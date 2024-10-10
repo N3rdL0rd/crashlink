@@ -1,0 +1,37 @@
+[project]
+name = "crashlink"
+version = "0.0.1"
+authors = [
+  { name="N3rdL0rd", email="n3rdl0rd@proton.me" },
+]
+description = "Just another HashLink decompiler/disassembler."
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+license = {file = "LICENSE"}
+dependencies = [
+  "pdoc3",
+  "black",
+  "build",
+  "twine",
+  "isort",
+  "mypy",
+  "radon",
+  "no_implicit_optional",
+  "pytest",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project.scripts]
+crashlink = "crashlink.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["crashlink", "crashlink.*"]
+exclude = ["tests", "tests.*", "local", "local.*", "env", "env.*"]

@@ -1,0 +1,6 @@
+test.py
+__pycache__*/
+build/
+dist/
+crashlink.egg-info/
+*.hl
