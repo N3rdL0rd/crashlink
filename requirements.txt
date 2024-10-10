@@ -1,0 +1,9 @@
+pdoc3
+black
+build
+twine
+isort
+mypy
+radon
+no_implicit_optional
+pytest
