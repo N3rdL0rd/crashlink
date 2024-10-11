@@ -4,11 +4,16 @@ Core classes.
 
 from typing import Optional, List
 import struct
+import string
+
+PRINTABLE_ASCII = set(string.printable.encode("ascii"))
 
 
 class Serialisable:
     def __init__(self):
-        raise NotImplementedError("Serialisable is an abstract class and should not be instantiated.")
+        raise NotImplementedError(
+            "Serialisable is an abstract class and should not be instantiated."
+        )
 
     def deserialise(self, f) -> "Serialisable":
         raise NotImplementedError("deserialise is not implemented for this class.")
@@ -52,7 +57,9 @@ class SerialisableInt(Serialisable):
         self.byteorder = "little"
         self.signed = False
 
-    def deserialise(self, f, length: int = 4, byteorder: str = "little", signed: bool = False) -> "SerialisableInt":
+    def deserialise(
+        self, f, length: int = 4, byteorder: str = "little", signed: bool = False
+    ) -> "SerialisableInt":
         self.length = length
         self.byteorder = byteorder
         self.signed = signed
@@ -82,8 +89,8 @@ class SerialisableF64(Serialisable):
 
 
 class VarInt(Serialisable):
-    def __init__(self):
-        self.value = 0
+    def __init__(self, value: int=0):
+        self.value = value
 
     def deserialise(self, f) -> "VarInt":
         b = int.from_bytes(f.read(1), "big")
@@ -111,7 +118,14 @@ class VarInt(Serialisable):
             elif value >= 0x20000000:
                 raise ValueError("value can't be >= 0x20000000")
             else:
-                return bytes([(value >> 24) | 0xE0, (value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF])
+                return bytes(
+                    [
+                        (value >> 24) | 0xE0,
+                        (value >> 16) & 0xFF,
+                        (value >> 8) & 0xFF,
+                        value & 0xFF,
+                    ]
+                )
         else:
             if self.value < 0x80:
                 return bytes([self.value])
@@ -121,7 +135,12 @@ class VarInt(Serialisable):
                 raise ValueError("value can't be >= 0x20000000")
             else:
                 return bytes(
-                    [(self.value >> 24) | 0xC0, (self.value >> 16) & 0xFF, (self.value >> 8) & 0xFF, self.value & 0xFF]
+                    [
+                        (self.value >> 24) | 0xC0,
+                        (self.value >> 16) & 0xFF,
+                        (self.value >> 8) & 0xFF,
+                        self.value & 0xFF,
+                    ]
                 )
 
 
@@ -130,18 +149,20 @@ class fIndex(VarInt):
     Abstract class based on VarInt to represent a distinct function index instead of just an arbitrary number.
     """
 
+
 def fmt_bytes(bytes: int) -> str:
     if bytes < 0:
         raise ValueError("Bytes cannot be negative.")
-    
+
     size_units = ["B", "Kb", "Mb", "Gb", "Tb"]
     index = 0
-    
+
     while bytes >= 1000 and index < len(size_units) - 1:
         bytes /= 1000
         index += 1
-    
+
     return f"{bytes:.1f}{size_units[index]}"
+
 
 class StringsBlock(Serialisable):
     def __init__(self):
@@ -149,28 +170,37 @@ class StringsBlock(Serialisable):
         self.length.length = 4
         self.value: List[str] = []
         self.lengths: List[int] = []
+        self.embedded_lengths: List[VarInt] = []
 
     def deserialise(self, f) -> "StringsBlock":
         self.length.deserialise(f, length=4)
         strings_size = self.length.value
         print(f"StringsBlock: Found {fmt_bytes(strings_size)} of strings")
         strings_data = f.read(strings_size)
-        
+
         index = 0
         while index < strings_size:
             string_length = 0
-            while index + string_length < strings_size and strings_data[index + string_length] != 0:
+            while (
+                index + string_length < strings_size
+                and strings_data[index + string_length] != 0
+            ):
                 string_length += 1
-            
+
             if index + string_length >= strings_size:
                 raise ValueError("Invalid string: no null terminator found")
-            
-            string = strings_data[index:index+string_length].decode("utf-8", errors="ignore")
+
+            string = strings_data[index : index + string_length].decode(
+                "utf-8", errors="ignore"
+            )
             self.value.append(string)
             self.lengths.append(string_length)
-            
+
             index += string_length + 1  # Skip the null terminator
         
+        for _ in self.value:
+            self.embedded_lengths.append(VarInt().deserialise(f))
+
         return self
 
     def serialise(self) -> bytes:
@@ -178,7 +208,13 @@ class StringsBlock(Serialisable):
         for string in self.value:
             strings_data += string.encode("utf-8") + b"\x00"
         self.length.value = len(strings_data)
-        return self.length.serialise() + strings_data
+        self.lengths = [len(string) for string in self.value]
+        self.embedded_lengths = [VarInt(length) for length in self.lengths]
+        return b"".join(
+            self.length.serialise(),
+            strings_data,
+            b"".join([i.serialise() for i in self.embedded_lengths])
+        )
 
 
 class BytesBlock(Serialisable):
@@ -217,6 +253,10 @@ class BytesBlock(Serialisable):
         return size_serialised + raw_data + positions_serialised
 
 
+def tell(f):
+    return hex(f.tell())
+
+
 class Bytecode(Serialisable):
     def __init__(self):
         self.magic = RawData(3)
@@ -243,46 +283,75 @@ class Bytecode(Serialisable):
         self.ndebugfiles: Optional[VarInt] = VarInt()
         self.debugfiles: Optional[StringsBlock] = StringsBlock()
 
+    def find_magic(self, f, magic=b"HLB"):
+        buffer_size = 1024
+        offset = 0
+        while True:
+            chunk = f.read(buffer_size)
+            if not chunk:
+                raise EOFError("Reached the end of file without finding magic bytes.")
+            index = chunk.find(magic)
+            if index != -1:
+                f.seek(offset + index)
+                print(f"Found bytecode at {tell(f)}... ", end="")
+                return
+            offset += buffer_size
+
     def deserialise(self, f):
+        print("Searching for magic...")
+        self.find_magic(f)
         self.magic.deserialise(f)
-        assert self.magic.value == b"HLB", "Incorrect magic found, is this actually HLB?"
+        assert (
+            self.magic.value == b"HLB"
+        ), "Incorrect magic found, is this actually HLB?"
         self.version.deserialise(f, length=1)
-        print(f"Found bytecode with version {self.version.value}... ", end="")
+        print(f"with version {self.version.value}... ", end="")
         self.flags.deserialise(f)
         self.has_debug_info = bool(self.flags.value & 1)
-        print(f"Has debug info: {self.has_debug_info}... ")
+        print(f"debug info: {self.has_debug_info}. ")
         self.nints.deserialise(f)
         self.nfloats.deserialise(f)
         self.nstrings.deserialise(f)
+
         if self.version.value >= 5:
             print("Found nbytes")
             self.nbytes.deserialise(f)
         else:
             self.nbytes = None
+
         self.ntypes.deserialise(f)
         self.nglobals.deserialise(f)
         self.nnatives.deserialise(f)
         self.nfunctions.deserialise(f)
+
         if self.version.value >= 4:
             print("Found nconstants")
             self.nconstants.deserialise(f)
         else:
             self.nconstants = None
+
         self.entrypoint.deserialise(f)
         print(f"Entrypoint: f@{self.entrypoint.value}")
+
         for _ in range(self.nints.value):
             self.ints.append(SerialisableInt().deserialise(f, length=4))
+
         for _ in range(self.nfloats.value):
             self.floats.append(SerialisableF64().deserialise(f))
+
         self.strings.deserialise(f)
-        print(f"Found {len(self.strings.value)} strings. nstrings: {self.nstrings.value}")
+        print(
+            f"Found {len(self.strings.value)} strings. nstrings: {self.nstrings.value}. Strings section ends at {tell(f)}"
+        )
+
         if self.version.value >= 5:
             print("Deserialising bytes... >=5")
             self.bytes.deserialise(f, self.nbytes.value)
         else:
             self.bytes = None
+
         if self.has_debug_info:
-            print(f"Deserialising debug files... (at {hex(f.tell())})")
+            print(f"Deserialising debug files... (at {tell(f)})")
             self.ndebugfiles.deserialise(f)
             print(f"Number of debug files: {self.ndebugfiles.value}")
             self.debugfiles.deserialise(f)
@@ -321,8 +390,5 @@ class Bytecode(Serialisable):
         if self.version.value >= 5:
             res += self.bytes.serialise()
         if self.has_debug_info:
-            res.join([
-                self.ndebugfiles.serialise(),
-                self.debugfiles.serialise()
-            ])
+            res.join([self.ndebugfiles.serialise(), self.debugfiles.serialise()])
         return res
