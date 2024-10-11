@@ -2,4 +2,4 @@
 Just another HashLink decompiler.
 """
 
-from . import bytecode
+from . import core, globals
