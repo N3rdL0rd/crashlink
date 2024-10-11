@@ -5,9 +5,11 @@ Core classes.
 from typing import Optional, List
 import struct
 import string
+from .globals import DEBUG
 
-PRINTABLE_ASCII = set(string.printable.encode("ascii"))
-
+def dbg_print(*args, **kwargs):
+    if DEBUG:
+        print(*args, **kwargs)
 
 class Serialisable:
     def __init__(self):
@@ -38,6 +40,9 @@ class Serialisable:
 
 
 class RawData(Serialisable):
+    """
+    A block of raw data.
+    """
     def __init__(self, length: int):
         self.value = b""
         self.length = length
@@ -51,6 +56,9 @@ class RawData(Serialisable):
 
 
 class SerialisableInt(Serialisable):
+    """
+    Integer of the specified byte length.
+    """
     def __init__(self):
         self.value = -1
         self.length = 4
@@ -77,6 +85,9 @@ class SerialisableInt(Serialisable):
 
 
 class SerialisableF64(Serialisable):
+    """
+    A standard 64-bit float.
+    """
     def __init__(self):
         self.value = 0.0
 
@@ -89,6 +100,9 @@ class SerialisableF64(Serialisable):
 
 
 class VarInt(Serialisable):
+    """
+    Variable-length integer, unique to HashLink.
+    """
     def __init__(self, value: int=0):
         self.value = value
 
@@ -175,7 +189,7 @@ class StringsBlock(Serialisable):
     def deserialise(self, f) -> "StringsBlock":
         self.length.deserialise(f, length=4)
         strings_size = self.length.value
-        print(f"StringsBlock: Found {fmt_bytes(strings_size)} of strings")
+        dbg_print(f"StringsBlock: Found {fmt_bytes(strings_size)} of strings")
         strings_data = f.read(strings_size)
 
         index = 0
@@ -293,28 +307,28 @@ class Bytecode(Serialisable):
             index = chunk.find(magic)
             if index != -1:
                 f.seek(offset + index)
-                print(f"Found bytecode at {tell(f)}... ", end="")
+                dbg_print(f"Found bytecode at {tell(f)}... ", end="")
                 return
             offset += buffer_size
 
     def deserialise(self, f):
-        print("Searching for magic...")
+        dbg_print("Searching for magic...")
         self.find_magic(f)
         self.magic.deserialise(f)
         assert (
             self.magic.value == b"HLB"
         ), "Incorrect magic found, is this actually HLB?"
         self.version.deserialise(f, length=1)
-        print(f"with version {self.version.value}... ", end="")
+        dbg_print(f"with version {self.version.value}... ", end="")
         self.flags.deserialise(f)
         self.has_debug_info = bool(self.flags.value & 1)
-        print(f"debug info: {self.has_debug_info}. ")
+        dbg_print(f"debug info: {self.has_debug_info}. ")
         self.nints.deserialise(f)
         self.nfloats.deserialise(f)
         self.nstrings.deserialise(f)
 
         if self.version.value >= 5:
-            print("Found nbytes")
+            dbg_print("Found nbytes")
             self.nbytes.deserialise(f)
         else:
             self.nbytes = None
@@ -325,13 +339,13 @@ class Bytecode(Serialisable):
         self.nfunctions.deserialise(f)
 
         if self.version.value >= 4:
-            print("Found nconstants")
+            dbg_print("Found nconstants")
             self.nconstants.deserialise(f)
         else:
             self.nconstants = None
 
         self.entrypoint.deserialise(f)
-        print(f"Entrypoint: f@{self.entrypoint.value}")
+        dbg_print(f"Entrypoint: f@{self.entrypoint.value}")
 
         for _ in range(self.nints.value):
             self.ints.append(SerialisableInt().deserialise(f, length=4))
@@ -340,20 +354,20 @@ class Bytecode(Serialisable):
             self.floats.append(SerialisableF64().deserialise(f))
 
         self.strings.deserialise(f)
-        print(
+        dbg_print(
             f"Found {len(self.strings.value)} strings. nstrings: {self.nstrings.value}. Strings section ends at {tell(f)}"
         )
 
         if self.version.value >= 5:
-            print("Deserialising bytes... >=5")
+            dbg_print("Deserialising bytes... >=5")
             self.bytes.deserialise(f, self.nbytes.value)
         else:
             self.bytes = None
 
         if self.has_debug_info:
-            print(f"Deserialising debug files... (at {tell(f)})")
+            dbg_print(f"Deserialising debug files... (at {tell(f)})")
             self.ndebugfiles.deserialise(f)
-            print(f"Number of debug files: {self.ndebugfiles.value}")
+            dbg_print(f"Number of debug files: {self.ndebugfiles.value}")
             self.debugfiles.deserialise(f)
         else:
             self.ndebugfiles = None
