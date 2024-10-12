@@ -7,6 +7,7 @@ import struct
 from typing import List, Optional
 
 from .globals import dbg_print, tell
+from .errors import MalformedBytecode, NoMagic
 
 
 class Serialisable:
@@ -128,7 +129,7 @@ class VarInt(Serialisable):
             if value < 0x2000:
                 return bytes([(value >> 8) | 0xA0, value & 0xFF])
             elif value >= 0x20000000:
-                raise ValueError("value can't be >= 0x20000000")
+                raise MalformedBytecode("value can't be >= 0x20000000")
             else:
                 return bytes(
                     [
@@ -144,7 +145,7 @@ class VarInt(Serialisable):
             elif self.value < 0x2000:
                 return bytes([(self.value >> 8) | 0x80, self.value & 0xFF])
             elif self.value >= 0x20000000:
-                raise ValueError("value can't be >= 0x20000000")
+                raise MalformedBytecode("value can't be >= 0x20000000")
             else:
                 return bytes(
                     [
@@ -185,7 +186,7 @@ class strRef(VarInt):
 
 def fmt_bytes(bytes: int) -> str:
     if bytes < 0:
-        raise ValueError("Bytes cannot be negative.")
+        raise MalformedBytecode("Bytes cannot be negative.")
 
     size_units = ["B", "Kb", "Mb", "Gb", "Tb"]
     index = 0
@@ -218,7 +219,7 @@ class StringsBlock(Serialisable):
                 string_length += 1
 
             if index + string_length >= strings_size:
-                raise ValueError("Invalid string: no null terminator found")
+                raise MalformedBytecode("Invalid string: no null terminator found")
 
             string = strings_data[index : index + string_length].decode("utf-8", errors="ignore")
             self.value.append(string)
@@ -500,20 +501,49 @@ class Abstract(TypeDef):
         return self.name.serialise()
 
 
+class EnumConstruct(Serialisable):
+    def __init__(self):
+        self.name = strRef()
+        self.nparams = VarInt()
+        self.params: List[tIndex] = []
+    
+    def deserialise(self, f) -> "EnumConstruct":
+        self.name.deserialise(f)
+        self.nparams.deserialise(f)
+        for _ in range(self.nparams.value):
+            self.params.append(tIndex().deserialise(f))
+        return self
+    
+    def serialise(self) -> bytes:
+        return b"".join([
+            self.name.serialise(),
+            self.nparams.serialise(),
+            b"".join([param.serialise() for param in self.params])
+        ])
+
+
 class Enum(TypeDef):
     def __init__(self):
         self.name = strRef()
         self._global = gIndex()
         self.nconstructs = VarInt()
+        self.constructs: List[EnumConstruct] = []
 
     def deserialise(self, f) -> "Enum":
         self.name.deserialise(f)
         self._global.deserialise(f)
         self.nconstructs.deserialise(f)
+        for _ in range(self.nconstructs.value):
+            self.constructs.append([EnumConstruct().deserialise(f)])
         return self
 
     def serialise(self) -> bytes:
-        return b"".join([self.name.serialise(), self._global.serialise(), self.nconstructs.serialise()])
+        return b"".join([
+            self.name.serialise(),
+            self._global.serialise(),
+            self.nconstructs.serialise(),
+            b"".join([construct.serialise() for construct in self.constructs])
+        ])
 
 
 class Null(TypeDef):
@@ -581,20 +611,57 @@ class Type(Serialisable):
         self.definition: Optional[TypeDef] = None
 
     def deserialise(self, f) -> "Type":
-        dbg_print(f"type starts at {tell(f)}")
         self.kind.deserialise(f, length=1)
         try:
-            dbg_print("Deserialising type with kind", self.kind.value, "at", tell(f))
             self.TYPEDEFS[self.kind.value]
             _def = self.TYPEDEFS[self.kind.value]()
             self.definition = _def.deserialise(f)
         except IndexError:
-            raise ValueError(f"Invalid type kind found @{tell(f)}")
+            raise MalformedBytecode(f"Invalid type kind found @{tell(f)}")
         return self
 
     def serialise(self) -> bytes:
         return b"".join([self.kind.serialise(), self.definition.serialise()])
 
+
+class Native(Serialisable):
+    def __init__(self):
+        self.lib = strRef()
+        self.name = strRef()
+        self.type = tIndex()
+        self.findex = fIndex()
+    
+    def deserialise(self, f) -> "Native":
+        self.lib.deserialise(f)
+        self.name.deserialise(f)
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        return self
+    
+    def serialise(self) -> bytes:
+        return b"".join([
+            self.lib.serialise(),
+            self.name.serialise(),
+            self.type.serialise(),
+            self.findex.serialise()
+        ])
+
+class Opcode(Serialisable):
+    
+
+
+class Function(Serialisable):
+    def __init__(self):
+        self.type = tIndex()
+        self.findex = fIndex()
+        self.nregs = VarInt()
+        self.nops = VarInt()
+        self.regs: List[tIndex] = []
+        self.ops: List[Opcode] = []
+        # self.debuginfo
+        # self.nassigns
+        # self.assigns
+        
 
 class Bytecode(Serialisable):
     def __init__(self):
@@ -623,6 +690,8 @@ class Bytecode(Serialisable):
         self.debugfiles: Optional[StringsBlock] = StringsBlock()
 
         self.types: List[Type] = []
+        self.global_types: List[tIndex] = []
+        self.natives: List[Native] = []
 
     def find_magic(self, f, magic=b"HLB"):
         buffer_size = 1024
@@ -630,7 +699,7 @@ class Bytecode(Serialisable):
         while True:
             chunk = f.read(buffer_size)
             if not chunk:
-                raise EOFError("Reached the end of file without finding magic bytes.")
+                raise NoMagic("Reached the end of file without finding magic bytes.")
             index = chunk.find(magic)
             if index != -1:
                 f.seek(offset + index)
@@ -700,10 +769,16 @@ class Bytecode(Serialisable):
             self.debugfiles = None
 
         dbg_print(f"Starting main blobs at {tell(f)}")
-
         for _ in range(self.ntypes.value):
-            dbg_print("type", _)
             self.types.append(Type().deserialise(f))
+        dbg_print(f"Globals starting at {tell(f)}")
+        for _ in range(self.nglobals.value):
+            self.global_types.append(tIndex().deserialise(f))
+        dbg_print(f"Natives starting at {tell(f)}")
+        for _ in range(self.nnatives.value):
+            self.natives.append(Native().deserialise(f))
+        
+
 
     def serialise(self) -> bytes:
         # TODO: dynamically set n**** variables to their correct values given their respective **** object - eg. set nfloats to len(floats)
@@ -737,4 +812,9 @@ class Bytecode(Serialisable):
             res += self.bytes.serialise()
         if self.has_debug_info:
             res.join([self.ndebugfiles.serialise(), self.debugfiles.serialise()])
+        res.join([
+            b"".join([typ.serialise() for typ in self.types]),
+            b"".join([typ.serialise() for typ in self.global_types]),
+            b"".join([native.serialise() for native in self.natives])
+        ])
         return res
