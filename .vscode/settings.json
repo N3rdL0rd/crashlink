@@ -2,11 +2,13 @@
     "cSpell.words": [
         "crashlink",
         "debugfiles",
+        "debuginfo",
         "deserialise",
         "Deserialising",
         "findex",
         "Haxe",
         "hlbc",
+        "nassigns",
         "nbindings",
         "nbytes",
         "nconstants",
@@ -18,12 +20,17 @@
         "nglobals",
         "nints",
         "nnatives",
+        "nops",
+        "nparams",
         "nprotos",
+        "nregs",
         "nstrings",
         "ntypes",
         "pindex",
         "protos",
-        "typedefs"
+        "Setref",
+        "typedefs",
+        "varint"
     ],
     "python.REPL.enableREPLSmartSend": false
 }
