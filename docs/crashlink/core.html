@@ -1,0 +1,1915 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.1">
+<title>crashlink.core API documentation</title>
+<meta name="description" content="Core classes.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin-bottom:1em}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>crashlink.core</code></h1>
+</header>
+<section id="section-intro">
+<p>Core classes.</p>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="crashlink.core.create_type"><code class="name flex">
+<span>def <span class="ident">create_type</span></span>(<span>_def: int, <br>f)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Creates a TypeDef for the given int index, reading from the buffer in f.</p></pre></div>
+</dd>
+<dt id="crashlink.core.fmt_bytes"><code class="name flex">
+<span>def <span class="ident">fmt_bytes</span></span>(<span>bytes: int) ‑> str</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="crashlink.core.Abstract"><code class="flex name class">
+<span>class <span class="ident">Abstract</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Abstract(TypeDef):
+    def __init__(self):
+        self.name = strRef()
+
+    def deserialise(self, f) -&gt; &#34;Abstract&#34;:
+        self.name.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return self.name.serialise()</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.Abstract.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Abstract" href="#crashlink.core.Abstract">Abstract</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.Abstract.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.Array"><code class="flex name class">
+<span>class <span class="ident">Array</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Array(_NoDataType):
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>crashlink.core._NoDataType</li>
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+<dt id="crashlink.core.Binding"><code class="flex name class">
+<span>class <span class="ident">Binding</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Binding(Serialisable):
+    def __init__(self):
+        self.field = VarInt()  # field ref, not deserving of its own separate type
+        self.findex = fIndex()
+
+    def deserialise(self, f) -&gt; &#34;Binding&#34;:
+        self.field.deserialise(f)
+        self.findex.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join([self.field.serialise(), self.findex.serialise()])</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.Binding.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Binding" href="#crashlink.core.Binding">Binding</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.Binding.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.Bool"><code class="flex name class">
+<span>class <span class="ident">Bool</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Bool(_NoDataType):
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>crashlink.core._NoDataType</li>
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+<dt id="crashlink.core.Bytecode"><code class="flex name class">
+<span>class <span class="ident">Bytecode</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Bytecode(Serialisable):
+    def __init__(self):
+        self.magic = RawData(3)
+        self.version = SerialisableInt()
+        self.version.length = 1
+        self.flags = VarInt()
+        self.has_debug_info = False
+        self.nints = VarInt()
+        self.nfloats = VarInt()
+        self.nstrings = VarInt()
+        self.nbytes: Optional[VarInt] = VarInt()
+        self.ntypes = VarInt()
+        self.nglobals = VarInt()
+        self.nnatives = VarInt()
+        self.nfunctions = VarInt()
+        self.nconstants: Optional[VarInt] = VarInt()
+        self.entrypoint = fIndex()
+
+        self.ints: List[SerialisableInt] = []
+        self.floats: List[SerialisableF64] = []
+        self.strings = StringsBlock()
+        self.bytes: Optional[BytesBlock] = BytesBlock()
+
+        self.ndebugfiles: Optional[VarInt] = VarInt()
+        self.debugfiles: Optional[StringsBlock] = StringsBlock()
+
+        self.types: List[Type] = []
+
+    def find_magic(self, f, magic=b&#34;HLB&#34;):
+        buffer_size = 1024
+        offset = 0
+        while True:
+            chunk = f.read(buffer_size)
+            if not chunk:
+                raise EOFError(&#34;Reached the end of file without finding magic bytes.&#34;)
+            index = chunk.find(magic)
+            if index != -1:
+                f.seek(offset + index)
+                dbg_print(f&#34;Found bytecode at {tell(f)}... &#34;, end=&#34;&#34;)
+                return
+            offset += buffer_size
+
+    def deserialise(self, f, search_magic=True):
+        if search_magic:
+            dbg_print(&#34;Searching for magic...&#34;)
+            self.find_magic(f)
+        self.magic.deserialise(f)
+        assert self.magic.value == b&#34;HLB&#34;, &#34;Incorrect magic found!&#34;
+        self.version.deserialise(f, length=1)
+        dbg_print(f&#34;with version {self.version.value}... &#34;, end=&#34;&#34;)
+        self.flags.deserialise(f)
+        self.has_debug_info = bool(self.flags.value &amp; 1)
+        dbg_print(f&#34;debug info: {self.has_debug_info}. &#34;)
+        self.nints.deserialise(f)
+        self.nfloats.deserialise(f)
+        self.nstrings.deserialise(f)
+
+        if self.version.value &gt;= 5:
+            dbg_print(&#34;Found nbytes&#34;)
+            self.nbytes.deserialise(f)
+        else:
+            self.nbytes = None
+
+        self.ntypes.deserialise(f)
+        self.nglobals.deserialise(f)
+        self.nnatives.deserialise(f)
+        self.nfunctions.deserialise(f)
+
+        if self.version.value &gt;= 4:
+            dbg_print(&#34;Found nconstants&#34;)
+            self.nconstants.deserialise(f)
+        else:
+            self.nconstants = None
+
+        self.entrypoint.deserialise(f)
+        dbg_print(f&#34;Entrypoint: f@{self.entrypoint.value}&#34;)
+
+        for _ in range(self.nints.value):
+            self.ints.append(SerialisableInt().deserialise(f, length=4))
+
+        for _ in range(self.nfloats.value):
+            self.floats.append(SerialisableF64().deserialise(f))
+
+        self.strings.deserialise(f)
+        dbg_print(
+            f&#34;Found {len(self.strings.value)} strings. nstrings: {self.nstrings.value}. Strings section ends at {tell(f)}&#34;
+        )
+
+        if self.version.value &gt;= 5:
+            dbg_print(&#34;Deserialising bytes... &gt;=5&#34;)
+            self.bytes.deserialise(f, self.nbytes.value)
+        else:
+            self.bytes = None
+
+        if self.has_debug_info:
+            dbg_print(f&#34;Deserialising debug files... (at {tell(f)})&#34;)
+            self.ndebugfiles.deserialise(f)
+            dbg_print(f&#34;Number of debug files: {self.ndebugfiles.value}&#34;)
+            self.debugfiles.deserialise(f)
+        else:
+            self.ndebugfiles = None
+            self.debugfiles = None
+
+        dbg_print(f&#34;Starting main blobs at {tell(f)}&#34;)
+
+        for _ in range(self.ntypes.value):
+            dbg_print(&#34;type&#34;, _)
+            self.types.append(Type().deserialise(f))
+
+    def serialise(self) -&gt; bytes:
+        # TODO: dynamically set n**** variables to their correct values given their respective **** object - eg. set nfloats to len(floats)
+        res = b&#34;&#34;.join(
+            [
+                self.magic.serialise(),
+                self.version.serialise(),
+                self.flags.serialise(),
+                self.nints.serialise(),
+                self.nfloats.serialise(),
+                self.nstrings.serialise(),
+            ]
+        )
+        if self.version.value &gt;= 5:
+            res += self.nbytes.serialise()
+        res.join(
+            [
+                self.ntypes.serialise(),
+                self.nglobals.serialise(),
+                self.nnatives.serialise(),
+                self.nfunctions.serialise(),
+            ]
+        )
+        if self.version.value &gt;= 4:
+            res += self.nconstants.serialise()
+        res += self.entrypoint.serialise()
+        res.join([i.serialise() for i in self.ints])
+        res.join([f.serialise() for f in self.floats])
+        res += self.strings.serialise()
+        if self.version.value &gt;= 5:
+            res += self.bytes.serialise()
+        if self.has_debug_info:
+            res.join([self.ndebugfiles.serialise(), self.debugfiles.serialise()])
+        return res</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.Bytecode.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f, <br>search_magic=True)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.Bytecode.find_magic"><code class="name flex">
+<span>def <span class="ident">find_magic</span></span>(<span>self, <br>f, <br>magic=b'HLB')</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.Bytecode.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.Bytes"><code class="flex name class">
+<span>class <span class="ident">Bytes</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Bytes(_NoDataType):
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>crashlink.core._NoDataType</li>
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+<dt id="crashlink.core.BytesBlock"><code class="flex name class">
+<span>class <span class="ident">BytesBlock</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class BytesBlock(Serialisable):
+    def __init__(self):
+        self.size = SerialisableInt()
+        self.size.length = 4
+        self.value: List[bytes] = []
+        self.nbytes = 0
+
+    def deserialise(self, f, nbytes: int) -&gt; &#34;BytesBlock&#34;:
+        self.nbytes = nbytes
+        self.size.deserialise(f, length=4)
+        raw = f.read(self.size.value)
+        positions: List[VarInt] = []
+        for _ in range(nbytes):
+            pos = VarInt()
+            pos.deserialise(f)
+            positions.append(pos)
+        positions = [pos.value for pos in positions]
+        for i in range(len(positions)):
+            start = positions[i]
+            end = positions[i + 1] if i + 1 &lt; len(positions) else len(raw)
+            self.value.append(raw[start:end])  # Append the extracted byte string
+        return self
+
+    def serialise(self) -&gt; bytes:
+        raw_data = b&#34;&#34;.join(self.value)
+        self.size.value = len(raw_data)
+        size_serialised = self.size.serialise()
+        positions = []
+        current_pos = 0
+        for byte_str in self.value:
+            positions.append(VarInt(current_pos))
+            current_pos += len(byte_str)
+        positions_serialised = b&#34;&#34;.join([pos.serialise() for pos in positions])
+        return size_serialised + raw_data + positions_serialised</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.BytesBlock.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f, <br>nbytes: int) ‑> <a title="crashlink.core.BytesBlock" href="#crashlink.core.BytesBlock">BytesBlock</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.BytesBlock.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.Dyn"><code class="flex name class">
+<span>class <span class="ident">Dyn</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Dyn(_NoDataType):
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>crashlink.core._NoDataType</li>
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+<dt id="crashlink.core.DynObj"><code class="flex name class">
+<span>class <span class="ident">DynObj</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class DynObj(_NoDataType):
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>crashlink.core._NoDataType</li>
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+<dt id="crashlink.core.Enum"><code class="flex name class">
+<span>class <span class="ident">Enum</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Enum(TypeDef):
+    def __init__(self):
+        self.name = strRef()
+        self._global = gIndex()
+        self.nconstructs = VarInt()
+
+    def deserialise(self, f) -&gt; &#34;Enum&#34;:
+        self.name.deserialise(f)
+        self._global.deserialise(f)
+        self.nconstructs.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join([self.name.serialise(), self._global.serialise(), self.nconstructs.serialise()])</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.Enum.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Enum" href="#crashlink.core.Enum">Enum</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.Enum.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.F32"><code class="flex name class">
+<span>class <span class="ident">F32</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class F32(_NoDataType):
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>crashlink.core._NoDataType</li>
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+<dt id="crashlink.core.F64"><code class="flex name class">
+<span>class <span class="ident">F64</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class F64(_NoDataType):
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>crashlink.core._NoDataType</li>
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+<dt id="crashlink.core.Field"><code class="flex name class">
+<span>class <span class="ident">Field</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Field(Serialisable):
+    def __init__(self):
+        self.name = strRef()
+        self.type = tIndex()
+
+    def deserialise(self, f) -&gt; &#34;Field&#34;:
+        self.name.deserialise(f)
+        self.type.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join([self.name.serialise(), self.type.serialise()])</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.Field.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.Field.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.Fun"><code class="flex name class">
+<span>class <span class="ident">Fun</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Fun(TypeDef):
+    def __init__(self):
+        self.nargs = VarInt()
+        self.args: List[tIndex] = []
+        self.ret = tIndex()
+
+    def deserialise(self, f) -&gt; &#34;Fun&#34;:
+        self.nargs.deserialise(f)
+        for _ in range(self.nargs.value):
+            self.args.append(tIndex().deserialise(f))
+        self.ret.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join(
+            [self.nargs.serialise(), b&#34;&#34;.join([idx.serialise() for idx in self.args]), self.ret.serialise()]
+        )</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Method" href="#crashlink.core.Method">Method</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.Fun.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Fun" href="#crashlink.core.Fun">Fun</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.Fun.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.I32"><code class="flex name class">
+<span>class <span class="ident">I32</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class I32(_NoDataType):
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>crashlink.core._NoDataType</li>
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+<dt id="crashlink.core.I64"><code class="flex name class">
+<span>class <span class="ident">I64</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class I64(_NoDataType):
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>crashlink.core._NoDataType</li>
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+<dt id="crashlink.core.Method"><code class="flex name class">
+<span>class <span class="ident">Method</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Method(Fun):
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Fun" href="#crashlink.core.Fun">Fun</a></li>
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+<dt id="crashlink.core.Null"><code class="flex name class">
+<span>class <span class="ident">Null</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Null(TypeDef):
+    def __init__(self):
+        self.type = tIndex()
+
+    def deserialise(self, f) -&gt; &#34;Null&#34;:
+        self.type.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return self.type.serialise()</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.Null.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Null" href="#crashlink.core.Null">Null</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.Null.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.Obj"><code class="flex name class">
+<span>class <span class="ident">Obj</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Obj(TypeDef):
+    def __init__(self):
+        self.name = strRef()
+        self.super = tIndex()
+        self._global = gIndex()
+        self.nfields = VarInt()
+        self.nprotos = VarInt()
+        self.nbindings = VarInt()
+        self.fields: List[Field] = []
+        self.protos: List[Proto] = []
+        self.bindings: List[Binding] = []
+
+    def deserialise(self, f) -&gt; &#34;Obj&#34;:
+        self.name.deserialise(f)
+        self.super.deserialise(f)
+        self._global.deserialise(f)
+        self.nfields.deserialise(f)
+        self.nprotos.deserialise(f)
+        self.nbindings.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(Field().deserialise(f))
+        for _ in range(self.nprotos.value):
+            self.protos.append(Proto().deserialise(f))
+        for _ in range(self.nbindings.value):
+            self.bindings.append(Binding().deserialise(f))
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join(
+            [
+                self.name.serialise(),
+                self.super.serialise(),
+                self._global.serialise(),
+                self.nfields.serialise(),
+                self.nprotos.serialise(),
+                self.nbindings.serialise(),
+                b&#34;&#34;.join([field.serialise() for field in self.fields]),
+                b&#34;&#34;.join([proto.serialise() for proto in self.protos]),
+                b&#34;&#34;.join([binding.serialise() for binding in self.bindings]),
+            ]
+        )</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Struct" href="#crashlink.core.Struct">Struct</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.Obj.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.Obj.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.Packed"><code class="flex name class">
+<span>class <span class="ident">Packed</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Packed(TypeDef):
+    def __init__(self):
+        self.inner = tIndex()
+
+    def deserialise(self, f) -&gt; &#34;Packed&#34;:
+        self.inner.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return self.inner.serialise()</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.Packed.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Packed" href="#crashlink.core.Packed">Packed</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.Packed.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.Proto"><code class="flex name class">
+<span>class <span class="ident">Proto</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Proto(Serialisable):
+    def __init__(self):
+        self.name = strRef()
+        self.findex = fIndex()
+        self.pindex = VarInt()  # unknown use
+
+    def deserialise(self, f) -&gt; &#34;Proto&#34;:
+        self.name.deserialise(f)
+        self.findex.deserialise(f)
+        self.pindex.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join([self.name.serialise(), self.findex.serialise(), self.pindex.serialise()])</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.Proto.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Proto" href="#crashlink.core.Proto">Proto</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.Proto.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.RawData"><code class="flex name class">
+<span>class <span class="ident">RawData</span></span>
+<span>(</span><span>length: int)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>A block of raw data.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class RawData(Serialisable):
+    &#34;&#34;&#34;
+    A block of raw data.
+    &#34;&#34;&#34;
+
+    def __init__(self, length: int):
+        self.value = b&#34;&#34;
+        self.length = length
+
+    def deserialise(self, f) -&gt; &#34;RawData&#34;:
+        self.value = f.read(self.length)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return self.value</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.RawData.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.RawData" href="#crashlink.core.RawData">RawData</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.RawData.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.Ref"><code class="flex name class">
+<span>class <span class="ident">Ref</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Ref(TypeDef):
+    def __init__(self):
+        self.type = tIndex()
+
+    def deserialise(self, f) -&gt; &#34;Ref&#34;:
+        self.type.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return self.type.serialise()</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.Ref.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Ref" href="#crashlink.core.Ref">Ref</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.Ref.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.Serialisable"><code class="flex name class">
+<span>class <span class="ident">Serialisable</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Serialisable:
+    def __init__(self):
+        raise NotImplementedError(&#34;Serialisable is an abstract class and should not be instantiated.&#34;)
+
+    def deserialise(self, f, *args, **kwargs) -&gt; &#34;Serialisable&#34;:
+        raise NotImplementedError(&#34;deserialise is not implemented for this class.&#34;)
+
+    def serialise(self) -&gt; bytes:
+        raise NotImplementedError(&#34;serialise is not implemented for this class.&#34;)
+
+    def __str__(self) -&gt; str:
+        return str(self.value)
+
+    def __repr__(self) -&gt; str:
+        return str(self.value)
+
+    def __eq__(self, other) -&gt; bool:
+        return self.value == other.value
+
+    def __ne__(self, other) -&gt; bool:
+        return self.value != other.value
+
+    def __lt__(self, other) -&gt; bool:
+        return self.value &lt; other.value</code></pre>
+</details>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Binding" href="#crashlink.core.Binding">Binding</a></li>
+<li><a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></li>
+<li><a title="crashlink.core.BytesBlock" href="#crashlink.core.BytesBlock">BytesBlock</a></li>
+<li><a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a></li>
+<li><a title="crashlink.core.Proto" href="#crashlink.core.Proto">Proto</a></li>
+<li><a title="crashlink.core.RawData" href="#crashlink.core.RawData">RawData</a></li>
+<li><a title="crashlink.core.SerialisableF64" href="#crashlink.core.SerialisableF64">SerialisableF64</a></li>
+<li><a title="crashlink.core.SerialisableInt" href="#crashlink.core.SerialisableInt">SerialisableInt</a></li>
+<li><a title="crashlink.core.StringsBlock" href="#crashlink.core.StringsBlock">StringsBlock</a></li>
+<li><a title="crashlink.core.Type" href="#crashlink.core.Type">Type</a></li>
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.Serialisable.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f, <br>*args, <br>**kwargs) ‑> <a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.Serialisable.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.SerialisableF64"><code class="flex name class">
+<span>class <span class="ident">SerialisableF64</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>A standard 64-bit float.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class SerialisableF64(Serialisable):
+    &#34;&#34;&#34;
+    A standard 64-bit float.
+    &#34;&#34;&#34;
+
+    def __init__(self):
+        self.value = 0.0
+
+    def deserialise(self, f) -&gt; &#34;SerialisableF64&#34;:
+        self.value = struct.unpack(&#34;&lt;d&#34;, f.read(8))[0]
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return struct.pack(&#34;&lt;d&#34;, self.value)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.SerialisableF64.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.SerialisableF64" href="#crashlink.core.SerialisableF64">SerialisableF64</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.SerialisableF64.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.SerialisableInt"><code class="flex name class">
+<span>class <span class="ident">SerialisableInt</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Integer of the specified byte length.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class SerialisableInt(Serialisable):
+    &#34;&#34;&#34;
+    Integer of the specified byte length.
+    &#34;&#34;&#34;
+
+    def __init__(self):
+        self.value = -1
+        self.length = 4
+        self.byteorder = &#34;little&#34;
+        self.signed = False
+
+    def deserialise(self, f, length: int = 4, byteorder: str = &#34;little&#34;, signed: bool = False) -&gt; &#34;SerialisableInt&#34;:
+        self.length = length
+        self.byteorder = byteorder
+        self.signed = signed
+        bytes = f.read(length)
+        if all(b == 0 for b in bytes):
+            self.value = 0
+            return self
+        while bytes[-1] == 0:
+            bytes = bytes[:-1]
+        self.value = int.from_bytes(bytes, byteorder, signed=signed)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return self.value.to_bytes(self.length, self.byteorder, signed=self.signed)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.SerialisableInt.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f, <br>length: int = 4, <br>byteorder: str = 'little', <br>signed: bool = False) ‑> <a title="crashlink.core.SerialisableInt" href="#crashlink.core.SerialisableInt">SerialisableInt</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.SerialisableInt.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.StringsBlock"><code class="flex name class">
+<span>class <span class="ident">StringsBlock</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class StringsBlock(Serialisable):
+    def __init__(self):
+        self.length = SerialisableInt()
+        self.length.length = 4
+        self.value: List[str] = []
+        self.lengths: List[int] = []
+        self.embedded_lengths: List[VarInt] = []
+
+    def deserialise(self, f) -&gt; &#34;StringsBlock&#34;:
+        self.length.deserialise(f, length=4)
+        strings_size = self.length.value
+        dbg_print(f&#34;StringsBlock: Found {fmt_bytes(strings_size)} of strings&#34;)
+        strings_data = f.read(strings_size)
+
+        index = 0
+        while index &lt; strings_size:
+            string_length = 0
+            while index + string_length &lt; strings_size and strings_data[index + string_length] != 0:
+                string_length += 1
+
+            if index + string_length &gt;= strings_size:
+                raise ValueError(&#34;Invalid string: no null terminator found&#34;)
+
+            string = strings_data[index : index + string_length].decode(&#34;utf-8&#34;, errors=&#34;ignore&#34;)
+            self.value.append(string)
+            self.lengths.append(string_length)
+
+            index += string_length + 1  # Skip the null terminator
+
+        for _ in self.value:
+            self.embedded_lengths.append(VarInt().deserialise(f))
+
+        return self
+
+    def serialise(self) -&gt; bytes:
+        strings_data = b&#34;&#34;
+        for string in self.value:
+            strings_data += string.encode(&#34;utf-8&#34;) + b&#34;\x00&#34;
+        self.length.value = len(strings_data)
+        self.lengths = [len(string) for string in self.value]
+        self.embedded_lengths = [VarInt(length) for length in self.lengths]
+        return b&#34;&#34;.join(self.length.serialise(), strings_data, b&#34;&#34;.join([i.serialise() for i in self.embedded_lengths]))</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.StringsBlock.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.StringsBlock" href="#crashlink.core.StringsBlock">StringsBlock</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.StringsBlock.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.Struct"><code class="flex name class">
+<span>class <span class="ident">Struct</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Struct(Obj):
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a></li>
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+<dt id="crashlink.core.Type"><code class="flex name class">
+<span>class <span class="ident">Type</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Type(Serialisable):
+    TYPEDEFS: List[TypeDef] = [
+        Void,  # 0
+        U8,  # 1
+        U16,  # 2
+        I32,  # 3
+        I64,  # 4
+        F32,  # 5
+        F64,  # 6
+        Bool,  # 7
+        Bytes,  # 8
+        Dyn,  # 9
+        Fun,  # 10
+        Obj,  # 11
+        Array,  # 12
+        TypeType,  # 13
+        Ref,  # 14
+        Virtual,  # 15
+        DynObj,  # 16
+        Abstract,  # 17
+        Enum,  # 18
+        Null,  # 19
+        Method,  # 20
+        Struct,  # 21
+        Packed,  # 22
+    ]
+
+    def __init__(self):
+        self.kind = SerialisableInt()
+        self.kind.length = 1
+        self.definition: Optional[TypeDef] = None
+
+    def deserialise(self, f) -&gt; &#34;Type&#34;:
+        dbg_print(f&#34;type starts at {tell(f)}&#34;)
+        self.kind.deserialise(f, length=1)
+        try:
+            dbg_print(&#34;Deserialising type with kind&#34;, self.kind.value, &#34;at&#34;, tell(f))
+            self.TYPEDEFS[self.kind.value]
+            _def = self.TYPEDEFS[self.kind.value]()
+            self.definition = _def.deserialise(f)
+        except IndexError:
+            raise ValueError(f&#34;Invalid type kind found @{tell(f)}&#34;)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join([self.kind.serialise(), self.definition.serialise()])</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashlink.core.Type.TYPEDEFS"><code class="name">var <span class="ident">TYPEDEFS</span> : List[<a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a>]</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.Type.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Type" href="#crashlink.core.Type">Type</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.Type.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.TypeDef"><code class="flex name class">
+<span>class <span class="ident">TypeDef</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class TypeDef(Serialisable):
+    &#34;&#34;&#34;
+    Abstract class for all type definition fields.
+    &#34;&#34;&#34;</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Abstract" href="#crashlink.core.Abstract">Abstract</a></li>
+<li><a title="crashlink.core.Enum" href="#crashlink.core.Enum">Enum</a></li>
+<li><a title="crashlink.core.Fun" href="#crashlink.core.Fun">Fun</a></li>
+<li><a title="crashlink.core.Null" href="#crashlink.core.Null">Null</a></li>
+<li><a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a></li>
+<li><a title="crashlink.core.Packed" href="#crashlink.core.Packed">Packed</a></li>
+<li><a title="crashlink.core.Ref" href="#crashlink.core.Ref">Ref</a></li>
+<li><a title="crashlink.core.Virtual" href="#crashlink.core.Virtual">Virtual</a></li>
+<li>crashlink.core._NoDataType</li>
+</ul>
+</dd>
+<dt id="crashlink.core.TypeType"><code class="flex name class">
+<span>class <span class="ident">TypeType</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class TypeType(_NoDataType):
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>crashlink.core._NoDataType</li>
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+<dt id="crashlink.core.U16"><code class="flex name class">
+<span>class <span class="ident">U16</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class U16(_NoDataType):
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>crashlink.core._NoDataType</li>
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+<dt id="crashlink.core.U8"><code class="flex name class">
+<span>class <span class="ident">U8</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class U8(_NoDataType):
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>crashlink.core._NoDataType</li>
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+<dt id="crashlink.core.VarInt"><code class="flex name class">
+<span>class <span class="ident">VarInt</span></span>
+<span>(</span><span>value: int = 0)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Variable-length integer, unique to HashLink.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class VarInt(Serialisable):
+    &#34;&#34;&#34;
+    Variable-length integer, unique to HashLink.
+    &#34;&#34;&#34;
+
+    def __init__(self, value: int = 0):
+        self.value = value
+
+    def deserialise(self, f) -&gt; &#34;VarInt&#34;:
+        b = int.from_bytes(f.read(1), &#34;big&#34;)
+        if b &amp; 0x80 == 0:
+            # Single byte value
+            self.value = b &amp; 0x7F
+        elif b &amp; 0x40 == 0:
+            # Two-byte value
+            v = int.from_bytes(f.read(1), &#34;big&#34;) | ((b &amp; 0x3F) &lt;&lt; 8)
+            self.value = v if b &amp; 0x20 == 0 else -v
+        else:
+            # Four-byte value
+            c = int.from_bytes(f.read(1), &#34;big&#34;)
+            d = int.from_bytes(f.read(1), &#34;big&#34;)
+            e = int.from_bytes(f.read(1), &#34;big&#34;)
+            v = ((b &amp; 0x3F) &lt;&lt; 24) | (c &lt;&lt; 16) | (d &lt;&lt; 8) | e
+            self.value = v if b &amp; 0x20 == 0 else -v
+        return self
+
+    def serialise(self) -&gt; bytes:
+        if self.value &lt; 0:
+            value = -self.value
+            if value &lt; 0x2000:
+                return bytes([(value &gt;&gt; 8) | 0xA0, value &amp; 0xFF])
+            elif value &gt;= 0x20000000:
+                raise ValueError(&#34;value can&#39;t be &gt;= 0x20000000&#34;)
+            else:
+                return bytes(
+                    [
+                        (value &gt;&gt; 24) | 0xE0,
+                        (value &gt;&gt; 16) &amp; 0xFF,
+                        (value &gt;&gt; 8) &amp; 0xFF,
+                        value &amp; 0xFF,
+                    ]
+                )
+        else:
+            if self.value &lt; 0x80:
+                return bytes([self.value])
+            elif self.value &lt; 0x2000:
+                return bytes([(self.value &gt;&gt; 8) | 0x80, self.value &amp; 0xFF])
+            elif self.value &gt;= 0x20000000:
+                raise ValueError(&#34;value can&#39;t be &gt;= 0x20000000&#34;)
+            else:
+                return bytes(
+                    [
+                        (self.value &gt;&gt; 24) | 0xC0,
+                        (self.value &gt;&gt; 16) &amp; 0xFF,
+                        (self.value &gt;&gt; 8) &amp; 0xFF,
+                        self.value &amp; 0xFF,
+                    ]
+                )</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.fIndex" href="#crashlink.core.fIndex">fIndex</a></li>
+<li><a title="crashlink.core.gIndex" href="#crashlink.core.gIndex">gIndex</a></li>
+<li><a title="crashlink.core.strRef" href="#crashlink.core.strRef">strRef</a></li>
+<li><a title="crashlink.core.tIndex" href="#crashlink.core.tIndex">tIndex</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.VarInt.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.VarInt.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.Virtual"><code class="flex name class">
+<span>class <span class="ident">Virtual</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Virtual(TypeDef):
+    def __init__(self):
+        self.nfields = VarInt()
+        self.fields: List[Field] = []
+
+    def deserialise(self, f) -&gt; &#34;Virtual&#34;:
+        self.nfields.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(Field().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join([self.nfields.serialise(), [field.serialise() for field in self.fields]])</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.Virtual.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Virtual" href="#crashlink.core.Virtual">Virtual</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.Virtual.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.Void"><code class="flex name class">
+<span>class <span class="ident">Void</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Void(_NoDataType):
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>crashlink.core._NoDataType</li>
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+<dt id="crashlink.core.fIndex"><code class="flex name class">
+<span>class <span class="ident">fIndex</span></span>
+<span>(</span><span>value: int = 0)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Abstract class based on VarInt to represent a distinct function index instead of just an arbitrary number.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class fIndex(VarInt):
+    &#34;&#34;&#34;
+    Abstract class based on VarInt to represent a distinct function index instead of just an arbitrary number.
+    &#34;&#34;&#34;</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+<dt id="crashlink.core.gIndex"><code class="flex name class">
+<span>class <span class="ident">gIndex</span></span>
+<span>(</span><span>value: int = 0)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Global index reference, based on VarInt.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class gIndex(VarInt):
+    &#34;&#34;&#34;
+    Global index reference, based on VarInt.
+    &#34;&#34;&#34;</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+<dt id="crashlink.core.strRef"><code class="flex name class">
+<span>class <span class="ident">strRef</span></span>
+<span>(</span><span>value: int = 0)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Abstract class to represent a string index.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class strRef(VarInt):
+    &#34;&#34;&#34;
+    Abstract class to represent a string index.
+    &#34;&#34;&#34;
+
+    def resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        return code.strings.value[self.value]</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.strRef.resolve"><code class="name flex">
+<span>def <span class="ident">resolve</span></span>(<span>self, <br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.tIndex"><code class="flex name class">
+<span>class <span class="ident">tIndex</span></span>
+<span>(</span><span>value: int = 0)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Abstract class based on VarInt to represent a distinct type by index instead of an arbitrary number.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class tIndex(VarInt):
+    &#34;&#34;&#34;
+    Abstract class based on VarInt to represent a distinct type by index instead of an arbitrary number.
+    &#34;&#34;&#34;</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashlink" href="index.html">crashlink</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="crashlink.core.create_type" href="#crashlink.core.create_type">create_type</a></code></li>
+<li><code><a title="crashlink.core.fmt_bytes" href="#crashlink.core.fmt_bytes">fmt_bytes</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="crashlink.core.Abstract" href="#crashlink.core.Abstract">Abstract</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.Abstract.deserialise" href="#crashlink.core.Abstract.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Abstract.serialise" href="#crashlink.core.Abstract.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Array" href="#crashlink.core.Array">Array</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Binding" href="#crashlink.core.Binding">Binding</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.Binding.deserialise" href="#crashlink.core.Binding.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Binding.serialise" href="#crashlink.core.Binding.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Bool" href="#crashlink.core.Bool">Bool</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.Bytecode.deserialise" href="#crashlink.core.Bytecode.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.find_magic" href="#crashlink.core.Bytecode.find_magic">find_magic</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.serialise" href="#crashlink.core.Bytecode.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Bytes" href="#crashlink.core.Bytes">Bytes</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.BytesBlock" href="#crashlink.core.BytesBlock">BytesBlock</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.BytesBlock.deserialise" href="#crashlink.core.BytesBlock.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.BytesBlock.serialise" href="#crashlink.core.BytesBlock.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Dyn" href="#crashlink.core.Dyn">Dyn</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.DynObj" href="#crashlink.core.DynObj">DynObj</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Enum" href="#crashlink.core.Enum">Enum</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.Enum.deserialise" href="#crashlink.core.Enum.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Enum.serialise" href="#crashlink.core.Enum.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.F32" href="#crashlink.core.F32">F32</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.F64" href="#crashlink.core.F64">F64</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.Field.deserialise" href="#crashlink.core.Field.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Field.serialise" href="#crashlink.core.Field.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Fun" href="#crashlink.core.Fun">Fun</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.Fun.deserialise" href="#crashlink.core.Fun.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Fun.serialise" href="#crashlink.core.Fun.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.I32" href="#crashlink.core.I32">I32</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.I64" href="#crashlink.core.I64">I64</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Method" href="#crashlink.core.Method">Method</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Null" href="#crashlink.core.Null">Null</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.Null.deserialise" href="#crashlink.core.Null.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Null.serialise" href="#crashlink.core.Null.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.Obj.deserialise" href="#crashlink.core.Obj.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Obj.serialise" href="#crashlink.core.Obj.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Packed" href="#crashlink.core.Packed">Packed</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.Packed.deserialise" href="#crashlink.core.Packed.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Packed.serialise" href="#crashlink.core.Packed.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Proto" href="#crashlink.core.Proto">Proto</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.Proto.deserialise" href="#crashlink.core.Proto.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Proto.serialise" href="#crashlink.core.Proto.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.RawData" href="#crashlink.core.RawData">RawData</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.RawData.deserialise" href="#crashlink.core.RawData.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.RawData.serialise" href="#crashlink.core.RawData.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Ref" href="#crashlink.core.Ref">Ref</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.Ref.deserialise" href="#crashlink.core.Ref.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Ref.serialise" href="#crashlink.core.Ref.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.Serialisable.deserialise" href="#crashlink.core.Serialisable.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Serialisable.serialise" href="#crashlink.core.Serialisable.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.SerialisableF64" href="#crashlink.core.SerialisableF64">SerialisableF64</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.SerialisableF64.deserialise" href="#crashlink.core.SerialisableF64.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.SerialisableF64.serialise" href="#crashlink.core.SerialisableF64.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.SerialisableInt" href="#crashlink.core.SerialisableInt">SerialisableInt</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.SerialisableInt.deserialise" href="#crashlink.core.SerialisableInt.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.SerialisableInt.serialise" href="#crashlink.core.SerialisableInt.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.StringsBlock" href="#crashlink.core.StringsBlock">StringsBlock</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.StringsBlock.deserialise" href="#crashlink.core.StringsBlock.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.StringsBlock.serialise" href="#crashlink.core.StringsBlock.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Struct" href="#crashlink.core.Struct">Struct</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Type" href="#crashlink.core.Type">Type</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.Type.TYPEDEFS" href="#crashlink.core.Type.TYPEDEFS">TYPEDEFS</a></code></li>
+<li><code><a title="crashlink.core.Type.deserialise" href="#crashlink.core.Type.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Type.serialise" href="#crashlink.core.Type.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.TypeType" href="#crashlink.core.TypeType">TypeType</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.U16" href="#crashlink.core.U16">U16</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.U8" href="#crashlink.core.U8">U8</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.VarInt.deserialise" href="#crashlink.core.VarInt.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.VarInt.serialise" href="#crashlink.core.VarInt.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Virtual" href="#crashlink.core.Virtual">Virtual</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.Virtual.deserialise" href="#crashlink.core.Virtual.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Virtual.serialise" href="#crashlink.core.Virtual.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.Void" href="#crashlink.core.Void">Void</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.fIndex" href="#crashlink.core.fIndex">fIndex</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.gIndex" href="#crashlink.core.gIndex">gIndex</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.strRef" href="#crashlink.core.strRef">strRef</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.strRef.resolve" href="#crashlink.core.strRef.resolve">resolve</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.tIndex" href="#crashlink.core.tIndex">tIndex</a></code></h4>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.1</a>.</p>
+</footer>
+</body>
+</html>

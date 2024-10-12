@@ -5,3 +5,5 @@ dist/
 crashlink.egg-info/
 *.hl
 env/
+.mypy_cache/
+.pytest_cache/

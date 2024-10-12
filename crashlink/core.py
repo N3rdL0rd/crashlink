@@ -2,22 +2,18 @@
 Core classes.
 """
 
-from typing import Optional, List
-import struct
 import string
-from .globals import DEBUG
+import struct
+from typing import List, Optional
 
-def dbg_print(*args, **kwargs):
-    if DEBUG:
-        print(*args, **kwargs)
+from .globals import dbg_print, tell
+
 
 class Serialisable:
     def __init__(self):
-        raise NotImplementedError(
-            "Serialisable is an abstract class and should not be instantiated."
-        )
+        raise NotImplementedError("Serialisable is an abstract class and should not be instantiated.")
 
-    def deserialise(self, f) -> "Serialisable":
+    def deserialise(self, f, *args, **kwargs) -> "Serialisable":
         raise NotImplementedError("deserialise is not implemented for this class.")
 
     def serialise(self) -> bytes:
@@ -43,6 +39,7 @@ class RawData(Serialisable):
     """
     A block of raw data.
     """
+
     def __init__(self, length: int):
         self.value = b""
         self.length = length
@@ -59,15 +56,14 @@ class SerialisableInt(Serialisable):
     """
     Integer of the specified byte length.
     """
+
     def __init__(self):
         self.value = -1
         self.length = 4
         self.byteorder = "little"
         self.signed = False
 
-    def deserialise(
-        self, f, length: int = 4, byteorder: str = "little", signed: bool = False
-    ) -> "SerialisableInt":
+    def deserialise(self, f, length: int = 4, byteorder: str = "little", signed: bool = False) -> "SerialisableInt":
         self.length = length
         self.byteorder = byteorder
         self.signed = signed
@@ -88,6 +84,7 @@ class SerialisableF64(Serialisable):
     """
     A standard 64-bit float.
     """
+
     def __init__(self):
         self.value = 0.0
 
@@ -103,7 +100,8 @@ class VarInt(Serialisable):
     """
     Variable-length integer, unique to HashLink.
     """
-    def __init__(self, value: int=0):
+
+    def __init__(self, value: int = 0):
         self.value = value
 
     def deserialise(self, f) -> "VarInt":
@@ -164,6 +162,27 @@ class fIndex(VarInt):
     """
 
 
+class tIndex(VarInt):
+    """
+    Abstract class based on VarInt to represent a distinct type by index instead of an arbitrary number.
+    """
+
+
+class gIndex(VarInt):
+    """
+    Global index reference, based on VarInt.
+    """
+
+
+class strRef(VarInt):
+    """
+    Abstract class to represent a string index.
+    """
+
+    def resolve(self, code: "Bytecode") -> str:
+        return code.strings.value[self.value]
+
+
 def fmt_bytes(bytes: int) -> str:
     if bytes < 0:
         raise ValueError("Bytes cannot be negative.")
@@ -195,23 +214,18 @@ class StringsBlock(Serialisable):
         index = 0
         while index < strings_size:
             string_length = 0
-            while (
-                index + string_length < strings_size
-                and strings_data[index + string_length] != 0
-            ):
+            while index + string_length < strings_size and strings_data[index + string_length] != 0:
                 string_length += 1
 
             if index + string_length >= strings_size:
                 raise ValueError("Invalid string: no null terminator found")
 
-            string = strings_data[index : index + string_length].decode(
-                "utf-8", errors="ignore"
-            )
+            string = strings_data[index : index + string_length].decode("utf-8", errors="ignore")
             self.value.append(string)
             self.lengths.append(string_length)
 
             index += string_length + 1  # Skip the null terminator
-        
+
         for _ in self.value:
             self.embedded_lengths.append(VarInt().deserialise(f))
 
@@ -224,11 +238,7 @@ class StringsBlock(Serialisable):
         self.length.value = len(strings_data)
         self.lengths = [len(string) for string in self.value]
         self.embedded_lengths = [VarInt(length) for length in self.lengths]
-        return b"".join(
-            self.length.serialise(),
-            strings_data,
-            b"".join([i.serialise() for i in self.embedded_lengths])
-        )
+        return b"".join(self.length.serialise(), strings_data, b"".join([i.serialise() for i in self.embedded_lengths]))
 
 
 class BytesBlock(Serialisable):
@@ -267,8 +277,323 @@ class BytesBlock(Serialisable):
         return size_serialised + raw_data + positions_serialised
 
 
-def tell(f):
-    return hex(f.tell())
+def create_type(_def: int, f):
+    """
+    Creates a TypeDef for the given int index, reading from the buffer in f.
+    """
+
+
+class TypeDef(Serialisable):
+    """
+    Abstract class for all type definition fields.
+    """
+
+
+class _NoDataType(TypeDef):
+    """
+    Base typedef for types with no data.
+    """
+
+    def __init__(self):
+        pass
+
+    def deserialise(self, f) -> "_NoDataType":
+        return self
+
+    def serialise(self) -> bytes:
+        return b""
+
+
+class Void(_NoDataType):
+    pass
+
+
+class U8(_NoDataType):
+    pass
+
+
+class U16(_NoDataType):
+    pass
+
+
+class I32(_NoDataType):
+    pass
+
+
+class I64(_NoDataType):
+    pass
+
+
+class F32(_NoDataType):
+    pass
+
+
+class F64(_NoDataType):
+    pass
+
+
+class Bool(_NoDataType):
+    pass
+
+
+class Bytes(_NoDataType):
+    pass
+
+
+class Dyn(_NoDataType):
+    pass
+
+
+class Fun(TypeDef):
+    def __init__(self):
+        self.nargs = VarInt()
+        self.args: List[tIndex] = []
+        self.ret = tIndex()
+
+    def deserialise(self, f) -> "Fun":
+        self.nargs.deserialise(f)
+        for _ in range(self.nargs.value):
+            self.args.append(tIndex().deserialise(f))
+        self.ret.deserialise(f)
+        return self
+
+    def serialise(self) -> bytes:
+        return b"".join(
+            [self.nargs.serialise(), b"".join([idx.serialise() for idx in self.args]), self.ret.serialise()]
+        )
+
+
+class Field(Serialisable):
+    def __init__(self):
+        self.name = strRef()
+        self.type = tIndex()
+
+    def deserialise(self, f) -> "Field":
+        self.name.deserialise(f)
+        self.type.deserialise(f)
+        return self
+
+    def serialise(self) -> bytes:
+        return b"".join([self.name.serialise(), self.type.serialise()])
+
+
+class Proto(Serialisable):
+    def __init__(self):
+        self.name = strRef()
+        self.findex = fIndex()
+        self.pindex = VarInt()  # unknown use
+
+    def deserialise(self, f) -> "Proto":
+        self.name.deserialise(f)
+        self.findex.deserialise(f)
+        self.pindex.deserialise(f)
+        return self
+
+    def serialise(self) -> bytes:
+        return b"".join([self.name.serialise(), self.findex.serialise(), self.pindex.serialise()])
+
+
+class Binding(Serialisable):
+    def __init__(self):
+        self.field = VarInt()  # field ref, not deserving of its own separate type
+        self.findex = fIndex()
+
+    def deserialise(self, f) -> "Binding":
+        self.field.deserialise(f)
+        self.findex.deserialise(f)
+        return self
+
+    def serialise(self) -> bytes:
+        return b"".join([self.field.serialise(), self.findex.serialise()])
+
+
+class Obj(TypeDef):
+    def __init__(self):
+        self.name = strRef()
+        self.super = tIndex()
+        self._global = gIndex()
+        self.nfields = VarInt()
+        self.nprotos = VarInt()
+        self.nbindings = VarInt()
+        self.fields: List[Field] = []
+        self.protos: List[Proto] = []
+        self.bindings: List[Binding] = []
+
+    def deserialise(self, f) -> "Obj":
+        self.name.deserialise(f)
+        self.super.deserialise(f)
+        self._global.deserialise(f)
+        self.nfields.deserialise(f)
+        self.nprotos.deserialise(f)
+        self.nbindings.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(Field().deserialise(f))
+        for _ in range(self.nprotos.value):
+            self.protos.append(Proto().deserialise(f))
+        for _ in range(self.nbindings.value):
+            self.bindings.append(Binding().deserialise(f))
+
+    def serialise(self) -> bytes:
+        return b"".join(
+            [
+                self.name.serialise(),
+                self.super.serialise(),
+                self._global.serialise(),
+                self.nfields.serialise(),
+                self.nprotos.serialise(),
+                self.nbindings.serialise(),
+                b"".join([field.serialise() for field in self.fields]),
+                b"".join([proto.serialise() for proto in self.protos]),
+                b"".join([binding.serialise() for binding in self.bindings]),
+            ]
+        )
+
+
+class Array(_NoDataType):
+    pass
+
+
+class TypeType(_NoDataType):
+    pass
+
+
+class Ref(TypeDef):
+    def __init__(self):
+        self.type = tIndex()
+
+    def deserialise(self, f) -> "Ref":
+        self.type.deserialise(f)
+        return self
+
+    def serialise(self) -> bytes:
+        return self.type.serialise()
+
+
+class Virtual(TypeDef):
+    def __init__(self):
+        self.nfields = VarInt()
+        self.fields: List[Field] = []
+
+    def deserialise(self, f) -> "Virtual":
+        self.nfields.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(Field().deserialise(f))
+        return self
+
+    def serialise(self) -> bytes:
+        return b"".join([self.nfields.serialise(), [field.serialise() for field in self.fields]])
+
+
+class DynObj(_NoDataType):
+    pass
+
+
+class Abstract(TypeDef):
+    def __init__(self):
+        self.name = strRef()
+
+    def deserialise(self, f) -> "Abstract":
+        self.name.deserialise(f)
+        return self
+
+    def serialise(self) -> bytes:
+        return self.name.serialise()
+
+
+class Enum(TypeDef):
+    def __init__(self):
+        self.name = strRef()
+        self._global = gIndex()
+        self.nconstructs = VarInt()
+
+    def deserialise(self, f) -> "Enum":
+        self.name.deserialise(f)
+        self._global.deserialise(f)
+        self.nconstructs.deserialise(f)
+        return self
+
+    def serialise(self) -> bytes:
+        return b"".join([self.name.serialise(), self._global.serialise(), self.nconstructs.serialise()])
+
+
+class Null(TypeDef):
+    def __init__(self):
+        self.type = tIndex()
+
+    def deserialise(self, f) -> "Null":
+        self.type.deserialise(f)
+        return self
+
+    def serialise(self) -> bytes:
+        return self.type.serialise()
+
+
+class Method(Fun):
+    pass
+
+
+class Struct(Obj):
+    pass
+
+
+class Packed(TypeDef):
+    def __init__(self):
+        self.inner = tIndex()
+
+    def deserialise(self, f) -> "Packed":
+        self.inner.deserialise(f)
+        return self
+
+    def serialise(self) -> bytes:
+        return self.inner.serialise()
+
+
+class Type(Serialisable):
+    TYPEDEFS: List[TypeDef] = [
+        Void,  # 0
+        U8,  # 1
+        U16,  # 2
+        I32,  # 3
+        I64,  # 4
+        F32,  # 5
+        F64,  # 6
+        Bool,  # 7
+        Bytes,  # 8
+        Dyn,  # 9
+        Fun,  # 10
+        Obj,  # 11
+        Array,  # 12
+        TypeType,  # 13
+        Ref,  # 14
+        Virtual,  # 15
+        DynObj,  # 16
+        Abstract,  # 17
+        Enum,  # 18
+        Null,  # 19
+        Method,  # 20
+        Struct,  # 21
+        Packed,  # 22
+    ]
+
+    def __init__(self):
+        self.kind = SerialisableInt()
+        self.kind.length = 1
+        self.definition: Optional[TypeDef] = None
+
+    def deserialise(self, f) -> "Type":
+        dbg_print(f"type starts at {tell(f)}")
+        self.kind.deserialise(f, length=1)
+        try:
+            dbg_print("Deserialising type with kind", self.kind.value, "at", tell(f))
+            self.TYPEDEFS[self.kind.value]
+            _def = self.TYPEDEFS[self.kind.value]()
+            self.definition = _def.deserialise(f)
+        except IndexError:
+            raise ValueError(f"Invalid type kind found @{tell(f)}")
+        return self
+
+    def serialise(self) -> bytes:
+        return b"".join([self.kind.serialise(), self.definition.serialise()])
 
 
 class Bytecode(Serialisable):
@@ -297,6 +622,8 @@ class Bytecode(Serialisable):
         self.ndebugfiles: Optional[VarInt] = VarInt()
         self.debugfiles: Optional[StringsBlock] = StringsBlock()
 
+        self.types: List[Type] = []
+
     def find_magic(self, f, magic=b"HLB"):
         buffer_size = 1024
         offset = 0
@@ -311,13 +638,12 @@ class Bytecode(Serialisable):
                 return
             offset += buffer_size
 
-    def deserialise(self, f):
-        dbg_print("Searching for magic...")
-        self.find_magic(f)
+    def deserialise(self, f, search_magic=True):
+        if search_magic:
+            dbg_print("Searching for magic...")
+            self.find_magic(f)
         self.magic.deserialise(f)
-        assert (
-            self.magic.value == b"HLB"
-        ), "Incorrect magic found, is this actually HLB?"
+        assert self.magic.value == b"HLB", "Incorrect magic found!"
         self.version.deserialise(f, length=1)
         dbg_print(f"with version {self.version.value}... ", end="")
         self.flags.deserialise(f)
@@ -372,6 +698,12 @@ class Bytecode(Serialisable):
         else:
             self.ndebugfiles = None
             self.debugfiles = None
+
+        dbg_print(f"Starting main blobs at {tell(f)}")
+
+        for _ in range(self.ntypes.value):
+            dbg_print("type", _)
+            self.types.append(Type().deserialise(f))
 
     def serialise(self) -> bytes:
         # TODO: dynamically set n**** variables to their correct values given their respective **** object - eg. set nfloats to len(floats)
