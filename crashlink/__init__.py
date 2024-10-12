@@ -2,4 +2,5 @@
 Just another HashLink decompiler.
 """
 
-from . import core, globals
+from .core import *
+from .globals import *

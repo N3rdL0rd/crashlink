@@ -4,17 +4,26 @@
         "debugfiles",
         "deserialise",
         "Deserialising",
+        "findex",
         "Haxe",
         "hlbc",
+        "nbindings",
         "nbytes",
         "nconstants",
+        "nconstructs",
         "ndebugfiles",
+        "nfields",
         "nfloats",
         "nfunctions",
         "nglobals",
         "nints",
         "nnatives",
+        "nprotos",
         "nstrings",
-        "ntypes"
-    ]
+        "ntypes",
+        "pindex",
+        "protos",
+        "typedefs"
+    ],
+    "python.REPL.enableREPLSmartSend": false
 }
