@@ -6,8 +6,9 @@ import string
 import struct
 from typing import List, Optional
 
+from .errors import InvalidOpCode, MalformedBytecode, NoMagic
 from .globals import dbg_print, tell
-from .errors import MalformedBytecode, NoMagic
+from .opcodes import opcodes
 
 
 class Serialisable:
@@ -184,6 +185,80 @@ class strRef(VarInt):
         return code.strings.value[self.value]
 
 
+class intRef(VarInt):
+    def resolve(self, code: "Bytecode") -> SerialisableInt:
+        return code.ints[self.value]
+
+
+class floatRef(VarInt):
+    def resolve(self, code: "Bytecode") -> SerialisableF64:
+        return code.floats[self.value]
+
+
+class bytesRef(VarInt):
+    def resolve(self, code: "Bytecode") -> bytes:
+        return code.bytes.value[self.value]
+
+
+class Reg(VarInt):
+    """
+    Abstract class to represent a register index in a function.
+    """
+
+
+class InlineBool(Serialisable):
+    def __init__(self):
+        self.varint = VarInt()
+        self.value: Optional[bool] = False
+
+    def deserialise(self, f) -> "InlineBool":
+        self.varint.deserialise(f)
+        self.value = bool(self.varint.value)
+        return self
+
+    def serialise(self) -> bytes:
+        self.varint.value = int(self.value)
+        return self.varint.serialise()
+
+
+class VarInts(Serialisable):
+    """
+    List of VarInts.
+    """
+
+    def __init__(self):
+        self.n = VarInt()
+        self.value: List[VarInt] = []
+
+    def deserialise(self, f) -> "VarInts":
+        self.n.deserialise(f)
+        for _ in range(self.n.value):
+            self.value.append(VarInt().deserialise(f))
+        return self
+
+    def serialise(self) -> bytes:
+        return b"".join([self.n.serialise(), b"".join([value.serialise() for value in self.value])])
+
+
+class Regs(Serialisable):
+    """
+    List of Regs.
+    """
+
+    def __init__(self):
+        self.n = VarInt()
+        self.value: List[Reg] = []
+
+    def deserialise(self, f) -> "Regs":
+        self.n.deserialise(f)
+        for _ in range(self.n.value):
+            self.value.append(Reg().deserialise(f))
+        return self
+
+    def serialise(self) -> bytes:
+        return b"".join([self.n.serialise(), b"".join([value.serialise() for value in self.value])])
+
+
 def fmt_bytes(bytes: int) -> str:
     if bytes < 0:
         raise MalformedBytecode("Bytes cannot be negative.")
@@ -276,12 +351,6 @@ class BytesBlock(Serialisable):
             current_pos += len(byte_str)
         positions_serialised = b"".join([pos.serialise() for pos in positions])
         return size_serialised + raw_data + positions_serialised
-
-
-def create_type(_def: int, f):
-    """
-    Creates a TypeDef for the given int index, reading from the buffer in f.
-    """
 
 
 class TypeDef(Serialisable):
@@ -506,20 +575,18 @@ class EnumConstruct(Serialisable):
         self.name = strRef()
         self.nparams = VarInt()
         self.params: List[tIndex] = []
-    
+
     def deserialise(self, f) -> "EnumConstruct":
         self.name.deserialise(f)
         self.nparams.deserialise(f)
         for _ in range(self.nparams.value):
             self.params.append(tIndex().deserialise(f))
         return self
-    
+
     def serialise(self) -> bytes:
-        return b"".join([
-            self.name.serialise(),
-            self.nparams.serialise(),
-            b"".join([param.serialise() for param in self.params])
-        ])
+        return b"".join(
+            [self.name.serialise(), self.nparams.serialise(), b"".join([param.serialise() for param in self.params])]
+        )
 
 
 class Enum(TypeDef):
@@ -538,12 +605,14 @@ class Enum(TypeDef):
         return self
 
     def serialise(self) -> bytes:
-        return b"".join([
-            self.name.serialise(),
-            self._global.serialise(),
-            self.nconstructs.serialise(),
-            b"".join([construct.serialise() for construct in self.constructs])
-        ])
+        return b"".join(
+            [
+                self.name.serialise(),
+                self._global.serialise(),
+                self.nconstructs.serialise(),
+                b"".join([construct.serialise() for construct in self.constructs]),
+            ]
+        )
 
 
 class Null(TypeDef):
@@ -630,24 +699,57 @@ class Native(Serialisable):
         self.name = strRef()
         self.type = tIndex()
         self.findex = fIndex()
-    
+
     def deserialise(self, f) -> "Native":
         self.lib.deserialise(f)
         self.name.deserialise(f)
         self.type.deserialise(f)
         self.findex.deserialise(f)
         return self
-    
+
     def serialise(self) -> bytes:
-        return b"".join([
-            self.lib.serialise(),
-            self.name.serialise(),
-            self.type.serialise(),
-            self.findex.serialise()
-        ])
+        return b"".join([self.lib.serialise(), self.name.serialise(), self.type.serialise(), self.findex.serialise()])
+
 
 class Opcode(Serialisable):
-    
+    """
+    Represents an opcode.
+    """
+
+    TYPE_MAP: List[Serialisable] = {
+        "Reg": Reg,
+        "Regs": Regs,
+        "RefInt": intRef,
+        "RefFloat": floatRef,
+        "InlineBool": InlineBool,
+        "RefBytes": bytesRef,
+        "RefString": strRef,
+        "RefFun": fIndex,
+        "RefField": VarInt,
+        "RefGlobal": gIndex,
+        "JumpOffset": VarInt,
+        "JumpOffsets": VarInts,
+        "RefType": tIndex,
+        "RefEnumConstant": VarInt,
+        "InlineInt": VarInt,
+    }
+
+    def __init__(self):
+        self.code = VarInt()
+        self.definition = {}
+
+    def deserialise(self, f) -> "Opcode":
+        self.code.deserialise(f)
+        try:
+            _def = opcodes[list(opcodes.keys())[self.code.value]]
+        except IndexError:
+            raise InvalidOpCode(f"Unknown opcode at {tell(f)}")
+        for param, _type in _def.items():
+            if _type in self.TYPE_MAP:
+                self.definition[param] = self.TYPE_MAP[_type]().deserialise(f)
+                continue
+            raise InvalidOpCode(f"Unknown opcode at {tell(f)} (2nd pass)")
+        return self
 
 
 class Function(Serialisable):
@@ -661,7 +763,30 @@ class Function(Serialisable):
         # self.debuginfo
         # self.nassigns
         # self.assigns
-        
+
+    def deserialise(self, f) -> "Function":
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        self.nregs.deserialise(f)
+        self.nops.deserialise(f)
+        for _ in range(self.nregs.value):
+            self.regs.append(tIndex().deserialise(f))
+        for _ in range(self.nops.value):
+            self.ops.append(Opcode().deserialise(f))
+        return self
+
+    def serialise(self) -> bytes:
+        return b"".join(
+            [
+                self.type.serialise(),
+                self.findex.serialise(),
+                self.nregs.serialise(),
+                self.nops.serialise(),
+                b"".join([reg.serialise() for reg in self.regs]),
+                b"".join([op.serialise() for op in self.ops]),
+            ]
+        )
+
 
 class Bytecode(Serialisable):
     def __init__(self):
@@ -692,6 +817,7 @@ class Bytecode(Serialisable):
         self.types: List[Type] = []
         self.global_types: List[tIndex] = []
         self.natives: List[Native] = []
+        self.functions: List[Function] = []
 
     def find_magic(self, f, magic=b"HLB"):
         buffer_size = 1024
@@ -777,8 +903,9 @@ class Bytecode(Serialisable):
         dbg_print(f"Natives starting at {tell(f)}")
         for _ in range(self.nnatives.value):
             self.natives.append(Native().deserialise(f))
-        
-
+        dbg_print(f"Functions starting at {tell(f)}")
+        for _ in range(self.nfunctions.value):
+            self.functions.append(Function().deserialise(f))
 
     def serialise(self) -> bytes:
         # TODO: dynamically set n**** variables to their correct values given their respective **** object - eg. set nfloats to len(floats)
@@ -812,9 +939,12 @@ class Bytecode(Serialisable):
             res += self.bytes.serialise()
         if self.has_debug_info:
             res.join([self.ndebugfiles.serialise(), self.debugfiles.serialise()])
-        res.join([
-            b"".join([typ.serialise() for typ in self.types]),
-            b"".join([typ.serialise() for typ in self.global_types]),
-            b"".join([native.serialise() for native in self.natives])
-        ])
+        res.join(
+            [
+                b"".join([typ.serialise() for typ in self.types]),
+                b"".join([typ.serialise() for typ in self.global_types]),
+                b"".join([native.serialise() for native in self.natives]),
+                b"".join([func.serialise() for func in self.functions]),
+            ]
+        )
         return res
