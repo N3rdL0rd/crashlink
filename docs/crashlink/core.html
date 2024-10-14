@@ -183,7 +183,7 @@ hljs.highlightAll();
         self.version = SerialisableInt()
         self.version.length = 1
         self.flags = VarInt()
-        self.has_debug_info = False
+        self.has_debug_info: Optional[bool] = None
         self.nints = VarInt()
         self.nfloats = VarInt()
         self.nstrings = VarInt()
@@ -207,6 +207,7 @@ hljs.highlightAll();
         self.global_types: List[tIndex] = []
         self.natives: List[Native] = []
         self.functions: List[Function] = []
+        self.constants: List[Constant] = []
 
     def find_magic(self, f, magic=b&#34;HLB&#34;):
         buffer_size = 1024
@@ -294,7 +295,11 @@ hljs.highlightAll();
             self.natives.append(Native().deserialise(f))
         dbg_print(f&#34;Functions starting at {tell(f)}&#34;)
         for _ in range(self.nfunctions.value):
-            self.functions.append(Function().deserialise(f))
+            self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
+        dbg_print(f&#34;Constants starting at {tell(f)}&#34;)
+        for _ in range(self.nconstants.value):
+            self.constants.append(Constant().deserialise(f))
+        dbg_print(f&#34;Bytecode end at {tell(f)}.&#34;)
 
     def serialise(self) -&gt; bytes:
         # TODO: dynamically set n**** variables to their correct values given their respective **** object - eg. set nfloats to len(floats)
@@ -440,6 +445,161 @@ hljs.highlightAll();
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.core.BytesBlock.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.Constant"><code class="flex name class">
+<span>class <span class="ident">Constant</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Constant(Serialisable):
+    def __init__(self):
+        self._global = gIndex()
+        self.nfields = VarInt()
+        self.fields: List[VarInt] = []
+
+    def deserialise(self, f) -&gt; &#34;Constant&#34;:
+        self._global.deserialise(f)
+        self.nfields.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(VarInt().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join(
+            [self._global.serialise(), self.nfields.serialise(), b&#34;&#34;.join([field.serialise() for field in self.fields])]
+        )</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.Constant.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Constant" href="#crashlink.core.Constant">Constant</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.Constant.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.DebugInfo"><code class="flex name class">
+<span>class <span class="ident">DebugInfo</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class DebugInfo(Serialisable):
+    def __init__(self):
+        self.debug_info: List[Tuple[int, int]] = []
+
+    def deserialise(self, f, nops: int) -&gt; &#34;DebugInfo&#34;:
+        tmp = []
+        currfile: int = -1
+        currline: int = 0
+        i = 0
+        while i &lt; nops:
+            c = struct.unpack(&#34;B&#34;, f.read(1))[0]
+            if c &amp; 1 != 0:
+                c &gt;&gt;= 1
+                currfile = (c &lt;&lt; 8) | struct.unpack(&#34;B&#34;, f.read(1))[0]
+            elif c &amp; 2 != 0:
+                delta = c &gt;&gt; 6
+                count = (c &gt;&gt; 2) &amp; 15
+                while count &gt; 0:
+                    count -= 1
+                    tmp.append((currfile, currline))
+                    i += 1
+                currline += delta
+            elif c &amp; 4 != 0:
+                currline += c &gt;&gt; 3
+                tmp.append((currfile, currline))
+                i += 1
+            else:
+                b2 = struct.unpack(&#34;B&#34;, f.read(1))[0]
+                b3 = struct.unpack(&#34;B&#34;, f.read(1))[0]
+                currline = (c &gt;&gt; 3) | (b2 &lt;&lt; 5) | (b3 &lt;&lt; 13)
+                tmp.append((currfile, currline))
+                i += 1
+        self.debug_info = tmp
+        return self
+
+    def serialise(self) -&gt; bytes:
+        result = bytearray()
+        curfile: int = -1
+        curpos = 0
+        rcount = 0
+
+        def flush_repeat(curpos: int, rcount: int, p: int) -&gt; Tuple[bytes, int, int]:
+            result = bytearray()
+            while rcount &gt; 0:
+                if rcount &gt;= 4:
+                    count = min(rcount, 15)
+                    result.extend(struct.pack(&#34;B&#34;, (2 | ((curpos - p) &lt;&lt; 6) | (count &lt;&lt; 2))))
+                    rcount -= count
+                    p = curpos
+                else:
+                    while rcount &gt; 0:
+                        result.extend(struct.pack(&#34;B&#34;, 4 | ((curpos - p) &lt;&lt; 3)))
+                        rcount -= 1
+                        p = curpos
+            return bytes(result), curpos, rcount
+
+        for f, p in self.debug_info:
+            if f != curfile:
+                flush_bytes, curpos, rcount = flush_repeat(curpos, rcount, p)
+                result.extend(flush_bytes)
+                curfile = f
+                result.extend(struct.pack(&#34;BB&#34;, ((f &gt;&gt; 7) | 1), (f &amp; 0xFF)))
+            if p != curpos:
+                flush_bytes, curpos, rcount = flush_repeat(curpos, rcount, p)
+                result.extend(flush_bytes)
+            if p == curpos:
+                rcount += 1
+            else:
+                delta = p - curpos
+                if 0 &lt; delta &lt; 32:
+                    result.extend(struct.pack(&#34;B&#34;, ((delta &lt;&lt; 3) | 4)))
+                else:
+                    result.extend(struct.pack(&#34;BBB&#34;, (p &lt;&lt; 3), (p &gt;&gt; 5), (p &gt;&gt; 13)))
+                curpos = p
+        old_curpos = curpos
+        flush_bytes, curpos, rcount = flush_repeat(curpos, rcount, old_curpos)
+        result.extend(flush_bytes)
+        return bytes(result)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.DebugInfo.deserialise"><code class="name flex">
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f, <br>nops: int) ‑> <a title="crashlink.core.DebugInfo" href="#crashlink.core.DebugInfo">DebugInfo</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.DebugInfo.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
@@ -736,23 +896,35 @@ hljs.highlightAll();
         self.nops = VarInt()
         self.regs: List[tIndex] = []
         self.ops: List[Opcode] = []
-        # self.debuginfo
-        # self.nassigns
-        # self.assigns
+        self.has_debug: Optional[bool] = None
+        self.version: Optional[int] = None
+        self.debuginfo: Optional[DebugInfo] = None
+        self.nassigns: Optional[VarInt] = None
+        self.assigns: Optional[List[Tuple[VarInt, VarInt]]] = None
 
-    def deserialise(self, f) -&gt; &#34;Function&#34;:
+    def deserialise(self, f, has_debug: bool, version: int) -&gt; &#34;Function&#34;:
+        self.has_debug = has_debug
+        self.version = version
         self.type.deserialise(f)
         self.findex.deserialise(f)
+        # dbg_print(f&#34;----- {self.findex.value} ({tell(f)}) -----&#34;)
         self.nregs.deserialise(f)
         self.nops.deserialise(f)
         for _ in range(self.nregs.value):
-            self.regs.append(tIndex().deserialise(f))
+            self.regs.append(tIndex().deserialise(f))  # type: ignore
         for _ in range(self.nops.value):
             self.ops.append(Opcode().deserialise(f))
+        if self.has_debug:
+            self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
+            if self.version &gt;= 3:
+                self.nassigns = VarInt().deserialise(f)
+                self.assigns = []
+                for _ in range(self.nassigns.value):
+                    self.assigns.append((VarInt().deserialise(f), VarInt().deserialise(f)))
         return self
 
     def serialise(self) -&gt; bytes:
-        return b&#34;&#34;.join(
+        res = b&#34;&#34;.join(
             [
                 self.type.serialise(),
                 self.findex.serialise(),
@@ -761,7 +933,13 @@ hljs.highlightAll();
                 b&#34;&#34;.join([reg.serialise() for reg in self.regs]),
                 b&#34;&#34;.join([op.serialise() for op in self.ops]),
             ]
-        )</code></pre>
+        )
+        if self.has_debug:
+            res += self.debuginfo.serialise()
+            if self.version &gt;= 3:
+                res += self.nassigns.serialise()
+                res += b&#34;&#34;.join([b&#34;&#34;.join([v.serialise() for v in assign]) for assign in self.assigns])
+        return res</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -770,7 +948,7 @@ hljs.highlightAll();
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Function.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f, <br>has_debug: bool, <br>version: int) ‑> <a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -1082,17 +1260,27 @@ hljs.highlightAll();
         self.definition = {}
 
     def deserialise(self, f) -&gt; &#34;Opcode&#34;:
+        # dbg_print(f&#34;Deserialising opcode at {tell(f)}... &#34;, end=&#34;&#34;)
         self.code.deserialise(f)
+        # dbg_print(f&#34;{self.code.value}... &#34;, end=&#34;&#34;)
         try:
             _def = opcodes[list(opcodes.keys())[self.code.value]]
         except IndexError:
+            # dbg_print()
             raise InvalidOpCode(f&#34;Unknown opcode at {tell(f)}&#34;)
         for param, _type in _def.items():
             if _type in self.TYPE_MAP:
                 self.definition[param] = self.TYPE_MAP[_type]().deserialise(f)
                 continue
+            # dbg_print()
             raise InvalidOpCode(f&#34;Unknown opcode at {tell(f)} (2nd pass)&#34;)
-        return self</code></pre>
+        # dbg_print(list(opcodes.keys())[self.code.value])
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join(
+            [self.code.serialise(), b&#34;&#34;.join([definition.serialise() for name, definition in self.definition.items()])]
+        )</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -1109,6 +1297,12 @@ hljs.highlightAll();
 <dl>
 <dt id="crashlink.core.Opcode.deserialise"><code class="name flex">
 <span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Opcode" href="#crashlink.core.Opcode">Opcode</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.Opcode.serialise"><code class="name flex">
+<span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -1366,6 +1560,7 @@ hljs.highlightAll();
 </summary>
 <pre><code class="python">class Serialisable:
     def __init__(self):
+        self.value: Any = None
         raise NotImplementedError(&#34;Serialisable is an abstract class and should not be instantiated.&#34;)
 
     def deserialise(self, f, *args, **kwargs) -&gt; &#34;Serialisable&#34;:
@@ -1394,6 +1589,8 @@ hljs.highlightAll();
 <li><a title="crashlink.core.Binding" href="#crashlink.core.Binding">Binding</a></li>
 <li><a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></li>
 <li><a title="crashlink.core.BytesBlock" href="#crashlink.core.BytesBlock">BytesBlock</a></li>
+<li><a title="crashlink.core.Constant" href="#crashlink.core.Constant">Constant</a></li>
+<li><a title="crashlink.core.DebugInfo" href="#crashlink.core.DebugInfo">DebugInfo</a></li>
 <li><a title="crashlink.core.EnumConstruct" href="#crashlink.core.EnumConstruct">EnumConstruct</a></li>
 <li><a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a></li>
 <li><a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a></li>
@@ -1628,7 +1825,7 @@ hljs.highlightAll();
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Type(Serialisable):
-    TYPEDEFS: List[TypeDef] = [
+    TYPEDEFS: List[TypeDef] = [  # type: ignore
         Void,  # 0
         U8,  # 1
         U16,  # 2
@@ -2239,6 +2436,20 @@ hljs.highlightAll();
 </ul>
 </li>
 <li>
+<h4><code><a title="crashlink.core.Constant" href="#crashlink.core.Constant">Constant</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.Constant.deserialise" href="#crashlink.core.Constant.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Constant.serialise" href="#crashlink.core.Constant.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.DebugInfo" href="#crashlink.core.DebugInfo">DebugInfo</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.DebugInfo.deserialise" href="#crashlink.core.DebugInfo.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.DebugInfo.serialise" href="#crashlink.core.DebugInfo.serialise">serialise</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="crashlink.core.Dyn" href="#crashlink.core.Dyn">Dyn</a></code></h4>
 </li>
 <li>
@@ -2327,6 +2538,7 @@ hljs.highlightAll();
 <ul class="">
 <li><code><a title="crashlink.core.Opcode.TYPE_MAP" href="#crashlink.core.Opcode.TYPE_MAP">TYPE_MAP</a></code></li>
 <li><code><a title="crashlink.core.Opcode.deserialise" href="#crashlink.core.Opcode.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Opcode.serialise" href="#crashlink.core.Opcode.serialise">serialise</a></code></li>
 </ul>
 </li>
 <li>

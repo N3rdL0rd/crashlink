@@ -1,0 +1,11 @@
+#!/bin/bash
+
+
+pushd tests/haxe >/dev/null
+
+for f in *.hx; do
+    filename="${f%.hx}"
+        haxe -hl "$filename.hl" -main "$filename.hx"
+done
+
+popd >/dev/null
