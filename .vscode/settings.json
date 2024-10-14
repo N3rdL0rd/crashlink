@@ -1,8 +1,13 @@
 {
     "cSpell.words": [
         "crashlink",
+        "curfile",
+        "curpos",
+        "currfile",
+        "currline",
         "debugfiles",
         "debuginfo",
+        "deser",
         "deserialise",
         "Deserialising",
         "findex",

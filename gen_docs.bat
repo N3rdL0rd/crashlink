@@ -9,6 +9,6 @@ env\Scripts\no_implicit_optional crashlink
 echo Generating docs...
 env\Scripts\pdoc3 crashlink --html -o docs --force --template-dir docs/templates
 echo Checking code quality...
-env\Scripts\mypy crashlink
+env\Scripts\mypy crashlink --check-untyped-defs
 env\Scripts\radon cc crashlink
 env\Scripts\pytest -lvv
