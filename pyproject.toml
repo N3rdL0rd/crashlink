@@ -13,17 +13,7 @@ classifiers = [
   "Operating System :: OS Independent",
 ]
 license = {file = "LICENSE"}
-dependencies = [
-  "pdoc3",
-  "black",
-  "build",
-  "twine",
-  "isort",
-  "mypy",
-  "radon",
-  "no_implicit_optional",
-  "pytest",
-]
+dependencies = []
 
 [build-system]
 requires = ["setuptools>=61.0"]
