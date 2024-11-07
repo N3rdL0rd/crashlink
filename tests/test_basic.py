@@ -1,26 +1,21 @@
 from crashlink import *
-from typing import Callable
-import os
+from glob import glob
 import pytest
 
 pytest.skip("currently broken", allow_module_level=True)
 
-def for_each_test(routine: Callable):
-    for test in os.listdir("tests/haxe"):
-        if test.endswith(".hl"):
-            code = Bytecode()
-            code.deserialise(open(os.path.join("tests/haxe", test), "rb"))
-            print(f"------{test}------")
-            routine(code) # type: ignore
+test_files = glob("tests/haxe/*.hl")
 
-def test_deser():
-    code = Bytecode()
-    with open("tests/haxe/Clazz.hl", "rb") as f:
-        code.deserialise(f)
-    assert code.is_ok()
-
-def deser_all(code: Bytecode):
-    assert code.is_ok()
-
-def test_deser_all():
-    for_each_test(deser_all)
+@pytest.mark.parametrize("path", test_files)
+def test_deser_basic(path: str):
+    with open(path, "rb") as f:
+        code = Bytecode().deserialise(f)
+        assert code.is_ok()
+        
+@pytest.mark.parametrize("path", test_files)
+def test_reser_basic(path: str):
+    with open(path, "rb") as f:
+        code = Bytecode().deserialise(f)
+        assert code.is_ok(), "Failed during deser"
+        f.seek(0)
+        assert f.read() == code.serialise(), "Failed during reser"
