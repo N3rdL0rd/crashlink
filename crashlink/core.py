@@ -4,8 +4,11 @@ Core classes.
 
 import struct
 from typing import Any, List, Optional, Tuple
+from io import BytesIO
+from datetime import datetime
+import ctypes
 
-from .errors import InvalidOpCode, MalformedBytecode, NoMagic
+from .errors import InvalidOpCode, MalformedBytecode, NoMagic, FailedSerialisation
 from .globals import dbg_print, tell
 from .opcodes import opcodes
 
@@ -314,7 +317,7 @@ class StringsBlock(Serialisable):
         self.length.value = len(strings_data)
         self.lengths = [len(string) for string in self.value]
         self.embedded_lengths = [VarInt(length) for length in self.lengths]
-        return b"".join(self.length.serialise(), strings_data, b"".join([i.serialise() for i in self.embedded_lengths]))
+        return b"".join([self.length.serialise(), strings_data, b"".join([i.serialise() for i in self.embedded_lengths])])
 
 
 class BytesBlock(Serialisable):
@@ -348,7 +351,8 @@ class BytesBlock(Serialisable):
         current_pos = 0
         for byte_str in self.value:
             positions.append(VarInt(current_pos))
-            current_pos += len(byte_str)
+            current_pos += len(
+                byte_str)
         positions_serialised = b"".join([pos.serialise() for pos in positions])
         return size_serialised + raw_data + positions_serialised
 
@@ -551,7 +555,7 @@ class Virtual(TypeDef):
         return self
 
     def serialise(self) -> bytes:
-        return b"".join([self.nfields.serialise(), [field.serialise() for field in self.fields]])
+        return b"".join([self.nfields.serialise(), b"".join([field.serialise() for field in self.fields])])
 
 
 class DynObj(_NoDataType):
@@ -601,7 +605,7 @@ class Enum(TypeDef):
         self._global.deserialise(f)
         self.nconstructs.deserialise(f)
         for _ in range(self.nconstructs.value):
-            self.constructs.append([EnumConstruct().deserialise(f)])
+            self.constructs.append(EnumConstruct().deserialise(f))
         return self
 
     def serialise(self) -> bytes:
@@ -649,29 +653,29 @@ class Packed(TypeDef):
 
 class Type(Serialisable):
     TYPEDEFS: List[TypeDef] = [
-        Void,  # 0
-        U8,  # 1
-        U16,  # 2
-        I32,  # 3
-        I64,  # 4
-        F32,  # 5
-        F64,  # 6
-        Bool,  # 7
-        Bytes,  # 8
-        Dyn,  # 9
-        Fun,  # 10
-        Obj,  # 11
-        Array,  # 12
-        TypeType,  # 13
-        Ref,  # 14
+        Void,     # 0, no data
+        U8,       # 1, no data
+        U16,      # 2, no data
+        I32,      # 3, no data
+        I64,      # 4, no data
+        F32,      # 5, no data
+        F64,      # 6, no data
+        Bool,     # 7, no data
+        Bytes,    # 8, no data
+        Dyn,      # 9, no data
+        Fun,      # 10
+        Obj,      # 11
+        Array,    # 12, no data
+        TypeType, # 13, no data
+        Ref,      # 14
         Virtual,  # 15
-        DynObj,  # 16
-        Abstract,  # 17
-        Enum,  # 18
-        Null,  # 19
-        Method,  # 20
-        Struct,  # 21
-        Packed,  # 22
+        DynObj,   # 16, no data
+        Abstract, # 17
+        Enum,     # 18
+        Null,     # 19
+        Method,   # 20
+        Struct,   # 21
+        Packed,   # 22
     ]
 
     def __init__(self):
@@ -690,7 +694,7 @@ class Type(Serialisable):
         return self
 
     def serialise(self) -> bytes:
-        return b"".join([self.kind.serialise(), self.definition.serialise()])
+        return b"".join([self.kind.serialise(), self.definition.serialise() if self.definition else b""])
 
 
 class Native(Serialisable):
@@ -739,9 +743,9 @@ class Opcode(Serialisable):
         self.definition = {}
 
     def deserialise(self, f) -> "Opcode":
-        dbg_print(f"Deserialising opcode at {tell(f)}... ", end="")
+        #dbg_print(f"Deserialising opcode at {tell(f)}... ", end="")
         self.code.deserialise(f)
-        dbg_print(f"{self.code.value}... ", end="")
+        #dbg_print(f"{self.code.value}... ", end="")
         try:
             _def = opcodes[list(opcodes.keys())[self.code.value]]
         except IndexError:
@@ -753,18 +757,30 @@ class Opcode(Serialisable):
                 continue
             dbg_print()
             raise InvalidOpCode(f"Unknown opcode at {tell(f)} (2nd pass)")
-        dbg_print(list(opcodes.keys())[self.code.value])
+        #dbg_print(list(opcodes.keys())[self.code.value])
         return self
 
     def serialise(self) -> bytes:
         return b"".join(
             [self.code.serialise(), b"".join([definition.serialise() for name, definition in self.definition.items()])]
         )
+        
+def read_u8(f) -> int:
+    return int.from_bytes(f.read(1), byteorder='little', signed=False)
 
+def write_u8(f, val: int) -> None:
+    try:
+        f.write(val.to_bytes(1, byteorder='little', signed=False))
+    except OverflowError:
+        raise FailedSerialisation(f"Overflow when writing u8 {val} @ {tell(f)}")
+
+class fileRef(int):
+    def resolve(self, code: "Bytecode") -> str:
+        return code.debugfiles.value[self]
 
 class DebugInfo(Serialisable):
     def __init__(self):
-        self.debug_info: List[Tuple[int, int]] = []
+        self.debug_info: List[Tuple[fileRef, int]] = [] # file index, line number
 
     def deserialise(self, f, nops: int) -> "DebugInfo":
         tmp = []
@@ -772,75 +788,76 @@ class DebugInfo(Serialisable):
         currline: int = 0
         i = 0
         while i < nops:
-            c = struct.unpack("B", f.read(1))[0]
+            c = ctypes.c_uint8(ord(f.read(1))).value
             if c & 1 != 0:
                 c >>= 1
-                currfile = (c << 8) | struct.unpack("B", f.read(1))[0]
+                currfile = (c << 8) | ctypes.c_uint8(ord(f.read(1))).value
             elif c & 2 != 0:
                 delta = c >> 6
                 count = (c >> 2) & 15
                 while count > 0:
                     count -= 1
-                    tmp.append((currfile, currline))
+                    tmp.append((fileRef(currfile), currline))
                     i += 1
                 currline += delta
             elif c & 4 != 0:
                 currline += c >> 3
-                tmp.append((currfile, currline))
+                tmp.append((fileRef(currfile), currline))
                 i += 1
             else:
-                b2 = struct.unpack("B", f.read(1))[0]
-                b3 = struct.unpack("B", f.read(1))[0]
+                b2 = ctypes.c_uint8(ord(f.read(1))).value
+                b3 = ctypes.c_uint8(ord(f.read(1))).value
                 currline = (c >> 3) | (b2 << 5) | (b3 << 13)
-                tmp.append((currfile, currline))
+                tmp.append((fileRef(currfile), currline))
                 i += 1
         self.debug_info = tmp
         return self
 
-    def serialise(self) -> bytes:
-        result = bytearray()
-        curfile: int = -1
-        curpos = 0
-        rcount = 0
+    def flush_repeat(self, w: BytesIO, curpos: ctypes.c_size_t, rcount: ctypes.c_size_t, pos: int):
+        """ Helper function to handle repeat encoding. """
+        if rcount.value > 0:
+            if rcount.value > 15:
+                w.write(ctypes.c_uint8((15 << 2) | 2).value.to_bytes(1, 'little'))
+                rcount.value -= 15
+                self.flush_repeat(w, curpos, rcount, pos)
+            else:
+                delta = pos - curpos.value
+                delta = delta if 0 < delta < 4 else 0
+                w.write(ctypes.c_uint8(((delta << 6) | (rcount.value << 2) | 2)).value.to_bytes(1, 'little'))
+                rcount.value = 0
+                curpos.value += delta
 
-        def flush_repeat(curpos: int, rcount: int, p: int) -> Tuple[bytes, int, int]:
-            result = bytearray()
-            while rcount > 0:
-                if rcount >= 4:
-                    count = min(rcount, 15)
-                    result.extend(struct.pack("B", (2 | ((curpos - p) << 6) | (count << 2))))
-                    rcount -= count
-                    p = curpos
-                else:
-                    while rcount > 0:
-                        result.extend(struct.pack("B", 4 | ((curpos - p) << 3)))
-                        rcount -= 1
-                        p = curpos
-            return bytes(result), curpos, rcount
+    def serialise(self) -> bytes:
+        w = BytesIO()
+        curfile = -1
+        curpos = ctypes.c_size_t(0)
+        rcount = ctypes.c_size_t(0)
 
         for f, p in self.debug_info:
             if f != curfile:
-                flush_bytes, curpos, rcount = flush_repeat(curpos, rcount, p)
-                result.extend(flush_bytes)
+                self.flush_repeat(w, curpos, rcount, p)
                 curfile = f
-                result.extend(struct.pack("BB", ((f >> 7) | 1), (f & 0xFF)))
-            if p != curpos:
-                flush_bytes, curpos, rcount = flush_repeat(curpos, rcount, p)
-                result.extend(flush_bytes)
-            if p == curpos:
-                rcount += 1
+                w.write(ctypes.c_uint8(((f >> 7) | 1)).value.to_bytes(1, 'little'))
+                w.write(ctypes.c_uint8(f & 0xFF).value.to_bytes(1, 'little'))
+            
+            if p != curpos.value:
+                self.flush_repeat(w, curpos, rcount, p)
+            
+            if p == curpos.value:
+                rcount.value += 1
             else:
-                delta = p - curpos
+                delta = p - curpos.value
                 if 0 < delta < 32:
-                    result.extend(struct.pack("B", ((delta << 3) | 4)))
+                    w.write(ctypes.c_uint8((delta << 3) | 4).value.to_bytes(1, 'little'))
                 else:
-                    result.extend(struct.pack("BBB", (p << 3), (p >> 5), (p >> 13)))
-                curpos = p
-        old_curpos = curpos
-        flush_bytes, curpos, rcount = flush_repeat(curpos, rcount, old_curpos)
-        result.extend(flush_bytes)
-        return bytes(result)
+                    w.write(ctypes.c_uint8((p << 3) & 0xFF).value.to_bytes(1, 'little'))
+                    w.write(ctypes.c_uint8((p >> 5) & 0xFF).value.to_bytes(1, 'little'))
+                    w.write(ctypes.c_uint8((p >> 13) & 0xFF).value.to_bytes(1, 'little'))
+                curpos.value = p
 
+        self.flush_repeat(w, curpos, rcount, curpos.value)
+        
+        return w.getvalue()
 
 class Function(Serialisable):
     def __init__(self):
@@ -855,13 +872,18 @@ class Function(Serialisable):
         self.debuginfo: Optional[DebugInfo] = None
         self.nassigns: Optional[VarInt] = None
         self.assigns: Optional[List[Tuple[VarInt, VarInt]]] = None
+        
+    def resolve_file(self, code: "Bytecode") -> str:
+        if not self.has_debug:
+            raise ValueError("Cannot get file from non-debug bytecode!")
+        return self.debuginfo.debug_info[0][0].resolve(code)
 
     def deserialise(self, f, has_debug: bool, version: int) -> "Function":
         self.has_debug = has_debug
         self.version = version
         self.type.deserialise(f)
         self.findex.deserialise(f)
-        dbg_print(f"----- {self.findex.value} ({tell(f)}) -----")
+        #dbg_print(f"----- {self.findex.value} ({tell(f)}) -----")
         self.nregs.deserialise(f)
         self.nops.deserialise(f)
         for _ in range(self.nregs.value):
@@ -917,6 +939,7 @@ class Constant(Serialisable):
 
 class Bytecode(Serialisable):
     def __init__(self):
+        self.deserialised = False
         self.magic = RawData(3)
         self.version = SerialisableInt()
         self.version.length = 1
@@ -960,8 +983,17 @@ class Bytecode(Serialisable):
                 dbg_print(f"Found bytecode at {tell(f)}... ", end="")
                 return
             offset += buffer_size
+            
+    @classmethod
+    def from_path(cls, path):
+        f = open(path, "rb")
+        instance = cls().deserialise(f)
+        f.close()
+        return instance
 
     def deserialise(self, f, search_magic=True):
+        start_time = datetime.now()
+        dbg_print("---- Deserialise ----")
         if search_magic:
             dbg_print("Searching for magic...")
             self.find_magic(f)
@@ -977,7 +1009,7 @@ class Bytecode(Serialisable):
         self.nstrings.deserialise(f)
 
         if self.version.value >= 5:
-            dbg_print("Found nbytes")
+            dbg_print(f"Found nbytes (version >= 5) at {tell(f)}")
             self.nbytes.deserialise(f)
         else:
             self.nbytes = None
@@ -988,7 +1020,7 @@ class Bytecode(Serialisable):
         self.nfunctions.deserialise(f)
 
         if self.version.value >= 4:
-            dbg_print("Found nconstants")
+            dbg_print(f"Found nconstants (version >= 4) at {tell(f)}")
             self.nconstants.deserialise(f)
         else:
             self.nconstants = None
@@ -1004,8 +1036,9 @@ class Bytecode(Serialisable):
 
         self.strings.deserialise(f)
         dbg_print(
-            f"Found {len(self.strings.value)} strings. nstrings: {self.nstrings.value}. Strings section ends at {tell(f)}"
+            f"Strings section ends at {tell(f)}"
         )
+        assert self.nstrings.value == len(self.strings.value), "nstrings and len of strings don't match!"
 
         if self.version.value >= 5:
             dbg_print("Deserialising bytes... >=5")
@@ -1023,6 +1056,7 @@ class Bytecode(Serialisable):
             self.debugfiles = None
 
         dbg_print(f"Starting main blobs at {tell(f)}")
+        dbg_print(f"Types starting at {tell(f)}")
         for _ in range(self.ntypes.value):
             self.types.append(Type().deserialise(f))
         dbg_print(f"Globals starting at {tell(f)}")
@@ -1038,8 +1072,13 @@ class Bytecode(Serialisable):
         for _ in range(self.nconstants.value):
             self.constants.append(Constant().deserialise(f))
         dbg_print(f"Bytecode end at {tell(f)}.")
+        self.deserialised = True
+        dbg_print(f"{(datetime.now() - start_time).microseconds/1000}ms elapsed.")
+        return self
 
     def serialise(self) -> bytes:
+        start_time = datetime.now()
+        dbg_print("---- Serialise ----")
         # TODO: dynamically set n**** variables to their correct values given their respective **** object - eg. set nfloats to len(floats)
         res = b"".join(
             [
@@ -1051,9 +1090,10 @@ class Bytecode(Serialisable):
                 self.nstrings.serialise(),
             ]
         )
+        dbg_print(f"VarInt block 1 at {hex(len(res))}")
         if self.version.value >= 5:
             res += self.nbytes.serialise()
-        res.join(
+        res += b"".join(
             [
                 self.ntypes.serialise(),
                 self.nglobals.serialise(),
@@ -1061,17 +1101,18 @@ class Bytecode(Serialisable):
                 self.nfunctions.serialise(),
             ]
         )
+        dbg_print(f"VarInt block 2 at {hex(len(res))}")
         if self.version.value >= 4:
             res += self.nconstants.serialise()
         res += self.entrypoint.serialise()
-        res.join([i.serialise() for i in self.ints])
-        res.join([f.serialise() for f in self.floats])
+        res += b"".join([i.serialise() for i in self.ints])
+        res += b"".join([f.serialise() for f in self.floats])
         res += self.strings.serialise()
         if self.version.value >= 5:
             res += self.bytes.serialise()
         if self.has_debug_info:
-            res.join([self.ndebugfiles.serialise(), self.debugfiles.serialise()])
-        res.join(
+            res += b"".join([self.ndebugfiles.serialise(), self.debugfiles.serialise()])
+        res += b"".join(
             [
                 b"".join([typ.serialise() for typ in self.types]),
                 b"".join([typ.serialise() for typ in self.global_types]),
@@ -1079,6 +1120,8 @@ class Bytecode(Serialisable):
                 b"".join([func.serialise() for func in self.functions]),
             ]
         )
+        dbg_print(f"Final size: {hex(len(res))}")
+        dbg_print(f"{(datetime.now() - start_time).microseconds/1000}ms elapsed.")
         return res
 
     def is_ok(self) -> bool:
@@ -1122,3 +1165,9 @@ class Bytecode(Serialisable):
                 return False
 
         return True
+    
+    def function(self, id: int) -> Function:
+        for function in self.functions:
+            if function.findex.value == id:
+                return function
+        raise IndexError(f"Function f@{id} not found!")
