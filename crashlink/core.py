@@ -123,7 +123,7 @@ class VarInt(Serialisable):
             c = int.from_bytes(f.read(1), "big")
             d = int.from_bytes(f.read(1), "big")
             e = int.from_bytes(f.read(1), "big")
-            v = ((b & 0x3F) << 24) | (c << 16) | (d << 8) | e
+            v = ((b & 0x1F) << 24) | (c << 16) | (d << 8) | e
             self.value = v if b & 0x20 == 0 else -v
         return self
 
@@ -506,6 +506,7 @@ class Obj(TypeDef):
             self.protos.append(Proto().deserialise(f))
         for _ in range(self.nbindings.value):
             self.bindings.append(Binding().deserialise(f))
+        return self
 
     def serialise(self) -> bytes:
         return b"".join(
@@ -684,6 +685,7 @@ class Type(Serialisable):
         self.definition: Optional[TypeDef] = None
 
     def deserialise(self, f) -> "Type":
+        #dbg_print(f"Type @ {tell(f)}")
         self.kind.deserialise(f, length=1)
         try:
             self.TYPEDEFS[self.kind.value]
