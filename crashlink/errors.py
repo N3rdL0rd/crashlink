@@ -25,3 +25,9 @@ class InvalidOpCode(CrashlinkError):
     """
     Raised when an invalid opcode is encountered.
     """
+
+
+class FailedSerialisation(CrashlinkError):
+    """
+    Raised when reserialisation of bytecode fails.
+    """
