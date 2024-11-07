@@ -7,3 +7,4 @@ crashlink.egg-info/
 env/
 .mypy_cache/
 .pytest_cache/
+hl/
