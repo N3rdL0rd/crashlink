@@ -60,9 +60,32 @@ hljs.highlightAll();
 </ul>
 <h3>Subclasses</h3>
 <ul class="hlist">
+<li><a title="crashlink.errors.FailedSerialisation" href="#crashlink.errors.FailedSerialisation">FailedSerialisation</a></li>
 <li><a title="crashlink.errors.InvalidOpCode" href="#crashlink.errors.InvalidOpCode">InvalidOpCode</a></li>
 <li><a title="crashlink.errors.MalformedBytecode" href="#crashlink.errors.MalformedBytecode">MalformedBytecode</a></li>
 <li><a title="crashlink.errors.NoMagic" href="#crashlink.errors.NoMagic">NoMagic</a></li>
+</ul>
+</dd>
+<dt id="crashlink.errors.FailedSerialisation"><code class="flex name class">
+<span>class <span class="ident">FailedSerialisation</span></span>
+<span>(</span><span>*args, <br>**kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Raised when reserialisation of bytecode fails.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class FailedSerialisation(CrashlinkError):
+    &#34;&#34;&#34;
+    Raised when reserialisation of bytecode fails.
+    &#34;&#34;&#34;</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.errors.CrashlinkError" href="#crashlink.errors.CrashlinkError">CrashlinkError</a></li>
+<li>builtins.Exception</li>
+<li>builtins.BaseException</li>
 </ul>
 </dd>
 <dt id="crashlink.errors.InvalidOpCode"><code class="flex name class">
@@ -148,6 +171,9 @@ hljs.highlightAll();
 <ul>
 <li>
 <h4><code><a title="crashlink.errors.CrashlinkError" href="#crashlink.errors.CrashlinkError">CrashlinkError</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.errors.FailedSerialisation" href="#crashlink.errors.FailedSerialisation">FailedSerialisation</a></code></h4>
 </li>
 <li>
 <h4><code><a title="crashlink.errors.InvalidOpCode" href="#crashlink.errors.InvalidOpCode">InvalidOpCode</a></code></h4>

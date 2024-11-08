@@ -2,13 +2,14 @@
 Core classes.
 """
 
-import struct
-from typing import Any, List, Optional, Tuple
-from io import BytesIO
-from datetime import datetime
 import ctypes
+import struct
+from datetime import datetime
+from io import BytesIO
+from typing import Any, List, Optional, Tuple
 
-from .errors import InvalidOpCode, MalformedBytecode, NoMagic, FailedSerialisation
+from .errors import (FailedSerialisation, InvalidOpCode, MalformedBytecode,
+                     NoMagic)
 from .globals import dbg_print, tell
 from .opcodes import opcodes
 
@@ -107,31 +108,29 @@ class VarInt(Serialisable):
 
     def deserialise(self, f) -> "VarInt":
         b = int.from_bytes(f.read(1), "big")
-        
+
         if b & 0x80 == 0:  # 0xxxxxxx
             self.value = b & 0x7F
         elif b & 0x40 == 0:  # 10xxxxxx
             second = int.from_bytes(f.read(1), "big")
-            
+
             first_contribution = (b & 0x1F) << 8
             v = second | first_contribution
-            
+
             is_negative = (b & 0x20) != 0
             self.value = -v if is_negative else v
         else:  # 11xxxxxx
-            bytes_read = [
-                int.from_bytes(f.read(1), "big") for _ in range(3)
-            ]
-            
+            bytes_read = [int.from_bytes(f.read(1), "big") for _ in range(3)]
+
             v = ((b & 0x1F) << 24) | (bytes_read[0] << 16) | (bytes_read[1] << 8) | bytes_read[2]
             self.value = -v if (b & 0x20) else v
             print(f"Four-byte value: {self.value}")
         return self
 
     def serialise(self) -> bytes:
-        
+
         if self.value < 0:
-            value = -self.value  # Work with positive value            
+            value = -self.value  # Work with positive value
             if value < 0x2000:  # Fits in 13 bits
                 first = (value >> 8) | 0xA0  # Set bits 7,5 for negative 2-byte
                 second = value & 0xFF
@@ -140,12 +139,14 @@ class VarInt(Serialisable):
                 if value >= 0x20000000:
                     raise MalformedBytecode("value can't be >= 0x20000000")
                 # Four-byte encoding with negative flag
-                return bytes([
-                    (value >> 24) | 0xE0,  # Set bits 7,6,5 for negative 4-byte
-                    (value >> 16) & 0xFF,
-                    (value >> 8) & 0xFF,
-                    value & 0xFF
-                ])
+                return bytes(
+                    [
+                        (value >> 24) | 0xE0,  # Set bits 7,6,5 for negative 4-byte
+                        (value >> 16) & 0xFF,
+                        (value >> 8) & 0xFF,
+                        value & 0xFF,
+                    ]
+                )
         else:
             if self.value < 0x80:  # Fits in 7 bits
                 return bytes([self.value])
@@ -157,12 +158,14 @@ class VarInt(Serialisable):
                 if self.value >= 0x20000000:
                     raise MalformedBytecode("value can't be >= 0x20000000")
                 # Four-byte encoding
-                return bytes([
-                    (self.value >> 24) | 0xC0,  # Set bits 7,6 for 4-byte
-                    (self.value >> 16) & 0xFF,
-                    (self.value >> 8) & 0xFF,
-                    self.value & 0xFF
-                ])
+                return bytes(
+                    [
+                        (self.value >> 24) | 0xC0,  # Set bits 7,6 for 4-byte
+                        (self.value >> 16) & 0xFF,
+                        (self.value >> 8) & 0xFF,
+                        self.value & 0xFF,
+                    ]
+                )
 
 
 class fIndex(VarInt):
@@ -321,7 +324,9 @@ class StringsBlock(Serialisable):
         self.length.value = len(strings_data)
         self.lengths = [len(string) for string in self.value]
         self.embedded_lengths = [VarInt(length) for length in self.lengths]
-        return b"".join([self.length.serialise(), strings_data, b"".join([i.serialise() for i in self.embedded_lengths])])
+        return b"".join(
+            [self.length.serialise(), strings_data, b"".join([i.serialise() for i in self.embedded_lengths])]
+        )
 
 
 class BytesBlock(Serialisable):
@@ -355,8 +360,7 @@ class BytesBlock(Serialisable):
         current_pos = 0
         for byte_str in self.value:
             positions.append(VarInt(current_pos))
-            current_pos += len(
-                byte_str)
+            current_pos += len(byte_str)
         positions_serialised = b"".join([pos.serialise() for pos in positions])
         return size_serialised + raw_data + positions_serialised
 
@@ -657,6 +661,7 @@ class Packed(TypeDef):
 
 
 class Type(Serialisable):
+    # fmt: off
     TYPEDEFS: List[TypeDef] = [
         Void,     # 0, no data
         U8,       # 1, no data
@@ -682,6 +687,7 @@ class Type(Serialisable):
         Struct,   # 21
         Packed,   # 22
     ]
+    # fmt: on
 
     def __init__(self):
         self.kind = SerialisableInt()
@@ -689,7 +695,7 @@ class Type(Serialisable):
         self.definition: Optional[TypeDef] = None
 
     def deserialise(self, f) -> "Type":
-        #dbg_print(f"Type @ {tell(f)}")
+        # dbg_print(f"Type @ {tell(f)}")
         self.kind.deserialise(f, length=1)
         try:
             self.TYPEDEFS[self.kind.value]
@@ -749,9 +755,9 @@ class Opcode(Serialisable):
         self.definition = {}
 
     def deserialise(self, f) -> "Opcode":
-        #dbg_print(f"Deserialising opcode at {tell(f)}... ", end="")
+        # dbg_print(f"Deserialising opcode at {tell(f)}... ", end="")
         self.code.deserialise(f)
-        #dbg_print(f"{self.code.value}... ", end="")
+        # dbg_print(f"{self.code.value}... ", end="")
         try:
             _def = opcodes[list(opcodes.keys())[self.code.value]]
         except IndexError:
@@ -763,30 +769,34 @@ class Opcode(Serialisable):
                 continue
             dbg_print()
             raise InvalidOpCode(f"Unknown opcode at {tell(f)} (2nd pass)")
-        #dbg_print(list(opcodes.keys())[self.code.value])
+        # dbg_print(list(opcodes.keys())[self.code.value])
         return self
 
     def serialise(self) -> bytes:
         return b"".join(
             [self.code.serialise(), b"".join([definition.serialise() for name, definition in self.definition.items()])]
         )
-        
+
+
 def read_u8(f) -> int:
-    return int.from_bytes(f.read(1), byteorder='little', signed=False)
+    return int.from_bytes(f.read(1), byteorder="little", signed=False)
+
 
 def write_u8(f, val: int) -> None:
     try:
-        f.write(val.to_bytes(1, byteorder='little', signed=False))
+        f.write(val.to_bytes(1, byteorder="little", signed=False))
     except OverflowError:
         raise FailedSerialisation(f"Overflow when writing u8 {val} @ {tell(f)}")
+
 
 class fileRef(int):
     def resolve(self, code: "Bytecode") -> str:
         return code.debugfiles.value[self]
 
+
 class DebugInfo(Serialisable):
     def __init__(self):
-        self.debug_info: List[Tuple[fileRef, int]] = [] # file index, line number
+        self.debug_info: List[Tuple[fileRef, int]] = []  # file index, line number
 
     def deserialise(self, f, nops: int) -> "DebugInfo":
         tmp = []
@@ -820,16 +830,16 @@ class DebugInfo(Serialisable):
         return self
 
     def flush_repeat(self, w: BytesIO, curpos: ctypes.c_size_t, rcount: ctypes.c_size_t, pos: int):
-        """ Helper function to handle repeat encoding. """
+        """Helper function to handle repeat encoding."""
         if rcount.value > 0:
             if rcount.value > 15:
-                w.write(ctypes.c_uint8((15 << 2) | 2).value.to_bytes(1, 'little'))
+                w.write(ctypes.c_uint8((15 << 2) | 2).value.to_bytes(1, "little"))
                 rcount.value -= 15
                 self.flush_repeat(w, curpos, rcount, pos)
             else:
                 delta = pos - curpos.value
                 delta = delta if 0 < delta < 4 else 0
-                w.write(ctypes.c_uint8(((delta << 6) | (rcount.value << 2) | 2)).value.to_bytes(1, 'little'))
+                w.write(ctypes.c_uint8(((delta << 6) | (rcount.value << 2) | 2)).value.to_bytes(1, "little"))
                 rcount.value = 0
                 curpos.value += delta
 
@@ -843,27 +853,28 @@ class DebugInfo(Serialisable):
             if f != curfile:
                 self.flush_repeat(w, curpos, rcount, p)
                 curfile = f
-                w.write(ctypes.c_uint8(((f >> 7) | 1)).value.to_bytes(1, 'little'))
-                w.write(ctypes.c_uint8(f & 0xFF).value.to_bytes(1, 'little'))
-            
+                w.write(ctypes.c_uint8(((f >> 7) | 1)).value.to_bytes(1, "little"))
+                w.write(ctypes.c_uint8(f & 0xFF).value.to_bytes(1, "little"))
+
             if p != curpos.value:
                 self.flush_repeat(w, curpos, rcount, p)
-            
+
             if p == curpos.value:
                 rcount.value += 1
             else:
                 delta = p - curpos.value
                 if 0 < delta < 32:
-                    w.write(ctypes.c_uint8((delta << 3) | 4).value.to_bytes(1, 'little'))
+                    w.write(ctypes.c_uint8((delta << 3) | 4).value.to_bytes(1, "little"))
                 else:
-                    w.write(ctypes.c_uint8((p << 3) & 0xFF).value.to_bytes(1, 'little'))
-                    w.write(ctypes.c_uint8((p >> 5) & 0xFF).value.to_bytes(1, 'little'))
-                    w.write(ctypes.c_uint8((p >> 13) & 0xFF).value.to_bytes(1, 'little'))
+                    w.write(ctypes.c_uint8((p << 3) & 0xFF).value.to_bytes(1, "little"))
+                    w.write(ctypes.c_uint8((p >> 5) & 0xFF).value.to_bytes(1, "little"))
+                    w.write(ctypes.c_uint8((p >> 13) & 0xFF).value.to_bytes(1, "little"))
                 curpos.value = p
 
         self.flush_repeat(w, curpos, rcount, curpos.value)
-        
+
         return w.getvalue()
+
 
 class Function(Serialisable):
     def __init__(self):
@@ -878,7 +889,7 @@ class Function(Serialisable):
         self.debuginfo: Optional[DebugInfo] = None
         self.nassigns: Optional[VarInt] = None
         self.assigns: Optional[List[Tuple[VarInt, VarInt]]] = None
-        
+
     def resolve_file(self, code: "Bytecode") -> str:
         if not self.has_debug:
             raise ValueError("Cannot get file from non-debug bytecode!")
@@ -889,7 +900,7 @@ class Function(Serialisable):
         self.version = version
         self.type.deserialise(f)
         self.findex.deserialise(f)
-        #dbg_print(f"----- {self.findex.value} ({tell(f)}) -----")
+        # dbg_print(f"----- {self.findex.value} ({tell(f)}) -----")
         self.nregs.deserialise(f)
         self.nops.deserialise(f)
         for _ in range(self.nregs.value):
@@ -989,7 +1000,7 @@ class Bytecode(Serialisable):
                 dbg_print(f"Found bytecode at {tell(f)}... ", end="")
                 return
             offset += buffer_size
-            
+
     @classmethod
     def from_path(cls, path):
         f = open(path, "rb")
@@ -1041,9 +1052,7 @@ class Bytecode(Serialisable):
             self.floats.append(SerialisableF64().deserialise(f))
 
         self.strings.deserialise(f)
-        dbg_print(
-            f"Strings section ends at {tell(f)}"
-        )
+        dbg_print(f"Strings section ends at {tell(f)}")
         assert self.nstrings.value == len(self.strings.value), "nstrings and len of strings don't match!"
 
         if self.version.value >= 5:
@@ -1124,7 +1133,7 @@ class Bytecode(Serialisable):
                 b"".join([typ.serialise() for typ in self.global_types]),
                 b"".join([native.serialise() for native in self.natives]),
                 b"".join([func.serialise() for func in self.functions]),
-                b"".join([constant.serialise() for constant in self.constants])
+                b"".join([constant.serialise() for constant in self.constants]),
             ]
         )
         dbg_print(f"Final size: {hex(len(res))}")
@@ -1172,7 +1181,7 @@ class Bytecode(Serialisable):
                 return False
 
         return True
-    
+
     def function(self, id: int) -> Function:
         for function in self.functions:
             if function.findex.value == id:
