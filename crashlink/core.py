@@ -102,63 +102,67 @@ class SerialisableF64(Serialisable):
 
 
 class VarInt(Serialisable):
-    """
-    Variable-length integer, unique to HashLink.
-    """
-
     def __init__(self, value: int = 0):
         self.value = value
 
     def deserialise(self, f) -> "VarInt":
         b = int.from_bytes(f.read(1), "big")
-        if b & 0x80 == 0:
-            # Single byte value
+        
+        if b & 0x80 == 0:  # 0xxxxxxx
             self.value = b & 0x7F
-        elif b & 0x40 == 0:
-            # Two-byte value
-            v = int.from_bytes(f.read(1), "big") | ((b & 0x3F) << 8)
-            self.value = v if b & 0x20 == 0 else -v
-        else:
-            # Four-byte value
-            c = int.from_bytes(f.read(1), "big")
-            d = int.from_bytes(f.read(1), "big")
-            e = int.from_bytes(f.read(1), "big")
-            v = ((b & 0x1F) << 24) | (c << 16) | (d << 8) | e
-            self.value = v if b & 0x20 == 0 else -v
+        elif b & 0x40 == 0:  # 10xxxxxx
+            second = int.from_bytes(f.read(1), "big")
+            
+            first_contribution = (b & 0x1F) << 8
+            v = second | first_contribution
+            
+            is_negative = (b & 0x20) != 0
+            self.value = -v if is_negative else v
+        else:  # 11xxxxxx
+            bytes_read = [
+                int.from_bytes(f.read(1), "big") for _ in range(3)
+            ]
+            
+            v = ((b & 0x1F) << 24) | (bytes_read[0] << 16) | (bytes_read[1] << 8) | bytes_read[2]
+            self.value = -v if (b & 0x20) else v
+            print(f"Four-byte value: {self.value}")
         return self
 
     def serialise(self) -> bytes:
+        
         if self.value < 0:
-            value = -self.value
-            if value < 0x2000:
-                return bytes([(value >> 8) | 0xA0, value & 0xFF])
-            elif value >= 0x20000000:
-                raise MalformedBytecode("value can't be >= 0x20000000")
+            value = -self.value  # Work with positive value            
+            if value < 0x2000:  # Fits in 13 bits
+                first = (value >> 8) | 0xA0  # Set bits 7,5 for negative 2-byte
+                second = value & 0xFF
+                return bytes([first, second])
             else:
-                return bytes(
-                    [
-                        (value >> 24) | 0xE0,
-                        (value >> 16) & 0xFF,
-                        (value >> 8) & 0xFF,
-                        value & 0xFF,
-                    ]
-                )
+                if value >= 0x20000000:
+                    raise MalformedBytecode("value can't be >= 0x20000000")
+                # Four-byte encoding with negative flag
+                return bytes([
+                    (value >> 24) | 0xE0,  # Set bits 7,6,5 for negative 4-byte
+                    (value >> 16) & 0xFF,
+                    (value >> 8) & 0xFF,
+                    value & 0xFF
+                ])
         else:
-            if self.value < 0x80:
+            if self.value < 0x80:  # Fits in 7 bits
                 return bytes([self.value])
-            elif self.value < 0x2000:
-                return bytes([(self.value >> 8) | 0x80, self.value & 0xFF])
-            elif self.value >= 0x20000000:
-                raise MalformedBytecode("value can't be >= 0x20000000")
+            elif self.value < 0x2000:  # Fits in 13 bits
+                first = (self.value >> 8) | 0x80  # Set bit 7 for 2-byte
+                second = self.value & 0xFF
+                return bytes([first, second])
             else:
-                return bytes(
-                    [
-                        (self.value >> 24) | 0xC0,
-                        (self.value >> 16) & 0xFF,
-                        (self.value >> 8) & 0xFF,
-                        self.value & 0xFF,
-                    ]
-                )
+                if self.value >= 0x20000000:
+                    raise MalformedBytecode("value can't be >= 0x20000000")
+                # Four-byte encoding
+                return bytes([
+                    (self.value >> 24) | 0xC0,  # Set bits 7,6 for 4-byte
+                    (self.value >> 16) & 0xFF,
+                    (self.value >> 8) & 0xFF,
+                    self.value & 0xFF
+                ])
 
 
 class fIndex(VarInt):
@@ -1120,6 +1124,7 @@ class Bytecode(Serialisable):
                 b"".join([typ.serialise() for typ in self.global_types]),
                 b"".join([native.serialise() for native in self.natives]),
                 b"".join([func.serialise() for func in self.functions]),
+                b"".join([constant.serialise() for constant in self.constants])
             ]
         )
         dbg_print(f"Final size: {hex(len(res))}")
