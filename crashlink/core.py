@@ -6,7 +6,7 @@ import ctypes
 import struct
 from datetime import datetime
 from io import BytesIO
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, Dict
 
 from .errors import (FailedSerialisation, InvalidOpCode, MalformedBytecode,
                      NoMagic)
@@ -732,7 +732,7 @@ class Opcode(Serialisable):
     Represents an opcode.
     """
 
-    TYPE_MAP: List[Serialisable] = {
+    TYPE_MAP: Dict[str, Serialisable] = {
         "Reg": Reg,
         "Regs": Regs,
         "RefInt": intRef,
@@ -747,6 +747,7 @@ class Opcode(Serialisable):
         "JumpOffsets": VarInts,
         "RefType": tIndex,
         "RefEnumConstant": VarInt,
+        "RefEnumConstruct": VarInt,
         "InlineInt": VarInt,
     }
 
@@ -767,9 +768,7 @@ class Opcode(Serialisable):
             if _type in self.TYPE_MAP:
                 self.definition[param] = self.TYPE_MAP[_type]().deserialise(f)
                 continue
-            dbg_print()
-            raise InvalidOpCode(f"Unknown opcode at {tell(f)} (2nd pass)")
-        # dbg_print(list(opcodes.keys())[self.code.value])
+            raise InvalidOpCode(f"Invalid opcode definition for {param, _type} at {tell(f)}")
         return self
 
     def serialise(self) -> bytes:
