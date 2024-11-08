@@ -2,8 +2,6 @@ from crashlink import *
 from glob import glob
 import pytest
 
-pytest.skip("currently broken", allow_module_level=True)
-
 test_files = glob("tests/haxe/*.hl")
 
 @pytest.mark.parametrize("path", test_files)
