@@ -8,3 +8,4 @@ env/
 .mypy_cache/
 .pytest_cache/
 hl/
+*.dat
