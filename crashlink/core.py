@@ -124,7 +124,6 @@ class VarInt(Serialisable):
 
             v = ((b & 0x1F) << 24) | (bytes_read[0] << 16) | (bytes_read[1] << 8) | bytes_read[2]
             self.value = -v if (b & 0x20) else v
-            print(f"Four-byte value: {self.value}")
         return self
 
     def serialise(self) -> bytes:
