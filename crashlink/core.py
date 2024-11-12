@@ -124,7 +124,6 @@ class VarInt(Serialisable):
 
             v = ((b & 0x1F) << 24) | (bytes_read[0] << 16) | (bytes_read[1] << 8) | bytes_read[2]
             self.value = -v if (b & 0x20) else v
-            print(f"Four-byte value: {self.value}")
         return self
 
     def serialise(self) -> bytes:
@@ -295,7 +294,7 @@ class StringsBlock(Serialisable):
         self.length.deserialise(f, length=4)
         strings_size = self.length.value
         dbg_print(f"Found {fmt_bytes(strings_size)} of strings")
-        strings_data = f.read(strings_size)
+        strings_data: bytes = f.read(strings_size)
 
         index = 0
         while index < strings_size:
@@ -306,7 +305,7 @@ class StringsBlock(Serialisable):
             if index + string_length >= strings_size:
                 raise MalformedBytecode("Invalid string: no null terminator found")
 
-            string = strings_data[index : index + string_length].decode("utf-8", errors="ignore")
+            string = strings_data[index : index + string_length].decode("utf-8", errors="surrogateescape")
             self.value.append(string)
             self.lengths.append(string_length)
 
@@ -320,7 +319,7 @@ class StringsBlock(Serialisable):
     def serialise(self) -> bytes:
         strings_data = b""
         for string in self.value:
-            strings_data += string.encode("utf-8") + b"\x00"
+            strings_data += string.encode("utf-8", errors="surrogateescape") + b"\x00"
         self.length.value = len(strings_data)
         self.lengths = [len(string) for string in self.value]
         self.embedded_lengths = [VarInt(length) for length in self.lengths]
