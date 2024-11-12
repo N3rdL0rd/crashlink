@@ -294,7 +294,7 @@ class StringsBlock(Serialisable):
     def deserialise(self, f) -> "StringsBlock":
         self.length.deserialise(f, length=4)
         strings_size = self.length.value
-        dbg_print(f"StringsBlock: Found {fmt_bytes(strings_size)} of strings")
+        dbg_print(f"Found {fmt_bytes(strings_size)} of strings")
         strings_data = f.read(strings_size)
 
         index = 0
@@ -985,6 +985,8 @@ class Bytecode(Serialisable):
         self.natives: List[Native] = []
         self.functions: List[Function] = []
         self.constants: List[Constant] = []
+        
+        self.section_offsets: Dict[str, tuple] = {}
 
     def find_magic(self, f, magic=b"HLB"):
         buffer_size = 1024
@@ -1013,57 +1015,79 @@ class Bytecode(Serialisable):
         if search_magic:
             dbg_print("Searching for magic...")
             self.find_magic(f)
+        self.track_section(f, "magic")
         self.magic.deserialise(f)
         assert self.magic.value == b"HLB", "Incorrect magic found!"
+        self.track_section(f, "version")
         self.version.deserialise(f, length=1)
         dbg_print(f"with version {self.version.value}... ", end="")
+        self.track_section(f, "flags")
         self.flags.deserialise(f)
         self.has_debug_info = bool(self.flags.value & 1)
         dbg_print(f"debug info: {self.has_debug_info}. ")
+        self.track_section(f, "nints")
         self.nints.deserialise(f)
+        self.track_section(f, "nfloats")
         self.nfloats.deserialise(f)
+        self.track_section(f, "nstrings")
         self.nstrings.deserialise(f)
 
         if self.version.value >= 5:
             dbg_print(f"Found nbytes (version >= 5) at {tell(f)}")
+            self.track_section(f, "nbytes")
             self.nbytes.deserialise(f)
         else:
             self.nbytes = None
 
+        self.track_section(f, "ntypes")
         self.ntypes.deserialise(f)
+        self.track_section(f, "nglobals")
         self.nglobals.deserialise(f)
+        self.track_section(f, "nnatives")
         self.nnatives.deserialise(f)
+        self.track_section(f, "nfunctions")
         self.nfunctions.deserialise(f)
 
         if self.version.value >= 4:
             dbg_print(f"Found nconstants (version >= 4) at {tell(f)}")
+            self.track_section(f, "nconstants")
             self.nconstants.deserialise(f)
         else:
             self.nconstants = None
 
+        self.track_section(f, "entrypoint")
         self.entrypoint.deserialise(f)
         dbg_print(f"Entrypoint: f@{self.entrypoint.value}")
 
-        for _ in range(self.nints.value):
+        self.track_section(f, "ints")
+        for i in range(self.nints.value):
+            self.track_section(f, f"int {i}")
             self.ints.append(SerialisableInt().deserialise(f, length=4))
 
-        for _ in range(self.nfloats.value):
+        self.track_section(f, "floats")
+        for i in range(self.nfloats.value):
+            self.track_section(f, f"float {i}")
             self.floats.append(SerialisableF64().deserialise(f))
 
+        dbg_print(f"Strings section starts at {tell(f)}")
+        self.track_section(f, "strings")
         self.strings.deserialise(f)
         dbg_print(f"Strings section ends at {tell(f)}")
         assert self.nstrings.value == len(self.strings.value), "nstrings and len of strings don't match!"
 
         if self.version.value >= 5:
             dbg_print("Deserialising bytes... >=5")
+            self.track_section(f, f"bytes")
             self.bytes.deserialise(f, self.nbytes.value)
         else:
             self.bytes = None
 
         if self.has_debug_info:
             dbg_print(f"Deserialising debug files... (at {tell(f)})")
+            self.track_section(f, f"ndebugfiles")
             self.ndebugfiles.deserialise(f)
             dbg_print(f"Number of debug files: {self.ndebugfiles.value}")
+            self.track_section(f, f"debugfiles")
             self.debugfiles.deserialise(f)
         else:
             self.ndebugfiles = None
@@ -1071,29 +1095,55 @@ class Bytecode(Serialisable):
 
         dbg_print(f"Starting main blobs at {tell(f)}")
         dbg_print(f"Types starting at {tell(f)}")
-        for _ in range(self.ntypes.value):
+        self.track_section(f, "types")
+        for i in range(self.ntypes.value):
+            self.track_section(f, f"type {i}")
             self.types.append(Type().deserialise(f))
         dbg_print(f"Globals starting at {tell(f)}")
-        for _ in range(self.nglobals.value):
+        self.track_section(f, "globals")
+        for i in range(self.nglobals.value):
+            self.track_section(f, f"global {i}")
             self.global_types.append(tIndex().deserialise(f))
         dbg_print(f"Natives starting at {tell(f)}")
-        for _ in range(self.nnatives.value):
+        self.track_section(f, "natives")
+        for i in range(self.nnatives.value):
+            self.track_section(f, f"native {i}")
             self.natives.append(Native().deserialise(f))
         dbg_print(f"Functions starting at {tell(f)}")
-        for _ in range(self.nfunctions.value):
+        self.track_section(f, "functions")
+        for i in range(self.nfunctions.value):
+            self.track_section(f, f"function {i}")
             self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
-        dbg_print(f"Constants starting at {tell(f)}")
-        for _ in range(self.nconstants.value):
-            self.constants.append(Constant().deserialise(f))
+        if self.nconstants is not None:
+            dbg_print(f"Constants starting at {tell(f)}")
+            self.track_section(f, "constants")
+            for i in range(self.nconstants.value):
+                self.track_section(f, f"constant {i}")
+                self.constants.append(Constant().deserialise(f))
         dbg_print(f"Bytecode end at {tell(f)}.")
         self.deserialised = True
         dbg_print(f"{(datetime.now() - start_time).microseconds/1000}ms elapsed.")
         return self
 
-    def serialise(self) -> bytes:
+    def serialise(self, auto_set_meta: bool=True) -> bytes:
         start_time = datetime.now()
         dbg_print("---- Serialise ----")
-        # TODO: dynamically set n**** variables to their correct values given their respective **** object - eg. set nfloats to len(floats)
+        if auto_set_meta:
+            dbg_print("Setting meta...")
+            self.flags.value = 1 if self.has_debug_info else 0
+            self.nints.value = len(self.ints)
+            self.nfloats.value = len(self.floats)
+            self.nstrings.value = len(self.strings.value)
+            if self.version.value >= 5:
+                self.nbytes.value = len(self.bytes.value)
+            self.ntypes.value = len(self.types)
+            self.nglobals.value = len(self.global_types)
+            self.nnatives.value = len(self.natives)
+            self.nfunctions.value = len(self.functions)
+            if self.version.value >= 4:
+                self.nconstants.value = len(self.constants)
+            if self.has_debug_info:
+                self.ndebugfiles.value = len(self.debugfiles.value)
         res = b"".join(
             [
                 self.magic.serialise(),
@@ -1186,3 +1236,13 @@ class Bytecode(Serialisable):
             if function.findex.value == id:
                 return function
         raise IndexError(f"Function f@{id} not found!")
+
+    def track_section(self, f, section_name):
+        start_offset = f.tell()
+        self.section_offsets[section_name] = (start_offset, f.tell())
+
+    def section_at(self, offset):
+        for section_name, (start, end) in self.section_offsets.items():
+            if start <= offset < end:
+                return section_name
+        return None
