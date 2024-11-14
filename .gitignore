@@ -9,3 +9,4 @@ env/
 .pytest_cache/
 hl/
 *.dat
+*.prof
