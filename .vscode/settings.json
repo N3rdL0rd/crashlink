@@ -9,6 +9,7 @@
         "debuginfo",
         "deser",
         "deserialise",
+        "deserialised",
         "Deserialising",
         "findex",
         "Haxe",
@@ -35,6 +36,7 @@
         "protos",
         "Setref",
         "surrogateescape",
+        "TQDM",
         "typedefs",
         "varint"
     ],

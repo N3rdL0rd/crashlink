@@ -7,6 +7,11 @@ import struct
 from datetime import datetime
 from io import BytesIO
 from typing import Any, List, Optional, Tuple, Dict
+try:
+    from tqdm import tqdm
+    USE_TQDM = True
+except ImportError:
+    USE_TQDM = False
 
 from .errors import (FailedSerialisation, InvalidOpCode, MalformedBytecode,
                      NoMagic)
@@ -107,64 +112,63 @@ class VarInt(Serialisable):
         self.value = value
 
     def deserialise(self, f) -> "VarInt":
+        # Read first byte to determine format
         b = int.from_bytes(f.read(1), "big")
-
-        if b & 0x80 == 0:  # 0xxxxxxx
-            self.value = b & 0x7F
-        elif b & 0x40 == 0:  # 10xxxxxx
+        
+        # Single byte format (0xxxxxxx)
+        if not (b & 0x80):
+            self.value = b
+            return self
+            
+        # Two byte format (10xxxxxx)
+        if not (b & 0x40):
+            # Read both remaining bytes at once
             second = int.from_bytes(f.read(1), "big")
-
-            first_contribution = (b & 0x1F) << 8
-            v = second | first_contribution
-
-            is_negative = (b & 0x20) != 0
-            self.value = -v if is_negative else v
-        else:  # 11xxxxxx
-            bytes_read = [int.from_bytes(f.read(1), "big") for _ in range(3)]
-
-            v = ((b & 0x1F) << 24) | (bytes_read[0] << 16) | (bytes_read[1] << 8) | bytes_read[2]
-            self.value = -v if (b & 0x20) else v
+            
+            # Combine bytes and handle sign
+            self.value = ((b & 0x1F) << 8) | second
+            if b & 0x20:
+                self.value = -self.value
+            return self
+            
+        # Four byte format (11xxxxxx)
+        # Read all three remaining bytes at once
+        remaining = int.from_bytes(f.read(3), "big")
+        
+        # Combine all bytes and handle sign
+        self.value = ((b & 0x1F) << 24) | remaining
+        if b & 0x20:
+            self.value = -self.value
         return self
 
     def serialise(self) -> bytes:
-
         if self.value < 0:
-            value = -self.value  # Work with positive value
-            if value < 0x2000:  # Fits in 13 bits
-                first = (value >> 8) | 0xA0  # Set bits 7,5 for negative 2-byte
-                second = value & 0xFF
-                return bytes([first, second])
-            else:
-                if value >= 0x20000000:
-                    raise MalformedBytecode("value can't be >= 0x20000000")
-                # Four-byte encoding with negative flag
-                return bytes(
-                    [
-                        (value >> 24) | 0xE0,  # Set bits 7,6,5 for negative 4-byte
-                        (value >> 16) & 0xFF,
-                        (value >> 8) & 0xFF,
-                        value & 0xFF,
-                    ]
-                )
-        else:
-            if self.value < 0x80:  # Fits in 7 bits
-                return bytes([self.value])
-            elif self.value < 0x2000:  # Fits in 13 bits
-                first = (self.value >> 8) | 0x80  # Set bit 7 for 2-byte
-                second = self.value & 0xFF
-                return bytes([first, second])
-            else:
-                if self.value >= 0x20000000:
-                    raise MalformedBytecode("value can't be >= 0x20000000")
-                # Four-byte encoding
-                return bytes(
-                    [
-                        (self.value >> 24) | 0xC0,  # Set bits 7,6 for 4-byte
-                        (self.value >> 16) & 0xFF,
-                        (self.value >> 8) & 0xFF,
-                        self.value & 0xFF,
-                    ]
-                )
+            value = -self.value
+            if value < 0x2000:  # 13 bits
+                return bytes([(value >> 8) | 0xA0, value & 0xFF])
+            if value >= 0x20000000:
+                raise MalformedBytecode("value can't be >= 0x20000000")
+            # Optimize 4-byte case
+            return bytes([
+                (value >> 24) | 0xE0,
+                (value >> 16) & 0xFF,
+                (value >> 8) & 0xFF,
+                value & 0xFF
+            ])
+        
+        if self.value < 0x80:  # 7 bits
+            return bytes([self.value])
+        if self.value < 0x2000:  # 13 bits
+            return bytes([(self.value >> 8) | 0x80, self.value & 0xFF])
+        if self.value >= 0x20000000:
+            raise MalformedBytecode("value can't be >= 0x20000000")
+        # Optimize 4-byte case
+        return bytes([
+            (self.value >> 24) | 0xC0,
+            (self.value >> 16) & 0xFF,
+            (self.value >> 8) & 0xFF,
+            self.value & 0xFF
+        ])
 
 
 class fIndex(VarInt):
@@ -1110,9 +1114,14 @@ class Bytecode(Serialisable):
             self.natives.append(Native().deserialise(f))
         dbg_print(f"Functions starting at {tell(f)}")
         self.track_section(f, "functions")
-        for i in range(self.nfunctions.value):
-            self.track_section(f, f"function {i}")
-            self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
+        if not USE_TQDM:
+            for i in range(self.nfunctions.value):
+                self.track_section(f, f"function {i}")
+                self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
+        else:
+            for i in tqdm(range(self.nfunctions.value)):
+                self.track_section(f, f"function {i}")
+                self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
         if self.nconstants is not None:
             dbg_print(f"Constants starting at {tell(f)}")
             self.track_section(f, "constants")
@@ -1121,7 +1130,7 @@ class Bytecode(Serialisable):
                 self.constants.append(Constant().deserialise(f))
         dbg_print(f"Bytecode end at {tell(f)}.")
         self.deserialised = True
-        dbg_print(f"{(datetime.now() - start_time).microseconds/1000}ms elapsed.")
+        dbg_print(f"{(datetime.now() - start_time).total_seconds()}s elapsed.")
         return self
 
     def serialise(self, auto_set_meta: bool=True) -> bytes:
@@ -1185,7 +1194,7 @@ class Bytecode(Serialisable):
             ]
         )
         dbg_print(f"Final size: {hex(len(res))}")
-        dbg_print(f"{(datetime.now() - start_time).microseconds/1000}ms elapsed.")
+        dbg_print(f"{(datetime.now() - start_time).total_seconds()}s elapsed.")
         return res
 
     def is_ok(self) -> bool:
