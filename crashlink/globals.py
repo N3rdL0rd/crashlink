@@ -2,6 +2,13 @@
 Global configuration.
 """
 
+VERSION: str = "closed pre-alpha"
+"""
+The version of crashlink.
+"""
+
+LONG_VERSION: str = "crashlink - Pure Python HashLink bytecode parser/disassembler/decompiler/modding tool - " + VERSION
+
 DEBUG: bool = True
 """
 Whether to enable certain features meant only for development or debugging of crashlink.
