@@ -10,3 +10,4 @@ env/
 hl/
 *.dat
 *.prof
+*.json
