@@ -30,8 +30,21 @@ opcodes = {
     "Call0": {"dst": "Reg", "fun": "RefFun"},  # 24
     "Call1": {"dst": "Reg", "fun": "RefFun", "arg0": "Reg"},  # 25
     "Call2": {"dst": "Reg", "fun": "RefFun", "arg0": "Reg", "arg1": "Reg"},  # 26
-    "Call3": {"dst": "Reg", "fun": "RefFun", "arg0": "Reg", "arg1": "Reg", "arg2": "Reg"},  # 27
-    "Call4": {"dst": "Reg", "fun": "RefFun", "arg0": "Reg", "arg1": "Reg", "arg2": "Reg", "arg3": "Reg"},  # 28
+    "Call3": {
+        "dst": "Reg",
+        "fun": "RefFun",
+        "arg0": "Reg",
+        "arg1": "Reg",
+        "arg2": "Reg",
+    },  # 27
+    "Call4": {
+        "dst": "Reg",
+        "fun": "RefFun",
+        "arg0": "Reg",
+        "arg1": "Reg",
+        "arg2": "Reg",
+        "arg3": "Reg",
+    },  # 28
     "CallN": {"dst": "Reg", "fun": "RefFun", "args": "Regs"},  # 29
     "CallMethod": {"dst": "Reg", "field": "RefField", "args": "Regs"},  # 30
     "CallThis": {"dst": "Reg", "field": "RefField", "args": "Regs"},  # 31
@@ -96,7 +109,12 @@ opcodes = {
     "MakeEnum": {"dst": "Reg", "construct": "RefEnumConstruct", "args": "Regs"},  # 90
     "EnumAlloc": {"dst": "Reg", "construct": "RefEnumConstruct"},  # 91
     "EnumIndex": {"dst": "Reg", "value": "Reg"},  # 92
-    "EnumField": {"dst": "Reg", "value": "Reg", "construct": "RefEnumConstruct", "field": "RefField"},  # 93
+    "EnumField": {
+        "dst": "Reg",
+        "value": "Reg",
+        "construct": "RefEnumConstruct",
+        "field": "RefField",
+    },  # 93
     "SetEnumField": {"value": "Reg", "field": "RefField", "src": "Reg"},  # 94
     "Assert": {},  # 95
     "RefData": {"dst": "Reg", "src": "Reg"},  # 96
