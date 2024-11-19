@@ -2,10 +2,45 @@ import argparse
 from .globals import VERSION
 import os
 from .core import Bytecode
+from . import fmt
+from typing import List, Dict, Tuple, Callable
+import sys
+import webbrowser
 
-def handle_cmd(code, is_hlbc, cmd):
-    print(is_hlbc, cmd)
-    # TODO
+def cmd_help(args, code):
+    if args:
+        for command in args:
+            if command in COMMANDS:
+                print(f"{command} - {COMMANDS[command][1]}")
+            else:
+                print(f"Unknown command: {command}")
+        return
+    print("Available commands:")
+    for cmd in COMMANDS:
+        print(f"\t{cmd} - {COMMANDS[cmd][1]}")
+    print("Type 'help <command>' for information on a specific command.")
+
+def cmd_funcs(args, code: Bytecode):
+    for func in code.functions:
+        print(fmt.disasm.func_header(code, func))
+
+COMMANDS: Dict[str, Tuple[Callable, str]] = {
+    "exit": (lambda _, __: sys.exit(), "Exit the program"),
+    "help": (cmd_help, "Show this help message"),
+    "wiki": (lambda _, __: webbrowser.open("https://github.com/Gui-Yom/hlbc/wiki/Bytecode-file-format"), "Open the HLBC wiki in your default browser"),
+    "funcs": (cmd_funcs, "List all functions in the bytecode")
+}
+
+def handle_cmd(code: Bytecode, is_hlbc: bool, cmd: str):
+    cmd: List[str] = cmd.split(" ")
+    if not is_hlbc:
+        for command in COMMANDS:
+            if cmd[0] == command:
+                COMMANDS[command][0](cmd[1:], code)
+                return
+    else:
+        raise NotImplementedError("HLBC compatibility mode is not yet implemented.")
+    print("Unknown command.")
 
 def main():
     parser = argparse.ArgumentParser(description=f"crashlink CLI ({VERSION})", prog="crashlink")
@@ -37,10 +72,7 @@ def main():
         handle_cmd(code, args.hlbc, args.command)
         
     while True:
-        cmd = input("crashlink> ")
-        if cmd == "exit":
-            break
-        handle_cmd(code, args.hlbc, cmd)
+        handle_cmd(code, args.hlbc, input("crashlink> "))
         
 if __name__ == "__main__":
     main()

@@ -188,6 +188,9 @@ class tIndex(VarInt):
     """
     Abstract class based on VarInt to represent a distinct type by index instead of an arbitrary number.
     """
+    
+    def resolve(self, code: "Bytecode") -> "Type":
+        return code.types[self.value]
 
 
 class gIndex(VarInt):
