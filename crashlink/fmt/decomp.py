@@ -111,6 +111,14 @@ class CFGraph:
             elif last_op.op != "Ret" and next_idx in nodes_by_idx:
                 self.add_branch(src_node, nodes_by_idx[next_idx], "unconditional")
     
+    def style_node(self, node: CFNode):
+        if node == self.entry:
+            return 'style=filled, fillcolor=pink1'
+        for op in node.ops:
+            if op.op == "Ret":
+                return 'style=filled, fillcolor=aquamarine'
+        return 'style=filled, fillcolor=lightblue'
+    
     def graph(self, code: Bytecode):
         """Generate DOT format graph visualization."""
         dot = ['digraph G {']
@@ -122,8 +130,7 @@ class CFGraph:
                 disasm.pseudo_from_op(op, i, self.func.regs, code)
                 for i, op in enumerate(node.ops)
             ]).replace('"', '\\"').replace('\n', '\\n')
-            
-            style = 'style=filled, fillcolor=darkolivegreen1' if node == self.entry else 'style=filled, fillcolor=lightblue'
+            style = self.style_node(node)
             dot.append(f'  node_{id(node)} [label="{label}", {style}];')
         
         for node in self.nodes:
