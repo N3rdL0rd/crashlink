@@ -6,6 +6,9 @@ from . import fmt
 from typing import List, Dict, Tuple, Callable
 import sys
 import webbrowser
+import tempfile
+import subprocess
+
 
 def cmd_help(args, code):
     if args:
@@ -20,16 +23,115 @@ def cmd_help(args, code):
         print(f"\t{cmd} - {COMMANDS[cmd][1]}")
     print("Type 'help <command>' for information on a specific command.")
 
+
 def cmd_funcs(args, code: Bytecode):
+    std = args and args[0] == "std"
     for func in code.functions:
+        if fmt.disasm.is_std(code, func) and not std:
+            continue
         print(fmt.disasm.func_header(code, func))
+    for native in code.natives:
+        if fmt.disasm.is_std(code, native) and not std:
+            continue
+        print(fmt.disasm.native_header(code, native))
+
+def cmd_entry(args, code: Bytecode):
+    entry = code.entrypoint.resolve(code)
+    print("    Entrypoint:", fmt.disasm.func_header(code, entry))
+
+def cmd_fn(args, code: Bytecode):
+    if not args:
+        print("Usage: fn <index>")
+        return
+    try:
+        index = int(args[0])
+    except ValueError:
+        print("Invalid index.")
+        return
+    for func in code.functions:
+        if func.findex.value == index:
+            print(fmt.disasm.func(code, func))
+            return
+    for native in code.natives:
+        if native.findex.value == index:
+            print(fmt.disasm.native_header(code, native))
+            return
+    print("Function not found.")
+
+def cmd_decomp(args, code: Bytecode):
+    if not args:
+        print("Usage: decomp <index>")
+        return
+    try:
+        index = int(args[0])
+    except ValueError:
+        print("Invalid index.")
+        return
+    for func in code.functions:
+        if func.findex.value == index:
+            decomp = fmt.decomp.Decompiler(code)
+            decomp.func(func)
+            for i, layer in enumerate(decomp.ir_layers):
+                print(f"--- IR Layer {i} ---")
+                print(layer)
+            return
+        
+def cmd_cfg(args, code: Bytecode):
+    if not args:
+        print("Usage: cfg <index>")
+        return
+    try:
+        index = int(args[0])
+    except ValueError:
+        print("Invalid index.")
+        return
+    for func in code.functions:
+        if func.findex.value == index:
+            cfg = fmt.decomp.CFGraph(func)
+            print("Building control flow graph...")
+            cfg.build()
+            print("DOT:")
+            dot = cfg.graph(code)
+            print(dot)
+            
+            with tempfile.NamedTemporaryFile(suffix='.dot', delete=False) as f:
+                f.write(dot.encode())
+                dot_file = f.name
+            
+            png_file = dot_file.replace('.dot', '.png')
+            try:
+                subprocess.run(['dot', '-Tpng', dot_file, '-o', png_file, '-Gdpi=300'], check=True)
+            except FileNotFoundError:
+                print("Graphviz not found. Install Graphviz to generate PNGs.")
+                return
+            
+            try:
+                os.startfile(png_file)
+                os.unlink(dot_file)
+            except:
+                print(f"Control flow graph saved to {png_file}. Use your favourite image viewer to open it.")
+            return
+        
 
 COMMANDS: Dict[str, Tuple[Callable, str]] = {
     "exit": (lambda _, __: sys.exit(), "Exit the program"),
     "help": (cmd_help, "Show this help message"),
-    "wiki": (lambda _, __: webbrowser.open("https://github.com/Gui-Yom/hlbc/wiki/Bytecode-file-format"), "Open the HLBC wiki in your default browser"),
-    "funcs": (cmd_funcs, "List all functions in the bytecode")
+    "wiki": (
+        lambda _, __: webbrowser.open(
+            "https://github.com/Gui-Yom/hlbc/wiki/Bytecode-file-format"
+        ),
+        "Open the HLBC wiki in your default browser",
+    ),
+    "funcs": (
+        cmd_funcs,
+        "List all functions in the bytecode - pass 'std' to not exclude stdlib",
+    ),
+    "entry": (cmd_entry, "Show the entrypoint of the bytecode"),
+    "fn": (cmd_fn, "Show information about a function"),
+    "decomp": (cmd_decomp, "Decompile a function"),
+    "cfg": (cmd_cfg, "Graph the control flow graph of a function"),
 }
+
 
 def handle_cmd(code: Bytecode, is_hlbc: bool, cmd: str):
     cmd: List[str] = cmd.split(" ")
@@ -42,11 +144,18 @@ def handle_cmd(code: Bytecode, is_hlbc: bool, cmd: str):
         raise NotImplementedError("HLBC compatibility mode is not yet implemented.")
     print("Unknown command.")
 
+
 def main():
-    parser = argparse.ArgumentParser(description=f"crashlink CLI ({VERSION})", prog="crashlink")
-    parser.add_argument("file", help="The file to open - can be HashLink bytecode or a Haxe source file")
+    parser = argparse.ArgumentParser(
+        description=f"crashlink CLI ({VERSION})", prog="crashlink"
+    )
+    parser.add_argument(
+        "file", help="The file to open - can be HashLink bytecode or a Haxe source file"
+    )
     parser.add_argument("-c", "--command", help="The command to run on startup")
-    parser.add_argument("-H", "--hlbc", help="Run in HLBC compatibility mode", action="store_true")
+    parser.add_argument(
+        "-H", "--hlbc", help="Run in HLBC compatibility mode", action="store_true"
+    )
     args = parser.parse_args()
 
     is_haxe = True
@@ -67,12 +176,13 @@ def main():
     else:
         with open(args.file, "rb") as f:
             code = Bytecode().deserialise(f)
-    
+
     if args.command:
         handle_cmd(code, args.hlbc, args.command)
-        
-    while True:
-        handle_cmd(code, args.hlbc, input("crashlink> "))
-        
+    else:
+        while True:
+            handle_cmd(code, args.hlbc, input("crashlink> "))
+
+
 if __name__ == "__main__":
     main()
