@@ -1,1 +1,1 @@
-from . import disasm
+from . import disasm, decomp

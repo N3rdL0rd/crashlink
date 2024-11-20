@@ -6,7 +6,7 @@ import ctypes
 import struct
 from datetime import datetime
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 try:
     from tqdm import tqdm
@@ -183,12 +183,18 @@ class fIndex(VarInt):
     Abstract class based on VarInt to represent a distinct function index instead of just an arbitrary number.
     """
 
+    def resolve(self, code: "Bytecode") -> "Function":
+        for function in code.functions:
+            if function.findex.value == self.value:
+                return function
+        raise MalformedBytecode(f"Function index {self.value} not found.")
+
 
 class tIndex(VarInt):
     """
     Abstract class based on VarInt to represent a distinct type by index instead of an arbitrary number.
     """
-    
+
     def resolve(self, code: "Bytecode") -> "Type":
         return code.types[self.value]
 
@@ -197,7 +203,9 @@ class gIndex(VarInt):
     """
     Global index reference, based on VarInt.
     """
-
+    
+    def resolve(self, code: "Bytecode") -> "Type":
+        return code.global_types[self.value].resolve(code)
 
 class strRef(VarInt):
     """
@@ -221,6 +229,16 @@ class floatRef(VarInt):
 class bytesRef(VarInt):
     def resolve(self, code: "Bytecode") -> bytes:
         return code.bytes.value[self.value]
+
+
+class fieldRef(VarInt):
+    """
+    Abstract class to represent a field index.
+    """
+
+    def resolve(self, code: "Bytecode", obj: "Obj") -> "Field":
+        fields = obj.resolve_fields(code)
+        return fields[self.value]
 
 
 class Reg(VarInt):
@@ -509,7 +527,7 @@ class Proto(Serialisable):
 
 class Binding(Serialisable):
     def __init__(self):
-        self.field = VarInt()  # field ref, not deserving of its own separate type
+        self.field = fieldRef()
         self.findex = fIndex()
 
     def deserialise(self, f) -> "Binding":
@@ -562,6 +580,33 @@ class Obj(TypeDef):
                 b"".join([binding.serialise() for binding in self.bindings]),
             ]
         )
+
+    def resolve_fields(self, code: "Bytecode") -> List[Field]:
+        # field references are relative to the entire class hierarchy - for instance:
+        # class A {
+        #     var a: Int;
+        # }
+        # class B extends A {
+        #     var b: Int;
+        # }
+        # where a is field 0 and b is field 1
+        if self.super.value < 0:  # no superclass
+            return self.fields
+        fields = []
+        visited_types = set()
+        current_type = self
+        while current_type:
+            if id(current_type) in visited_types:
+                raise ValueError("Cyclic inheritance detected in class hierarchy.")
+            visited_types.add(id(current_type))
+            fields = current_type.fields + fields
+            if current_type.super.value < 0:
+                current_type = None
+            else:
+                current_type: Optional[Obj] = current_type.super.resolve(
+                    code
+                ).definition
+        return fields
 
 
 class Array(_NoDataType):
@@ -794,7 +839,7 @@ class Opcode(Serialisable):
         "RefBytes": bytesRef,
         "RefString": strRef,
         "RefFun": fIndex,
-        "RefField": VarInt,
+        "RefField": fieldRef,
         "RefGlobal": gIndex,
         "JumpOffset": VarInt,
         "JumpOffsets": VarInts,
@@ -806,6 +851,7 @@ class Opcode(Serialisable):
 
     def __init__(self):
         self.code = VarInt()
+        self.op = None
         self.definition = {}
 
     def deserialise(self, f) -> "Opcode":
@@ -815,7 +861,7 @@ class Opcode(Serialisable):
         try:
             _def = opcodes[list(opcodes.keys())[self.code.value]]
         except IndexError:
-            dbg_print()
+            #dbg_print()
             raise InvalidOpCode(f"Unknown opcode at {tell(f)}")
         for param, _type in _def.items():
             if _type in self.TYPE_MAP:
@@ -824,6 +870,7 @@ class Opcode(Serialisable):
             raise InvalidOpCode(
                 f"Invalid opcode definition for {param, _type} at {tell(f)}"
             )
+        self.op = list(opcodes.keys())[self.code.value]
         return self
 
     def serialise(self) -> bytes:
@@ -986,7 +1033,7 @@ class Function(Serialisable):
                 self.assigns = []
                 for _ in range(self.nassigns.value):
                     self.assigns.append(
-                        (VarInt().deserialise(f), VarInt().deserialise(f))
+                        (strRef().deserialise(f), VarInt().deserialise(f))
                     )
         return self
 
@@ -1333,11 +1380,12 @@ class Bytecode(Serialisable):
         raise IndexError(f"Function f@{id} not found!")
 
     def track_section(self, f, section_name):
-        start_offset = f.tell()
-        self.section_offsets[section_name] = (start_offset, f.tell())
+        self.section_offsets[section_name] = f.tell()
 
     def section_at(self, offset):
-        for section_name, (start, end) in self.section_offsets.items():
-            if start <= offset < end:
+        # returns the name of the section at the offset:
+        # if the offset is after a section start and before the next section start, it's still in the first section
+        for section_name, section_offset in list(reversed(self.section_offsets.items())):
+            if offset >= section_offset:
                 return section_name
         return None
