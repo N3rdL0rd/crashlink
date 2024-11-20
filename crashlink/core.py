@@ -245,6 +245,9 @@ class Reg(VarInt):
     """
     Abstract class to represent a register index in a function.
     """
+    
+    def resolve(self, code: "Bytecode") -> "Type":
+        return code.types[self.value]
 
 
 class InlineBool(Serialisable):
