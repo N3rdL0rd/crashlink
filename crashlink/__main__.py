@@ -122,6 +122,12 @@ COMMANDS: Dict[str, Tuple[Callable, str]] = {
         ),
         "Open the HLBC wiki in your default browser",
     ),
+    "opcodes": (
+        lambda _, __: webbrowser.open(
+            "https://github.com/Gui-Yom/hlbc/blob/master/crates/hlbc/src/opcodes.rs"
+        ),
+        "Open the HLBC source to opcodes.rs in your default browser"  
+    ),
     "funcs": (
         cmd_funcs,
         "List all functions in the bytecode - pass 'std' to not exclude stdlib",

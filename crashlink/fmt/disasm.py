@@ -143,6 +143,17 @@ def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg], code: Bytecode):
         return f"reg{op.definition['dst']} = {op.definition['ptr'].resolve(code)}"
     elif op.op == "Float":
         return f"reg{op.definition['dst']} = {op.definition['ptr'].resolve(code)}"
+    elif op.op == "GetThis":
+        # dst = this.field
+        this = None
+        for reg in regs:
+            # find first Obj reg
+            if type(reg.resolve(code).definition) == Obj:
+                this = reg.resolve(code)
+                break
+        if this:
+            return f"reg{op.definition['dst']} = this.{op.definition['field'].resolve(code, this.definition).name.resolve(code)}"
+        return f"reg{op.definition['dst']} = this.f@{op.definition['field'].value} (this not found!)"
     elif op.op == "Label":
         return "label"
     elif op.op == "Mov":
@@ -151,10 +162,14 @@ def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg], code: Bytecode):
         return f"if reg{op.definition['a']} >= reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
     elif op.op == "JNotLt": # jump not less than
         return f"if reg{op.definition['a']} >= reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+    elif op.op == "JNotEq": # jump not equal
+        return f"if reg{op.definition['a']} != reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
     elif op.op == "Mul":
         return f"reg{op.definition['dst']} = reg{op.definition['a']} * reg{op.definition['b']}"
     elif op.op == "SDiv": # signed division
         return f"reg{op.definition['dst']} = reg{op.definition['a']} / reg{op.definition['b']}"
+    elif op.op == "Incr":
+        return f"reg{op.definition['dst']}++"
     elif op.op == "Decr":
         return f"reg{op.definition['dst']}--"
     elif op.op == "GetGlobal":
@@ -163,8 +178,15 @@ def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg], code: Bytecode):
     elif op.op == "Field":
         field = op.definition['field'].resolve(code, regs[op.definition['obj'].value].resolve(code).definition).name.resolve(code)
         return f"reg{op.definition['dst']} = reg{op.definition['obj']}.{field}"
+    elif op.op == "SetField":
+        field = op.definition['field'].resolve(code, regs[op.definition['obj'].value].resolve(code).definition).name.resolve(code)
+        return f"reg{op.definition['obj']}.{field} = reg{op.definition['src']}"
+    elif op.op == "SetArray":
+        return f"reg{op.definition['array']}[reg{op.definition['index']}] = reg{op.definition['src']})"
     elif op.op == "NullCheck":
         return f"if reg{op.definition['reg']} is null: error"
+    elif op.op == "ArraySize":
+        return f"reg{op.definition['dst']} = len(reg{op.definition['array']})"
     elif op.op == "New":
         # no type specified since regs are typed, so it can only be the type of the reg
         typ = regs[op.definition['dst'].value].resolve(code)
@@ -179,6 +201,9 @@ def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg], code: Bytecode):
         return f"reg{op.definition['dst']} = reg{op.definition['fun']}({', '.join([f'reg{arg}' for arg in op.definition['args'].value])})"
     elif op.op == "JAlways":
         return f"jump to {idx + (op.definition['offset'].value + 1)}"
+    elif op.op == "Call2":
+        #{"dst": "Reg", "fun": "RefFun", "arg0": "Reg", "arg1": "Reg"}
+        return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1']])})"
     elif op.op == "Ret":
         if type(regs[op.definition['ret'].value].resolve(code).definition) == Void:
             return "return"
