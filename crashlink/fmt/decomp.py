@@ -149,6 +149,10 @@ class CFGraph:
     def graph(self, code: Bytecode):
         """Generate DOT format graph visualization."""
         dot = ["digraph G {"]
+        dot.append('  labelloc="t";')  # Add this line to position the label at the top
+        dot.append('  label="CFG for %s";' % disasm.func_header(code, self.func))
+        dot.append('  fontname="Arial";')
+        dot.append('  labelfontsize=20;')
         dot.append('  node [shape=box, fontname="Courier"];')
         dot.append('  edge [fontname="Courier", fontsize=9];')
 
