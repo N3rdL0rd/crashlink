@@ -147,6 +147,8 @@ def pseudo_from_op(
         return f"reg{op.definition['dst']} = {op.definition['ptr'].resolve(code)}"
     elif op.op == "Float":
         return f"reg{op.definition['dst']} = {op.definition['ptr'].resolve(code)}"
+    elif op.op == "Bool":
+        return f"reg{op.definition['dst']} = {op.definition['value'].value}"
     elif op.op == "GetThis":
         # dst = this.field
         this = None
@@ -170,6 +172,8 @@ def pseudo_from_op(
         return f"if reg{op.definition['a']} >= reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
     elif op.op == "JNotEq":  # jump not equal
         return f"if reg{op.definition['a']} != reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+    elif op.op == "JSGt":  # jump signed greater than
+        return f"if reg{op.definition['a']} > reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
     elif op.op == "Mul":
         return f"reg{op.definition['dst']} = reg{op.definition['a']} * reg{op.definition['b']}"
     elif op.op == "SDiv":  # signed division
@@ -247,8 +251,12 @@ def pseudo_from_op(
         return f"end trap to reg{op.definition['exc']}"
     elif op.op == "Call0":
         return f"reg{op.definition['dst']} = f@{op.definition['fun']}()"  # TODO: resolve function names in pseudo
+    elif op.op == "Call1":
+        return f"reg{op.definition['dst']} = f@{op.definition['fun']}(reg{op.definition['arg0']})"
     elif op.op == "Call2":
         return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1']])})"
+    elif op.op == "Call3":
+        return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1', 'arg2']])})"
     elif op.op == "Ret":
         if type(regs[op.definition["ret"].value].resolve(code).definition) == Void:
             return "return"
