@@ -128,6 +128,7 @@ def is_std(code: Bytecode, func: Function | Native):
             return True
     return False
 
+
 def is_static(code: Bytecode, func: Function):
     # bindings are static functions, protos are dynamic
     for type in code.types:
@@ -138,7 +139,10 @@ def is_static(code: Bytecode, func: Function):
                     return True
     return False
 
-def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg], code: Bytecode):
+
+def pseudo_from_op(
+    op: Opcode, idx: int, regs: List[Reg], code: Bytecode, terse: bool = False
+):
     if op.op == "Int":
         return f"reg{op.definition['dst']} = {op.definition['ptr'].resolve(code)}"
     elif op.op == "Float":
@@ -158,17 +162,17 @@ def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg], code: Bytecode):
         return "label"
     elif op.op == "Mov":
         return f"reg{op.definition['dst']} = reg{op.definition['src']}"
-    elif op.op == "JSGte": # jump signed greater than or equal
+    elif op.op == "JSGte":  # jump signed greater than or equal
         return f"if reg{op.definition['a']} >= reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
-    elif op.op == "JULt": # jump unsigned less than
+    elif op.op == "JULt":  # jump unsigned less than
         return f"if reg{op.definition['a']} < reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
-    elif op.op == "JNotLt": # jump not less than
+    elif op.op == "JNotLt":  # jump not less than
         return f"if reg{op.definition['a']} >= reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
-    elif op.op == "JNotEq": # jump not equal
+    elif op.op == "JNotEq":  # jump not equal
         return f"if reg{op.definition['a']} != reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
     elif op.op == "Mul":
         return f"reg{op.definition['dst']} = reg{op.definition['a']} * reg{op.definition['b']}"
-    elif op.op == "SDiv": # signed division
+    elif op.op == "SDiv":  # signed division
         return f"reg{op.definition['dst']} = reg{op.definition['a']} / reg{op.definition['b']}"
     elif op.op == "Incr":
         return f"reg{op.definition['dst']}++"
@@ -178,18 +182,28 @@ def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg], code: Bytecode):
         return f"reg{op.definition['dst']} = reg{op.definition['a']} - reg{op.definition['b']}"
     elif op.op == "Add":
         return f"reg{op.definition['dst']} = reg{op.definition['a']} + reg{op.definition['b']}"
-    elif op.op == "Shl": # shift left
+    elif op.op == "Shl":  # shift left
         return f"reg{op.definition['dst']} = reg{op.definition['a']} << reg{op.definition['b']}"
-    elif op.op == "SMod": # signed modulo
+    elif op.op == "SMod":  # signed modulo
         return f"reg{op.definition['dst']} = reg{op.definition['a']} % reg{op.definition['b']}"
     elif op.op == "GetGlobal":
-        glob = type_name(code, op.definition['global'].resolve(code)) # TODO: resolve constants
+        glob = type_name(
+            code, op.definition["global"].resolve(code)
+        )  # TODO: resolve constants
         return f"reg{op.definition['dst']} = {glob} (g@{op.definition['global']})"
     elif op.op == "Field":
-        field = op.definition['field'].resolve(code, regs[op.definition['obj'].value].resolve(code).definition).name.resolve(code)
+        field = (
+            op.definition["field"]
+            .resolve(code, regs[op.definition["obj"].value].resolve(code).definition)
+            .name.resolve(code)
+        )
         return f"reg{op.definition['dst']} = reg{op.definition['obj']}.{field}"
     elif op.op == "SetField":
-        field = op.definition['field'].resolve(code, regs[op.definition['obj'].value].resolve(code).definition).name.resolve(code)
+        field = (
+            op.definition["field"]
+            .resolve(code, regs[op.definition["obj"].value].resolve(code).definition)
+            .name.resolve(code)
+        )
         return f"reg{op.definition['obj']}.{field} = reg{op.definition['src']}"
     elif op.op == "SetArray":
         return f"reg{op.definition['array']}[reg{op.definition['index']}] = reg{op.definition['src']})"
@@ -199,7 +213,7 @@ def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg], code: Bytecode):
         return f"reg{op.definition['dst']} = len(reg{op.definition['array']})"
     elif op.op == "New":
         # no type specified since regs are typed, so it can only be the type of the reg
-        typ = regs[op.definition['dst'].value].resolve(code)
+        typ = regs[op.definition["dst"].value].resolve(code)
         return f"reg{op.definition['dst']} = new {type_name(code, typ)}"
     elif op.op == "DynSet":
         return f"reg{op.definition['obj']}.{op.definition['field'].resolve(code)} = reg{op.definition['src']}"
@@ -208,38 +222,44 @@ def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg], code: Bytecode):
     elif op.op == "ToVirtual":
         return f"reg{op.definition['dst']} = Virtual(reg{op.definition['src']})"
     elif op.op == "CallClosure":
-        if type(regs[op.definition['dst'].value].resolve(code).definition) == Void:
+        if type(regs[op.definition["dst"].value].resolve(code).definition) == Void:
             return f"reg{op.definition['fun']}({', '.join([f'reg{arg}' for arg in op.definition['args'].value])})"
         return f"reg{op.definition['dst']} = reg{op.definition['fun']}({', '.join([f'reg{arg}' for arg in op.definition['args'].value])})"
     elif op.op == "JAlways":
         return f"jump to {idx + (op.definition['offset'].value + 1)}"
     elif op.op == "Switch":
-        reg = op.definition['reg']
-        offsets = op.definition['offsets'].value
+        reg = op.definition["reg"]
+        offsets = op.definition["offsets"].value
         offset_mappings = []
+        cases = []
         for i, offset in enumerate(offsets):
             if offset.value != 0:
                 case_num = str(i)
                 target = str(idx + (offset.value + 1))
                 offset_mappings.append(f"{case_num}: {target}")
-        return f"switch reg{reg} to [{', '.join(offset_mappings)}] (end: {idx + (op.definition['end'].value)})"
+                cases.append(case_num)
+        if not terse:
+            return f"switch reg{reg} to [{', '.join(offset_mappings)}] (end: {idx + (op.definition['end'].value)})"
+        return f"switch reg{reg} to [{', '.join(cases)}] (end: {idx + (op.definition['end'].value)})"
     elif op.op == "Trap":
         return f"trap to reg{op.definition['exc']} (end: {idx + (op.definition['offset'].value)})"
     elif op.op == "EndTrap":
         return f"end trap to reg{op.definition['exc']}"
     elif op.op == "Call0":
-        return f"reg{op.definition['dst']} = f@{op.definition['fun']}()" # TODO: resolve function names in pseudo
+        return f"reg{op.definition['dst']} = f@{op.definition['fun']}()"  # TODO: resolve function names in pseudo
     elif op.op == "Call2":
         return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1']])})"
     elif op.op == "Ret":
-        if type(regs[op.definition['ret'].value].resolve(code).definition) == Void:
+        if type(regs[op.definition["ret"].value].resolve(code).definition) == Void:
             return "return"
         return f"return reg{op.definition['ret']}"
     return "<unsupported pseudo>"
 
+
 def fmt_op(code: Bytecode, regs: List[Reg], op: Opcode, idx: int, width: int = 15):
     defn = op.definition
     return f"{idx:>3}. {op.op:<{width}} {str(defn):<{48}} {pseudo_from_op(op, idx, regs, code):<{width}}"
+
 
 def func(code: Bytecode, func: Function):
     if type(func) == Native:
@@ -258,5 +278,8 @@ def func(code: Bytecode, func: Function):
         res += fmt_op(code, func.regs, op, i) + "\n"
     return res
 
+
 def func_ir(code: Bytecode, func: Function) -> str:
-    return "\n".join([pseudo_from_op(op, i, func.regs, code) for i, op in enumerate(func.ops)])
+    return "\n".join(
+        [pseudo_from_op(op, i, func.regs, code) for i, op in enumerate(func.ops)]
+    )
