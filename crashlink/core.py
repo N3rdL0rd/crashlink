@@ -203,9 +203,10 @@ class gIndex(VarInt):
     """
     Global index reference, based on VarInt.
     """
-    
+
     def resolve(self, code: "Bytecode") -> "Type":
         return code.global_types[self.value].resolve(code)
+
 
 class strRef(VarInt):
     """
@@ -245,7 +246,7 @@ class Reg(VarInt):
     """
     Abstract class to represent a register index in a function.
     """
-    
+
     def resolve(self, code: "Bytecode") -> "Type":
         return code.types[self.value]
 
@@ -864,7 +865,7 @@ class Opcode(Serialisable):
         try:
             _def = opcodes[list(opcodes.keys())[self.code.value]]
         except IndexError:
-            #dbg_print()
+            # dbg_print()
             raise InvalidOpCode(f"Unknown opcode at {tell(f)}")
         for param, _type in _def.items():
             if _type in self.TYPE_MAP:
@@ -1388,7 +1389,9 @@ class Bytecode(Serialisable):
     def section_at(self, offset):
         # returns the name of the section at the offset:
         # if the offset is after a section start and before the next section start, it's still in the first section
-        for section_name, section_offset in list(reversed(self.section_offsets.items())):
+        for section_name, section_offset in list(
+            reversed(self.section_offsets.items())
+        ):
             if offset >= section_offset:
                 return section_name
         return None

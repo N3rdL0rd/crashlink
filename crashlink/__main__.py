@@ -35,9 +35,11 @@ def cmd_funcs(args, code: Bytecode):
             continue
         print(fmt.disasm.native_header(code, native))
 
+
 def cmd_entry(args, code: Bytecode):
     entry = code.entrypoint.resolve(code)
     print("    Entrypoint:", fmt.disasm.func_header(code, entry))
+
 
 def cmd_fn(args, code: Bytecode):
     if not args:
@@ -58,6 +60,7 @@ def cmd_fn(args, code: Bytecode):
             return
     print("Function not found.")
 
+
 def cmd_decomp(args, code: Bytecode):
     if not args:
         print("Usage: decomp <index>")
@@ -75,7 +78,8 @@ def cmd_decomp(args, code: Bytecode):
                 print(f"--- IR Layer {i} ---")
                 print(layer)
             return
-        
+
+
 def cmd_cfg(args, code: Bytecode):
     if not args:
         print("Usage: cfg <index>")
@@ -94,24 +98,28 @@ def cmd_cfg(args, code: Bytecode):
             dot = cfg.graph(code)
             print(dot)
             print("Attempting to render graph...")
-            with tempfile.NamedTemporaryFile(suffix='.dot', delete=False) as f:
+            with tempfile.NamedTemporaryFile(suffix=".dot", delete=False) as f:
                 f.write(dot.encode())
                 dot_file = f.name
-            
-            png_file = dot_file.replace('.dot', '.png')
+
+            png_file = dot_file.replace(".dot", ".png")
             try:
-                subprocess.run(['dot', '-Tpng', dot_file, '-o', png_file, '-Gdpi=300'], check=True)
+                subprocess.run(
+                    ["dot", "-Tpng", dot_file, "-o", png_file, "-Gdpi=300"], check=True
+                )
             except FileNotFoundError:
                 print("Graphviz not found. Install Graphviz to generate PNGs.")
                 return
-            
+
             try:
                 os.startfile(png_file)
                 os.unlink(dot_file)
             except:
-                print(f"Control flow graph saved to {png_file}. Use your favourite image viewer to open it.")
+                print(
+                    f"Control flow graph saved to {png_file}. Use your favourite image viewer to open it."
+                )
             return
-        
+
 
 COMMANDS: Dict[str, Tuple[Callable, str]] = {
     "exit": (lambda _, __: sys.exit(), "Exit the program"),
@@ -126,7 +134,7 @@ COMMANDS: Dict[str, Tuple[Callable, str]] = {
         lambda _, __: webbrowser.open(
             "https://github.com/Gui-Yom/hlbc/blob/master/crates/hlbc/src/opcodes.rs"
         ),
-        "Open the HLBC source to opcodes.rs in your default browser"  
+        "Open the HLBC source to opcodes.rs in your default browser",
     ),
     "funcs": (
         cmd_funcs,
