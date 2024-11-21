@@ -62,7 +62,7 @@ class CFGraph:
             if op.op in ["JTrue", "JFalse", "JNull", "JNotNull",
                         "JSLt", "JSGte", "JSGt", "JSLte", 
                         "JULt", "JUGte", "JNotLt", "JNotGte",
-                        "JEq", "JNotEq", "JAlways", "Ret"]:
+                        "JEq", "JNotEq", "JAlways", "Switch", "Ret"]:
                 blocks.append((current_start, current_ops))
                 current_ops = []
                 current_start = i + 1
@@ -102,7 +102,16 @@ class CFGraph:
                 if next_idx in nodes_by_idx:
                     edge_type = "false" 
                     self.add_branch(src_node, nodes_by_idx[next_idx], edge_type)
-                    
+            
+            elif last_op.op == "Switch":
+                for i, offset in enumerate(last_op.definition['offsets'].value):
+                    if offset.value != 0:
+                        jump_idx = start_idx + len(ops) + offset.value
+                        self.add_branch(src_node, nodes_by_idx[jump_idx], f"switch: case: {i} ")
+                if next_idx in nodes_by_idx:
+                    self.add_branch(src_node, nodes_by_idx[next_idx], "switch: default")
+                #self.add_branch(src_node, nodes_by_idx[start_idx + len(ops) + last_op.definition['end'].value], "switch: end")
+            
             # unconditionals
             elif last_op.op == "JAlways":
                 jump_idx = start_idx + len(ops) + last_op.definition["offset"].value
@@ -139,7 +148,9 @@ class CFGraph:
                     style = 'color="green", label="true"'
                 elif edge_type == "false":
                     style = 'color="crimson", label="false"'
-                else:  # unconditional
+                elif edge_type.startswith("switch: "):
+                    style = f'color="purple", label="{edge_type.split("switch: ")[1].strip()}"'
+                else:
                     style = 'color="cornflowerblue"'
                     
                 dot.append(f'  node_{id(node)} -> node_{id(branch)} [{style}];')

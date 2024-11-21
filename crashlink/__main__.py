@@ -93,7 +93,7 @@ def cmd_cfg(args, code: Bytecode):
             print("DOT:")
             dot = cfg.graph(code)
             print(dot)
-            
+            print("Attempting to render graph...")
             with tempfile.NamedTemporaryFile(suffix='.dot', delete=False) as f:
                 f.write(dot.encode())
                 dot_file = f.name
