@@ -13,6 +13,7 @@ class CFNode:
     def __init__(self, ops: List[Opcode]):
         self.ops = ops
         self.branches = []
+        self.base_offset: int = 0
 
     def __repr__(self):
         return "<CFNode: %s>" % self.ops
@@ -25,12 +26,13 @@ class CFGraph:
 
     def __init__(self, func: Function):
         self.func = func
-        self.nodes = []
+        self.nodes: List[CFNode] = []
         self.entry = None
 
-    def add_node(self, ops: List[Opcode]) -> CFNode:
+    def add_node(self, ops: List[Opcode], base_offset: int=0) -> CFNode:
         node = CFNode(ops)
         self.nodes.append(node)
+        node.base_offset = base_offset
         return node
 
     def add_branch(self, src: CFNode, dst: CFNode, edge_type: str):
@@ -79,7 +81,7 @@ class CFGraph:
 
         nodes_by_idx = {}
         for start_idx, ops in blocks:
-            node = self.add_node(ops)
+            node = self.add_node(ops, start_idx)
             nodes_by_idx[start_idx] = node
             if start_idx == 0:
                 self.entry = node
@@ -149,10 +151,11 @@ class CFGraph:
     def graph(self, code: Bytecode):
         """Generate DOT format graph visualization."""
         dot = ["digraph G {"]
-        dot.append('  labelloc="t";')  # Add this line to position the label at the top
+        dot.append('  labelloc="t";')
         dot.append('  label="CFG for %s";' % disasm.func_header(code, self.func))
         dot.append('  fontname="Arial";')
         dot.append('  labelfontsize=20;')
+        dot.append('  forcelabels=true;')
         dot.append('  node [shape=box, fontname="Courier"];')
         dot.append('  edge [fontname="Courier", fontsize=9];')
 
@@ -160,7 +163,7 @@ class CFGraph:
             label = (
                 "\n".join(
                     [
-                        disasm.pseudo_from_op(op, i, self.func.regs, code, terse=True)
+                        disasm.pseudo_from_op(op, node.base_offset + i, self.func.regs, code, terse=True)
                         for i, op in enumerate(node.ops)
                     ]
                 )
@@ -168,7 +171,7 @@ class CFGraph:
                 .replace("\n", "\\n")
             )
             style = self.style_node(node)
-            dot.append(f'  node_{id(node)} [label="{label}", {style}];')
+            dot.append(f'  node_{id(node)} [label="{label}", {style}, xlabel="{node.base_offset}."];')
 
         for node in self.nodes:
             for branch, edge_type in node.branches:
