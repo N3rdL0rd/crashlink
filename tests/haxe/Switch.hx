@@ -12,7 +12,6 @@ class Switch {
             case 2: b += 1;
             //case 4: b += 1;
         }
-        /*
         switch (a) {
             case -1: b += 1;
             case -5: b += 1;
@@ -21,6 +20,6 @@ class Switch {
         switch (c) {
             case "hello": a += 1;
             case "world": a += 1;
-        }*/
+        }
     }
 }

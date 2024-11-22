@@ -19,6 +19,48 @@ class CFNode:
         return "<CFNode: %s>" % self.ops
 
 
+class CFOptimizer:
+    """
+    Base class for control flow graph optimizers.
+    """
+
+    def __init__(self, graph: "CFGraph"):
+        self.graph = graph
+
+    def optimize(self):
+        raise NotImplementedError()
+
+
+class CFJumpThreader(CFOptimizer):
+    """
+    Thread jumps to reduce the number of nodes in the graph.
+    """
+
+    def optimize(self):
+        # map each node to its predecessors
+        predecessors = {}
+        for node in self.graph.nodes:
+            for branch, _ in node.branches:
+                predecessors.setdefault(branch, []).append(node)
+
+        nodes_to_remove = set()
+        for node in self.graph.nodes:
+            if len(node.ops) == 1 and node.ops[0].op == "JAlways":
+                if len(node.branches) == 1:
+                    target_node, edge_type = node.branches[0]
+                    # redirect all predecessors to target_node
+                    for pred in predecessors.get(node, []):
+                        pred.branches = [
+                            (target_node if branch == node else branch, etype)
+                            for branch, etype in pred.branches
+                        ]
+                        predecessors.setdefault(target_node, []).append(pred)
+                    nodes_to_remove.add(node)
+
+        # remove nodes from graph
+        self.graph.nodes = [n for n in self.graph.nodes if n not in nodes_to_remove]
+
+
 class CFGraph:
     """
     A control flow graph.
@@ -28,8 +70,9 @@ class CFGraph:
         self.func = func
         self.nodes: List[CFNode] = []
         self.entry = None
+        self.applied_optimizers: List[CFOptimizer] = []
 
-    def add_node(self, ops: List[Opcode], base_offset: int=0) -> CFNode:
+    def add_node(self, ops: List[Opcode], base_offset: int = 0) -> CFNode:
         node = CFNode(ops)
         self.nodes.append(node)
         node.base_offset = base_offset
@@ -38,7 +81,7 @@ class CFGraph:
     def add_branch(self, src: CFNode, dst: CFNode, edge_type: str):
         src.branches.append((dst, edge_type))
 
-    def build(self):
+    def build(self, do_optimize: bool = True):
         """Build the control flow graph."""
         if not self.func.ops:
             return
@@ -102,10 +145,9 @@ class CFGraph:
                 
                 jump_idx = start_idx + len(ops) + last_op.definition["offset"].value
                 
-                # - Jump target is "true" branch
-                # - Fall-through is "false" branch
+                # - jump target is "true" branch
+                # - fall-through is "false" branch
                     
-                # Handle jump target
                 if jump_idx in nodes_by_idx:
                     edge_type = "true"
                     self.add_branch(src_node, nodes_by_idx[jump_idx], edge_type)
@@ -140,6 +182,14 @@ class CFGraph:
             elif last_op.op != "Ret" and next_idx in nodes_by_idx:
                 self.add_branch(src_node, nodes_by_idx[next_idx], "unconditional")
 
+        self.optimize([CFJumpThreader(self)])
+
+    def optimize(self, optimizers: List[CFOptimizer]):
+        for optimizer in optimizers:
+            if optimizer not in self.applied_optimizers:
+                optimizer.optimize()
+                self.applied_optimizers.append(optimizer)
+
     def style_node(self, node: CFNode):
         if node == self.entry:
             return "style=filled, fillcolor=pink1"
@@ -154,8 +204,8 @@ class CFGraph:
         dot.append('  labelloc="t";')
         dot.append('  label="CFG for %s";' % disasm.func_header(code, self.func))
         dot.append('  fontname="Arial";')
-        dot.append('  labelfontsize=20;')
-        dot.append('  forcelabels=true;')
+        dot.append("  labelfontsize=20;")
+        dot.append("  forcelabels=true;")
         dot.append('  node [shape=box, fontname="Courier"];')
         dot.append('  edge [fontname="Courier", fontsize=9];')
 
@@ -163,7 +213,9 @@ class CFGraph:
             label = (
                 "\n".join(
                     [
-                        disasm.pseudo_from_op(op, node.base_offset + i, self.func.regs, code, terse=True)
+                        disasm.pseudo_from_op(
+                            op, node.base_offset + i, self.func.regs, code, terse=True
+                        )
                         for i, op in enumerate(node.ops)
                     ]
                 )
@@ -171,7 +223,9 @@ class CFGraph:
                 .replace("\n", "\\n")
             )
             style = self.style_node(node)
-            dot.append(f'  node_{id(node)} [label="{label}", {style}, xlabel="{node.base_offset}."];')
+            dot.append(
+                f'  node_{id(node)} [label="{label}", {style}, xlabel="{node.base_offset}."];'
+            )
 
         for node in self.nodes:
             for branch, edge_type in node.branches:
