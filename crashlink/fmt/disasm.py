@@ -149,6 +149,8 @@ def pseudo_from_op(
         return f"reg{op.definition['dst']} = {op.definition['ptr'].resolve(code)}"
     elif op.op == "Bool":
         return f"reg{op.definition['dst']} = {op.definition['value'].value}"
+    elif op.op == "String":
+        return f"reg{op.definition['dst']} = \"{op.definition['ptr'].resolve(code)}\""
     elif op.op == "GetThis":
         # dst = this.field
         this = None
@@ -164,6 +166,12 @@ def pseudo_from_op(
         return "label"
     elif op.op == "Mov":
         return f"reg{op.definition['dst']} = reg{op.definition['src']}"
+    elif op.op == "JEq":
+        return f"if reg{op.definition['a']} == reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+    elif op.op == "JSEq":  # jump signed equal
+        return f"if reg{op.definition['a']} == reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+    elif op.op == "JNull":  # jump null
+        return f"if reg{op.definition['reg']} is null: jump to {idx + (op.definition['offset'].value + 1)}"
     elif op.op == "JSGte":  # jump signed greater than or equal
         return f"if reg{op.definition['a']} >= reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
     elif op.op == "JULt":  # jump unsigned less than
