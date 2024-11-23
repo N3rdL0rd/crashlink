@@ -61,6 +61,25 @@ class CFJumpThreader(CFOptimizer):
         self.graph.nodes = [n for n in self.graph.nodes if n not in nodes_to_remove]
 
 
+class CFDeadCodeEliminator(CFOptimizer):
+    """
+    Remove unreachable code blocks
+    """
+
+    def optimize(self):
+        reachable = set()
+        worklist = [self.graph.entry]
+
+        while worklist:
+            node = worklist.pop()
+            if node not in reachable:
+                reachable.add(node)
+                for next_node, _ in node.branches:
+                    worklist.append(next_node)
+
+        self.graph.nodes = [n for n in self.graph.nodes if n in reachable]
+
+
 class CFGraph:
     """
     A control flow graph.
@@ -182,7 +201,12 @@ class CFGraph:
             elif last_op.op != "Ret" and next_idx in nodes_by_idx:
                 self.add_branch(src_node, nodes_by_idx[next_idx], "unconditional")
 
-        self.optimize([CFJumpThreader(self)])
+        # fmt: off
+        self.optimize([
+            CFJumpThreader(self),
+            CFDeadCodeEliminator(self),
+        ])
+        # fmt: on
 
     def optimize(self, optimizers: List[CFOptimizer]):
         for optimizer in optimizers:
