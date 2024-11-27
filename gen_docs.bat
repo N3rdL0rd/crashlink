@@ -11,4 +11,4 @@ env\Scripts\pdoc3 crashlink --html -o docs --force --template-dir docs/templates
 echo Checking code quality...
 env\Scripts\mypy crashlink --check-untyped-defs
 env\Scripts\radon cc crashlink
-env\Scripts\pytest -lvv
+env\Scripts\pytest

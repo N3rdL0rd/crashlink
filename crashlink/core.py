@@ -6,9 +6,9 @@ import ctypes
 import struct
 from datetime import datetime
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Tuple, Literal, TypeVar
+from typing import Any, Dict, List, Literal, Optional, Tuple, TypeVar
 
-T = TypeVar('T', bound='VarInt') # HACK: easier than reimplementing deserialise for each subclass
+T = TypeVar("T", bound="VarInt")  # HACK: easier than reimplementing deserialise for each subclass
 
 try:
     from tqdm import tqdm
@@ -78,7 +78,9 @@ class SerialisableInt(Serialisable):
         self.byteorder = "little"
         self.signed = False
 
-    def deserialise(self, f, length: int = 4, byteorder: Literal['little', 'big'] = "little", signed: bool = False) -> "SerialisableInt":
+    def deserialise(
+        self, f, length: int = 4, byteorder: Literal["little", "big"] = "little", signed: bool = False
+    ) -> "SerialisableInt":
         self.length = length
         self.byteorder = byteorder
         self.signed = signed
@@ -306,7 +308,7 @@ class Regs(Serialisable):
         return b"".join([self.n.serialise(), b"".join([value.serialise() for value in self.value])])
 
 
-def fmt_bytes(bytes: int|float) -> str:
+def fmt_bytes(bytes: int | float) -> str:
     if bytes < 0:
         raise MalformedBytecode("Bytes cannot be negative.")
 
@@ -386,10 +388,10 @@ class BytesBlock(Serialisable):
             pos = VarInt()
             pos.deserialise(f)
             positions.append(pos)
-        positions = [pos.value for pos in positions]
-        for i in range(len(positions)):
-            start = positions[i]
-            end = positions[i + 1] if i + 1 < len(positions) else len(raw)
+        positions_int = [pos.value for pos in positions]
+        for i in range(len(positions_int)):
+            start = positions_int[i]
+            end = positions_int[i + 1] if i + 1 < len(positions_int) else len(raw)
             self.value.append(raw[start:end])  # Append the extracted byte string
         return self
 
@@ -587,9 +589,9 @@ class Obj(TypeDef):
         # where a is field 0 and b is field 1
         if self.super.value < 0:  # no superclass
             return self.fields
-        fields = []
+        fields: List[Field] = []
         visited_types = set()
-        current_type = self
+        current_type: Optional[Obj] = self
         while current_type:
             if id(current_type) in visited_types:
                 raise ValueError("Cyclic inheritance detected in class hierarchy.")
@@ -598,7 +600,10 @@ class Obj(TypeDef):
             if current_type.super.value < 0:
                 current_type = None
             else:
-                current_type: Optional[Obj] = current_type.super.resolve(code).definition
+                defn = current_type.super.resolve(code).definition
+                if not isinstance(defn, Obj):
+                    raise ValueError("Invalid superclass type.")
+                current_type = defn
         return fields
 
 
@@ -886,7 +891,9 @@ def write_u8(f, val: int) -> None:
 
 class fileRef(int):
     def resolve(self, code: "Bytecode") -> str:
-        return code.debugfiles.value[self]
+        if code.debugfiles:
+            return code.debugfiles.value[self]
+        raise MalformedBytecode("No debug files found.")
 
 
 class DebugInfo(Serialisable):
@@ -983,10 +990,10 @@ class Function(Serialisable):
         self.version: Optional[int] = None
         self.debuginfo: Optional[DebugInfo] = None
         self.nassigns: Optional[VarInt] = None
-        self.assigns: Optional[List[Tuple[VarInt, VarInt]]] = None
+        self.assigns: Optional[List[Tuple[strRef, VarInt]]] = None
 
     def resolve_file(self, code: "Bytecode") -> str:
-        if not self.has_debug:
+        if not self.has_debug or not self.debuginfo:
             raise ValueError("Cannot get file from non-debug bytecode!")
         return self.debuginfo.debug_info[0][0].resolve(code)
 
@@ -1022,9 +1029,9 @@ class Function(Serialisable):
                 b"".join([op.serialise() for op in self.ops]),
             ]
         )
-        if self.has_debug:
+        if self.has_debug and self.debuginfo:
             res += self.debuginfo.serialise()
-            if self.version >= 3:
+            if self.version and self.version >= 3 and self.nassigns and self.assigns is not None:
                 res += self.nassigns.serialise()
                 res += b"".join([b"".join([v.serialise() for v in assign]) for assign in self.assigns])
         return res
@@ -1132,7 +1139,7 @@ class Bytecode(Serialisable):
         self.track_section(f, "nstrings")
         self.nstrings.deserialise(f)
 
-        if self.version.value >= 5:
+        if self.version.value >= 5 and self.nbytes:
             dbg_print(f"Found nbytes (version >= 5) at {tell(f)}")
             self.track_section(f, "nbytes")
             self.nbytes.deserialise(f)
@@ -1148,7 +1155,7 @@ class Bytecode(Serialisable):
         self.track_section(f, "nfunctions")
         self.nfunctions.deserialise(f)
 
-        if self.version.value >= 4:
+        if self.version.value >= 4 and self.nconstants:
             dbg_print(f"Found nconstants (version >= 4) at {tell(f)}")
             self.track_section(f, "nconstants")
             self.nconstants.deserialise(f)
@@ -1175,14 +1182,14 @@ class Bytecode(Serialisable):
         dbg_print(f"Strings section ends at {tell(f)}")
         assert self.nstrings.value == len(self.strings.value), "nstrings and len of strings don't match!"
 
-        if self.version.value >= 5:
+        if self.version.value >= 5 and self.bytes and self.nbytes:
             dbg_print("Deserialising bytes... >=5")
             self.track_section(f, f"bytes")
             self.bytes.deserialise(f, self.nbytes.value)
         else:
             self.bytes = None
 
-        if self.has_debug_info:
+        if self.has_debug_info and self.ndebugfiles and self.debugfiles:
             dbg_print(f"Deserialising debug files... (at {tell(f)})")
             self.track_section(f, f"ndebugfiles")
             self.ndebugfiles.deserialise(f)
@@ -1240,14 +1247,14 @@ class Bytecode(Serialisable):
             self.nfloats.value = len(self.floats)
             self.nstrings.value = len(self.strings.value)
             if self.version.value >= 5:
-                self.nbytes.value = len(self.bytes.value) # type: ignore
+                self.nbytes.value = len(self.bytes.value)  # type: ignore
             self.ntypes.value = len(self.types)
             self.nglobals.value = len(self.global_types)
             self.nnatives.value = len(self.natives)
             self.nfunctions.value = len(self.functions)
-            if self.version.value >= 4:
+            if self.version.value >= 4 and self.nconstants:
                 self.nconstants.value = len(self.constants)
-            if self.has_debug_info:
+            if self.has_debug_info and self.ndebugfiles and self.debugfiles:
                 self.ndebugfiles.value = len(self.debugfiles.value)
         res = b"".join(
             [
@@ -1260,7 +1267,7 @@ class Bytecode(Serialisable):
             ]
         )
         dbg_print(f"VarInt block 1 at {hex(len(res))}")
-        if self.version.value >= 5:
+        if self.version.value >= 5 and self.nbytes:
             res += self.nbytes.serialise()
         res += b"".join(
             [
@@ -1271,15 +1278,15 @@ class Bytecode(Serialisable):
             ]
         )
         dbg_print(f"VarInt block 2 at {hex(len(res))}")
-        if self.version.value >= 4:
+        if self.version.value >= 4 and self.nconstants:
             res += self.nconstants.serialise()
         res += self.entrypoint.serialise()
         res += b"".join([i.serialise() for i in self.ints])
         res += b"".join([f.serialise() for f in self.floats])
         res += self.strings.serialise()
-        if self.version.value >= 5:
+        if self.version.value >= 5 and self.bytes:
             res += self.bytes.serialise()
-        if self.has_debug_info:
+        if self.has_debug_info and self.ndebugfiles and self.debugfiles:
             res += b"".join([self.ndebugfiles.serialise(), self.debugfiles.serialise()])
         res += b"".join(
             [

@@ -1,6 +1,9 @@
-import traceback
+"""
+Decompilation and control flow graph generation
+"""
 
-from typing import Callable, Dict, List, Tuple, Set
+import traceback
+from typing import Callable, Dict, List, Set, Tuple
 
 from ..core import *
 from ..errors import *

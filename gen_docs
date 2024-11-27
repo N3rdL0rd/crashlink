@@ -13,4 +13,4 @@ pdoc3 crashlink --html -o docs --force --template-dir docs/templates
 echo "Checking code quality..."
 mypy crashlink --check-untyped-defs
 radon cc crashlink
-pytest -lvv
+pytest

@@ -2,7 +2,7 @@
 Global configuration.
 """
 
-VERSION: str = "closed pre-alpha"
+VERSION: str = "pre-alpha"
 """
 The version of crashlink.
 """

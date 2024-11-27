@@ -135,7 +135,7 @@ COMMANDS: Dict[str, Tuple[Callable, str]] = {
     ),
     "entry": (cmd_entry, "Show the entrypoint of the bytecode"),
     "fn": (cmd_fn, "Show information about a function"),
-    #"decomp": (cmd_decomp, "Decompile a function"),
+    # "decomp": (cmd_decomp, "Decompile a function"),
     "cfg": (cmd_cfg, "Graph the control flow graph of a function"),
 }
 

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
 <meta name="generator" content="pdoc3 0.11.1">
 <title>crashlink.fmt.disasm API documentation</title>
-<meta name="description" content="">
+<meta name="description" content="Human-readable disassembly of opcodes.">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
@@ -27,6 +27,7 @@ hljs.highlightAll();
 <h1 class="title">Module <code>crashlink.fmt.disasm</code></h1>
 </header>
 <section id="section-intro">
+<p>Human-readable disassembly of opcodes.</p>
 </section>
 <section>
 </section>
@@ -36,25 +37,25 @@ hljs.highlightAll();
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="crashlink.fmt.disasm.fmt_op"><code class="name flex">
-<span>def <span class="ident">fmt_op</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>, <br>regs: List[<a title="crashlink.core.Reg" href="../core.html#crashlink.core.Reg">Reg</a>], <br>op: <a title="crashlink.core.Opcode" href="../core.html#crashlink.core.Opcode">Opcode</a>, <br>idx: int, <br>width: int = 15)</span>
+<span>def <span class="ident">fmt_op</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>, <br>regs: Union[List[<a title="crashlink.core.Reg" href="../core.html#crashlink.core.Reg">Reg</a>], List[<a title="crashlink.core.tIndex" href="../core.html#crashlink.core.tIndex">tIndex</a>]], <br>op: <a title="crashlink.core.Opcode" href="../core.html#crashlink.core.Opcode">Opcode</a>, <br>idx: int, <br>width: int = 15)</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.fmt.disasm.full_func_name"><code class="name flex">
-<span>def <span class="ident">full_func_name</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>, <br>func: <a title="crashlink.core.Function" href="../core.html#crashlink.core.Function">Function</a>)</span>
+<span>def <span class="ident">full_func_name</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>, <br>func: <a title="crashlink.core.Function" href="../core.html#crashlink.core.Function">Function</a>) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.fmt.disasm.func"><code class="name flex">
-<span>def <span class="ident">func</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>, <br>func: <a title="crashlink.core.Function" href="../core.html#crashlink.core.Function">Function</a>)</span>
+<span>def <span class="ident">func</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>, <br>func: <a title="crashlink.core.Function" href="../core.html#crashlink.core.Function">Function</a> | <a title="crashlink.core.Native" href="../core.html#crashlink.core.Native">Native</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.fmt.disasm.func_header"><code class="name flex">
-<span>def <span class="ident">func_header</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>, <br>func: <a title="crashlink.core.Function" href="../core.html#crashlink.core.Function">Function</a>)</span>
+<span>def <span class="ident">func_header</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>, <br>func: <a title="crashlink.core.Function" href="../core.html#crashlink.core.Function">Function</a>) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -90,19 +91,19 @@ hljs.highlightAll();
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.fmt.disasm.native_header"><code class="name flex">
-<span>def <span class="ident">native_header</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>, <br>native: <a title="crashlink.core.Native" href="../core.html#crashlink.core.Native">Native</a>)</span>
+<span>def <span class="ident">native_header</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>, <br>native: <a title="crashlink.core.Native" href="../core.html#crashlink.core.Native">Native</a>) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.fmt.disasm.pseudo_from_op"><code class="name flex">
-<span>def <span class="ident">pseudo_from_op</span></span>(<span>op: <a title="crashlink.core.Opcode" href="../core.html#crashlink.core.Opcode">Opcode</a>, <br>idx: int, <br>regs: List[<a title="crashlink.core.Reg" href="../core.html#crashlink.core.Reg">Reg</a>], <br>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>, <br>terse: bool = False)</span>
+<span>def <span class="ident">pseudo_from_op</span></span>(<span>op: <a title="crashlink.core.Opcode" href="../core.html#crashlink.core.Opcode">Opcode</a>, <br>idx: int, <br>regs: Union[List[<a title="crashlink.core.Reg" href="../core.html#crashlink.core.Reg">Reg</a>], List[<a title="crashlink.core.tIndex" href="../core.html#crashlink.core.tIndex">tIndex</a>]], <br>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>, <br>terse: bool = False)</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.fmt.disasm.type_name"><code class="name flex">
-<span>def <span class="ident">type_name</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>, <br>typ: <a title="crashlink.core.Type" href="../core.html#crashlink.core.Type">Type</a>)</span>
+<span>def <span class="ident">type_name</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>, <br>typ: <a title="crashlink.core.Type" href="../core.html#crashlink.core.Type">Type</a>) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>

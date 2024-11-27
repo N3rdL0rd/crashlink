@@ -37,7 +37,7 @@ hljs.highlightAll();
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="crashlink.core.fmt_bytes"><code class="name flex">
-<span>def <span class="ident">fmt_bytes</span></span>(<span>bytes: int) ‑> str</span>
+<span>def <span class="ident">fmt_bytes</span></span>(<span>bytes: int | float) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -268,7 +268,7 @@ hljs.highlightAll();
         self.track_section(f, &#34;nstrings&#34;)
         self.nstrings.deserialise(f)
 
-        if self.version.value &gt;= 5:
+        if self.version.value &gt;= 5 and self.nbytes:
             dbg_print(f&#34;Found nbytes (version &gt;= 5) at {tell(f)}&#34;)
             self.track_section(f, &#34;nbytes&#34;)
             self.nbytes.deserialise(f)
@@ -284,7 +284,7 @@ hljs.highlightAll();
         self.track_section(f, &#34;nfunctions&#34;)
         self.nfunctions.deserialise(f)
 
-        if self.version.value &gt;= 4:
+        if self.version.value &gt;= 4 and self.nconstants:
             dbg_print(f&#34;Found nconstants (version &gt;= 4) at {tell(f)}&#34;)
             self.track_section(f, &#34;nconstants&#34;)
             self.nconstants.deserialise(f)
@@ -311,14 +311,14 @@ hljs.highlightAll();
         dbg_print(f&#34;Strings section ends at {tell(f)}&#34;)
         assert self.nstrings.value == len(self.strings.value), &#34;nstrings and len of strings don&#39;t match!&#34;
 
-        if self.version.value &gt;= 5:
+        if self.version.value &gt;= 5 and self.bytes and self.nbytes:
             dbg_print(&#34;Deserialising bytes... &gt;=5&#34;)
             self.track_section(f, f&#34;bytes&#34;)
             self.bytes.deserialise(f, self.nbytes.value)
         else:
             self.bytes = None
 
-        if self.has_debug_info:
+        if self.has_debug_info and self.ndebugfiles and self.debugfiles:
             dbg_print(f&#34;Deserialising debug files... (at {tell(f)})&#34;)
             self.track_section(f, f&#34;ndebugfiles&#34;)
             self.ndebugfiles.deserialise(f)
@@ -376,14 +376,14 @@ hljs.highlightAll();
             self.nfloats.value = len(self.floats)
             self.nstrings.value = len(self.strings.value)
             if self.version.value &gt;= 5:
-                self.nbytes.value = len(self.bytes.value)
+                self.nbytes.value = len(self.bytes.value)  # type: ignore
             self.ntypes.value = len(self.types)
             self.nglobals.value = len(self.global_types)
             self.nnatives.value = len(self.natives)
             self.nfunctions.value = len(self.functions)
-            if self.version.value &gt;= 4:
+            if self.version.value &gt;= 4 and self.nconstants:
                 self.nconstants.value = len(self.constants)
-            if self.has_debug_info:
+            if self.has_debug_info and self.ndebugfiles and self.debugfiles:
                 self.ndebugfiles.value = len(self.debugfiles.value)
         res = b&#34;&#34;.join(
             [
@@ -396,7 +396,7 @@ hljs.highlightAll();
             ]
         )
         dbg_print(f&#34;VarInt block 1 at {hex(len(res))}&#34;)
-        if self.version.value &gt;= 5:
+        if self.version.value &gt;= 5 and self.nbytes:
             res += self.nbytes.serialise()
         res += b&#34;&#34;.join(
             [
@@ -407,15 +407,15 @@ hljs.highlightAll();
             ]
         )
         dbg_print(f&#34;VarInt block 2 at {hex(len(res))}&#34;)
-        if self.version.value &gt;= 4:
+        if self.version.value &gt;= 4 and self.nconstants:
             res += self.nconstants.serialise()
         res += self.entrypoint.serialise()
         res += b&#34;&#34;.join([i.serialise() for i in self.ints])
         res += b&#34;&#34;.join([f.serialise() for f in self.floats])
         res += self.strings.serialise()
-        if self.version.value &gt;= 5:
+        if self.version.value &gt;= 5 and self.bytes:
             res += self.bytes.serialise()
-        if self.has_debug_info:
+        if self.has_debug_info and self.ndebugfiles and self.debugfiles:
             res += b&#34;&#34;.join([self.ndebugfiles.serialise(), self.debugfiles.serialise()])
         res += b&#34;&#34;.join(
             [
@@ -592,10 +592,10 @@ hljs.highlightAll();
             pos = VarInt()
             pos.deserialise(f)
             positions.append(pos)
-        positions = [pos.value for pos in positions]
-        for i in range(len(positions)):
-            start = positions[i]
-            end = positions[i + 1] if i + 1 &lt; len(positions) else len(raw)
+        positions_int = [pos.value for pos in positions]
+        for i in range(len(positions_int)):
+            start = positions_int[i]
+            end = positions_int[i + 1] if i + 1 &lt; len(positions_int) else len(raw)
             self.value.append(raw[start:end])  # Append the extracted byte string
         return self
 
@@ -1099,10 +1099,10 @@ hljs.highlightAll();
         self.version: Optional[int] = None
         self.debuginfo: Optional[DebugInfo] = None
         self.nassigns: Optional[VarInt] = None
-        self.assigns: Optional[List[Tuple[VarInt, VarInt]]] = None
+        self.assigns: Optional[List[Tuple[strRef, VarInt]]] = None
 
     def resolve_file(self, code: &#34;Bytecode&#34;) -&gt; str:
-        if not self.has_debug:
+        if not self.has_debug or not self.debuginfo:
             raise ValueError(&#34;Cannot get file from non-debug bytecode!&#34;)
         return self.debuginfo.debug_info[0][0].resolve(code)
 
@@ -1138,9 +1138,9 @@ hljs.highlightAll();
                 b&#34;&#34;.join([op.serialise() for op in self.ops]),
             ]
         )
-        if self.has_debug:
+        if self.has_debug and self.debuginfo:
             res += self.debuginfo.serialise()
-            if self.version &gt;= 3:
+            if self.version and self.version &gt;= 3 and self.nassigns and self.assigns is not None:
                 res += self.nassigns.serialise()
                 res += b&#34;&#34;.join([b&#34;&#34;.join([v.serialise() for v in assign]) for assign in self.assigns])
         return res</code></pre>
@@ -1221,7 +1221,7 @@ hljs.highlightAll();
 <pre><code class="python">class InlineBool(Serialisable):
     def __init__(self):
         self.varint = VarInt()
-        self.value: Optional[bool] = False
+        self.value: bool = False
 
     def deserialise(self, f) -&gt; &#34;InlineBool&#34;:
         self.varint.deserialise(f)
@@ -1427,9 +1427,9 @@ hljs.highlightAll();
         # where a is field 0 and b is field 1
         if self.super.value &lt; 0:  # no superclass
             return self.fields
-        fields = []
+        fields: List[Field] = []
         visited_types = set()
-        current_type = self
+        current_type: Optional[Obj] = self
         while current_type:
             if id(current_type) in visited_types:
                 raise ValueError(&#34;Cyclic inheritance detected in class hierarchy.&#34;)
@@ -1438,7 +1438,10 @@ hljs.highlightAll();
             if current_type.super.value &lt; 0:
                 current_type = None
             else:
-                current_type: Optional[Obj] = current_type.super.resolve(code).definition
+                defn = current_type.super.resolve(code).definition
+                if not isinstance(defn, Obj):
+                    raise ValueError(&#34;Invalid superclass type.&#34;)
+                current_type = defn
         return fields</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -1486,7 +1489,7 @@ hljs.highlightAll();
     Represents an opcode.
     &#34;&#34;&#34;
 
-    TYPE_MAP: Dict[str, Serialisable] = {
+    TYPE_MAP: Dict[str, type] = {
         &#34;Reg&#34;: Reg,
         &#34;Regs&#34;: Regs,
         &#34;RefInt&#34;: intRef,
@@ -1541,7 +1544,7 @@ hljs.highlightAll();
 </ul>
 <h3>Class variables</h3>
 <dl>
-<dt id="crashlink.core.Opcode.TYPE_MAP"><code class="name">var <span class="ident">TYPE_MAP</span> : Dict[str, <a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a>]</code></dt>
+<dt id="crashlink.core.Opcode.TYPE_MAP"><code class="name">var <span class="ident">TYPE_MAP</span> : Dict[str, type]</code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
 </dd>
@@ -1953,7 +1956,9 @@ hljs.highlightAll();
         self.byteorder = &#34;little&#34;
         self.signed = False
 
-    def deserialise(self, f, length: int = 4, byteorder: str = &#34;little&#34;, signed: bool = False) -&gt; &#34;SerialisableInt&#34;:
+    def deserialise(
+        self, f, length: int = 4, byteorder: Literal[&#34;little&#34;, &#34;big&#34;] = &#34;little&#34;, signed: bool = False
+    ) -&gt; &#34;SerialisableInt&#34;:
         self.length = length
         self.byteorder = byteorder
         self.signed = signed
@@ -1976,7 +1981,7 @@ hljs.highlightAll();
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.SerialisableInt.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f, <br>length: int = 4, <br>byteorder: str = 'little', <br>signed: bool = False) ‑> <a title="crashlink.core.SerialisableInt" href="#crashlink.core.SerialisableInt">SerialisableInt</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f, <br>length: int = 4, <br>byteorder: Literal['little', 'big'] = 'little', <br>signed: bool = False) ‑> <a title="crashlink.core.SerialisableInt" href="#crashlink.core.SerialisableInt">SerialisableInt</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -2097,7 +2102,7 @@ hljs.highlightAll();
 </summary>
 <pre><code class="python">class Type(Serialisable):
     # fmt: off
-    TYPEDEFS: List[TypeDef] = [
+    TYPEDEFS: List[type] = [
         Void,     # 0, no data
         U8,       # 1, no data
         U16,      # 2, no data
@@ -2154,7 +2159,7 @@ hljs.highlightAll();
 </ul>
 <h3>Class variables</h3>
 <dl>
-<dt id="crashlink.core.Type.TYPEDEFS"><code class="name">var <span class="ident">TYPEDEFS</span> : List[<a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a>]</code></dt>
+<dt id="crashlink.core.Type.TYPEDEFS"><code class="name">var <span class="ident">TYPEDEFS</span> : List[type]</code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
 </dd>
@@ -2277,7 +2282,7 @@ hljs.highlightAll();
     def __init__(self, value: int = 0):
         self.value = value
 
-    def deserialise(self, f) -&gt; &#34;VarInt&#34;:
+    def deserialise(self: T, f) -&gt; T:
         # Read first byte to determine format
         b = int.from_bytes(f.read(1), &#34;big&#34;)
 
@@ -2357,7 +2362,7 @@ hljs.highlightAll();
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.VarInt.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self: ~T, <br>f) ‑> ~T</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -2497,7 +2502,10 @@ hljs.highlightAll();
 </summary>
 <pre><code class="python">class bytesRef(VarInt):
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; bytes:
-        return code.bytes.value[self.value]</code></pre>
+        if code.bytes:
+            return code.bytes.value[self.value]
+        else:
+            raise MalformedBytecode(&#34;No bytes block found.&#34;)</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -2608,7 +2616,9 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 </summary>
 <pre><code class="python">class fileRef(int):
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
-        return code.debugfiles.value[self]</code></pre>
+        if code.debugfiles:
+            return code.debugfiles.value[self]
+        raise MalformedBytecode(&#34;No debug files found.&#34;)</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
