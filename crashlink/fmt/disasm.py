@@ -1,7 +1,7 @@
-from ..core import *
-
-from typing import Optional
 from enum import Enum, auto
+from typing import Optional
+
+from ..core import *
 
 
 def get_proto_for(code: Bytecode, idx: int) -> Optional[Proto]:
@@ -140,9 +140,7 @@ def is_static(code: Bytecode, func: Function):
     return False
 
 
-def pseudo_from_op(
-    op: Opcode, idx: int, regs: List[Reg], code: Bytecode, terse: bool = False
-):
+def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg]|List[tIndex], code: Bytecode, terse: bool = False):
     if op.op == "Int":
         return f"reg{op.definition['dst']} = {op.definition['ptr'].resolve(code)}"
     elif op.op == "Float":
@@ -175,13 +173,17 @@ def pseudo_from_op(
     elif op.op == "JSGte":  # jump signed greater than or equal
         return f"if reg{op.definition['a']} >= reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
     elif op.op == "JULt":  # jump unsigned less than
-        return f"if reg{op.definition['a']} < reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+        return (
+            f"if reg{op.definition['a']} < reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+        )
     elif op.op == "JNotLt":  # jump not less than
         return f"if reg{op.definition['a']} >= reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
     elif op.op == "JNotEq":  # jump not equal
         return f"if reg{op.definition['a']} != reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
     elif op.op == "JSGt":  # jump signed greater than
-        return f"if reg{op.definition['a']} > reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+        return (
+            f"if reg{op.definition['a']} > reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+        )
     elif op.op == "Mul":
         return f"reg{op.definition['dst']} = reg{op.definition['a']} * reg{op.definition['b']}"
     elif op.op == "SDiv":  # signed division
@@ -199,9 +201,7 @@ def pseudo_from_op(
     elif op.op == "SMod":  # signed modulo
         return f"reg{op.definition['dst']} = reg{op.definition['a']} % reg{op.definition['b']}"
     elif op.op == "GetGlobal":
-        glob = type_name(
-            code, op.definition["global"].resolve(code)
-        )  # TODO: resolve constants
+        glob = type_name(code, op.definition["global"].resolve(code))  # TODO: resolve constants
         return f"reg{op.definition['dst']} = {glob} (g@{op.definition['global']})"
     elif op.op == "Field":
         field = (
@@ -272,7 +272,7 @@ def pseudo_from_op(
     return "<unsupported pseudo>"
 
 
-def fmt_op(code: Bytecode, regs: List[Reg], op: Opcode, idx: int, width: int = 15):
+def fmt_op(code: Bytecode, regs: List[Reg]|List[tIndex], op: Opcode, idx: int, width: int = 15):
     defn = op.definition
     return f"{idx:>3}. {op.op:<{width}} {str(defn):<{48}} {pseudo_from_op(op, idx, regs, code):<{width}}"
 
@@ -296,6 +296,4 @@ def func(code: Bytecode, func: Function):
 
 
 def func_ir(code: Bytecode, func: Function) -> str:
-    return "\n".join(
-        [pseudo_from_op(op, i, func.regs, code) for i, op in enumerate(func.ops)]
-    )
+    return "\n".join([pseudo_from_op(op, i, func.regs, code) for i, op in enumerate(func.ops)])
