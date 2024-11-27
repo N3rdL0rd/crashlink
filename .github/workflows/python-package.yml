@@ -28,6 +28,14 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         python -m pip install pytest
+    - name: Set up Haxe
+      uses: krdlab/setup-haxe@v1
+      with:
+        haxe-version: 4.3.4
+    - name: Build test samples
+      run: |
+        chmod +x build_tests &&
+        ./build_tests
     - name: Test with pytest
       run: |
         pytest
