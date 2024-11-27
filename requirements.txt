@@ -9,5 +9,3 @@ no_implicit_optional
 pytest
 tqdm
 snakeviz
-grandalf
-matplotlib
