@@ -91,7 +91,7 @@ def func_header(code: Bytecode, func: Function) -> str:
     fun_type = func.type.resolve(code).definition
     if isinstance(fun_type, Fun):
         fun: Fun = fun_type
-        return f"f@{func.findex.value} {'static ' if is_static(code, func) else ''}{name} ({', '.join([type_name(code, arg.resolve(code)) for arg in fun.args])}) -> {type_name(code, fun.ret.resolve(code))}"
+        return f"f@{func.findex.value} {'static ' if is_static(code, func) else ''}{name} ({', '.join([type_name(code, arg.resolve(code)) for arg in fun.args])}) -> {type_name(code, fun.ret.resolve(code))} (from {func.resolve_file(code)})"
     return f"f@{func.findex.value} {name} (no fun found, this is a bug!)"
 
 
@@ -99,41 +99,25 @@ def native_header(code: Bytecode, native: Native) -> str:
     fun_type = native.type.resolve(code).definition
     if isinstance(fun_type, Fun):
         fun: Fun = fun_type
-        return f"f@{native.findex.value} {native.lib.resolve(code)}.{native.name.resolve(code)} [native] ({', '.join([type_name(code, arg.resolve(code)) for arg in fun.args])}) -> {type_name(code, fun.ret.resolve(code))}"
+        return f"f@{native.findex.value} {native.lib.resolve(code)}.{native.name.resolve(code)} [native] ({', '.join([type_name(code, arg.resolve(code)) for arg in fun.args])}) -> {type_name(code, fun.ret.resolve(code))} (from {native.lib.resolve(code)})"
     return f"f@{native.findex.value} {native.lib.resolve(code)}.{native.name.resolve(code)} [native] (no fun found, this is a bug!)"
 
 
 def is_std(code: Bytecode, func: Function | Native):
+    """
+    Checks if a function is from the standard library. This is a heuristic and is a bit broken still.
+    """
     if isinstance(func, Native):
         return True
-    name = full_func_name(code, func)
-    prefixes = [
-        "hl.",
-        "haxe.",
-        "std.",
-        "?std.",
-        "Std.",
-        "$Std.",
-        "Date.",
-        "$Date.",
-        "String.",
-        "$String.",
-        "StringBuf.",
-        "$StringBuf.",
-        "$SysError.",
-        "SysError.",
-        "Sys.",
-        "$Sys.",
-        "$Type.",
-        "Type.",
-    ]
-    for prefix in prefixes:
-        if name.startswith(prefix):
-            return True
+    if "std" in func.resolve_file(code):
+        return True
     return False
 
 
 def is_static(code: Bytecode, func: Function):
+    """
+    Checks if a function is static.
+    """
     # bindings are static functions, protos are dynamic
     for type in code.types:
         if type.kind.value == Type.TYPEDEFS.index(Obj):
@@ -147,6 +131,9 @@ def is_static(code: Bytecode, func: Function):
 
 
 def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg] | List[tIndex], code: Bytecode, terse: bool = False):
+    """
+    Generates pseudocode disassembly from an opcode.
+    """
     if op.op == "Int":
         return f"reg{op.definition['dst']} = {op.definition['ptr'].resolve(code)}"
     elif op.op == "Float":
@@ -279,11 +266,17 @@ def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg] | List[tIndex], code: B
 
 
 def fmt_op(code: Bytecode, regs: List[Reg] | List[tIndex], op: Opcode, idx: int, width: int = 15):
+    """
+    Formats an opcode into a table row.
+    """
     defn = op.definition
     return f"{idx:>3}. {op.op:<{width}} {str(defn):<{48}} {pseudo_from_op(op, idx, regs, code):<{width}}"
 
 
 def func(code: Bytecode, func: Function | Native):
+    """
+    Generates a human-readable printout and disassembly of a function or native.
+    """
     if isinstance(func, Native):
         return native_header(code, func)
     res = ""
@@ -299,7 +292,3 @@ def func(code: Bytecode, func: Function | Native):
     for i, op in enumerate(func.ops):
         res += fmt_op(code, func.regs, op, i) + "\n"
     return res
-
-
-def func_ir(code: Bytecode, func: Function) -> str:
-    return "\n".join([pseudo_from_op(op, i, func.regs, code) for i, op in enumerate(func.ops)])
