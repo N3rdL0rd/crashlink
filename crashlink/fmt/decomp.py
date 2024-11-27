@@ -1,8 +1,11 @@
+import traceback
+
+from typing import Callable, Dict, List, Tuple, Set
+
 from ..core import *
-from . import disasm
 from ..errors import *
 from ..opcodes import opcodes
-import traceback
+from . import disasm
 
 
 class CFNode:
@@ -12,7 +15,7 @@ class CFNode:
 
     def __init__(self, ops: List[Opcode]):
         self.ops = ops
-        self.branches = []
+        self.branches: List[Tuple[CFNode, str]] = []
         self.base_offset: int = 0
 
     def __repr__(self):
@@ -38,7 +41,7 @@ class CFJumpThreader(CFOptimizer):
 
     def optimize(self):
         # map each node to its predecessors
-        predecessors = {}
+        predecessors: Dict[CFNode, List[CFNode]] = {}
         for node in self.graph.nodes:
             for branch, _ in node.branches:
                 predecessors.setdefault(branch, []).append(node)
@@ -51,8 +54,7 @@ class CFJumpThreader(CFOptimizer):
                     # redirect all predecessors to target_node
                     for pred in predecessors.get(node, []):
                         pred.branches = [
-                            (target_node if branch == node else branch, etype)
-                            for branch, etype in pred.branches
+                            (target_node if branch == node else branch, etype) for branch, etype in pred.branches
                         ]
                         predecessors.setdefault(target_node, []).append(pred)
                     nodes_to_remove.add(node)
@@ -67,12 +69,12 @@ class CFDeadCodeEliminator(CFOptimizer):
     """
 
     def optimize(self):
-        reachable = set()
+        reachable: Set[CFNode] = set()
         worklist = [self.graph.entry]
 
         while worklist:
             node = worklist.pop()
-            if node not in reachable:
+            if node not in reachable and node:
                 reachable.add(node)
                 for next_node, _ in node.branches:
                     worklist.append(next_node)
@@ -88,7 +90,7 @@ class CFGraph:
     def __init__(self, func: Function):
         self.func = func
         self.nodes: List[CFNode] = []
-        self.entry = None
+        self.entry: Optional[CFNode] = None
         self.applied_optimizers: List[CFOptimizer] = []
 
     def add_node(self, ops: List[Opcode], base_offset: int = 0) -> CFNode:
@@ -115,9 +117,9 @@ class CFGraph:
             # fmt: on
                 jump_targets.add(i + op.definition["offset"].value + 1)
 
-        current_ops = []
+        current_ops: List[Opcode] = []
         current_start = 0
-        blocks = []  # (start_idx, ops) tuples
+        blocks: List[Tuple[int, List[Opcode]]] = []  # (start_idx, ops) tuples
 
         for i, op in enumerate(self.func.ops):
             if i in jump_targets and current_ops:
@@ -237,9 +239,7 @@ class CFGraph:
             label = (
                 "\n".join(
                     [
-                        disasm.pseudo_from_op(
-                            op, node.base_offset + i, self.func.regs, code, terse=True
-                        )
+                        disasm.pseudo_from_op(op, node.base_offset + i, self.func.regs, code, terse=True)
                         for i, op in enumerate(node.ops)
                     ]
                 )
@@ -247,9 +247,7 @@ class CFGraph:
                 .replace("\n", "\\n")
             )
             style = self.style_node(node)
-            dot.append(
-                f'  node_{id(node)} [label="{label}", {style}, xlabel="{node.base_offset}."];'
-            )
+            dot.append(f'  node_{id(node)} [label="{label}", {style}, xlabel="{node.base_offset}."];')
 
         for node in self.nodes:
             for branch, edge_type in node.branches:
