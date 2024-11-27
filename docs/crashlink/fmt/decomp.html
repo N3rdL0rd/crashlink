@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
 <meta name="generator" content="pdoc3 0.11.1">
 <title>crashlink.fmt.decomp API documentation</title>
-<meta name="description" content="">
+<meta name="description" content="Decompilation and control flow graph generation">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
@@ -27,6 +27,7 @@ hljs.highlightAll();
 <h1 class="title">Module <code>crashlink.fmt.decomp</code></h1>
 </header>
 <section id="section-intro">
+<p>Decompilation and control flow graph generation</p>
 </section>
 <section>
 </section>
@@ -53,12 +54,12 @@ hljs.highlightAll();
     &#34;&#34;&#34;
 
     def optimize(self):
-        reachable = set()
+        reachable: Set[CFNode] = set()
         worklist = [self.graph.entry]
 
         while worklist:
             node = worklist.pop()
-            if node not in reachable:
+            if node not in reachable and node:
                 reachable.add(node)
                 for next_node, _ in node.branches:
                     worklist.append(next_node)
@@ -97,7 +98,7 @@ hljs.highlightAll();
     def __init__(self, func: Function):
         self.func = func
         self.nodes: List[CFNode] = []
-        self.entry = None
+        self.entry: Optional[CFNode] = None
         self.applied_optimizers: List[CFOptimizer] = []
 
     def add_node(self, ops: List[Opcode], base_offset: int = 0) -&gt; CFNode:
@@ -124,9 +125,9 @@ hljs.highlightAll();
             # fmt: on
                 jump_targets.add(i + op.definition[&#34;offset&#34;].value + 1)
 
-        current_ops = []
+        current_ops: List[Opcode] = []
         current_start = 0
-        blocks = []  # (start_idx, ops) tuples
+        blocks: List[Tuple[int, List[Opcode]]] = []  # (start_idx, ops) tuples
 
         for i, op in enumerate(self.func.ops):
             if i in jump_targets and current_ops:
@@ -331,7 +332,7 @@ hljs.highlightAll();
 
     def optimize(self):
         # map each node to its predecessors
-        predecessors = {}
+        predecessors: Dict[CFNode, List[CFNode]] = {}
         for node in self.graph.nodes:
             for branch, _ in node.branches:
                 predecessors.setdefault(branch, []).append(node)
@@ -383,7 +384,7 @@ hljs.highlightAll();
 
     def __init__(self, ops: List[Opcode]):
         self.ops = ops
-        self.branches = []
+        self.branches: List[Tuple[CFNode, str]] = []
         self.base_offset: int = 0
 
     def __repr__(self):

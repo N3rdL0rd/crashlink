@@ -1,5 +1,6 @@
 {
     "cSpell.words": [
+        "cornflowerblue",
         "crashlink",
         "curfile",
         "curpos",
@@ -14,11 +15,18 @@
         "deserialised",
         "Deserialising",
         "disasm",
+        "endtrap",
+        "etype",
         "findex",
+        "fontname",
+        "fontsize",
+        "forcelabels",
         "funcs",
         "Gdpi",
         "Haxe",
         "hlbc",
+        "labelfontsize",
+        "labelloc",
         "nassigns",
         "nbindings",
         "nbytes",
@@ -45,7 +53,10 @@
         "Tpng",
         "TQDM",
         "typedefs",
-        "varint"
+        "unconditionals",
+        "varint",
+        "worklist",
+        "xlabel"
     ],
     "python.REPL.enableREPLSmartSend": false,
     "python.testing.pytestArgs": [

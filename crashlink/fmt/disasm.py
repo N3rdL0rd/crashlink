@@ -1,4 +1,7 @@
-from enum import Enum, auto
+"""
+Human-readable disassembly of opcodes.
+"""
+
 from typing import Optional
 
 from ..core import *
@@ -7,6 +10,8 @@ from ..core import *
 def get_proto_for(code: Bytecode, idx: int) -> Optional[Proto]:
     for type in code.types:
         if type.kind.value == Type.TYPEDEFS.index(Obj):
+            if not isinstance(type.definition, Obj):
+                raise TypeError(f"Expected Obj, got {type.definition}")
             definition: Obj = type.definition
             for proto in definition.protos:
                 if proto.findex.value == idx:
@@ -17,6 +22,8 @@ def get_proto_for(code: Bytecode, idx: int) -> Optional[Proto]:
 def get_field_for(code: Bytecode, idx: int) -> Optional[Field]:
     for type in code.types:
         if type.kind.value == Type.TYPEDEFS.index(Obj):
+            if not isinstance(type.definition, Obj):
+                raise TypeError(f"Expected Obj, got {type.definition}")
             definition: Obj = type.definition
             fields = definition.resolve_fields(code)
             for binding in definition.bindings:  # binding binds a field to a function
@@ -25,14 +32,13 @@ def get_field_for(code: Bytecode, idx: int) -> Optional[Field]:
     return None
 
 
-def type_name(code: Bytecode, typ: Type):
+def type_name(code: Bytecode, typ: Type) -> str:
     typedef = type(typ.definition)
     defn = typ.definition
-    if typedef == Obj:
-        defn: Obj = defn
+
+    if typedef == Obj and isinstance(defn, Obj):
         return defn.name.resolve(code)
-    elif typedef == Virtual:
-        defn: Virtual = defn
+    elif typedef == Virtual and isinstance(defn, Virtual):
         fields = []
         for field in defn.fields:
             fields.append(field.name.resolve(code))
@@ -40,16 +46,18 @@ def type_name(code: Bytecode, typ: Type):
     return typedef.__name__
 
 
-def full_func_name(code: Bytecode, func: Function):
+def full_func_name(code: Bytecode, func: Function) -> str:
     proto = get_proto_for(code, func.findex.value)
     if proto:
         name = proto.name.resolve(code)
         for type in code.types:
             if type.kind.value == Type.TYPEDEFS.index(Obj):
-                definition: Obj = type.definition
-                for fun in definition.protos:
+                if not isinstance(type.definition, Obj):
+                    continue
+                obj_def: Obj = type.definition
+                for fun in obj_def.protos:
                     if fun.findex.value == func.findex.value:
-                        return f"{definition.name.resolve(code)}.{name}"
+                        return f"{obj_def.name.resolve(code)}.{name}"
     else:
         name = "<none>"
         field = get_field_for(code, func.findex.value)
@@ -57,13 +65,13 @@ def full_func_name(code: Bytecode, func: Function):
             name = field.name.resolve(code)
             for type in code.types:
                 if type.kind.value == Type.TYPEDEFS.index(Obj):
-                    definition: Obj = type.definition
-                    fields = definition.resolve_fields(code)
-                    for binding in definition.bindings:
+                    if not isinstance(type.definition, Obj):
+                        continue
+                    _obj_def: Obj = type.definition
+                    fields = _obj_def.resolve_fields(code)
+                    for binding in _obj_def.bindings:
                         if binding.findex.value == func.findex.value:
-                            return f"{definition.name.resolve(code)}.{name}"
-        else:
-            name = "<none>"
+                            return f"{_obj_def.name.resolve(code)}.{name}"
     return name
 
 
@@ -78,23 +86,19 @@ def type_to_haxe(type: str):
     return mapping.get(type, type)
 
 
-def func_header(code: Bytecode, func: Function):
+def func_header(code: Bytecode, func: Function) -> str:
     name = full_func_name(code, func)
-    try:
-        fun: Fun = func.type.resolve(code).definition
-    except:
-        fun = None
-    if fun:
+    fun_type = func.type.resolve(code).definition
+    if isinstance(fun_type, Fun):
+        fun: Fun = fun_type
         return f"f@{func.findex.value} {'static ' if is_static(code, func) else ''}{name} ({', '.join([type_name(code, arg.resolve(code)) for arg in fun.args])}) -> {type_name(code, fun.ret.resolve(code))}"
     return f"f@{func.findex.value} {name} (no fun found, this is a bug!)"
 
 
-def native_header(code: Bytecode, native: Native):
-    try:
-        fun: Fun = native.type.resolve(code).definition
-    except:
-        fun = None
-    if fun:
+def native_header(code: Bytecode, native: Native) -> str:
+    fun_type = native.type.resolve(code).definition
+    if isinstance(fun_type, Fun):
+        fun: Fun = fun_type
         return f"f@{native.findex.value} {native.lib.resolve(code)}.{native.name.resolve(code)} [native] ({', '.join([type_name(code, arg.resolve(code)) for arg in fun.args])}) -> {type_name(code, fun.ret.resolve(code))}"
     return f"f@{native.findex.value} {native.lib.resolve(code)}.{native.name.resolve(code)} [native] (no fun found, this is a bug!)"
 
@@ -133,6 +137,8 @@ def is_static(code: Bytecode, func: Function):
     # bindings are static functions, protos are dynamic
     for type in code.types:
         if type.kind.value == Type.TYPEDEFS.index(Obj):
+            if not isinstance(type.definition, Obj):
+                raise TypeError(f"Expected Obj, got {type.definition}")
             definition: Obj = type.definition
             for binding in definition.bindings:
                 if binding.findex.value == func.findex.value:
@@ -140,7 +146,7 @@ def is_static(code: Bytecode, func: Function):
     return False
 
 
-def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg]|List[tIndex], code: Bytecode, terse: bool = False):
+def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg] | List[tIndex], code: Bytecode, terse: bool = False):
     if op.op == "Int":
         return f"reg{op.definition['dst']} = {op.definition['ptr'].resolve(code)}"
     elif op.op == "Float":
@@ -272,20 +278,20 @@ def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg]|List[tIndex], code: Byt
     return "<unsupported pseudo>"
 
 
-def fmt_op(code: Bytecode, regs: List[Reg]|List[tIndex], op: Opcode, idx: int, width: int = 15):
+def fmt_op(code: Bytecode, regs: List[Reg] | List[tIndex], op: Opcode, idx: int, width: int = 15):
     defn = op.definition
     return f"{idx:>3}. {op.op:<{width}} {str(defn):<{48}} {pseudo_from_op(op, idx, regs, code):<{width}}"
 
 
-def func(code: Bytecode, func: Function):
-    if type(func) == Native:
+def func(code: Bytecode, func: Function | Native):
+    if isinstance(func, Native):
         return native_header(code, func)
     res = ""
     res += func_header(code, func) + "\n"
     res += "Reg types:\n"
     for i, reg in enumerate(func.regs):
         res += f"  {i}. {type_name(code, reg.resolve(code))}\n"
-    if func.has_debug:
+    if func.has_debug and func.assigns and func.version and func.version >= 3:
         res += "\nAssigns:\n"
         for assign in func.assigns:
             res += f"Op {assign[1].value - 1}: {assign[0].resolve(code)}\n"
