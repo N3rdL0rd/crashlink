@@ -130,7 +130,13 @@ def is_static(code: Bytecode, func: Function):
     return False
 
 
-def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg] | List[tIndex], code: Bytecode, terse: bool = False):
+def pseudo_from_op(
+    op: Opcode,
+    idx: int,
+    regs: List[Reg] | List[tIndex],
+    code: Bytecode,
+    terse: bool = False,
+):
     """
     Generates pseudocode disassembly from an opcode.
     """
@@ -163,6 +169,10 @@ def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg] | List[tIndex], code: B
         return f"if reg{op.definition['a']} == reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
     elif op.op == "JNull":  # jump null
         return f"if reg{op.definition['reg']} is null: jump to {idx + (op.definition['offset'].value + 1)}"
+    elif op.op == "JFalse":
+        return f"if reg{op.definition['cond']} is false: jump to {idx + (op.definition['offset'].value + 1)}"
+    elif op.op == "JTrue":
+        return f"if reg{op.definition['cond']} is true: jump to {idx + (op.definition['offset'].value + 1)}"
     elif op.op == "JSGte":  # jump signed greater than or equal
         return f"if reg{op.definition['a']} >= reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
     elif op.op == "JULt":  # jump unsigned less than
@@ -265,7 +275,13 @@ def pseudo_from_op(op: Opcode, idx: int, regs: List[Reg] | List[tIndex], code: B
     return "<unsupported pseudo>"
 
 
-def fmt_op(code: Bytecode, regs: List[Reg] | List[tIndex], op: Opcode, idx: int, width: int = 15):
+def fmt_op(
+    code: Bytecode,
+    regs: List[Reg] | List[tIndex],
+    op: Opcode,
+    idx: int,
+    width: int = 15,
+):
     """
     Formats an opcode into a table row.
     """
