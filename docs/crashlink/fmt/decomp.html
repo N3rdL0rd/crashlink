@@ -427,6 +427,398 @@ hljs.highlightAll();
 </dd>
 </dl>
 </dd>
+<dt id="crashlink.fmt.decomp.IRControlFlow"><code class="flex name class">
+<span>class <span class="ident">IRControlFlow</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base class for control flow statements</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRControlFlow(IRStatement):
+    &#34;&#34;&#34;Base class for control flow statements&#34;&#34;&#34;
+
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.fmt.decomp.IRStatement" href="#crashlink.fmt.decomp.IRStatement">IRStatement</a></li>
+<li><a title="crashlink.fmt.decomp.IRNode" href="#crashlink.fmt.decomp.IRNode">IRNode</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.fmt.decomp.IRIf" href="#crashlink.fmt.decomp.IRIf">IRIf</a></li>
+<li><a title="crashlink.fmt.decomp.IRLoop" href="#crashlink.fmt.decomp.IRLoop">IRLoop</a></li>
+<li><a title="crashlink.fmt.decomp.IRSwitch" href="#crashlink.fmt.decomp.IRSwitch">IRSwitch</a></li>
+</ul>
+</dd>
+<dt id="crashlink.fmt.decomp.IRExpression"><code class="flex name class">
+<span>class <span class="ident">IRExpression</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base class for IR expressions</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRExpression(IRNode):
+    &#34;&#34;&#34;Base class for IR expressions&#34;&#34;&#34;
+
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.fmt.decomp.IRNode" href="#crashlink.fmt.decomp.IRNode">IRNode</a></li>
+<li>abc.ABC</li>
+</ul>
+</dd>
+<dt id="crashlink.fmt.decomp.IRFunction"><code class="flex name class">
+<span>class <span class="ident">IRFunction</span></span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>, <br>func: <a title="crashlink.core.Function" href="../core.html#crashlink.core.Function">Function</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRFunction:
+    def __init__(self, code: Bytecode, func: Function):
+        self.func = func
+        self.cfg = CFGraph(func)
+        self.cfg.build()
+        self.code = code
+        self.ops = func.ops
+        self.statements: List[IRStatement] = []
+        self.lifter = IRLifter()
+        self.locals: List[IRLocal] = []
+        self._register_lifters()
+        self._lift()
+
+    def _register_lifters(self):
+        &#34;&#34;&#34;Register opcode lifters&#34;&#34;&#34;
+        self.lifter.register(&#34;Switch&#34;, self._lift_switch)
+
+    def _lift_switch(self, op: Opcode) -&gt; IRSwitch:
+        pass  # TODO
+
+    def _lift(self):
+        &#34;&#34;&#34;Lift function to IR&#34;&#34;&#34;
+        for i, reg in enumerate(self.func.regs):
+            self.locals.append(IRLocal(f&#34;reg{i}&#34;, reg))
+        self._name_locals()
+        for node in self.cfg.nodes:
+            for op in node.ops:
+                ir_node = self.lifter.lift(op)
+                if isinstance(ir_node, IRStatement):
+                    self.statements.append(ir_node)
+
+    def _name_locals(self):
+        &#34;&#34;&#34;Name locals based on debug info&#34;&#34;&#34;
+        if not self.func.has_debug:
+            return
+        reg_assigns: List[Set[str]] = [set() for _ in self.func.regs]
+        for assign in self.func.assigns:
+            val = assign[1].value - 1
+            # Tuple[strRef (name), VarInt (op index)]
+            if val &lt; 0:
+                continue  # TODO: handle this - negative indexes are argument names
+            reg: Optional[int] = None
+            op = self.ops[val]
+            try:
+                op.definition[&#34;dst&#34;]
+                reg = op.definition[&#34;dst&#34;].value
+            except KeyError:
+                pass
+            if reg is not None:
+                reg_assigns[reg].add(assign[0].resolve(self.code))
+        for i, _reg in enumerate(self.func.regs):
+            if _reg.resolve(self.code).definition and isinstance(_reg.resolve(self.code).definition, Void):
+                reg_assigns[i].add(&#34;void&#34;)
+        dbg_print(&#34;Named regs:&#34;, reg_assigns)
+        for i, local in enumerate(self.locals):
+            if reg_assigns[i] and len(reg_assigns[i]) == 1:
+                local.name = reg_assigns[i].pop()</code></pre>
+</details>
+</dd>
+<dt id="crashlink.fmt.decomp.IRIf"><code class="flex name class">
+<span>class <span class="ident">IRIf</span></span>
+<span>(</span><span>condition: <a title="crashlink.fmt.decomp.IRExpression" href="#crashlink.fmt.decomp.IRExpression">IRExpression</a>, <br>then_block: List[<a title="crashlink.fmt.decomp.IRStatement" href="#crashlink.fmt.decomp.IRStatement">IRStatement</a>], <br>else_block: Optional[List[<a title="crashlink.fmt.decomp.IRStatement" href="#crashlink.fmt.decomp.IRStatement">IRStatement</a>]] = None)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base class for control flow statements</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRIf(IRControlFlow):
+    def __init__(
+        self, condition: IRExpression, then_block: List[IRStatement], else_block: Optional[List[IRStatement]] = None
+    ):
+        super().__init__()
+        self.condition = condition
+        self.then_block = then_block
+        self.else_block = else_block
+
+    def accept(self, visitor: IRVisitor):
+        visitor.visit_if(self)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.fmt.decomp.IRControlFlow" href="#crashlink.fmt.decomp.IRControlFlow">IRControlFlow</a></li>
+<li><a title="crashlink.fmt.decomp.IRStatement" href="#crashlink.fmt.decomp.IRStatement">IRStatement</a></li>
+<li><a title="crashlink.fmt.decomp.IRNode" href="#crashlink.fmt.decomp.IRNode">IRNode</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.fmt.decomp.IRIf.accept"><code class="name flex">
+<span>def <span class="ident">accept</span></span>(<span>self, <br>visitor: <a title="crashlink.fmt.decomp.IRVisitor" href="#crashlink.fmt.decomp.IRVisitor">IRVisitor</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.fmt.decomp.IRLifter"><code class="flex name class">
+<span>class <span class="ident">IRLifter</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Lifts opcodes to IR</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRLifter:
+    &#34;&#34;&#34;Lifts opcodes to IR&#34;&#34;&#34;
+
+    def __init__(self):
+        self.lifters: Dict[str, Callable] = {}
+
+    def register(self, opcode: str, lifter: Callable):
+        &#34;&#34;&#34;Register a lifter for an opcode&#34;&#34;&#34;
+        self.lifters[opcode] = lifter
+
+    def lift(self, op: Opcode) -&gt; IRNode:
+        &#34;&#34;&#34;Lift an opcode to IR&#34;&#34;&#34;
+        if op.op not in self.lifters:
+            raise ValueError(f&#34;No lifter for {op.op}&#34;)
+        return self.lifters[op.op](op)</code></pre>
+</details>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.fmt.decomp.IRLifter.lift"><code class="name flex">
+<span>def <span class="ident">lift</span></span>(<span>self, <br>op: <a title="crashlink.core.Opcode" href="../core.html#crashlink.core.Opcode">Opcode</a>) ‑> <a title="crashlink.fmt.decomp.IRNode" href="#crashlink.fmt.decomp.IRNode">IRNode</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Lift an opcode to IR</p></pre></div>
+</dd>
+<dt id="crashlink.fmt.decomp.IRLifter.register"><code class="name flex">
+<span>def <span class="ident">register</span></span>(<span>self, <br>opcode: str, <br>lifter: Callable)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Register a lifter for an opcode</p></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.fmt.decomp.IRLocal"><code class="flex name class">
+<span>class <span class="ident">IRLocal</span></span>
+<span>(</span><span>name: str, <br>type: <a title="crashlink.core.tIndex" href="../core.html#crashlink.core.tIndex">tIndex</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRLocal:
+    def __init__(self, name: str, type: tIndex):
+        self.name = name
+        self.type = type
+
+    def __repr__(self):
+        return f&#34;&lt;IRLocal: {self.name} {self.type}&gt;&#34;</code></pre>
+</details>
+</dd>
+<dt id="crashlink.fmt.decomp.IRLoop"><code class="flex name class">
+<span>class <span class="ident">IRLoop</span></span>
+<span>(</span><span>condition: <a title="crashlink.fmt.decomp.IRExpression" href="#crashlink.fmt.decomp.IRExpression">IRExpression</a>, <br>body: List[<a title="crashlink.fmt.decomp.IRStatement" href="#crashlink.fmt.decomp.IRStatement">IRStatement</a>])</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base class for control flow statements</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRLoop(IRControlFlow):
+    def __init__(self, condition: IRExpression, body: List[IRStatement]):
+        super().__init__()
+        self.condition = condition
+        self.body = body
+
+    def accept(self, visitor: IRVisitor):
+        visitor.visit_loop(self)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.fmt.decomp.IRControlFlow" href="#crashlink.fmt.decomp.IRControlFlow">IRControlFlow</a></li>
+<li><a title="crashlink.fmt.decomp.IRStatement" href="#crashlink.fmt.decomp.IRStatement">IRStatement</a></li>
+<li><a title="crashlink.fmt.decomp.IRNode" href="#crashlink.fmt.decomp.IRNode">IRNode</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.fmt.decomp.IRLoop.accept"><code class="name flex">
+<span>def <span class="ident">accept</span></span>(<span>self, <br>visitor: <a title="crashlink.fmt.decomp.IRVisitor" href="#crashlink.fmt.decomp.IRVisitor">IRVisitor</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.fmt.decomp.IRNode"><code class="flex name class">
+<span>class <span class="ident">IRNode</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base class for all IR nodes</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRNode(ABC):
+    &#34;&#34;&#34;Base class for all IR nodes&#34;&#34;&#34;
+
+    def __init__(self):
+        self.parent: Optional[IRNode] = None
+
+    @abstractmethod
+    def accept(self, visitor: &#34;IRVisitor&#34;) -&gt; None:
+        pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>abc.ABC</li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.fmt.decomp.IRExpression" href="#crashlink.fmt.decomp.IRExpression">IRExpression</a></li>
+<li><a title="crashlink.fmt.decomp.IRStatement" href="#crashlink.fmt.decomp.IRStatement">IRStatement</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.fmt.decomp.IRNode.accept"><code class="name flex">
+<span>def <span class="ident">accept</span></span>(<span>self, <br>visitor: <a title="crashlink.fmt.decomp.IRVisitor" href="#crashlink.fmt.decomp.IRVisitor">IRVisitor</a>) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.fmt.decomp.IRStatement"><code class="flex name class">
+<span>class <span class="ident">IRStatement</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base class for IR statements</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRStatement(IRNode):
+    &#34;&#34;&#34;Base class for IR statements&#34;&#34;&#34;
+
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.fmt.decomp.IRNode" href="#crashlink.fmt.decomp.IRNode">IRNode</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.fmt.decomp.IRControlFlow" href="#crashlink.fmt.decomp.IRControlFlow">IRControlFlow</a></li>
+</ul>
+</dd>
+<dt id="crashlink.fmt.decomp.IRSwitch"><code class="flex name class">
+<span>class <span class="ident">IRSwitch</span></span>
+<span>(</span><span>value: <a title="crashlink.fmt.decomp.IRExpression" href="#crashlink.fmt.decomp.IRExpression">IRExpression</a>, <br>cases: Dict[int, List[<a title="crashlink.fmt.decomp.IRStatement" href="#crashlink.fmt.decomp.IRStatement">IRStatement</a>]], <br>default: Optional[List[<a title="crashlink.fmt.decomp.IRStatement" href="#crashlink.fmt.decomp.IRStatement">IRStatement</a>]] = None)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base class for control flow statements</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRSwitch(IRControlFlow):
+    def __init__(
+        self, value: IRExpression, cases: Dict[int, List[IRStatement]], default: Optional[List[IRStatement]] = None
+    ):
+        super().__init__()
+        self.value = value
+        self.cases = cases
+        self.default = default
+
+    def accept(self, visitor: IRVisitor):
+        visitor.visit_switch(self)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.fmt.decomp.IRControlFlow" href="#crashlink.fmt.decomp.IRControlFlow">IRControlFlow</a></li>
+<li><a title="crashlink.fmt.decomp.IRStatement" href="#crashlink.fmt.decomp.IRStatement">IRStatement</a></li>
+<li><a title="crashlink.fmt.decomp.IRNode" href="#crashlink.fmt.decomp.IRNode">IRNode</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.fmt.decomp.IRSwitch.accept"><code class="name flex">
+<span>def <span class="ident">accept</span></span>(<span>self, <br>visitor: <a title="crashlink.fmt.decomp.IRVisitor" href="#crashlink.fmt.decomp.IRVisitor">IRVisitor</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.fmt.decomp.IRVisitor"><code class="flex name class">
+<span>class <span class="ident">IRVisitor</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base visitor for IR nodes</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRVisitor(ABC):
+    &#34;&#34;&#34;Base visitor for IR nodes&#34;&#34;&#34;
+
+    @abstractmethod
+    def visit_statement(self, stmt: &#34;IRStatement&#34;) -&gt; None:
+        pass
+
+    @abstractmethod
+    def visit_expression(self, expr: &#34;IRExpression&#34;) -&gt; None:
+        pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.fmt.decomp.IRVisitor.visit_expression"><code class="name flex">
+<span>def <span class="ident">visit_expression</span></span>(<span>self, <br>expr: <a title="crashlink.fmt.decomp.IRExpression" href="#crashlink.fmt.decomp.IRExpression">IRExpression</a>) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.fmt.decomp.IRVisitor.visit_statement"><code class="name flex">
+<span>def <span class="ident">visit_statement</span></span>(<span>self, <br>stmt: <a title="crashlink.fmt.decomp.IRStatement" href="#crashlink.fmt.decomp.IRStatement">IRStatement</a>) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
 </dl>
 </section>
 </article>
@@ -472,6 +864,59 @@ hljs.highlightAll();
 <h4><code><a title="crashlink.fmt.decomp.CFOptimizer" href="#crashlink.fmt.decomp.CFOptimizer">CFOptimizer</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.fmt.decomp.CFOptimizer.optimize" href="#crashlink.fmt.decomp.CFOptimizer.optimize">optimize</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.fmt.decomp.IRControlFlow" href="#crashlink.fmt.decomp.IRControlFlow">IRControlFlow</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.fmt.decomp.IRExpression" href="#crashlink.fmt.decomp.IRExpression">IRExpression</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.fmt.decomp.IRFunction" href="#crashlink.fmt.decomp.IRFunction">IRFunction</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.fmt.decomp.IRIf" href="#crashlink.fmt.decomp.IRIf">IRIf</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.fmt.decomp.IRIf.accept" href="#crashlink.fmt.decomp.IRIf.accept">accept</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.fmt.decomp.IRLifter" href="#crashlink.fmt.decomp.IRLifter">IRLifter</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.fmt.decomp.IRLifter.lift" href="#crashlink.fmt.decomp.IRLifter.lift">lift</a></code></li>
+<li><code><a title="crashlink.fmt.decomp.IRLifter.register" href="#crashlink.fmt.decomp.IRLifter.register">register</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.fmt.decomp.IRLocal" href="#crashlink.fmt.decomp.IRLocal">IRLocal</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.fmt.decomp.IRLoop" href="#crashlink.fmt.decomp.IRLoop">IRLoop</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.fmt.decomp.IRLoop.accept" href="#crashlink.fmt.decomp.IRLoop.accept">accept</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.fmt.decomp.IRNode" href="#crashlink.fmt.decomp.IRNode">IRNode</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.fmt.decomp.IRNode.accept" href="#crashlink.fmt.decomp.IRNode.accept">accept</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.fmt.decomp.IRStatement" href="#crashlink.fmt.decomp.IRStatement">IRStatement</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.fmt.decomp.IRSwitch" href="#crashlink.fmt.decomp.IRSwitch">IRSwitch</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.fmt.decomp.IRSwitch.accept" href="#crashlink.fmt.decomp.IRSwitch.accept">accept</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.fmt.decomp.IRVisitor" href="#crashlink.fmt.decomp.IRVisitor">IRVisitor</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.fmt.decomp.IRVisitor.visit_expression" href="#crashlink.fmt.decomp.IRVisitor.visit_expression">visit_expression</a></code></li>
+<li><code><a title="crashlink.fmt.decomp.IRVisitor.visit_statement" href="#crashlink.fmt.decomp.IRVisitor.visit_statement">visit_statement</a></code></li>
 </ul>
 </li>
 </ul>

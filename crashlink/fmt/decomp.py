@@ -2,11 +2,12 @@
 Decompilation and control flow graph generation
 """
 
-import traceback
-from typing import Callable, Dict, List, Set, Tuple
+from abc import ABC, abstractmethod
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from ..core import *
 from ..errors import *
+from ..globals import dbg_print
 from ..opcodes import opcodes
 from . import disasm
 
@@ -269,3 +270,189 @@ class CFGraph:
 
         dot.append("}")
         return "\n".join(dot)
+
+
+class IRNode(ABC):
+    """Base class for all IR nodes"""
+
+    def __init__(self):
+        self.parent: Optional[IRNode] = None
+
+    @abstractmethod
+    def accept(self, visitor: "IRVisitor") -> None:
+        pass
+
+
+class IRVisitor(ABC):
+    """Base visitor for IR nodes"""
+
+    @abstractmethod
+    def visit_statement(self, stmt: "IRStatement") -> None:
+        pass
+
+    @abstractmethod
+    def visit_expression(self, expr: "IRExpression") -> None:
+        pass
+    
+    @abstractmethod
+    def visit_if(self, stmt: "IRIf") -> None:
+        pass
+    
+    @abstractmethod
+    def visit_loop(self, stmt: "IRLoop") -> None:
+        pass
+    
+    @abstractmethod
+    def visit_switch(self, stmt: "IRSwitch") -> None:
+        pass
+
+
+class IRStatement(IRNode):
+    """Base class for IR statements"""
+
+    pass
+
+
+class IRExpression(IRNode):
+    """Base class for IR expressions"""
+
+    pass
+
+
+class IRControlFlow(IRStatement):
+    """Base class for control flow statements"""
+
+    pass
+
+
+class IRIf(IRControlFlow):
+    def __init__(
+        self, condition: IRExpression, then_block: List[IRStatement], else_block: Optional[List[IRStatement]] = None
+    ):
+        super().__init__()
+        self.condition = condition
+        self.then_block = then_block
+        self.else_block = else_block
+
+    def accept(self, visitor: IRVisitor):
+        visitor.visit_if(self)
+
+
+class IRLoop(IRControlFlow):
+    def __init__(self, condition: IRExpression, body: List[IRStatement]):
+        super().__init__()
+        self.condition = condition
+        self.body = body
+
+    def accept(self, visitor: IRVisitor):
+        visitor.visit_loop(self)
+
+
+class IRSwitch(IRControlFlow):
+    def __init__(
+        self, value: IRExpression, cases: Dict[int, List[IRStatement]], default: Optional[List[IRStatement]] = None
+    ):
+        super().__init__()
+        self.value = value
+        self.cases = cases
+        self.default = default
+
+    def accept(self, visitor: IRVisitor):
+        visitor.visit_switch(self)
+
+
+class InlineOp(IRStatement):
+    """Inline opcode in IR"""
+
+    def __init__(self, op: Opcode):
+        super().__init__()
+        self.op = op
+
+    def accept(self, visitor: IRVisitor):
+        visitor.visit_statement(self)
+
+
+class IRLifter:
+    """Lifts opcodes to IR"""
+
+    def __init__(self):
+        self.lifters: Dict[str, Callable] = {}
+        self._register_lifters()
+
+    def register(self, opcode: str, lifter: Callable):
+        """Register a lifter for an opcode"""
+        self.lifters[opcode] = lifter
+
+    def _register_lifters(self):
+        for opcode in opcodes:
+            if hasattr(self, f"lift_{opcode.lower()}"):
+                self.register(opcode, getattr(self, f"lift_{opcode.lower()}"))
+
+    def lift(self, op: Opcode) -> IRNode:
+        """Lift an opcode to IR"""
+        if op.op not in self.lifters:
+            print(f"Warning: No lifter for {op.op}")
+            return InlineOp(op)
+        return self.lifters[op.op](op)
+    
+    def lift_switch(self, op: Opcode) -> IRSwitch:
+        # TODO
+        pass
+
+class IRLocal:
+    def __init__(self, name: str, type: tIndex):
+        self.name = name
+        self.type = type
+
+    def __repr__(self):
+        return f"<IRLocal: {self.name} {self.type}>"
+
+
+class IRFunction:
+    def __init__(self, code: Bytecode, func: Function):
+        self.func = func
+        self.cfg = CFGraph(func)
+        self.cfg.build()
+        self.code = code
+        self.ops = func.ops
+        self.statements: List[IRStatement] = []
+        self.lifter = IRLifter()
+        self.locals: List[IRLocal] = []
+        self._lift()
+
+    def _lift(self):
+        """Lift function to IR"""
+        for i, reg in enumerate(self.func.regs):
+            self.locals.append(IRLocal(f"reg{i}", reg))
+        self._name_locals()
+        for node in self.cfg.nodes:
+            for op in node.ops:
+                ir_node = self.lifter.lift(op)
+                if isinstance(ir_node, IRStatement):
+                    self.statements.append(ir_node)
+
+    def _name_locals(self):
+        """Name locals based on debug info"""
+        reg_assigns: List[Set[str]] = [set() for _ in self.func.regs]
+        if self.func.has_debug and self.func.assigns:
+            for assign in self.func.assigns:
+                val = assign[1].value - 1
+                # Tuple[strRef (name), VarInt (op index)]
+                if val < 0:
+                    continue  # TODO: handle this - negative indexes are argument names
+                reg: Optional[int] = None
+                op = self.ops[val]
+                try:
+                    op.definition["dst"]
+                    reg = op.definition["dst"].value
+                except KeyError:
+                    pass
+                if reg is not None:
+                    reg_assigns[reg].add(assign[0].resolve(self.code))
+        for i, _reg in enumerate(self.func.regs):
+            if _reg.resolve(self.code).definition and isinstance(_reg.resolve(self.code).definition, Void):
+                reg_assigns[i].add("void")
+        dbg_print("Named regs:", reg_assigns)
+        for i, local in enumerate(self.locals):
+            if reg_assigns[i] and len(reg_assigns[i]) == 1:
+                local.name = reg_assigns[i].pop()

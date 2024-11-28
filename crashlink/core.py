@@ -1,5 +1,10 @@
 """
-Core classes.
+Core bytecode format definitions.
+
+This module contains the definitions for HashLink bytecode structures, as well as the serialisation
+and deserialisation methods for them. You probably don't need to use too much of this file directly,
+besides Bytecode, Opcode, and Function. The decompiler will take care of a lot of abstraction for
+you.
 """
 
 import ctypes
@@ -10,19 +15,21 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, TypeVar
 
 T = TypeVar("T", bound="VarInt")  # HACK: easier than reimplementing deserialise for each subclass
 
-try:
-    from tqdm import tqdm
-
-    USE_TQDM = True
-except ImportError:
-    USE_TQDM = False
-
 from .errors import (FailedSerialisation, InvalidOpCode, MalformedBytecode,
                      NoMagic)
 from .globals import dbg_print, tell
 from .opcodes import opcodes
 
+try:
+    from tqdm import tqdm
 
+    USE_TQDM = True
+except ImportError:
+    dbg_print("Could not find tqdm. Progress bars will not be displayed.")
+    USE_TQDM = False
+
+
+# TODO: rewrite all ABCs like this to use the PEP 3119 `abc` module
 class Serialisable:
     def __init__(self):
         self.value: Any = None
@@ -79,7 +86,11 @@ class SerialisableInt(Serialisable):
         self.signed = False
 
     def deserialise(
-        self, f, length: int = 4, byteorder: Literal["little", "big"] = "little", signed: bool = False
+        self,
+        f,
+        length: int = 4,
+        byteorder: Literal["little", "big"] = "little",
+        signed: bool = False,
     ) -> "SerialisableInt":
         self.length = length
         self.byteorder = byteorder
@@ -877,6 +888,12 @@ class Opcode(Serialisable):
             ]
         )
 
+    def __repr__(self) -> str:
+        return f"<Opcode: {self.op} {self.definition}>"
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
 
 def read_u8(f) -> int:
     return int.from_bytes(f.read(1), byteorder="little", signed=False)
@@ -1006,7 +1023,7 @@ class Function(Serialisable):
         self.nregs.deserialise(f)
         self.nops.deserialise(f)
         for _ in range(self.nregs.value):
-            self.regs.append(tIndex().deserialise(f))  # type: ignore
+            self.regs.append(tIndex().deserialise(f))
         for _ in range(self.nops.value):
             self.ops.append(Opcode().deserialise(f))
         if self.has_debug:
@@ -1246,8 +1263,8 @@ class Bytecode(Serialisable):
             self.nints.value = len(self.ints)
             self.nfloats.value = len(self.floats)
             self.nstrings.value = len(self.strings.value)
-            if self.version.value >= 5:
-                self.nbytes.value = len(self.bytes.value)  # type: ignore
+            if self.version.value >= 5 and self.bytes and self.nbytes:
+                self.nbytes.value = len(self.bytes.value)
             self.ntypes.value = len(self.types)
             self.nglobals.value = len(self.global_types)
             self.nnatives.value = len(self.natives)

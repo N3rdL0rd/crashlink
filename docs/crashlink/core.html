@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
 <meta name="generator" content="pdoc3 0.11.1">
 <title>crashlink.core API documentation</title>
-<meta name="description" content="Core classes.">
+<meta name="description" content="Core bytecode format definitions …">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
@@ -27,7 +27,11 @@ hljs.highlightAll();
 <h1 class="title">Module <code>crashlink.core</code></h1>
 </header>
 <section id="section-intro">
-<p>Core classes.</p>
+<p>Core bytecode format definitions.</p>
+<p>This module contains the definitions for HashLink bytecode structures, as well as the serialisation
+and deserialisation methods for them. You probably don't need to use too much of this file directly,
+besides Bytecode, Opcode, and Function. The decompiler will take care of a lot of abstraction for
+you.</p>
 </section>
 <section>
 </section>
@@ -1536,7 +1540,13 @@ hljs.highlightAll();
                 self.code.serialise(),
                 b&#34;&#34;.join([definition.serialise() for name, definition in self.definition.items()]),
             ]
-        )</code></pre>
+        )
+
+    def __repr__(self) -&gt; str:
+        return f&#34;&lt;Opcode: {self.op} {self.definition}&gt;&#34;
+
+    def __str__(self) -&gt; str:
+        return self.__repr__()</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -1957,7 +1967,11 @@ hljs.highlightAll();
         self.signed = False
 
     def deserialise(
-        self, f, length: int = 4, byteorder: Literal[&#34;little&#34;, &#34;big&#34;] = &#34;little&#34;, signed: bool = False
+        self,
+        f,
+        length: int = 4,
+        byteorder: Literal[&#34;little&#34;, &#34;big&#34;] = &#34;little&#34;,
+        signed: bool = False,
     ) -&gt; &#34;SerialisableInt&#34;:
         self.length = length
         self.byteorder = byteorder
