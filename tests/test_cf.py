@@ -1,6 +1,7 @@
+from typing import Tuple
+
 from crashlink import *
 
-from typing import Tuple
 
 def load_test(path) -> Tuple[Bytecode, Function]:
     code = Bytecode.from_path(path)
@@ -12,6 +13,7 @@ def load_test(path) -> Tuple[Bytecode, Function]:
             break
     assert func is not None
     return code, func
+
 
 def test_switch():
     code, func = load_test("tests/haxe/Switch.hl")

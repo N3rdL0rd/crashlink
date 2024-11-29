@@ -1,0 +1,1016 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.1">
+<title>crashlink.decomp API documentation</title>
+<meta name="description" content="Decompilation and control flow graph generation">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin-bottom:1em}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>crashlink.decomp</code></h1>
+</header>
+<section id="section-intro">
+<p>Decompilation and control flow graph generation</p>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="crashlink.decomp.CFDeadCodeEliminator"><code class="flex name class">
+<span>class <span class="ident">CFDeadCodeEliminator</span></span>
+<span>(</span><span>graph: <a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Remove unreachable code blocks</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class CFDeadCodeEliminator(CFOptimizer):
+    &#34;&#34;&#34;
+    Remove unreachable code blocks
+    &#34;&#34;&#34;
+
+    def optimize(self):
+        reachable: Set[CFNode] = set()
+        worklist = [self.graph.entry]
+
+        while worklist:
+            node = worklist.pop()
+            if node not in reachable and node:
+                reachable.add(node)
+                for next_node, _ in node.branches:
+                    worklist.append(next_node)
+
+        self.graph.nodes = [n for n in self.graph.nodes if n in reachable]</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.CFOptimizer" href="#crashlink.decomp.CFOptimizer">CFOptimizer</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.CFDeadCodeEliminator.optimize"><code class="name flex">
+<span>def <span class="ident">optimize</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.decomp.CFGraph"><code class="flex name class">
+<span>class <span class="ident">CFGraph</span></span>
+<span>(</span><span>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>A control flow graph.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class CFGraph:
+    &#34;&#34;&#34;
+    A control flow graph.
+    &#34;&#34;&#34;
+
+    def __init__(self, func: Function):
+        self.func = func
+        self.nodes: List[CFNode] = []
+        self.entry: Optional[CFNode] = None
+        self.applied_optimizers: List[CFOptimizer] = []
+
+    def add_node(self, ops: List[Opcode], base_offset: int = 0) -&gt; CFNode:
+        node = CFNode(ops)
+        self.nodes.append(node)
+        node.base_offset = base_offset
+        return node
+
+    def add_branch(self, src: CFNode, dst: CFNode, edge_type: str):
+        src.branches.append((dst, edge_type))
+
+    def build(self, do_optimize: bool = True):
+        &#34;&#34;&#34;Build the control flow graph.&#34;&#34;&#34;
+        if not self.func.ops:
+            return
+
+        jump_targets = set()
+        for i, op in enumerate(self.func.ops):
+            # fmt: off
+            if op.op in [&#34;JTrue&#34;, &#34;JFalse&#34;, &#34;JNull&#34;, &#34;JNotNull&#34;, 
+                        &#34;JSLt&#34;, &#34;JSGte&#34;, &#34;JSGt&#34;, &#34;JSLte&#34;,
+                        &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;,
+                        &#34;JEq&#34;, &#34;JNotEq&#34;, &#34;JAlways&#34;, &#34;Trap&#34;]:
+            # fmt: on
+                jump_targets.add(i + op.definition[&#34;offset&#34;].value + 1)
+
+        current_ops: List[Opcode] = []
+        current_start = 0
+        blocks: List[Tuple[int, List[Opcode]]] = []  # (start_idx, ops) tuples
+
+        for i, op in enumerate(self.func.ops):
+            if i in jump_targets and current_ops:
+                blocks.append((current_start, current_ops))
+                current_ops = []
+                current_start = i
+
+            current_ops.append(op)
+
+            # fmt: off
+            if op.op in [&#34;JTrue&#34;, &#34;JFalse&#34;, &#34;JNull&#34;, &#34;JNotNull&#34;,
+                        &#34;JSLt&#34;, &#34;JSGte&#34;, &#34;JSGt&#34;, &#34;JSLte&#34;, 
+                        &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;,
+                        &#34;JEq&#34;, &#34;JNotEq&#34;, &#34;JAlways&#34;, &#34;Switch&#34;, &#34;Ret&#34;,
+                        &#34;Trap&#34;, &#34;EndTrap&#34;]:
+            # fmt: on
+                blocks.append((current_start, current_ops))
+                current_ops = []
+                current_start = i + 1
+
+        if current_ops:
+            blocks.append((current_start, current_ops))
+
+        nodes_by_idx = {}
+        for start_idx, ops in blocks:
+            node = self.add_node(ops, start_idx)
+            nodes_by_idx[start_idx] = node
+            if start_idx == 0:
+                self.entry = node
+
+        for start_idx, ops in blocks:
+            src_node = nodes_by_idx[start_idx]
+            last_op = ops[-1]
+
+            next_idx = start_idx + len(ops)
+
+            # conditionals
+            # fmt: off
+            if last_op.op in [&#34;JTrue&#34;, &#34;JFalse&#34;, &#34;JNull&#34;, &#34;JNotNull&#34;,
+                            &#34;JSLt&#34;, &#34;JSGte&#34;, &#34;JSGt&#34;, &#34;JSLte&#34;,
+                            &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;, 
+                            &#34;JEq&#34;, &#34;JNotEq&#34;]:
+            # fmt: on
+                
+                jump_idx = start_idx + len(ops) + last_op.definition[&#34;offset&#34;].value
+                
+                # - jump target is &#34;true&#34; branch
+                # - fall-through is &#34;false&#34; branch
+                    
+                if jump_idx in nodes_by_idx:
+                    edge_type = &#34;true&#34;
+                    self.add_branch(src_node, nodes_by_idx[jump_idx], edge_type)
+                    
+                if next_idx in nodes_by_idx:
+                    edge_type = &#34;false&#34; 
+                    self.add_branch(src_node, nodes_by_idx[next_idx], edge_type)
+            
+            elif last_op.op == &#34;Switch&#34;:
+                for i, offset in enumerate(last_op.definition[&#39;offsets&#39;].value):
+                    if offset.value != 0:
+                        jump_idx = start_idx + len(ops) + offset.value
+                        self.add_branch(src_node, nodes_by_idx[jump_idx], f&#34;switch: case: {i} &#34;)
+                if next_idx in nodes_by_idx:
+                    self.add_branch(src_node, nodes_by_idx[next_idx], &#34;switch: default&#34;)
+            
+            elif last_op.op == &#34;Trap&#34;:
+                jump_idx = start_idx + len(ops) + last_op.definition[&#34;offset&#34;].value
+                if jump_idx in nodes_by_idx:
+                    self.add_branch(src_node, nodes_by_idx[jump_idx], &#34;trap&#34;)
+                if next_idx in nodes_by_idx:
+                    self.add_branch(src_node, nodes_by_idx[next_idx], &#34;fall-through&#34;)
+            
+            elif last_op.op == &#34;EndTrap&#34;:
+                if next_idx in nodes_by_idx:
+                    self.add_branch(src_node, nodes_by_idx[next_idx], &#34;endtrap&#34;)
+            
+            elif last_op.op == &#34;JAlways&#34;:
+                jump_idx = start_idx + len(ops) + last_op.definition[&#34;offset&#34;].value
+                if jump_idx in nodes_by_idx:
+                    self.add_branch(src_node, nodes_by_idx[jump_idx], &#34;unconditional&#34;)
+            elif last_op.op != &#34;Ret&#34; and next_idx in nodes_by_idx:
+                self.add_branch(src_node, nodes_by_idx[next_idx], &#34;unconditional&#34;)
+
+        # fmt: off
+        self.optimize([
+            CFJumpThreader(self),
+            CFDeadCodeEliminator(self),
+        ])
+        # fmt: on
+
+    def optimize(self, optimizers: List[CFOptimizer]):
+        for optimizer in optimizers:
+            if optimizer not in self.applied_optimizers:
+                optimizer.optimize()
+                self.applied_optimizers.append(optimizer)
+
+    def style_node(self, node: CFNode):
+        if node == self.entry:
+            return &#34;style=filled, fillcolor=pink1&#34;
+        for op in node.ops:
+            if op.op == &#34;Ret&#34;:
+                return &#34;style=filled, fillcolor=aquamarine&#34;
+        return &#34;style=filled, fillcolor=lightblue&#34;
+
+    def graph(self, code: Bytecode):
+        &#34;&#34;&#34;Generate DOT format graph visualization.&#34;&#34;&#34;
+        dot = [&#34;digraph G {&#34;]
+        dot.append(&#39;  labelloc=&#34;t&#34;;&#39;)
+        dot.append(&#39;  label=&#34;CFG for %s&#34;;&#39; % disasm.func_header(code, self.func))
+        dot.append(&#39;  fontname=&#34;Arial&#34;;&#39;)
+        dot.append(&#34;  labelfontsize=20;&#34;)
+        dot.append(&#34;  forcelabels=true;&#34;)
+        dot.append(&#39;  node [shape=box, fontname=&#34;Courier&#34;];&#39;)
+        dot.append(&#39;  edge [fontname=&#34;Courier&#34;, fontsize=9];&#39;)
+
+        for node in self.nodes:
+            label = (
+                &#34;\n&#34;.join(
+                    [
+                        disasm.pseudo_from_op(op, node.base_offset + i, self.func.regs, code, terse=True)
+                        for i, op in enumerate(node.ops)
+                    ]
+                )
+                .replace(&#39;&#34;&#39;, &#39;\\&#34;&#39;)
+                .replace(&#34;\n&#34;, &#34;\\n&#34;)
+            )
+            style = self.style_node(node)
+            dot.append(f&#39;  node_{id(node)} [label=&#34;{label}&#34;, {style}, xlabel=&#34;{node.base_offset}.&#34;];&#39;)
+
+        for node in self.nodes:
+            for branch, edge_type in node.branches:
+                if edge_type == &#34;true&#34;:
+                    style = &#39;color=&#34;green&#34;, label=&#34;true&#34;&#39;
+                elif edge_type == &#34;false&#34;:
+                    style = &#39;color=&#34;crimson&#34;, label=&#34;false&#34;&#39;
+                elif edge_type.startswith(&#34;switch: &#34;):
+                    style = f&#39;color=&#34;{&#34;purple&#34; if not edge_type.split(&#34;switch: &#34;)[1].strip() == &#34;default&#34; else &#34;crimson&#34;}&#34;, label=&#34;{edge_type.split(&#34;switch: &#34;)[1].strip()}&#34;&#39;
+                elif edge_type == &#34;trap&#34;:
+                    style = &#39;color=&#34;yellow3&#34;, label=&#34;trap&#34;&#39;
+                else:  # unconditionals and unmatched
+                    style = &#39;color=&#34;cornflowerblue&#34;&#39;
+
+                dot.append(f&#34;  node_{id(node)} -&gt; node_{id(branch)} [{style}];&#34;)
+
+        dot.append(&#34;}&#34;)
+        return &#34;\n&#34;.join(dot)</code></pre>
+</details>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.CFGraph.add_branch"><code class="name flex">
+<span>def <span class="ident">add_branch</span></span>(<span>self, <br>src: <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>, <br>dst: <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>, <br>edge_type: str)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.decomp.CFGraph.add_node"><code class="name flex">
+<span>def <span class="ident">add_node</span></span>(<span>self, <br>ops: List[<a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>], <br>base_offset: int = 0) ‑> <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.decomp.CFGraph.build"><code class="name flex">
+<span>def <span class="ident">build</span></span>(<span>self, <br>do_optimize: bool = True)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Build the control flow graph.</p></pre></div>
+</dd>
+<dt id="crashlink.decomp.CFGraph.graph"><code class="name flex">
+<span>def <span class="ident">graph</span></span>(<span>self, <br>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Generate DOT format graph visualization.</p></pre></div>
+</dd>
+<dt id="crashlink.decomp.CFGraph.optimize"><code class="name flex">
+<span>def <span class="ident">optimize</span></span>(<span>self, <br>optimizers: List[<a title="crashlink.decomp.CFOptimizer" href="#crashlink.decomp.CFOptimizer">CFOptimizer</a>])</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.decomp.CFGraph.style_node"><code class="name flex">
+<span>def <span class="ident">style_node</span></span>(<span>self, <br>node: <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.decomp.CFJumpThreader"><code class="flex name class">
+<span>class <span class="ident">CFJumpThreader</span></span>
+<span>(</span><span>graph: <a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Thread jumps to reduce the number of nodes in the graph.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class CFJumpThreader(CFOptimizer):
+    &#34;&#34;&#34;
+    Thread jumps to reduce the number of nodes in the graph.
+    &#34;&#34;&#34;
+
+    def optimize(self):
+        # map each node to its predecessors
+        predecessors: Dict[CFNode, List[CFNode]] = {}
+        for node in self.graph.nodes:
+            for branch, _ in node.branches:
+                predecessors.setdefault(branch, []).append(node)
+
+        nodes_to_remove = set()
+        for node in self.graph.nodes:
+            if len(node.ops) == 1 and node.ops[0].op == &#34;JAlways&#34;:
+                if len(node.branches) == 1:
+                    target_node, edge_type = node.branches[0]
+                    # redirect all predecessors to target_node
+                    for pred in predecessors.get(node, []):
+                        pred.branches = [
+                            (target_node if branch == node else branch, etype) for branch, etype in pred.branches
+                        ]
+                        predecessors.setdefault(target_node, []).append(pred)
+                    nodes_to_remove.add(node)
+
+        # remove nodes from graph
+        self.graph.nodes = [n for n in self.graph.nodes if n not in nodes_to_remove]</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.CFOptimizer" href="#crashlink.decomp.CFOptimizer">CFOptimizer</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.CFJumpThreader.optimize"><code class="name flex">
+<span>def <span class="ident">optimize</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.decomp.CFNode"><code class="flex name class">
+<span>class <span class="ident">CFNode</span></span>
+<span>(</span><span>ops: List[<a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>])</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>A control flow node.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class CFNode:
+    &#34;&#34;&#34;
+    A control flow node.
+    &#34;&#34;&#34;
+
+    def __init__(self, ops: List[Opcode]):
+        self.ops = ops
+        self.branches: List[Tuple[CFNode, str]] = []
+        self.base_offset: int = 0
+
+    def __repr__(self):
+        return &#34;&lt;CFNode: %s&gt;&#34; % self.ops</code></pre>
+</details>
+</dd>
+<dt id="crashlink.decomp.CFOptimizer"><code class="flex name class">
+<span>class <span class="ident">CFOptimizer</span></span>
+<span>(</span><span>graph: <a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base class for control flow graph optimizers.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class CFOptimizer:
+    &#34;&#34;&#34;
+    Base class for control flow graph optimizers.
+    &#34;&#34;&#34;
+
+    def __init__(self, graph: &#34;CFGraph&#34;):
+        self.graph = graph
+
+    def optimize(self):
+        raise NotImplementedError()</code></pre>
+</details>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.CFDeadCodeEliminator" href="#crashlink.decomp.CFDeadCodeEliminator">CFDeadCodeEliminator</a></li>
+<li><a title="crashlink.decomp.CFJumpThreader" href="#crashlink.decomp.CFJumpThreader">CFJumpThreader</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.CFOptimizer.optimize"><code class="name flex">
+<span>def <span class="ident">optimize</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.decomp.IRControlFlow"><code class="flex name class">
+<span>class <span class="ident">IRControlFlow</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base class for control flow statements</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRControlFlow(IRStatement):
+    &#34;&#34;&#34;Base class for control flow statements&#34;&#34;&#34;
+
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
+<li><a title="crashlink.decomp.IRNode" href="#crashlink.decomp.IRNode">IRNode</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRIf" href="#crashlink.decomp.IRIf">IRIf</a></li>
+<li><a title="crashlink.decomp.IRLoop" href="#crashlink.decomp.IRLoop">IRLoop</a></li>
+<li><a title="crashlink.decomp.IRSwitch" href="#crashlink.decomp.IRSwitch">IRSwitch</a></li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.IRExpression"><code class="flex name class">
+<span>class <span class="ident">IRExpression</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base class for IR expressions</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRExpression(IRNode):
+    &#34;&#34;&#34;Base class for IR expressions&#34;&#34;&#34;
+
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRNode" href="#crashlink.decomp.IRNode">IRNode</a></li>
+<li>abc.ABC</li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.IRFunction"><code class="flex name class">
+<span>class <span class="ident">IRFunction</span></span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRFunction:
+    def __init__(self, code: Bytecode, func: Function):
+        self.func = func
+        self.cfg = CFGraph(func)
+        self.cfg.build()
+        self.code = code
+        self.ops = func.ops
+        self.statements: List[IRStatement] = []
+        self.lifter = IRLifter()
+        self.locals: List[IRLocal] = []
+        self._lift()
+
+    def _lift(self):
+        &#34;&#34;&#34;Lift function to IR&#34;&#34;&#34;
+        for i, reg in enumerate(self.func.regs):
+            self.locals.append(IRLocal(f&#34;reg{i}&#34;, reg))
+        self._name_locals()
+        for node in self.cfg.nodes:
+            for op in node.ops:
+                ir_node = self.lifter.lift(op)
+                if isinstance(ir_node, IRStatement):
+                    self.statements.append(ir_node)
+
+    def _name_locals(self):
+        &#34;&#34;&#34;Name locals based on debug info&#34;&#34;&#34;
+        reg_assigns: List[Set[str]] = [set() for _ in self.func.regs]
+        if self.func.has_debug and self.func.assigns:
+            for assign in self.func.assigns:
+                val = assign[1].value - 1
+                # Tuple[strRef (name), VarInt (op index)]
+                if val &lt; 0:
+                    continue  # TODO: handle this - negative indexes are argument names
+                reg: Optional[int] = None
+                op = self.ops[val]
+                try:
+                    op.definition[&#34;dst&#34;]
+                    reg = op.definition[&#34;dst&#34;].value
+                except KeyError:
+                    pass
+                if reg is not None:
+                    reg_assigns[reg].add(assign[0].resolve(self.code))
+        for i, _reg in enumerate(self.func.regs):
+            if _reg.resolve(self.code).definition and isinstance(_reg.resolve(self.code).definition, Void):
+                reg_assigns[i].add(&#34;void&#34;)
+        dbg_print(&#34;Named regs:&#34;, reg_assigns)
+        for i, local in enumerate(self.locals):
+            if reg_assigns[i] and len(reg_assigns[i]) == 1:
+                local.name = reg_assigns[i].pop()</code></pre>
+</details>
+</dd>
+<dt id="crashlink.decomp.IRIf"><code class="flex name class">
+<span>class <span class="ident">IRIf</span></span>
+<span>(</span><span>condition: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>, <br>then_block: List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>], <br>else_block: Optional[List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>]] = None)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base class for control flow statements</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRIf(IRControlFlow):
+    def __init__(
+        self, condition: IRExpression, then_block: List[IRStatement], else_block: Optional[List[IRStatement]] = None
+    ):
+        super().__init__()
+        self.condition = condition
+        self.then_block = then_block
+        self.else_block = else_block
+
+    def accept(self, visitor: IRVisitor):
+        visitor.visit_if(self)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRControlFlow" href="#crashlink.decomp.IRControlFlow">IRControlFlow</a></li>
+<li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
+<li><a title="crashlink.decomp.IRNode" href="#crashlink.decomp.IRNode">IRNode</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRIf.accept"><code class="name flex">
+<span>def <span class="ident">accept</span></span>(<span>self, <br>visitor: <a title="crashlink.decomp.IRVisitor" href="#crashlink.decomp.IRVisitor">IRVisitor</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.decomp.IRLifter"><code class="flex name class">
+<span>class <span class="ident">IRLifter</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Lifts opcodes to IR</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRLifter:
+    &#34;&#34;&#34;Lifts opcodes to IR&#34;&#34;&#34;
+
+    def __init__(self):
+        self.lifters: Dict[str, Callable] = {}
+        self._register_lifters()
+
+    def register(self, opcode: str, lifter: Callable):
+        &#34;&#34;&#34;Register a lifter for an opcode&#34;&#34;&#34;
+        self.lifters[opcode] = lifter
+
+    def _register_lifters(self):
+        for opcode in opcodes:
+            if hasattr(self, f&#34;lift_{opcode.lower()}&#34;):
+                self.register(opcode, getattr(self, f&#34;lift_{opcode.lower()}&#34;))
+
+    def lift(self, op: Opcode) -&gt; IRNode:
+        &#34;&#34;&#34;Lift an opcode to IR&#34;&#34;&#34;
+        if op.op not in self.lifters:
+            print(f&#34;Warning: No lifter for {op.op}&#34;)
+            return InlineOp(op)
+        return self.lifters[op.op](op)
+
+    def lift_switch(self, op: Opcode) -&gt; IRSwitch:  # type: ignore
+        # TODO
+        pass</code></pre>
+</details>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRLifter.lift"><code class="name flex">
+<span>def <span class="ident">lift</span></span>(<span>self, <br>op: <a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>) ‑> <a title="crashlink.decomp.IRNode" href="#crashlink.decomp.IRNode">IRNode</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Lift an opcode to IR</p></pre></div>
+</dd>
+<dt id="crashlink.decomp.IRLifter.lift_switch"><code class="name flex">
+<span>def <span class="ident">lift_switch</span></span>(<span>self, <br>op: <a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>) ‑> <a title="crashlink.decomp.IRSwitch" href="#crashlink.decomp.IRSwitch">IRSwitch</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.decomp.IRLifter.register"><code class="name flex">
+<span>def <span class="ident">register</span></span>(<span>self, <br>opcode: str, <br>lifter: Callable)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Register a lifter for an opcode</p></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.decomp.IRLocal"><code class="flex name class">
+<span>class <span class="ident">IRLocal</span></span>
+<span>(</span><span>name: str, <br>type: <a title="crashlink.core.tIndex" href="core.html#crashlink.core.tIndex">tIndex</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRLocal:
+    def __init__(self, name: str, type: tIndex):
+        self.name = name
+        self.type = type
+
+    def __repr__(self):
+        return f&#34;&lt;IRLocal: {self.name} {self.type}&gt;&#34;</code></pre>
+</details>
+</dd>
+<dt id="crashlink.decomp.IRLoop"><code class="flex name class">
+<span>class <span class="ident">IRLoop</span></span>
+<span>(</span><span>condition: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>, <br>body: List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>])</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base class for control flow statements</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRLoop(IRControlFlow):
+    def __init__(self, condition: IRExpression, body: List[IRStatement]):
+        super().__init__()
+        self.condition = condition
+        self.body = body
+
+    def accept(self, visitor: IRVisitor):
+        visitor.visit_loop(self)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRControlFlow" href="#crashlink.decomp.IRControlFlow">IRControlFlow</a></li>
+<li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
+<li><a title="crashlink.decomp.IRNode" href="#crashlink.decomp.IRNode">IRNode</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRLoop.accept"><code class="name flex">
+<span>def <span class="ident">accept</span></span>(<span>self, <br>visitor: <a title="crashlink.decomp.IRVisitor" href="#crashlink.decomp.IRVisitor">IRVisitor</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.decomp.IRNode"><code class="flex name class">
+<span>class <span class="ident">IRNode</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base class for all IR nodes</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRNode(ABC):
+    &#34;&#34;&#34;Base class for all IR nodes&#34;&#34;&#34;
+
+    def __init__(self):
+        self.parent: Optional[IRNode] = None
+
+    @abstractmethod
+    def accept(self, visitor: &#34;IRVisitor&#34;) -&gt; None:
+        pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>abc.ABC</li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
+<li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRNode.accept"><code class="name flex">
+<span>def <span class="ident">accept</span></span>(<span>self, <br>visitor: <a title="crashlink.decomp.IRVisitor" href="#crashlink.decomp.IRVisitor">IRVisitor</a>) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.decomp.IRStatement"><code class="flex name class">
+<span>class <span class="ident">IRStatement</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base class for IR statements</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRStatement(IRNode):
+    &#34;&#34;&#34;Base class for IR statements&#34;&#34;&#34;
+
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRNode" href="#crashlink.decomp.IRNode">IRNode</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRControlFlow" href="#crashlink.decomp.IRControlFlow">IRControlFlow</a></li>
+<li><a title="crashlink.decomp.InlineOp" href="#crashlink.decomp.InlineOp">InlineOp</a></li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.IRSwitch"><code class="flex name class">
+<span>class <span class="ident">IRSwitch</span></span>
+<span>(</span><span>value: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>, <br>cases: Dict[int, List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>]], <br>default: Optional[List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>]] = None)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base class for control flow statements</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRSwitch(IRControlFlow):
+    def __init__(
+        self, value: IRExpression, cases: Dict[int, List[IRStatement]], default: Optional[List[IRStatement]] = None
+    ):
+        super().__init__()
+        self.value = value
+        self.cases = cases
+        self.default = default
+
+    def accept(self, visitor: IRVisitor):
+        visitor.visit_switch(self)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRControlFlow" href="#crashlink.decomp.IRControlFlow">IRControlFlow</a></li>
+<li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
+<li><a title="crashlink.decomp.IRNode" href="#crashlink.decomp.IRNode">IRNode</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRSwitch.accept"><code class="name flex">
+<span>def <span class="ident">accept</span></span>(<span>self, <br>visitor: <a title="crashlink.decomp.IRVisitor" href="#crashlink.decomp.IRVisitor">IRVisitor</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.decomp.IRVisitor"><code class="flex name class">
+<span>class <span class="ident">IRVisitor</span></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Base visitor for IR nodes</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRVisitor(ABC):
+    &#34;&#34;&#34;Base visitor for IR nodes&#34;&#34;&#34;
+
+    @abstractmethod
+    def visit_statement(self, stmt: &#34;IRStatement&#34;) -&gt; None:
+        pass
+
+    @abstractmethod
+    def visit_expression(self, expr: &#34;IRExpression&#34;) -&gt; None:
+        pass
+
+    @abstractmethod
+    def visit_if(self, stmt: &#34;IRIf&#34;) -&gt; None:
+        pass
+
+    @abstractmethod
+    def visit_loop(self, stmt: &#34;IRLoop&#34;) -&gt; None:
+        pass
+
+    @abstractmethod
+    def visit_switch(self, stmt: &#34;IRSwitch&#34;) -&gt; None:
+        pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRVisitor.visit_expression"><code class="name flex">
+<span>def <span class="ident">visit_expression</span></span>(<span>self, <br>expr: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.decomp.IRVisitor.visit_if"><code class="name flex">
+<span>def <span class="ident">visit_if</span></span>(<span>self, <br>stmt: <a title="crashlink.decomp.IRIf" href="#crashlink.decomp.IRIf">IRIf</a>) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.decomp.IRVisitor.visit_loop"><code class="name flex">
+<span>def <span class="ident">visit_loop</span></span>(<span>self, <br>stmt: <a title="crashlink.decomp.IRLoop" href="#crashlink.decomp.IRLoop">IRLoop</a>) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.decomp.IRVisitor.visit_statement"><code class="name flex">
+<span>def <span class="ident">visit_statement</span></span>(<span>self, <br>stmt: <a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.decomp.IRVisitor.visit_switch"><code class="name flex">
+<span>def <span class="ident">visit_switch</span></span>(<span>self, <br>stmt: <a title="crashlink.decomp.IRSwitch" href="#crashlink.decomp.IRSwitch">IRSwitch</a>) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.decomp.InlineOp"><code class="flex name class">
+<span>class <span class="ident">InlineOp</span></span>
+<span>(</span><span>op: <a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Inline opcode in IR</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class InlineOp(IRStatement):
+    &#34;&#34;&#34;Inline opcode in IR&#34;&#34;&#34;
+
+    def __init__(self, op: Opcode):
+        super().__init__()
+        self.op = op
+
+    def accept(self, visitor: IRVisitor):
+        visitor.visit_statement(self)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
+<li><a title="crashlink.decomp.IRNode" href="#crashlink.decomp.IRNode">IRNode</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.InlineOp.accept"><code class="name flex">
+<span>def <span class="ident">accept</span></span>(<span>self, <br>visitor: <a title="crashlink.decomp.IRVisitor" href="#crashlink.decomp.IRVisitor">IRVisitor</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashlink" href="index.html">crashlink</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="crashlink.decomp.CFDeadCodeEliminator" href="#crashlink.decomp.CFDeadCodeEliminator">CFDeadCodeEliminator</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.CFDeadCodeEliminator.optimize" href="#crashlink.decomp.CFDeadCodeEliminator.optimize">optimize</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a></code></h4>
+<ul class="two-column">
+<li><code><a title="crashlink.decomp.CFGraph.add_branch" href="#crashlink.decomp.CFGraph.add_branch">add_branch</a></code></li>
+<li><code><a title="crashlink.decomp.CFGraph.add_node" href="#crashlink.decomp.CFGraph.add_node">add_node</a></code></li>
+<li><code><a title="crashlink.decomp.CFGraph.build" href="#crashlink.decomp.CFGraph.build">build</a></code></li>
+<li><code><a title="crashlink.decomp.CFGraph.graph" href="#crashlink.decomp.CFGraph.graph">graph</a></code></li>
+<li><code><a title="crashlink.decomp.CFGraph.optimize" href="#crashlink.decomp.CFGraph.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.CFGraph.style_node" href="#crashlink.decomp.CFGraph.style_node">style_node</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.CFJumpThreader" href="#crashlink.decomp.CFJumpThreader">CFJumpThreader</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.CFJumpThreader.optimize" href="#crashlink.decomp.CFJumpThreader.optimize">optimize</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.CFOptimizer" href="#crashlink.decomp.CFOptimizer">CFOptimizer</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.CFOptimizer.optimize" href="#crashlink.decomp.CFOptimizer.optimize">optimize</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.IRControlFlow" href="#crashlink.decomp.IRControlFlow">IRControlFlow</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.IRFunction" href="#crashlink.decomp.IRFunction">IRFunction</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.IRIf" href="#crashlink.decomp.IRIf">IRIf</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRIf.accept" href="#crashlink.decomp.IRIf.accept">accept</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.IRLifter" href="#crashlink.decomp.IRLifter">IRLifter</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRLifter.lift" href="#crashlink.decomp.IRLifter.lift">lift</a></code></li>
+<li><code><a title="crashlink.decomp.IRLifter.lift_switch" href="#crashlink.decomp.IRLifter.lift_switch">lift_switch</a></code></li>
+<li><code><a title="crashlink.decomp.IRLifter.register" href="#crashlink.decomp.IRLifter.register">register</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.IRLoop" href="#crashlink.decomp.IRLoop">IRLoop</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRLoop.accept" href="#crashlink.decomp.IRLoop.accept">accept</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.IRNode" href="#crashlink.decomp.IRNode">IRNode</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRNode.accept" href="#crashlink.decomp.IRNode.accept">accept</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.IRSwitch" href="#crashlink.decomp.IRSwitch">IRSwitch</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRSwitch.accept" href="#crashlink.decomp.IRSwitch.accept">accept</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.IRVisitor" href="#crashlink.decomp.IRVisitor">IRVisitor</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRVisitor.visit_expression" href="#crashlink.decomp.IRVisitor.visit_expression">visit_expression</a></code></li>
+<li><code><a title="crashlink.decomp.IRVisitor.visit_if" href="#crashlink.decomp.IRVisitor.visit_if">visit_if</a></code></li>
+<li><code><a title="crashlink.decomp.IRVisitor.visit_loop" href="#crashlink.decomp.IRVisitor.visit_loop">visit_loop</a></code></li>
+<li><code><a title="crashlink.decomp.IRVisitor.visit_statement" href="#crashlink.decomp.IRVisitor.visit_statement">visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.IRVisitor.visit_switch" href="#crashlink.decomp.IRVisitor.visit_switch">visit_switch</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.InlineOp" href="#crashlink.decomp.InlineOp">InlineOp</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.InlineOp.accept" href="#crashlink.decomp.InlineOp.accept">accept</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.1</a>.</p>
+</footer>
+</body>
+</html>

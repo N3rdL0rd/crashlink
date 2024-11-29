@@ -6,8 +6,7 @@ import tempfile
 import webbrowser
 from typing import Callable, Dict, List, Tuple
 
-from . import disasm
-from . import decomp
+from . import decomp, disasm
 from .core import Bytecode
 from .globals import VERSION
 

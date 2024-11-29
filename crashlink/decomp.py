@@ -5,11 +5,11 @@ Decompilation and control flow graph generation
 from abc import ABC, abstractmethod
 from typing import Callable, Dict, List, Optional, Set, Tuple
 
+from . import disasm
 from .core import *
 from .errors import *
 from .globals import dbg_print
 from .opcodes import opcodes
-from . import disasm
 
 
 class CFNode:
@@ -293,15 +293,15 @@ class IRVisitor(ABC):
     @abstractmethod
     def visit_expression(self, expr: "IRExpression") -> None:
         pass
-    
+
     @abstractmethod
     def visit_if(self, stmt: "IRIf") -> None:
         pass
-    
+
     @abstractmethod
     def visit_loop(self, stmt: "IRLoop") -> None:
         pass
-    
+
     @abstractmethod
     def visit_switch(self, stmt: "IRSwitch") -> None:
         pass
@@ -394,10 +394,11 @@ class IRLifter:
             print(f"Warning: No lifter for {op.op}")
             return InlineOp(op)
         return self.lifters[op.op](op)
-    
-    def lift_switch(self, op: Opcode) -> IRSwitch:
+
+    def lift_switch(self, op: Opcode) -> IRSwitch:  # type: ignore
         # TODO
         pass
+
 
 class IRLocal:
     def __init__(self, name: str, type: tIndex):
