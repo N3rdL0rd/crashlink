@@ -71,6 +71,10 @@ Before committing, please run `./gen_docs` to format the code, run tests, and ge
 
 Pull requests are always welcome! For major changes, please open an issue first to discuss what you would like to change.
 
+## Architecture
+
+![Architecture](docs/static/flow.svg)
+
 ## Credits
 
 - Thank you to [Gui-Yom](https://github.com/Gui-Yom) for writing hlbc and for maintaining documentation on the HashLink bytecode format, as well as for providing tests and helping me during development.

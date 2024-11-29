@@ -190,7 +190,12 @@ class VarInt(Serialisable):
         )
 
 
-class fIndex(VarInt):
+class ResolvableVarInt(VarInt):
+    def resolve(self, code: "Bytecode") -> Any:
+        raise NotImplementedError("resolve is not implemented for this class.")
+
+
+class fIndex(ResolvableVarInt):
     """
     Abstract class based on VarInt to represent a distinct function index instead of just an arbitrary number.
     """
@@ -202,7 +207,7 @@ class fIndex(VarInt):
         raise MalformedBytecode(f"Function index {self.value} not found.")
 
 
-class tIndex(VarInt):
+class tIndex(ResolvableVarInt):
     """
     Abstract class based on VarInt to represent a distinct type by index instead of an arbitrary number.
     """
@@ -211,7 +216,7 @@ class tIndex(VarInt):
         return code.types[self.value]
 
 
-class gIndex(VarInt):
+class gIndex(ResolvableVarInt):
     """
     Global index reference, based on VarInt.
     """
@@ -220,7 +225,7 @@ class gIndex(VarInt):
         return code.global_types[self.value].resolve(code)
 
 
-class strRef(VarInt):
+class strRef(ResolvableVarInt):
     """
     Abstract class to represent a string index.
     """
@@ -229,17 +234,17 @@ class strRef(VarInt):
         return code.strings.value[self.value]
 
 
-class intRef(VarInt):
+class intRef(ResolvableVarInt):
     def resolve(self, code: "Bytecode") -> SerialisableInt:
         return code.ints[self.value]
 
 
-class floatRef(VarInt):
+class floatRef(ResolvableVarInt):
     def resolve(self, code: "Bytecode") -> SerialisableF64:
         return code.floats[self.value]
 
 
-class bytesRef(VarInt):
+class bytesRef(ResolvableVarInt):
     def resolve(self, code: "Bytecode") -> bytes:
         if code.bytes:
             return code.bytes.value[self.value]
@@ -247,7 +252,7 @@ class bytesRef(VarInt):
             raise MalformedBytecode("No bytes block found.")
 
 
-class fieldRef(VarInt):
+class fieldRef(ResolvableVarInt):
     """
     Abstract class to represent a field index.
     """
@@ -257,7 +262,7 @@ class fieldRef(VarInt):
         return fields[self.value]
 
 
-class Reg(VarInt):
+class Reg(ResolvableVarInt):
     """
     Abstract class to represent a register index in a function.
     """
