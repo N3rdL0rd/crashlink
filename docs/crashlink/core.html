@@ -379,8 +379,8 @@ you.</p>
             self.nints.value = len(self.ints)
             self.nfloats.value = len(self.floats)
             self.nstrings.value = len(self.strings.value)
-            if self.version.value &gt;= 5:
-                self.nbytes.value = len(self.bytes.value)  # type: ignore
+            if self.version.value &gt;= 5 and self.bytes and self.nbytes:
+                self.nbytes.value = len(self.bytes.value)
             self.ntypes.value = len(self.types)
             self.nglobals.value = len(self.global_types)
             self.nnatives.value = len(self.natives)
@@ -1119,7 +1119,7 @@ you.</p>
         self.nregs.deserialise(f)
         self.nops.deserialise(f)
         for _ in range(self.nregs.value):
-            self.regs.append(tIndex().deserialise(f))  # type: ignore
+            self.regs.append(tIndex().deserialise(f))
         for _ in range(self.nops.value):
             self.ops.append(Opcode().deserialise(f))
         if self.has_debug:
