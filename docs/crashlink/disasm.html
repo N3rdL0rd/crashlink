@@ -37,7 +37,7 @@ hljs.highlightAll();
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="crashlink.disasm.fmt_op"><code class="name flex">
-<span>def <span class="ident">fmt_op</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>regs: Union[List[<a title="crashlink.core.Reg" href="core.html#crashlink.core.Reg">Reg</a>], List[<a title="crashlink.core.tIndex" href="core.html#crashlink.core.tIndex">tIndex</a>]], <br>op: <a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>, <br>idx: int, <br>width: int = 15)</span>
+<span>def <span class="ident">fmt_op</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>regs: Union[List[<a title="crashlink.core.Reg" href="core.html#crashlink.core.Reg">Reg</a>], List[<a title="crashlink.core.tIndex" href="core.html#crashlink.core.tIndex">tIndex</a>]], <br>op: <a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>, <br>idx: int, <br>width: int = 15) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><pre><p>Formats an opcode into a table row.</p></pre></div>
@@ -49,7 +49,7 @@ hljs.highlightAll();
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.disasm.func"><code class="name flex">
-<span>def <span class="ident">func</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a> | <a title="crashlink.core.Native" href="core.html#crashlink.core.Native">Native</a>)</span>
+<span>def <span class="ident">func</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a> | <a title="crashlink.core.Native" href="core.html#crashlink.core.Native">Native</a>) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><pre><p>Generates a human-readable printout and disassembly of a function or native.</p></pre></div>
@@ -73,13 +73,13 @@ hljs.highlightAll();
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.disasm.is_static"><code class="name flex">
-<span>def <span class="ident">is_static</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a>)</span>
+<span>def <span class="ident">is_static</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a>) ‑> bool</span>
 </code></dt>
 <dd>
 <div class="desc"><pre><p>Checks if a function is static.</p></pre></div>
 </dd>
 <dt id="crashlink.disasm.is_std"><code class="name flex">
-<span>def <span class="ident">is_std</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a> | <a title="crashlink.core.Native" href="core.html#crashlink.core.Native">Native</a>)</span>
+<span>def <span class="ident">is_std</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a> | <a title="crashlink.core.Native" href="core.html#crashlink.core.Native">Native</a>) ‑> bool</span>
 </code></dt>
 <dd>
 <div class="desc"><pre><p>Checks if a function is from the standard library. This is a heuristic and is a bit broken still.</p></pre></div>
@@ -91,7 +91,7 @@ hljs.highlightAll();
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.disasm.pseudo_from_op"><code class="name flex">
-<span>def <span class="ident">pseudo_from_op</span></span>(<span>op: <a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>, <br>idx: int, <br>regs: Union[List[<a title="crashlink.core.Reg" href="core.html#crashlink.core.Reg">Reg</a>], List[<a title="crashlink.core.tIndex" href="core.html#crashlink.core.tIndex">tIndex</a>]], <br>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>terse: bool = False)</span>
+<span>def <span class="ident">pseudo_from_op</span></span>(<span>op: <a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>, <br>idx: int, <br>regs: Union[List[<a title="crashlink.core.Reg" href="core.html#crashlink.core.Reg">Reg</a>], List[<a title="crashlink.core.tIndex" href="core.html#crashlink.core.tIndex">tIndex</a>]], <br>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>terse: bool = False) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><pre><p>Generates pseudocode disassembly from an opcode.</p></pre></div>
@@ -103,7 +103,7 @@ hljs.highlightAll();
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.disasm.type_to_haxe"><code class="name flex">
-<span>def <span class="ident">type_to_haxe</span></span>(<span>type: str)</span>
+<span>def <span class="ident">type_to_haxe</span></span>(<span>type: str) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>

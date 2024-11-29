@@ -10,3 +10,4 @@ pytest
 tqdm
 snakeviz
 typeguard
+types-tqdm

@@ -3,8 +3,8 @@ Decompilation and control flow graph generation
 """
 
 from abc import ABC, abstractmethod
-from typing import Callable, Dict, List, Optional, Set, Tuple, Any
-from enum import Enum as _Enum # Enum is already defined in crashlink.core
+from enum import Enum as _Enum  # Enum is already defined in crashlink.core
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from . import disasm
 from .core import *
@@ -290,7 +290,7 @@ class IRStatement(ABC):
     @abstractmethod
     def __repr__(self) -> str:
         pass
-    
+
     def __str__(self) -> str:
         return self.__repr__()
 
@@ -299,6 +299,7 @@ class IRBlock(IRStatement):
     """
     A basic unit block of IR. Contains a list of IRStatements, and can contain other IRBlocks.
     """
+
     def __init__(self, code: Bytecode):
         super().__init__(code)
         self.statements: List[IRStatement] = []
@@ -306,7 +307,7 @@ class IRBlock(IRStatement):
     def __repr__(self) -> str:
         statements = "\n\t  ".join(map(str, self.statements))
         return f"<IRBlock: {statements}>"
-    
+
 
 class IRArithmetic(IRStatement):
     class ArithmeticType(_Enum):
@@ -323,14 +324,14 @@ class IRArithmetic(IRStatement):
         AND = "&"
         OR = "|"
         XOR = "^"
-    
+
     def __init__(self, code: Bytecode, dst: IRLocal, lhs: IRLocal, rhs: IRLocal, op: "IRArithmetic.ArithmeticType"):
         super().__init__(code)
         self.dst = dst
         self.lhs = lhs
         self.rhs = rhs
         self.op = op
-    
+
     def __repr__(self) -> str:
         return f"<IRArithmetic: {self.dst} = {self.lhs} {self.op.value} {self.rhs}>"
 
@@ -341,14 +342,14 @@ class IRCall(IRStatement):
         METHOD = 1
         THIS = 2
         CLOSURE = 3
-    
+
     def __init__(self, code: Bytecode, dst: IRLocal, func: IRLocal, args: List[IRLocal], call_type: "IRCall.CallType"):
         super().__init__(code)
         self.dst = dst
         self.func = func
         self.args = args
         self.call_type = call_type
-    
+
     def __repr__(self) -> str:
         return f"<IRCall: {self.dst} = {self.func}({', '.join(map(str, self.args))})>"
 
@@ -361,8 +362,15 @@ class IRConst(IRStatement):
         BYTES = "bytes"
         STRING = "string"
         NULL = "null"
-        
-    def __init__(self, code: Bytecode, dst: IRLocal, const_type: "IRConst.ConstType", idx: Optional[ResolvableVarInt] = None, value: Optional[bool] = None):
+
+    def __init__(
+        self,
+        code: Bytecode,
+        dst: IRLocal,
+        const_type: "IRConst.ConstType",
+        idx: Optional[ResolvableVarInt] = None,
+        value: Optional[bool] = None,
+    ):
         super().__init__(code)
         self.dst = dst
         self.const_type = const_type
@@ -375,11 +383,11 @@ class IRConst(IRStatement):
             if not idx:
                 raise DecompError("IRConst must have an index")
             self.value = idx.resolve(code)
-        
+
     def __repr__(self) -> str:
-        #return f"<IRConst: {self.dst} = {self.const_type.value} {self.value}>"
+        # return f"<IRConst: {self.dst} = {self.const_type.value} {self.value}>"
         return f"<IRConst: {self.dst} = {self.value}>"
-    
+
 
 class IRFunction:
     def __init__(self, code: Bytecode, func: Function) -> None:
@@ -431,11 +439,27 @@ class IRFunction:
     def _lift_block(self, node: CFNode) -> None:
         """Lift a control flow node to an IR block"""
         for op in node.ops:
-            if op.op in ["Add", "Sub", "Mul", "SDiv", "UDiv", "SMod", "UMod", "Shl", "SShr", "UShr", "And", "Or", "Xor"]:
+            if op.op in [
+                "Add",
+                "Sub",
+                "Mul",
+                "SDiv",
+                "UDiv",
+                "SMod",
+                "UMod",
+                "Shl",
+                "SShr",
+                "UShr",
+                "And",
+                "Or",
+                "Xor",
+            ]:
                 dst = self.locals[op.definition["dst"].value]
                 lhs = self.locals[op.definition["a"].value]
                 rhs = self.locals[op.definition["b"].value]
-                self.block.statements.append(IRArithmetic(self.code, dst, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()]))
+                self.block.statements.append(
+                    IRArithmetic(self.code, dst, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])
+                )
             elif op.op in ["Int", "Float", "Bool", "Bytes", "String", "Null"]:
                 dst = self.locals[op.definition["dst"].value]
                 const_type = IRConst.ConstType[op.op.upper()]
@@ -444,6 +468,6 @@ class IRFunction:
                 else:
                     value = None
                 self.block.statements.append(IRConst(self.code, dst, const_type, op.definition["ptr"], value))
-                
+
     def print(self) -> None:
         print(self.block)

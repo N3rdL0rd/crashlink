@@ -32,6 +32,7 @@ class FailedSerialisation(CrashlinkError):
     Raised when reserialisation of bytecode fails.
     """
 
+
 class DecompError(CrashlinkError):
     """
     Raised when an error occurs during decompilation.

@@ -47,13 +47,13 @@ you.</p>
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.core.read_u8"><code class="name flex">
-<span>def <span class="ident">read_u8</span></span>(<span>f) ‑> int</span>
+<span>def <span class="ident">read_u8</span></span>(<span>f: typing.BinaryIO | _io.BytesIO) ‑> int</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.core.write_u8"><code class="name flex">
-<span>def <span class="ident">write_u8</span></span>(<span>f, <br>val: int) ‑> None</span>
+<span>def <span class="ident">write_u8</span></span>(<span>f: typing.BinaryIO | _io.BytesIO, <br>val: int) ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -73,10 +73,10 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Abstract(TypeDef):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.name = strRef()
 
-    def deserialise(self, f) -&gt; &#34;Abstract&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Abstract&#34;:
         self.name.deserialise(f)
         return self
 
@@ -91,7 +91,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Abstract.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Abstract" href="#crashlink.core.Abstract">Abstract</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Abstract" href="#crashlink.core.Abstract">Abstract</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -133,11 +133,11 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Binding(Serialisable):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.field = fieldRef()
         self.findex = fIndex()
 
-    def deserialise(self, f) -&gt; &#34;Binding&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Binding&#34;:
         self.field.deserialise(f)
         self.findex.deserialise(f)
         return self
@@ -152,7 +152,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Binding.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Binding" href="#crashlink.core.Binding">Binding</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Binding" href="#crashlink.core.Binding">Binding</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -194,7 +194,7 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Bytecode(Serialisable):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.deserialised = False
         self.magic = RawData(3)
         self.version = SerialisableInt()
@@ -226,9 +226,9 @@ you.</p>
         self.functions: List[Function] = []
         self.constants: List[Constant] = []
 
-        self.section_offsets: Dict[str, tuple] = {}
+        self.section_offsets: Dict[str, int] = {}
 
-    def find_magic(self, f, magic=b&#34;HLB&#34;):
+    def find_magic(self, f: BinaryIO | BytesIO, magic: bytes = b&#34;HLB&#34;) -&gt; None:
         buffer_size = 1024
         offset = 0
         while True:
@@ -243,13 +243,13 @@ you.</p>
             offset += buffer_size
 
     @classmethod
-    def from_path(cls, path):
+    def from_path(cls, path: str) -&gt; &#34;Bytecode&#34;:
         f = open(path, &#34;rb&#34;)
         instance = cls().deserialise(f)
         f.close()
         return instance
 
-    def deserialise(self, f, search_magic=True):
+    def deserialise(self, f: BinaryIO | BytesIO, search_magic: bool = True) -&gt; &#34;Bytecode&#34;:
         start_time = datetime.now()
         dbg_print(&#34;---- Deserialise ----&#34;)
         if search_magic:
@@ -482,10 +482,10 @@ you.</p>
                 return function
         raise IndexError(f&#34;Function f@{id} not found!&#34;)
 
-    def track_section(self, f, section_name):
+    def track_section(self, f: BinaryIO | BytesIO, section_name: str) -&gt; None:
         self.section_offsets[section_name] = f.tell()
 
-    def section_at(self, offset):
+    def section_at(self, offset: int) -&gt; Optional[str]:
         # returns the name of the section at the offset:
         # if the offset is after a section start and before the next section start, it&#39;s still in the first section
         for section_name, section_offset in list(reversed(self.section_offsets.items())):
@@ -500,7 +500,7 @@ you.</p>
 <h3>Static methods</h3>
 <dl>
 <dt id="crashlink.core.Bytecode.from_path"><code class="name flex">
-<span>def <span class="ident">from_path</span></span>(<span>path)</span>
+<span>def <span class="ident">from_path</span></span>(<span>path: str) ‑> <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -509,13 +509,13 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Bytecode.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f, <br>search_magic=True)</span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO, <br>search_magic: bool = True) ‑> <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.core.Bytecode.find_magic"><code class="name flex">
-<span>def <span class="ident">find_magic</span></span>(<span>self, <br>f, <br>magic=b'HLB')</span>
+<span>def <span class="ident">find_magic</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO, <br>magic: bytes = b'HLB') ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -533,7 +533,7 @@ you.</p>
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.core.Bytecode.section_at"><code class="name flex">
-<span>def <span class="ident">section_at</span></span>(<span>self, <br>offset)</span>
+<span>def <span class="ident">section_at</span></span>(<span>self, <br>offset: int) ‑> Optional[str]</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -545,7 +545,7 @@ you.</p>
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.core.Bytecode.track_section"><code class="name flex">
-<span>def <span class="ident">track_section</span></span>(<span>self, <br>f, <br>section_name)</span>
+<span>def <span class="ident">track_section</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO, <br>section_name: str) ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -581,13 +581,13 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class BytesBlock(Serialisable):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.size = SerialisableInt()
         self.size.length = 4
         self.value: List[bytes] = []
         self.nbytes = 0
 
-    def deserialise(self, f, nbytes: int) -&gt; &#34;BytesBlock&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO, nbytes: int) -&gt; &#34;BytesBlock&#34;:
         self.nbytes = nbytes
         self.size.deserialise(f, length=4)
         raw = f.read(self.size.value)
@@ -622,7 +622,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.BytesBlock.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f, <br>nbytes: int) ‑> <a title="crashlink.core.BytesBlock" href="#crashlink.core.BytesBlock">BytesBlock</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO, <br>nbytes: int) ‑> <a title="crashlink.core.BytesBlock" href="#crashlink.core.BytesBlock">BytesBlock</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -645,12 +645,12 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Constant(Serialisable):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self._global = gIndex()
         self.nfields = VarInt()
         self.fields: List[VarInt] = []
 
-    def deserialise(self, f) -&gt; &#34;Constant&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Constant&#34;:
         self._global.deserialise(f)
         self.nfields.deserialise(f)
         for _ in range(self.nfields.value):
@@ -673,7 +673,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Constant.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Constant" href="#crashlink.core.Constant">Constant</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Constant" href="#crashlink.core.Constant">Constant</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -696,10 +696,10 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class DebugInfo(Serialisable):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.debug_info: List[Tuple[fileRef, int]] = []  # file index, line number
 
-    def deserialise(self, f, nops: int) -&gt; &#34;DebugInfo&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO, nops: int) -&gt; &#34;DebugInfo&#34;:
         tmp = []
         currfile: int = -1
         currline: int = 0
@@ -730,7 +730,7 @@ you.</p>
         self.debug_info = tmp
         return self
 
-    def flush_repeat(self, w: BytesIO, curpos: ctypes.c_size_t, rcount: ctypes.c_size_t, pos: int):
+    def flush_repeat(self, w: BinaryIO | BytesIO, curpos: ctypes.c_size_t, rcount: ctypes.c_size_t, pos: int) -&gt; None:
         &#34;&#34;&#34;Helper function to handle repeat encoding.&#34;&#34;&#34;
         if rcount.value &gt; 0:
             if rcount.value &gt; 15:
@@ -783,13 +783,13 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.DebugInfo.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f, <br>nops: int) ‑> <a title="crashlink.core.DebugInfo" href="#crashlink.core.DebugInfo">DebugInfo</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO, <br>nops: int) ‑> <a title="crashlink.core.DebugInfo" href="#crashlink.core.DebugInfo">DebugInfo</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.core.DebugInfo.flush_repeat"><code class="name flex">
-<span>def <span class="ident">flush_repeat</span></span>(<span>self, <br>w: _io.BytesIO, <br>curpos: ctypes.c_ulonglong, <br>rcount: ctypes.c_ulonglong, <br>pos: int)</span>
+<span>def <span class="ident">flush_repeat</span></span>(<span>self, <br>w: typing.BinaryIO | _io.BytesIO, <br>curpos: ctypes.c_ulonglong, <br>rcount: ctypes.c_ulonglong, <br>pos: int) ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"><pre><p>Helper function to handle repeat encoding.</p></pre></div>
@@ -850,13 +850,13 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Enum(TypeDef):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.name = strRef()
         self._global = gIndex()
         self.nconstructs = VarInt()
         self.constructs: List[EnumConstruct] = []
 
-    def deserialise(self, f) -&gt; &#34;Enum&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Enum&#34;:
         self.name.deserialise(f)
         self._global.deserialise(f)
         self.nconstructs.deserialise(f)
@@ -882,7 +882,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Enum.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Enum" href="#crashlink.core.Enum">Enum</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Enum" href="#crashlink.core.Enum">Enum</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -905,12 +905,12 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class EnumConstruct(Serialisable):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.name = strRef()
         self.nparams = VarInt()
         self.params: List[tIndex] = []
 
-    def deserialise(self, f) -&gt; &#34;EnumConstruct&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;EnumConstruct&#34;:
         self.name.deserialise(f)
         self.nparams.deserialise(f)
         for _ in range(self.nparams.value):
@@ -933,7 +933,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.EnumConstruct.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.EnumConstruct" href="#crashlink.core.EnumConstruct">EnumConstruct</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.EnumConstruct" href="#crashlink.core.EnumConstruct">EnumConstruct</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -994,11 +994,11 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Field(Serialisable):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.name = strRef()
         self.type = tIndex()
 
-    def deserialise(self, f) -&gt; &#34;Field&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Field&#34;:
         self.name.deserialise(f)
         self.type.deserialise(f)
         return self
@@ -1013,7 +1013,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Field.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -1036,12 +1036,12 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Fun(TypeDef):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.nargs = VarInt()
         self.args: List[tIndex] = []
         self.ret = tIndex()
 
-    def deserialise(self, f) -&gt; &#34;Fun&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Fun&#34;:
         self.nargs.deserialise(f)
         for _ in range(self.nargs.value):
             self.args.append(tIndex().deserialise(f))
@@ -1069,7 +1069,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Fun.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Fun" href="#crashlink.core.Fun">Fun</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Fun" href="#crashlink.core.Fun">Fun</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -1092,7 +1092,7 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Function(Serialisable):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.type = tIndex()
         self.findex = fIndex()
         self.nregs = VarInt()
@@ -1110,7 +1110,7 @@ you.</p>
             raise ValueError(&#34;Cannot get file from non-debug bytecode!&#34;)
         return self.debuginfo.debug_info[0][0].resolve(code)
 
-    def deserialise(self, f, has_debug: bool, version: int) -&gt; &#34;Function&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO, has_debug: bool, version: int) -&gt; &#34;Function&#34;:
         self.has_debug = has_debug
         self.version = version
         self.type.deserialise(f)
@@ -1156,7 +1156,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Function.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f, <br>has_debug: bool, <br>version: int) ‑> <a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO, <br>has_debug: bool, <br>version: int) ‑> <a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -1223,11 +1223,11 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class InlineBool(Serialisable):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.varint = VarInt()
         self.value: bool = False
 
-    def deserialise(self, f) -&gt; &#34;InlineBool&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;InlineBool&#34;:
         self.varint.deserialise(f)
         self.value = bool(self.varint.value)
         return self
@@ -1243,7 +1243,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.InlineBool.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.InlineBool" href="#crashlink.core.InlineBool">InlineBool</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.InlineBool" href="#crashlink.core.InlineBool">InlineBool</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -1285,13 +1285,13 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Native(Serialisable):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.lib = strRef()
         self.name = strRef()
         self.type = tIndex()
         self.findex = fIndex()
 
-    def deserialise(self, f) -&gt; &#34;Native&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Native&#34;:
         self.lib.deserialise(f)
         self.name.deserialise(f)
         self.type.deserialise(f)
@@ -1315,7 +1315,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Native.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Native" href="#crashlink.core.Native">Native</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Native" href="#crashlink.core.Native">Native</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -1338,10 +1338,10 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Null(TypeDef):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.type = tIndex()
 
-    def deserialise(self, f) -&gt; &#34;Null&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Null&#34;:
         self.type.deserialise(f)
         return self
 
@@ -1356,7 +1356,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Null.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Null" href="#crashlink.core.Null">Null</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Null" href="#crashlink.core.Null">Null</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -1379,7 +1379,7 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Obj(TypeDef):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.name = strRef()
         self.super = tIndex()
         self._global = gIndex()
@@ -1390,7 +1390,7 @@ you.</p>
         self.protos: List[Proto] = []
         self.bindings: List[Binding] = []
 
-    def deserialise(self, f) -&gt; &#34;Obj&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Obj&#34;:
         self.name.deserialise(f)
         self.super.deserialise(f)
         self._global.deserialise(f)
@@ -1460,7 +1460,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Obj.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -1512,12 +1512,12 @@ you.</p>
         &#34;InlineInt&#34;: VarInt,
     }
 
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.code = VarInt()
-        self.op = None
-        self.definition = {}
+        self.op: Optional[str] = None
+        self.definition: Dict[Any, Any] = {}
 
-    def deserialise(self, f) -&gt; &#34;Opcode&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Opcode&#34;:
         # dbg_print(f&#34;Deserialising opcode at {tell(f)}... &#34;, end=&#34;&#34;)
         self.code.deserialise(f)
         # dbg_print(f&#34;{self.code.value}... &#34;, end=&#34;&#34;)
@@ -1562,7 +1562,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Opcode.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Opcode" href="#crashlink.core.Opcode">Opcode</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Opcode" href="#crashlink.core.Opcode">Opcode</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -1585,10 +1585,10 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Packed(TypeDef):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.inner = tIndex()
 
-    def deserialise(self, f) -&gt; &#34;Packed&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Packed&#34;:
         self.inner.deserialise(f)
         return self
 
@@ -1603,7 +1603,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Packed.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Packed" href="#crashlink.core.Packed">Packed</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Packed" href="#crashlink.core.Packed">Packed</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -1626,12 +1626,12 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Proto(Serialisable):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.name = strRef()
         self.findex = fIndex()
         self.pindex = VarInt()  # unknown use
 
-    def deserialise(self, f) -&gt; &#34;Proto&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Proto&#34;:
         self.name.deserialise(f)
         self.findex.deserialise(f)
         self.pindex.deserialise(f)
@@ -1647,7 +1647,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Proto.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Proto" href="#crashlink.core.Proto">Proto</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Proto" href="#crashlink.core.Proto">Proto</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -1676,10 +1676,10 @@ you.</p>
     &#34;&#34;&#34;
 
     def __init__(self, length: int):
-        self.value = b&#34;&#34;
+        self.value: bytes = b&#34;&#34;
         self.length = length
 
-    def deserialise(self, f) -&gt; &#34;RawData&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;RawData&#34;:
         self.value = f.read(self.length)
         return self
 
@@ -1693,7 +1693,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.RawData.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.RawData" href="#crashlink.core.RawData">RawData</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.RawData" href="#crashlink.core.RawData">RawData</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -1716,10 +1716,10 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Ref(TypeDef):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.type = tIndex()
 
-    def deserialise(self, f) -&gt; &#34;Ref&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Ref&#34;:
         self.type.deserialise(f)
         return self
 
@@ -1734,7 +1734,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Ref.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Ref" href="#crashlink.core.Ref">Ref</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Ref" href="#crashlink.core.Ref">Ref</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -1757,7 +1757,7 @@ you.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class Reg(VarInt):
+<pre><code class="python">class Reg(ResolvableVarInt):
     &#34;&#34;&#34;
     Abstract class to represent a register index in a function.
     &#34;&#34;&#34;
@@ -1767,6 +1767,7 @@ you.</p>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
+<li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 </ul>
@@ -1794,11 +1795,11 @@ you.</p>
     List of Regs.
     &#34;&#34;&#34;
 
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.n = VarInt()
         self.value: List[Reg] = []
 
-    def deserialise(self, f) -&gt; &#34;Regs&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Regs&#34;:
         self.n.deserialise(f)
         for _ in range(self.n.value):
             self.value.append(Reg().deserialise(f))
@@ -1814,13 +1815,54 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Regs.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Regs" href="#crashlink.core.Regs">Regs</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Regs" href="#crashlink.core.Regs">Regs</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
 </dd>
 <dt id="crashlink.core.Regs.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.ResolvableVarInt"><code class="flex name class">
+<span>class <span class="ident">ResolvableVarInt</span></span>
+<span>(</span><span>value: int = 0)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class ResolvableVarInt(VarInt):
+    def resolve(self, code: &#34;Bytecode&#34;) -&gt; Any:
+        raise NotImplementedError(&#34;resolve is not implemented for this class.&#34;)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.core.Reg" href="#crashlink.core.Reg">Reg</a></li>
+<li><a title="crashlink.core.bytesRef" href="#crashlink.core.bytesRef">bytesRef</a></li>
+<li><a title="crashlink.core.fIndex" href="#crashlink.core.fIndex">fIndex</a></li>
+<li><a title="crashlink.core.fieldRef" href="#crashlink.core.fieldRef">fieldRef</a></li>
+<li><a title="crashlink.core.floatRef" href="#crashlink.core.floatRef">floatRef</a></li>
+<li><a title="crashlink.core.gIndex" href="#crashlink.core.gIndex">gIndex</a></li>
+<li><a title="crashlink.core.intRef" href="#crashlink.core.intRef">intRef</a></li>
+<li><a title="crashlink.core.strRef" href="#crashlink.core.strRef">strRef</a></li>
+<li><a title="crashlink.core.tIndex" href="#crashlink.core.tIndex">tIndex</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.ResolvableVarInt.resolve"><code class="name flex">
+<span>def <span class="ident">resolve</span></span>(<span>self, <br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> Any</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -1837,11 +1879,11 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Serialisable:
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.value: Any = None
         raise NotImplementedError(&#34;Serialisable is an abstract class and should not be instantiated.&#34;)
 
-    def deserialise(self, f, *args, **kwargs) -&gt; &#34;Serialisable&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO, *args: Any, **kwargs: Any) -&gt; &#34;Serialisable&#34;:
         raise NotImplementedError(&#34;deserialise is not implemented for this class.&#34;)
 
     def serialise(self) -&gt; bytes:
@@ -1853,13 +1895,19 @@ you.</p>
     def __repr__(self) -&gt; str:
         return str(self.value)
 
-    def __eq__(self, other) -&gt; bool:
+    def __eq__(self, other: object) -&gt; Any:
+        if not isinstance(other, Serialisable):
+            return NotImplemented
         return self.value == other.value
 
-    def __ne__(self, other) -&gt; bool:
+    def __ne__(self, other: object) -&gt; Any:
+        if not isinstance(other, Serialisable):
+            return NotImplemented
         return self.value != other.value
 
-    def __lt__(self, other) -&gt; bool:
+    def __lt__(self, other: object) -&gt; Any:
+        if not isinstance(other, Serialisable):
+            return NotImplemented
         return self.value &lt; other.value</code></pre>
 </details>
 <h3>Subclasses</h3>
@@ -1889,7 +1937,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Serialisable.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f, <br>*args, <br>**kwargs) ‑> <a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO, <br>*args: Any, <br>**kwargs: Any) ‑> <a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -1916,10 +1964,10 @@ you.</p>
     A standard 64-bit float.
     &#34;&#34;&#34;
 
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.value = 0.0
 
-    def deserialise(self, f) -&gt; &#34;SerialisableF64&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;SerialisableF64&#34;:
         self.value = struct.unpack(&#34;&lt;d&#34;, f.read(8))[0]
         return self
 
@@ -1933,7 +1981,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.SerialisableF64.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.SerialisableF64" href="#crashlink.core.SerialisableF64">SerialisableF64</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.SerialisableF64" href="#crashlink.core.SerialisableF64">SerialisableF64</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -1960,15 +2008,15 @@ you.</p>
     Integer of the specified byte length.
     &#34;&#34;&#34;
 
-    def __init__(self):
-        self.value = -1
+    def __init__(self) -&gt; None:
+        self.value: int = -1
         self.length = 4
-        self.byteorder = &#34;little&#34;
+        self.byteorder: Literal[&#34;little&#34;, &#34;big&#34;] = &#34;little&#34;
         self.signed = False
 
     def deserialise(
         self,
-        f,
+        f: BinaryIO | BytesIO,
         length: int = 4,
         byteorder: Literal[&#34;little&#34;, &#34;big&#34;] = &#34;little&#34;,
         signed: bool = False,
@@ -1995,7 +2043,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.SerialisableInt.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f, <br>length: int = 4, <br>byteorder: Literal['little', 'big'] = 'little', <br>signed: bool = False) ‑> <a title="crashlink.core.SerialisableInt" href="#crashlink.core.SerialisableInt">SerialisableInt</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO, <br>length: int = 4, <br>byteorder: Literal['little', 'big'] = 'little', <br>signed: bool = False) ‑> <a title="crashlink.core.SerialisableInt" href="#crashlink.core.SerialisableInt">SerialisableInt</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -2018,14 +2066,14 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class StringsBlock(Serialisable):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.length = SerialisableInt()
         self.length.length = 4
         self.value: List[str] = []
         self.lengths: List[int] = []
         self.embedded_lengths: List[VarInt] = []
 
-    def deserialise(self, f) -&gt; &#34;StringsBlock&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;StringsBlock&#34;:
         self.length.deserialise(f, length=4)
         strings_size = self.length.value
         dbg_print(f&#34;Found {fmt_bytes(strings_size)} of strings&#34;)
@@ -2073,7 +2121,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.StringsBlock.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.StringsBlock" href="#crashlink.core.StringsBlock">StringsBlock</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.StringsBlock" href="#crashlink.core.StringsBlock">StringsBlock</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -2143,12 +2191,12 @@ you.</p>
     ]
     # fmt: on
 
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.kind = SerialisableInt()
         self.kind.length = 1
         self.definition: Optional[TypeDef] = None
 
-    def deserialise(self, f) -&gt; &#34;Type&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Type&#34;:
         # dbg_print(f&#34;Type @ {tell(f)}&#34;)
         self.kind.deserialise(f, length=1)
         try:
@@ -2181,7 +2229,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Type.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Type" href="#crashlink.core.Type">Type</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Type" href="#crashlink.core.Type">Type</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -2294,9 +2342,9 @@ you.</p>
 </summary>
 <pre><code class="python">class VarInt(Serialisable):
     def __init__(self, value: int = 0):
-        self.value = value
+        self.value: int = value
 
-    def deserialise(self: T, f) -&gt; T:
+    def deserialise(self: T, f: BinaryIO | BytesIO) -&gt; T:
         # Read first byte to determine format
         b = int.from_bytes(f.read(1), &#34;big&#34;)
 
@@ -2363,20 +2411,12 @@ you.</p>
 </ul>
 <h3>Subclasses</h3>
 <ul class="hlist">
-<li><a title="crashlink.core.Reg" href="#crashlink.core.Reg">Reg</a></li>
-<li><a title="crashlink.core.bytesRef" href="#crashlink.core.bytesRef">bytesRef</a></li>
-<li><a title="crashlink.core.fIndex" href="#crashlink.core.fIndex">fIndex</a></li>
-<li><a title="crashlink.core.fieldRef" href="#crashlink.core.fieldRef">fieldRef</a></li>
-<li><a title="crashlink.core.floatRef" href="#crashlink.core.floatRef">floatRef</a></li>
-<li><a title="crashlink.core.gIndex" href="#crashlink.core.gIndex">gIndex</a></li>
-<li><a title="crashlink.core.intRef" href="#crashlink.core.intRef">intRef</a></li>
-<li><a title="crashlink.core.strRef" href="#crashlink.core.strRef">strRef</a></li>
-<li><a title="crashlink.core.tIndex" href="#crashlink.core.tIndex">tIndex</a></li>
+<li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 </ul>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.VarInt.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self: ~T, <br>f) ‑> ~T</span>
+<span>def <span class="ident">deserialise</span></span>(<span>self: ~T, <br>f: typing.BinaryIO | _io.BytesIO) ‑> ~T</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -2403,11 +2443,11 @@ you.</p>
     List of VarInts.
     &#34;&#34;&#34;
 
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.n = VarInt()
         self.value: List[VarInt] = []
 
-    def deserialise(self, f) -&gt; &#34;VarInts&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;VarInts&#34;:
         self.n.deserialise(f)
         for _ in range(self.n.value):
             self.value.append(VarInt().deserialise(f))
@@ -2423,7 +2463,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.VarInts.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.VarInts" href="#crashlink.core.VarInts">VarInts</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.VarInts" href="#crashlink.core.VarInts">VarInts</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -2446,11 +2486,11 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Virtual(TypeDef):
-    def __init__(self):
+    def __init__(self) -&gt; None:
         self.nfields = VarInt()
         self.fields: List[Field] = []
 
-    def deserialise(self, f) -&gt; &#34;Virtual&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Virtual&#34;:
         self.nfields.deserialise(f)
         for _ in range(self.nfields.value):
             self.fields.append(Field().deserialise(f))
@@ -2472,7 +2512,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Virtual.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f) ‑> <a title="crashlink.core.Virtual" href="#crashlink.core.Virtual">Virtual</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Virtual" href="#crashlink.core.Virtual">Virtual</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -2514,7 +2554,7 @@ you.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class bytesRef(VarInt):
+<pre><code class="python">class bytesRef(ResolvableVarInt):
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; bytes:
         if code.bytes:
             return code.bytes.value[self.value]
@@ -2523,6 +2563,7 @@ you.</p>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
+<li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 </ul>
@@ -2546,7 +2587,7 @@ you.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class fIndex(VarInt):
+<pre><code class="python">class fIndex(ResolvableVarInt):
     &#34;&#34;&#34;
     Abstract class based on VarInt to represent a distinct function index instead of just an arbitrary number.
     &#34;&#34;&#34;
@@ -2559,6 +2600,7 @@ you.</p>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
+<li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 </ul>
@@ -2582,24 +2624,47 @@ you.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class fieldRef(VarInt):
+<pre><code class="python">class fieldRef(ResolvableVarInt):
     &#34;&#34;&#34;
     Abstract class to represent a field index.
     &#34;&#34;&#34;
 
-    def resolve(self, code: &#34;Bytecode&#34;, obj: &#34;Obj&#34;) -&gt; &#34;Field&#34;:
-        fields = obj.resolve_fields(code)
-        return fields[self.value]</code></pre>
+    obj: Optional[&#34;Obj&#34;] = None
+
+    def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Field&#34;:
+        if self.obj:
+            return self.obj.resolve_fields(code)[self.value]
+        raise ValueError(
+            &#34;Cannot resolve field without context. Try setting `field.obj` to an instance of `Obj`, or use `field.resolve_obj(code, obj)` instead.&#34;
+        )
+
+    def resolve_obj(self, code: &#34;Bytecode&#34;, obj: &#34;Obj&#34;) -&gt; &#34;Field&#34;:
+        self.obj = obj
+        return obj.resolve_fields(code)[self.value]</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
+<li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 </ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashlink.core.fieldRef.obj"><code class="name">var <span class="ident">obj</span> : Optional[<a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a>]</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.fieldRef.resolve"><code class="name flex">
-<span>def <span class="ident">resolve</span></span>(<span>self, <br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>, <br>obj: <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a>) ‑> <a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a></span>
+<span>def <span class="ident">resolve</span></span>(<span>self, <br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> <a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+</dd>
+<dt id="crashlink.core.fieldRef.resolve_obj"><code class="name flex">
+<span>def <span class="ident">resolve_obj</span></span>(<span>self, <br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>, <br>obj: <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a>) ‑> <a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
@@ -2658,12 +2723,13 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class floatRef(VarInt):
+<pre><code class="python">class floatRef(ResolvableVarInt):
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; SerialisableF64:
         return code.floats[self.value]</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
+<li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 </ul>
@@ -2687,7 +2753,7 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class gIndex(VarInt):
+<pre><code class="python">class gIndex(ResolvableVarInt):
     &#34;&#34;&#34;
     Global index reference, based on VarInt.
     &#34;&#34;&#34;
@@ -2697,6 +2763,7 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
+<li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 </ul>
@@ -2720,12 +2787,13 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class intRef(VarInt):
+<pre><code class="python">class intRef(ResolvableVarInt):
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; SerialisableInt:
         return code.ints[self.value]</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
+<li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 </ul>
@@ -2749,7 +2817,7 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class strRef(VarInt):
+<pre><code class="python">class strRef(ResolvableVarInt):
     &#34;&#34;&#34;
     Abstract class to represent a string index.
     &#34;&#34;&#34;
@@ -2759,6 +2827,7 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
+<li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 </ul>
@@ -2782,7 +2851,7 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class tIndex(VarInt):
+<pre><code class="python">class tIndex(ResolvableVarInt):
     &#34;&#34;&#34;
     Abstract class based on VarInt to represent a distinct type by index instead of an arbitrary number.
     &#34;&#34;&#34;
@@ -2792,6 +2861,7 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
+<li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 </ul>
@@ -3021,6 +3091,12 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 </ul>
 </li>
 <li>
+<h4><code><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.ResolvableVarInt.resolve" href="#crashlink.core.ResolvableVarInt.resolve">resolve</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.Serialisable.deserialise" href="#crashlink.core.Serialisable.deserialise">deserialise</a></code></li>
@@ -3110,7 +3186,9 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 <li>
 <h4><code><a title="crashlink.core.fieldRef" href="#crashlink.core.fieldRef">fieldRef</a></code></h4>
 <ul class="">
+<li><code><a title="crashlink.core.fieldRef.obj" href="#crashlink.core.fieldRef.obj">obj</a></code></li>
 <li><code><a title="crashlink.core.fieldRef.resolve" href="#crashlink.core.fieldRef.resolve">resolve</a></code></li>
+<li><code><a title="crashlink.core.fieldRef.resolve_obj" href="#crashlink.core.fieldRef.resolve_obj">resolve_obj</a></code></li>
 </ul>
 </li>
 <li>
