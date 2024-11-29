@@ -244,7 +244,7 @@ References:
 Enums:
 - MakeEnum: Create enum variant (dst = construct(args...))
 - EnumAlloc: Create enum with defaults (dst = construct())
-- EnumIndex: Get enum tag (dst = variantof value)
+- EnumIndex: Get enum tag (dst = variant of value)
 - EnumField: Get enum field (dst = (value as construct).field)
 - SetEnumField: Set enum field (value.field = src)
 
