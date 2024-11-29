@@ -11,9 +11,28 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
+  "Topic :: Software Development :: Disassemblers",  
 ]
 license = {file = "LICENSE"}
 dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pdoc3",
+  "black",
+  "build",
+  "twine",
+  "isort",
+  "mypy",
+  "radon",
+  "no_implicit_optional",
+  "pytest",
+  "tqdm",
+  "snakeviz",
+  "typeguard",
+  "types-tqdm",
+]
+tqdm = ["tqdm"]
 
 [build-system]
 requires = ["setuptools>=61.0"]
