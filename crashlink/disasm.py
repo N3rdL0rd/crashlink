@@ -157,7 +157,7 @@ def pseudo_from_op(
                 this = reg.resolve(code)
                 break
         if this:
-            return f"reg{op.definition['dst']} = this.{op.definition['field'].resolve(code, this.definition).name.resolve(code)}"
+            return f"reg{op.definition['dst']} = this.{op.definition['field'].resolve_obj(code, this.definition).name.resolve(code)}"
         return f"reg{op.definition['dst']} = this.f@{op.definition['field'].value} (this not found!)"
     elif op.op == "Label":
         return "label"
@@ -209,14 +209,14 @@ def pseudo_from_op(
     elif op.op == "Field":
         field = (
             op.definition["field"]
-            .resolve(code, regs[op.definition["obj"].value].resolve(code).definition)
+            .resolve_obj(code, regs[op.definition["obj"].value].resolve(code).definition)
             .name.resolve(code)
         )
         return f"reg{op.definition['dst']} = reg{op.definition['obj']}.{field}"
     elif op.op == "SetField":
         field = (
             op.definition["field"]
-            .resolve(code, regs[op.definition["obj"].value].resolve(code).definition)
+            .resolve_obj(code, regs[op.definition["obj"].value].resolve(code).definition)
             .name.resolve(code)
         )
         return f"reg{op.definition['obj']}.{field} = reg{op.definition['src']}"
