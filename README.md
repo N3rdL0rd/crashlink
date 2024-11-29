@@ -66,18 +66,36 @@ Ops:
 
 ## Development
 
+> [!NOTE]
+> This project is configured for the [just](https://just.systems/) command runner. If you don't have it installed, you can still run the commands in the `justfile` manually, but I don't recommend it.
+
 For development purposes, you can clone the repo, install development dependencies, and run the tests:
 
 ```bash
 git clone https://github.com/N3rdL0rd/crashlink
 cd crashlink
-pip install -e .[dev]
-pytest
+# optionally, create and activate a venv here.
+just install # or pip install -e .[dev]
+just test # or pytest
 ```
 
-Before committing, please run `./gen_docs` to format the code, run tests, and generate documentation in `docs/`. If you're adding new features to the core serialisation/deserialisation code (`core.py`), please also add a test case in `tests/haxe/` for the new language feature you're adding. If you're adding a feature to the decompiler or disassembler, please add a normal test case (in Python) in `tests/` that tests the new feature.
+Before committing, please run `just dev` to format the code, run tests, and generate documentation in `docs/`. If you're adding new features to the core serialisation/deserialisation code (`core.py`), please also add a test case in `tests/haxe/` for the new language feature you're adding. If you're adding a feature to the decompiler or disassembler, please add a normal test case (in Python) in `tests/` that tests the new feature.
 
 Pull requests are always welcome! For major changes, please open an issue first to discuss what you would like to change.
+
+You can use the following pre-defined commands with `just`:
+
+- `just dev`: Run tests, format code, and generate documentation.
+- `just build`: Build the package.
+- `just install`: Install development dependencies and the package in editable mode.
+- `just build-tests`: Build test samples.
+- `just test`: Run tests.
+- `just format`: Format code.
+- `just docs`: Generate documentation.
+- `just check`: Run static analysis/typechecking.
+- `just clean`: Clean up build artifacts.
+- `just profile`: Run the test suite with cProfile and then open the results in a browser.
+- `just serve-docs`: Serve the documentation locally.
 
 ## Architecture
 
