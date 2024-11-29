@@ -2,6 +2,9 @@
 Global configuration.
 """
 
+from typing import BinaryIO, Any
+from io import BytesIO
+
 VERSION: str = "pre-alpha"
 """
 The version of crashlink.
@@ -15,7 +18,7 @@ Whether to enable certain features meant only for development or debugging of cr
 """
 
 
-def dbg_print(*args, **kwargs):
+def dbg_print(*args: Any, **kwargs: Any) -> None:
     """
     Print a message if DEBUG is True.
     """
@@ -23,7 +26,7 @@ def dbg_print(*args, **kwargs):
         print(*args, **kwargs)
 
 
-def tell(f):
+def tell(f: BinaryIO|BytesIO) -> str:
     """
     Hex-formatted tell of a file.
     """

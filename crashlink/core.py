@@ -11,7 +11,7 @@ import ctypes
 import struct
 from datetime import datetime
 from io import BytesIO
-from typing import Any, Dict, List, Literal, Optional, Tuple, TypeVar
+from typing import Any, Dict, List, Literal, Optional, Tuple, TypeVar, BinaryIO, TypeAlias
 
 T = TypeVar("T", bound="VarInt")  # HACK: easier than reimplementing deserialise for each subclass
 
@@ -31,11 +31,11 @@ except ImportError:
 
 # TODO: rewrite all ABCs like this to use the PEP 3119 `abc` module
 class Serialisable:
-    def __init__(self):
+    def __init__(self) -> None:
         self.value: Any = None
         raise NotImplementedError("Serialisable is an abstract class and should not be instantiated.")
 
-    def deserialise(self, f, *args, **kwargs) -> "Serialisable":
+    def deserialise(self, f: BinaryIO|BytesIO, *args: Any, **kwargs: Any) -> "Serialisable":
         raise NotImplementedError("deserialise is not implemented for this class.")
 
     def serialise(self) -> bytes:
@@ -47,13 +47,19 @@ class Serialisable:
     def __repr__(self) -> str:
         return str(self.value)
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> Any:
+        if not isinstance(other, Serialisable):
+            return NotImplemented
         return self.value == other.value
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, other: object) -> Any:
+        if not isinstance(other, Serialisable):
+            return NotImplemented
         return self.value != other.value
 
-    def __lt__(self, other) -> bool:
+    def __lt__(self, other: object) -> Any:
+        if not isinstance(other, Serialisable):
+            return NotImplemented
         return self.value < other.value
 
 
@@ -63,10 +69,10 @@ class RawData(Serialisable):
     """
 
     def __init__(self, length: int):
-        self.value = b""
+        self.value: bytes = b""
         self.length = length
 
-    def deserialise(self, f) -> "RawData":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "RawData":
         self.value = f.read(self.length)
         return self
 
@@ -79,15 +85,15 @@ class SerialisableInt(Serialisable):
     Integer of the specified byte length.
     """
 
-    def __init__(self):
-        self.value = -1
+    def __init__(self) -> None:
+        self.value: int = -1
         self.length = 4
-        self.byteorder = "little"
+        self.byteorder: Literal["little", "big"] = "little"
         self.signed = False
 
     def deserialise(
         self,
-        f,
+        f: BinaryIO|BytesIO,
         length: int = 4,
         byteorder: Literal["little", "big"] = "little",
         signed: bool = False,
@@ -113,10 +119,10 @@ class SerialisableF64(Serialisable):
     A standard 64-bit float.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.value = 0.0
 
-    def deserialise(self, f) -> "SerialisableF64":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "SerialisableF64":
         self.value = struct.unpack("<d", f.read(8))[0]
         return self
 
@@ -126,9 +132,9 @@ class SerialisableF64(Serialisable):
 
 class VarInt(Serialisable):
     def __init__(self, value: int = 0):
-        self.value = value
+        self.value: int = value
 
-    def deserialise(self: T, f) -> T:
+    def deserialise(self: T, f: BinaryIO|BytesIO) -> T:
         # Read first byte to determine format
         b = int.from_bytes(f.read(1), "big")
 
@@ -279,11 +285,11 @@ class Reg(ResolvableVarInt):
 
 
 class InlineBool(Serialisable):
-    def __init__(self):
+    def __init__(self) -> None:
         self.varint = VarInt()
         self.value: bool = False
 
-    def deserialise(self, f) -> "InlineBool":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "InlineBool":
         self.varint.deserialise(f)
         self.value = bool(self.varint.value)
         return self
@@ -298,11 +304,11 @@ class VarInts(Serialisable):
     List of VarInts.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.n = VarInt()
         self.value: List[VarInt] = []
 
-    def deserialise(self, f) -> "VarInts":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "VarInts":
         self.n.deserialise(f)
         for _ in range(self.n.value):
             self.value.append(VarInt().deserialise(f))
@@ -317,11 +323,11 @@ class Regs(Serialisable):
     List of Regs.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.n = VarInt()
         self.value: List[Reg] = []
 
-    def deserialise(self, f) -> "Regs":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "Regs":
         self.n.deserialise(f)
         for _ in range(self.n.value):
             self.value.append(Reg().deserialise(f))
@@ -346,14 +352,14 @@ def fmt_bytes(bytes: int | float) -> str:
 
 
 class StringsBlock(Serialisable):
-    def __init__(self):
+    def __init__(self) -> None:
         self.length = SerialisableInt()
         self.length.length = 4
         self.value: List[str] = []
         self.lengths: List[int] = []
         self.embedded_lengths: List[VarInt] = []
 
-    def deserialise(self, f) -> "StringsBlock":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "StringsBlock":
         self.length.deserialise(f, length=4)
         strings_size = self.length.value
         dbg_print(f"Found {fmt_bytes(strings_size)} of strings")
@@ -396,13 +402,13 @@ class StringsBlock(Serialisable):
 
 
 class BytesBlock(Serialisable):
-    def __init__(self):
+    def __init__(self) -> None:
         self.size = SerialisableInt()
         self.size.length = 4
         self.value: List[bytes] = []
         self.nbytes = 0
 
-    def deserialise(self, f, nbytes: int) -> "BytesBlock":
+    def deserialise(self, f: BinaryIO|BytesIO, nbytes: int) -> "BytesBlock":
         self.nbytes = nbytes
         self.size.deserialise(f, length=4)
         raw = f.read(self.size.value)
@@ -442,10 +448,10 @@ class _NoDataType(TypeDef):
     Base typedef for types with no data.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
-    def deserialise(self, f) -> "_NoDataType":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "_NoDataType":
         return self
 
     def serialise(self) -> bytes:
@@ -493,12 +499,12 @@ class Dyn(_NoDataType):
 
 
 class Fun(TypeDef):
-    def __init__(self):
+    def __init__(self) -> None:
         self.nargs = VarInt()
         self.args: List[tIndex] = []
         self.ret = tIndex()
 
-    def deserialise(self, f) -> "Fun":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "Fun":
         self.nargs.deserialise(f)
         for _ in range(self.nargs.value):
             self.args.append(tIndex().deserialise(f))
@@ -516,11 +522,11 @@ class Fun(TypeDef):
 
 
 class Field(Serialisable):
-    def __init__(self):
+    def __init__(self) -> None:
         self.name = strRef()
         self.type = tIndex()
 
-    def deserialise(self, f) -> "Field":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "Field":
         self.name.deserialise(f)
         self.type.deserialise(f)
         return self
@@ -530,12 +536,12 @@ class Field(Serialisable):
 
 
 class Proto(Serialisable):
-    def __init__(self):
+    def __init__(self) -> None:
         self.name = strRef()
         self.findex = fIndex()
         self.pindex = VarInt()  # unknown use
 
-    def deserialise(self, f) -> "Proto":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "Proto":
         self.name.deserialise(f)
         self.findex.deserialise(f)
         self.pindex.deserialise(f)
@@ -546,11 +552,11 @@ class Proto(Serialisable):
 
 
 class Binding(Serialisable):
-    def __init__(self):
+    def __init__(self) -> None:
         self.field = fieldRef()
         self.findex = fIndex()
 
-    def deserialise(self, f) -> "Binding":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "Binding":
         self.field.deserialise(f)
         self.findex.deserialise(f)
         return self
@@ -560,7 +566,7 @@ class Binding(Serialisable):
 
 
 class Obj(TypeDef):
-    def __init__(self):
+    def __init__(self) -> None:
         self.name = strRef()
         self.super = tIndex()
         self._global = gIndex()
@@ -571,7 +577,7 @@ class Obj(TypeDef):
         self.protos: List[Proto] = []
         self.bindings: List[Binding] = []
 
-    def deserialise(self, f) -> "Obj":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "Obj":
         self.name.deserialise(f)
         self.super.deserialise(f)
         self._global.deserialise(f)
@@ -639,10 +645,10 @@ class TypeType(_NoDataType):
 
 
 class Ref(TypeDef):
-    def __init__(self):
+    def __init__(self) -> None:
         self.type = tIndex()
 
-    def deserialise(self, f) -> "Ref":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "Ref":
         self.type.deserialise(f)
         return self
 
@@ -651,11 +657,11 @@ class Ref(TypeDef):
 
 
 class Virtual(TypeDef):
-    def __init__(self):
+    def __init__(self) -> None:
         self.nfields = VarInt()
         self.fields: List[Field] = []
 
-    def deserialise(self, f) -> "Virtual":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "Virtual":
         self.nfields.deserialise(f)
         for _ in range(self.nfields.value):
             self.fields.append(Field().deserialise(f))
@@ -675,10 +681,10 @@ class DynObj(_NoDataType):
 
 
 class Abstract(TypeDef):
-    def __init__(self):
+    def __init__(self) -> None:
         self.name = strRef()
 
-    def deserialise(self, f) -> "Abstract":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "Abstract":
         self.name.deserialise(f)
         return self
 
@@ -687,12 +693,12 @@ class Abstract(TypeDef):
 
 
 class EnumConstruct(Serialisable):
-    def __init__(self):
+    def __init__(self) -> None:
         self.name = strRef()
         self.nparams = VarInt()
         self.params: List[tIndex] = []
 
-    def deserialise(self, f) -> "EnumConstruct":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "EnumConstruct":
         self.name.deserialise(f)
         self.nparams.deserialise(f)
         for _ in range(self.nparams.value):
@@ -710,13 +716,13 @@ class EnumConstruct(Serialisable):
 
 
 class Enum(TypeDef):
-    def __init__(self):
+    def __init__(self) -> None:
         self.name = strRef()
         self._global = gIndex()
         self.nconstructs = VarInt()
         self.constructs: List[EnumConstruct] = []
 
-    def deserialise(self, f) -> "Enum":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "Enum":
         self.name.deserialise(f)
         self._global.deserialise(f)
         self.nconstructs.deserialise(f)
@@ -736,10 +742,10 @@ class Enum(TypeDef):
 
 
 class Null(TypeDef):
-    def __init__(self):
+    def __init__(self) -> None:
         self.type = tIndex()
 
-    def deserialise(self, f) -> "Null":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "Null":
         self.type.deserialise(f)
         return self
 
@@ -756,10 +762,10 @@ class Struct(Obj):
 
 
 class Packed(TypeDef):
-    def __init__(self):
+    def __init__(self) -> None:
         self.inner = tIndex()
 
-    def deserialise(self, f) -> "Packed":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "Packed":
         self.inner.deserialise(f)
         return self
 
@@ -796,12 +802,12 @@ class Type(Serialisable):
     ]
     # fmt: on
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.kind = SerialisableInt()
         self.kind.length = 1
         self.definition: Optional[TypeDef] = None
 
-    def deserialise(self, f) -> "Type":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "Type":
         # dbg_print(f"Type @ {tell(f)}")
         self.kind.deserialise(f, length=1)
         try:
@@ -822,13 +828,13 @@ class Type(Serialisable):
 
 
 class Native(Serialisable):
-    def __init__(self):
+    def __init__(self) -> None:
         self.lib = strRef()
         self.name = strRef()
         self.type = tIndex()
         self.findex = fIndex()
 
-    def deserialise(self, f) -> "Native":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "Native":
         self.lib.deserialise(f)
         self.name.deserialise(f)
         self.type.deserialise(f)
@@ -870,12 +876,12 @@ class Opcode(Serialisable):
         "InlineInt": VarInt,
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.code = VarInt()
-        self.op = None
-        self.definition = {}
+        self.op: Optional[str] = None
+        self.definition: Dict[Any, Any] = {}
 
-    def deserialise(self, f) -> "Opcode":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "Opcode":
         # dbg_print(f"Deserialising opcode at {tell(f)}... ", end="")
         self.code.deserialise(f)
         # dbg_print(f"{self.code.value}... ", end="")
@@ -907,11 +913,11 @@ class Opcode(Serialisable):
         return self.__repr__()
 
 
-def read_u8(f) -> int:
+def read_u8(f: BinaryIO|BytesIO) -> int:
     return int.from_bytes(f.read(1), byteorder="little", signed=False)
 
 
-def write_u8(f, val: int) -> None:
+def write_u8(f: BinaryIO|BytesIO, val: int) -> None:
     try:
         f.write(val.to_bytes(1, byteorder="little", signed=False))
     except OverflowError:
@@ -926,10 +932,10 @@ class fileRef(int):
 
 
 class DebugInfo(Serialisable):
-    def __init__(self):
+    def __init__(self) -> None:
         self.debug_info: List[Tuple[fileRef, int]] = []  # file index, line number
 
-    def deserialise(self, f, nops: int) -> "DebugInfo":
+    def deserialise(self, f: BinaryIO|BytesIO, nops: int) -> "DebugInfo":
         tmp = []
         currfile: int = -1
         currline: int = 0
@@ -960,7 +966,7 @@ class DebugInfo(Serialisable):
         self.debug_info = tmp
         return self
 
-    def flush_repeat(self, w: BytesIO, curpos: ctypes.c_size_t, rcount: ctypes.c_size_t, pos: int):
+    def flush_repeat(self, w: BinaryIO|BytesIO, curpos: ctypes.c_size_t, rcount: ctypes.c_size_t, pos: int) -> None:
         """Helper function to handle repeat encoding."""
         if rcount.value > 0:
             if rcount.value > 15:
@@ -1008,7 +1014,7 @@ class DebugInfo(Serialisable):
 
 
 class Function(Serialisable):
-    def __init__(self):
+    def __init__(self) -> None:
         self.type = tIndex()
         self.findex = fIndex()
         self.nregs = VarInt()
@@ -1026,7 +1032,7 @@ class Function(Serialisable):
             raise ValueError("Cannot get file from non-debug bytecode!")
         return self.debuginfo.debug_info[0][0].resolve(code)
 
-    def deserialise(self, f, has_debug: bool, version: int) -> "Function":
+    def deserialise(self, f: BinaryIO|BytesIO, has_debug: bool, version: int) -> "Function":
         self.has_debug = has_debug
         self.version = version
         self.type.deserialise(f)
@@ -1067,12 +1073,12 @@ class Function(Serialisable):
 
 
 class Constant(Serialisable):
-    def __init__(self):
+    def __init__(self) -> None:
         self._global = gIndex()
         self.nfields = VarInt()
         self.fields: List[VarInt] = []
 
-    def deserialise(self, f) -> "Constant":
+    def deserialise(self, f: BinaryIO|BytesIO) -> "Constant":
         self._global.deserialise(f)
         self.nfields.deserialise(f)
         for _ in range(self.nfields.value):
@@ -1090,7 +1096,7 @@ class Constant(Serialisable):
 
 
 class Bytecode(Serialisable):
-    def __init__(self):
+    def __init__(self) -> None:
         self.deserialised = False
         self.magic = RawData(3)
         self.version = SerialisableInt()
@@ -1122,9 +1128,9 @@ class Bytecode(Serialisable):
         self.functions: List[Function] = []
         self.constants: List[Constant] = []
 
-        self.section_offsets: Dict[str, tuple] = {}
+        self.section_offsets: Dict[str, int] = {}
 
-    def find_magic(self, f, magic=b"HLB"):
+    def find_magic(self, f: BinaryIO|BytesIO, magic: bytes=b"HLB") -> None:
         buffer_size = 1024
         offset = 0
         while True:
@@ -1139,13 +1145,13 @@ class Bytecode(Serialisable):
             offset += buffer_size
 
     @classmethod
-    def from_path(cls, path):
+    def from_path(cls, path: str) -> "Bytecode":
         f = open(path, "rb")
         instance = cls().deserialise(f)
         f.close()
         return instance
 
-    def deserialise(self, f, search_magic=True):
+    def deserialise(self, f: BinaryIO|BytesIO, search_magic: bool=True) -> "Bytecode":
         start_time = datetime.now()
         dbg_print("---- Deserialise ----")
         if search_magic:
@@ -1378,10 +1384,10 @@ class Bytecode(Serialisable):
                 return function
         raise IndexError(f"Function f@{id} not found!")
 
-    def track_section(self, f, section_name):
+    def track_section(self, f: BinaryIO|BytesIO, section_name: str) -> None:
         self.section_offsets[section_name] = f.tell()
 
-    def section_at(self, offset):
+    def section_at(self, offset: int) -> Optional[str]:
         # returns the name of the section at the offset:
         # if the offset is after a section start and before the next section start, it's still in the first section
         for section_name, section_offset in list(reversed(self.section_offsets.items())):

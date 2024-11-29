@@ -3,7 +3,7 @@ Decompilation and control flow graph generation
 """
 
 from abc import ABC, abstractmethod
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple, Any
 from enum import Enum as _Enum # Enum is already defined in crashlink.core
 
 from . import disasm
@@ -23,7 +23,7 @@ class CFNode:
         self.branches: List[Tuple[CFNode, str]] = []
         self.base_offset: int = 0
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "<CFNode: %s>" % self.ops
 
 
@@ -35,7 +35,7 @@ class CFOptimizer:
     def __init__(self, graph: "CFGraph"):
         self.graph = graph
 
-    def optimize(self):
+    def optimize(self) -> None:
         raise NotImplementedError()
 
 
@@ -44,7 +44,7 @@ class CFJumpThreader(CFOptimizer):
     Thread jumps to reduce the number of nodes in the graph.
     """
 
-    def optimize(self):
+    def optimize(self) -> None:
         # map each node to its predecessors
         predecessors: Dict[CFNode, List[CFNode]] = {}
         for node in self.graph.nodes:
@@ -73,7 +73,7 @@ class CFDeadCodeEliminator(CFOptimizer):
     Remove unreachable code blocks
     """
 
-    def optimize(self):
+    def optimize(self) -> None:
         reachable: Set[CFNode] = set()
         worklist = [self.graph.entry]
 
@@ -104,10 +104,10 @@ class CFGraph:
         node.base_offset = base_offset
         return node
 
-    def add_branch(self, src: CFNode, dst: CFNode, edge_type: str):
+    def add_branch(self, src: CFNode, dst: CFNode, edge_type: str) -> None:
         src.branches.append((dst, edge_type))
 
-    def build(self, do_optimize: bool = True):
+    def build(self, do_optimize: bool = True) -> None:
         """Build the control flow graph."""
         if not self.func.ops:
             return
@@ -215,13 +215,13 @@ class CFGraph:
         ])
         # fmt: on
 
-    def optimize(self, optimizers: List[CFOptimizer]):
+    def optimize(self, optimizers: List[CFOptimizer]) -> None:
         for optimizer in optimizers:
             if optimizer not in self.applied_optimizers:
                 optimizer.optimize()
                 self.applied_optimizers.append(optimizer)
 
-    def style_node(self, node: CFNode):
+    def style_node(self, node: CFNode) -> str:
         if node == self.entry:
             return "style=filled, fillcolor=pink1"
         for op in node.ops:
@@ -229,7 +229,7 @@ class CFGraph:
                 return "style=filled, fillcolor=aquamarine"
         return "style=filled, fillcolor=lightblue"
 
-    def graph(self, code: Bytecode):
+    def graph(self, code: Bytecode) -> str:
         """Generate DOT format graph visualization."""
         dot = ["digraph G {"]
         dot.append('  labelloc="t";')
@@ -279,7 +279,7 @@ class IRLocal:
         self.type = type
         self.code = code
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<IRLocal: {self.name} {disasm.type_name(self.code, self.type.resolve(self.code)) if self.code else f't@{self.type}'}>"
 
 
@@ -288,10 +288,10 @@ class IRStatement(ABC):
         self.code = code
 
     @abstractmethod
-    def __repr__(self):
+    def __repr__(self) -> str:
         pass
     
-    def __str__(self):
+    def __str__(self) -> str:
         return self.__repr__()
 
 
@@ -303,7 +303,7 @@ class IRBlock(IRStatement):
         super().__init__(code)
         self.statements: List[IRStatement] = []
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         statements = "\n\t  ".join(map(str, self.statements))
         return f"<IRBlock: {statements}>"
     
@@ -331,7 +331,7 @@ class IRArithmetic(IRStatement):
         self.rhs = rhs
         self.op = op
     
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<IRArithmetic: {self.dst} = {self.lhs} {self.op.value} {self.rhs}>"
 
 
@@ -349,7 +349,7 @@ class IRCall(IRStatement):
         self.args = args
         self.call_type = call_type
     
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<IRCall: {self.dst} = {self.func}({', '.join(map(str, self.args))})>"
 
 
@@ -376,13 +376,13 @@ class IRConst(IRStatement):
                 raise DecompError("IRConst must have an index")
             self.value = idx.resolve(code)
         
-    def __repr__(self):
+    def __repr__(self) -> str:
         #return f"<IRConst: {self.dst} = {self.const_type.value} {self.value}>"
         return f"<IRConst: {self.dst} = {self.value}>"
     
 
 class IRFunction:
-    def __init__(self, code: Bytecode, func: Function):
+    def __init__(self, code: Bytecode, func: Function) -> None:
         self.func = func
         self.cfg = CFGraph(func)
         self.cfg.build()
@@ -392,7 +392,7 @@ class IRFunction:
         self.block = IRBlock(code)
         self._lift()
 
-    def _lift(self):
+    def _lift(self) -> None:
         """Lift function to IR"""
         for i, reg in enumerate(self.func.regs):
             self.locals.append(IRLocal(f"reg{i}", reg, code=self.code))
@@ -402,7 +402,7 @@ class IRFunction:
         else:
             raise DecompError("Function CFG has no entry node, cannot lift to IR")
 
-    def _name_locals(self):
+    def _name_locals(self) -> None:
         """Name locals based on debug info"""
         reg_assigns: List[Set[str]] = [set() for _ in self.func.regs]
         if self.func.has_debug and self.func.assigns:
@@ -428,7 +428,7 @@ class IRFunction:
                 local.name = reg_assigns[i].pop()
         dbg_print("Named locals:", self.locals)
 
-    def _lift_block(self, node: CFNode):
+    def _lift_block(self, node: CFNode) -> None:
         """Lift a control flow node to an IR block"""
         for op in node.ops:
             if op.op in ["Add", "Sub", "Mul", "SDiv", "UDiv", "SMod", "UMod", "Shl", "SShr", "UShr", "And", "Or", "Xor"]:
@@ -445,5 +445,5 @@ class IRFunction:
                     value = None
                 self.block.statements.append(IRConst(self.code, dst, const_type, op.definition["ptr"], value))
                 
-    def print(self):
+    def print(self) -> None:
         print(self.block)

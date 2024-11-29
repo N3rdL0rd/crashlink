@@ -4,14 +4,15 @@ import subprocess
 import sys
 import tempfile
 import webbrowser
-from typing import Callable, Dict, List, Tuple
+from typing import Dict, List, Tuple
+from collections.abc import Callable
 
 from . import decomp, disasm
 from .core import Bytecode
 from .globals import VERSION
 
 
-def cmd_help(args, code):
+def cmd_help(args: List[str], code: Bytecode) -> None:
     if args:
         for command in args:
             if command in COMMANDS:
@@ -25,7 +26,7 @@ def cmd_help(args, code):
     print("Type 'help <command>' for information on a specific command.")
 
 
-def cmd_funcs(args, code: Bytecode):
+def cmd_funcs(args: List[str], code: Bytecode) -> None:
     std = args and args[0] == "std"
     for func in code.functions:
         if disasm.is_std(code, func) and not std:
@@ -37,12 +38,12 @@ def cmd_funcs(args, code: Bytecode):
         print(disasm.native_header(code, native))
 
 
-def cmd_entry(args, code: Bytecode):
+def cmd_entry(args: List[str], code: Bytecode) -> None:
     entry = code.entrypoint.resolve(code)
     print("    Entrypoint:", disasm.func_header(code, entry))
 
 
-def cmd_fn(args, code: Bytecode):
+def cmd_fn(args: List[str], code: Bytecode) -> None:
     if not args:
         print("Usage: fn <index>")
         return
@@ -81,7 +82,7 @@ def cmd_fn(args, code: Bytecode):
 #             return
 
 
-def cmd_cfg(args, code: Bytecode):
+def cmd_cfg(args: List[str], code: Bytecode) -> None:
     if not args:
         print("Usage: cfg <index>")
         return
@@ -117,16 +118,16 @@ def cmd_cfg(args, code: Bytecode):
                 print(f"Control flow graph saved to {png_file}. Use your favourite image viewer to open it.")
             return
 
-
-COMMANDS: Dict[str, Tuple[Callable, str]] = {
+# typing is ignored for lambdas because webbrowser.open returns a bool instead of None
+COMMANDS: Dict[str, Tuple[Callable[[List[str], Bytecode], None], str]] = {
     "exit": (lambda _, __: sys.exit(), "Exit the program"),
     "help": (cmd_help, "Show this help message"),
     "wiki": (
-        lambda _, __: webbrowser.open("https://github.com/Gui-Yom/hlbc/wiki/Bytecode-file-format"),
+        lambda _, __: webbrowser.open("https://github.com/Gui-Yom/hlbc/wiki/Bytecode-file-format"), # type: ignore
         "Open the HLBC wiki in your default browser",
     ),
     "opcodes": (
-        lambda _, __: webbrowser.open("https://github.com/Gui-Yom/hlbc/blob/master/crates/hlbc/src/opcodes.rs"),
+        lambda _, __: webbrowser.open("https://github.com/Gui-Yom/hlbc/blob/master/crates/hlbc/src/opcodes.rs"), # type: ignore
         "Open the HLBC source to opcodes.rs in your default browser",
     ),
     "funcs": (
@@ -140,7 +141,7 @@ COMMANDS: Dict[str, Tuple[Callable, str]] = {
 }
 
 
-def handle_cmd(code: Bytecode, is_hlbc: bool, cmd: str):
+def handle_cmd(code: Bytecode, is_hlbc: bool, cmd: str) -> None:
     cmd_list: List[str] = cmd.split(" ")
     if not is_hlbc:
         for command in COMMANDS:
@@ -152,7 +153,7 @@ def handle_cmd(code: Bytecode, is_hlbc: bool, cmd: str):
     print("Unknown command.")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=f"crashlink CLI ({VERSION})", prog="crashlink")
     parser.add_argument("file", help="The file to open - can be HashLink bytecode or a Haxe source file")
     parser.add_argument("-c", "--command", help="The command to run on startup")

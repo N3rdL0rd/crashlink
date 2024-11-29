@@ -2,7 +2,7 @@
 Human-readable disassembly of opcodes.
 """
 
-from typing import Optional
+from typing import Optional, List
 
 from .core import *
 
@@ -75,7 +75,7 @@ def full_func_name(code: Bytecode, func: Function) -> str:
     return name
 
 
-def type_to_haxe(type: str):
+def type_to_haxe(type: str) -> str:
     mapping = {
         "I32": "Int",
         "F64": "Float",
@@ -103,7 +103,7 @@ def native_header(code: Bytecode, native: Native) -> str:
     return f"f@{native.findex.value} {native.lib.resolve(code)}.{native.name.resolve(code)} [native] (no fun found, this is a bug!)"
 
 
-def is_std(code: Bytecode, func: Function | Native):
+def is_std(code: Bytecode, func: Function | Native) -> bool:
     """
     Checks if a function is from the standard library. This is a heuristic and is a bit broken still.
     """
@@ -114,7 +114,7 @@ def is_std(code: Bytecode, func: Function | Native):
     return False
 
 
-def is_static(code: Bytecode, func: Function):
+def is_static(code: Bytecode, func: Function) -> bool:
     """
     Checks if a function is static.
     """
@@ -136,7 +136,7 @@ def pseudo_from_op(
     regs: List[Reg] | List[tIndex],
     code: Bytecode,
     terse: bool = False,
-):
+) -> str:
     """
     Generates pseudocode disassembly from an opcode.
     """
@@ -281,7 +281,7 @@ def fmt_op(
     op: Opcode,
     idx: int,
     width: int = 15,
-):
+) -> str:
     """
     Formats an opcode into a table row.
     """
@@ -289,7 +289,7 @@ def fmt_op(
     return f"{idx:>3}. {op.op:<{width}} {str(defn):<{48}} {pseudo_from_op(op, idx, regs, code):<{width}}"
 
 
-def func(code: Bytecode, func: Function | Native):
+def func(code: Bytecode, func: Function | Native) -> str:
     """
     Generates a human-readable printout and disassembly of a function or native.
     """
