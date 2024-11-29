@@ -6,7 +6,8 @@ import tempfile
 import webbrowser
 from typing import Callable, Dict, List, Tuple
 
-from . import fmt
+from . import disasm
+from . import decomp
 from .core import Bytecode
 from .globals import VERSION
 
@@ -28,18 +29,18 @@ def cmd_help(args, code):
 def cmd_funcs(args, code: Bytecode):
     std = args and args[0] == "std"
     for func in code.functions:
-        if fmt.disasm.is_std(code, func) and not std:
+        if disasm.is_std(code, func) and not std:
             continue
-        print(fmt.disasm.func_header(code, func))
+        print(disasm.func_header(code, func))
     for native in code.natives:
-        if fmt.disasm.is_std(code, native) and not std:
+        if disasm.is_std(code, native) and not std:
             continue
-        print(fmt.disasm.native_header(code, native))
+        print(disasm.native_header(code, native))
 
 
 def cmd_entry(args, code: Bytecode):
     entry = code.entrypoint.resolve(code)
-    print("    Entrypoint:", fmt.disasm.func_header(code, entry))
+    print("    Entrypoint:", disasm.func_header(code, entry))
 
 
 def cmd_fn(args, code: Bytecode):
@@ -53,11 +54,11 @@ def cmd_fn(args, code: Bytecode):
         return
     for func in code.functions:
         if func.findex.value == index:
-            print(fmt.disasm.func(code, func))
+            print(disasm.func(code, func))
             return
     for native in code.natives:
         if native.findex.value == index:
-            print(fmt.disasm.native_header(code, native))
+            print(disasm.native_header(code, native))
             return
     print("Function not found.")
 
@@ -73,7 +74,7 @@ def cmd_fn(args, code: Bytecode):
 #         return
 #     for func in code.functions:
 #         if func.findex.value == index:
-#             decomp = fmt.decomp.Decompiler(code)
+#             decomp = decomp.Decompiler(code)
 #             decomp.func(func)
 #             for i, layer in enumerate(decomp.ir_layers):
 #                 print(f"--- IR Layer {i} ---")
@@ -92,7 +93,7 @@ def cmd_cfg(args, code: Bytecode):
         return
     for func in code.functions:
         if func.findex.value == index:
-            cfg = fmt.decomp.CFGraph(func)
+            cfg = decomp.CFGraph(func)
             print("Building control flow graph...")
             cfg.build()
             print("DOT:")

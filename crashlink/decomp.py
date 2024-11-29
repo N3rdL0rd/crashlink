@@ -5,10 +5,10 @@ Decompilation and control flow graph generation
 from abc import ABC, abstractmethod
 from typing import Callable, Dict, List, Optional, Set, Tuple
 
-from ..core import *
-from ..errors import *
-from ..globals import dbg_print
-from ..opcodes import opcodes
+from .core import *
+from .errors import *
+from .globals import dbg_print
+from .opcodes import opcodes
 from . import disasm
 
 
