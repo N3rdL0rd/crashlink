@@ -4,7 +4,7 @@ Human-readable disassembly of opcodes.
 
 from typing import Optional
 
-from ..core import *
+from .core import *
 
 
 def get_proto_for(code: Bytecode, idx: int) -> Optional[Proto]:

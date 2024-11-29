@@ -31,7 +31,7 @@ from crashlink import *
 code = Bytecode.from_path("path/to/file.hl")
 for func in code.functions:
     if func.findex.value == 22 or func.findex.value == 240: # typical entry points that the compiler generates
-        print(fmt.disasm.func(code, func))
+        print(disasm.func(code, func))
 # > f@22 static $Clazz.main () -> Void (from Clazz.hx)
 # > Reg types:
 # >   0. Void

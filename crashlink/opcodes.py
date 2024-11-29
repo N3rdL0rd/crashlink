@@ -254,5 +254,5 @@ Other:
 - Prefetch: CPU memory prefetch hint
 - Asm: Inline x86 assembly
 
-If you want to see a more detailed pseudocode for any given instance of `Opcode`, you can use `crashlink.fmt.disasm.pseudo_from_op()` to get a human-readable representation of the operation.
+If you want to see a more detailed pseudocode for any given instance of `Opcode`, you can use `crashlink.disasm.pseudo_from_op()` to get a human-readable representation of the operation.
 """

@@ -2,7 +2,8 @@
 Just another HashLink decompiler.
 """
 
-from . import fmt
+from . import decomp
+from . import disasm
 from .core import *
 from .errors import *
 from .globals import *
