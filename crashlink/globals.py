@@ -2,8 +2,8 @@
 Global configuration.
 """
 
-from typing import BinaryIO, Any
 from io import BytesIO
+from typing import Any, BinaryIO
 
 VERSION: str = "pre-alpha"
 """
@@ -26,7 +26,7 @@ def dbg_print(*args: Any, **kwargs: Any) -> None:
         print(*args, **kwargs)
 
 
-def tell(f: BinaryIO|BytesIO) -> str:
+def tell(f: BinaryIO | BytesIO) -> str:
     """
     Hex-formatted tell of a file.
     """

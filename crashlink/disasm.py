@@ -2,7 +2,7 @@
 Human-readable disassembly of opcodes.
 """
 
-from typing import Optional, List
+from typing import List, Optional
 
 from .core import *
 

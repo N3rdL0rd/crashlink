@@ -1,11 +1,12 @@
 import argparse
 import os
+import platform
 import subprocess
 import sys
 import tempfile
 import webbrowser
-from typing import Dict, List, Tuple
 from collections.abc import Callable
+from typing import Dict, List, Tuple
 
 from . import decomp, disasm
 from .core import Bytecode
@@ -112,22 +113,28 @@ def cmd_cfg(args: List[str], code: Bytecode) -> None:
                 return
 
             try:
-                os.startfile(png_file)
+                if platform.system() == "Windows":
+                    subprocess.run(["start", png_file], shell=True)
+                elif platform.system() == "Darwin":
+                    subprocess.run(["open", png_file])
+                else:
+                    subprocess.run(["xdg-open", png_file])
                 os.unlink(dot_file)
             except:
                 print(f"Control flow graph saved to {png_file}. Use your favourite image viewer to open it.")
             return
+
 
 # typing is ignored for lambdas because webbrowser.open returns a bool instead of None
 COMMANDS: Dict[str, Tuple[Callable[[List[str], Bytecode], None], str]] = {
     "exit": (lambda _, __: sys.exit(), "Exit the program"),
     "help": (cmd_help, "Show this help message"),
     "wiki": (
-        lambda _, __: webbrowser.open("https://github.com/Gui-Yom/hlbc/wiki/Bytecode-file-format"), # type: ignore
+        lambda _, __: webbrowser.open("https://github.com/Gui-Yom/hlbc/wiki/Bytecode-file-format"),  # type: ignore
         "Open the HLBC wiki in your default browser",
     ),
     "opcodes": (
-        lambda _, __: webbrowser.open("https://github.com/Gui-Yom/hlbc/blob/master/crates/hlbc/src/opcodes.rs"), # type: ignore
+        lambda _, __: webbrowser.open("https://github.com/Gui-Yom/hlbc/blob/master/crates/hlbc/src/opcodes.rs"),  # type: ignore
         "Open the HLBC source to opcodes.rs in your default browser",
     ),
     "funcs": (

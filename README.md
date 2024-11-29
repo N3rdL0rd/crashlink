@@ -22,6 +22,14 @@ Optionally, install `tqdm` for progress bars when parsing large files:
 pip install <TODO> tqdm
 ```
 
+You also need to have Graphviz installed to generate control flow graphs. On most *nix systems, on Windows (with Chocolatey or Scoop), and on MacOS (with Homebrew), you can install it with your package manager under `graphviz`.
+
+- Windows: `choco install graphviz`
+- MacOS: `brew install graphviz`
+- Debian: `sudo apt install graphviz`
+- Arch: `sudo pacman -S graphviz`
+- Fedora: `sudo dnf install graphviz`
+
 ## Usage
 
 Either:
