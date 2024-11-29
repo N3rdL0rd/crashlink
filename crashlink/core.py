@@ -256,10 +256,17 @@ class fieldRef(ResolvableVarInt):
     """
     Abstract class to represent a field index.
     """
+    
+    obj: Optional["Obj"] = None
+    
+    def resolve(self, code: "Bytecode") -> "Field":
+        if self.obj:
+            return self.obj.resolve_fields(code)[self.value]
+        raise ValueError("Cannot resolve field without context. Try setting `field.obj` to an instance of `Obj`, or use `field.resolve_obj(code, obj)` instead.")
 
-    def resolve(self, code: "Bytecode", obj: "Obj") -> "Field":
-        fields = obj.resolve_fields(code)
-        return fields[self.value]
+    def resolve_obj(self, code: "Bytecode", obj: "Obj") -> "Field":
+        self.obj = obj
+        return obj.resolve_fields(code)[self.value]
 
 
 class Reg(ResolvableVarInt):
