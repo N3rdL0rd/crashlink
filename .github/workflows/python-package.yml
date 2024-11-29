@@ -32,10 +32,10 @@ jobs:
       uses: krdlab/setup-haxe@v1
       with:
         haxe-version: 4.3.4
+    - uses: extractions/setup-just@v2
     - name: Build test samples
       run: |
-        chmod +x build_tests &&
-        ./build_tests
+        just build-tests
     - name: Test with pytest
       run: |
         pytest
