@@ -207,19 +207,11 @@ def pseudo_from_op(
         glob = type_name(code, op.definition["global"].resolve(code))  # TODO: resolve constants
         return f"reg{op.definition['dst']} = {glob} (g@{op.definition['global']})"
     elif op.op == "Field":
-        field = (
-            op.definition["field"]
-            .resolve_obj(code, regs[op.definition["obj"].value].resolve(code).definition)
-            .name.resolve(code)
-        )
-        return f"reg{op.definition['dst']} = reg{op.definition['obj']}.{field}"
+        field = op.definition["field"].resolve_obj(code, regs[op.definition["obj"].value].resolve(code).definition)
+        return f"reg{op.definition['dst']} = reg{op.definition['obj']}.{field.name.resolve(code)}"
     elif op.op == "SetField":
-        field = (
-            op.definition["field"]
-            .resolve_obj(code, regs[op.definition["obj"].value].resolve(code).definition)
-            .name.resolve(code)
-        )
-        return f"reg{op.definition['obj']}.{field} = reg{op.definition['src']}"
+        field = op.definition["field"].resolve_obj(code, regs[op.definition["obj"].value].resolve(code).definition)
+        return f"reg{op.definition['obj']}.{field.name.resolve(code)} = reg{op.definition['src']}"
     elif op.op == "SetArray":
         return f"reg{op.definition['array']}[reg{op.definition['index']}] = reg{op.definition['src']})"
     elif op.op == "NullCheck":
@@ -268,6 +260,12 @@ def pseudo_from_op(
         return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1']])})"
     elif op.op == "Call3":
         return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1', 'arg2']])})"
+    elif op.op == "CallN":
+        return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{arg}' for arg in op.definition['args'].value])})"
+    elif op.op == "Null":
+        return f"reg{op.definition['dst']} = null"
+    elif op.op == "JSLt":  # jump signed less than
+        return f"if reg{op.definition['a']} < reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
     elif op.op == "Ret":
         if type(regs[op.definition["ret"].value].resolve(code).definition) == Void:
             return "return"

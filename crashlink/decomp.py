@@ -273,16 +273,6 @@ class CFGraph:
         return "\n".join(dot)
 
 
-class IRLocal:
-    def __init__(self, name: str, type: tIndex, code: Optional[Bytecode] = None):
-        self.name = name
-        self.type = type
-        self.code = code
-
-    def __repr__(self) -> str:
-        return f"<IRLocal: {self.name} {disasm.type_name(self.code, self.type.resolve(self.code)) if self.code else f't@{self.type}'}>"
-
-
 class IRStatement(ABC):
     def __init__(self, code: Bytecode):
         self.code = code
@@ -305,11 +295,51 @@ class IRBlock(IRStatement):
         self.statements: List[IRStatement] = []
 
     def __repr__(self) -> str:
-        statements = "\n\t  ".join(map(str, self.statements))
-        return f"<IRBlock: {statements}>"
+        if not self.statements:
+            return "<IRBlock:>"
+            
+        formatted_statements = []
+        base_indent = "    "
+            
+        for stmt in self.statements:
+            if isinstance(stmt, IRConditional):
+                cond_lines = str(stmt).split('\n')
+                formatted_statements.append(base_indent + cond_lines[0])
+                for line in cond_lines[1:]:
+                    formatted_statements.append(base_indent + line)
+            else:
+                formatted_statements.append(base_indent + str(stmt))
+                    
+        statements = "\n".join(formatted_statements)
+        return f"<IRBlock:\n{statements}>"
 
 
-class IRArithmetic(IRStatement):
+class IRExpression(IRStatement, ABC):
+    """Abstract base class for expressions that produce a value"""
+
+    def __init__(self, code: Bytecode):
+        super().__init__(code)
+
+    @abstractmethod
+    def get_type(self) -> Type:
+        """Get the type of value this expression produces"""
+        pass
+
+
+class IRLocal(IRExpression):
+    def __init__(self, name: str, type: tIndex, code: Bytecode):
+        super().__init__(code)
+        self.name = name
+        self.type = type
+
+    def get_type(self) -> Type:
+        return self.type.resolve(self.code)
+
+    def __repr__(self) -> str:
+        return f"<IRLocal: {self.name} {disasm.type_name(self.code, self.type.resolve(self.code))}>"
+
+
+class IRArithmetic(IRExpression):
     class ArithmeticType(_Enum):
         ADD = "+"
         SUB = "-"
@@ -325,36 +355,90 @@ class IRArithmetic(IRStatement):
         OR = "|"
         XOR = "^"
 
-    def __init__(self, code: Bytecode, dst: IRLocal, lhs: IRLocal, rhs: IRLocal, op: "IRArithmetic.ArithmeticType"):
+    def __init__(self, code: Bytecode, left: IRExpression, right: IRExpression, op: "IRArithmetic.ArithmeticType"):
         super().__init__(code)
-        self.dst = dst
-        self.lhs = lhs
-        self.rhs = rhs
+        self.left = left
+        self.right = right
         self.op = op
 
+    def get_type(self) -> Type:
+        # For arithmetic, result type matches left operand type
+        return self.left.get_type()
+
     def __repr__(self) -> str:
-        return f"<IRArithmetic: {self.dst} = {self.lhs} {self.op.value} {self.rhs}>"
+        return f"<IRArithmetic: {self.left} {self.op.value} {self.right}>"
 
 
-class IRCall(IRStatement):
-    class CallType(_Enum):
-        FUNC = 0
-        METHOD = 1
-        THIS = 2
-        CLOSURE = 3
+class IRAssign(IRStatement):
+    """Assignment of an expression result to a local variable"""
 
-    def __init__(self, code: Bytecode, dst: IRLocal, func: IRLocal, args: List[IRLocal], call_type: "IRCall.CallType"):
+    def __init__(self, code: Bytecode, target: IRLocal, expr: IRExpression):
         super().__init__(code)
-        self.dst = dst
-        self.func = func
-        self.args = args
-        self.call_type = call_type
+        self.target = target
+        self.expr = expr
 
     def __repr__(self) -> str:
-        return f"<IRCall: {self.dst} = {self.func}({', '.join(map(str, self.args))})>"
+        return f"<IRAssign: {self.target} = {self.expr} ({disasm.type_name(self.code, self.expr.get_type())})>"
 
 
-class IRConst(IRStatement):
+# class IRCall(IRStatement):
+#     """A function call"""
+#     class CallType(_Enum):
+#         FUNC = 0
+#         METHOD = 1
+#         THIS = 2
+#         CLOSURE = 3
+
+#     def __init__(self, code: Bytecode, dst: IRLocal, func: IRLocal, args: List[IRLocal], call_type: "IRCall.CallType"):
+#         super().__init__(code)
+#         self.dst = dst
+#         self.func = func
+#         self.args = args
+#         self.call_type = call_type
+
+#     def __repr__(self) -> str:
+#         return f"<IRCall: {self.dst} = {self.func}({', '.join(map(str, self.args))})>"
+# TODO: IRExpression for calls
+
+class IRBoolExpr(IRExpression):
+    """Base class for boolean expressions"""
+    class CompareType(_Enum):
+        EQ = "=="
+        NEQ = "!="
+        LT = "<"
+        LTE = "<="
+        GT = ">"
+        GTE = ">="
+        NULL = "is null"
+        NOT_NULL = "is not null"
+        TRUE = "true"
+        FALSE = "false"
+
+    def __init__(self, code: Bytecode, op: "IRBoolExpr.CompareType", 
+                 left: Optional[IRExpression] = None, 
+                 right: Optional[IRExpression] = None):
+        super().__init__(code)
+        self.op = op
+        self.left = left
+        self.right = right
+
+    def get_type(self) -> Type:
+        # Boolean expressions always return bool type
+        for type in self.code.types:
+            if disasm.type_name(self.code, type) == "Bool":
+                return type
+        raise DecompError("Bool type not found in code")
+
+    def __repr__(self) -> str:
+        if self.op in [IRBoolExpr.CompareType.NULL, IRBoolExpr.CompareType.NOT_NULL]:
+            return f"<IRBoolExpr: {self.left} {self.op.value}>"
+        elif self.op in [IRBoolExpr.CompareType.TRUE, IRBoolExpr.CompareType.FALSE]:
+            return f"<IRBoolExpr: {self.op.value}>"
+        return f"<IRBoolExpr: {self.left} {self.op.value} {self.right}>"
+
+class IRConst(IRExpression):
+    """Represents a constant value expression"""
+
     class ConstType(_Enum):
         INT = "int"
         FLOAT = "float"
@@ -366,30 +450,65 @@ class IRConst(IRStatement):
     def __init__(
         self,
         code: Bytecode,
-        dst: IRLocal,
         const_type: "IRConst.ConstType",
         idx: Optional[ResolvableVarInt] = None,
         value: Optional[bool] = None,
     ):
         super().__init__(code)
-        self.dst = dst
         self.const_type = const_type
         self.value: Any = value
+
         if const_type == IRConst.ConstType.BOOL:
-            if not value:
+            if value is None:
                 raise DecompError("IRConst with type BOOL must have a value")
             self.value = value
         else:
-            if not idx:
+            if idx is None:
                 raise DecompError("IRConst must have an index")
             self.value = idx.resolve(code)
 
-    def __repr__(self) -> str:
-        # return f"<IRConst: {self.dst} = {self.const_type.value} {self.value}>"
-        return f"<IRConst: {self.dst} = {self.value}>"
+    def get_type(self) -> Type:
+        def _get_type_in_code(code: Bytecode, name: str) -> Type:
+            for type in code.types:
+                if disasm.type_name(code, type) == name:
+                    return type
+            raise DecompError(f"Type {name} not found in code")
 
+        if self.const_type == IRConst.ConstType.INT:
+            return _get_type_in_code(self.code, "I32")
+        elif self.const_type == IRConst.ConstType.FLOAT:
+            return _get_type_in_code(self.code, "F64")
+        elif self.const_type == IRConst.ConstType.BOOL:
+            return _get_type_in_code(self.code, "Bool")
+        elif self.const_type == IRConst.ConstType.BYTES:
+            return _get_type_in_code(self.code, "Bytes")
+        elif self.const_type == IRConst.ConstType.STRING:
+            return _get_type_in_code(self.code, "String")
+        elif self.const_type == IRConst.ConstType.NULL:
+            return _get_type_in_code(self.code, "Null")
+        else:
+            raise DecompError(f"Unknown IRConst type: {self.const_type}")
+
+    def __repr__(self) -> str:
+        return f"<IRConst: {self.value}>"
+
+
+class IRConditional(IRStatement):
+    """A conditional statement"""
+
+    def __init__(self, code: Bytecode, condition: IRExpression, true_block: IRBlock, false_block: IRBlock):
+        super().__init__(code)
+        self.condition = condition
+        self.true_block = true_block
+        self.false_block = false_block
+
+    def __repr__(self) -> str:
+        return f"<IRConditional: if {self.condition} then\n{self.true_block}\nelse\n{self.false_block}>"
 
 class IRFunction:
+    """
+    Intermediate representation of a function.
+    """
     def __init__(self, code: Bytecode, func: Function) -> None:
         self.func = func
         self.cfg = CFGraph(func)
@@ -397,7 +516,7 @@ class IRFunction:
         self.code = code
         self.ops = func.ops
         self.locals: List[IRLocal] = []
-        self.block = IRBlock(code)
+        self.block: IRBlock
         self._lift()
 
     def _lift(self) -> None:
@@ -406,7 +525,7 @@ class IRFunction:
             self.locals.append(IRLocal(f"reg{i}", reg, code=self.code))
         self._name_locals()
         if self.cfg.entry:
-            self._lift_block(self.cfg.entry)
+            self.block = self._lift_block(self.cfg.entry)
         else:
             raise DecompError("Function CFG has no entry node, cannot lift to IR")
 
@@ -415,10 +534,10 @@ class IRFunction:
         reg_assigns: List[Set[str]] = [set() for _ in self.func.regs]
         if self.func.has_debug and self.func.assigns:
             for assign in self.func.assigns:
+                # assign: Tuple[strRef (name), VarInt (op index)]
                 val = assign[1].value - 1
-                # Tuple[strRef (name), VarInt (op index)]
                 if val < 0:
-                    continue  # TODO: handle this - negative indexes are argument names
+                    continue # arg name
                 reg: Optional[int] = None
                 op = self.ops[val]
                 try:
@@ -428,6 +547,14 @@ class IRFunction:
                     pass
                 if reg is not None:
                     reg_assigns[reg].add(assign[0].resolve(self.code))
+        # loop through arg names: all with value < 0, eg:
+        # Assigns:
+        # Op -1: argument_name (corresponds to reg 0)
+        # Op -1: other_arg_name (corresponds to reg 1)
+        # Op -1: third_arg_name (corresponds to reg 2)
+        if self.func.assigns and self.func.has_debug:
+            for i, assign in enumerate([assign for assign in self.func.assigns if assign[1].value < 0]):
+                reg_assigns[i].add(assign[0].resolve(self.code))
         for i, _reg in enumerate(self.func.regs):
             if _reg.resolve(self.code).definition and isinstance(_reg.resolve(self.code).definition, Void):
                 reg_assigns[i].add("void")
@@ -436,38 +563,101 @@ class IRFunction:
                 local.name = reg_assigns[i].pop()
         dbg_print("Named locals:", self.locals)
 
-    def _lift_block(self, node: CFNode) -> None:
+    def _lift_block(self, node: CFNode, visited: Optional[Set[CFNode]] = None) -> IRBlock:
         """Lift a control flow node to an IR block"""
+        if visited is None:
+            visited = set()
+        
+        if node in visited:
+            return IRBlock(self.code)  # Return empty block for cycles
+            
+        visited.add(node)
+        block = IRBlock(self.code)
+
+        # Process operations in current block
         for op in node.ops:
-            if op.op in [
-                "Add",
-                "Sub",
-                "Mul",
-                "SDiv",
-                "UDiv",
-                "SMod",
-                "UMod",
-                "Shl",
-                "SShr",
-                "UShr",
-                "And",
-                "Or",
-                "Xor",
-            ]:
+            if op.op in ["Add", "Sub", "Mul", "SDiv", "UDiv", "SMod", "UMod", 
+                        "Shl", "SShr", "UShr", "And", "Or", "Xor"]:
                 dst = self.locals[op.definition["dst"].value]
                 lhs = self.locals[op.definition["a"].value]
                 rhs = self.locals[op.definition["b"].value]
-                self.block.statements.append(
-                    IRArithmetic(self.code, dst, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])
+                block.statements.append(
+                    IRAssign(self.code, dst, 
+                        IRArithmetic(self.code, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])
+                    )
                 )
             elif op.op in ["Int", "Float", "Bool", "Bytes", "String", "Null"]:
                 dst = self.locals[op.definition["dst"].value]
                 const_type = IRConst.ConstType[op.op.upper()]
-                if op.op == "Bool":
-                    value = op.definition["value"].value
+                value = op.definition["value"].value if op.op == "Bool" else None
+                if not op.op in ["Bool"]:
+                    const = IRConst(self.code, const_type, op.definition["ptr"], value)
                 else:
-                    value = None
-                self.block.statements.append(IRConst(self.code, dst, const_type, op.definition["ptr"], value))
+                    const = IRConst(self.code, const_type, value=value)
+                block.statements.append(IRAssign(self.code, dst, const))
+            # Handle conditionals
+            elif op.op in ["JTrue", "JFalse", "JNull", "JNotNull", 
+                        "JSLt", "JSGte", "JSGt", "JSLte",
+                        "JULt", "JUGte", "JEq", "JNotEq"]:
+                
+                # Map jump ops to comparison types
+                jump_to_compare = {
+                    "JTrue": IRBoolExpr.CompareType.TRUE,
+                    "JFalse": IRBoolExpr.CompareType.FALSE,
+                    "JNull": IRBoolExpr.CompareType.NULL,
+                    "JNotNull": IRBoolExpr.CompareType.NOT_NULL,
+                    "JSLt": IRBoolExpr.CompareType.LT,
+                    "JSGte": IRBoolExpr.CompareType.GTE,
+                    "JSGt": IRBoolExpr.CompareType.GT,
+                    "JSLte": IRBoolExpr.CompareType.LTE,
+                    "JULt": IRBoolExpr.CompareType.LT,
+                    "JUGte": IRBoolExpr.CompareType.GTE,
+                    "JEq": IRBoolExpr.CompareType.EQ,
+                    "JNotEq": IRBoolExpr.CompareType.NEQ
+                }
+
+                # Build condition expression
+                if op.op in ["JTrue", "JFalse"]:
+                    cond = self.locals[op.definition["cond"].value]
+                    condition = IRBoolExpr(self.code, jump_to_compare[op.op], cond)
+                elif op.op in ["JNull", "JNotNull"]:
+                    val = self.locals[op.definition["value"].value]
+                    condition = IRBoolExpr(self.code, jump_to_compare[op.op], val)
+                else:  # Comparison operations
+                    left = self.locals[op.definition["a"].value]
+                    right = self.locals[op.definition["b"].value]
+                    condition = IRBoolExpr(self.code, jump_to_compare[op.op], left, right)
+
+                # Find branches
+                true_branch = None
+                false_branch = None
+                for next_node, edge_type in node.branches:
+                    if edge_type == "true":
+                        true_branch = self._lift_block(next_node, visited)
+                    elif edge_type == "false":
+                        false_branch = self._lift_block(next_node, visited)
+                
+                if true_branch and false_branch:
+                    block.statements.append(
+                        IRConditional(self.code, condition, true_branch, false_branch)
+                    )
+                    return block
+
+            # Handle unconditional jumps
+            elif op.op == "JAlways":
+                for next_node, edge_type in node.branches:
+                    if edge_type == "unconditional":
+                        next_block = self._lift_block(next_node, visited)
+                        block.statements.extend(next_block.statements)
+                        return block
+
+        # Handle fall-through
+        for next_node, edge_type in node.branches:
+            if edge_type == "unconditional":
+                next_block = self._lift_block(next_node, visited)
+                block.statements.extend(next_block.statements)
+
+        return block
 
     def print(self) -> None:
         print(self.block)

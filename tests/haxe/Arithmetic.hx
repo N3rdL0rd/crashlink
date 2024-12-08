@@ -9,5 +9,16 @@ class Arithmetic {
         var res4 = first_var / second_var;
         var res5 = first_var % second_var;
         var res6 = first_var << second_var;
+        var bool_res = first_var < second_var; // true
+        if (bool_res) {
+            var final_res = first_var + second_var;
+        } else {
+            var final_res = first_var - second_var;
+        }
+        if (first_var < second_var) {
+            var final_res = first_var + second_var;
+        } else {
+            var final_res = first_var - second_var;
+        }
     }
 }
