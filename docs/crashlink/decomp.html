@@ -429,16 +429,15 @@ hljs.highlightAll();
 </dd>
 <dt id="crashlink.decomp.IRArithmetic"><code class="flex name class">
 <span>class <span class="ident">IRArithmetic</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>dst: <a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>, <br>lhs: <a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>, <br>rhs: <a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>, <br>op: <a title="crashlink.decomp.IRArithmetic.ArithmeticType" href="#crashlink.decomp.IRArithmetic.ArithmeticType">IRArithmetic.ArithmeticType</a>)</span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>left: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>, <br>right: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>, <br>op: <a title="crashlink.decomp.IRArithmetic.ArithmeticType" href="#crashlink.decomp.IRArithmetic.ArithmeticType">IRArithmetic.ArithmeticType</a>)</span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Helper class that provides a standard way to create an ABC using
-inheritance.</p></pre></div>
+<div class="desc"><pre><p>Abstract base class for expressions that produce a value</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class IRArithmetic(IRStatement):
+<pre><code class="python">class IRArithmetic(IRExpression):
     class ArithmeticType(_Enum):
         ADD = &#34;+&#34;
         SUB = &#34;-&#34;
@@ -454,18 +453,22 @@ inheritance.</p></pre></div>
         OR = &#34;|&#34;
         XOR = &#34;^&#34;
 
-    def __init__(self, code: Bytecode, dst: IRLocal, lhs: IRLocal, rhs: IRLocal, op: &#34;IRArithmetic.ArithmeticType&#34;):
+    def __init__(self, code: Bytecode, left: IRExpression, right: IRExpression, op: &#34;IRArithmetic.ArithmeticType&#34;):
         super().__init__(code)
-        self.dst = dst
-        self.lhs = lhs
-        self.rhs = rhs
+        self.left = left
+        self.right = right
         self.op = op
 
+    def get_type(self) -&gt; Type:
+        # For arithmetic, result type matches left operand type
+        return self.left.get_type()
+
     def __repr__(self) -&gt; str:
-        return f&#34;&lt;IRArithmetic: {self.dst} = {self.lhs} {self.op.value} {self.rhs}&gt;&#34;</code></pre>
+        return f&#34;&lt;IRArithmetic: {self.left} {self.op.value} {self.right}&gt;&#34;</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
+<li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
 <li>abc.ABC</li>
 </ul>
@@ -476,6 +479,41 @@ inheritance.</p></pre></div>
 <div class="desc"><pre><p>An enumeration.</p></pre></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.IRExpression.get_type" href="#crashlink.decomp.IRExpression.get_type">get_type</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.IRAssign"><code class="flex name class">
+<span>class <span class="ident">IRAssign</span></span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>target: <a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>, <br>expr: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Assignment of an expression result to a local variable</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRAssign(IRStatement):
+    &#34;&#34;&#34;Assignment of an expression result to a local variable&#34;&#34;&#34;
+
+    def __init__(self, code: Bytecode, target: IRLocal, expr: IRExpression):
+        super().__init__(code)
+        self.target = target
+        self.expr = expr
+
+    def __repr__(self) -&gt; str:
+        return f&#34;&lt;IRAssign: {self.target} = {self.expr} ({disasm.type_name(self.code, self.expr.get_type())})&gt;&#34;</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
+<li>abc.ABC</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRBlock"><code class="flex name class">
 <span>class <span class="ident">IRBlock</span></span>
@@ -549,16 +587,17 @@ inheritance.</p></pre></div>
 </dd>
 <dt id="crashlink.decomp.IRConst"><code class="flex name class">
 <span>class <span class="ident">IRConst</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>dst: <a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>, <br>const_type: <a title="crashlink.decomp.IRConst.ConstType" href="#crashlink.decomp.IRConst.ConstType">IRConst.ConstType</a>, <br>idx: Optional[<a title="crashlink.core.ResolvableVarInt" href="core.html#crashlink.core.ResolvableVarInt">ResolvableVarInt</a>] = None, <br>value: Optional[bool] = None)</span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>const_type: <a title="crashlink.decomp.IRConst.ConstType" href="#crashlink.decomp.IRConst.ConstType">IRConst.ConstType</a>, <br>idx: Optional[<a title="crashlink.core.ResolvableVarInt" href="core.html#crashlink.core.ResolvableVarInt">ResolvableVarInt</a>] = None, <br>value: Optional[bool] = None)</span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Helper class that provides a standard way to create an ABC using
-inheritance.</p></pre></div>
+<div class="desc"><pre><p>Represents a constant value expression</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class IRConst(IRStatement):
+<pre><code class="python">class IRConst(IRExpression):
+    &#34;&#34;&#34;Represents a constant value expression&#34;&#34;&#34;
+
     class ConstType(_Enum):
         INT = &#34;int&#34;
         FLOAT = &#34;float&#34;
@@ -570,30 +609,51 @@ inheritance.</p></pre></div>
     def __init__(
         self,
         code: Bytecode,
-        dst: IRLocal,
         const_type: &#34;IRConst.ConstType&#34;,
         idx: Optional[ResolvableVarInt] = None,
         value: Optional[bool] = None,
     ):
         super().__init__(code)
-        self.dst = dst
         self.const_type = const_type
         self.value: Any = value
+
         if const_type == IRConst.ConstType.BOOL:
-            if not value:
+            if value is None:
                 raise DecompError(&#34;IRConst with type BOOL must have a value&#34;)
             self.value = value
         else:
-            if not idx:
+            if idx is None:
                 raise DecompError(&#34;IRConst must have an index&#34;)
             self.value = idx.resolve(code)
 
+    def get_type(self) -&gt; Type:
+        def _get_type_in_code(code: Bytecode, name: str) -&gt; Type:
+            for type in code.types:
+                if disasm.type_name(code, type) == name:
+                    return type
+            raise DecompError(f&#34;Type {name} not found in code&#34;)
+
+        if self.const_type == IRConst.ConstType.INT:
+            return _get_type_in_code(self.code, &#34;I32&#34;)
+        elif self.const_type == IRConst.ConstType.FLOAT:
+            return _get_type_in_code(self.code, &#34;F64&#34;)
+        elif self.const_type == IRConst.ConstType.BOOL:
+            return _get_type_in_code(self.code, &#34;Bool&#34;)
+        elif self.const_type == IRConst.ConstType.BYTES:
+            return _get_type_in_code(self.code, &#34;Bytes&#34;)
+        elif self.const_type == IRConst.ConstType.STRING:
+            return _get_type_in_code(self.code, &#34;String&#34;)
+        elif self.const_type == IRConst.ConstType.NULL:
+            return _get_type_in_code(self.code, &#34;Null&#34;)
+        else:
+            raise DecompError(f&#34;Unknown IRConst type: {self.const_type}&#34;)
+
     def __repr__(self) -&gt; str:
-        # return f&#34;&lt;IRConst: {self.dst} = {self.const_type.value} {self.value}&gt;&#34;
-        return f&#34;&lt;IRConst: {self.dst} = {self.value}&gt;&#34;</code></pre>
+        return f&#34;&lt;IRConst: {self.value}&gt;&#34;</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
+<li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
 <li>abc.ABC</li>
 </ul>
@@ -602,6 +662,56 @@ inheritance.</p></pre></div>
 <dt id="crashlink.decomp.IRConst.ConstType"><code class="name">var <span class="ident">ConstType</span></code></dt>
 <dd>
 <div class="desc"><pre><p>An enumeration.</p></pre></div>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.IRExpression.get_type" href="#crashlink.decomp.IRExpression.get_type">get_type</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.IRExpression"><code class="flex name class">
+<span>class <span class="ident">IRExpression</span></span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Abstract base class for expressions that produce a value</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRExpression(IRStatement, ABC):
+    &#34;&#34;&#34;Abstract base class for expressions that produce a value&#34;&#34;&#34;
+
+    def __init__(self, code: Bytecode):
+        super().__init__(code)
+
+    @abstractmethod
+    def get_type(self) -&gt; Type:
+        &#34;&#34;&#34;Get the type of value this expression produces&#34;&#34;&#34;
+        pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRArithmetic" href="#crashlink.decomp.IRArithmetic">IRArithmetic</a></li>
+<li><a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a></li>
+<li><a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRExpression.get_type"><code class="name flex">
+<span>def <span class="ident">get_type</span></span>(<span>self) ‑> <a title="crashlink.core.Type" href="core.html#crashlink.core.Type">Type</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Get the type of value this expression produces</p></pre></div>
 </dd>
 </dl>
 </dd>
@@ -684,7 +794,9 @@ inheritance.</p></pre></div>
                 lhs = self.locals[op.definition[&#34;a&#34;].value]
                 rhs = self.locals[op.definition[&#34;b&#34;].value]
                 self.block.statements.append(
-                    IRArithmetic(self.code, dst, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])
+                    IRAssign(
+                        self.code, dst, IRArithmetic(self.code, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])
+                    )
                 )
             elif op.op in [&#34;Int&#34;, &#34;Float&#34;, &#34;Bool&#34;, &#34;Bytes&#34;, &#34;String&#34;, &#34;Null&#34;]:
                 dst = self.locals[op.definition[&#34;dst&#34;].value]
@@ -693,7 +805,8 @@ inheritance.</p></pre></div>
                     value = op.definition[&#34;value&#34;].value
                 else:
                     value = None
-                self.block.statements.append(IRConst(self.code, dst, const_type, op.definition[&#34;ptr&#34;], value))
+                const = IRConst(self.code, const_type, op.definition[&#34;ptr&#34;], value)
+                self.block.statements.append(IRAssign(self.code, dst, const))
 
     def print(self) -&gt; None:
         print(self.block)</code></pre>
@@ -710,23 +823,40 @@ inheritance.</p></pre></div>
 </dd>
 <dt id="crashlink.decomp.IRLocal"><code class="flex name class">
 <span>class <span class="ident">IRLocal</span></span>
-<span>(</span><span>name: str, <br>type: <a title="crashlink.core.tIndex" href="core.html#crashlink.core.tIndex">tIndex</a>, <br>code: Optional[<a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>] = None)</span>
+<span>(</span><span>name: str, <br>type: <a title="crashlink.core.tIndex" href="core.html#crashlink.core.tIndex">tIndex</a>, <br>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
 </code></dt>
 <dd>
-<div class="desc"><pre></pre></div>
+<div class="desc"><pre><p>Abstract base class for expressions that produce a value</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class IRLocal:
-    def __init__(self, name: str, type: tIndex, code: Optional[Bytecode] = None):
+<pre><code class="python">class IRLocal(IRExpression):
+    def __init__(self, name: str, type: tIndex, code: Bytecode):
+        super().__init__(code)
         self.name = name
         self.type = type
-        self.code = code
+
+    def get_type(self) -&gt; Type:
+        return self.type.resolve(self.code)
 
     def __repr__(self) -&gt; str:
-        return f&#34;&lt;IRLocal: {self.name} {disasm.type_name(self.code, self.type.resolve(self.code)) if self.code else f&#39;t@{self.type}&#39;}&gt;&#34;</code></pre>
+        return f&#34;&lt;IRLocal: {self.name} {disasm.type_name(self.code, self.type.resolve(self.code))}&gt;&#34;</code></pre>
 </details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
+<li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.IRExpression.get_type" href="#crashlink.decomp.IRExpression.get_type">get_type</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRStatement"><code class="flex name class">
 <span>class <span class="ident">IRStatement</span></span>
@@ -756,10 +886,10 @@ inheritance.</p></pre></div>
 </ul>
 <h3>Subclasses</h3>
 <ul class="hlist">
-<li><a title="crashlink.decomp.IRArithmetic" href="#crashlink.decomp.IRArithmetic">IRArithmetic</a></li>
+<li><a title="crashlink.decomp.IRAssign" href="#crashlink.decomp.IRAssign">IRAssign</a></li>
 <li><a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a></li>
 <li><a title="crashlink.decomp.IRCall" href="#crashlink.decomp.IRCall">IRCall</a></li>
-<li><a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a></li>
+<li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
 </ul>
 </dd>
 </dl>
@@ -816,6 +946,9 @@ inheritance.</p></pre></div>
 </ul>
 </li>
 <li>
+<h4><code><a title="crashlink.decomp.IRAssign" href="#crashlink.decomp.IRAssign">IRAssign</a></code></h4>
+</li>
+<li>
 <h4><code><a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a></code></h4>
 </li>
 <li>
@@ -828,6 +961,12 @@ inheritance.</p></pre></div>
 <h4><code><a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.decomp.IRConst.ConstType" href="#crashlink.decomp.IRConst.ConstType">ConstType</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRExpression.get_type" href="#crashlink.decomp.IRExpression.get_type">get_type</a></code></li>
 </ul>
 </li>
 <li>
