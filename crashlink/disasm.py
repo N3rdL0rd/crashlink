@@ -257,6 +257,7 @@ def pseudo_from_op(
     elif op.op == "Call1":
         return f"reg{op.definition['dst']} = f@{op.definition['fun']}(reg{op.definition['arg0']})"
     elif op.op == "Call2":
+        fun = full_func_name(code, code.fn(op.definition["fun"].value))
         return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1']])})"
     elif op.op == "Call3":
         return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1', 'arg2']])})"
@@ -266,6 +267,8 @@ def pseudo_from_op(
         return f"reg{op.definition['dst']} = null"
     elif op.op == "JSLt":  # jump signed less than
         return f"if reg{op.definition['a']} < reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+    elif op.op == "Ref":
+        return f"reg{op.definition['dst']} = &reg{op.definition['src']}"
     elif op.op == "Ret":
         if type(regs[op.definition["ret"].value].resolve(code).definition) == Void:
             return "return"

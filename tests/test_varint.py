@@ -1,6 +1,5 @@
 from io import BytesIO
 
-import pytest
 
 from crashlink import VarInt
 

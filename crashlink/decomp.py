@@ -4,13 +4,12 @@ Decompilation and control flow graph generation
 
 from abc import ABC, abstractmethod
 from enum import Enum as _Enum  # Enum is already defined in crashlink.core
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from . import disasm
 from .core import *
 from .errors import *
 from .globals import dbg_print
-from .opcodes import opcodes
 
 
 class CFNode:
@@ -590,7 +589,7 @@ class IRFunction:
                 dst = self.locals[op.definition["dst"].value]
                 const_type = IRConst.ConstType[op.op.upper()]
                 value = op.definition["value"].value if op.op == "Bool" else None
-                if not op.op in ["Bool"]:
+                if op.op not in ["Bool"]:
                     const = IRConst(self.code, const_type, op.definition["ptr"], value)
                 else:
                     const = IRConst(self.code, const_type, value=value)
