@@ -123,6 +123,7 @@ def cmd_cfg(args: List[str], code: Bytecode) -> None:
             except:
                 print(f"Control flow graph saved to {png_file}. Use your favourite image viewer to open it.")
             return
+    print("Function not found.")
 
 
 # typing is ignored for lambdas because webbrowser.open returns a bool instead of None

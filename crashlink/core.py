@@ -12,7 +12,7 @@ import struct
 from datetime import datetime
 from io import BytesIO
 from typing import (Any, BinaryIO, Dict, List, Literal, Optional, Tuple,
-                    TypeAlias, TypeVar)
+                    TypeVar)
 
 T = TypeVar("T", bound="VarInt")  # HACK: easier than reimplementing deserialise for each subclass
 
@@ -1222,17 +1222,17 @@ class Bytecode(Serialisable):
 
         if self.version.value >= 5 and self.bytes and self.nbytes:
             dbg_print("Deserialising bytes... >=5")
-            self.track_section(f, f"bytes")
+            self.track_section(f, "bytes")
             self.bytes.deserialise(f, self.nbytes.value)
         else:
             self.bytes = None
 
         if self.has_debug_info and self.ndebugfiles and self.debugfiles:
             dbg_print(f"Deserialising debug files... (at {tell(f)})")
-            self.track_section(f, f"ndebugfiles")
+            self.track_section(f, "ndebugfiles")
             self.ndebugfiles.deserialise(f)
             dbg_print(f"Number of debug files: {self.ndebugfiles.value}")
-            self.track_section(f, f"debugfiles")
+            self.track_section(f, "debugfiles")
             self.debugfiles.deserialise(f)
         else:
             self.ndebugfiles = None
@@ -1274,6 +1274,27 @@ class Bytecode(Serialisable):
         self.deserialised = True
         dbg_print(f"{(datetime.now() - start_time).total_seconds()}s elapsed.")
         return self
+    
+    def fn(self, findex: int) -> Function|Native:
+        for f in self.functions:
+            if f.findex.value == findex:
+                return f
+        for n in self.natives:
+            if n.findex.value == findex:
+                return n
+        raise ValueError(f"Function {findex} not found!")
+
+    def t(self, tindex: int) -> Type:
+        for t in self.types:
+            if t.type.value == tindex:
+                return t
+        raise ValueError(f"Type {tindex} not found!")
+    
+    def g(self, gindex: int) -> tIndex:
+        for g in self.global_types:
+            if g.value == gindex:
+                return g
+        raise ValueError(f"Global {gindex} not found!")
 
     def serialise(self, auto_set_meta: bool = True) -> bytes:
         start_time = datetime.now()
