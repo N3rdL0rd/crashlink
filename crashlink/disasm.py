@@ -3,8 +3,10 @@ Human-readable disassembly of opcodes.
 """
 
 from typing import List, Optional
+from ast import literal_eval
 
 from .core import *
+from .opcodes import opcodes
 
 
 def get_proto_for(code: Bytecode, idx: int) -> Optional[Proto]:
@@ -46,7 +48,7 @@ def type_name(code: Bytecode, typ: Type) -> str:
     return typedef.__name__
 
 
-def full_func_name(code: Bytecode, func: Function) -> str:
+def full_func_name(code: Bytecode, func: Function|Native) -> str:
     proto = get_proto_for(code, func.findex.value)
     if proto:
         name = proto.name.resolve(code)
@@ -309,3 +311,29 @@ def func(code: Bytecode, func: Function | Native) -> str:
     for i, op in enumerate(func.ops):
         res += fmt_op(code, func.regs, op, i) + "\n"
     return res
+
+def to_asm(ops: List[Opcode]) -> str:
+    res = ""
+    for op in ops:
+        res += f"{op.op}. {'. '.join([str(arg) for arg in op.definition.values()])}\n"
+    return res
+
+def from_asm(asm: str) -> List[Opcode]:
+    ops = []
+    for line in asm.split("\n"):
+        parts = line.split(". ")
+        op = parts[0]
+        args = parts[1:]
+        if not op:
+            continue
+        new_opcode = Opcode()
+        new_opcode.op = op
+        new_opcode.definition = {}
+        # find defn types for this op
+        opargs = opcodes[op]
+        for name, type in opargs.items():
+            new_value = Opcode.TYPE_MAP[type]()
+            new_value.value = literal_eval(args.pop(0))
+            new_opcode.definition[name] = new_value
+        ops.append(new_opcode)
+    return ops

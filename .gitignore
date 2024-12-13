@@ -11,3 +11,4 @@ hl/
 *.dat
 *.prof
 *.json
+build*.bat
