@@ -902,6 +902,8 @@ class Opcode(Serialisable):
         return self
 
     def serialise(self) -> bytes:
+        if self.op:
+            self.code.value = list(opcodes.keys()).index(self.op)
         return b"".join(
             [
                 self.code.serialise(),
@@ -1256,7 +1258,7 @@ class Bytecode(Serialisable):
             self.natives.append(Native().deserialise(f))
         dbg_print(f"Functions starting at {tell(f)}")
         self.track_section(f, "functions")
-        if not USE_TQDM:
+        if not USE_TQDM or self.nfunctions.value < 1000:
             for i in range(self.nfunctions.value):
                 self.track_section(f, f"function {i}")
                 self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
@@ -1275,20 +1277,18 @@ class Bytecode(Serialisable):
         dbg_print(f"{(datetime.now() - start_time).total_seconds()}s elapsed.")
         return self
     
-    def fn(self, findex: int) -> Function|Native:
+    def fn(self, findex: int, native: bool=True) -> Function|Native:
         for f in self.functions:
             if f.findex.value == findex:
                 return f
-        for n in self.natives:
-            if n.findex.value == findex:
-                return n
+        if native:
+            for n in self.natives:
+                if n.findex.value == findex:
+                    return n
         raise ValueError(f"Function {findex} not found!")
 
     def t(self, tindex: int) -> Type:
-        for t in self.types:
-            if t.type.value == tindex:
-                return t
-        raise ValueError(f"Type {tindex} not found!")
+        return self.types[tindex]
     
     def g(self, gindex: int) -> tIndex:
         for g in self.global_types:
@@ -1401,12 +1401,6 @@ class Bytecode(Serialisable):
                 return False
 
         return True
-
-    def function(self, id: int) -> Function:
-        for function in self.functions:
-            if function.findex.value == id:
-                return function
-        raise IndexError(f"Function f@{id} not found!")
 
     def track_section(self, f: BinaryIO | BytesIO, section_name: str) -> None:
         self.section_offsets[section_name] = f.tell()

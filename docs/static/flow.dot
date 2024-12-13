@@ -1,0 +1,15 @@
+digraph G {
+    node [shape=box style=filled]
+    "Input bytecode" -> "Core parser"
+    "Core parser" -> "Disassembly"
+    "Disassembly" -> "Core parser"
+    "Core parser" -> "Control flow recovery"
+    "Type and debug information"
+    "Control flow recovery" -> "Control flow optimizer" -> "IR lifter"
+    "Core parser" -> "Type and debug information"
+    "Type and debug information" -> "IR lifter"
+    "IR lifter" -> "IR optimizer"
+    "Type and debug information" -> "IR optimizer"
+    "IR optimizer" -> "Output pseudocode"
+    "Output pseudocode" -> "Haxe compiler" -> "Input bytecode"
+}

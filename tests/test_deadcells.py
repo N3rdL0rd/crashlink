@@ -1,4 +1,5 @@
 import os
+import pytest
 
 from crashlink import *
 
@@ -11,6 +12,7 @@ POSSIBLE_LOCATIONS = [
 ]
 
 
+@pytest.mark.skip(reason="Not open-source. If you own the game, feel free to run this test.")
 def test_deser_deadcells():
     loc = next((loc for loc in POSSIBLE_LOCATIONS if os.path.exists(loc)), None)
     if loc is None:
