@@ -461,46 +461,90 @@ class _NoDataType(TypeDef):
 
 
 class Void(_NoDataType):
+    """
+    Void type, no data. Used to discard data (eg. reg: Void = call f@**).
+    """
+
     pass
 
 
 class U8(_NoDataType):
+    """
+    Unsigned 8-bit integer type, no data.
+    """
+
     pass
 
 
 class U16(_NoDataType):
+    """
+    Unsigned 16-bit integer type, no data.
+    """
+
     pass
 
 
 class I32(_NoDataType):
+    """
+    Signed 32-bit integer type, no data.
+    """
+
     pass
 
 
 class I64(_NoDataType):
+    """
+    Signed 64-bit integer type, no data.
+    """
+
     pass
 
 
 class F32(_NoDataType):
+    """
+    32-bit float type, no data.
+    """
+
     pass
 
 
 class F64(_NoDataType):
+    """
+    64-bit float type, no data.
+    """
+
     pass
 
 
 class Bool(_NoDataType):
+    """
+    Boolean type, no data.
+    """
+
     pass
 
 
 class Bytes(_NoDataType):
+    """
+    Bytes type, no data.
+    """
+
     pass
 
 
 class Dyn(_NoDataType):
+    """
+    Dynamic type, no data. Can store any type of data in a typed register as a pointer.
+    """
+
     pass
 
 
 class Fun(TypeDef):
+    """
+    Stores metadata about a function (signatures). When referenced in conjunction with a Proto or Method, it can be used to reconstruct the full function signature. See `crashlink.disasm.func_header` for a working reference.
+    """
+
     def __init__(self) -> None:
         self.nargs = VarInt()
         self.args: List[tIndex] = []
@@ -524,6 +568,10 @@ class Fun(TypeDef):
 
 
 class Field(Serialisable):
+    """
+    Represents a field in a class definition.
+    """
+
     def __init__(self) -> None:
         self.name = strRef()
         self.type = tIndex()
@@ -538,6 +586,10 @@ class Field(Serialisable):
 
 
 class Proto(Serialisable):
+    """
+    Represents a prototype of a function
+    """
+
     def __init__(self) -> None:
         self.name = strRef()
         self.findex = fIndex()
@@ -554,6 +606,10 @@ class Proto(Serialisable):
 
 
 class Binding(Serialisable):
+    """
+    Represents a binding of a field to a class.
+    """
+
     def __init__(self) -> None:
         self.field = fieldRef()
         self.findex = fIndex()
@@ -568,6 +624,20 @@ class Binding(Serialisable):
 
 
 class Obj(TypeDef):
+    """
+    Represents a class definition. Contains:
+
+    - name: strRef
+    - super: tIndex
+    - _global: gIndex
+    - nfields: VarInt
+    - nprotos: VarInt
+    - nbindings: VarInt
+    - fields: List[Field]
+    - protos: List[Proto]
+    - bindings: List[Binding]
+    """
+
     def __init__(self) -> None:
         self.name = strRef()
         self.super = tIndex()
@@ -639,14 +709,26 @@ class Obj(TypeDef):
 
 
 class Array(_NoDataType):
+    """
+    Array type, no data.
+    """
+
     pass
 
 
 class TypeType(_NoDataType):
+    """
+    Type wrapping a type, no data.
+    """
+
     pass
 
 
 class Ref(TypeDef):
+    """
+    Memory reference to an instance of a type.
+    """
+
     def __init__(self) -> None:
         self.type = tIndex()
 
@@ -659,6 +741,10 @@ class Ref(TypeDef):
 
 
 class Virtual(TypeDef):
+    """
+    Virtual type, used for virtual/abstract classes.
+    """
+
     def __init__(self) -> None:
         self.nfields = VarInt()
         self.fields: List[Field] = []
@@ -679,10 +765,18 @@ class Virtual(TypeDef):
 
 
 class DynObj(_NoDataType):
+    """
+    Dynamic object type, no data.
+    """
+
     pass
 
 
 class Abstract(TypeDef):
+    """
+    Abstract class type.
+    """
+
     def __init__(self) -> None:
         self.name = strRef()
 
@@ -695,6 +789,10 @@ class Abstract(TypeDef):
 
 
 class EnumConstruct(Serialisable):
+    """
+    Construct of an enum.
+    """
+
     def __init__(self) -> None:
         self.name = strRef()
         self.nparams = VarInt()
@@ -718,6 +816,10 @@ class EnumConstruct(Serialisable):
 
 
 class Enum(TypeDef):
+    """
+    Enum type.
+    """
+
     def __init__(self) -> None:
         self.name = strRef()
         self._global = gIndex()
@@ -744,6 +846,10 @@ class Enum(TypeDef):
 
 
 class Null(TypeDef):
+    """
+    Null of a certain type.
+    """
+
     def __init__(self) -> None:
         self.type = tIndex()
 
@@ -756,14 +862,26 @@ class Null(TypeDef):
 
 
 class Method(Fun):
+    """
+    Method type, identical to Fun.
+    """
+
     pass
 
 
 class Struct(Obj):
+    """
+    Struct type, identical to Obj.
+    """
+
     pass
 
 
 class Packed(TypeDef):
+    """
+    Holds an inner type index.
+    """
+
     def __init__(self) -> None:
         self.inner = tIndex()
 
@@ -776,6 +894,13 @@ class Packed(TypeDef):
 
 
 class Type(Serialisable):
+    """
+    Type definition:
+
+    - kind: SerialisableInt
+    - definition: TypeDef
+    """
+
     # fmt: off
     TYPEDEFS: List[type] = [
         Void,     # 0, no data
@@ -830,6 +955,15 @@ class Type(Serialisable):
 
 
 class Native(Serialisable):
+    """
+    Represents a native function.
+
+    - lib: strRef
+    - name: strRef
+    - type: tIndex
+    - findex: fIndex
+    """
+
     def __init__(self) -> None:
         self.lib = strRef()
         self.name = strRef()
