@@ -101,12 +101,16 @@ you.</p>
 <span>class <span class="ident">Abstract</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<div class="desc"><pre><p>Abstract class type.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Abstract(TypeDef):
+    &#34;&#34;&#34;
+    Abstract class type.
+    &#34;&#34;&#34;
+
     def __init__(self) -&gt; None:
         self.name = strRef()
 
@@ -157,12 +161,16 @@ you.</p>
 <span>class <span class="ident">Array</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<div class="desc"><pre><p>Array type, no data.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Array(_NoDataType):
+    &#34;&#34;&#34;
+    Array type, no data.
+    &#34;&#34;&#34;
+
     pass</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -176,12 +184,16 @@ you.</p>
 <span>class <span class="ident">Binding</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre></pre></div>
+<div class="desc"><pre><p>Represents a binding of a field to a class.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Binding(Serialisable):
+    &#34;&#34;&#34;
+    Represents a binding of a field to a class.
+    &#34;&#34;&#34;
+
     def __init__(self) -&gt; None:
         self.field = fieldRef()
         self.findex = fIndex()
@@ -234,12 +246,16 @@ you.</p>
 <span>class <span class="ident">Bool</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<div class="desc"><pre><p>Boolean type, no data.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Bool(_NoDataType):
+    &#34;&#34;&#34;
+    Boolean type, no data.
+    &#34;&#34;&#34;
+
     pass</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -953,12 +969,16 @@ you.</p>
 <span>class <span class="ident">Bytes</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<div class="desc"><pre><p>Bytes type, no data.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Bytes(_NoDataType):
+    &#34;&#34;&#34;
+    Bytes type, no data.
+    &#34;&#34;&#34;
+
     pass</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -1352,12 +1372,16 @@ you.</p>
 <span>class <span class="ident">Dyn</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<div class="desc"><pre><p>Dynamic type, no data. Can store any type of data in a typed register as a pointer.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Dyn(_NoDataType):
+    &#34;&#34;&#34;
+    Dynamic type, no data. Can store any type of data in a typed register as a pointer.
+    &#34;&#34;&#34;
+
     pass</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -1371,12 +1395,16 @@ you.</p>
 <span>class <span class="ident">DynObj</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<div class="desc"><pre><p>Dynamic object type, no data.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class DynObj(_NoDataType):
+    &#34;&#34;&#34;
+    Dynamic object type, no data.
+    &#34;&#34;&#34;
+
     pass</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -1390,12 +1418,16 @@ you.</p>
 <span>class <span class="ident">Enum</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<div class="desc"><pre><p>Enum type.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Enum(TypeDef):
+    &#34;&#34;&#34;
+    Enum type.
+    &#34;&#34;&#34;
+
     def __init__(self) -&gt; None:
         self.name = strRef()
         self._global = gIndex()
@@ -1471,12 +1503,16 @@ you.</p>
 <span>class <span class="ident">EnumConstruct</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre></pre></div>
+<div class="desc"><pre><p>Construct of an enum.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class EnumConstruct(Serialisable):
+    &#34;&#34;&#34;
+    Construct of an enum.
+    &#34;&#34;&#34;
+
     def __init__(self) -&gt; None:
         self.name = strRef()
         self.nparams = VarInt()
@@ -1546,12 +1582,16 @@ you.</p>
 <span>class <span class="ident">F32</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<div class="desc"><pre><p>32-bit float type, no data.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class F32(_NoDataType):
+    &#34;&#34;&#34;
+    32-bit float type, no data.
+    &#34;&#34;&#34;
+
     pass</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -1565,12 +1605,16 @@ you.</p>
 <span>class <span class="ident">F64</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<div class="desc"><pre><p>64-bit float type, no data.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class F64(_NoDataType):
+    &#34;&#34;&#34;
+    64-bit float type, no data.
+    &#34;&#34;&#34;
+
     pass</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -1584,12 +1628,16 @@ you.</p>
 <span>class <span class="ident">Field</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre></pre></div>
+<div class="desc"><pre><p>Represents a field in a class definition.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Field(Serialisable):
+    &#34;&#34;&#34;
+    Represents a field in a class definition.
+    &#34;&#34;&#34;
+
     def __init__(self) -&gt; None:
         self.name = strRef()
         self.type = tIndex()
@@ -1642,12 +1690,16 @@ you.</p>
 <span>class <span class="ident">Fun</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<div class="desc"><pre><p>Stores metadata about a function (signatures). When referenced in conjunction with a Proto or Method, it can be used to reconstruct the full function signature. See <code><a title="crashlink.disasm.func_header" href="disasm.html#crashlink.disasm.func_header">func_header()</a></code> for a working reference.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Fun(TypeDef):
+    &#34;&#34;&#34;
+    Stores metadata about a function (signatures). When referenced in conjunction with a Proto or Method, it can be used to reconstruct the full function signature. See `crashlink.disasm.func_header` for a working reference.
+    &#34;&#34;&#34;
+
     def __init__(self) -&gt; None:
         self.nargs = VarInt()
         self.args: List[tIndex] = []
@@ -1871,12 +1923,16 @@ you.</p>
 <span>class <span class="ident">I32</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<div class="desc"><pre><p>Signed 32-bit integer type, no data.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class I32(_NoDataType):
+    &#34;&#34;&#34;
+    Signed 32-bit integer type, no data.
+    &#34;&#34;&#34;
+
     pass</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -1890,12 +1946,16 @@ you.</p>
 <span>class <span class="ident">I64</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<div class="desc"><pre><p>Signed 64-bit integer type, no data.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class I64(_NoDataType):
+    &#34;&#34;&#34;
+    Signed 64-bit integer type, no data.
+    &#34;&#34;&#34;
+
     pass</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -1969,12 +2029,16 @@ you.</p>
 <span>class <span class="ident">Method</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<div class="desc"><pre><p>Method type, identical to Fun.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Method(Fun):
+    &#34;&#34;&#34;
+    Method type, identical to Fun.
+    &#34;&#34;&#34;
+
     pass</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -1988,12 +2052,27 @@ you.</p>
 <span>class <span class="ident">Native</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre></pre></div>
+<div class="desc"><pre><p>Represents a native function.</p>
+<ul>
+<li>lib: strRef</li>
+<li>name: strRef</li>
+<li>type: tIndex</li>
+<li>findex: fIndex</li>
+</ul></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Native(Serialisable):
+    &#34;&#34;&#34;
+    Represents a native function.
+
+    - lib: strRef
+    - name: strRef
+    - type: tIndex
+    - findex: fIndex
+    &#34;&#34;&#34;
+
     def __init__(self) -&gt; None:
         self.lib = strRef()
         self.name = strRef()
@@ -2066,12 +2145,16 @@ you.</p>
 <span>class <span class="ident">Null</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<div class="desc"><pre><p>Null of a certain type.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Null(TypeDef):
+    &#34;&#34;&#34;
+    Null of a certain type.
+    &#34;&#34;&#34;
+
     def __init__(self) -&gt; None:
         self.type = tIndex()
 
@@ -2122,12 +2205,37 @@ you.</p>
 <span>class <span class="ident">Obj</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<div class="desc"><pre><p>Represents a class definition. Contains:</p>
+<ul>
+<li>name: strRef</li>
+<li>super: tIndex</li>
+<li>_global: gIndex</li>
+<li>nfields: VarInt</li>
+<li>nprotos: VarInt</li>
+<li>nbindings: VarInt</li>
+<li>fields: List[Field]</li>
+<li>protos: List[Proto]</li>
+<li>bindings: List[Binding]</li>
+</ul></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Obj(TypeDef):
+    &#34;&#34;&#34;
+    Represents a class definition. Contains:
+
+    - name: strRef
+    - super: tIndex
+    - _global: gIndex
+    - nfields: VarInt
+    - nprotos: VarInt
+    - nbindings: VarInt
+    - fields: List[Field]
+    - protos: List[Proto]
+    - bindings: List[Binding]
+    &#34;&#34;&#34;
+
     def __init__(self) -&gt; None:
         self.name = strRef()
         self.super = tIndex()
@@ -2435,12 +2543,16 @@ you.</p>
 <span>class <span class="ident">Packed</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<div class="desc"><pre><p>Holds an inner type index.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Packed(TypeDef):
+    &#34;&#34;&#34;
+    Holds an inner type index.
+    &#34;&#34;&#34;
+
     def __init__(self) -&gt; None:
         self.inner = tIndex()
 
@@ -2491,12 +2603,16 @@ you.</p>
 <span>class <span class="ident">Proto</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre></pre></div>
+<div class="desc"><pre><p>Represents a prototype of a function</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Proto(Serialisable):
+    &#34;&#34;&#34;
+    Represents a prototype of a function
+    &#34;&#34;&#34;
+
     def __init__(self) -&gt; None:
         self.name = strRef()
         self.findex = fIndex()
@@ -2613,12 +2729,16 @@ you.</p>
 <span>class <span class="ident">Ref</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<div class="desc"><pre><p>Memory reference to an instance of a type.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Ref(TypeDef):
+    &#34;&#34;&#34;
+    Memory reference to an instance of a type.
+    &#34;&#34;&#34;
+
     def __init__(self) -&gt; None:
         self.type = tIndex()
 
@@ -3195,12 +3315,16 @@ you.</p>
 <span>class <span class="ident">Struct</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<div class="desc"><pre><p>Struct type, identical to Obj.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Struct(Obj):
+    &#34;&#34;&#34;
+    Struct type, identical to Obj.
+    &#34;&#34;&#34;
+
     pass</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -3214,12 +3338,23 @@ you.</p>
 <span>class <span class="ident">Type</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre></pre></div>
+<div class="desc"><pre><p>Type definition:</p>
+<ul>
+<li>kind: SerialisableInt</li>
+<li>definition: TypeDef</li>
+</ul></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Type(Serialisable):
+    &#34;&#34;&#34;
+    Type definition:
+
+    - kind: SerialisableInt
+    - definition: TypeDef
+    &#34;&#34;&#34;
+
     # fmt: off
     TYPEDEFS: List[type] = [
         Void,     # 0, no data
@@ -3361,12 +3496,16 @@ you.</p>
 <span>class <span class="ident">TypeType</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<div class="desc"><pre><p>Type wrapping a type, no data.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class TypeType(_NoDataType):
+    &#34;&#34;&#34;
+    Type wrapping a type, no data.
+    &#34;&#34;&#34;
+
     pass</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -3380,12 +3519,16 @@ you.</p>
 <span>class <span class="ident">U16</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<div class="desc"><pre><p>Unsigned 16-bit integer type, no data.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class U16(_NoDataType):
+    &#34;&#34;&#34;
+    Unsigned 16-bit integer type, no data.
+    &#34;&#34;&#34;
+
     pass</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -3399,12 +3542,16 @@ you.</p>
 <span>class <span class="ident">U8</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<div class="desc"><pre><p>Unsigned 8-bit integer type, no data.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class U8(_NoDataType):
+    &#34;&#34;&#34;
+    Unsigned 8-bit integer type, no data.
+    &#34;&#34;&#34;
+
     pass</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -3650,12 +3797,16 @@ you.</p>
 <span>class <span class="ident">Virtual</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Abstract class for all type definition fields.</p></pre></div>
+<div class="desc"><pre><p>Virtual type, used for virtual/abstract classes.</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Virtual(TypeDef):
+    &#34;&#34;&#34;
+    Virtual type, used for virtual/abstract classes.
+    &#34;&#34;&#34;
+
     def __init__(self) -&gt; None:
         self.nfields = VarInt()
         self.fields: List[Field] = []
@@ -3721,12 +3872,16 @@ you.</p>
 <span>class <span class="ident">Void</span></span>
 </code></dt>
 <dd>
-<div class="desc"><pre><p>Base typedef for types with no data.</p></pre></div>
+<div class="desc"><pre><p>Void type, no data. Used to discard data (eg. reg: Void = call f@**).</p></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Void(_NoDataType):
+    &#34;&#34;&#34;
+    Void type, no data. Used to discard data (eg. reg: Void = call f@**).
+    &#34;&#34;&#34;
+
     pass</code></pre>
 </details>
 <h3>Ancestors</h3>
