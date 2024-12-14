@@ -1,15 +1,18 @@
 """
-Human-readable disassembly of opcodes.
+Human-readable disassembly of opcodes and utilities to work at a relatively low level with HashLink bytecode.
 """
 
-from typing import List, Optional
 from ast import literal_eval
+from typing import List, Optional
 
 from .core import *
 from .opcodes import opcodes
 
 
 def get_proto_for(code: Bytecode, idx: int) -> Optional[Proto]:
+    """
+    Gets the proto for a standalone function index.
+    """
     for type in code.types:
         if type.kind.value == Type.TYPEDEFS.index(Obj):
             if not isinstance(type.definition, Obj):
@@ -22,6 +25,9 @@ def get_proto_for(code: Bytecode, idx: int) -> Optional[Proto]:
 
 
 def get_field_for(code: Bytecode, idx: int) -> Optional[Field]:
+    """
+    Gets the field for a standalone function index.
+    """
     for type in code.types:
         if type.kind.value == Type.TYPEDEFS.index(Obj):
             if not isinstance(type.definition, Obj):
@@ -35,6 +41,9 @@ def get_field_for(code: Bytecode, idx: int) -> Optional[Field]:
 
 
 def type_name(code: Bytecode, typ: Type) -> str:
+    """
+    Generates a human-readable name for a type.
+    """
     typedef = type(typ.definition)
     defn = typ.definition
 
@@ -48,7 +57,10 @@ def type_name(code: Bytecode, typ: Type) -> str:
     return typedef.__name__
 
 
-def full_func_name(code: Bytecode, func: Function|Native) -> str:
+def full_func_name(code: Bytecode, func: Function | Native) -> str:
+    """
+    Generates a human-readable name for a function or native.
+    """
     proto = get_proto_for(code, func.findex.value)
     if proto:
         name = proto.name.resolve(code)
@@ -78,6 +90,9 @@ def full_func_name(code: Bytecode, func: Function|Native) -> str:
 
 
 def type_to_haxe(type: str) -> str:
+    """
+    Maps internal HashLink type names to Haxe type names.
+    """
     mapping = {
         "I32": "Int",
         "F64": "Float",
@@ -89,6 +104,9 @@ def type_to_haxe(type: str) -> str:
 
 
 def func_header(code: Bytecode, func: Function) -> str:
+    """
+    Generates a human-readable header for a function.
+    """
     name = full_func_name(code, func)
     fun_type = func.type.resolve(code).definition
     if isinstance(fun_type, Fun):
@@ -98,6 +116,9 @@ def func_header(code: Bytecode, func: Function) -> str:
 
 
 def native_header(code: Bytecode, native: Native) -> str:
+    """
+    Generates a human-readable header for a native function.
+    """
     fun_type = native.type.resolve(code).definition
     if isinstance(fun_type, Fun):
         fun: Fun = fun_type
@@ -268,7 +289,9 @@ def pseudo_from_op(
     elif op.op == "Null":
         return f"reg{op.definition['dst']} = null"
     elif op.op == "JSLt":  # jump signed less than
-        return f"if reg{op.definition['a']} < reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+        return (
+            f"if reg{op.definition['a']} < reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+        )
     elif op.op == "Ref":
         return f"reg{op.definition['dst']} = &reg{op.definition['src']}"
     elif op.op == "Ret":
@@ -312,13 +335,45 @@ def func(code: Bytecode, func: Function | Native) -> str:
         res += fmt_op(code, func.regs, op, i) + "\n"
     return res
 
+
 def to_asm(ops: List[Opcode]) -> str:
+    """
+    Dumps a list of opcodes to a human-readable(-ish) assembly format.
+
+    Eg.:
+    ```txt
+    Int. 0. 0
+    Int. 2. 1
+    GetGlobal. 3. 3
+    Add. 4. 0. 2
+    Sub. 5. 0. 2
+    Mul. 6. 0. 2
+    ToSFloat. 8. 0
+    ToSFloat. 9. 2
+    SDiv. 8. 8. 9
+    SMod. 7. 0. 2
+    Shl. 10. 0. 2
+    JSLt. 0. 2. 2
+    Bool. 11. False
+    JAlways. 1
+    Bool. 11. True
+    JSLt. 0. 2. 2
+    Bool. 12. False
+    JAlways. 1
+    Bool. 12. True
+    Ret. 1
+    ```
+    """
     res = ""
     for op in ops:
         res += f"{op.op}. {'. '.join([str(arg) for arg in op.definition.values()])}\n"
     return res
 
+
 def from_asm(asm: str) -> List[Opcode]:
+    """
+    Reads and parses a list of opcodes from a human-readable(-ish) assembly format. See `to_asm`.
+    """
     ops = []
     for line in asm.split("\n"):
         parts = line.split(". ")

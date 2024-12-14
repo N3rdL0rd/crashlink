@@ -1,5 +1,5 @@
 """
-Decompilation and control flow graph generation
+Decompilation, IR and control flow graph generation
 """
 
 from abc import ABC, abstractmethod
@@ -296,19 +296,19 @@ class IRBlock(IRStatement):
     def __repr__(self) -> str:
         if not self.statements:
             return "<IRBlock:>"
-            
+
         formatted_statements = []
         base_indent = "    "
-            
+
         for stmt in self.statements:
             if isinstance(stmt, IRConditional):
-                cond_lines = str(stmt).split('\n')
+                cond_lines = str(stmt).split("\n")
                 formatted_statements.append(base_indent + cond_lines[0])
                 for line in cond_lines[1:]:
                     formatted_statements.append(base_indent + line)
             else:
                 formatted_statements.append(base_indent + str(stmt))
-                    
+
         statements = "\n".join(formatted_statements)
         return f"<IRBlock:\n{statements}>"
 
@@ -399,8 +399,10 @@ class IRAssign(IRStatement):
 #         return f"<IRCall: {self.dst} = {self.func}({', '.join(map(str, self.args))})>"
 # TODO: IRExpression for calls
 
+
 class IRBoolExpr(IRExpression):
     """Base class for boolean expressions"""
+
     class CompareType(_Enum):
         EQ = "=="
         NEQ = "!="
@@ -413,9 +415,13 @@ class IRBoolExpr(IRExpression):
         TRUE = "true"
         FALSE = "false"
 
-    def __init__(self, code: Bytecode, op: "IRBoolExpr.CompareType", 
-                 left: Optional[IRExpression] = None, 
-                 right: Optional[IRExpression] = None):
+    def __init__(
+        self,
+        code: Bytecode,
+        op: "IRBoolExpr.CompareType",
+        left: Optional[IRExpression] = None,
+        right: Optional[IRExpression] = None,
+    ):
         super().__init__(code)
         self.op = op
         self.left = left
@@ -434,6 +440,7 @@ class IRBoolExpr(IRExpression):
         elif self.op in [IRBoolExpr.CompareType.TRUE, IRBoolExpr.CompareType.FALSE]:
             return f"<IRBoolExpr: {self.op.value}>"
         return f"<IRBoolExpr: {self.left} {self.op.value} {self.right}>"
+
 
 class IRConst(IRExpression):
     """Represents a constant value expression"""
@@ -504,10 +511,12 @@ class IRConditional(IRStatement):
     def __repr__(self) -> str:
         return f"<IRConditional: if {self.condition} then\n{self.true_block}\nelse\n{self.false_block}>"
 
+
 class IRFunction:
     """
     Intermediate representation of a function.
     """
+
     def __init__(self, code: Bytecode, func: Function) -> None:
         self.func = func
         self.cfg = CFGraph(func)
@@ -536,7 +545,7 @@ class IRFunction:
                 # assign: Tuple[strRef (name), VarInt (op index)]
                 val = assign[1].value - 1
                 if val < 0:
-                    continue # arg name
+                    continue  # arg name
                 reg: Optional[int] = None
                 op = self.ops[val]
                 try:
@@ -566,23 +575,36 @@ class IRFunction:
         """Lift a control flow node to an IR block"""
         if visited is None:
             visited = set()
-        
+
         if node in visited:
             return IRBlock(self.code)  # Return empty block for cycles
-            
+
         visited.add(node)
         block = IRBlock(self.code)
 
         # Process operations in current block
         for op in node.ops:
-            if op.op in ["Add", "Sub", "Mul", "SDiv", "UDiv", "SMod", "UMod", 
-                        "Shl", "SShr", "UShr", "And", "Or", "Xor"]:
+            if op.op in [
+                "Add",
+                "Sub",
+                "Mul",
+                "SDiv",
+                "UDiv",
+                "SMod",
+                "UMod",
+                "Shl",
+                "SShr",
+                "UShr",
+                "And",
+                "Or",
+                "Xor",
+            ]:
                 dst = self.locals[op.definition["dst"].value]
                 lhs = self.locals[op.definition["a"].value]
                 rhs = self.locals[op.definition["b"].value]
                 block.statements.append(
-                    IRAssign(self.code, dst, 
-                        IRArithmetic(self.code, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])
+                    IRAssign(
+                        self.code, dst, IRArithmetic(self.code, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])
                     )
                 )
             elif op.op in ["Int", "Float", "Bool", "Bytes", "String", "Null"]:
@@ -595,11 +617,21 @@ class IRFunction:
                     const = IRConst(self.code, const_type, value=value)
                 block.statements.append(IRAssign(self.code, dst, const))
             # Handle conditionals
-            elif op.op in ["JTrue", "JFalse", "JNull", "JNotNull", 
-                        "JSLt", "JSGte", "JSGt", "JSLte",
-                        "JULt", "JUGte", "JEq", "JNotEq"]:
-                
-                # Map jump ops to comparison types
+            elif op.op in [
+                "JTrue",
+                "JFalse",
+                "JNull",
+                "JNotNull",
+                "JSLt",
+                "JSGte",
+                "JSGt",
+                "JSLte",
+                "JULt",
+                "JUGte",
+                "JEq",
+                "JNotEq",
+            ]:
+
                 jump_to_compare = {
                     "JTrue": IRBoolExpr.CompareType.TRUE,
                     "JFalse": IRBoolExpr.CompareType.FALSE,
@@ -612,7 +644,7 @@ class IRFunction:
                     "JULt": IRBoolExpr.CompareType.LT,
                     "JUGte": IRBoolExpr.CompareType.GTE,
                     "JEq": IRBoolExpr.CompareType.EQ,
-                    "JNotEq": IRBoolExpr.CompareType.NEQ
+                    "JNotEq": IRBoolExpr.CompareType.NEQ,
                 }
 
                 # Build condition expression
@@ -635,11 +667,9 @@ class IRFunction:
                         true_branch = self._lift_block(next_node, visited)
                     elif edge_type == "false":
                         false_branch = self._lift_block(next_node, visited)
-                
+
                 if true_branch and false_branch:
-                    block.statements.append(
-                        IRConditional(self.code, condition, true_branch, false_branch)
-                    )
+                    block.statements.append(IRConditional(self.code, condition, true_branch, false_branch))
                     return block
 
             # Handle unconditional jumps

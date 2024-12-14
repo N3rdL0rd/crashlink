@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
-<meta name="generator" content="pdoc3 0.11.1">
+<meta name="generator" content="pdoc3 0.11.5">
 <title>crashlink API documentation</title>
-<meta name="description" content="Just another HashLink decompiler.">
+<meta name="description" content="Pure Python HashLink bytecode parser/disassembler/decompiler/modding tool …">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
-<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin-bottom:1em}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
 <style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
 <style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
 <script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
@@ -27,7 +27,89 @@ hljs.highlightAll();
 <h1 class="title">Package <code>crashlink</code></h1>
 </header>
 <section id="section-intro">
-<p>Just another HashLink decompiler.</p>
+<p>Pure Python HashLink bytecode parser/disassembler/decompiler/modding tool</p>
+<h2 id="features">Features</h2>
+<ul>
+<li>Pure Python with zero dependencies, integrates nicely in a lot of places (IDAPython compatible!)</li>
+<li>Allows values to be externally modified and reserialised through a scriptable interface</li>
+<li>A very nice little CLI with <a href="https://github.com/Gui-Yom/hlbc">hlbc</a>-compatible mode.</li>
+</ul>
+<h2 id="installation">Installation</h2>
+<pre><code class="language-bash">pip install crashlink # TODO: publish to PyPI
+</code></pre>
+<p>Optionally, install <code>tqdm</code> for progress bars when parsing large files:</p>
+<pre><code class="language-bash">pip install crashlink[tqdm]
+</code></pre>
+<p>You also need to have Graphviz installed to generate control flow graphs. On most *nix systems, on Windows (with Chocolatey or Scoop), and on MacOS (with Homebrew), you can install it with your package manager under <code>graphviz</code>.</p>
+<ul>
+<li>Windows: <code>choco install graphviz</code></li>
+<li>MacOS: <code>brew install graphviz</code></li>
+<li>Debian: <code>sudo apt install graphviz</code></li>
+<li>Arch: <code>sudo pacman -S graphviz</code></li>
+<li>Fedora: <code>sudo dnf install graphviz</code></li>
+</ul>
+<h2 id="usage">Usage</h2>
+<p>Either:</p>
+<pre><code class="language-py">from crashlink import *
+code = Bytecode.from_path(&quot;path/to/file.hl&quot;)
+for func in code.functions:
+    if func.findex.value == 22 or func.findex.value == 240: # typical entry points that the compiler generates
+        print(disasm.func(code, func))
+# &gt; f@22 static $Clazz.main () -&gt; Void (from Clazz.hx)
+# &gt; Reg types:
+# &gt;   0. Void
+# &gt;
+# &gt; Ops:
+# &gt;   0. Ret             {'ret': 0}                                       return
+</code></pre>
+<p>Or:</p>
+<pre><code class="language-bash">$ crashlink path/to/file.hl # or python -m crashlink
+crashlink&gt; funcs
+f@22 static Clazz.main () -&gt; Void (from Clazz.hx)
+f@23 Clazz.method (Clazz) -&gt; I32 (from Clazz.hx)
+crashlink&gt; fn 22
+f@22 static Clazz.main () -&gt; Void (from Clazz.hx)
+Reg types:
+  0. Void
+
+Ops:
+  0. Ret             {'ret': 0}                                       return
+</code></pre>
+<h2 id="development">Development</h2>
+<blockquote>
+<p>Note:
+This project is configured for the <a href="https://just.systems/">just</a> command runner. If you don't have it installed, you can still run the commands in the <code>justfile</code> manually, but I don't recommend it.</p>
+</blockquote>
+<p>For development purposes, you can clone the repo, install development dependencies, and run the tests:</p>
+<pre><code class="language-bash">git clone https://github.com/N3rdL0rd/crashlink
+cd crashlink
+# optionally, create and activate a venv here.
+just install # or pip install -e .[dev]
+just test # or pytest
+</code></pre>
+<p>Before committing, please run <code>just dev</code> to format the code, run tests, and generate documentation in <code>docs/</code>. If you're adding new features to the core serialisation/deserialisation code (<code><a title="crashlink.core" href="core.html">crashlink.core</a></code>), please also add a test case in <code>tests/haxe/</code> for the new language feature you're adding. If you're adding a feature to the decompiler or disassembler, please add a normal test case (in Python) in <code>tests/</code> that tests the new feature.</p>
+<p>Pull requests are always welcome! For major changes, please open an issue first to discuss what you would like to change.</p>
+<p>You can use the following pre-defined commands with <code>just</code>:</p>
+<ul>
+<li><code>just dev</code>: Run tests, format code, and generate documentation.</li>
+<li><code>just build</code>: Build the package.</li>
+<li><code>just install</code>: Install development dependencies and the package in editable mode.</li>
+<li><code>just build-tests</code>: Build test samples.</li>
+<li><code>just test</code>: Run tests.</li>
+<li><code>just format</code>: Format code.</li>
+<li><code>just docs</code>: Generate documentation.</li>
+<li><code>just check</code>: Run static analysis/typechecking.</li>
+<li><code>just clean</code>: Clean up build artifacts.</li>
+<li><code>just profile</code>: Run the test suite with cProfile and then open the results in a browser.</li>
+<li><code>just serve-docs</code>: Serve the documentation locally.</li>
+</ul>
+<h2 id="credits">Credits</h2>
+<ul>
+<li>Thank you to <a href="https://github.com/Gui-Yom">Gui-Yom</a> for writing hlbc and for maintaining documentation on the HashLink bytecode format, as well as for providing tests and helping me during development.</li>
+<li>Thank you to <a href="https://haxe.org/">Haxe Foundation</a> for creating the HashLink VM and the Haxe programming language.</li>
+<li>And a big thank you to you, dear user, for being at least partially interested in this project.</li>
+</ul>
+<p>❤ N3rdL0rd</p>
 </section>
 <section>
 <h2 class="section-title" id="header-submodules">Sub-modules</h2>
@@ -38,11 +120,11 @@ hljs.highlightAll();
 </dd>
 <dt><code class="name"><a title="crashlink.decomp" href="decomp.html">crashlink.decomp</a></code></dt>
 <dd>
-<div class="desc"><pre><p>Decompilation and control flow graph generation</p></pre></div>
+<div class="desc"><pre><p>Decompilation, IR and control flow graph generation</p></pre></div>
 </dd>
 <dt><code class="name"><a title="crashlink.disasm" href="disasm.html">crashlink.disasm</a></code></dt>
 <dd>
-<div class="desc"><pre><p>Human-readable disassembly of opcodes.</p></pre></div>
+<div class="desc"><pre><p>Human-readable disassembly of opcodes and utilities to work at a relatively low level with HashLink bytecode.</p></pre></div>
 </dd>
 <dt><code class="name"><a title="crashlink.errors" href="errors.html">crashlink.errors</a></code></dt>
 <dd>
@@ -67,7 +149,13 @@ hljs.highlightAll();
 </article>
 <nav id="sidebar">
 <div class="toc">
-<ul></ul>
+<ul>
+<li><a href="#features">Features</a></li>
+<li><a href="#installation">Installation</a></li>
+<li><a href="#usage">Usage</a></li>
+<li><a href="#development">Development</a></li>
+<li><a href="#credits">Credits</a></li>
+</ul>
 </div>
 <ul id="index">
 <li><h3><a href="#header-submodules">Sub-modules</a></h3>
@@ -84,7 +172,7 @@ hljs.highlightAll();
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.1</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
 </footer>
 </body>
 </html>
