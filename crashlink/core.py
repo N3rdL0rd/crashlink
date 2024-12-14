@@ -11,8 +11,7 @@ import ctypes
 import struct
 from datetime import datetime
 from io import BytesIO
-from typing import (Any, BinaryIO, Dict, List, Literal, Optional, Tuple,
-                    TypeVar)
+from typing import Any, BinaryIO, Dict, List, Literal, Optional, Tuple, TypeVar
 
 T = TypeVar("T", bound="VarInt")  # HACK: easier than reimplementing deserialise for each subclass
 
@@ -1276,8 +1275,8 @@ class Bytecode(Serialisable):
         self.deserialised = True
         dbg_print(f"{(datetime.now() - start_time).total_seconds()}s elapsed.")
         return self
-    
-    def fn(self, findex: int, native: bool=True) -> Function|Native:
+
+    def fn(self, findex: int, native: bool = True) -> Function | Native:
         for f in self.functions:
             if f.findex.value == findex:
                 return f
@@ -1289,7 +1288,7 @@ class Bytecode(Serialisable):
 
     def t(self, tindex: int) -> Type:
         return self.types[tindex]
-    
+
     def g(self, gindex: int) -> tIndex:
         for g in self.global_types:
             if g.value == gindex:

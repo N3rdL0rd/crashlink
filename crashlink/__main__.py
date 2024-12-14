@@ -1,3 +1,7 @@
+"""
+Entrypoint for the crashlink CLI.
+"""
+
 import argparse
 import os
 import platform
@@ -14,6 +18,9 @@ from .globals import VERSION
 
 
 def cmd_help(args: List[str], code: Bytecode) -> None:
+    """
+    Help command, lists available commands from `COMMANDS`.
+    """
     if args:
         for command in args:
             if command in COMMANDS:
@@ -28,6 +35,9 @@ def cmd_help(args: List[str], code: Bytecode) -> None:
 
 
 def cmd_funcs(args: List[str], code: Bytecode) -> None:
+    """
+    Prints all functions and natives in the bytecode. If `std` is passed as an argument, it will include stdlib functions.
+    """
     std = args and args[0] == "std"
     for func in code.functions:
         if disasm.is_std(code, func) and not std:
@@ -40,11 +50,17 @@ def cmd_funcs(args: List[str], code: Bytecode) -> None:
 
 
 def cmd_entry(args: List[str], code: Bytecode) -> None:
+    """
+    Prints the entrypoint of the bytecode.
+    """
     entry = code.entrypoint.resolve(code)
     print("    Entrypoint:", disasm.func_header(code, entry))
 
 
 def cmd_fn(args: List[str], code: Bytecode) -> None:
+    """
+    Disassembles a function to pseudocode by findex.
+    """
     if not args:
         print("Usage: fn <index>")
         return
@@ -84,6 +100,9 @@ def cmd_fn(args: List[str], code: Bytecode) -> None:
 
 
 def cmd_cfg(args: List[str], code: Bytecode) -> None:
+    """
+    Renders a control flow graph for a given findex and attempts to open it in the default image viewer.s
+    """
     if not args:
         print("Usage: cfg <index>")
         return
@@ -147,9 +166,15 @@ COMMANDS: Dict[str, Tuple[Callable[[List[str], Bytecode], None], str]] = {
     # "decomp": (cmd_decomp, "Decompile a function"),
     "cfg": (cmd_cfg, "Graph the control flow graph of a function"),
 }
+"""
+List of CLI commands.
+"""
 
 
 def handle_cmd(code: Bytecode, is_hlbc: bool, cmd: str) -> None:
+    """
+    Handles a command.
+    """
     cmd_list: List[str] = cmd.split(" ")
     if not is_hlbc:
         for command in COMMANDS:
@@ -162,6 +187,9 @@ def handle_cmd(code: Bytecode, is_hlbc: bool, cmd: str) -> None:
 
 
 def main() -> None:
+    """
+    Main entrypoint.
+    """
     parser = argparse.ArgumentParser(description=f"crashlink CLI ({VERSION})", prog="crashlink")
     parser.add_argument("file", help="The file to open - can be HashLink bytecode or a Haxe source file")
     parser.add_argument("-c", "--command", help="The command to run on startup")

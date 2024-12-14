@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
-<meta name="generator" content="pdoc3 0.11.1">
+<meta name="generator" content="pdoc3 0.11.5">
 <title>crashlink.core API documentation</title>
 <meta name="description" content="Core bytecode format definitions …">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
-<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin-bottom:1em}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
 <style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
 <style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
 <script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
@@ -45,18 +45,52 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def fmt_bytes(bytes: int | float) -&gt; str:
+    if bytes &lt; 0:
+        raise MalformedBytecode(&#34;Bytes cannot be negative.&#34;)
+
+    size_units = [&#34;B&#34;, &#34;Kb&#34;, &#34;Mb&#34;, &#34;Gb&#34;, &#34;Tb&#34;]
+    index = 0
+
+    while bytes &gt;= 1000 and index &lt; len(size_units) - 1:
+        bytes /= 1000
+        index += 1
+
+    return f&#34;{bytes:.1f}{size_units[index]}&#34;</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.read_u8"><code class="name flex">
 <span>def <span class="ident">read_u8</span></span>(<span>f: typing.BinaryIO | _io.BytesIO) ‑> int</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def read_u8(f: BinaryIO | BytesIO) -&gt; int:
+    return int.from_bytes(f.read(1), byteorder=&#34;little&#34;, signed=False)</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.write_u8"><code class="name flex">
 <span>def <span class="ident">write_u8</span></span>(<span>f: typing.BinaryIO | _io.BytesIO, <br>val: int) ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def write_u8(f: BinaryIO | BytesIO, val: int) -&gt; None:
+    try:
+        f.write(val.to_bytes(1, byteorder=&#34;little&#34;, signed=False))
+    except OverflowError:
+        raise FailedSerialisation(f&#34;Overflow when writing u8 {val} @ {tell(f)}&#34;)</code></pre>
+</details>
 </dd>
 </dl>
 </section>
@@ -95,12 +129,27 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Abstract&#34;:
+    self.name.deserialise(f)
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Abstract.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return self.name.serialise()</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -156,12 +205,28 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Binding&#34;:
+    self.field.deserialise(f)
+    self.findex.deserialise(f)
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Binding.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return b&#34;&#34;.join([self.field.serialise(), self.findex.serialise()])</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -317,17 +382,17 @@ you.</p>
 
         if self.version.value &gt;= 5 and self.bytes and self.nbytes:
             dbg_print(&#34;Deserialising bytes... &gt;=5&#34;)
-            self.track_section(f, f&#34;bytes&#34;)
+            self.track_section(f, &#34;bytes&#34;)
             self.bytes.deserialise(f, self.nbytes.value)
         else:
             self.bytes = None
 
         if self.has_debug_info and self.ndebugfiles and self.debugfiles:
             dbg_print(f&#34;Deserialising debug files... (at {tell(f)})&#34;)
-            self.track_section(f, f&#34;ndebugfiles&#34;)
+            self.track_section(f, &#34;ndebugfiles&#34;)
             self.ndebugfiles.deserialise(f)
             dbg_print(f&#34;Number of debug files: {self.ndebugfiles.value}&#34;)
-            self.track_section(f, f&#34;debugfiles&#34;)
+            self.track_section(f, &#34;debugfiles&#34;)
             self.debugfiles.deserialise(f)
         else:
             self.ndebugfiles = None
@@ -351,7 +416,7 @@ you.</p>
             self.natives.append(Native().deserialise(f))
         dbg_print(f&#34;Functions starting at {tell(f)}&#34;)
         self.track_section(f, &#34;functions&#34;)
-        if not USE_TQDM:
+        if not USE_TQDM or self.nfunctions.value &lt; 1000:
             for i in range(self.nfunctions.value):
                 self.track_section(f, f&#34;function {i}&#34;)
                 self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
@@ -369,6 +434,25 @@ you.</p>
         self.deserialised = True
         dbg_print(f&#34;{(datetime.now() - start_time).total_seconds()}s elapsed.&#34;)
         return self
+
+    def fn(self, findex: int, native: bool = True) -&gt; Function | Native:
+        for f in self.functions:
+            if f.findex.value == findex:
+                return f
+        if native:
+            for n in self.natives:
+                if n.findex.value == findex:
+                    return n
+        raise ValueError(f&#34;Function {findex} not found!&#34;)
+
+    def t(self, tindex: int) -&gt; Type:
+        return self.types[tindex]
+
+    def g(self, gindex: int) -&gt; tIndex:
+        for g in self.global_types:
+            if g.value == gindex:
+                return g
+        raise ValueError(f&#34;Global {gindex} not found!&#34;)
 
     def serialise(self, auto_set_meta: bool = True) -&gt; bytes:
         start_time = datetime.now()
@@ -476,12 +560,6 @@ you.</p>
 
         return True
 
-    def function(self, id: int) -&gt; Function:
-        for function in self.functions:
-            if function.findex.value == id:
-                return function
-        raise IndexError(f&#34;Function f@{id} not found!&#34;)
-
     def track_section(self, f: BinaryIO | BytesIO, section_name: str) -&gt; None:
         self.section_offsets[section_name] = f.tell()
 
@@ -513,42 +591,361 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO, search_magic: bool = True) -&gt; &#34;Bytecode&#34;:
+    start_time = datetime.now()
+    dbg_print(&#34;---- Deserialise ----&#34;)
+    if search_magic:
+        dbg_print(&#34;Searching for magic...&#34;)
+        self.find_magic(f)
+    self.track_section(f, &#34;magic&#34;)
+    self.magic.deserialise(f)
+    assert self.magic.value == b&#34;HLB&#34;, &#34;Incorrect magic found!&#34;
+    self.track_section(f, &#34;version&#34;)
+    self.version.deserialise(f, length=1)
+    dbg_print(f&#34;with version {self.version.value}... &#34;, end=&#34;&#34;)
+    self.track_section(f, &#34;flags&#34;)
+    self.flags.deserialise(f)
+    self.has_debug_info = bool(self.flags.value &amp; 1)
+    dbg_print(f&#34;debug info: {self.has_debug_info}. &#34;)
+    self.track_section(f, &#34;nints&#34;)
+    self.nints.deserialise(f)
+    self.track_section(f, &#34;nfloats&#34;)
+    self.nfloats.deserialise(f)
+    self.track_section(f, &#34;nstrings&#34;)
+    self.nstrings.deserialise(f)
+
+    if self.version.value &gt;= 5 and self.nbytes:
+        dbg_print(f&#34;Found nbytes (version &gt;= 5) at {tell(f)}&#34;)
+        self.track_section(f, &#34;nbytes&#34;)
+        self.nbytes.deserialise(f)
+    else:
+        self.nbytes = None
+
+    self.track_section(f, &#34;ntypes&#34;)
+    self.ntypes.deserialise(f)
+    self.track_section(f, &#34;nglobals&#34;)
+    self.nglobals.deserialise(f)
+    self.track_section(f, &#34;nnatives&#34;)
+    self.nnatives.deserialise(f)
+    self.track_section(f, &#34;nfunctions&#34;)
+    self.nfunctions.deserialise(f)
+
+    if self.version.value &gt;= 4 and self.nconstants:
+        dbg_print(f&#34;Found nconstants (version &gt;= 4) at {tell(f)}&#34;)
+        self.track_section(f, &#34;nconstants&#34;)
+        self.nconstants.deserialise(f)
+    else:
+        self.nconstants = None
+
+    self.track_section(f, &#34;entrypoint&#34;)
+    self.entrypoint.deserialise(f)
+    dbg_print(f&#34;Entrypoint: f@{self.entrypoint.value}&#34;)
+
+    self.track_section(f, &#34;ints&#34;)
+    for i in range(self.nints.value):
+        self.track_section(f, f&#34;int {i}&#34;)
+        self.ints.append(SerialisableInt().deserialise(f, length=4))
+
+    self.track_section(f, &#34;floats&#34;)
+    for i in range(self.nfloats.value):
+        self.track_section(f, f&#34;float {i}&#34;)
+        self.floats.append(SerialisableF64().deserialise(f))
+
+    dbg_print(f&#34;Strings section starts at {tell(f)}&#34;)
+    self.track_section(f, &#34;strings&#34;)
+    self.strings.deserialise(f)
+    dbg_print(f&#34;Strings section ends at {tell(f)}&#34;)
+    assert self.nstrings.value == len(self.strings.value), &#34;nstrings and len of strings don&#39;t match!&#34;
+
+    if self.version.value &gt;= 5 and self.bytes and self.nbytes:
+        dbg_print(&#34;Deserialising bytes... &gt;=5&#34;)
+        self.track_section(f, &#34;bytes&#34;)
+        self.bytes.deserialise(f, self.nbytes.value)
+    else:
+        self.bytes = None
+
+    if self.has_debug_info and self.ndebugfiles and self.debugfiles:
+        dbg_print(f&#34;Deserialising debug files... (at {tell(f)})&#34;)
+        self.track_section(f, &#34;ndebugfiles&#34;)
+        self.ndebugfiles.deserialise(f)
+        dbg_print(f&#34;Number of debug files: {self.ndebugfiles.value}&#34;)
+        self.track_section(f, &#34;debugfiles&#34;)
+        self.debugfiles.deserialise(f)
+    else:
+        self.ndebugfiles = None
+        self.debugfiles = None
+
+    dbg_print(f&#34;Starting main blobs at {tell(f)}&#34;)
+    dbg_print(f&#34;Types starting at {tell(f)}&#34;)
+    self.track_section(f, &#34;types&#34;)
+    for i in range(self.ntypes.value):
+        self.track_section(f, f&#34;type {i}&#34;)
+        self.types.append(Type().deserialise(f))
+    dbg_print(f&#34;Globals starting at {tell(f)}&#34;)
+    self.track_section(f, &#34;globals&#34;)
+    for i in range(self.nglobals.value):
+        self.track_section(f, f&#34;global {i}&#34;)
+        self.global_types.append(tIndex().deserialise(f))
+    dbg_print(f&#34;Natives starting at {tell(f)}&#34;)
+    self.track_section(f, &#34;natives&#34;)
+    for i in range(self.nnatives.value):
+        self.track_section(f, f&#34;native {i}&#34;)
+        self.natives.append(Native().deserialise(f))
+    dbg_print(f&#34;Functions starting at {tell(f)}&#34;)
+    self.track_section(f, &#34;functions&#34;)
+    if not USE_TQDM or self.nfunctions.value &lt; 1000:
+        for i in range(self.nfunctions.value):
+            self.track_section(f, f&#34;function {i}&#34;)
+            self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
+    else:
+        for i in tqdm(range(self.nfunctions.value)):
+            self.track_section(f, f&#34;function {i}&#34;)
+            self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
+    if self.nconstants is not None:
+        dbg_print(f&#34;Constants starting at {tell(f)}&#34;)
+        self.track_section(f, &#34;constants&#34;)
+        for i in range(self.nconstants.value):
+            self.track_section(f, f&#34;constant {i}&#34;)
+            self.constants.append(Constant().deserialise(f))
+    dbg_print(f&#34;Bytecode end at {tell(f)}.&#34;)
+    self.deserialised = True
+    dbg_print(f&#34;{(datetime.now() - start_time).total_seconds()}s elapsed.&#34;)
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Bytecode.find_magic"><code class="name flex">
 <span>def <span class="ident">find_magic</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO, <br>magic: bytes = b'HLB') ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def find_magic(self, f: BinaryIO | BytesIO, magic: bytes = b&#34;HLB&#34;) -&gt; None:
+    buffer_size = 1024
+    offset = 0
+    while True:
+        chunk = f.read(buffer_size)
+        if not chunk:
+            raise NoMagic(&#34;Reached the end of file without finding magic bytes.&#34;)
+        index = chunk.find(magic)
+        if index != -1:
+            f.seek(offset + index)
+            dbg_print(f&#34;Found bytecode at {tell(f)}... &#34;, end=&#34;&#34;)
+            return
+        offset += buffer_size</code></pre>
+</details>
 </dd>
-<dt id="crashlink.core.Bytecode.function"><code class="name flex">
-<span>def <span class="ident">function</span></span>(<span>self, <br>id: int) ‑> <a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a></span>
+<dt id="crashlink.core.Bytecode.fn"><code class="name flex">
+<span>def <span class="ident">fn</span></span>(<span>self, <br>findex: int, <br>native: bool = True) ‑> <a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a> | <a title="crashlink.core.Native" href="#crashlink.core.Native">Native</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def fn(self, findex: int, native: bool = True) -&gt; Function | Native:
+    for f in self.functions:
+        if f.findex.value == findex:
+            return f
+    if native:
+        for n in self.natives:
+            if n.findex.value == findex:
+                return n
+    raise ValueError(f&#34;Function {findex} not found!&#34;)</code></pre>
+</details>
+</dd>
+<dt id="crashlink.core.Bytecode.g"><code class="name flex">
+<span>def <span class="ident">g</span></span>(<span>self, <br>gindex: int) ‑> <a title="crashlink.core.tIndex" href="#crashlink.core.tIndex">tIndex</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def g(self, gindex: int) -&gt; tIndex:
+    for g in self.global_types:
+        if g.value == gindex:
+            return g
+    raise ValueError(f&#34;Global {gindex} not found!&#34;)</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Bytecode.is_ok"><code class="name flex">
 <span>def <span class="ident">is_ok</span></span>(<span>self) ‑> bool</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_ok(self) -&gt; bool:
+    if len(self.ints) != self.nints.value:
+        return False
+
+    if len(self.floats) != self.nfloats.value:
+        return False
+
+    if len(self.strings.value) != self.nstrings.value:
+        return False
+
+    if self.version.value &gt;= 5:
+        if self.nbytes is None or self.bytes is None:
+            return False
+        if len(self.bytes.value) != self.nbytes.value:
+            return False
+
+    if len(self.types) != self.ntypes.value:
+        return False
+
+    if len(self.global_types) != self.nglobals.value:
+        return False
+
+    if len(self.natives) != self.nnatives.value:
+        return False
+
+    if len(self.functions) != self.nfunctions.value:
+        return False
+
+    if self.version.value &gt;= 4:
+        if self.nconstants is None:
+            return False
+        if len(self.constants) != self.nconstants.value:
+            return False
+
+    if self.has_debug_info:
+        if self.ndebugfiles is None or self.debugfiles is None:
+            return False
+        if len(self.debugfiles.value) != self.ndebugfiles.value:
+            return False
+
+    return True</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Bytecode.section_at"><code class="name flex">
-<span>def <span class="ident">section_at</span></span>(<span>self, <br>offset: int) ‑> Optional[str]</span>
+<span>def <span class="ident">section_at</span></span>(<span>self, <br>offset: int) ‑> str | None</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def section_at(self, offset: int) -&gt; Optional[str]:
+    # returns the name of the section at the offset:
+    # if the offset is after a section start and before the next section start, it&#39;s still in the first section
+    for section_name, section_offset in list(reversed(self.section_offsets.items())):
+        if offset &gt;= section_offset:
+            return section_name
+    return None</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Bytecode.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self, <br>auto_set_meta: bool = True) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self, auto_set_meta: bool = True) -&gt; bytes:
+    start_time = datetime.now()
+    dbg_print(&#34;---- Serialise ----&#34;)
+    if auto_set_meta:
+        dbg_print(&#34;Setting meta...&#34;)
+        self.flags.value = 1 if self.has_debug_info else 0
+        self.nints.value = len(self.ints)
+        self.nfloats.value = len(self.floats)
+        self.nstrings.value = len(self.strings.value)
+        if self.version.value &gt;= 5 and self.bytes and self.nbytes:
+            self.nbytes.value = len(self.bytes.value)
+        self.ntypes.value = len(self.types)
+        self.nglobals.value = len(self.global_types)
+        self.nnatives.value = len(self.natives)
+        self.nfunctions.value = len(self.functions)
+        if self.version.value &gt;= 4 and self.nconstants:
+            self.nconstants.value = len(self.constants)
+        if self.has_debug_info and self.ndebugfiles and self.debugfiles:
+            self.ndebugfiles.value = len(self.debugfiles.value)
+    res = b&#34;&#34;.join(
+        [
+            self.magic.serialise(),
+            self.version.serialise(),
+            self.flags.serialise(),
+            self.nints.serialise(),
+            self.nfloats.serialise(),
+            self.nstrings.serialise(),
+        ]
+    )
+    dbg_print(f&#34;VarInt block 1 at {hex(len(res))}&#34;)
+    if self.version.value &gt;= 5 and self.nbytes:
+        res += self.nbytes.serialise()
+    res += b&#34;&#34;.join(
+        [
+            self.ntypes.serialise(),
+            self.nglobals.serialise(),
+            self.nnatives.serialise(),
+            self.nfunctions.serialise(),
+        ]
+    )
+    dbg_print(f&#34;VarInt block 2 at {hex(len(res))}&#34;)
+    if self.version.value &gt;= 4 and self.nconstants:
+        res += self.nconstants.serialise()
+    res += self.entrypoint.serialise()
+    res += b&#34;&#34;.join([i.serialise() for i in self.ints])
+    res += b&#34;&#34;.join([f.serialise() for f in self.floats])
+    res += self.strings.serialise()
+    if self.version.value &gt;= 5 and self.bytes:
+        res += self.bytes.serialise()
+    if self.has_debug_info and self.ndebugfiles and self.debugfiles:
+        res += b&#34;&#34;.join([self.ndebugfiles.serialise(), self.debugfiles.serialise()])
+    res += b&#34;&#34;.join(
+        [
+            b&#34;&#34;.join([typ.serialise() for typ in self.types]),
+            b&#34;&#34;.join([typ.serialise() for typ in self.global_types]),
+            b&#34;&#34;.join([native.serialise() for native in self.natives]),
+            b&#34;&#34;.join([func.serialise() for func in self.functions]),
+            b&#34;&#34;.join([constant.serialise() for constant in self.constants]),
+        ]
+    )
+    dbg_print(f&#34;Final size: {hex(len(res))}&#34;)
+    dbg_print(f&#34;{(datetime.now() - start_time).total_seconds()}s elapsed.&#34;)
+    return res</code></pre>
+</details>
+</dd>
+<dt id="crashlink.core.Bytecode.t"><code class="name flex">
+<span>def <span class="ident">t</span></span>(<span>self, <br>tindex: int) ‑> <a title="crashlink.core.Type" href="#crashlink.core.Type">Type</a></span>
+</code></dt>
+<dd>
+<div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def t(self, tindex: int) -&gt; Type:
+    return self.types[tindex]</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Bytecode.track_section"><code class="name flex">
 <span>def <span class="ident">track_section</span></span>(<span>self, <br>f: typing.BinaryIO | _io.BytesIO, <br>section_name: str) ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def track_section(self, f: BinaryIO | BytesIO, section_name: str) -&gt; None:
+    self.section_offsets[section_name] = f.tell()</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -626,12 +1023,48 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO, nbytes: int) -&gt; &#34;BytesBlock&#34;:
+    self.nbytes = nbytes
+    self.size.deserialise(f, length=4)
+    raw = f.read(self.size.value)
+    positions: List[VarInt] = []
+    for _ in range(nbytes):
+        pos = VarInt()
+        pos.deserialise(f)
+        positions.append(pos)
+    positions_int = [pos.value for pos in positions]
+    for i in range(len(positions_int)):
+        start = positions_int[i]
+        end = positions_int[i + 1] if i + 1 &lt; len(positions_int) else len(raw)
+        self.value.append(raw[start:end])  # Append the extracted byte string
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.BytesBlock.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    raw_data = b&#34;&#34;.join(self.value)
+    self.size.value = len(raw_data)
+    size_serialised = self.size.serialise()
+    positions = []
+    current_pos = 0
+    for byte_str in self.value:
+        positions.append(VarInt(current_pos))
+        current_pos += len(byte_str)
+    positions_serialised = b&#34;&#34;.join([pos.serialise() for pos in positions])
+    return size_serialised + raw_data + positions_serialised</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -677,12 +1110,36 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Constant&#34;:
+    self._global.deserialise(f)
+    self.nfields.deserialise(f)
+    for _ in range(self.nfields.value):
+        self.fields.append(VarInt().deserialise(f))
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Constant.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return b&#34;&#34;.join(
+        [
+            self._global.serialise(),
+            self.nfields.serialise(),
+            b&#34;&#34;.join([field.serialise() for field in self.fields]),
+        ]
+    )</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -787,18 +1244,107 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO, nops: int) -&gt; &#34;DebugInfo&#34;:
+    tmp = []
+    currfile: int = -1
+    currline: int = 0
+    i = 0
+    while i &lt; nops:
+        c = ctypes.c_uint8(ord(f.read(1))).value
+        if c &amp; 1 != 0:
+            c &gt;&gt;= 1
+            currfile = (c &lt;&lt; 8) | ctypes.c_uint8(ord(f.read(1))).value
+        elif c &amp; 2 != 0:
+            delta = c &gt;&gt; 6
+            count = (c &gt;&gt; 2) &amp; 15
+            while count &gt; 0:
+                count -= 1
+                tmp.append((fileRef(currfile), currline))
+                i += 1
+            currline += delta
+        elif c &amp; 4 != 0:
+            currline += c &gt;&gt; 3
+            tmp.append((fileRef(currfile), currline))
+            i += 1
+        else:
+            b2 = ctypes.c_uint8(ord(f.read(1))).value
+            b3 = ctypes.c_uint8(ord(f.read(1))).value
+            currline = (c &gt;&gt; 3) | (b2 &lt;&lt; 5) | (b3 &lt;&lt; 13)
+            tmp.append((fileRef(currfile), currline))
+            i += 1
+    self.debug_info = tmp
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.DebugInfo.flush_repeat"><code class="name flex">
 <span>def <span class="ident">flush_repeat</span></span>(<span>self, <br>w: typing.BinaryIO | _io.BytesIO, <br>curpos: ctypes.c_ulonglong, <br>rcount: ctypes.c_ulonglong, <br>pos: int) ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"><pre><p>Helper function to handle repeat encoding.</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def flush_repeat(self, w: BinaryIO | BytesIO, curpos: ctypes.c_size_t, rcount: ctypes.c_size_t, pos: int) -&gt; None:
+    &#34;&#34;&#34;Helper function to handle repeat encoding.&#34;&#34;&#34;
+    if rcount.value &gt; 0:
+        if rcount.value &gt; 15:
+            w.write(ctypes.c_uint8((15 &lt;&lt; 2) | 2).value.to_bytes(1, &#34;little&#34;))
+            rcount.value -= 15
+            self.flush_repeat(w, curpos, rcount, pos)
+        else:
+            delta = pos - curpos.value
+            delta = delta if 0 &lt; delta &lt; 4 else 0
+            w.write(ctypes.c_uint8(((delta &lt;&lt; 6) | (rcount.value &lt;&lt; 2) | 2)).value.to_bytes(1, &#34;little&#34;))
+            rcount.value = 0
+            curpos.value += delta</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.DebugInfo.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    w = BytesIO()
+    curfile = -1
+    curpos = ctypes.c_size_t(0)
+    rcount = ctypes.c_size_t(0)
+
+    for f, p in self.debug_info:
+        if f != curfile:
+            self.flush_repeat(w, curpos, rcount, p)
+            curfile = f
+            w.write(ctypes.c_uint8(((f &gt;&gt; 7) | 1)).value.to_bytes(1, &#34;little&#34;))
+            w.write(ctypes.c_uint8(f &amp; 0xFF).value.to_bytes(1, &#34;little&#34;))
+
+        if p != curpos.value:
+            self.flush_repeat(w, curpos, rcount, p)
+
+        if p == curpos.value:
+            rcount.value += 1
+        else:
+            delta = p - curpos.value
+            if 0 &lt; delta &lt; 32:
+                w.write(ctypes.c_uint8((delta &lt;&lt; 3) | 4).value.to_bytes(1, &#34;little&#34;))
+            else:
+                w.write(ctypes.c_uint8((p &lt;&lt; 3) &amp; 0xFF).value.to_bytes(1, &#34;little&#34;))
+                w.write(ctypes.c_uint8((p &gt;&gt; 5) &amp; 0xFF).value.to_bytes(1, &#34;little&#34;))
+                w.write(ctypes.c_uint8((p &gt;&gt; 13) &amp; 0xFF).value.to_bytes(1, &#34;little&#34;))
+            curpos.value = p
+
+    self.flush_repeat(w, curpos, rcount, curpos.value)
+
+    return w.getvalue()</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -886,12 +1432,38 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Enum&#34;:
+    self.name.deserialise(f)
+    self._global.deserialise(f)
+    self.nconstructs.deserialise(f)
+    for _ in range(self.nconstructs.value):
+        self.constructs.append(EnumConstruct().deserialise(f))
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Enum.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return b&#34;&#34;.join(
+        [
+            self.name.serialise(),
+            self._global.serialise(),
+            self.nconstructs.serialise(),
+            b&#34;&#34;.join([construct.serialise() for construct in self.constructs]),
+        ]
+    )</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -937,12 +1509,36 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;EnumConstruct&#34;:
+    self.name.deserialise(f)
+    self.nparams.deserialise(f)
+    for _ in range(self.nparams.value):
+        self.params.append(tIndex().deserialise(f))
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.EnumConstruct.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return b&#34;&#34;.join(
+        [
+            self.name.serialise(),
+            self.nparams.serialise(),
+            b&#34;&#34;.join([param.serialise() for param in self.params]),
+        ]
+    )</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -1017,12 +1613,28 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Field&#34;:
+    self.name.deserialise(f)
+    self.type.deserialise(f)
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Field.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return b&#34;&#34;.join([self.name.serialise(), self.type.serialise()])</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -1073,12 +1685,36 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Fun&#34;:
+    self.nargs.deserialise(f)
+    for _ in range(self.nargs.value):
+        self.args.append(tIndex().deserialise(f))
+    self.ret.deserialise(f)
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Fun.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return b&#34;&#34;.join(
+        [
+            self.nargs.serialise(),
+            b&#34;&#34;.join([idx.serialise() for idx in self.args]),
+            self.ret.serialise(),
+        ]
+    )</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -1160,18 +1796,74 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO, has_debug: bool, version: int) -&gt; &#34;Function&#34;:
+    self.has_debug = has_debug
+    self.version = version
+    self.type.deserialise(f)
+    self.findex.deserialise(f)
+    # dbg_print(f&#34;----- {self.findex.value} ({tell(f)}) -----&#34;)
+    self.nregs.deserialise(f)
+    self.nops.deserialise(f)
+    for _ in range(self.nregs.value):
+        self.regs.append(tIndex().deserialise(f))
+    for _ in range(self.nops.value):
+        self.ops.append(Opcode().deserialise(f))
+    if self.has_debug:
+        self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
+        if self.version &gt;= 3:
+            self.nassigns = VarInt().deserialise(f)
+            self.assigns = []
+            for _ in range(self.nassigns.value):
+                self.assigns.append((strRef().deserialise(f), VarInt().deserialise(f)))
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Function.resolve_file"><code class="name flex">
 <span>def <span class="ident">resolve_file</span></span>(<span>self, <br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve_file(self, code: &#34;Bytecode&#34;) -&gt; str:
+    if not self.has_debug or not self.debuginfo:
+        raise ValueError(&#34;Cannot get file from non-debug bytecode!&#34;)
+    return self.debuginfo.debug_info[0][0].resolve(code)</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Function.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    res = b&#34;&#34;.join(
+        [
+            self.type.serialise(),
+            self.findex.serialise(),
+            self.nregs.serialise(),
+            self.nops.serialise(),
+            b&#34;&#34;.join([reg.serialise() for reg in self.regs]),
+            b&#34;&#34;.join([op.serialise() for op in self.ops]),
+        ]
+    )
+    if self.has_debug and self.debuginfo:
+        res += self.debuginfo.serialise()
+        if self.version and self.version &gt;= 3 and self.nassigns and self.assigns is not None:
+            res += self.nassigns.serialise()
+            res += b&#34;&#34;.join([b&#34;&#34;.join([v.serialise() for v in assign]) for assign in self.assigns])
+    return res</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -1247,12 +1939,29 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;InlineBool&#34;:
+    self.varint.deserialise(f)
+    self.value = bool(self.varint.value)
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.InlineBool.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    self.varint.value = int(self.value)
+    return self.varint.serialise()</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -1319,12 +2028,37 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Native&#34;:
+    self.lib.deserialise(f)
+    self.name.deserialise(f)
+    self.type.deserialise(f)
+    self.findex.deserialise(f)
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Native.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return b&#34;&#34;.join(
+        [
+            self.lib.serialise(),
+            self.name.serialise(),
+            self.type.serialise(),
+            self.findex.serialise(),
+        ]
+    )</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -1360,12 +2094,27 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Null&#34;:
+    self.type.deserialise(f)
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Null.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return self.type.serialise()</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -1464,18 +2213,88 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Obj&#34;:
+    self.name.deserialise(f)
+    self.super.deserialise(f)
+    self._global.deserialise(f)
+    self.nfields.deserialise(f)
+    self.nprotos.deserialise(f)
+    self.nbindings.deserialise(f)
+    for _ in range(self.nfields.value):
+        self.fields.append(Field().deserialise(f))
+    for _ in range(self.nprotos.value):
+        self.protos.append(Proto().deserialise(f))
+    for _ in range(self.nbindings.value):
+        self.bindings.append(Binding().deserialise(f))
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Obj.resolve_fields"><code class="name flex">
 <span>def <span class="ident">resolve_fields</span></span>(<span>self, <br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> List[<a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a>]</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve_fields(self, code: &#34;Bytecode&#34;) -&gt; List[Field]:
+    # field references are relative to the entire class hierarchy - for instance:
+    # class A {
+    #     var a: Int;
+    # }
+    # class B extends A {
+    #     var b: Int;
+    # }
+    # where a is field 0 and b is field 1
+    if self.super.value &lt; 0:  # no superclass
+        return self.fields
+    fields: List[Field] = []
+    visited_types = set()
+    current_type: Optional[Obj] = self
+    while current_type:
+        if id(current_type) in visited_types:
+            raise ValueError(&#34;Cyclic inheritance detected in class hierarchy.&#34;)
+        visited_types.add(id(current_type))
+        fields = current_type.fields + fields
+        if current_type.super.value &lt; 0:
+            current_type = None
+        else:
+            defn = current_type.super.resolve(code).definition
+            if not isinstance(defn, Obj):
+                raise ValueError(&#34;Invalid superclass type.&#34;)
+            current_type = defn
+    return fields</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Obj.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return b&#34;&#34;.join(
+        [
+            self.name.serialise(),
+            self.super.serialise(),
+            self._global.serialise(),
+            self.nfields.serialise(),
+            self.nprotos.serialise(),
+            self.nbindings.serialise(),
+            b&#34;&#34;.join([field.serialise() for field in self.fields]),
+            b&#34;&#34;.join([proto.serialise() for proto in self.protos]),
+            b&#34;&#34;.join([binding.serialise() for binding in self.bindings]),
+        ]
+    )</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -1535,6 +2354,8 @@ you.</p>
         return self
 
     def serialise(self) -&gt; bytes:
+        if self.op:
+            self.code.value = list(opcodes.keys()).index(self.op)
         return b&#34;&#34;.join(
             [
                 self.code.serialise(),
@@ -1566,12 +2387,47 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Opcode&#34;:
+    # dbg_print(f&#34;Deserialising opcode at {tell(f)}... &#34;, end=&#34;&#34;)
+    self.code.deserialise(f)
+    # dbg_print(f&#34;{self.code.value}... &#34;, end=&#34;&#34;)
+    try:
+        _def = opcodes[list(opcodes.keys())[self.code.value]]
+    except IndexError:
+        # dbg_print()
+        raise InvalidOpCode(f&#34;Unknown opcode at {tell(f)}&#34;)
+    for param, _type in _def.items():
+        if _type in self.TYPE_MAP:
+            self.definition[param] = self.TYPE_MAP[_type]().deserialise(f)
+            continue
+        raise InvalidOpCode(f&#34;Invalid opcode definition for {param, _type} at {tell(f)}&#34;)
+    self.op = list(opcodes.keys())[self.code.value]
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Opcode.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    if self.op:
+        self.code.value = list(opcodes.keys()).index(self.op)
+    return b&#34;&#34;.join(
+        [
+            self.code.serialise(),
+            b&#34;&#34;.join([definition.serialise() for name, definition in self.definition.items()]),
+        ]
+    )</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -1607,12 +2463,27 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Packed&#34;:
+    self.inner.deserialise(f)
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Packed.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return self.inner.serialise()</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -1651,12 +2522,29 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Proto&#34;:
+    self.name.deserialise(f)
+    self.findex.deserialise(f)
+    self.pindex.deserialise(f)
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Proto.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return b&#34;&#34;.join([self.name.serialise(), self.findex.serialise(), self.pindex.serialise()])</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -1697,12 +2585,27 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;RawData&#34;:
+    self.value = f.read(self.length)
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.RawData.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return self.value</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -1738,12 +2641,27 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Ref&#34;:
+    self.type.deserialise(f)
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Ref.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return self.type.serialise()</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -1778,6 +2696,13 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Type&#34;:
+    return code.types[self.value]</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -1819,12 +2744,29 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Regs&#34;:
+    self.n.deserialise(f)
+    for _ in range(self.n.value):
+        self.value.append(Reg().deserialise(f))
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Regs.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return b&#34;&#34;.join([self.n.serialise(), b&#34;&#34;.join([value.serialise() for value in self.value])])</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -1866,6 +2808,13 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve(self, code: &#34;Bytecode&#34;) -&gt; Any:
+    raise NotImplementedError(&#34;resolve is not implemented for this class.&#34;)</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -1941,12 +2890,26 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO, *args: Any, **kwargs: Any) -&gt; &#34;Serialisable&#34;:
+    raise NotImplementedError(&#34;deserialise is not implemented for this class.&#34;)</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Serialisable.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    raise NotImplementedError(&#34;serialise is not implemented for this class.&#34;)</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -1985,12 +2948,27 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;SerialisableF64&#34;:
+    self.value = struct.unpack(&#34;&lt;d&#34;, f.read(8))[0]
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.SerialisableF64.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return struct.pack(&#34;&lt;d&#34;, self.value)</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -2047,12 +3025,42 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(
+    self,
+    f: BinaryIO | BytesIO,
+    length: int = 4,
+    byteorder: Literal[&#34;little&#34;, &#34;big&#34;] = &#34;little&#34;,
+    signed: bool = False,
+) -&gt; &#34;SerialisableInt&#34;:
+    self.length = length
+    self.byteorder = byteorder
+    self.signed = signed
+    bytes = f.read(length)
+    if all(b == 0 for b in bytes):
+        self.value = 0
+        return self
+    while bytes[-1] == 0:
+        bytes = bytes[:-1]
+    self.value = int.from_bytes(bytes, byteorder, signed=signed)
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.SerialisableInt.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return self.value.to_bytes(self.length, self.byteorder, signed=self.signed)</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -2125,12 +3133,61 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;StringsBlock&#34;:
+    self.length.deserialise(f, length=4)
+    strings_size = self.length.value
+    dbg_print(f&#34;Found {fmt_bytes(strings_size)} of strings&#34;)
+    strings_data: bytes = f.read(strings_size)
+
+    index = 0
+    while index &lt; strings_size:
+        string_length = 0
+        while index + string_length &lt; strings_size and strings_data[index + string_length] != 0:
+            string_length += 1
+
+        if index + string_length &gt;= strings_size:
+            raise MalformedBytecode(&#34;Invalid string: no null terminator found&#34;)
+
+        string = strings_data[index : index + string_length].decode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;)
+        self.value.append(string)
+        self.lengths.append(string_length)
+
+        index += string_length + 1  # Skip the null terminator
+
+    for _ in self.value:
+        self.embedded_lengths.append(VarInt().deserialise(f))
+
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.StringsBlock.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    strings_data = b&#34;&#34;
+    for string in self.value:
+        strings_data += string.encode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;) + b&#34;\x00&#34;
+    self.length.value = len(strings_data)
+    self.lengths = [len(string) for string in self.value]
+    self.embedded_lengths = [VarInt(length) for length in self.lengths]
+    return b&#34;&#34;.join(
+        [
+            self.length.serialise(),
+            strings_data,
+            b&#34;&#34;.join([i.serialise() for i in self.embedded_lengths]),
+        ]
+    )</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -2233,12 +3290,39 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Type&#34;:
+    # dbg_print(f&#34;Type @ {tell(f)}&#34;)
+    self.kind.deserialise(f, length=1)
+    try:
+        self.TYPEDEFS[self.kind.value]
+        _def = self.TYPEDEFS[self.kind.value]()
+        self.definition = _def.deserialise(f)
+    except IndexError:
+        raise MalformedBytecode(f&#34;Invalid type kind found @{tell(f)}&#34;)
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Type.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return b&#34;&#34;.join(
+        [
+            self.kind.serialise(),
+            self.definition.serialise() if self.definition else b&#34;&#34;,
+        ]
+    )</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -2420,12 +3504,81 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self: T, f: BinaryIO | BytesIO) -&gt; T:
+    # Read first byte to determine format
+    b = int.from_bytes(f.read(1), &#34;big&#34;)
+
+    # Single byte format (0xxxxxxx)
+    if not (b &amp; 0x80):
+        self.value = b
+        return self
+
+    # Two byte format (10xxxxxx)
+    if not (b &amp; 0x40):
+        second = int.from_bytes(f.read(1), &#34;big&#34;)
+
+        # Combine bytes and handle sign
+        self.value = ((b &amp; 0x1F) &lt;&lt; 8) | second
+        if b &amp; 0x20:
+            self.value = -self.value
+        return self
+
+    # Four byte format (11xxxxxx)
+    remaining = int.from_bytes(f.read(3), &#34;big&#34;)
+
+    # Combine all bytes and handle sign
+    self.value = ((b &amp; 0x1F) &lt;&lt; 24) | remaining
+    if b &amp; 0x20:
+        self.value = -self.value
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.VarInt.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    if self.value &lt; 0:
+        value = -self.value
+        if value &lt; 0x2000:  # 13 bits
+            return bytes([(value &gt;&gt; 8) | 0xA0, value &amp; 0xFF])
+        if value &gt;= 0x20000000:
+            raise MalformedBytecode(&#34;value can&#39;t be &gt;= 0x20000000&#34;)
+        # Optimized 4-byte case
+        return bytes(
+            [
+                (value &gt;&gt; 24) | 0xE0,
+                (value &gt;&gt; 16) &amp; 0xFF,
+                (value &gt;&gt; 8) &amp; 0xFF,
+                value &amp; 0xFF,
+            ]
+        )
+
+    if self.value &lt; 0x80:  # 7 bits
+        return bytes([self.value])
+    if self.value &lt; 0x2000:  # 13 bits
+        return bytes([(self.value &gt;&gt; 8) | 0x80, self.value &amp; 0xFF])
+    if self.value &gt;= 0x20000000:
+        raise MalformedBytecode(&#34;value can&#39;t be &gt;= 0x20000000&#34;)
+    # Optimized 4-byte case
+    return bytes(
+        [
+            (self.value &gt;&gt; 24) | 0xC0,
+            (self.value &gt;&gt; 16) &amp; 0xFF,
+            (self.value &gt;&gt; 8) &amp; 0xFF,
+            self.value &amp; 0xFF,
+        ]
+    )</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -2467,12 +3620,29 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;VarInts&#34;:
+    self.n.deserialise(f)
+    for _ in range(self.n.value):
+        self.value.append(VarInt().deserialise(f))
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.VarInts.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return b&#34;&#34;.join([self.n.serialise(), b&#34;&#34;.join([value.serialise() for value in self.value])])</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -2516,12 +3686,34 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Virtual&#34;:
+    self.nfields.deserialise(f)
+    for _ in range(self.nfields.value):
+        self.fields.append(Field().deserialise(f))
+    return self</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.Virtual.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialise(self) -&gt; bytes:
+    return b&#34;&#34;.join(
+        [
+            self.nfields.serialise(),
+            b&#34;&#34;.join([field.serialise() for field in self.fields]),
+        ]
+    )</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -2574,6 +3766,16 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve(self, code: &#34;Bytecode&#34;) -&gt; bytes:
+    if code.bytes:
+        return code.bytes.value[self.value]
+    else:
+        raise MalformedBytecode(&#34;No bytes block found.&#34;)</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -2611,6 +3813,16 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Function&#34;:
+    for function in code.functions:
+        if function.findex.value == self.value:
+            return function
+    raise MalformedBytecode(f&#34;Function index {self.value} not found.&#34;)</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -2650,7 +3862,7 @@ you.</p>
 </ul>
 <h3>Class variables</h3>
 <dl>
-<dt id="crashlink.core.fieldRef.obj"><code class="name">var <span class="ident">obj</span> : Optional[<a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a>]</code></dt>
+<dt id="crashlink.core.fieldRef.obj"><code class="name">var <span class="ident">obj</span> : <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a> | None</code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
 </dd>
@@ -2662,12 +3874,31 @@ you.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Field&#34;:
+    if self.obj:
+        return self.obj.resolve_fields(code)[self.value]
+    raise ValueError(
+        &#34;Cannot resolve field without context. Try setting `field.obj` to an instance of `Obj`, or use `field.resolve_obj(code, obj)` instead.&#34;
+    )</code></pre>
+</details>
 </dd>
 <dt id="crashlink.core.fieldRef.resolve_obj"><code class="name flex">
 <span>def <span class="ident">resolve_obj</span></span>(<span>self, <br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>, <br>obj: <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a>) ‑> <a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve_obj(self, code: &#34;Bytecode&#34;, obj: &#34;Obj&#34;) -&gt; &#34;Field&#34;:
+    self.obj = obj
+    return obj.resolve_fields(code)[self.value]</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -2710,6 +3941,15 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+    if code.debugfiles:
+        return code.debugfiles.value[self]
+    raise MalformedBytecode(&#34;No debug files found.&#34;)</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -2740,6 +3980,13 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve(self, code: &#34;Bytecode&#34;) -&gt; SerialisableF64:
+    return code.floats[self.value]</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -2774,6 +4021,13 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Type&#34;:
+    return code.global_types[self.value].resolve(code)</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -2804,6 +4058,13 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve(self, code: &#34;Bytecode&#34;) -&gt; SerialisableInt:
+    return code.ints[self.value]</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -2838,6 +4099,13 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+    return code.strings.value[self.value]</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -2872,6 +4140,13 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Type&#34;:
+    return code.types[self.value]</code></pre>
+</details>
 </dd>
 </dl>
 </dd>
@@ -2922,11 +4197,13 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 <ul class="two-column">
 <li><code><a title="crashlink.core.Bytecode.deserialise" href="#crashlink.core.Bytecode.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.find_magic" href="#crashlink.core.Bytecode.find_magic">find_magic</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.fn" href="#crashlink.core.Bytecode.fn">fn</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.from_path" href="#crashlink.core.Bytecode.from_path">from_path</a></code></li>
-<li><code><a title="crashlink.core.Bytecode.function" href="#crashlink.core.Bytecode.function">function</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.g" href="#crashlink.core.Bytecode.g">g</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.is_ok" href="#crashlink.core.Bytecode.is_ok">is_ok</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.section_at" href="#crashlink.core.Bytecode.section_at">section_at</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.serialise" href="#crashlink.core.Bytecode.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.t" href="#crashlink.core.Bytecode.t">t</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.track_section" href="#crashlink.core.Bytecode.track_section">track_section</a></code></li>
 </ul>
 </li>
@@ -3233,7 +4510,7 @@ Base 0 means to interpret the base from the string as an integer literal.</p>
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.1</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
 </footer>
 </body>
 </html>

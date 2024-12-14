@@ -1,6 +1,5 @@
 from io import BytesIO
 
-
 from crashlink import VarInt
 
 
