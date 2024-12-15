@@ -163,142 +163,145 @@ def pseudo_from_op(
     """
     Generates pseudocode disassembly from an opcode.
     """
-    if op.op == "Int":
-        return f"reg{op.definition['dst']} = {op.definition['ptr'].resolve(code)}"
-    elif op.op == "Float":
-        return f"reg{op.definition['dst']} = {op.definition['ptr'].resolve(code)}"
-    elif op.op == "Bool":
-        return f"reg{op.definition['dst']} = {op.definition['value'].value}"
-    elif op.op == "String":
-        return f"reg{op.definition['dst']} = \"{op.definition['ptr'].resolve(code)}\""
-    elif op.op == "GetThis":
-        # dst = this.field
-        this = None
-        for reg in regs:
-            # find first Obj reg
-            if type(reg.resolve(code).definition) == Obj:
-                this = reg.resolve(code)
-                break
-        if this:
-            return f"reg{op.definition['dst']} = this.{op.definition['field'].resolve_obj(code, this.definition).name.resolve(code)}"
-        return f"reg{op.definition['dst']} = this.f@{op.definition['field'].value} (this not found!)"
-    elif op.op == "Label":
-        return "label"
-    elif op.op == "Mov":
-        return f"reg{op.definition['dst']} = reg{op.definition['src']}"
-    elif op.op == "JEq":
-        return f"if reg{op.definition['a']} == reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
-    elif op.op == "JSEq":  # jump signed equal
-        return f"if reg{op.definition['a']} == reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
-    elif op.op == "JNull":  # jump null
-        return f"if reg{op.definition['reg']} is null: jump to {idx + (op.definition['offset'].value + 1)}"
-    elif op.op == "JFalse":
-        return f"if reg{op.definition['cond']} is false: jump to {idx + (op.definition['offset'].value + 1)}"
-    elif op.op == "JTrue":
-        return f"if reg{op.definition['cond']} is true: jump to {idx + (op.definition['offset'].value + 1)}"
-    elif op.op == "JSGte":  # jump signed greater than or equal
-        return f"if reg{op.definition['a']} >= reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
-    elif op.op == "JULt":  # jump unsigned less than
-        return (
-            f"if reg{op.definition['a']} < reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
-        )
-    elif op.op == "JNotLt":  # jump not less than
-        return f"if reg{op.definition['a']} >= reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
-    elif op.op == "JNotEq":  # jump not equal
-        return f"if reg{op.definition['a']} != reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
-    elif op.op == "JSGt":  # jump signed greater than
-        return (
-            f"if reg{op.definition['a']} > reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
-        )
-    elif op.op == "Mul":
-        return f"reg{op.definition['dst']} = reg{op.definition['a']} * reg{op.definition['b']}"
-    elif op.op == "SDiv":  # signed division
-        return f"reg{op.definition['dst']} = reg{op.definition['a']} / reg{op.definition['b']}"
-    elif op.op == "Incr":
-        return f"reg{op.definition['dst']}++"
-    elif op.op == "Decr":
-        return f"reg{op.definition['dst']}--"
-    elif op.op == "Sub":
-        return f"reg{op.definition['dst']} = reg{op.definition['a']} - reg{op.definition['b']}"
-    elif op.op == "Add":
-        return f"reg{op.definition['dst']} = reg{op.definition['a']} + reg{op.definition['b']}"
-    elif op.op == "Shl":  # shift left
-        return f"reg{op.definition['dst']} = reg{op.definition['a']} << reg{op.definition['b']}"
-    elif op.op == "SMod":  # signed modulo
-        return f"reg{op.definition['dst']} = reg{op.definition['a']} % reg{op.definition['b']}"
-    elif op.op == "GetGlobal":
-        glob = type_name(code, op.definition["global"].resolve(code))  # TODO: resolve constants
-        return f"reg{op.definition['dst']} = {glob} (g@{op.definition['global']})"
-    elif op.op == "Field":
-        field = op.definition["field"].resolve_obj(code, regs[op.definition["obj"].value].resolve(code).definition)
-        return f"reg{op.definition['dst']} = reg{op.definition['obj']}.{field.name.resolve(code)}"
-    elif op.op == "SetField":
-        field = op.definition["field"].resolve_obj(code, regs[op.definition["obj"].value].resolve(code).definition)
-        return f"reg{op.definition['obj']}.{field.name.resolve(code)} = reg{op.definition['src']}"
-    elif op.op == "SetArray":
-        return f"reg{op.definition['array']}[reg{op.definition['index']}] = reg{op.definition['src']})"
-    elif op.op == "NullCheck":
-        return f"if reg{op.definition['reg']} is null: error"
-    elif op.op == "ArraySize":
-        return f"reg{op.definition['dst']} = len(reg{op.definition['array']})"
-    elif op.op == "New":
-        # no type specified since regs are typed, so it can only be the type of the reg
-        typ = regs[op.definition["dst"].value].resolve(code)
-        return f"reg{op.definition['dst']} = new {type_name(code, typ)}"
-    elif op.op == "DynSet":
-        return f"reg{op.definition['obj']}.{op.definition['field'].resolve(code)} = reg{op.definition['src']}"
-    elif op.op == "ToSFloat":
-        return f"reg{op.definition['dst']} = SFloat(reg{op.definition['src']})"
-    elif op.op == "ToVirtual":
-        return f"reg{op.definition['dst']} = Virtual(reg{op.definition['src']})"
-    elif op.op == "CallClosure":
-        if type(regs[op.definition["dst"].value].resolve(code).definition) == Void:
-            return f"reg{op.definition['fun']}({', '.join([f'reg{arg}' for arg in op.definition['args'].value])})"
-        return f"reg{op.definition['dst']} = reg{op.definition['fun']}({', '.join([f'reg{arg}' for arg in op.definition['args'].value])})"
-    elif op.op == "JAlways":
-        return f"jump to {idx + (op.definition['offset'].value + 1)}"
-    elif op.op == "Switch":
-        reg = op.definition["reg"]
-        offsets = op.definition["offsets"].value
-        offset_mappings = []
-        cases = []
-        for i, offset in enumerate(offsets):
-            if offset.value != 0:
-                case_num = str(i)
-                target = str(idx + (offset.value + 1))
-                offset_mappings.append(f"{case_num}: {target}")
-                cases.append(case_num)
-        if not terse:
-            return f"switch reg{reg} to [{', '.join(offset_mappings)}] (end: {idx + (op.definition['end'].value)})"
-        return f"switch reg{reg} to [{', '.join(cases)}] (end: {idx + (op.definition['end'].value)})"
-    elif op.op == "Trap":
-        return f"trap to reg{op.definition['exc']} (end: {idx + (op.definition['offset'].value)})"
-    elif op.op == "EndTrap":
-        return f"end trap to reg{op.definition['exc']}"
-    elif op.op == "Call0":
-        return f"reg{op.definition['dst']} = f@{op.definition['fun']}()"  # TODO: resolve function names in pseudo
-    elif op.op == "Call1":
-        return f"reg{op.definition['dst']} = f@{op.definition['fun']}(reg{op.definition['arg0']})"
-    elif op.op == "Call2":
-        fun = full_func_name(code, code.fn(op.definition["fun"].value))
-        return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1']])})"
-    elif op.op == "Call3":
-        return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1', 'arg2']])})"
-    elif op.op == "CallN":
-        return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{arg}' for arg in op.definition['args'].value])})"
-    elif op.op == "Null":
-        return f"reg{op.definition['dst']} = null"
-    elif op.op == "JSLt":  # jump signed less than
-        return (
-            f"if reg{op.definition['a']} < reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
-        )
-    elif op.op == "Ref":
-        return f"reg{op.definition['dst']} = &reg{op.definition['src']}"
-    elif op.op == "Ret":
-        if type(regs[op.definition["ret"].value].resolve(code).definition) == Void:
-            return "return"
-        return f"return reg{op.definition['ret']}"
-    return "<unsupported pseudo>"
+    match op.op:
+        # Constants
+        case "Int" | "Float":
+            return f"reg{op.definition['dst']} = {op.definition['ptr'].resolve(code)}"
+        case "Bool":
+            return f"reg{op.definition['dst']} = {op.definition['value'].value}"
+        case "String":
+            return f"reg{op.definition['dst']} = \"{op.definition['ptr'].resolve(code)}\""
+        case "Null":
+            return f"reg{op.definition['dst']} = null"
+
+        # Control Flow
+        case "Label":
+            return "label"
+        case "JAlways":
+            return f"jump to {idx + (op.definition['offset'].value + 1)}"
+        case "JEq" | "JSEq":
+            return f"if reg{op.definition['a']} == reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+        case "JNull":
+            return f"if reg{op.definition['reg']} is null: jump to {idx + (op.definition['offset'].value + 1)}"
+        case "JFalse":
+            return f"if reg{op.definition['cond']} is false: jump to {idx + (op.definition['offset'].value + 1)}"
+        case "JTrue":
+            return f"if reg{op.definition['cond']} is true: jump to {idx + (op.definition['offset'].value + 1)}"
+        case "JSGte":
+            return f"if reg{op.definition['a']} >= reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+        case "JULt" | "JSLt":
+            return f"if reg{op.definition['a']} < reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+        case "JNotLt":
+            return f"if reg{op.definition['a']} >= reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+        case "JNotEq":
+            return f"if reg{op.definition['a']} != reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+        case "JSGt":
+            return f"if reg{op.definition['a']} > reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+
+        # Arithmetic
+        case "Mul":
+            return f"reg{op.definition['dst']} = reg{op.definition['a']} * reg{op.definition['b']}"
+        case "SDiv":
+            return f"reg{op.definition['dst']} = reg{op.definition['a']} / reg{op.definition['b']}"
+        case "Incr":
+            return f"reg{op.definition['dst']}++"
+        case "Decr":
+            return f"reg{op.definition['dst']}--"
+        case "Sub":
+            return f"reg{op.definition['dst']} = reg{op.definition['a']} - reg{op.definition['b']}"
+        case "Add":
+            return f"reg{op.definition['dst']} = reg{op.definition['a']} + reg{op.definition['b']}"
+        case "Shl":
+            return f"reg{op.definition['dst']} = reg{op.definition['a']} << reg{op.definition['b']}"
+        case "SMod":
+            return f"reg{op.definition['dst']} = reg{op.definition['a']} % reg{op.definition['b']}"
+
+        # Memory/Object Operations
+        case "GetThis":
+            this = next((reg for reg in regs if type(reg.resolve(code).definition) == Obj), None)
+            if this:
+                return f"reg{op.definition['dst']} = this.{op.definition['field'].resolve_obj(code, this.definition).name.resolve(code)}"
+            return f"reg{op.definition['dst']} = this.f@{op.definition['field'].value} (this not found!)"
+        case "GetGlobal":
+            glob = type_name(code, op.definition["global"].resolve(code))
+            return f"reg{op.definition['dst']} = {glob} (g@{op.definition['global']})"
+        case "Field":
+            field = op.definition["field"].resolve_obj(code, regs[op.definition["obj"].value].resolve(code).definition)
+            return f"reg{op.definition['dst']} = reg{op.definition['obj']}.{field.name.resolve(code)}"
+        case "SetField":
+            field = op.definition["field"].resolve_obj(code, regs[op.definition["obj"].value].resolve(code).definition)
+            return f"reg{op.definition['obj']}.{field.name.resolve(code)} = reg{op.definition['src']}"
+        case "Mov":
+            return f"reg{op.definition['dst']} = reg{op.definition['src']}"
+        case "SetArray":
+            return f"reg{op.definition['array']}[reg{op.definition['index']}] = reg{op.definition['src']})"
+        case "ArraySize":
+            return f"reg{op.definition['dst']} = len(reg{op.definition['array']})"
+        case "New":
+            typ = regs[op.definition["dst"].value].resolve(code)
+            return f"reg{op.definition['dst']} = new {type_name(code, typ)}"
+        case "DynSet":
+            return f"reg{op.definition['obj']}.{op.definition['field'].resolve(code)} = reg{op.definition['src']}"
+
+        # Type Conversions
+        case "ToSFloat":
+            return f"reg{op.definition['dst']} = SFloat(reg{op.definition['src']})"
+        case "ToVirtual":
+            return f"reg{op.definition['dst']} = Virtual(reg{op.definition['src']})"
+        case "Ref":
+            return f"reg{op.definition['dst']} = &reg{op.definition['src']}"
+
+        # Function Calls
+        case "CallClosure":
+            args = ', '.join([f'reg{arg}' for arg in op.definition['args'].value])
+            if type(regs[op.definition["dst"].value].resolve(code).definition) == Void:
+                return f"reg{op.definition['fun']}({args})"
+            return f"reg{op.definition['dst']} = reg{op.definition['fun']}({args})"
+        case "Call0":
+            return f"reg{op.definition['dst']} = f@{op.definition['fun']}()"
+        case "Call1":
+            return f"reg{op.definition['dst']} = f@{op.definition['fun']}(reg{op.definition['arg0']})"
+        case "Call2":
+            fun = full_func_name(code, code.fn(op.definition["fun"].value))
+            return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1']])})"
+        case "Call3":
+            return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1', 'arg2']])})"
+        case "CallN":
+            return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{arg}' for arg in op.definition['args'].value])})"
+
+        # Error Handling
+        case "NullCheck":
+            return f"if reg{op.definition['reg']} is null: error"
+        case "Trap":
+            return f"trap to reg{op.definition['exc']} (end: {idx + (op.definition['offset'].value)})"
+        case "EndTrap":
+            return f"end trap to reg{op.definition['exc']}"
+
+        # Switch
+        case "Switch":
+            reg = op.definition["reg"]
+            offsets = op.definition["offsets"].value
+            offset_mappings = []
+            cases = []
+            for i, offset in enumerate(offsets):
+                if offset.value != 0:
+                    case_num = str(i)
+                    target = str(idx + (offset.value + 1))
+                    offset_mappings.append(f"if {case_num} jump {target}")
+                    cases.append(case_num)
+            if not terse:
+                return f"switch reg{reg} [{', '.join(offset_mappings)}] (end: {idx + (op.definition['end'].value)})"
+            return f"switch reg{reg} [{', '.join(cases)}] (end: {idx + (op.definition['end'].value)})"
+
+        # Return
+        case "Ret":
+            if type(regs[op.definition["ret"].value].resolve(code).definition) == Void:
+                return "return"
+            return f"return reg{op.definition['ret']}"
+
+        # Unknown
+        case _:
+            return f"unknown operation {op.op}"
 
 
 def fmt_op(

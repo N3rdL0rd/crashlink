@@ -11,6 +11,9 @@ The version of crashlink.
 """
 
 LONG_VERSION: str = "crashlink - Pure Python HashLink bytecode parser/disassembler/decompiler/modding tool - " + VERSION
+"""
+String displayed in the help message for the CLI.
+"""
 
 DEBUG: bool = False
 """

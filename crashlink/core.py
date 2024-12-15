@@ -31,6 +31,9 @@ except ImportError:
 
 # TODO: rewrite all ABCs like this to use the PEP 3119 `abc` module
 class Serialisable:
+    """
+    Base class for all serialisable objects.
+    """
     def __init__(self) -> None:
         self.value: Any = None
         raise NotImplementedError("Serialisable is an abstract class and should not be instantiated.")
@@ -131,6 +134,9 @@ class SerialisableF64(Serialisable):
 
 
 class VarInt(Serialisable):
+    """
+    Variable-length integer - can be 1, 2, or 4 bytes.
+    """
     def __init__(self, value: int = 0):
         self.value: int = value
 
@@ -197,6 +203,9 @@ class VarInt(Serialisable):
 
 
 class ResolvableVarInt(VarInt):
+    """
+    Base class for resolvable VarInts. Call `resolve` to get a direct reference to the object it points to.
+    """
     def resolve(self, code: "Bytecode") -> Any:
         raise NotImplementedError("resolve is not implemented for this class.")
 
@@ -215,7 +224,7 @@ class fIndex(ResolvableVarInt):
 
 class tIndex(ResolvableVarInt):
     """
-    Abstract class based on VarInt to represent a distinct type by index instead of an arbitrary number.
+    Reference to a type in the bytecode.
     """
 
     def resolve(self, code: "Bytecode") -> "Type":
@@ -224,7 +233,7 @@ class tIndex(ResolvableVarInt):
 
 class gIndex(ResolvableVarInt):
     """
-    Global index reference, based on VarInt.
+    Reference to a global object in the bytecode.
     """
 
     def resolve(self, code: "Bytecode") -> "Type":
@@ -233,7 +242,7 @@ class gIndex(ResolvableVarInt):
 
 class strRef(ResolvableVarInt):
     """
-    Abstract class to represent a string index.
+    Reference to a string in the bytecode.
     """
 
     def resolve(self, code: "Bytecode") -> str:
@@ -241,16 +250,25 @@ class strRef(ResolvableVarInt):
 
 
 class intRef(ResolvableVarInt):
+    """
+    Reference to an integer in the bytecode.
+    """
     def resolve(self, code: "Bytecode") -> SerialisableInt:
         return code.ints[self.value]
 
 
 class floatRef(ResolvableVarInt):
+    """
+    Reference to a float in the bytecode.
+    """
     def resolve(self, code: "Bytecode") -> SerialisableF64:
         return code.floats[self.value]
 
 
 class bytesRef(ResolvableVarInt):
+    """
+    Reference to a byte string in the bytecode.
+    """
     def resolve(self, code: "Bytecode") -> bytes:
         if code.bytes:
             return code.bytes.value[self.value]
@@ -260,7 +278,7 @@ class bytesRef(ResolvableVarInt):
 
 class fieldRef(ResolvableVarInt):
     """
-    Abstract class to represent a field index.
+    Reference to a field in an object definition.
     """
 
     obj: Optional["Obj"] = None
@@ -279,7 +297,7 @@ class fieldRef(ResolvableVarInt):
 
 class Reg(ResolvableVarInt):
     """
-    Abstract class to represent a register index in a function.
+    Reference to a register in the bytecode.
     """
 
     def resolve(self, code: "Bytecode") -> "Type":
@@ -287,6 +305,9 @@ class Reg(ResolvableVarInt):
 
 
 class InlineBool(Serialisable):
+    """
+    Inline boolean value.
+    """
     def __init__(self) -> None:
         self.varint = VarInt()
         self.value: bool = False
@@ -322,7 +343,7 @@ class VarInts(Serialisable):
 
 class Regs(Serialisable):
     """
-    List of Regs.
+    List of references to registers.
     """
 
     def __init__(self) -> None:
@@ -340,6 +361,9 @@ class Regs(Serialisable):
 
 
 def fmt_bytes(bytes: int | float) -> str:
+    """
+    Format bytes into a human-readable string.
+    """
     if bytes < 0:
         raise MalformedBytecode("Bytes cannot be negative.")
 
@@ -354,6 +378,9 @@ def fmt_bytes(bytes: int | float) -> str:
 
 
 class StringsBlock(Serialisable):
+    """
+    Block of strings in the bytecode. Contains a list of strings and their lengths.
+    """
     def __init__(self) -> None:
         self.length = SerialisableInt()
         self.length.length = 4
@@ -404,6 +431,9 @@ class StringsBlock(Serialisable):
 
 
 class BytesBlock(Serialisable):
+    """
+    Block of bytes in the bytecode. Contains a list of byte strings and their lengths.
+    """
     def __init__(self) -> None:
         self.size = SerialisableInt()
         self.size.length = 4
@@ -1052,10 +1082,16 @@ class Opcode(Serialisable):
 
 
 def read_u8(f: BinaryIO | BytesIO) -> int:
+    """
+    Reads an unsigned 8-bit integer from the file. Utility function for reimplementation of certain routines in Rust.
+    """
     return int.from_bytes(f.read(1), byteorder="little", signed=False)
 
 
 def write_u8(f: BinaryIO | BytesIO, val: int) -> None:
+    """
+    Writes an unsigned 8-bit integer to the file. Utility function for reimplementation of certain routines in Rust.
+    """
     try:
         f.write(val.to_bytes(1, byteorder="little", signed=False))
     except OverflowError:
@@ -1063,6 +1099,9 @@ def write_u8(f: BinaryIO | BytesIO, val: int) -> None:
 
 
 class fileRef(int):
+    """
+    Reference to a file in the debug info.
+    """
     def resolve(self, code: "Bytecode") -> str:
         if code.debugfiles:
             return code.debugfiles.value[self]
@@ -1070,6 +1109,9 @@ class fileRef(int):
 
 
 class DebugInfo(Serialisable):
+    """
+    Represents debug information for a function, encoded with a delta encoding scheme for compression.
+    """
     def __init__(self) -> None:
         self.debug_info: List[Tuple[fileRef, int]] = []  # file index, line number
 
@@ -1152,6 +1194,9 @@ class DebugInfo(Serialisable):
 
 
 class Function(Serialisable):
+    """
+    Represents a function in the bytecode. Due to the interesting ways in which HashLink works, this does not have a name or a signature, but rather a return type and a list of registers and opcodes.
+    """
     def __init__(self) -> None:
         self.type = tIndex()
         self.findex = fIndex()
@@ -1211,6 +1256,9 @@ class Function(Serialisable):
 
 
 class Constant(Serialisable):
+    """
+    Represents a bytecode constant.
+    """
     def __init__(self) -> None:
         self._global = gIndex()
         self.nfields = VarInt()
@@ -1234,6 +1282,11 @@ class Constant(Serialisable):
 
 
 class Bytecode(Serialisable):
+    """
+    The main bytecode class. To read a bytecode file, use the `from_path` class method.
+    
+    For more information about the overall structure, see [here](https://n3rdl0rd.github.io/ModDocCE/files/hlboot)
+    """
     def __init__(self) -> None:
         self.deserialised = False
         self.magic = RawData(3)
