@@ -218,7 +218,12 @@ def pseudo_from_op(
 
         # Memory/Object Operations
         case "GetThis":
-            this = next((reg for reg in regs if type(reg.resolve(code).definition) == Obj), None)
+            this = None
+            for reg in regs:
+                # find first Obj reg
+                if type(reg.resolve(code).definition) == Obj:
+                    this = reg.resolve(code)
+                    break
             if this:
                 return f"reg{op.definition['dst']} = this.{op.definition['field'].resolve_obj(code, this.definition).name.resolve(code)}"
             return f"reg{op.definition['dst']} = this.f@{op.definition['field'].value} (this not found!)"
