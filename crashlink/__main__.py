@@ -143,6 +143,25 @@ def cmd_cfg(args: List[str], code: Bytecode) -> None:
                 print(f"Control flow graph saved to {png_file}. Use your favourite image viewer to open it.")
             return
     print("Function not found.")
+    
+def cmd_ir(args: List[str], code: Bytecode) -> None:
+    """
+    Lifts a function to IR and displays it as object notation.
+    """
+    if not args:
+        print("Usage: ir <index>")
+        return
+    try:
+        index = int(args[0])
+    except ValueError:
+        print("Invalid index.")
+        return
+    for func in code.functions:
+        if func.findex.value == index:
+            ir = decomp.IRFunction(code, func)
+            ir.print()
+            return
+    print("Function not found.")
 
 
 # typing is ignored for lambdas because webbrowser.open returns a bool instead of None
@@ -165,6 +184,7 @@ COMMANDS: Dict[str, Tuple[Callable[[List[str], Bytecode], None], str]] = {
     "fn": (cmd_fn, "Show information about a function"),
     # "decomp": (cmd_decomp, "Decompile a function"),
     "cfg": (cmd_cfg, "Graph the control flow graph of a function"),
+    "ir": (cmd_ir, "Lift a function to IR, then display it as object notation")
 }
 """
 List of CLI commands.
@@ -219,7 +239,11 @@ def main() -> None:
         handle_cmd(code, args.hlbc, args.command)
     else:
         while True:
-            handle_cmd(code, args.hlbc, input("crashlink> "))
+            try:
+                handle_cmd(code, args.hlbc, input("crashlink> "))
+            except KeyboardInterrupt:
+                print()
+                continue
 
 
 if __name__ == "__main__":
