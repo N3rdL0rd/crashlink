@@ -10,7 +10,7 @@ Pure Python HashLink bytecode parser/disassembler/decompiler/modding tool
 ## Installation
 
 ```bash
-pip install crashlink # TODO: publish to PyPI
+pip install crashlink
 ```
 
 Optionally, install `tqdm` for progress bars when parsing large files:
