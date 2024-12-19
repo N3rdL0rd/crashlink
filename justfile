@@ -12,6 +12,10 @@ build:
     python -m build
     rm -rf build crashlink.egg-info
 
+# Publish crashlink to PyPI
+publish:
+    twine upload dist/*
+
 # Build test samples
 build-tests:
     cd tests/haxe && \
