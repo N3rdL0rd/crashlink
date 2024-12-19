@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
-<meta name="generator" content="pdoc3 0.11.1">
+<meta name="generator" content="pdoc3 0.11.5">
 <title>crashlink.opcodes API documentation</title>
 <meta name="description" content="Definitions of all 98 supported opcodes in the HashLink VM.">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
-<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin-bottom:1em}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
 <style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
 <style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
 <script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
@@ -18,6 +18,17 @@
 <script>window.addEventListener('DOMContentLoaded', () => {
 hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
 hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
 })</script>
 </head>
 <body>
@@ -36,120 +47,178 @@ hljs.highlightAll();
 <dl>
 <dt id="crashlink.opcodes.opcodes"><code class="name">var <span class="ident">opcodes</span></code></dt>
 <dd>
-<div class="desc"><pre><p>Definitions of all 98 supported opcodes in the HashLink VM.</p>
-<p>Basic Operations:
-- Mov: Copy value from src into dst register (dst = src) 
-- Int: Load i32 constant from pool into dst (dst = @ptr)
-- Float: Load f64 constant from pool into dst (dst = @ptr)
-- Bool: Set boolean value in dst (dst = true/false)
-- Bytes: Load byte array from constant pool into dst (dst = @ptr)
-- String: Load string from constant pool into dst (dst = @ptr)
-- Null: Set dst register to null (dst = null)</p>
-<p>Arithmetic:
-- Add: Add two numbers (dst = a + b)
-- Sub: Subtract two numbers (dst = a - b) 
-- Mul: Multiply two numbers (dst = a * b)
-- SDiv: Signed division (dst = a / b)
-- UDiv: Unsigned division (dst = a / b)
-- SMod: Signed modulo (dst = a % b)
-- UMod: Unsigned modulo (dst = a % b)</p>
-<p>Bitwise:
-- Shl: Left shift (dst = a &lt;&lt; b)
-- SShr: Signed right shift (dst = a &gt;&gt; b)
-- UShr: Unsigned right shift (dst = a &gt;&gt;&gt; b)
-- And: Bitwise AND (dst = a &amp; b)
-- Or: Bitwise OR (dst = a | b)
-- Xor: Bitwise XOR (dst = a ^ b)
-- Neg: Negate value (dst = -src)
-- Not: Boolean NOT (dst = !src)</p>
-<p>Increment/Decrement:
-- Incr: Increment value (dst++)
-- Decr: Decrement value (dst&ndash;)</p>
-<p>Function Calls:
-- Call0: Call function with no args (dst = fun())
-- Call1: Call function with 1 arg (dst = fun(arg0))
-- Call2: Call function with 2 args (dst = fun(arg0, arg1))
-- Call3: Call function with 3 args (dst = fun(arg0, arg1, arg2))
-- Call4: Call function with 4 args (dst = fun(arg0, arg1, arg2, arg3))
-- CallN: Call function with N args (dst = fun(args&hellip;))
-- CallMethod: Call method with N args (dst = obj.field(args&hellip;))
-- CallThis: Call this method with N args (dst = this.field(args&hellip;))
-- CallClosure: Call closure with N args (dst = fun(args&hellip;))</p>
-<p>Closures:
-- StaticClosure: Create closure from function (dst = fun)
-- InstanceClosure: Create closure from object method (dst = obj.fun)
-- VirtualClosure: Create closure from object field (dst = obj.field)</p>
-<p>Global Variables:
-- GetGlobal: Get global value (dst = @global)
-- SetGlobal: Set global value (@global = src)</p>
-<p>Fields:
-- Field: Get object field (dst = obj.field)<br>
-- SetField: Set object field (obj.field = src)
-- GetThis: Get this field (dst = this.field)
-- SetThis: Set this field (this.field = src)
-- DynGet: Get dynamic field (dst = obj[field])
-- DynSet: Set dynamic field (obj[field] = src)</p>
-<p>Control Flow:
-- JTrue: Jump if true (if cond jump by offset)
-- JFalse: Jump if false (if !cond jump by offset)
-- JNull: Jump if null (if reg == null jump by offset)
-- JNotNull: Jump if not null (if reg != null jump by offset)
-- JSLt/JSGte/JSGt/JSLte: Signed comparison jumps
-- JULt/JUGte: Unsigned comparison jumps 
-- JNotLt/JNotGte: Negated comparison jumps
-- JEq: Jump if equal (if a == b jump by offset)
-- JNotEq: Jump if not equal (if a != b jump by offset)
-- JAlways: Unconditional jump
-- Label: Target for backward jumps (loops)
-- Switch: Multi-way branch based on integer value</p>
-<p>Type Conversions:
-- ToDyn: Convert to dynamic type (dst = (dyn)src)
-- ToSFloat: Convert to signed float (dst = (float)src)
-- ToUFloat: Convert to unsigned float (dst = (float)src) 
-- ToInt: Convert to int (dst = (int)src)
-- SafeCast: Safe type cast with runtime check
-- UnsafeCast: Unchecked type cast
-- ToVirtual: Convert to virtual type</p>
-<p>Exception Handling:
-- Ret: Return from function (return ret)
-- Throw: Throw exception 
-- Rethrow: Rethrow exception
-- Trap: Setup try-catch block
-- EndTrap: End try-catch block
-- NullCheck: Throw if null (if reg == null throw)</p>
-<p>Memory Operations:
-- GetI8: Read i8 from bytes (dst = bytes[index])
-- GetI16: Read i16 from bytes (dst = bytes[index])
-- GetMem: Read from memory (dst = bytes[index])
-- GetArray: Get array element (dst = array[index])
-- SetI8: Write i8 to bytes (bytes[index] = src)
-- SetI16: Write i16 to bytes (bytes[index] = src) 
-- SetMem: Write to memory (bytes[index] = src)
-- SetArray: Set array element (array[index] = src)</p>
-<p>Objects:
-- New: Allocate new object (dst = new typeof(dst))
-- ArraySize: Get array length (dst = len(array))
-- Type: Get type object (dst = type ty)
-- GetType: Get value's type (dst = typeof src)
-- GetTID: Get type ID (dst = typeof src)</p>
-<p>References:
-- Ref: Create reference (dst = &amp;src)
-- Unref: Read reference (dst = <em>src)
-- Setref: Write reference (</em>dst = src)
-- RefData: Get reference data
-- RefOffset: Get reference with offset</p>
-<p>Enums:
-- MakeEnum: Create enum variant (dst = construct(args&hellip;))
-- EnumAlloc: Create enum with defaults (dst = construct())
-- EnumIndex: Get enum tag (dst = variant of value)
-- EnumField: Get enum field (dst = (value as construct).field)
-- SetEnumField: Set enum field (value.field = src)</p>
-<p>Other:
-- Assert: Debug break
-- Nop: No operation
-- Prefetch: CPU memory prefetch hint
-- Asm: Inline x86 assembly</p>
-<p>If you want to see a more detailed pseudocode for any given instance of <code>Opcode</code>, you can use <code><a title="crashlink.disasm.pseudo_from_op" href="disasm.html#crashlink.disasm.pseudo_from_op">pseudo_from_op()</a></code> to get a human-readable representation of the operation.</p></pre></div>
+<div class="desc"><p>Definitions of all 98 supported opcodes in the HashLink VM.</p>
+<p>Basic Operations:</p>
+<ul>
+<li>Mov: Copy value from src into dst register (<code>dst = src</code>) </li>
+<li>Int: Load i32 constant from pool into dst (<code>dst = @ptr</code>)</li>
+<li>Float: Load f64 constant from pool into dst (<code>dst = @ptr</code>)</li>
+<li>Bool: Set boolean value in dst (<code>dst = true/false</code>)</li>
+<li>Bytes: Load byte array from constant pool into dst (<code>dst = @ptr</code>)</li>
+<li>String: Load string from constant pool into dst (<code>dst = @ptr</code>)</li>
+<li>Null: Set dst register to null (<code>dst = null</code>)</li>
+</ul>
+<p>Arithmetic:</p>
+<ul>
+<li>Add: Add two numbers (<code>dst = a + b</code>)</li>
+<li>Sub: Subtract two numbers (<code>dst = a - b</code>) </li>
+<li>Mul: Multiply two numbers (<code>dst = a * b</code>)</li>
+<li>SDiv: Signed division (<code>dst = a / b</code>)</li>
+<li>UDiv: Unsigned division (<code>dst = a / b</code>)</li>
+<li>SMod: Signed modulo (<code>dst = a % b</code>)</li>
+<li>UMod: Unsigned modulo (<code>dst = a % b</code>)</li>
+</ul>
+<p>Bitwise:</p>
+<ul>
+<li>Shl: Left shift (<code>dst = a &lt;&lt; b</code>)</li>
+<li>SShr: Signed right shift (<code>dst = a &gt;&gt; b</code>)</li>
+<li>UShr: Unsigned right shift (<code>dst = a &gt;&gt;&gt; b</code>)</li>
+<li>And: Bitwise AND (<code>dst = a &amp; b</code>)</li>
+<li>Or: Bitwise OR (<code>dst = a | b</code>)</li>
+<li>Xor: Bitwise XOR (<code>dst = a ^ b</code>)</li>
+<li>Neg: Negate value (<code>dst = -src</code>)</li>
+<li>Not: Boolean NOT (<code>dst = !src</code>)</li>
+</ul>
+<p>Increment/Decrement:</p>
+<ul>
+<li>Incr: Increment value (<code>dst++</code>)</li>
+<li>Decr: Decrement value (<code>dst--</code>)</li>
+</ul>
+<p>Function Calls:</p>
+<ul>
+<li>Call0: Call function with no args (<code>dst = fun()</code>)</li>
+<li>Call1: Call function with 1 arg (<code>dst = fun(arg0)</code>)</li>
+<li>Call2: Call function with 2 args (<code>dst = fun(arg0, arg1)</code>)</li>
+<li>Call3: Call function with 3 args (<code>dst = fun(arg0, arg1, arg2)</code>)</li>
+<li>Call4: Call function with 4 args (<code>dst = fun(arg0, arg1, arg2, arg3)</code>)</li>
+<li>CallN: Call function with N args (<code>dst = fun(args...)</code>)</li>
+<li>CallMethod: Call method with N args (<code>dst = obj.field(args...)</code>)</li>
+<li>CallThis: Call this method with N args (<code>dst = this.field(args...)</code>)</li>
+<li>CallClosure: Call closure with N args (<code>dst = fun(args...)</code>)</li>
+</ul>
+<p>Closures:</p>
+<ul>
+<li>StaticClosure: Create closure from function (<code>dst = fun</code>)</li>
+<li>InstanceClosure: Create closure from object method (<code>dst = obj.fun</code>)</li>
+<li>VirtualClosure: Create closure from object field (<code>dst = obj.field</code>)</li>
+</ul>
+<p>Global Variables:</p>
+<ul>
+<li>GetGlobal: Get global value (<code>dst = @global</code>)</li>
+<li>SetGlobal: Set global value (<code>@global = src</code>)</li>
+</ul>
+<p>Fields:</p>
+<ul>
+<li>Field: Get object field (<code>dst = obj.field</code>)
+</li>
+<li>SetField: Set object field (<code>obj.field = src</code>)</li>
+<li>GetThis: Get this field (<code>dst = this.field</code>)</li>
+<li>SetThis: Set this field (<code>this.field = src</code>)</li>
+<li>DynGet: Get dynamic field (<code>dst = obj[field]</code>)</li>
+<li>DynSet: Set dynamic field (<code>obj[field] = src</code>)</li>
+</ul>
+<p>Control Flow:</p>
+<ul>
+<li>JTrue: Jump if true (<code>if cond jump by offset</code>)</li>
+<li>JFalse: Jump if false (<code>if !cond jump by offset</code>)</li>
+<li>JNull: Jump if null (<code>if reg == null jump by offset</code>)</li>
+<li>JNotNull: Jump if not null (<code>if reg != null jump by offset</code>)</li>
+<li>JSLt/JSGte/JSGt/JSLte: Signed comparison jumps</li>
+<li>JULt/JUGte: Unsigned comparison jumps </li>
+<li>JNotLt/JNotGte: Negated comparison jumps</li>
+<li>JEq: Jump if equal (<code>if a == b jump by offset</code>)</li>
+<li>JNotEq: Jump if not equal (<code>if a != b jump by offset</code>)</li>
+<li>JAlways: Unconditional jump</li>
+<li>Label: Target for backward jumps (loops)</li>
+<li>Switch: Multi-way branch based on integer value</li>
+</ul>
+<p>Type Conversions:</p>
+<ul>
+<li>ToDyn: Convert to dynamic type (<code>dst = (dyn)src</code>)</li>
+<li>ToSFloat: Convert to signed float (<code>dst = (float)src</code>)</li>
+<li>ToUFloat: Convert to unsigned float (<code>dst = (float)src</code>) </li>
+<li>ToInt: Convert to int (<code>dst = (int)src</code>)</li>
+<li>SafeCast: Safe type cast with runtime check</li>
+<li>UnsafeCast: Unchecked type cast</li>
+<li>ToVirtual: Convert to virtual type</li>
+</ul>
+<p>Exception Handling:</p>
+<ul>
+<li>Ret: Return from function (<code>return ret</code>)</li>
+<li>Throw: Throw exception </li>
+<li>Rethrow: Rethrow exception</li>
+<li>Trap: Setup try-catch block</li>
+<li>EndTrap: End try-catch block</li>
+<li>NullCheck: Throw if null (<code>if reg == null throw</code>)</li>
+</ul>
+<p>Memory Operations:</p>
+<ul>
+<li>GetI8: Read i8 from bytes (<code>dst = bytes[index]</code>)</li>
+<li>GetI16: Read i16 from bytes (<code>dst = bytes[index]</code>)</li>
+<li>GetMem: Read from memory (<code>dst = bytes[index]</code>)</li>
+<li>GetArray: Get array element (<code>dst = array[index]</code>)</li>
+<li>SetI8: Write i8 to bytes (<code>bytes[index] = src</code>)</li>
+<li>SetI16: Write i16 to bytes (<code>bytes[index] = src</code>) </li>
+<li>SetMem: Write to memory (<code>bytes[index] = src</code>)</li>
+<li>SetArray: Set array element (<code>array[index] = src</code>)</li>
+</ul>
+<p>Objects:</p>
+<ul>
+<li>New: Allocate new object (<code>dst = new typeof(dst)</code>)</li>
+<li>ArraySize: Get array length (<code>dst = len(array)</code>)</li>
+<li>Type: Get type object (<code>dst = type ty</code>)</li>
+<li>GetType: Get value's type (<code>dst = typeof src</code>)</li>
+<li>GetTID: Get type ID (<code>dst = typeof src</code>)</li>
+</ul>
+<p>References:</p>
+<ul>
+<li>Ref: Create reference (<code>dst = &amp;src</code>)</li>
+<li>Unref: Read reference (<code>dst = *src</code>)</li>
+<li>Setref: Write reference (<code>*dst = src</code>)</li>
+<li>RefData: Get reference data</li>
+<li>RefOffset: Get reference with offset</li>
+</ul>
+<p>Enums:</p>
+<ul>
+<li>MakeEnum: Create enum variant (<code>dst = construct(args...)</code>)</li>
+<li>EnumAlloc: Create enum with defaults (<code>dst = construct()</code>)</li>
+<li>EnumIndex: Get enum tag (<code>dst = variant of value</code>)</li>
+<li>EnumField: Get enum field (<code>dst = (value as construct).field</code>)</li>
+<li>SetEnumField: Set enum field (<code>value.field = src</code>)</li>
+</ul>
+<p>Other:</p>
+<ul>
+<li>Assert: Debug break</li>
+<li>Nop: No operation</li>
+<li>Prefetch: CPU memory prefetch hint</li>
+<li>Asm: Inline x86 assembly</li>
+</ul>
+<p>If you want to see a more detailed pseudocode for any given instance of <code>Opcode</code>, you can use <code><a title="crashlink.disasm.pseudo_from_op" href="disasm.html#crashlink.disasm.pseudo_from_op">pseudo_from_op()</a></code> to get a human-readable representation of the operation.</p>
+<p>If you're using the CLI in patch mode, you'll see opcodes in a format like:</p>
+<pre><code class="language-hlasm">Int. 0. 0
+Int. 2. 1
+GetGlobal. 3. 3
+Add. 4. 0. 2
+Sub. 5. 0. 2
+Mul. 6. 0. 2
+ToSFloat. 8. 0
+ToSFloat. 9. 2
+SDiv. 8. 8. 9
+SMod. 7. 0. 2
+Shl. 10. 0. 2
+JSLt. 0. 2. 2
+Bool. 11. False
+JAlways. 1
+Bool. 11. True
+JSLt. 0. 2. 2
+Bool. 12. False
+JAlways. 1
+Bool. 12. True
+Nop.
+CallN. [1, 2, 3]
+Ret. 1
+</code></pre>
+<p>When writing opcodes in this format, seperate each argument to the opcode with a period. For opcodes that require lists, pass them in JSON format, e.g. <code>CallN. [reg, reg, reg, reg]</code>.</p></div>
 </dd>
 </dl>
 </section>
@@ -177,7 +246,7 @@ hljs.highlightAll();
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.1</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
 </footer>
 </body>
 </html>

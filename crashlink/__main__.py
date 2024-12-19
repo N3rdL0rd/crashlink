@@ -195,7 +195,7 @@ def cmd_patch(args: List[str], code: Bytecode) -> None:
             os.unlink(file)
             return
     try:
-        with open(file, "r", encoding="utf-8") as f2: # whyyyy mypy, whyyyy???
+        with open(file, "r", encoding="utf-8") as f2:  # whyyyy mypy, whyyyy???
             modified = f2.read()
 
         lines = modified.split("\n")
