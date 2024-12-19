@@ -143,6 +143,85 @@ def cmd_cfg(args: List[str], code: Bytecode) -> None:
                 print(f"Control flow graph saved to {png_file}. Use your favourite image viewer to open it.")
             return
     print("Function not found.")
+    
+
+def cmd_patch(args: List[str], code: Bytecode) -> None:
+    if not args:
+        print("Usage: patch <index>")
+        return
+    try:
+        index = int(args[0])
+    except ValueError:
+        print("Invalid index.")
+        return
+    try:
+        func = code.fn(index)
+    except ValueError:
+        print("Function not found.")
+        return
+    content = f"""{disasm.func(code, func)}
+
+###### Modify the opcodes below this line. Any edits above this line will be ignored, and removing this line will cause patching to fail. #####
+{disasm.to_asm(func.ops)}"""
+    with tempfile.NamedTemporaryFile(suffix=".hlasm", delete=False) as f:
+        f.write(content.encode())
+        file = f.name
+    try:
+        import tkinter as tk
+        from tkinter import scrolledtext
+        
+        def save_and_exit():
+            with open(file, 'w', encoding='utf-8') as f:
+                f.write(text.get('1.0', tk.END))
+            root.destroy()
+            
+        root = tk.Tk()
+        root.title(f"Editing function f@{index}")
+        text = scrolledtext.ScrolledText(root, width=200, height=50)
+        text.pack()
+        text.insert('1.0', content)
+        
+        button = tk.Button(root, text="Save and Exit", command=save_and_exit)
+        button.pack()
+        
+        root.mainloop()
+    except ImportError:
+        if os.name == 'nt':
+            os.system(f'notepad "{file}"')
+        elif os.name == 'posix':
+            os.system(f'nano "{file}"')
+        else:
+            print("No suitable editor found")
+            os.unlink(file)
+            return
+
+    try:
+        with open(file, 'r', encoding='utf-8') as f:
+            modified = f.read()
+        
+        lines = modified.split('\n')
+        sep_idx = next(i for i, line in enumerate(lines) if '######' in line)
+        new_asm = '\n'.join(lines[sep_idx + 1:])
+        new_ops = disasm.from_asm(new_asm)
+        
+        func.ops = new_ops
+        print(f"Function f@{index} updated successfully")
+    
+    except Exception as e:
+        print(f"Failed to patch function: {e}")
+    finally:
+        os.unlink(file)
+
+def cmd_save(args: List[str], code: Bytecode) -> None:
+    if not args:
+        print("Usage: save <path>")
+        return
+    print("Serialising...")
+    ser = code.serialise()
+    print("Saving...")
+    with open(args[0], 'wb') as f:
+        f.write(ser)
+    print("Done!")
 
 
 # typing is ignored for lambdas because webbrowser.open returns a bool instead of None
@@ -165,6 +244,8 @@ COMMANDS: Dict[str, Tuple[Callable[[List[str], Bytecode], None], str]] = {
     "fn": (cmd_fn, "Show information about a function"),
     # "decomp": (cmd_decomp, "Decompile a function"),
     "cfg": (cmd_cfg, "Graph the control flow graph of a function"),
+    "patch": (cmd_patch, "Patch a function's raw opcodes"),
+    "save": (cmd_save, "Save the modified bytecode to a given path"),
 }
 """
 List of CLI commands.
