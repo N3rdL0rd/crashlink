@@ -209,7 +209,6 @@ def cmd_patch(args: List[str], code: Bytecode) -> None:
             print("No suitable editor found")
             os.unlink(file)
             return
-
     try:
         with open(file, 'r', encoding='utf-8') as f:
             modified = f.read()
@@ -261,6 +260,7 @@ COMMANDS: Dict[str, Tuple[Callable[[List[str], Bytecode], None], str]] = {
     "cfg": (cmd_cfg, "Graph the control flow graph of a function"),
     "patch": (cmd_patch, "Patch a function's raw opcodes"),
     "save": (cmd_save, "Save the modified bytecode to a given path"),
+    "ir": (cmd_ir, "Display the IR of a function in object-notation"),
 }
 """
 List of CLI commands.
