@@ -4,6 +4,9 @@
 
 Pure Python HashLink bytecode parser/disassembler/decompiler/modding tool
 
+> [!WARNING]
+> This project is under active development. Breaking changes may be made to APIs with zero notice.
+
 ## Features
 
 - Pure Python with zero dependencies, integrates nicely in a lot of places (IDAPython compatible!)
@@ -50,7 +53,7 @@ for func in code.functions:
 
 Or:
 
-```bash
+```txt
 $ crashlink path/to/file.hl # or python -m crashlink
 crashlink> funcs
 f@22 static Clazz.main () -> Void (from Clazz.hx)
@@ -100,6 +103,9 @@ You can use the following pre-defined commands with `just`:
 ## Architecture
 
 ![Architecture](docs/static/flow.svg)
+
+> [!NOTE]
+> IR and the IR optimization layers have not yet been fully implemented.
 
 ## Credits
 
