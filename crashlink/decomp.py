@@ -608,7 +608,7 @@ class IRTrace(IRStatement):
         self.method_name = method_name
 
     def __repr__(self) -> str:
-        return f"<IRTrace>" # TODO: resolve globals
+        return f"<IRTrace>"  # TODO: resolve globals
 
 
 class IRFunction:
