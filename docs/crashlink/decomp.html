@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
-<meta name="generator" content="pdoc3 0.11.5">
+<meta name="generator" content="pdoc3 0.11.1">
 <title>crashlink.decomp API documentation</title>
 <meta name="description" content="Decompilation, IR and control flow graph generation">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
-<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin-bottom:1em}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
 <style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
 <style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
 <script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
@@ -77,23 +77,6 @@ hljs.highlightAll();
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def optimize(self) -&gt; None:
-    reachable: Set[CFNode] = set()
-    worklist = [self.graph.entry]
-
-    while worklist:
-        node = worklist.pop()
-        if node not in reachable and node:
-            reachable.add(node)
-            for next_node, _ in node.branches:
-                worklist.append(next_node)
-
-    self.graph.nodes = [n for n in self.graph.nodes if n in reachable]</code></pre>
-</details>
 </dd>
 </dl>
 </dd>
@@ -299,234 +282,36 @@ hljs.highlightAll();
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def add_branch(self, src: CFNode, dst: CFNode, edge_type: str) -&gt; None:
-    src.branches.append((dst, edge_type))</code></pre>
-</details>
 </dd>
 <dt id="crashlink.decomp.CFGraph.add_node"><code class="name flex">
 <span>def <span class="ident">add_node</span></span>(<span>self, <br>ops: List[<a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>], <br>base_offset: int = 0) ‑> <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a></span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def add_node(self, ops: List[Opcode], base_offset: int = 0) -&gt; CFNode:
-    node = CFNode(ops)
-    self.nodes.append(node)
-    node.base_offset = base_offset
-    return node</code></pre>
-</details>
 </dd>
 <dt id="crashlink.decomp.CFGraph.build"><code class="name flex">
 <span>def <span class="ident">build</span></span>(<span>self, <br>do_optimize: bool = True) ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"><pre><p>Build the control flow graph.</p></pre></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def build(self, do_optimize: bool = True) -&gt; None:
-    &#34;&#34;&#34;Build the control flow graph.&#34;&#34;&#34;
-    if not self.func.ops:
-        return
-
-    jump_targets = set()
-    for i, op in enumerate(self.func.ops):
-        # fmt: off
-        if op.op in [&#34;JTrue&#34;, &#34;JFalse&#34;, &#34;JNull&#34;, &#34;JNotNull&#34;, 
-                    &#34;JSLt&#34;, &#34;JSGte&#34;, &#34;JSGt&#34;, &#34;JSLte&#34;,
-                    &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;,
-                    &#34;JEq&#34;, &#34;JNotEq&#34;, &#34;JAlways&#34;, &#34;Trap&#34;]:
-        # fmt: on
-            jump_targets.add(i + op.definition[&#34;offset&#34;].value + 1)
-
-    current_ops: List[Opcode] = []
-    current_start = 0
-    blocks: List[Tuple[int, List[Opcode]]] = []  # (start_idx, ops) tuples
-
-    for i, op in enumerate(self.func.ops):
-        if i in jump_targets and current_ops:
-            blocks.append((current_start, current_ops))
-            current_ops = []
-            current_start = i
-
-        current_ops.append(op)
-
-        # fmt: off
-        if op.op in [&#34;JTrue&#34;, &#34;JFalse&#34;, &#34;JNull&#34;, &#34;JNotNull&#34;,
-                    &#34;JSLt&#34;, &#34;JSGte&#34;, &#34;JSGt&#34;, &#34;JSLte&#34;, 
-                    &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;,
-                    &#34;JEq&#34;, &#34;JNotEq&#34;, &#34;JAlways&#34;, &#34;Switch&#34;, &#34;Ret&#34;,
-                    &#34;Trap&#34;, &#34;EndTrap&#34;]:
-        # fmt: on
-            blocks.append((current_start, current_ops))
-            current_ops = []
-            current_start = i + 1
-
-    if current_ops:
-        blocks.append((current_start, current_ops))
-
-    nodes_by_idx = {}
-    for start_idx, ops in blocks:
-        node = self.add_node(ops, start_idx)
-        nodes_by_idx[start_idx] = node
-        if start_idx == 0:
-            self.entry = node
-
-    for start_idx, ops in blocks:
-        src_node = nodes_by_idx[start_idx]
-        last_op = ops[-1]
-
-        next_idx = start_idx + len(ops)
-
-        # conditionals
-        # fmt: off
-        if last_op.op in [&#34;JTrue&#34;, &#34;JFalse&#34;, &#34;JNull&#34;, &#34;JNotNull&#34;,
-                        &#34;JSLt&#34;, &#34;JSGte&#34;, &#34;JSGt&#34;, &#34;JSLte&#34;,
-                        &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;, 
-                        &#34;JEq&#34;, &#34;JNotEq&#34;]:
-        # fmt: on
-            
-            jump_idx = start_idx + len(ops) + last_op.definition[&#34;offset&#34;].value
-            
-            # - jump target is &#34;true&#34; branch
-            # - fall-through is &#34;false&#34; branch
-                
-            if jump_idx in nodes_by_idx:
-                edge_type = &#34;true&#34;
-                self.add_branch(src_node, nodes_by_idx[jump_idx], edge_type)
-                
-            if next_idx in nodes_by_idx:
-                edge_type = &#34;false&#34; 
-                self.add_branch(src_node, nodes_by_idx[next_idx], edge_type)
-        
-        elif last_op.op == &#34;Switch&#34;:
-            for i, offset in enumerate(last_op.definition[&#39;offsets&#39;].value):
-                if offset.value != 0:
-                    jump_idx = start_idx + len(ops) + offset.value
-                    self.add_branch(src_node, nodes_by_idx[jump_idx], f&#34;switch: case: {i} &#34;)
-            if next_idx in nodes_by_idx:
-                self.add_branch(src_node, nodes_by_idx[next_idx], &#34;switch: default&#34;)
-        
-        elif last_op.op == &#34;Trap&#34;:
-            jump_idx = start_idx + len(ops) + last_op.definition[&#34;offset&#34;].value
-            if jump_idx in nodes_by_idx:
-                self.add_branch(src_node, nodes_by_idx[jump_idx], &#34;trap&#34;)
-            if next_idx in nodes_by_idx:
-                self.add_branch(src_node, nodes_by_idx[next_idx], &#34;fall-through&#34;)
-        
-        elif last_op.op == &#34;EndTrap&#34;:
-            if next_idx in nodes_by_idx:
-                self.add_branch(src_node, nodes_by_idx[next_idx], &#34;endtrap&#34;)
-        
-        elif last_op.op == &#34;JAlways&#34;:
-            jump_idx = start_idx + len(ops) + last_op.definition[&#34;offset&#34;].value
-            if jump_idx in nodes_by_idx:
-                self.add_branch(src_node, nodes_by_idx[jump_idx], &#34;unconditional&#34;)
-        elif last_op.op != &#34;Ret&#34; and next_idx in nodes_by_idx:
-            self.add_branch(src_node, nodes_by_idx[next_idx], &#34;unconditional&#34;)
-
-    # fmt: off
-    self.optimize([
-        CFJumpThreader(self),
-        CFDeadCodeEliminator(self),
-    ])
-    # fmt: on</code></pre>
-</details>
 </dd>
 <dt id="crashlink.decomp.CFGraph.graph"><code class="name flex">
 <span>def <span class="ident">graph</span></span>(<span>self, <br>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><pre><p>Generate DOT format graph visualization.</p></pre></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def graph(self, code: Bytecode) -&gt; str:
-    &#34;&#34;&#34;Generate DOT format graph visualization.&#34;&#34;&#34;
-    dot = [&#34;digraph G {&#34;]
-    dot.append(&#39;  labelloc=&#34;t&#34;;&#39;)
-    dot.append(&#39;  label=&#34;CFG for %s&#34;;&#39; % disasm.func_header(code, self.func))
-    dot.append(&#39;  fontname=&#34;Arial&#34;;&#39;)
-    dot.append(&#34;  labelfontsize=20;&#34;)
-    dot.append(&#34;  forcelabels=true;&#34;)
-    dot.append(&#39;  node [shape=box, fontname=&#34;Courier&#34;];&#39;)
-    dot.append(&#39;  edge [fontname=&#34;Courier&#34;, fontsize=9];&#39;)
-
-    for node in self.nodes:
-        label = (
-            &#34;\n&#34;.join(
-                [
-                    disasm.pseudo_from_op(op, node.base_offset + i, self.func.regs, code, terse=True)
-                    for i, op in enumerate(node.ops)
-                ]
-            )
-            .replace(&#39;&#34;&#39;, &#39;\\&#34;&#39;)
-            .replace(&#34;\n&#34;, &#34;\\n&#34;)
-        )
-        style = self.style_node(node)
-        dot.append(f&#39;  node_{id(node)} [label=&#34;{label}&#34;, {style}, xlabel=&#34;{node.base_offset}.&#34;];&#39;)
-
-    for node in self.nodes:
-        for branch, edge_type in node.branches:
-            if edge_type == &#34;true&#34;:
-                style = &#39;color=&#34;green&#34;, label=&#34;true&#34;&#39;
-            elif edge_type == &#34;false&#34;:
-                style = &#39;color=&#34;crimson&#34;, label=&#34;false&#34;&#39;
-            elif edge_type.startswith(&#34;switch: &#34;):
-                style = f&#39;color=&#34;{&#34;purple&#34; if not edge_type.split(&#34;switch: &#34;)[1].strip() == &#34;default&#34; else &#34;crimson&#34;}&#34;, label=&#34;{edge_type.split(&#34;switch: &#34;)[1].strip()}&#34;&#39;
-            elif edge_type == &#34;trap&#34;:
-                style = &#39;color=&#34;yellow3&#34;, label=&#34;trap&#34;&#39;
-            else:  # unconditionals and unmatched
-                style = &#39;color=&#34;cornflowerblue&#34;&#39;
-
-            dot.append(f&#34;  node_{id(node)} -&gt; node_{id(branch)} [{style}];&#34;)
-
-    dot.append(&#34;}&#34;)
-    return &#34;\n&#34;.join(dot)</code></pre>
-</details>
 </dd>
 <dt id="crashlink.decomp.CFGraph.optimize"><code class="name flex">
 <span>def <span class="ident">optimize</span></span>(<span>self, <br>optimizers: List[<a title="crashlink.decomp.CFOptimizer" href="#crashlink.decomp.CFOptimizer">CFOptimizer</a>]) ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def optimize(self, optimizers: List[CFOptimizer]) -&gt; None:
-    for optimizer in optimizers:
-        if optimizer not in self.applied_optimizers:
-            optimizer.optimize()
-            self.applied_optimizers.append(optimizer)</code></pre>
-</details>
 </dd>
 <dt id="crashlink.decomp.CFGraph.style_node"><code class="name flex">
 <span>def <span class="ident">style_node</span></span>(<span>self, <br>node: <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def style_node(self, node: CFNode) -&gt; str:
-    if node == self.entry:
-        return &#34;style=filled, fillcolor=pink1&#34;
-    for op in node.ops:
-        if op.op == &#34;Ret&#34;:
-            return &#34;style=filled, fillcolor=aquamarine&#34;
-    return &#34;style=filled, fillcolor=lightblue&#34;</code></pre>
-</details>
 </dd>
 </dl>
 </dd>
@@ -579,33 +364,6 @@ hljs.highlightAll();
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def optimize(self) -&gt; None:
-    # map each node to its predecessors
-    predecessors: Dict[CFNode, List[CFNode]] = {}
-    for node in self.graph.nodes:
-        for branch, _ in node.branches:
-            predecessors.setdefault(branch, []).append(node)
-
-    nodes_to_remove = set()
-    for node in self.graph.nodes:
-        if len(node.ops) == 1 and node.ops[0].op == &#34;JAlways&#34;:
-            if len(node.branches) == 1:
-                target_node, edge_type = node.branches[0]
-                # redirect all predecessors to target_node
-                for pred in predecessors.get(node, []):
-                    pred.branches = [
-                        (target_node if branch == node else branch, etype) for branch, etype in pred.branches
-                    ]
-                    predecessors.setdefault(target_node, []).append(pred)
-                nodes_to_remove.add(node)
-
-    # remove nodes from graph
-    self.graph.nodes = [n for n in self.graph.nodes if n not in nodes_to_remove]</code></pre>
-</details>
 </dd>
 </dl>
 </dd>
@@ -666,13 +424,6 @@ hljs.highlightAll();
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def optimize(self) -&gt; None:
-    raise NotImplementedError()</code></pre>
-</details>
 </dd>
 </dl>
 </dd>
@@ -794,8 +545,18 @@ hljs.highlightAll();
             if isinstance(stmt, IRConditional):
                 cond_lines = str(stmt).split(&#34;\n&#34;)
                 formatted_statements.append(base_indent + cond_lines[0])
-                for line in cond_lines[1:]:
-                    formatted_statements.append(base_indent + line)
+
+                true_block_lines = str(stmt.true_block).split(&#34;\n&#34;)
+                for line in true_block_lines:
+                    if line.strip():
+                        formatted_statements.append(base_indent + &#34;    &#34; + line.strip())
+
+                formatted_statements.append(base_indent + &#34;else&#34;)
+
+                false_block_lines = str(stmt.false_block).split(&#34;\n&#34;)
+                for line in false_block_lines:
+                    if line.strip():
+                        formatted_statements.append(base_indent + &#34;    &#34; + line.strip())
             else:
                 formatted_statements.append(base_indent + str(stmt))
 
@@ -810,7 +571,7 @@ hljs.highlightAll();
 </dd>
 <dt id="crashlink.decomp.IRBoolExpr"><code class="flex name class">
 <span>class <span class="ident">IRBoolExpr</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>op: <a title="crashlink.decomp.IRBoolExpr.CompareType" href="#crashlink.decomp.IRBoolExpr.CompareType">IRBoolExpr.CompareType</a>, <br>left: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a> | None = None, <br>right: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a> | None = None)</span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>op: <a title="crashlink.decomp.IRBoolExpr.CompareType" href="#crashlink.decomp.IRBoolExpr.CompareType">IRBoolExpr.CompareType</a>, <br>left: Optional[<a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>] = None, <br>right: Optional[<a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>] = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><pre><p>Base class for boolean expressions</p></pre></div>
@@ -881,6 +642,70 @@ hljs.highlightAll();
 </li>
 </ul>
 </dd>
+<dt id="crashlink.decomp.IRCall"><code class="flex name class">
+<span>class <span class="ident">IRCall</span></span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>call_type: <a title="crashlink.decomp.IRCall.CallType" href="#crashlink.decomp.IRCall.CallType">IRCall.CallType</a>, <br>target: <a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a>|<a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>, <br>args: List[<a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>])</span>
+</code></dt>
+<dd>
+<div class="desc"><pre><p>Function call expression</p></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRCall(IRExpression):
+    &#34;&#34;&#34;Function call expression&#34;&#34;&#34;
+
+    class CallType(_Enum):
+        FUNC = &#34;func&#34;
+        NATIVE = &#34;native&#34;
+        THIS = &#34;this&#34;
+        CLOSURE = &#34;closure&#34;
+        METHOD = &#34;method&#34;
+
+    def __init__(
+        self, code: Bytecode, call_type: &#34;IRCall.CallType&#34;, target: &#34;IRConst|IRLocal&#34;, args: List[IRExpression]
+    ):
+        super().__init__(code)
+        self.call_type = call_type
+        self.target = target
+        self.args = args
+        if self.call_type != IRCall.CallType.CLOSURE and isinstance(self.target, IRLocal):
+            raise DecompError(&#34;Non-closure calls must have a constant target&#34;)
+
+    def get_type(self) -&gt; Type:
+        # for now, assume closure calls return dynamic type
+        if self.call_type == IRCall.CallType.CLOSURE:
+            for type in self.code.types:
+                if disasm.type_name(self.code, type) == &#34;Dyn&#34;:
+                    return type
+            raise DecompError(&#34;Dyn type not found in code&#34;)
+        return self.target.get_type()
+
+    def __repr__(self) -&gt; str:
+        return f&#34;&lt;IRCall: {self.target}({&#39;, &#39;.join([str(arg) for arg in self.args])})&gt;&#34;</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
+<li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashlink.decomp.IRCall.CallType"><code class="name">var <span class="ident">CallType</span></code></dt>
+<dd>
+<div class="desc"><pre><p>An enumeration.</p></pre></div>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.IRExpression.get_type" href="#crashlink.decomp.IRExpression.get_type">get_type</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
 <dt id="crashlink.decomp.IRConditional"><code class="flex name class">
 <span>class <span class="ident">IRConditional</span></span>
 <span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>condition: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>, <br>true_block: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>, <br>false_block: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>)</span>
@@ -911,7 +736,7 @@ hljs.highlightAll();
 </dd>
 <dt id="crashlink.decomp.IRConst"><code class="flex name class">
 <span>class <span class="ident">IRConst</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>const_type: <a title="crashlink.decomp.IRConst.ConstType" href="#crashlink.decomp.IRConst.ConstType">IRConst.ConstType</a>, <br>idx: <a title="crashlink.core.ResolvableVarInt" href="core.html#crashlink.core.ResolvableVarInt">ResolvableVarInt</a> | None = None, <br>value: bool | None = None)</span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <br>const_type: <a title="crashlink.decomp.IRConst.ConstType" href="#crashlink.decomp.IRConst.ConstType">IRConst.ConstType</a>, <br>idx: Optional[<a title="crashlink.core.ResolvableVarInt" href="core.html#crashlink.core.ResolvableVarInt">ResolvableVarInt</a>] = None, <br>value: Optional[bool] = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><pre><p>Represents a constant value expression</p></pre></div>
@@ -929,6 +754,7 @@ hljs.highlightAll();
         BYTES = &#34;bytes&#34;
         STRING = &#34;string&#34;
         NULL = &#34;null&#34;
+        FUN = &#34;fun&#34;
 
     def __init__(
         self,
@@ -969,10 +795,19 @@ hljs.highlightAll();
             return _get_type_in_code(self.code, &#34;String&#34;)
         elif self.const_type == IRConst.ConstType.NULL:
             return _get_type_in_code(self.code, &#34;Null&#34;)
+        elif self.const_type == IRConst.ConstType.FUN:
+            if not isinstance(self.value, Function):
+                raise DecompError(f&#34;Expected function index to resolve to a function, got {self.value}&#34;)
+            res = self.value.type.resolve(self.code)
+            if isinstance(res, Type):
+                return res
+            raise DecompError(f&#34;Expected function return to resolve to a type, got {res}&#34;)
         else:
             raise DecompError(f&#34;Unknown IRConst type: {self.const_type}&#34;)
 
     def __repr__(self) -&gt; str:
+        if isinstance(self.value, Function):
+            return f&#34;&lt;IRConst: {disasm.func_header(self.code, self.value)}&gt;&#34;
         return f&#34;&lt;IRConst: {self.value}&gt;&#34;</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -1027,6 +862,7 @@ hljs.highlightAll();
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRArithmetic" href="#crashlink.decomp.IRArithmetic">IRArithmetic</a></li>
 <li><a title="crashlink.decomp.IRBoolExpr" href="#crashlink.decomp.IRBoolExpr">IRBoolExpr</a></li>
+<li><a title="crashlink.decomp.IRCall" href="#crashlink.decomp.IRCall">IRCall</a></li>
 <li><a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a></li>
 <li><a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a></li>
 </ul>
@@ -1037,15 +873,6 @@ hljs.highlightAll();
 </code></dt>
 <dd>
 <div class="desc"><pre><p>Get the type of value this expression produces</p></pre></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">@abstractmethod
-def get_type(self) -&gt; Type:
-    &#34;&#34;&#34;Get the type of value this expression produces&#34;&#34;&#34;
-    pass</code></pre>
-</details>
 </dd>
 </dl>
 </dd>
@@ -1073,6 +900,7 @@ def get_type(self) -&gt; Type:
         self.locals: List[IRLocal] = []
         self.block: IRBlock
         self._lift()
+        self._optimize()
 
     def _lift(self) -&gt; None:
         &#34;&#34;&#34;Lift function to IR&#34;&#34;&#34;
@@ -1083,6 +911,10 @@ def get_type(self) -&gt; Type:
             self.block = self._lift_block(self.cfg.entry)
         else:
             raise DecompError(&#34;Function CFG has no entry node, cannot lift to IR&#34;)
+
+    def _optimize(self) -&gt; None:
+        &#34;&#34;&#34;Optimize the IR&#34;&#34;&#34;
+        pass  # TODO
 
     def _name_locals(self) -&gt; None:
         &#34;&#34;&#34;Name locals based on debug info&#34;&#34;&#34;
@@ -1178,7 +1010,6 @@ def get_type(self) -&gt; Type:
                 &#34;JEq&#34;,
                 &#34;JNotEq&#34;,
             ]:
-
                 jump_to_compare = {
                     &#34;JTrue&#34;: IRBoolExpr.CompareType.TRUE,
                     &#34;JFalse&#34;: IRBoolExpr.CompareType.FALSE,
@@ -1206,26 +1037,34 @@ def get_type(self) -&gt; Type:
                     right = self.locals[op.definition[&#34;b&#34;].value]
                     condition = IRBoolExpr(self.code, jump_to_compare[op.op], left, right)
 
-                # Find branches
-                true_branch = None
-                false_branch = None
+                true_node = None
+                false_node = None
+
                 for next_node, edge_type in node.branches:
                     if edge_type == &#34;true&#34;:
-                        true_branch = self._lift_block(next_node, visited)
+                        true_node = next_node
                     elif edge_type == &#34;false&#34;:
-                        false_branch = self._lift_block(next_node, visited)
+                        false_node = next_node
 
-                if true_branch and false_branch:
-                    block.statements.append(IRConditional(self.code, condition, true_branch, false_branch))
-                    return block
+                if true_node or false_node:
+                    true_block = self._lift_block(true_node, visited.copy()) if true_node else IRBlock(self.code)
+                    false_block = self._lift_block(false_node, visited.copy()) if false_node else IRBlock(self.code)
+                    block.statements.append(IRConditional(self.code, condition, true_block, false_block))
 
-            # Handle unconditional jumps
+            # Handle unconditional jumps - should already be threaded earlier but handle here just in case
             elif op.op == &#34;JAlways&#34;:
                 for next_node, edge_type in node.branches:
                     if edge_type == &#34;unconditional&#34;:
                         next_block = self._lift_block(next_node, visited)
                         block.statements.extend(next_block.statements)
                         return block
+
+            elif op.op in [&#34;Call0&#34;, &#34;Call1&#34;, &#34;Call2&#34;, &#34;Call3&#34;, &#34;Call4&#34;]:
+                n = int(op.op[-1])
+                dst = self.locals[op.definition[&#34;dst&#34;].value]
+                fun = IRConst(self.code, IRConst.ConstType.FUN, op.definition[&#34;fun&#34;])
+                args = [self.locals[op.definition[f&#34;arg{i}&#34;].value] for i in range(n)]
+                block.statements.append(IRAssign(self.code, dst, IRCall(self.code, IRCall.CallType.FUNC, fun, args)))
 
         # Handle fall-through
         for next_node, edge_type in node.branches:
@@ -1245,13 +1084,6 @@ def get_type(self) -&gt; Type:
 </code></dt>
 <dd>
 <div class="desc"><pre></pre></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def print(self) -&gt; None:
-    print(self.block)</code></pre>
-</details>
 </dd>
 </dl>
 </dd>
@@ -1392,6 +1224,12 @@ inheritance.</p></pre></div>
 </ul>
 </li>
 <li>
+<h4><code><a title="crashlink.decomp.IRCall" href="#crashlink.decomp.IRCall">IRCall</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRCall.CallType" href="#crashlink.decomp.IRCall.CallType">CallType</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="crashlink.decomp.IRConditional" href="#crashlink.decomp.IRConditional">IRConditional</a></code></h4>
 </li>
 <li>
@@ -1424,7 +1262,7 @@ inheritance.</p></pre></div>
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.1</a>.</p>
 </footer>
 </body>
 </html>

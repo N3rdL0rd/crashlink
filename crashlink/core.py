@@ -17,7 +17,7 @@ T = TypeVar("T", bound="VarInt")  # HACK: easier than reimplementing deserialise
 
 from .errors import (FailedSerialisation, InvalidOpCode, MalformedBytecode,
                      NoMagic)
-from .globals import dbg_print, tell
+from .globals import dbg_print, fmt_bytes, tell
 from .opcodes import opcodes
 
 try:
@@ -34,6 +34,7 @@ class Serialisable:
     """
     Base class for all serialisable objects.
     """
+
     def __init__(self) -> None:
         self.value: Any = None
         raise NotImplementedError("Serialisable is an abstract class and should not be instantiated.")
@@ -45,10 +46,16 @@ class Serialisable:
         raise NotImplementedError("serialise is not implemented for this class.")
 
     def __str__(self) -> str:
-        return str(self.value)
+        try:
+            return str(self.value)
+        except AttributeError:
+            return super().__repr__()
 
     def __repr__(self) -> str:
-        return str(self.value)
+        try:
+            return str(self.value)
+        except AttributeError:
+            return super().__repr__()
 
     def __eq__(self, other: object) -> Any:
         if not isinstance(other, Serialisable):
@@ -137,11 +144,16 @@ class VarInt(Serialisable):
     """
     Variable-length integer - can be 1, 2, or 4 bytes.
     """
+
+    # Cache struct formats
+    _struct_short = struct.Struct(">H")  # big-endian unsigned short
+    _struct_medium = struct.Struct(">I")  # big-endian unsigned int (for 3 bytes)
+
     def __init__(self, value: int = 0):
         self.value: int = value
 
     def deserialise(self: T, f: BinaryIO | BytesIO) -> T:
-        # Read first byte to determine format
+        # Read first byte - keep int.from_bytes for single byte
         b = int.from_bytes(f.read(1), "big")
 
         # Single byte format (0xxxxxxx)
@@ -151,7 +163,8 @@ class VarInt(Serialisable):
 
         # Two byte format (10xxxxxx)
         if not (b & 0x40):
-            second = int.from_bytes(f.read(1), "big")
+            # Read 2 bytes as unsigned short
+            second = f.read(1)[0]  # Faster than int.from_bytes for single byte
 
             # Combine bytes and handle sign
             self.value = ((b & 0x1F) << 8) | second
@@ -160,7 +173,7 @@ class VarInt(Serialisable):
             return self
 
         # Four byte format (11xxxxxx)
-        remaining = int.from_bytes(f.read(3), "big")
+        remaining = self._struct_medium.unpack(b"\x00" + f.read(3))[0]
 
         # Combine all bytes and handle sign
         self.value = ((b & 0x1F) << 24) | remaining
@@ -206,6 +219,7 @@ class ResolvableVarInt(VarInt):
     """
     Base class for resolvable VarInts. Call `resolve` to get a direct reference to the object it points to.
     """
+
     def resolve(self, code: "Bytecode") -> Any:
         raise NotImplementedError("resolve is not implemented for this class.")
 
@@ -253,6 +267,7 @@ class intRef(ResolvableVarInt):
     """
     Reference to an integer in the bytecode.
     """
+
     def resolve(self, code: "Bytecode") -> SerialisableInt:
         return code.ints[self.value]
 
@@ -261,6 +276,7 @@ class floatRef(ResolvableVarInt):
     """
     Reference to a float in the bytecode.
     """
+
     def resolve(self, code: "Bytecode") -> SerialisableF64:
         return code.floats[self.value]
 
@@ -269,6 +285,7 @@ class bytesRef(ResolvableVarInt):
     """
     Reference to a byte string in the bytecode.
     """
+
     def resolve(self, code: "Bytecode") -> bytes:
         if code.bytes:
             return code.bytes.value[self.value]
@@ -308,6 +325,7 @@ class InlineBool(Serialisable):
     """
     Inline boolean value.
     """
+
     def __init__(self) -> None:
         self.varint = VarInt()
         self.value: bool = False
@@ -360,27 +378,11 @@ class Regs(Serialisable):
         return b"".join([self.n.serialise(), b"".join([value.serialise() for value in self.value])])
 
 
-def fmt_bytes(bytes: int | float) -> str:
-    """
-    Format bytes into a human-readable string.
-    """
-    if bytes < 0:
-        raise MalformedBytecode("Bytes cannot be negative.")
-
-    size_units = ["B", "Kb", "Mb", "Gb", "Tb"]
-    index = 0
-
-    while bytes >= 1000 and index < len(size_units) - 1:
-        bytes /= 1000
-        index += 1
-
-    return f"{bytes:.1f}{size_units[index]}"
-
-
 class StringsBlock(Serialisable):
     """
     Block of strings in the bytecode. Contains a list of strings and their lengths.
     """
+
     def __init__(self) -> None:
         self.length = SerialisableInt()
         self.length.length = 4
@@ -434,6 +436,7 @@ class BytesBlock(Serialisable):
     """
     Block of bytes in the bytecode. Contains a list of byte strings and their lengths.
     """
+
     def __init__(self) -> None:
         self.size = SerialisableInt()
         self.size.length = 4
@@ -1081,39 +1084,39 @@ class Opcode(Serialisable):
         return self.__repr__()
 
 
-def read_u8(f: BinaryIO | BytesIO) -> int:
-    """
-    Reads an unsigned 8-bit integer from the file. Utility function for reimplementation of certain routines in Rust.
-    """
-    return int.from_bytes(f.read(1), byteorder="little", signed=False)
-
-
-def write_u8(f: BinaryIO | BytesIO, val: int) -> None:
-    """
-    Writes an unsigned 8-bit integer to the file. Utility function for reimplementation of certain routines in Rust.
-    """
-    try:
-        f.write(val.to_bytes(1, byteorder="little", signed=False))
-    except OverflowError:
-        raise FailedSerialisation(f"Overflow when writing u8 {val} @ {tell(f)}")
-
-
-class fileRef(int):
+class fileRef(ResolvableVarInt):
     """
     Reference to a file in the debug info.
     """
+
+    def __init__(self, fid: int = 0, line: int = -1) -> None:
+        super().__init__(fid)
+        self.line = line
+
     def resolve(self, code: "Bytecode") -> str:
-        if code.debugfiles:
-            return code.debugfiles.value[self]
-        raise MalformedBytecode("No debug files found.")
+        if not code.debugfiles:
+            raise MalformedBytecode("No debug files found.")
+        return code.debugfiles.value[self.value]
+
+    def resolve_line(self, code: "Bytecode") -> int:
+        return self.line
+
+    def resolve_pretty(self, code: "Bytecode") -> str:
+        return f"{self.resolve(code)}:{self.line}"
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, fileRef):
+            return NotImplemented
+        return self.value == other.value and self.line == other.line
 
 
 class DebugInfo(Serialisable):
     """
     Represents debug information for a function, encoded with a delta encoding scheme for compression.
     """
+
     def __init__(self) -> None:
-        self.debug_info: List[Tuple[fileRef, int]] = []  # file index, line number
+        self.value: List[fileRef] = []
 
     def deserialise(self, f: BinaryIO | BytesIO, nops: int) -> "DebugInfo":
         tmp = []
@@ -1130,20 +1133,20 @@ class DebugInfo(Serialisable):
                 count = (c >> 2) & 15
                 while count > 0:
                     count -= 1
-                    tmp.append((fileRef(currfile), currline))
+                    tmp.append(fileRef(currfile, currline))
                     i += 1
                 currline += delta
             elif c & 4 != 0:
                 currline += c >> 3
-                tmp.append((fileRef(currfile), currline))
+                tmp.append(fileRef(currfile, currline))
                 i += 1
             else:
                 b2 = ctypes.c_uint8(ord(f.read(1))).value
                 b3 = ctypes.c_uint8(ord(f.read(1))).value
                 currline = (c >> 3) | (b2 << 5) | (b3 << 13)
-                tmp.append((fileRef(currfile), currline))
+                tmp.append(fileRef(currfile, currline))
                 i += 1
-        self.debug_info = tmp
+        self.value = tmp
         return self
 
     def flush_repeat(self, w: BinaryIO | BytesIO, curpos: ctypes.c_size_t, rcount: ctypes.c_size_t, pos: int) -> None:
@@ -1166,7 +1169,9 @@ class DebugInfo(Serialisable):
         curpos = ctypes.c_size_t(0)
         rcount = ctypes.c_size_t(0)
 
-        for f, p in self.debug_info:
+        for ref in self.value:
+            f = ref.value
+            p = ref.line
             if f != curfile:
                 self.flush_repeat(w, curpos, rcount, p)
                 curfile = f
@@ -1192,11 +1197,17 @@ class DebugInfo(Serialisable):
 
         return w.getvalue()
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, DebugInfo):
+            return NotImplemented
+        return self.value == other.value
+
 
 class Function(Serialisable):
     """
     Represents a function in the bytecode. Due to the interesting ways in which HashLink works, this does not have a name or a signature, but rather a return type and a list of registers and opcodes.
     """
+
     def __init__(self) -> None:
         self.type = tIndex()
         self.findex = fIndex()
@@ -1213,7 +1224,7 @@ class Function(Serialisable):
     def resolve_file(self, code: "Bytecode") -> str:
         if not self.has_debug or not self.debuginfo:
             raise ValueError("Cannot get file from non-debug bytecode!")
-        return self.debuginfo.debug_info[0][0].resolve(code)
+        return self.debuginfo.value[0].resolve(code)
 
     def deserialise(self, f: BinaryIO | BytesIO, has_debug: bool, version: int) -> "Function":
         self.has_debug = has_debug
@@ -1259,6 +1270,7 @@ class Constant(Serialisable):
     """
     Represents a bytecode constant.
     """
+
     def __init__(self) -> None:
         self._global = gIndex()
         self.nfields = VarInt()
@@ -1284,9 +1296,10 @@ class Constant(Serialisable):
 class Bytecode(Serialisable):
     """
     The main bytecode class. To read a bytecode file, use the `from_path` class method.
-    
+
     For more information about the overall structure, see [here](https://n3rdl0rd.github.io/ModDocCE/files/hlboot)
     """
+
     def __init__(self) -> None:
         self.deserialised = False
         self.magic = RawData(3)
@@ -1318,6 +1331,8 @@ class Bytecode(Serialisable):
         self.natives: List[Native] = []
         self.functions: List[Function] = []
         self.constants: List[Constant] = []
+        
+        self.initialized_globals: Dict[int, Any] = {}
 
         self.section_offsets: Dict[str, int] = {}
 
@@ -1460,8 +1475,35 @@ class Bytecode(Serialisable):
                 self.constants.append(Constant().deserialise(f))
         dbg_print(f"Bytecode end at {tell(f)}.")
         self.deserialised = True
+        dbg_print("Initializing globals...")
+        self.init_globals()
         dbg_print(f"{(datetime.now() - start_time).total_seconds()}s elapsed.")
         return self
+
+    def init_globals(self) -> None:
+        for const in self.constants:
+            res = {}
+            obj = const._global.resolve(self).definition
+            if not isinstance(obj, Obj):
+                dbg_print("WARNING: Skipping non-Obj constant.")
+                continue
+            obj_fields = obj.resolve_fields(self)
+            for i, field in enumerate(const.fields):
+                # Field has:
+                # - name: strRef
+                # - type: tIndex
+                # we need to use the type to know how to resolve the const ref to the actual value
+                typ = obj_fields[i].type.resolve(self).definition
+                name = obj_fields[i].name.resolve(self)
+                if isinstance(typ, I32) or isinstance(typ, U8) or isinstance(typ, U16) or isinstance(typ, I64):
+                    res[name] = self.ints[field.value].value
+                elif isinstance(typ, F32) or isinstance(typ, F64):
+                    res[name] = self.floats[field.value].value
+                elif isinstance(typ, Bytes):
+                    if self.version.value >= 5:
+                        res[name] = self.bytes.value[field.value] # TODO: verify that this is correct behaviour for >=5
+                    else:
+                        res[name] = self.strings.value[field.value]
 
     def fn(self, findex: int, native: bool = True) -> Function | Native:
         for f in self.functions:
