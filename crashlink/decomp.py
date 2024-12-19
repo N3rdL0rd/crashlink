@@ -11,6 +11,12 @@ from .core import *
 from .errors import *
 from .globals import dbg_print
 
+def _get_type_in_code(code: Bytecode, name: str) -> Type:
+    for type in code.types:
+        if disasm.type_name(code, type) == name:
+            return type
+    raise DecompError(f"Type {name} not found in code")
+
 
 class CFNode:
     """
@@ -275,6 +281,7 @@ class CFGraph:
 class IRStatement(ABC):
     def __init__(self, code: Bytecode):
         self.code = code
+        self.comment: Optional[str] = None
 
     @abstractmethod
     def __repr__(self) -> str:
@@ -304,8 +311,18 @@ class IRBlock(IRStatement):
             if isinstance(stmt, IRConditional):
                 cond_lines = str(stmt).split("\n")
                 formatted_statements.append(base_indent + cond_lines[0])
-                for line in cond_lines[1:]:
-                    formatted_statements.append(base_indent + line)
+
+                true_block_lines = str(stmt.true_block).split("\n")
+                for line in true_block_lines:
+                    if line.strip():
+                        formatted_statements.append(base_indent + "    " + line.strip())
+
+                formatted_statements.append(base_indent + "else")
+
+                false_block_lines = str(stmt.false_block).split("\n")
+                for line in false_block_lines:
+                    if line.strip():
+                        formatted_statements.append(base_indent + "    " + line.strip())
             else:
                 formatted_statements.append(base_indent + str(stmt))
 
@@ -380,24 +397,41 @@ class IRAssign(IRStatement):
         return f"<IRAssign: {self.target} = {self.expr} ({disasm.type_name(self.code, self.expr.get_type())})>"
 
 
-# class IRCall(IRStatement):
-#     """A function call"""
-#     class CallType(_Enum):
-#         FUNC = 0
-#         METHOD = 1
-#         THIS = 2
-#         CLOSURE = 3
+class IRCall(IRExpression):
+    """Function call expression"""
 
-#     def __init__(self, code: Bytecode, dst: IRLocal, func: IRLocal, args: List[IRLocal], call_type: "IRCall.CallType"):
-#         super().__init__(code)
-#         self.dst = dst
-#         self.func = func
-#         self.args = args
-#         self.call_type = call_type
+    class CallType(_Enum):
+        FUNC = "func"
+        NATIVE = "native"
+        THIS = "this"
+        CLOSURE = "closure"
+        METHOD = "method"
 
-#     def __repr__(self) -> str:
-#         return f"<IRCall: {self.dst} = {self.func}({', '.join(map(str, self.args))})>"
-# TODO: IRExpression for calls
+    def __init__(
+        self, code: Bytecode, call_type: "IRCall.CallType", target: "IRConst|IRLocal|None", args: List[IRExpression]
+    ):
+        super().__init__(code)
+        self.call_type = call_type
+        self.target = target
+        self.args = args
+        if self.call_type == IRCall.CallType.THIS and self.target is not None:
+            raise DecompError("THIS calls must have a None target")
+        if self.call_type != IRCall.CallType.CLOSURE and isinstance(self.target, IRLocal):
+            raise DecompError("Non-CLOSURE calls must have a constant target")
+
+    def get_type(self) -> Type:
+        # for now, assume closure calls return dynamic type
+        if self.call_type == IRCall.CallType.CLOSURE:
+            for type in self.code.types:
+                if disasm.type_name(self.code, type) == "Dyn":
+                    return type
+            raise DecompError("Dyn type not found in code")
+        if self.call_type == IRCall.CallType.THIS or self.target is None:
+            return _get_type_in_code(self.code, "Obj")
+        return self.target.get_type()
+
+    def __repr__(self) -> str:
+        return f"<IRCall: {self.target}({', '.join([str(arg) for arg in self.args])})>"
 
 
 class IRBoolExpr(IRExpression):
@@ -414,6 +448,7 @@ class IRBoolExpr(IRExpression):
         NOT_NULL = "is not null"
         TRUE = "true"
         FALSE = "false"
+        NOT = "not"
 
     def __init__(
         self,
@@ -433,10 +468,36 @@ class IRBoolExpr(IRExpression):
             if disasm.type_name(self.code, type) == "Bool":
                 return type
         raise DecompError("Bool type not found in code")
+    
+    def invert(self) -> None:
+        if self.op == IRBoolExpr.CompareType.NOT:
+            raise DecompError("Cannot invert NOT operation")
+        if self.op in [IRBoolExpr.CompareType.TRUE, IRBoolExpr.CompareType.FALSE]:
+            raise DecompError("Cannot invert TRUE/FALSE operation")
+        if self.op == IRBoolExpr.CompareType.NULL:
+            self.op = IRBoolExpr.CompareType.NOT_NULL
+        elif self.op == IRBoolExpr.CompareType.NOT_NULL:
+            self.op = IRBoolExpr.CompareType.NULL
+        elif self.op == IRBoolExpr.CompareType.EQ:
+            self.op = IRBoolExpr.CompareType.NEQ
+        elif self.op == IRBoolExpr.CompareType.NEQ:
+            self.op = IRBoolExpr.CompareType.EQ
+        elif self.op == IRBoolExpr.CompareType.LT:
+            self.op = IRBoolExpr.CompareType.GTE
+        elif self.op == IRBoolExpr.CompareType.GTE:
+            self.op = IRBoolExpr.CompareType.LT
+        elif self.op == IRBoolExpr.CompareType.GT:
+            self.op = IRBoolExpr.CompareType.LTE
+        elif self.op == IRBoolExpr.CompareType.LTE:
+            self.op = IRBoolExpr.CompareType.GT
+        else:
+            raise DecompError(f"Unknown IRBoolExpr type: {self.op}")
 
     def __repr__(self) -> str:
         if self.op in [IRBoolExpr.CompareType.NULL, IRBoolExpr.CompareType.NOT_NULL]:
             return f"<IRBoolExpr: {self.left} {self.op.value}>"
+        elif self.op == IRBoolExpr.CompareType.NOT:
+            return f"<IRBoolExpr: {self.op.value} {self.left}>"
         elif self.op in [IRBoolExpr.CompareType.TRUE, IRBoolExpr.CompareType.FALSE]:
             return f"<IRBoolExpr: {self.op.value}>"
         return f"<IRBoolExpr: {self.left} {self.op.value} {self.right}>"
@@ -452,6 +513,7 @@ class IRConst(IRExpression):
         BYTES = "bytes"
         STRING = "string"
         NULL = "null"
+        FUN = "fun"
 
     def __init__(
         self,
@@ -474,12 +536,6 @@ class IRConst(IRExpression):
             self.value = idx.resolve(code)
 
     def get_type(self) -> Type:
-        def _get_type_in_code(code: Bytecode, name: str) -> Type:
-            for type in code.types:
-                if disasm.type_name(code, type) == name:
-                    return type
-            raise DecompError(f"Type {name} not found in code")
-
         if self.const_type == IRConst.ConstType.INT:
             return _get_type_in_code(self.code, "I32")
         elif self.const_type == IRConst.ConstType.FLOAT:
@@ -492,10 +548,19 @@ class IRConst(IRExpression):
             return _get_type_in_code(self.code, "String")
         elif self.const_type == IRConst.ConstType.NULL:
             return _get_type_in_code(self.code, "Null")
+        elif self.const_type == IRConst.ConstType.FUN:
+            if not isinstance(self.value, Function):
+                raise DecompError(f"Expected function index to resolve to a function, got {self.value}")
+            res = self.value.type.resolve(self.code)
+            if isinstance(res, Type):
+                return res
+            raise DecompError(f"Expected function return to resolve to a type, got {res}")
         else:
             raise DecompError(f"Unknown IRConst type: {self.const_type}")
 
     def __repr__(self) -> str:
+        if isinstance(self.value, Function):
+            return f"<IRConst: {disasm.func_header(self.code, self.value)}>"
         return f"<IRConst: {self.value}>"
 
 
@@ -507,10 +572,41 @@ class IRConditional(IRStatement):
         self.condition = condition
         self.true_block = true_block
         self.false_block = false_block
+        
+    def invert(self) -> None:
+        self.true_block, self.false_block = self.false_block, self.true_block
+        if isinstance(self.condition, IRBoolExpr):
+            self.condition.invert()
+        else:
+            old_cond = self.condition
+            self.condition = IRBoolExpr(self.code, IRBoolExpr.CompareType.NOT, old_cond)
 
     def __repr__(self) -> str:
         return f"<IRConditional: if {self.condition} then\n{self.true_block}\nelse\n{self.false_block}>"
 
+
+class IRReturn(IRStatement):
+    """Return statement"""
+
+    def __init__(self, code: Bytecode, value: Optional[IRExpression]=None):
+        super().__init__(code)
+        self.value = value
+
+    def __repr__(self) -> str:
+        return f"<IRReturn: {self.value}>"
+    
+class IRTrace(IRStatement):
+    """Trace statement"""
+
+    def __init__(self, code: Bytecode, filename: gIndex, line: int, class_name: gIndex, method_name: gIndex):
+        super().__init__(code)
+        self.filename = filename
+        self.line = line
+        self.class_name = class_name
+        self.method_name = method_name
+
+    def __repr__(self) -> str:
+        return f"<IRTrace: {self.value}>"
 
 class IRFunction:
     """
@@ -526,6 +622,7 @@ class IRFunction:
         self.locals: List[IRLocal] = []
         self.block: IRBlock
         self._lift()
+        self._optimize()
 
     def _lift(self) -> None:
         """Lift function to IR"""
@@ -536,6 +633,10 @@ class IRFunction:
             self.block = self._lift_block(self.cfg.entry)
         else:
             raise DecompError("Function CFG has no entry node, cannot lift to IR")
+
+    def _optimize(self) -> None:
+        """Optimize the IR"""
+        pass  # TODO
 
     def _name_locals(self) -> None:
         """Name locals based on debug info"""
@@ -631,7 +732,6 @@ class IRFunction:
                 "JEq",
                 "JNotEq",
             ]:
-
                 jump_to_compare = {
                     "JTrue": IRBoolExpr.CompareType.TRUE,
                     "JFalse": IRBoolExpr.CompareType.FALSE,
@@ -659,32 +759,47 @@ class IRFunction:
                     right = self.locals[op.definition["b"].value]
                     condition = IRBoolExpr(self.code, jump_to_compare[op.op], left, right)
 
-                # Find branches
-                true_branch = None
-                false_branch = None
+                true_node = None
+                false_node = None
+
                 for next_node, edge_type in node.branches:
                     if edge_type == "true":
-                        true_branch = self._lift_block(next_node, visited)
+                        true_node = next_node
                     elif edge_type == "false":
-                        false_branch = self._lift_block(next_node, visited)
+                        false_node = next_node
 
-                if true_branch and false_branch:
-                    block.statements.append(IRConditional(self.code, condition, true_branch, false_branch))
-                    return block
+                if true_node or false_node:
+                    true_block = self._lift_block(true_node, visited.copy()) if true_node else IRBlock(self.code)
+                    false_block = self._lift_block(false_node, visited.copy()) if false_node else IRBlock(self.code)
+                    cond = IRConditional(self.code, condition, true_block, false_block)
+                    #cond.invert()
+                    block.statements.append(cond)
 
-            # Handle unconditional jumps
-            elif op.op == "JAlways":
-                for next_node, edge_type in node.branches:
-                    if edge_type == "unconditional":
-                        next_block = self._lift_block(next_node, visited)
-                        block.statements.extend(next_block.statements)
-                        return block
+            # NOTE: never EVER handle JAlways here, jump threading is already done with the CFG
 
-        # Handle fall-through
-        for next_node, edge_type in node.branches:
-            if edge_type == "unconditional":
-                next_block = self._lift_block(next_node, visited)
-                block.statements.extend(next_block.statements)
+            elif op.op in ["Call0", "Call1", "Call2", "Call3", "Call4"]:
+                n = int(op.op[-1])
+                dst = self.locals[op.definition["dst"].value]
+                fun = IRConst(self.code, IRConst.ConstType.FUN, op.definition["fun"])
+                args = [self.locals[op.definition[f"arg{i}"].value] for i in range(n)]
+                block.statements.append(IRAssign(self.code, dst, IRCall(self.code, IRCall.CallType.FUNC, fun, args)))
+            
+            elif op.op == "CallMethod":
+                dst = self.locals[op.definition["dst"].value]
+                target = self.locals[op.definition["target"].value]
+                args = [self.locals[op.definition[f"arg{i}"].value] for i in range(op.definition["nargs"].value)]
+                block.statements.append(IRAssign(self.code, dst, IRCall(self.code, IRCall.CallType.METHOD, target, args)))
+            
+            elif op.op == "CallThis":
+                dst = self.locals[op.definition["dst"].value]
+                args = [self.locals[op.definition[f"arg{i}"].value] for i in range(op.definition["nargs"].value)]
+                block.statements.append(IRAssign(self.code, dst, IRCall(self.code, IRCall.CallType.THIS, None, args)))
+                
+            elif op.op == "Ret":
+                if isinstance(op.definition["ret"].resolve(self.code).definition, Void):
+                    block.statements.append(IRReturn(self.code))
+                else:
+                    block.statements.append(IRReturn(self.code, self.locals[op.definition["ret"].value]))
 
         return block
 

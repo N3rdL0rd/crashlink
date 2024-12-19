@@ -258,7 +258,7 @@ def pseudo_from_op(
 
         # Function Calls
         case "CallClosure":
-            args = ', '.join([f'reg{arg}' for arg in op.definition['args'].value])
+            args = ", ".join([f"reg{arg}" for arg in op.definition["args"].value])
             if type(regs[op.definition["dst"].value].resolve(code).definition) == Void:
                 return f"reg{op.definition['fun']}({args})"
             return f"reg{op.definition['dst']} = reg{op.definition['fun']}({args})"
@@ -315,12 +315,18 @@ def fmt_op(
     op: Opcode,
     idx: int,
     width: int = 15,
+    debug: Optional[List[fileRef]] = None,
 ) -> str:
     """
     Formats an opcode into a table row.
     """
     defn = op.definition
-    return f"{idx:>3}. {op.op:<{width}} {str(defn):<{48}} {pseudo_from_op(op, idx, regs, code):<{width}}"
+    file_info = ""
+    if debug:
+        file = debug[idx].resolve_pretty(code)  # str: "file:line"
+        file_info = f"[{file}] "
+
+    return f"{file_info}{idx:>3}. {op.op:<{width}} {str(defn):<{48}} {pseudo_from_op(op, idx, regs, code):<{width}}"
 
 
 def func(code: Bytecode, func: Function | Native) -> str:
@@ -340,7 +346,7 @@ def func(code: Bytecode, func: Function | Native) -> str:
             res += f"Op {assign[1].value - 1}: {assign[0].resolve(code)}\n"
     res += "\nOps:\n"
     for i, op in enumerate(func.ops):
-        res += fmt_op(code, func.regs, op, i) + "\n"
+        res += fmt_op(code, func.regs, op, i, debug=func.debuginfo.value if func.debuginfo else None) + "\n"
     return res
 
 

@@ -4,7 +4,6 @@ from crashlink import VarInt
 
 
 def test_range():
-    # values = list(range(0, 20000000, 10000))
     for value in range(0, 20000000, 10000):
         test = VarInt(value)
         ser = BytesIO(test.serialise())
