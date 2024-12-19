@@ -12,3 +12,5 @@ hl/
 *.prof
 *.json
 build*.bat
+pypi_token.txt
+testenv

@@ -113,4 +113,4 @@ You can use the following pre-defined commands with `just`:
 - Thank you to [Haxe Foundation](https://haxe.org/) for creating the HashLink VM and the Haxe programming language.
 - And a big thank you to you, dear user, for being at least partially interested in this project.
 
-:heart: N3rdL0rd
+❤ N3rdL0rd
