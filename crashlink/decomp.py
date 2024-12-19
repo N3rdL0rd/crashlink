@@ -11,6 +11,7 @@ from .core import *
 from .errors import *
 from .globals import dbg_print
 
+
 def _get_type_in_code(code: Bytecode, name: str) -> Type:
     for type in code.types:
         if disasm.type_name(code, type) == name:
@@ -468,7 +469,7 @@ class IRBoolExpr(IRExpression):
             if disasm.type_name(self.code, type) == "Bool":
                 return type
         raise DecompError("Bool type not found in code")
-    
+
     def invert(self) -> None:
         if self.op == IRBoolExpr.CompareType.NOT:
             raise DecompError("Cannot invert NOT operation")
@@ -572,7 +573,7 @@ class IRConditional(IRStatement):
         self.condition = condition
         self.true_block = true_block
         self.false_block = false_block
-        
+
     def invert(self) -> None:
         self.true_block, self.false_block = self.false_block, self.true_block
         if isinstance(self.condition, IRBoolExpr):
@@ -588,13 +589,14 @@ class IRConditional(IRStatement):
 class IRReturn(IRStatement):
     """Return statement"""
 
-    def __init__(self, code: Bytecode, value: Optional[IRExpression]=None):
+    def __init__(self, code: Bytecode, value: Optional[IRExpression] = None):
         super().__init__(code)
         self.value = value
 
     def __repr__(self) -> str:
         return f"<IRReturn: {self.value}>"
-    
+
+
 class IRTrace(IRStatement):
     """Trace statement"""
 
@@ -606,7 +608,8 @@ class IRTrace(IRStatement):
         self.method_name = method_name
 
     def __repr__(self) -> str:
-        return f"<IRTrace: {self.value}>"
+        return f"<IRTrace>" # TODO: resolve globals
+
 
 class IRFunction:
     """
@@ -772,7 +775,7 @@ class IRFunction:
                     true_block = self._lift_block(true_node, visited.copy()) if true_node else IRBlock(self.code)
                     false_block = self._lift_block(false_node, visited.copy()) if false_node else IRBlock(self.code)
                     cond = IRConditional(self.code, condition, true_block, false_block)
-                    #cond.invert()
+                    # cond.invert()
                     block.statements.append(cond)
 
             # NOTE: never EVER handle JAlways here, jump threading is already done with the CFG
@@ -783,18 +786,20 @@ class IRFunction:
                 fun = IRConst(self.code, IRConst.ConstType.FUN, op.definition["fun"])
                 args = [self.locals[op.definition[f"arg{i}"].value] for i in range(n)]
                 block.statements.append(IRAssign(self.code, dst, IRCall(self.code, IRCall.CallType.FUNC, fun, args)))
-            
+
             elif op.op == "CallMethod":
                 dst = self.locals[op.definition["dst"].value]
                 target = self.locals[op.definition["target"].value]
                 args = [self.locals[op.definition[f"arg{i}"].value] for i in range(op.definition["nargs"].value)]
-                block.statements.append(IRAssign(self.code, dst, IRCall(self.code, IRCall.CallType.METHOD, target, args)))
-            
+                block.statements.append(
+                    IRAssign(self.code, dst, IRCall(self.code, IRCall.CallType.METHOD, target, args))
+                )
+
             elif op.op == "CallThis":
                 dst = self.locals[op.definition["dst"].value]
                 args = [self.locals[op.definition[f"arg{i}"].value] for i in range(op.definition["nargs"].value)]
                 block.statements.append(IRAssign(self.code, dst, IRCall(self.code, IRCall.CallType.THIS, None, args)))
-                
+
             elif op.op == "Ret":
                 if isinstance(op.definition["ret"].resolve(self.code).definition, Void):
                     block.statements.append(IRReturn(self.code))
