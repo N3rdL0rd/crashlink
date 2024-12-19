@@ -13,7 +13,7 @@ from collections.abc import Callable
 from typing import Dict, List, Tuple
 
 from . import decomp, disasm
-from .core import Bytecode
+from .core import Bytecode, Native
 from .globals import VERSION
 
 
@@ -80,25 +80,6 @@ def cmd_fn(args: List[str], code: Bytecode) -> None:
     print("Function not found.")
 
 
-# def cmd_decomp(args, code: Bytecode):
-#     if not args:
-#         print("Usage: decomp <index>")
-#         return
-#     try:
-#         index = int(args[0])
-#     except ValueError:
-#         print("Invalid index.")
-#         return
-#     for func in code.functions:
-#         if func.findex.value == index:
-#             decomp = decomp.Decompiler(code)
-#             decomp.func(func)
-#             for i, layer in enumerate(decomp.ir_layers):
-#                 print(f"--- IR Layer {i} ---")
-#                 print(layer)
-#             return
-
-
 def cmd_cfg(args: List[str], code: Bytecode) -> None:
     """
     Renders a control flow graph for a given findex and attempts to open it in the default image viewer.s
@@ -160,6 +141,7 @@ def cmd_ir(args: List[str], code: Bytecode) -> None:
             return
     print("Function not found.")
 
+
 def cmd_patch(args: List[str], code: Bytecode) -> None:
     if not args:
         print("Usage: patch <index>")
@@ -174,57 +156,61 @@ def cmd_patch(args: List[str], code: Bytecode) -> None:
     except ValueError:
         print("Function not found.")
         return
+    if isinstance(func, Native):
+        print("Cannot patch native.")
+        return
     content = f"""{disasm.func(code, func)}
 
 ###### Modify the opcodes below this line. Any edits above this line will be ignored, and removing this line will cause patching to fail. #####
 {disasm.to_asm(func.ops)}"""
-    with tempfile.NamedTemporaryFile(suffix=".hlasm", delete=False) as f:
-        f.write(content.encode())
+    with tempfile.NamedTemporaryFile(suffix=".hlasm", mode="w", encoding="utf-8", delete=False) as f:
+        f.write(content)
         file = f.name
     try:
         import tkinter as tk
         from tkinter import scrolledtext
-        
-        def save_and_exit():
-            with open(file, 'w', encoding='utf-8') as f:
-                f.write(text.get('1.0', tk.END))
+
+        def save_and_exit() -> None:
+            with open(file, "w", encoding="utf-8") as f:
+                f.write(text.get("1.0", tk.END))
             root.destroy()
-            
+
         root = tk.Tk()
         root.title(f"Editing function f@{index}")
         text = scrolledtext.ScrolledText(root, width=200, height=50)
         text.pack()
-        text.insert('1.0', content)
-        
+        text.insert("1.0", content)
+
         button = tk.Button(root, text="Save and Exit", command=save_and_exit)
         button.pack()
-        
+
         root.mainloop()
     except ImportError:
-        if os.name == 'nt':
+        if os.name == "nt":
             os.system(f'notepad "{file}"')
-        elif os.name == 'posix':
+        elif os.name == "posix":
             os.system(f'nano "{file}"')
         else:
             print("No suitable editor found")
             os.unlink(file)
             return
     try:
-        with open(file, 'r', encoding='utf-8') as f:
-            modified = f.read()
-        
-        lines = modified.split('\n')
-        sep_idx = next(i for i, line in enumerate(lines) if '######' in line)
-        new_asm = '\n'.join(lines[sep_idx + 1:])
+        with open(file, "r", encoding="utf-8") as f2: # whyyyy mypy, whyyyy???
+            modified = f2.read()
+
+        lines = modified.split("\n")
+        sep_idx = next(i for i, line in enumerate(lines) if "######" in line)
+        new_asm = "\n".join(lines[sep_idx + 1 :])
         new_ops = disasm.from_asm(new_asm)
-        
+
         func.ops = new_ops
         print(f"Function f@{index} updated successfully")
-    
+
     except Exception as e:
         print(f"Failed to patch function: {e}")
     finally:
         os.unlink(file)
+
 
 def cmd_save(args: List[str], code: Bytecode) -> None:
     if not args:
@@ -233,7 +219,7 @@ def cmd_save(args: List[str], code: Bytecode) -> None:
     print("Serialising...")
     ser = code.serialise()
     print("Saving...")
-    with open(args[0], 'wb') as f:
+    with open(args[0], "wb") as f:
         f.write(ser)
     print("Done!")
 

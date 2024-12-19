@@ -1331,7 +1331,7 @@ class Bytecode(Serialisable):
         self.natives: List[Native] = []
         self.functions: List[Function] = []
         self.constants: List[Constant] = []
-        
+
         self.initialized_globals: Dict[int, Any] = {}
 
         self.section_offsets: Dict[str, int] = {}
@@ -1482,7 +1482,7 @@ class Bytecode(Serialisable):
 
     def init_globals(self) -> None:
         for const in self.constants:
-            res = {}
+            res: Dict[str, Any] = {}
             obj = const._global.resolve(self).definition
             if not isinstance(obj, Obj):
                 dbg_print("WARNING: Skipping non-Obj constant.")
@@ -1500,8 +1500,8 @@ class Bytecode(Serialisable):
                 elif isinstance(typ, F32) or isinstance(typ, F64):
                     res[name] = self.floats[field.value].value
                 elif isinstance(typ, Bytes):
-                    if self.version.value >= 5:
-                        res[name] = self.bytes.value[field.value] # TODO: verify that this is correct behaviour for >=5
+                    if self.version.value >= 5 and self.bytes:
+                        res[name] = self.bytes.value[field.value]  # TODO: verify that this is correct behaviour for >=5
                     else:
                         res[name] = self.strings.value[field.value]
 
