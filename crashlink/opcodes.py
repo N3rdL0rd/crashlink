@@ -299,5 +299,5 @@ CallN. [1, 2, 3]
 Ret. 1
 ```
 
-When writing opcodes in this format, seperate each argument to the opcode with a period. For opcodes that require lists, pass them in JSON format, e.g. `CallN. [reg, reg, reg, reg]`.
+When writing opcodes in this format, separate each argument to the opcode with a period. For opcodes that require lists, pass them in JSON format, e.g. `CallN. [reg, reg, reg, reg]`.
 """
