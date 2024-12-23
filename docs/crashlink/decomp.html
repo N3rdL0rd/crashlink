@@ -238,12 +238,13 @@ el.replaceWith(d);
             elif last_op.op != &#34;Ret&#34; and next_idx in nodes_by_idx:
                 self.add_branch(src_node, nodes_by_idx[next_idx], &#34;unconditional&#34;)
 
-        # fmt: off
-        self.optimize([
-            CFJumpThreader(self),
-            CFDeadCodeEliminator(self),
-        ])
-        # fmt: on
+        if do_optimize:
+            # fmt: off
+            self.optimize([
+                CFJumpThreader(self),
+                CFDeadCodeEliminator(self),
+            ])
+            # fmt: on
 
     def optimize(self, optimizers: List[CFOptimizer]) -&gt; None:
         for optimizer in optimizers:
@@ -300,7 +301,15 @@ el.replaceWith(d);
                 dot.append(f&#34;  node_{id(node)} -&gt; node_{id(branch)} [{style}];&#34;)
 
         dot.append(&#34;}&#34;)
-        return &#34;\n&#34;.join(dot)</code></pre>
+        return &#34;\n&#34;.join(dot)
+
+    def num_incoming(self, node: CFNode) -&gt; int:
+        count = 0
+        for n in self.nodes:
+            for branch, _ in n.branches:
+                if branch == node:
+                    count += 1
+        return count</code></pre>
 </details>
 <div class="desc"><p>A control flow graph.</p></div>
 <h3>Methods</h3>
@@ -443,12 +452,13 @@ el.replaceWith(d);
         elif last_op.op != &#34;Ret&#34; and next_idx in nodes_by_idx:
             self.add_branch(src_node, nodes_by_idx[next_idx], &#34;unconditional&#34;)
 
-    # fmt: off
-    self.optimize([
-        CFJumpThreader(self),
-        CFDeadCodeEliminator(self),
-    ])
-    # fmt: on</code></pre>
+    if do_optimize:
+        # fmt: off
+        self.optimize([
+            CFJumpThreader(self),
+            CFDeadCodeEliminator(self),
+        ])
+        # fmt: on</code></pre>
 </details>
 <div class="desc"><p>Build the control flow graph.</p></div>
 </dd>
@@ -504,6 +514,24 @@ el.replaceWith(d);
     return &#34;\n&#34;.join(dot)</code></pre>
 </details>
 <div class="desc"><p>Generate DOT format graph visualization.</p></div>
+</dd>
+<dt id="crashlink.decomp.CFGraph.num_incoming"><code class="name flex">
+<span>def <span class="ident">num_incoming</span></span>(<span>self,<br>node: <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>) ‑> int</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def num_incoming(self, node: CFNode) -&gt; int:
+    count = 0
+    for n in self.nodes:
+        for branch, _ in n.branches:
+            if branch == node:
+                count += 1
+    return count</code></pre>
+</details>
+<div class="desc"></div>
 </dd>
 <dt id="crashlink.decomp.CFGraph.optimize"><code class="name flex">
 <span>def <span class="ident">optimize</span></span>(<span>self,<br>optimizers: List[<a title="crashlink.decomp.CFOptimizer" href="#crashlink.decomp.CFOptimizer">CFOptimizer</a>]) ‑> None</span>
@@ -850,6 +878,8 @@ el.replaceWith(d);
         GTE = &#34;&gt;=&#34;
         NULL = &#34;is null&#34;
         NOT_NULL = &#34;is not null&#34;
+        ISTRUE = &#34;is true&#34;
+        ISFALSE = &#34;is false&#34;
         TRUE = &#34;true&#34;
         FALSE = &#34;false&#34;
         NOT = &#34;not&#34;
@@ -876,9 +906,15 @@ el.replaceWith(d);
     def invert(self) -&gt; None:
         if self.op == IRBoolExpr.CompareType.NOT:
             raise DecompError(&#34;Cannot invert NOT operation&#34;)
-        if self.op in [IRBoolExpr.CompareType.TRUE, IRBoolExpr.CompareType.FALSE]:
-            raise DecompError(&#34;Cannot invert TRUE/FALSE operation&#34;)
-        if self.op == IRBoolExpr.CompareType.NULL:
+        elif self.op == IRBoolExpr.CompareType.TRUE:
+            self.op = IRBoolExpr.CompareType.FALSE
+        elif self.op == IRBoolExpr.CompareType.FALSE:
+            self.op = IRBoolExpr.CompareType.TRUE
+        elif self.op == IRBoolExpr.CompareType.ISTRUE:
+            self.op = IRBoolExpr.CompareType.ISFALSE
+        elif self.op == IRBoolExpr.CompareType.ISFALSE:
+            self.op = IRBoolExpr.CompareType.ISTRUE
+        elif self.op == IRBoolExpr.CompareType.NULL:
             self.op = IRBoolExpr.CompareType.NOT_NULL
         elif self.op == IRBoolExpr.CompareType.NOT_NULL:
             self.op = IRBoolExpr.CompareType.NULL
@@ -904,6 +940,8 @@ el.replaceWith(d);
             return f&#34;&lt;IRBoolExpr: {self.op.value} {self.left}&gt;&#34;
         elif self.op in [IRBoolExpr.CompareType.TRUE, IRBoolExpr.CompareType.FALSE]:
             return f&#34;&lt;IRBoolExpr: {self.op.value}&gt;&#34;
+        elif self.op in [IRBoolExpr.CompareType.ISTRUE, IRBoolExpr.CompareType.ISFALSE]:
+            return f&#34;&lt;IRBoolExpr: {self.left} {self.op.value}&gt;&#34;
         return f&#34;&lt;IRBoolExpr: {self.left} {self.op.value} {self.right}&gt;&#34;</code></pre>
 </details>
 <div class="desc"><p>Base class for boolean expressions</p></div>
@@ -933,9 +971,15 @@ el.replaceWith(d);
 <pre><code class="python">def invert(self) -&gt; None:
     if self.op == IRBoolExpr.CompareType.NOT:
         raise DecompError(&#34;Cannot invert NOT operation&#34;)
-    if self.op in [IRBoolExpr.CompareType.TRUE, IRBoolExpr.CompareType.FALSE]:
-        raise DecompError(&#34;Cannot invert TRUE/FALSE operation&#34;)
-    if self.op == IRBoolExpr.CompareType.NULL:
+    elif self.op == IRBoolExpr.CompareType.TRUE:
+        self.op = IRBoolExpr.CompareType.FALSE
+    elif self.op == IRBoolExpr.CompareType.FALSE:
+        self.op = IRBoolExpr.CompareType.TRUE
+    elif self.op == IRBoolExpr.CompareType.ISTRUE:
+        self.op = IRBoolExpr.CompareType.ISFALSE
+    elif self.op == IRBoolExpr.CompareType.ISFALSE:
+        self.op = IRBoolExpr.CompareType.ISTRUE
+    elif self.op == IRBoolExpr.CompareType.NULL:
         self.op = IRBoolExpr.CompareType.NOT_NULL
     elif self.op == IRBoolExpr.CompareType.NOT_NULL:
         self.op = IRBoolExpr.CompareType.NULL
@@ -1309,6 +1353,34 @@ def get_type(self) -&gt; Type:
                 local.name = reg_assigns[i].pop()
         dbg_print(&#34;Named locals:&#34;, self.locals)
 
+    def _find_convergence(self, true_node: CFNode, false_node: CFNode, visited: Set[CFNode]) -&gt; Optional[CFNode]:
+        &#34;&#34;&#34;Find where two branches of a conditional converge by following their control flow&#34;&#34;&#34;
+        true_visited = set()
+        false_visited = set()
+        true_queue = [true_node]
+        false_queue = [false_node]
+
+        while true_queue or false_queue:
+            if true_queue:
+                node = true_queue.pop(0)
+                if node in false_visited:
+                    return node
+                true_visited.add(node)
+                for next_node, _ in node.branches:
+                    if next_node not in true_visited:
+                        true_queue.append(next_node)
+
+            if false_queue:
+                node = false_queue.pop(0)
+                if node in true_visited:
+                    return node
+                false_visited.add(node)
+                for next_node, _ in node.branches:
+                    if next_node not in false_visited:
+                        false_queue.append(next_node)
+
+        return None  # No convergence found
+
     def _lift_block(self, node: CFNode, visited: Optional[Set[CFNode]] = None) -&gt; IRBlock:
         &#34;&#34;&#34;Lift a control flow node to an IR block&#34;&#34;&#34;
         if visited is None:
@@ -1354,7 +1426,7 @@ def get_type(self) -&gt; Type:
                 else:
                     const = IRConst(self.code, const_type, value=value)
                 block.statements.append(IRAssign(self.code, dst, const))
-            # Handle conditionals
+
             elif op.op in [
                 &#34;JTrue&#34;,
                 &#34;JFalse&#34;,
@@ -1369,9 +1441,35 @@ def get_type(self) -&gt; Type:
                 &#34;JEq&#34;,
                 &#34;JNotEq&#34;,
             ]:
-                jump_to_compare = {
-                    &#34;JTrue&#34;: IRBoolExpr.CompareType.TRUE,
-                    &#34;JFalse&#34;: IRBoolExpr.CompareType.FALSE,
+                # conditionals create a diamond shape in the IR - the two branches will at some point converge again.
+                # TODO: loop support and detection
+                true_branch = None
+                false_branch = None
+                for branch_node, edge_type in node.branches:
+                    if edge_type == &#34;true&#34;:
+                        true_branch = branch_node
+                    elif edge_type == &#34;false&#34;:
+                        false_branch = branch_node
+                if true_branch is None or false_branch is None:
+                    raise DecompError(&#34;Conditional jump missing true/false branch. Check CFG generation maybe?&#34;)
+
+                # HACK: blocks that have multiple branches coming into them shouldn&#39;t exist for generated if statements.
+                # therefore, we can assume that if a conditional branch leads to a node that has multiple incoming branches,
+                # it&#39;s an empty block and that&#39;s what comes *after* the conditional branches altogether.
+                should_lift_t = True
+                should_lift_f = True
+                if self.cfg.num_incoming(true_branch) &gt; 1:
+                    should_lift_t = False
+                if self.cfg.num_incoming(false_branch) &gt; 1:
+                    should_lift_f = False
+
+                if not should_lift_t and not should_lift_f:
+                    print(&#34;WARNING: Skipping conditional due to weird incoming branches.&#34;)
+                    continue
+
+                cond_map = {
+                    &#34;JTrue&#34;: IRBoolExpr.CompareType.ISTRUE,
+                    &#34;JFalse&#34;: IRBoolExpr.CompareType.ISFALSE,
                     &#34;JNull&#34;: IRBoolExpr.CompareType.NULL,
                     &#34;JNotNull&#34;: IRBoolExpr.CompareType.NOT_NULL,
                     &#34;JSLt&#34;: IRBoolExpr.CompareType.LT,
@@ -1383,36 +1481,41 @@ def get_type(self) -&gt; Type:
                     &#34;JEq&#34;: IRBoolExpr.CompareType.EQ,
                     &#34;JNotEq&#34;: IRBoolExpr.CompareType.NEQ,
                 }
-
-                # Build condition expression
-                if op.op in [&#34;JTrue&#34;, &#34;JFalse&#34;]:
-                    cond = self.locals[op.definition[&#34;cond&#34;].value]
-                    condition = IRBoolExpr(self.code, jump_to_compare[op.op], cond)
-                elif op.op in [&#34;JNull&#34;, &#34;JNotNull&#34;]:
-                    val = self.locals[op.definition[&#34;value&#34;].value]
-                    condition = IRBoolExpr(self.code, jump_to_compare[op.op], val)
-                else:  # Comparison operations
+                cond = cond_map[op.op]
+                left, right = None, None
+                if cond not in [
+                    IRBoolExpr.CompareType.ISTRUE,
+                    IRBoolExpr.CompareType.ISFALSE,
+                    IRBoolExpr.CompareType.NULL,
+                    IRBoolExpr.CompareType.NOT_NULL,
+                ]:
                     left = self.locals[op.definition[&#34;a&#34;].value]
                     right = self.locals[op.definition[&#34;b&#34;].value]
-                    condition = IRBoolExpr(self.code, jump_to_compare[op.op], left, right)
 
-                true_node = None
-                false_node = None
+                condition = IRBoolExpr(self.code, cond, left, right)
+                true_block = self._lift_block(true_branch, visited) if should_lift_t else IRBlock(self.code)
+                false_block = self._lift_block(false_branch, visited) if should_lift_f else IRBlock(self.code)
+                _cond = IRConditional(self.code, condition, true_block, false_block)
+                if not should_lift_t:
+                    _cond.invert()  # invert the condition so the one full block isn&#39;t the else block
+                block.statements.append(_cond)
 
-                for next_node, edge_type in node.branches:
-                    if edge_type == &#34;true&#34;:
-                        true_node = next_node
-                    elif edge_type == &#34;false&#34;:
-                        false_node = next_node
-
-                if true_node or false_node:
-                    true_block = self._lift_block(true_node, visited.copy()) if true_node else IRBlock(self.code)
-                    false_block = self._lift_block(false_node, visited.copy()) if false_node else IRBlock(self.code)
-                    cond = IRConditional(self.code, condition, true_block, false_block)
-                    # cond.invert()
-                    block.statements.append(cond)
-
-            # NOTE: never EVER handle JAlways here, jump threading is already done with the CFG
+                # now, find the next block and lift it.
+                next_node = None
+                if not should_lift_f:
+                    next_node = false_branch
+                elif not should_lift_t:
+                    next_node = true_branch
+                else:
+                    convergence = self._find_convergence(true_branch, false_branch, visited)
+                    if convergence:
+                        next_node = convergence
+                    else:
+                        dbg_print(&#34;WARNING: No convergence point found for conditional branches&#34;)
+                if not next_node:
+                    raise DecompError(&#34;No next node found for conditional branches&#34;)
+                next_block = self._lift_block(next_node, visited)
+                block.statements.append(next_block)
 
             elif op.op in [&#34;Call0&#34;, &#34;Call1&#34;, &#34;Call2&#34;, &#34;Call3&#34;, &#34;Call4&#34;]:
                 n = int(op.op[-1])
@@ -1620,6 +1723,7 @@ inheritance.</p></div>
 <li><code><a title="crashlink.decomp.CFGraph.add_node" href="#crashlink.decomp.CFGraph.add_node">add_node</a></code></li>
 <li><code><a title="crashlink.decomp.CFGraph.build" href="#crashlink.decomp.CFGraph.build">build</a></code></li>
 <li><code><a title="crashlink.decomp.CFGraph.graph" href="#crashlink.decomp.CFGraph.graph">graph</a></code></li>
+<li><code><a title="crashlink.decomp.CFGraph.num_incoming" href="#crashlink.decomp.CFGraph.num_incoming">num_incoming</a></code></li>
 <li><code><a title="crashlink.decomp.CFGraph.optimize" href="#crashlink.decomp.CFGraph.optimize">optimize</a></code></li>
 <li><code><a title="crashlink.decomp.CFGraph.style_node" href="#crashlink.decomp.CFGraph.style_node">style_node</a></code></li>
 </ul>

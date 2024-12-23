@@ -215,6 +215,8 @@ def pseudo_from_op(
             return f"reg{op.definition['dst']} = reg{op.definition['a']} << reg{op.definition['b']}"
         case "SMod":
             return f"reg{op.definition['dst']} = reg{op.definition['a']} % reg{op.definition['b']}"
+        case "Xor":
+            return f"reg{op.definition['dst']} = reg{op.definition['a']} ^ reg{op.definition['b']}"
 
         # Memory/Object Operations
         case "GetThis":
@@ -255,6 +257,14 @@ def pseudo_from_op(
             return f"reg{op.definition['dst']} = Virtual(reg{op.definition['src']})"
         case "Ref":
             return f"reg{op.definition['dst']} = &reg{op.definition['src']}"
+        case "SetMem":
+            return f"reg{op.definition['bytes']}[reg{op.definition['index']}] = reg{op.definition['src']}"
+        case "GetMem":
+            return f"reg{op.definition['dst']} = reg{op.definition['bytes']}[reg{op.definition['index']}]"
+        case "SafeCast":
+            return f"reg{op.definition['dst']} = reg{op.definition['src']} as {type_name(code, regs[op.definition['dst'].value].resolve(code))}"
+        case "UnsafeCast":
+            return f"reg{op.definition['dst']} = reg{op.definition['src']} unsafely as {type_name(code, regs[op.definition['dst'].value].resolve(code))}"
 
         # Function Calls
         case "CallClosure":
@@ -402,7 +412,7 @@ def from_asm(asm: str) -> List[Opcode]:
         opargs = opcodes[op]
         for name, type in opargs.items():
             new_value = Opcode.TYPE_MAP[type]()
-            new_value.value = literal_eval(args.pop(0)) # FIXME: unsafe?
+            new_value.value = literal_eval(args.pop(0))  # FIXME: unsafe?
             new_opcode.definition[name] = new_value
         ops.append(new_opcode)
     return ops
