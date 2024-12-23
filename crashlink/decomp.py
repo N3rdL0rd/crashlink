@@ -214,12 +214,13 @@ class CFGraph:
             elif last_op.op != "Ret" and next_idx in nodes_by_idx:
                 self.add_branch(src_node, nodes_by_idx[next_idx], "unconditional")
 
-        # fmt: off
-        self.optimize([
-            CFJumpThreader(self),
-            CFDeadCodeEliminator(self),
-        ])
-        # fmt: on
+        if do_optimize:
+            # fmt: off
+            self.optimize([
+                CFJumpThreader(self),
+                CFDeadCodeEliminator(self),
+            ])
+            # fmt: on
 
     def optimize(self, optimizers: List[CFOptimizer]) -> None:
         for optimizer in optimizers:
@@ -277,6 +278,14 @@ class CFGraph:
 
         dot.append("}")
         return "\n".join(dot)
+
+    def num_incoming(self, node: CFNode) -> int:
+        count = 0
+        for n in self.nodes:
+            for branch, _ in n.branches:
+                if branch == node:
+                    count += 1
+        return count
 
 
 class IRStatement(ABC):
@@ -447,6 +456,8 @@ class IRBoolExpr(IRExpression):
         GTE = ">="
         NULL = "is null"
         NOT_NULL = "is not null"
+        ISTRUE = "is true"
+        ISFALSE = "is false"
         TRUE = "true"
         FALSE = "false"
         NOT = "not"
@@ -473,9 +484,15 @@ class IRBoolExpr(IRExpression):
     def invert(self) -> None:
         if self.op == IRBoolExpr.CompareType.NOT:
             raise DecompError("Cannot invert NOT operation")
-        if self.op in [IRBoolExpr.CompareType.TRUE, IRBoolExpr.CompareType.FALSE]:
-            raise DecompError("Cannot invert TRUE/FALSE operation")
-        if self.op == IRBoolExpr.CompareType.NULL:
+        elif self.op == IRBoolExpr.CompareType.TRUE:
+            self.op = IRBoolExpr.CompareType.FALSE
+        elif self.op == IRBoolExpr.CompareType.FALSE:
+            self.op = IRBoolExpr.CompareType.TRUE
+        elif self.op == IRBoolExpr.CompareType.ISTRUE:
+            self.op = IRBoolExpr.CompareType.ISFALSE
+        elif self.op == IRBoolExpr.CompareType.ISFALSE:
+            self.op = IRBoolExpr.CompareType.ISTRUE
+        elif self.op == IRBoolExpr.CompareType.NULL:
             self.op = IRBoolExpr.CompareType.NOT_NULL
         elif self.op == IRBoolExpr.CompareType.NOT_NULL:
             self.op = IRBoolExpr.CompareType.NULL
@@ -501,6 +518,8 @@ class IRBoolExpr(IRExpression):
             return f"<IRBoolExpr: {self.op.value} {self.left}>"
         elif self.op in [IRBoolExpr.CompareType.TRUE, IRBoolExpr.CompareType.FALSE]:
             return f"<IRBoolExpr: {self.op.value}>"
+        elif self.op in [IRBoolExpr.CompareType.ISTRUE, IRBoolExpr.CompareType.ISFALSE]:
+            return f"<IRBoolExpr: {self.left} {self.op.value}>"
         return f"<IRBoolExpr: {self.left} {self.op.value} {self.right}>"
 
 
@@ -675,6 +694,34 @@ class IRFunction:
                 local.name = reg_assigns[i].pop()
         dbg_print("Named locals:", self.locals)
 
+    def _find_convergence(self, true_node: CFNode, false_node: CFNode, visited: Set[CFNode]) -> Optional[CFNode]:
+        """Find where two branches of a conditional converge by following their control flow"""
+        true_visited = set()
+        false_visited = set()
+        true_queue = [true_node]
+        false_queue = [false_node]
+
+        while true_queue or false_queue:
+            if true_queue:
+                node = true_queue.pop(0)
+                if node in false_visited:
+                    return node
+                true_visited.add(node)
+                for next_node, _ in node.branches:
+                    if next_node not in true_visited:
+                        true_queue.append(next_node)
+
+            if false_queue:
+                node = false_queue.pop(0)
+                if node in true_visited:
+                    return node
+                false_visited.add(node)
+                for next_node, _ in node.branches:
+                    if next_node not in false_visited:
+                        false_queue.append(next_node)
+
+        return None  # No convergence found
+
     def _lift_block(self, node: CFNode, visited: Optional[Set[CFNode]] = None) -> IRBlock:
         """Lift a control flow node to an IR block"""
         if visited is None:
@@ -720,7 +767,7 @@ class IRFunction:
                 else:
                     const = IRConst(self.code, const_type, value=value)
                 block.statements.append(IRAssign(self.code, dst, const))
-            # Handle conditionals
+
             elif op.op in [
                 "JTrue",
                 "JFalse",
@@ -735,9 +782,35 @@ class IRFunction:
                 "JEq",
                 "JNotEq",
             ]:
-                jump_to_compare = {
-                    "JTrue": IRBoolExpr.CompareType.TRUE,
-                    "JFalse": IRBoolExpr.CompareType.FALSE,
+                # conditionals create a diamond shape in the IR - the two branches will at some point converge again.
+                # TODO: loop support and detection
+                true_branch = None
+                false_branch = None
+                for branch_node, edge_type in node.branches:
+                    if edge_type == "true":
+                        true_branch = branch_node
+                    elif edge_type == "false":
+                        false_branch = branch_node
+                if true_branch is None or false_branch is None:
+                    raise DecompError("Conditional jump missing true/false branch. Check CFG generation maybe?")
+
+                # HACK: blocks that have multiple branches coming into them shouldn't exist for generated if statements.
+                # therefore, we can assume that if a conditional branch leads to a node that has multiple incoming branches,
+                # it's an empty block and that's what comes *after* the conditional branches altogether.
+                should_lift_t = True
+                should_lift_f = True
+                if self.cfg.num_incoming(true_branch) > 1:
+                    should_lift_t = False
+                if self.cfg.num_incoming(false_branch) > 1:
+                    should_lift_f = False
+
+                if not should_lift_t and not should_lift_f:
+                    print("WARNING: Skipping conditional due to weird incoming branches.")
+                    continue
+
+                cond_map = {
+                    "JTrue": IRBoolExpr.CompareType.ISTRUE,
+                    "JFalse": IRBoolExpr.CompareType.ISFALSE,
                     "JNull": IRBoolExpr.CompareType.NULL,
                     "JNotNull": IRBoolExpr.CompareType.NOT_NULL,
                     "JSLt": IRBoolExpr.CompareType.LT,
@@ -749,36 +822,41 @@ class IRFunction:
                     "JEq": IRBoolExpr.CompareType.EQ,
                     "JNotEq": IRBoolExpr.CompareType.NEQ,
                 }
-
-                # Build condition expression
-                if op.op in ["JTrue", "JFalse"]:
-                    cond = self.locals[op.definition["cond"].value]
-                    condition = IRBoolExpr(self.code, jump_to_compare[op.op], cond)
-                elif op.op in ["JNull", "JNotNull"]:
-                    val = self.locals[op.definition["value"].value]
-                    condition = IRBoolExpr(self.code, jump_to_compare[op.op], val)
-                else:  # Comparison operations
+                cond = cond_map[op.op]
+                left, right = None, None
+                if cond not in [
+                    IRBoolExpr.CompareType.ISTRUE,
+                    IRBoolExpr.CompareType.ISFALSE,
+                    IRBoolExpr.CompareType.NULL,
+                    IRBoolExpr.CompareType.NOT_NULL,
+                ]:
                     left = self.locals[op.definition["a"].value]
                     right = self.locals[op.definition["b"].value]
-                    condition = IRBoolExpr(self.code, jump_to_compare[op.op], left, right)
 
-                true_node = None
-                false_node = None
+                condition = IRBoolExpr(self.code, cond, left, right)
+                true_block = self._lift_block(true_branch, visited) if should_lift_t else IRBlock(self.code)
+                false_block = self._lift_block(false_branch, visited) if should_lift_f else IRBlock(self.code)
+                _cond = IRConditional(self.code, condition, true_block, false_block)
+                if not should_lift_t:
+                    _cond.invert()  # invert the condition so the one full block isn't the else block
+                block.statements.append(_cond)
 
-                for next_node, edge_type in node.branches:
-                    if edge_type == "true":
-                        true_node = next_node
-                    elif edge_type == "false":
-                        false_node = next_node
-
-                if true_node or false_node:
-                    true_block = self._lift_block(true_node, visited.copy()) if true_node else IRBlock(self.code)
-                    false_block = self._lift_block(false_node, visited.copy()) if false_node else IRBlock(self.code)
-                    cond = IRConditional(self.code, condition, true_block, false_block)
-                    # cond.invert()
-                    block.statements.append(cond)
-
-            # NOTE: never EVER handle JAlways here, jump threading is already done with the CFG
+                # now, find the next block and lift it.
+                next_node = None
+                if not should_lift_f:
+                    next_node = false_branch
+                elif not should_lift_t:
+                    next_node = true_branch
+                else:
+                    convergence = self._find_convergence(true_branch, false_branch, visited)
+                    if convergence:
+                        next_node = convergence
+                    else:
+                        dbg_print("WARNING: No convergence point found for conditional branches")
+                if not next_node:
+                    raise DecompError("No next node found for conditional branches")
+                next_block = self._lift_block(next_node, visited)
+                block.statements.append(next_block)
 
             elif op.op in ["Call0", "Call1", "Call2", "Call3", "Call4"]:
                 n = int(op.op[-1])

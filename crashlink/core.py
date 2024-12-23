@@ -9,6 +9,7 @@ you.
 
 import ctypes
 import struct
+from abc import ABC, abstractmethod
 from datetime import datetime
 from io import BytesIO
 from typing import Any, BinaryIO, Dict, List, Literal, Optional, Tuple, TypeVar
@@ -30,20 +31,22 @@ except ImportError:
 
 
 # TODO: rewrite all ABCs like this to use the PEP 3119 `abc` module
-class Serialisable:
+class Serialisable(ABC):
     """
     Base class for all serialisable objects.
     """
 
+    @abstractmethod
     def __init__(self) -> None:
         self.value: Any = None
-        raise NotImplementedError("Serialisable is an abstract class and should not be instantiated.")
 
+    @abstractmethod
     def deserialise(self, f: BinaryIO | BytesIO, *args: Any, **kwargs: Any) -> "Serialisable":
-        raise NotImplementedError("deserialise is not implemented for this class.")
+        pass
 
+    @abstractmethod
     def serialise(self) -> bytes:
-        raise NotImplementedError("serialise is not implemented for this class.")
+        pass
 
     def __str__(self) -> str:
         try:
@@ -1501,6 +1504,7 @@ class Bytecode(Serialisable):
                     res[name] = self.floats[field.value].value
                 elif isinstance(typ, Bytes):
                     if self.version.value >= 5 and self.bytes:
+                        print("WARNING: Using bytes for constant. This may be incorrect.")
                         res[name] = self.bytes.value[field.value]  # TODO: verify that this is correct behaviour for >=5
                     else:
                         res[name] = self.strings.value[field.value]
