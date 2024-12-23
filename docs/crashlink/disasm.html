@@ -102,7 +102,7 @@ el.replaceWith(d);
         opargs = opcodes[op]
         for name, type in opargs.items():
             new_value = Opcode.TYPE_MAP[type]()
-            new_value.value = literal_eval(args.pop(0))
+            new_value.value = literal_eval(args.pop(0))  # FIXME: unsafe?
             new_opcode.definition[name] = new_value
         ops.append(new_opcode)
     return ops</code></pre>
@@ -385,6 +385,8 @@ el.replaceWith(d);
             return f&#34;reg{op.definition[&#39;dst&#39;]} = reg{op.definition[&#39;a&#39;]} &lt;&lt; reg{op.definition[&#39;b&#39;]}&#34;
         case &#34;SMod&#34;:
             return f&#34;reg{op.definition[&#39;dst&#39;]} = reg{op.definition[&#39;a&#39;]} % reg{op.definition[&#39;b&#39;]}&#34;
+        case &#34;Xor&#34;:
+            return f&#34;reg{op.definition[&#39;dst&#39;]} = reg{op.definition[&#39;a&#39;]} ^ reg{op.definition[&#39;b&#39;]}&#34;
 
         # Memory/Object Operations
         case &#34;GetThis&#34;:
@@ -425,6 +427,14 @@ el.replaceWith(d);
             return f&#34;reg{op.definition[&#39;dst&#39;]} = Virtual(reg{op.definition[&#39;src&#39;]})&#34;
         case &#34;Ref&#34;:
             return f&#34;reg{op.definition[&#39;dst&#39;]} = &amp;reg{op.definition[&#39;src&#39;]}&#34;
+        case &#34;SetMem&#34;:
+            return f&#34;reg{op.definition[&#39;bytes&#39;]}[reg{op.definition[&#39;index&#39;]}] = reg{op.definition[&#39;src&#39;]}&#34;
+        case &#34;GetMem&#34;:
+            return f&#34;reg{op.definition[&#39;dst&#39;]} = reg{op.definition[&#39;bytes&#39;]}[reg{op.definition[&#39;index&#39;]}]&#34;
+        case &#34;SafeCast&#34;:
+            return f&#34;reg{op.definition[&#39;dst&#39;]} = reg{op.definition[&#39;src&#39;]} as {type_name(code, regs[op.definition[&#39;dst&#39;].value].resolve(code))}&#34;
+        case &#34;UnsafeCast&#34;:
+            return f&#34;reg{op.definition[&#39;dst&#39;]} = reg{op.definition[&#39;src&#39;]} unsafely as {type_name(code, regs[op.definition[&#39;dst&#39;].value].resolve(code))}&#34;
 
         # Function Calls
         case &#34;CallClosure&#34;:

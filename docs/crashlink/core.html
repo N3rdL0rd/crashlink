@@ -81,6 +81,7 @@ you.</p>
 <ul class="hlist">
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -134,6 +135,7 @@ you.</p>
 <li>crashlink.core._NoDataType</li>
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 </dd>
 <dt id="crashlink.core.Binding"><code class="flex name class">
@@ -165,6 +167,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -219,6 +222,7 @@ you.</p>
 <li>crashlink.core._NoDataType</li>
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 </dd>
 <dt id="crashlink.core.Bytecode"><code class="flex name class">
@@ -437,6 +441,7 @@ you.</p>
                     res[name] = self.floats[field.value].value
                 elif isinstance(typ, Bytes):
                     if self.version.value &gt;= 5 and self.bytes:
+                        print(&#34;WARNING: Using bytes for constant. This may be incorrect.&#34;)
                         res[name] = self.bytes.value[field.value]  # TODO: verify that this is correct behaviour for &gt;=5
                     else:
                         res[name] = self.strings.value[field.value]
@@ -582,6 +587,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Static methods</h3>
 <dl>
@@ -816,6 +822,7 @@ you.</p>
                 res[name] = self.floats[field.value].value
             elif isinstance(typ, Bytes):
                 if self.version.value &gt;= 5 and self.bytes:
+                    print(&#34;WARNING: Using bytes for constant. This may be incorrect.&#34;)
                     res[name] = self.bytes.value[field.value]  # TODO: verify that this is correct behaviour for &gt;=5
                 else:
                     res[name] = self.strings.value[field.value]</code></pre>
@@ -1015,6 +1022,7 @@ you.</p>
 <li>crashlink.core._NoDataType</li>
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 </dd>
 <dt id="crashlink.core.BytesBlock"><code class="flex name class">
@@ -1068,6 +1076,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -1159,6 +1168,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -1304,6 +1314,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -1439,6 +1450,7 @@ you.</p>
 <li>crashlink.core._NoDataType</li>
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 </dd>
 <dt id="crashlink.core.DynObj"><code class="flex name class">
@@ -1462,6 +1474,7 @@ you.</p>
 <li>crashlink.core._NoDataType</li>
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 </dd>
 <dt id="crashlink.core.Enum"><code class="flex name class">
@@ -1506,6 +1519,7 @@ you.</p>
 <ul class="hlist">
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -1587,6 +1601,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -1649,6 +1664,7 @@ you.</p>
 <li>crashlink.core._NoDataType</li>
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 </dd>
 <dt id="crashlink.core.F64"><code class="flex name class">
@@ -1672,6 +1688,7 @@ you.</p>
 <li>crashlink.core._NoDataType</li>
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 </dd>
 <dt id="crashlink.core.Field"><code class="flex name class">
@@ -1703,6 +1720,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -1775,6 +1793,7 @@ you.</p>
 <ul class="hlist">
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Subclasses</h3>
 <ul class="hlist">
@@ -1894,6 +1913,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -1994,6 +2014,7 @@ you.</p>
 <li>crashlink.core._NoDataType</li>
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 </dd>
 <dt id="crashlink.core.I64"><code class="flex name class">
@@ -2017,6 +2038,7 @@ you.</p>
 <li>crashlink.core._NoDataType</li>
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 </dd>
 <dt id="crashlink.core.InlineBool"><code class="flex name class">
@@ -2049,6 +2071,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -2104,6 +2127,7 @@ you.</p>
 <li><a title="crashlink.core.Fun" href="#crashlink.core.Fun">Fun</a></li>
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 </dd>
 <dt id="crashlink.core.Native"><code class="flex name class">
@@ -2157,6 +2181,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -2227,6 +2252,7 @@ you.</p>
 <ul class="hlist">
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -2367,6 +2393,7 @@ you.</p>
 <ul class="hlist">
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Subclasses</h3>
 <ul class="hlist">
@@ -2538,6 +2565,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Class variables</h3>
 <dl>
@@ -2625,6 +2653,7 @@ you.</p>
 <ul class="hlist">
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -2688,6 +2717,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -2751,6 +2781,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -2811,6 +2842,7 @@ you.</p>
 <ul class="hlist">
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -2866,6 +2898,7 @@ you.</p>
 <li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -2914,6 +2947,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -2970,6 +3004,7 @@ you.</p>
 <ul class="hlist">
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Subclasses</h3>
 <ul class="hlist">
@@ -3009,20 +3044,22 @@ you.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class Serialisable:
+<pre><code class="python">class Serialisable(ABC):
     &#34;&#34;&#34;
     Base class for all serialisable objects.
     &#34;&#34;&#34;
 
+    @abstractmethod
     def __init__(self) -&gt; None:
         self.value: Any = None
-        raise NotImplementedError(&#34;Serialisable is an abstract class and should not be instantiated.&#34;)
 
+    @abstractmethod
     def deserialise(self, f: BinaryIO | BytesIO, *args: Any, **kwargs: Any) -&gt; &#34;Serialisable&#34;:
-        raise NotImplementedError(&#34;deserialise is not implemented for this class.&#34;)
+        pass
 
+    @abstractmethod
     def serialise(self) -&gt; bytes:
-        raise NotImplementedError(&#34;serialise is not implemented for this class.&#34;)
+        pass
 
     def __str__(self) -&gt; str:
         try:
@@ -3052,6 +3089,10 @@ you.</p>
         return self.value &lt; other.value</code></pre>
 </details>
 <div class="desc"><p>Base class for all serialisable objects.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>abc.ABC</li>
+</ul>
 <h3>Subclasses</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Binding" href="#crashlink.core.Binding">Binding</a></li>
@@ -3086,8 +3127,9 @@ you.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO, *args: Any, **kwargs: Any) -&gt; &#34;Serialisable&#34;:
-    raise NotImplementedError(&#34;deserialise is not implemented for this class.&#34;)</code></pre>
+<pre><code class="python">@abstractmethod
+def deserialise(self, f: BinaryIO | BytesIO, *args: Any, **kwargs: Any) -&gt; &#34;Serialisable&#34;:
+    pass</code></pre>
 </details>
 <div class="desc"></div>
 </dd>
@@ -3099,8 +3141,9 @@ you.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def serialise(self) -&gt; bytes:
-    raise NotImplementedError(&#34;serialise is not implemented for this class.&#34;)</code></pre>
+<pre><code class="python">@abstractmethod
+def serialise(self) -&gt; bytes:
+    pass</code></pre>
 </details>
 <div class="desc"></div>
 </dd>
@@ -3133,6 +3176,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -3210,6 +3254,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -3322,6 +3367,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -3409,6 +3455,7 @@ you.</p>
 <li><a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a></li>
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 </dd>
 <dt id="crashlink.core.Type"><code class="flex name class">
@@ -3487,6 +3534,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Class variables</h3>
 <dl>
@@ -3555,6 +3603,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Subclasses</h3>
 <ul class="hlist">
@@ -3590,6 +3639,7 @@ you.</p>
 <li>crashlink.core._NoDataType</li>
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 </dd>
 <dt id="crashlink.core.U16"><code class="flex name class">
@@ -3613,6 +3663,7 @@ you.</p>
 <li>crashlink.core._NoDataType</li>
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 </dd>
 <dt id="crashlink.core.U8"><code class="flex name class">
@@ -3636,6 +3687,7 @@ you.</p>
 <li>crashlink.core._NoDataType</li>
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 </dd>
 <dt id="crashlink.core.VarInt"><code class="flex name class">
@@ -3725,6 +3777,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Subclasses</h3>
 <ul class="hlist">
@@ -3846,6 +3899,7 @@ you.</p>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -3916,6 +3970,7 @@ you.</p>
 <ul class="hlist">
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -3976,6 +4031,7 @@ you.</p>
 <li>crashlink.core._NoDataType</li>
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 </dd>
 <dt id="crashlink.core.bytesRef"><code class="flex name class">
@@ -4004,6 +4060,7 @@ you.</p>
 <li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -4051,6 +4108,7 @@ you.</p>
 <li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -4105,6 +4163,7 @@ you.</p>
 <li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Class variables</h3>
 <dl>
@@ -4188,6 +4247,7 @@ you.</p>
 <li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -4257,6 +4317,7 @@ you.</p>
 <li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -4298,6 +4359,7 @@ you.</p>
 <li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -4339,6 +4401,7 @@ you.</p>
 <li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -4380,6 +4443,7 @@ you.</p>
 <li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -4421,6 +4485,7 @@ you.</p>
 <li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
