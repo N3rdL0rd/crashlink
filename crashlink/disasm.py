@@ -402,7 +402,7 @@ def from_asm(asm: str) -> List[Opcode]:
         opargs = opcodes[op]
         for name, type in opargs.items():
             new_value = Opcode.TYPE_MAP[type]()
-            new_value.value = literal_eval(args.pop(0))
+            new_value.value = literal_eval(args.pop(0)) # FIXME: unsafe?
             new_opcode.definition[name] = new_value
         ops.append(new_opcode)
     return ops
