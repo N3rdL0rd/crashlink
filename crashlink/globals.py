@@ -4,6 +4,13 @@ Global configuration.
 
 from io import BytesIO
 from typing import Any, BinaryIO
+import os
+
+def _is_debug() -> bool:
+    """
+    Determine whether or not to enable debug mode. 
+    """
+    return bool(os.getenv("CRASHLINK_DEBUG", False)) or bool(os.getenv("DEBUG", False)) or os.path.exists(".crashlink_debug")
 
 VERSION: str = "v0.0.1a"
 """
@@ -15,7 +22,7 @@ LONG_VERSION: str = "crashlink - Pure Python HashLink bytecode multitool - " + V
 String displayed in the help message for the CLI.
 """
 
-DEBUG: bool = False
+DEBUG: bool = False or _is_debug()
 """
 Whether to enable certain features meant only for development or debugging of crashlink.
 """
