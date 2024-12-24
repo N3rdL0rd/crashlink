@@ -861,8 +861,7 @@ class IRFunction:
                 true_block = self._lift_block(true_branch, visited) if should_lift_t else IRBlock(self.code)
                 false_block = self._lift_block(false_branch, visited) if should_lift_f else IRBlock(self.code)
                 _cond = IRConditional(self.code, condition, true_block, false_block)
-                if not should_lift_t:
-                    _cond.invert()  # invert the condition so the one full block isn't the else block
+                _cond.invert()  # invert the condition so the one full block isn't the else block
                 block.statements.append(_cond)
 
                 # now, find the next block and lift it.
