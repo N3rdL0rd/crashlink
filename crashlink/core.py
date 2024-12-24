@@ -255,6 +255,9 @@ class gIndex(ResolvableVarInt):
 
     def resolve(self, code: "Bytecode") -> "Type":
         return code.global_types[self.value].resolve(code)
+    
+    def resolve_str(self, code: "Bytecode") -> str:
+        return code.const_str(self.value)
 
 
 class strRef(ResolvableVarInt):
@@ -1484,6 +1487,7 @@ class Bytecode(Serialisable):
         return self
 
     def init_globals(self) -> None:
+        final: Dict[int, Any] = {}
         for const in self.constants:
             res: Dict[str, Any] = {}
             obj = const._global.resolve(self).definition
@@ -1503,11 +1507,11 @@ class Bytecode(Serialisable):
                 elif isinstance(typ, F32) or isinstance(typ, F64):
                     res[name] = self.floats[field.value].value
                 elif isinstance(typ, Bytes):
-                    if self.version.value >= 5 and self.bytes:
-                        print("WARNING: Using bytes for constant. This may be incorrect.")
-                        res[name] = self.bytes.value[field.value]  # TODO: verify that this is correct behaviour for >=5
-                    else:
-                        res[name] = self.strings.value[field.value]
+                    res[name] = self.strings.value[field.value]
+                else:
+                    res[name] = field.value
+            final[const._global.value] = res
+        self.initialized_globals = final
 
     def fn(self, findex: int, native: bool = True) -> Function | Native:
         for f in self.functions:
@@ -1527,6 +1531,22 @@ class Bytecode(Serialisable):
             if g.value == gindex:
                 return g
         raise ValueError(f"Global {gindex} not found!")
+    
+    def const_str(self, gindex: int) -> str:
+        # TODO: is this overcomplicated?
+        if gindex not in self.initialized_globals:
+            if gindex < 0 or gindex >= len(self.global_types):
+                raise ValueError(f"Global {gindex} not found!")
+            raise ValueError(f"Global {gindex} does not have a constant value!")
+        obj = self.global_types[gindex].resolve(self).definition
+        if not isinstance(obj, Obj):
+            raise TypeError(f"Global {gindex} is not an object!")
+        if not obj.name.resolve(self) == "String":
+            raise TypeError(f"Global {gindex} is not a string!")
+        obj_fields = obj.resolve_fields(self)
+        if len(obj_fields) != 2:
+            raise ValueError(f"Global {gindex} seems malformed!")
+        return self.initialized_globals[gindex][obj_fields[0].name.resolve(self)]
 
     def serialise(self, auto_set_meta: bool = True) -> bytes:
         start_time = datetime.now()
