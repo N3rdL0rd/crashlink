@@ -279,14 +279,14 @@ class CFGraph:
         dot.append("}")
         return "\n".join(dot)
 
-    def num_incoming(self, node: CFNode) -> int:
-        count = 0
+    def predecessors(self, node: CFNode) -> List[CFNode]:
+        """Get predecessors of a node"""
+        preds = []
         for n in self.nodes:
-            for branch, _ in n.branches:
-                if branch == node:
-                    count += 1
-        return count
-
+            for succ, _ in n.branches:
+                if succ == node:
+                    preds.append(n)
+        return preds
 
 class IRStatement(ABC):
     def __init__(self, code: Bytecode):
@@ -605,6 +605,28 @@ class IRConditional(IRStatement):
         return f"<IRConditional: if {self.condition} then\n{self.true_block}\nelse\n{self.false_block}>"
 
 
+class IRLoop(IRStatement):
+    """Loop statement"""
+
+    def __init__(self, code: Bytecode, condition: IRExpression, body: IRBlock):
+        super().__init__(code)
+        self.condition = condition
+        self.body = body
+
+    def __repr__(self) -> str:
+        return f"<IRLoop: while {self.condition}\n{self.body}>"
+
+
+class IRBreak(IRStatement):
+    """Break statement"""
+
+    def __init__(self, code: Bytecode):
+        super().__init__(code)
+
+    def __repr__(self) -> str:
+        return "<IRBreak>"
+
+
 class IRReturn(IRStatement):
     """Return statement"""
 
@@ -722,13 +744,15 @@ class IRFunction:
 
         return None  # No convergence found
 
-    def _lift_block(self, node: CFNode, visited: Optional[Set[CFNode]] = None) -> IRBlock:
-        """Lift a control flow node to an IR block"""
+    def _lift_block(self, node: CFNode, 
+                    visited: Optional[Set[CFNode]] = None) -> IRBlock:
         if visited is None:
             visited = set()
+            
+        if node in visited:                
+            return IRBlock(self.code)
 
-        if node in visited:
-            return IRBlock(self.code)  # Return empty block for cycles
+        visited.add(node)
 
         visited.add(node)
         block = IRBlock(self.code)
@@ -799,13 +823,13 @@ class IRFunction:
                 # it's an empty block and that's what comes *after* the conditional branches altogether.
                 should_lift_t = True
                 should_lift_f = True
-                if self.cfg.num_incoming(true_branch) > 1:
+                if len(self.cfg.predecessors(true_branch)) > 1:
                     should_lift_t = False
-                if self.cfg.num_incoming(false_branch) > 1:
+                if len(self.cfg.predecessors(false_branch)) > 1:
                     should_lift_f = False
 
                 if not should_lift_t and not should_lift_f:
-                    print("WARNING: Skipping conditional due to weird incoming branches.")
+                    dbg_print("Warning: Skipping conditional due to weird incoming branches.")
                     continue
 
                 cond_map = {

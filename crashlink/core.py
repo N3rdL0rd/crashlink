@@ -394,49 +394,47 @@ class StringsBlock(Serialisable):
         self.length.length = 4
         self.value: List[str] = []
         self.lengths: List[int] = []
-        self.embedded_lengths: List[VarInt] = []
+        self.lengths: List[VarInt] = []
 
-    def deserialise(self, f: BinaryIO | BytesIO) -> "StringsBlock":
+    def deserialise(self, f: BinaryIO | BytesIO, nstrings: int) -> "StringsBlock":
         self.length.deserialise(f, length=4)
-        strings_size = self.length.value
-        dbg_print(f"Found {fmt_bytes(strings_size)} of strings")
-        strings_data: bytes = f.read(strings_size)
-
-        index = 0
-        while index < strings_size:
-            string_length = 0
-            while index + string_length < strings_size and strings_data[index + string_length] != 0:
-                string_length += 1
-
-            if index + string_length >= strings_size:
-                raise MalformedBytecode("Invalid string: no null terminator found")
-
-            string = strings_data[index : index + string_length].decode("utf-8", errors="surrogateescape")
-            self.value.append(string)
-            self.lengths.append(string_length)
-
-            index += string_length + 1  # Skip the null terminator
-
-        for _ in self.value:
-            self.embedded_lengths.append(VarInt().deserialise(f))
-
-        return self
+        size = self.length.value
+        sdata: bytes = f.read(size)
+        strings: List[str] = []
+        lengths: List[VarInt] = []
+        curpos = 0
+        for _ in range(nstrings):
+            sz = VarInt().deserialise(f)
+            if curpos + sz.value >= size:
+                raise ValueError("Invalid string")
+            
+            str_value = sdata[curpos:curpos + sz.value]
+            if curpos + sz.value < size and sdata[curpos + sz.value] != 0:
+                raise ValueError("Invalid string")
+            
+            strings.append(str_value.decode('utf-8', errors="surrogateescape"))
+            lengths.append(sz)
+            
+            curpos += sz.value + 1  # +1 for null terminator
+        self.value = strings
+        self.lengths = lengths
 
     def serialise(self) -> bytes:
         strings_data = b""
         for string in self.value:
             strings_data += string.encode("utf-8", errors="surrogateescape") + b"\x00"
         self.length.value = len(strings_data)
-        self.lengths = [len(string) for string in self.value]
-        self.embedded_lengths = [VarInt(length) for length in self.lengths]
+        self.lengths = [VarInt(len(string)) for string in self.value]
         return b"".join(
             [
                 self.length.serialise(),
                 strings_data,
-                b"".join([i.serialise() for i in self.embedded_lengths]),
+                b"".join([i.serialise() for i in self.lengths]),
             ]
         )
 
+
+        
 
 class BytesBlock(Serialisable):
     """
@@ -1425,7 +1423,7 @@ class Bytecode(Serialisable):
 
         dbg_print(f"Strings section starts at {tell(f)}")
         self.track_section(f, "strings")
-        self.strings.deserialise(f)
+        self.strings.deserialise(f, self.nstrings.value)
         dbg_print(f"Strings section ends at {tell(f)}")
         assert self.nstrings.value == len(self.strings.value), "nstrings and len of strings don't match!"
 
@@ -1442,7 +1440,7 @@ class Bytecode(Serialisable):
             self.ndebugfiles.deserialise(f)
             dbg_print(f"Number of debug files: {self.ndebugfiles.value}")
             self.track_section(f, "debugfiles")
-            self.debugfiles.deserialise(f)
+            self.debugfiles.deserialise(f, self.ndebugfiles.value)
         else:
             self.ndebugfiles = None
             self.debugfiles = None
@@ -1546,7 +1544,10 @@ class Bytecode(Serialisable):
         obj_fields = obj.resolve_fields(self)
         if len(obj_fields) != 2:
             raise ValueError(f"Global {gindex} seems malformed!")
-        return self.initialized_globals[gindex][obj_fields[0].name.resolve(self)]
+        res = self.initialized_globals[gindex][obj_fields[0].name.resolve(self)]
+        if not isinstance(res, str):
+            raise TypeError(f"This should never happen!")
+        return res
 
     def serialise(self, auto_set_meta: bool = True) -> bytes:
         start_time = datetime.now()
