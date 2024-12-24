@@ -40,9 +40,10 @@ Either:
 ```py
 from crashlink import *
 code = Bytecode.from_path("path/to/file.hl")
-for func in code.functions:
-    if func.findex.value == 22 or func.findex.value == 240: # typical entry points that the compiler generates
-        print(disasm.func(code, func))
+if code.fn(22): # 22 and 240 are typical entry points for the compiler to generate
+  print(disasm.func(code.fn(22)))
+elif code.fn(240):
+  print(disasm.func(code.fn(240)))
 # > f@22 static $Clazz.main () -> Void (from Clazz.hx)
 # > Reg types:
 # >   0. Void
@@ -106,6 +107,27 @@ You can use the following pre-defined commands with `just`:
 
 > [!NOTE]
 > IR and the IR optimization layers have not yet been fully implemented.
+
+## Roadmap
+
+- [ ] IR lifter (layer 0)
+  - [x] If statements
+  - [ ] Loops
+  - [ ] Switch opcode statements
+  - [ ] Function calls
+    - [ ] CallClosure
+  - [ ] Closures
+- [ ] IR optimization layers
+  - [ ] SSA locals
+  - [ ] Trace optimization
+  - [ ] Nested if/else/if/else -> switch
+- [ ] IR -> Haxe
+- [ ] Partial recompilation (against stubs of other functions)
+- [ ] GUI? (customtkinter or dearpygui)
+  - [ ] Graphical disassembler
+  - [ ] Embedded CFG viewer through some Graphviz bindings
+  - [ ] Decompiler and patching interface
+  - [ ] IR layer viewer
 
 ## Credits
 
