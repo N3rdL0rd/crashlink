@@ -10,15 +10,16 @@ import subprocess
 import sys
 import tempfile
 import webbrowser
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
-from . import decomp, disasm 
+from . import decomp, disasm
 from .core import Bytecode, Native
 from .globals import VERSION
 
+
 class Commands:
     """Container class for all CLI commands"""
-    
+
     def __init__(self, code: Bytecode):
         self.code = code
 
@@ -28,7 +29,6 @@ class Commands:
         if len(s) == 1:
             return cmd, " ".join(s)
         return s[1], s[0]
-        
 
     def help(self, args: List[str]) -> None:
         """Prints this help message or information on a specific command. `help (command)`"""
@@ -36,14 +36,15 @@ class Commands:
         if args:
             for command in args:
                 if command in commands:
-                    usage, desc = self._format_help(commands[command].__doc__, command)
+                    doc: str = commands[command].__doc__ or ""
+                    usage, desc = self._format_help(doc, command)
                     print(f"{usage} - {desc}")
                 else:
                     print(f"Unknown command: {command}")
             return
         print("Available commands:")
         for cmd, func in commands.items():
-            usage, desc = self._format_help(func.__doc__, cmd)
+            usage, desc = self._format_help(func.__doc__ or "", cmd)
             print(f"\t{usage} - {desc}")
         print("Type 'help <command>' for information on a specific command.")
 
@@ -237,27 +238,53 @@ class Commands:
             f.write(ser)
         print("Done!")
 
-    def _get_commands(self) -> Dict[str, callable]:
+    def pseudo(self, args: List[str]) -> None:
+        """Generate pseudocode for a function with the given index. Optionally, specify target language backend. `pseudo <idx> (target: haxe)`"""
+        if len(args) == 0:
+            print("Usage: pseudo <index> (target: haxe)")
+            return
+        try:
+            index = int(args[0])
+        except ValueError:
+            print("Invalid index.")
+            return
+        target = args[1] if len(args) > 1 else "haxe"
+        for func in self.code.functions:
+            if func.findex.value == index:
+                f = decomp.IRFunction(self.code, func)
+                if not target in decomp.TARGETS:
+                    print(f"Unknown target language: {target}")
+                    return
+                print(decomp.TARGETS[target](self.code).translate(f))
+                return
+        print("Function not found.")
+
+    def _get_commands(self) -> Dict[str, Callable[[List[str]], None]]:
         """Get all command methods using reflection"""
-        return {name: func for name, func in inspect.getmembers(self, predicate=inspect.ismethod)
-                if not name.startswith('_')}
+        return {
+            name: func
+            for name, func in inspect.getmembers(self, predicate=inspect.ismethod)
+            if not name.startswith("_")
+        }
+
 
 def handle_cmd(code: Bytecode, is_hlbc: bool, cmd: str) -> None:
     """Handles a command."""
     cmd_list: List[str] = cmd.split(" ")
     if not cmd_list[0]:
         return
-        
+
     if is_hlbc:
         raise NotImplementedError("HLBC compatibility mode is not yet implemented.")
-        
+
     commands = Commands(code)
     available_commands = commands._get_commands()
-    
+
     if cmd_list[0] in available_commands:
         available_commands[cmd_list[0]](cmd_list[1:])
     else:
         print("Unknown command.")
+
 
 def main() -> None:
     """

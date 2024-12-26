@@ -2,15 +2,21 @@
 Global configuration.
 """
 
+import os
 from io import BytesIO
 from typing import Any, BinaryIO
-import os
+
 
 def _is_debug() -> bool:
     """
-    Determine whether or not to enable debug mode. 
+    Determine whether or not to enable debug mode.
     """
-    return bool(os.getenv("CRASHLINK_DEBUG", False)) or bool(os.getenv("DEBUG", False)) or os.path.exists(".crashlink_debug")
+    return (
+        bool(os.getenv("CRASHLINK_DEBUG", False))
+        or bool(os.getenv("DEBUG", False))
+        or os.path.exists(".crashlink_debug")
+    )
+
 
 VERSION: str = "v0.0.1a"
 """

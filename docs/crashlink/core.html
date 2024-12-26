@@ -359,7 +359,7 @@ you.</p>
 
         dbg_print(f&#34;Strings section starts at {tell(f)}&#34;)
         self.track_section(f, &#34;strings&#34;)
-        self.strings.deserialise(f)
+        self.strings.deserialise(f, self.nstrings.value)
         dbg_print(f&#34;Strings section ends at {tell(f)}&#34;)
         assert self.nstrings.value == len(self.strings.value), &#34;nstrings and len of strings don&#39;t match!&#34;
 
@@ -376,7 +376,7 @@ you.</p>
             self.ndebugfiles.deserialise(f)
             dbg_print(f&#34;Number of debug files: {self.ndebugfiles.value}&#34;)
             self.track_section(f, &#34;debugfiles&#34;)
-            self.debugfiles.deserialise(f)
+            self.debugfiles.deserialise(f, self.ndebugfiles.value)
         else:
             self.ndebugfiles = None
             self.debugfiles = None
@@ -421,6 +421,7 @@ you.</p>
         return self
 
     def init_globals(self) -&gt; None:
+        final: Dict[int, Any] = {}
         for const in self.constants:
             res: Dict[str, Any] = {}
             obj = const._global.resolve(self).definition
@@ -440,11 +441,11 @@ you.</p>
                 elif isinstance(typ, F32) or isinstance(typ, F64):
                     res[name] = self.floats[field.value].value
                 elif isinstance(typ, Bytes):
-                    if self.version.value &gt;= 5 and self.bytes:
-                        print(&#34;WARNING: Using bytes for constant. This may be incorrect.&#34;)
-                        res[name] = self.bytes.value[field.value]  # TODO: verify that this is correct behaviour for &gt;=5
-                    else:
-                        res[name] = self.strings.value[field.value]
+                    res[name] = self.strings.value[field.value]
+                else:
+                    res[name] = field.value
+            final[const._global.value] = res
+        self.initialized_globals = final
 
     def fn(self, findex: int, native: bool = True) -&gt; Function | Native:
         for f in self.functions:
@@ -464,6 +465,25 @@ you.</p>
             if g.value == gindex:
                 return g
         raise ValueError(f&#34;Global {gindex} not found!&#34;)
+
+    def const_str(self, gindex: int) -&gt; str:
+        # TODO: is this overcomplicated?
+        if gindex not in self.initialized_globals:
+            if gindex &lt; 0 or gindex &gt;= len(self.global_types):
+                raise ValueError(f&#34;Global {gindex} not found!&#34;)
+            raise ValueError(f&#34;Global {gindex} does not have a constant value!&#34;)
+        obj = self.global_types[gindex].resolve(self).definition
+        if not isinstance(obj, Obj):
+            raise TypeError(f&#34;Global {gindex} is not an object!&#34;)
+        if not obj.name.resolve(self) == &#34;String&#34;:
+            raise TypeError(f&#34;Global {gindex} is not a string!&#34;)
+        obj_fields = obj.resolve_fields(self)
+        if len(obj_fields) != 2:
+            raise ValueError(f&#34;Global {gindex} seems malformed!&#34;)
+        res = self.initialized_globals[gindex][obj_fields[0].name.resolve(self)]
+        if not isinstance(res, str):
+            raise TypeError(f&#34;This should never happen!&#34;)
+        return res
 
     def serialise(self, auto_set_meta: bool = True) -&gt; bytes:
         start_time = datetime.now()
@@ -600,6 +620,35 @@ you.</p>
 </dl>
 <h3>Methods</h3>
 <dl>
+<dt id="crashlink.core.Bytecode.const_str"><code class="name flex">
+<span>def <span class="ident">const_str</span></span>(<span>self, gindex: int) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def const_str(self, gindex: int) -&gt; str:
+    # TODO: is this overcomplicated?
+    if gindex not in self.initialized_globals:
+        if gindex &lt; 0 or gindex &gt;= len(self.global_types):
+            raise ValueError(f&#34;Global {gindex} not found!&#34;)
+        raise ValueError(f&#34;Global {gindex} does not have a constant value!&#34;)
+    obj = self.global_types[gindex].resolve(self).definition
+    if not isinstance(obj, Obj):
+        raise TypeError(f&#34;Global {gindex} is not an object!&#34;)
+    if not obj.name.resolve(self) == &#34;String&#34;:
+        raise TypeError(f&#34;Global {gindex} is not a string!&#34;)
+    obj_fields = obj.resolve_fields(self)
+    if len(obj_fields) != 2:
+        raise ValueError(f&#34;Global {gindex} seems malformed!&#34;)
+    res = self.initialized_globals[gindex][obj_fields[0].name.resolve(self)]
+    if not isinstance(res, str):
+        raise TypeError(f&#34;This should never happen!&#34;)
+    return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
 <dt id="crashlink.core.Bytecode.deserialise"><code class="name flex">
 <span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO, search_magic: bool = True) ‑> <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></span>
 </code></dt>
@@ -670,7 +719,7 @@ you.</p>
 
     dbg_print(f&#34;Strings section starts at {tell(f)}&#34;)
     self.track_section(f, &#34;strings&#34;)
-    self.strings.deserialise(f)
+    self.strings.deserialise(f, self.nstrings.value)
     dbg_print(f&#34;Strings section ends at {tell(f)}&#34;)
     assert self.nstrings.value == len(self.strings.value), &#34;nstrings and len of strings don&#39;t match!&#34;
 
@@ -687,7 +736,7 @@ you.</p>
         self.ndebugfiles.deserialise(f)
         dbg_print(f&#34;Number of debug files: {self.ndebugfiles.value}&#34;)
         self.track_section(f, &#34;debugfiles&#34;)
-        self.debugfiles.deserialise(f)
+        self.debugfiles.deserialise(f, self.ndebugfiles.value)
     else:
         self.ndebugfiles = None
         self.debugfiles = None
@@ -802,6 +851,7 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def init_globals(self) -&gt; None:
+    final: Dict[int, Any] = {}
     for const in self.constants:
         res: Dict[str, Any] = {}
         obj = const._global.resolve(self).definition
@@ -821,11 +871,11 @@ you.</p>
             elif isinstance(typ, F32) or isinstance(typ, F64):
                 res[name] = self.floats[field.value].value
             elif isinstance(typ, Bytes):
-                if self.version.value &gt;= 5 and self.bytes:
-                    print(&#34;WARNING: Using bytes for constant. This may be incorrect.&#34;)
-                    res[name] = self.bytes.value[field.value]  # TODO: verify that this is correct behaviour for &gt;=5
-                else:
-                    res[name] = self.strings.value[field.value]</code></pre>
+                res[name] = self.strings.value[field.value]
+            else:
+                res[name] = field.value
+        final[const._global.value] = res
+    self.initialized_globals = final</code></pre>
 </details>
 <div class="desc"></div>
 </dd>
@@ -2991,13 +3041,14 @@ you.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class ResolvableVarInt(VarInt):
+<pre><code class="python">class ResolvableVarInt(VarInt, ABC):
     &#34;&#34;&#34;
     Base class for resolvable VarInts. Call `resolve` to get a direct reference to the object it points to.
     &#34;&#34;&#34;
 
+    @abstractmethod
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; Any:
-        raise NotImplementedError(&#34;resolve is not implemented for this class.&#34;)</code></pre>
+        pass</code></pre>
 </details>
 <div class="desc"><p>Base class for resolvable VarInts. Call <code>resolve</code> to get a direct reference to the object it points to.</p></div>
 <h3>Ancestors</h3>
@@ -3029,8 +3080,9 @@ you.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def resolve(self, code: &#34;Bytecode&#34;) -&gt; Any:
-    raise NotImplementedError(&#34;resolve is not implemented for this class.&#34;)</code></pre>
+<pre><code class="python">@abstractmethod
+def resolve(self, code: &#34;Bytecode&#34;) -&gt; Any:
+    pass</code></pre>
 </details>
 <div class="desc"></div>
 </dd>
@@ -3319,33 +3371,30 @@ def serialise(self) -&gt; bytes:
         self.length = SerialisableInt()
         self.length.length = 4
         self.value: List[str] = []
-        self.lengths: List[int] = []
-        self.embedded_lengths: List[VarInt] = []
+        self.lengths: List[VarInt] = []
 
-    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;StringsBlock&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO, nstrings: int) -&gt; &#34;StringsBlock&#34;:
         self.length.deserialise(f, length=4)
-        strings_size = self.length.value
-        dbg_print(f&#34;Found {fmt_bytes(strings_size)} of strings&#34;)
-        strings_data: bytes = f.read(strings_size)
+        size = self.length.value
+        sdata: bytes = f.read(size)
+        strings: List[str] = []
+        lengths: List[VarInt] = []
+        curpos = 0
+        for _ in range(nstrings):
+            sz = VarInt().deserialise(f)
+            if curpos + sz.value &gt;= size:
+                raise ValueError(&#34;Invalid string&#34;)
 
-        index = 0
-        while index &lt; strings_size:
-            string_length = 0
-            while index + string_length &lt; strings_size and strings_data[index + string_length] != 0:
-                string_length += 1
+            str_value = sdata[curpos : curpos + sz.value]
+            if curpos + sz.value &lt; size and sdata[curpos + sz.value] != 0:
+                raise ValueError(&#34;Invalid string&#34;)
 
-            if index + string_length &gt;= strings_size:
-                raise MalformedBytecode(&#34;Invalid string: no null terminator found&#34;)
+            strings.append(str_value.decode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;))
+            lengths.append(sz)
 
-            string = strings_data[index : index + string_length].decode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;)
-            self.value.append(string)
-            self.lengths.append(string_length)
-
-            index += string_length + 1  # Skip the null terminator
-
-        for _ in self.value:
-            self.embedded_lengths.append(VarInt().deserialise(f))
-
+            curpos += sz.value + 1  # +1 for null terminator
+        self.value = strings
+        self.lengths = lengths
         return self
 
     def serialise(self) -&gt; bytes:
@@ -3353,13 +3402,12 @@ def serialise(self) -&gt; bytes:
         for string in self.value:
             strings_data += string.encode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;) + b&#34;\x00&#34;
         self.length.value = len(strings_data)
-        self.lengths = [len(string) for string in self.value]
-        self.embedded_lengths = [VarInt(length) for length in self.lengths]
+        self.lengths = [VarInt(len(string)) for string in self.value]
         return b&#34;&#34;.join(
             [
                 self.length.serialise(),
                 strings_data,
-                b&#34;&#34;.join([i.serialise() for i in self.embedded_lengths]),
+                b&#34;&#34;.join([i.serialise() for i in self.lengths]),
             ]
         )</code></pre>
 </details>
@@ -3372,37 +3420,35 @@ def serialise(self) -&gt; bytes:
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.StringsBlock.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.StringsBlock" href="#crashlink.core.StringsBlock">StringsBlock</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO, nstrings: int) ‑> <a title="crashlink.core.StringsBlock" href="#crashlink.core.StringsBlock">StringsBlock</a></span>
 </code></dt>
 <dd>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;StringsBlock&#34;:
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO, nstrings: int) -&gt; &#34;StringsBlock&#34;:
     self.length.deserialise(f, length=4)
-    strings_size = self.length.value
-    dbg_print(f&#34;Found {fmt_bytes(strings_size)} of strings&#34;)
-    strings_data: bytes = f.read(strings_size)
+    size = self.length.value
+    sdata: bytes = f.read(size)
+    strings: List[str] = []
+    lengths: List[VarInt] = []
+    curpos = 0
+    for _ in range(nstrings):
+        sz = VarInt().deserialise(f)
+        if curpos + sz.value &gt;= size:
+            raise ValueError(&#34;Invalid string&#34;)
 
-    index = 0
-    while index &lt; strings_size:
-        string_length = 0
-        while index + string_length &lt; strings_size and strings_data[index + string_length] != 0:
-            string_length += 1
+        str_value = sdata[curpos : curpos + sz.value]
+        if curpos + sz.value &lt; size and sdata[curpos + sz.value] != 0:
+            raise ValueError(&#34;Invalid string&#34;)
 
-        if index + string_length &gt;= strings_size:
-            raise MalformedBytecode(&#34;Invalid string: no null terminator found&#34;)
+        strings.append(str_value.decode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;))
+        lengths.append(sz)
 
-        string = strings_data[index : index + string_length].decode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;)
-        self.value.append(string)
-        self.lengths.append(string_length)
-
-        index += string_length + 1  # Skip the null terminator
-
-    for _ in self.value:
-        self.embedded_lengths.append(VarInt().deserialise(f))
-
+        curpos += sz.value + 1  # +1 for null terminator
+    self.value = strings
+    self.lengths = lengths
     return self</code></pre>
 </details>
 <div class="desc"></div>
@@ -3420,13 +3466,12 @@ def serialise(self) -&gt; bytes:
     for string in self.value:
         strings_data += string.encode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;) + b&#34;\x00&#34;
     self.length.value = len(strings_data)
-    self.lengths = [len(string) for string in self.value]
-    self.embedded_lengths = [VarInt(length) for length in self.lengths]
+    self.lengths = [VarInt(len(string)) for string in self.value]
     return b&#34;&#34;.join(
         [
             self.length.serialise(),
             strings_data,
-            b&#34;&#34;.join([i.serialise() for i in self.embedded_lengths]),
+            b&#34;&#34;.join([i.serialise() for i in self.lengths]),
         ]
     )</code></pre>
 </details>
@@ -4351,7 +4396,10 @@ def serialise(self) -&gt; bytes:
     &#34;&#34;&#34;
 
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Type&#34;:
-        return code.global_types[self.value].resolve(code)</code></pre>
+        return code.global_types[self.value].resolve(code)
+
+    def resolve_str(self, code: &#34;Bytecode&#34;) -&gt; str:
+        return code.const_str(self.value)</code></pre>
 </details>
 <div class="desc"><p>Reference to a global object in the bytecode.</p></div>
 <h3>Ancestors</h3>
@@ -4373,6 +4421,19 @@ def serialise(self) -&gt; bytes:
 </summary>
 <pre><code class="python">def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Type&#34;:
     return code.global_types[self.value].resolve(code)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.gIndex.resolve_str"><code class="name flex">
+<span>def <span class="ident">resolve_str</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve_str(self, code: &#34;Bytecode&#34;) -&gt; str:
+    return code.const_str(self.value)</code></pre>
 </details>
 <div class="desc"></div>
 </dd>
@@ -4542,6 +4603,7 @@ def serialise(self) -&gt; bytes:
 <li>
 <h4><code><a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></code></h4>
 <ul class="two-column">
+<li><code><a title="crashlink.core.Bytecode.const_str" href="#crashlink.core.Bytecode.const_str">const_str</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.deserialise" href="#crashlink.core.Bytecode.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.find_magic" href="#crashlink.core.Bytecode.find_magic">find_magic</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.fn" href="#crashlink.core.Bytecode.fn">fn</a></code></li>
@@ -4834,6 +4896,7 @@ def serialise(self) -&gt; bytes:
 <h4><code><a title="crashlink.core.gIndex" href="#crashlink.core.gIndex">gIndex</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.gIndex.resolve" href="#crashlink.core.gIndex.resolve">resolve</a></code></li>
+<li><code><a title="crashlink.core.gIndex.resolve_str" href="#crashlink.core.gIndex.resolve_str">resolve_str</a></code></li>
 </ul>
 </li>
 <li>
