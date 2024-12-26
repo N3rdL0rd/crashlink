@@ -393,7 +393,6 @@ class StringsBlock(Serialisable):
         self.length = SerialisableInt()
         self.length.length = 4
         self.value: List[str] = []
-        self.lengths: List[int] = []
         self.lengths: List[VarInt] = []
 
     def deserialise(self, f: BinaryIO | BytesIO, nstrings: int) -> "StringsBlock":
@@ -418,6 +417,7 @@ class StringsBlock(Serialisable):
             curpos += sz.value + 1  # +1 for null terminator
         self.value = strings
         self.lengths = lengths
+        return self
 
     def serialise(self) -> bytes:
         strings_data = b""
