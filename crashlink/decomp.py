@@ -4,6 +4,7 @@ Decompilation, IR and control flow graph generation
 
 from abc import ABC, abstractmethod
 from enum import Enum as _Enum  # Enum is already defined in crashlink.core
+from pprint import pformat
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from . import disasm
@@ -288,6 +289,7 @@ class CFGraph:
                     preds.append(n)
         return preds
 
+
 class IRStatement(ABC):
     def __init__(self, code: Bytecode):
         self.code = code
@@ -312,31 +314,11 @@ class IRBlock(IRStatement):
 
     def __repr__(self) -> str:
         if not self.statements:
-            return "<IRBlock:>"
+            return "<IRBlock>"
 
-        formatted_statements = []
-        base_indent = "    "
+        # uniform indentation
+        statements = pformat(self.statements, indent=0).replace("\n", "\n\t")
 
-        for stmt in self.statements:
-            if isinstance(stmt, IRConditional):
-                cond_lines = str(stmt).split("\n")
-                formatted_statements.append(base_indent + cond_lines[0])
-
-                true_block_lines = str(stmt.true_block).split("\n")
-                for line in true_block_lines:
-                    if line.strip():
-                        formatted_statements.append(base_indent + "    " + line.strip())
-
-                formatted_statements.append(base_indent + "else")
-
-                false_block_lines = str(stmt.false_block).split("\n")
-                for line in false_block_lines:
-                    if line.strip():
-                        formatted_statements.append(base_indent + "    " + line.strip())
-            else:
-                formatted_statements.append(base_indent + str(stmt))
-
-        statements = "\n".join(formatted_statements)
         return f"<IRBlock:\n{statements}>"
 
 
@@ -381,7 +363,13 @@ class IRArithmetic(IRExpression):
         OR = "|"
         XOR = "^"
 
-    def __init__(self, code: Bytecode, left: IRExpression, right: IRExpression, op: "IRArithmetic.ArithmeticType"):
+    def __init__(
+        self,
+        code: Bytecode,
+        left: IRExpression,
+        right: IRExpression,
+        op: "IRArithmetic.ArithmeticType",
+    ):
         super().__init__(code)
         self.left = left
         self.right = right
@@ -418,7 +406,11 @@ class IRCall(IRExpression):
         METHOD = "method"
 
     def __init__(
-        self, code: Bytecode, call_type: "IRCall.CallType", target: "IRConst|IRLocal|None", args: List[IRExpression]
+        self,
+        code: Bytecode,
+        call_type: "IRCall.CallType",
+        target: "IRConst|IRLocal|None",
+        args: List[IRExpression],
     ):
         super().__init__(code)
         self.call_type = call_type
@@ -540,11 +532,14 @@ class IRConst(IRExpression):
         code: Bytecode,
         const_type: "IRConst.ConstType",
         idx: Optional[ResolvableVarInt] = None,
-        value: Optional[bool] = None,
+        value: Optional[bool | int] = None,
     ):
         super().__init__(code)
         self.const_type = const_type
         self.value: Any = value
+
+        if const_type == IRConst.ConstType.INT and idx is None and value is not None:
+            return
 
         if const_type == IRConst.ConstType.BOOL:
             if value is None:
@@ -587,7 +582,13 @@ class IRConst(IRExpression):
 class IRConditional(IRStatement):
     """A conditional statement"""
 
-    def __init__(self, code: Bytecode, condition: IRExpression, true_block: IRBlock, false_block: IRBlock):
+    def __init__(
+        self,
+        code: Bytecode,
+        condition: IRExpression,
+        true_block: IRBlock,
+        false_block: IRBlock,
+    ):
         super().__init__(code)
         self.condition = condition
         self.true_block = true_block
@@ -602,7 +603,7 @@ class IRConditional(IRStatement):
             self.condition = IRBoolExpr(self.code, IRBoolExpr.CompareType.NOT, old_cond)
 
     def __repr__(self) -> str:
-        return f"<IRConditional: if {self.condition} then\n{self.true_block}\nelse\n{self.false_block}>"
+        return f"<IRConditional: if {self.condition} then\n\t{self.true_block}\nelse\n\t{self.false_block}>"
 
 
 class IRLoop(IRStatement):
@@ -641,7 +642,14 @@ class IRReturn(IRStatement):
 class IRTrace(IRStatement):
     """Trace statement"""
 
-    def __init__(self, code: Bytecode, filename: gIndex, line: int, class_name: gIndex, method_name: gIndex):
+    def __init__(
+        self,
+        code: Bytecode,
+        filename: gIndex,
+        line: int,
+        class_name: gIndex,
+        method_name: gIndex,
+    ):
         super().__init__(code)
         self.filename = filename
         self.line = line
@@ -650,6 +658,29 @@ class IRTrace(IRStatement):
 
     def __repr__(self) -> str:
         return f"<IRTrace: {self.filename.resolve_str(self.code)} {self.line} {self.class_name.resolve_str(self.code)} {self.method_name.resolve_str(self.code)}>"
+
+
+class IRSwitch(IRStatement):
+    """Switch statement"""
+
+    def __init__(
+        self,
+        code: Bytecode,
+        value: IRExpression,
+        cases: Dict[IRConst, IRBlock],
+        default: IRBlock,
+    ):
+        super().__init__(code)
+        self.value = value
+        self.cases = cases
+        self.default = default
+
+    def __repr__(self) -> str:
+        cases = ""
+        for case, block in self.cases.items():
+            cases += f"\n\t{case}: {block}"
+        cases += f"\n\tdefault: {self.default}"
+        return f"<IRSwitch: {self.value}{cases}>"
 
 
 class IRFunction:
@@ -744,12 +775,11 @@ class IRFunction:
 
         return None  # No convergence found
 
-    def _lift_block(self, node: CFNode, 
-                    visited: Optional[Set[CFNode]] = None) -> IRBlock:
+    def _lift_block(self, node: CFNode, visited: Optional[Set[CFNode]] = None) -> IRBlock:
         if visited is None:
             visited = set()
-            
-        if node in visited:                
+
+        if node in visited:
             return IRBlock(self.code)
 
         visited.add(node)
@@ -779,7 +809,14 @@ class IRFunction:
                 rhs = self.locals[op.definition["b"].value]
                 block.statements.append(
                     IRAssign(
-                        self.code, dst, IRArithmetic(self.code, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])
+                        self.code,
+                        dst,
+                        IRArithmetic(
+                            self.code,
+                            lhs,
+                            rhs,
+                            IRArithmetic.ArithmeticType[op.op.upper()],
+                        ),
                     )
                 )
             elif op.op in ["Int", "Float", "Bool", "Bytes", "String", "Null"]:
@@ -886,20 +923,36 @@ class IRFunction:
                 dst = self.locals[op.definition["dst"].value]
                 fun = IRConst(self.code, IRConst.ConstType.FUN, op.definition["fun"])
                 args = [self.locals[op.definition[f"arg{i}"].value] for i in range(n)]
-                block.statements.append(IRAssign(self.code, dst, IRCall(self.code, IRCall.CallType.FUNC, fun, args)))
+                block.statements.append(
+                    IRAssign(
+                        self.code,
+                        dst,
+                        IRCall(self.code, IRCall.CallType.FUNC, fun, args),
+                    )
+                )
 
             elif op.op == "CallMethod":
                 dst = self.locals[op.definition["dst"].value]
                 target = self.locals[op.definition["target"].value]
                 args = [self.locals[op.definition[f"arg{i}"].value] for i in range(op.definition["nargs"].value)]
                 block.statements.append(
-                    IRAssign(self.code, dst, IRCall(self.code, IRCall.CallType.METHOD, target, args))
+                    IRAssign(
+                        self.code,
+                        dst,
+                        IRCall(self.code, IRCall.CallType.METHOD, target, args),
+                    )
                 )
 
             elif op.op == "CallThis":
                 dst = self.locals[op.definition["dst"].value]
                 args = [self.locals[op.definition[f"arg{i}"].value] for i in range(op.definition["nargs"].value)]
-                block.statements.append(IRAssign(self.code, dst, IRCall(self.code, IRCall.CallType.THIS, None, args)))
+                block.statements.append(
+                    IRAssign(
+                        self.code,
+                        dst,
+                        IRCall(self.code, IRCall.CallType.THIS, None, args),
+                    )
+                )
 
             elif op.op == "Ret":
                 if isinstance(op.definition["ret"].resolve(self.code).definition, Void):
@@ -907,7 +960,89 @@ class IRFunction:
                 else:
                     block.statements.append(IRReturn(self.code, self.locals[op.definition["ret"].value]))
 
+            elif op.op == "Switch":
+                val = self.locals[op.definition["reg"].value]
+                offsets = op.definition["offsets"].value
+                cases = {}
+                case_nodes = []
+
+                for i, offset in enumerate(offsets):
+                    if offset.value != 0:
+                        jump_idx = node.base_offset + len(node.ops) + offset.value
+                        target_node = None
+                        for nod in self.cfg.nodes:
+                            if nod.base_offset == jump_idx:
+                                target_node = nod
+                                break
+
+                        if target_node:
+                            case_const = IRConst(self.code, IRConst.ConstType.INT, value=i)
+                            case_nodes.append(target_node)
+                            cases[case_const] = self._lift_block(target_node, visited)
+
+                default_node = None
+                for branch_node, edge_type in node.branches:
+                    if edge_type == "switch: default":
+                        default_node = branch_node
+                        break
+
+                if not default_node:
+                    raise DecompError("Switch missing default branch")
+
+                case_nodes.append(default_node)
+                default_block = self._lift_block(default_node, visited)
+
+                switch = IRSwitch(self.code, val, cases, default_block)
+                block.statements.append(switch)
+
+                convergence = None
+                for possible_node in self.cfg.nodes:
+                    is_convergence = True
+                    for case_node in case_nodes:
+                        if not any(succ == possible_node for succ, _ in case_node.branches):
+                            is_convergence = False
+                            break
+                    if is_convergence:
+                        convergence = possible_node
+                        break
+
+                if convergence:
+                    next_block = self._lift_block(convergence, visited)
+                    block.statements.append(next_block)
+
         return block
 
     def print(self) -> None:
         print(self.block)
+
+
+class PseudoTarget(ABC):
+    """
+    Abstract base class for a pseudocode language backend. Implementations translate from IR to the target language.
+    """
+
+    def __init__(self, code: Bytecode):
+        self.code = code
+
+    @abstractmethod
+    def translate(self, ir: IRFunction) -> str:
+        """Translate IR to the target language"""
+        pass
+
+
+class HaxeTarget(PseudoTarget):
+    """Haxe pseudocode language backend"""
+
+    def translate(self, ir: IRFunction) -> str:
+        output = []
+        for local in ir.locals:
+            output.append(f"var {local.name}:{disasm.type_to_haxe(disasm.type_name(self.code, local.get_type()))};")
+        return "\n".join(output)
+
+
+TARGETS = {
+    "haxe": HaxeTarget,
+}
+"""
+Targets for pseudocode generation.
+"""

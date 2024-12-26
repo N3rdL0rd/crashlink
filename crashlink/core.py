@@ -255,7 +255,7 @@ class gIndex(ResolvableVarInt):
 
     def resolve(self, code: "Bytecode") -> "Type":
         return code.global_types[self.value].resolve(code)
-    
+
     def resolve_str(self, code: "Bytecode") -> str:
         return code.const_str(self.value)
 
@@ -406,14 +406,14 @@ class StringsBlock(Serialisable):
             sz = VarInt().deserialise(f)
             if curpos + sz.value >= size:
                 raise ValueError("Invalid string")
-            
-            str_value = sdata[curpos:curpos + sz.value]
+
+            str_value = sdata[curpos : curpos + sz.value]
             if curpos + sz.value < size and sdata[curpos + sz.value] != 0:
                 raise ValueError("Invalid string")
-            
-            strings.append(str_value.decode('utf-8', errors="surrogateescape"))
+
+            strings.append(str_value.decode("utf-8", errors="surrogateescape"))
             lengths.append(sz)
-            
+
             curpos += sz.value + 1  # +1 for null terminator
         self.value = strings
         self.lengths = lengths
@@ -433,8 +433,6 @@ class StringsBlock(Serialisable):
             ]
         )
 
-
-        
 
 class BytesBlock(Serialisable):
     """
@@ -1529,7 +1527,7 @@ class Bytecode(Serialisable):
             if g.value == gindex:
                 return g
         raise ValueError(f"Global {gindex} not found!")
-    
+
     def const_str(self, gindex: int) -> str:
         # TODO: is this overcomplicated?
         if gindex not in self.initialized_globals:

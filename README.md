@@ -113,7 +113,7 @@ You can use the following pre-defined commands with `just`:
 - [ ] IR lifter (layer 0)
   - [x] If statements
   - [ ] Loops
-  - [ ] Switch opcode statements
+  - [x] Switch opcode statements
   - [ ] Function calls
     - [ ] CallClosure
   - [ ] Closures
@@ -121,7 +121,9 @@ You can use the following pre-defined commands with `just`:
   - [ ] SSA locals
   - [ ] Trace optimization
   - [ ] Nested if/else/if/else -> switch
-- [ ] IR -> Haxe
+- [ ] Pseudocode targets
+  - [ ] Haxe (main target)
+  - [ ] Any others? We'll see.
 - [ ] Partial recompilation (against stubs of other functions)
 - [ ] GUI? (customtkinter or dearpygui)
   - [ ] Graphical disassembler
