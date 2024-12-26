@@ -14,7 +14,7 @@ from datetime import datetime
 from io import BytesIO
 from typing import Any, BinaryIO, Dict, List, Literal, Optional, Tuple, TypeVar
 
-T = TypeVar("T", bound="VarInt")  # HACK: easier than reimplementing deserialise for each subclass
+T = TypeVar("T", bound="VarInt")  # easier than reimplementing deserialise for each subclass
 
 from .errors import (FailedSerialisation, InvalidOpCode, MalformedBytecode,
                      NoMagic)
@@ -30,7 +30,6 @@ except ImportError:
     USE_TQDM = False
 
 
-# TODO: rewrite all ABCs like this to use the PEP 3119 `abc` module
 class Serialisable(ABC):
     """
     Base class for all serialisable objects.
@@ -218,13 +217,14 @@ class VarInt(Serialisable):
         )
 
 
-class ResolvableVarInt(VarInt):
+class ResolvableVarInt(VarInt, ABC):
     """
     Base class for resolvable VarInts. Call `resolve` to get a direct reference to the object it points to.
     """
 
+    @abstractmethod
     def resolve(self, code: "Bytecode") -> Any:
-        raise NotImplementedError("resolve is not implemented for this class.")
+        pass
 
 
 class fIndex(ResolvableVarInt):
