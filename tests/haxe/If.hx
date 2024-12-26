@@ -13,20 +13,7 @@ class If {
 
     static function main() {
         var a = 500;
-        if (a > 400) {
-            
-        }
-        spacer();
         var b = 10;
-        if (a > b) {
-            
-        }
-        spacer();
-        if (a > 400) {
-            
-        } else {
-            
-        }
         spacer();
         if (a > b) {
             other();
