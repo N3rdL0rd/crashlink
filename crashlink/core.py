@@ -1610,10 +1610,13 @@ class Bytecode(Serialisable):
                 b"".join([typ.serialise() for typ in self.types]),
                 b"".join([typ.serialise() for typ in self.global_types]),
                 b"".join([native.serialise() for native in self.natives]),
-                b"".join([func.serialise() for func in self.functions]),
-                b"".join([constant.serialise() for constant in self.constants]),
             ]
         )
+        if USE_TQDM:
+            res += b"".join([func.serialise() for func in tqdm(self.functions)])
+        else:
+            res += b"".join([func.serialise() for func in self.functions])
+        res += b"".join([constant.serialise() for constant in self.constants])
         dbg_print(f"Final size: {hex(len(res))}")
         dbg_print(f"{(datetime.now() - start_time).total_seconds()}s elapsed.")
         return res

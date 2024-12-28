@@ -33,8 +33,12 @@ dev = [
   "snakeviz",
   "typeguard",
   "types-tqdm",
+  "dill"
 ]
-tqdm = ["tqdm"]
+extras = [
+  "tqdm",
+  "dill"
+]
 
 [build-system]
 requires = ["setuptools>=61.0"]
