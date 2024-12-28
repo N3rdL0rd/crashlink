@@ -322,7 +322,7 @@ class Commands:
             print("Usage: pickle <path>")
             return
         try:
-            import dill
+            import dill  # type: ignore
 
             with open(args[0], "wb") as f:
                 dill.dump(self.code, f)

@@ -541,10 +541,13 @@ you.</p>
                 b&#34;&#34;.join([typ.serialise() for typ in self.types]),
                 b&#34;&#34;.join([typ.serialise() for typ in self.global_types]),
                 b&#34;&#34;.join([native.serialise() for native in self.natives]),
-                b&#34;&#34;.join([func.serialise() for func in self.functions]),
-                b&#34;&#34;.join([constant.serialise() for constant in self.constants]),
             ]
         )
+        if USE_TQDM:
+            res += b&#34;&#34;.join([func.serialise() for func in tqdm(self.functions)])
+        else:
+            res += b&#34;&#34;.join([func.serialise() for func in self.functions])
+        res += b&#34;&#34;.join([constant.serialise() for constant in self.constants])
         dbg_print(f&#34;Final size: {hex(len(res))}&#34;)
         dbg_print(f&#34;{(datetime.now() - start_time).total_seconds()}s elapsed.&#34;)
         return res
@@ -1013,10 +1016,13 @@ you.</p>
             b&#34;&#34;.join([typ.serialise() for typ in self.types]),
             b&#34;&#34;.join([typ.serialise() for typ in self.global_types]),
             b&#34;&#34;.join([native.serialise() for native in self.natives]),
-            b&#34;&#34;.join([func.serialise() for func in self.functions]),
-            b&#34;&#34;.join([constant.serialise() for constant in self.constants]),
         ]
     )
+    if USE_TQDM:
+        res += b&#34;&#34;.join([func.serialise() for func in tqdm(self.functions)])
+    else:
+        res += b&#34;&#34;.join([func.serialise() for func in self.functions])
+    res += b&#34;&#34;.join([constant.serialise() for constant in self.constants])
     dbg_print(f&#34;Final size: {hex(len(res))}&#34;)
     dbg_print(f&#34;{(datetime.now() - start_time).total_seconds()}s elapsed.&#34;)
     return res</code></pre>
