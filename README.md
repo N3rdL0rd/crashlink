@@ -19,10 +19,10 @@ Pure Python HashLink bytecode parser/disassembler/decompiler/modding tool
 pip install crashlink
 ```
 
-Optionally, install `tqdm` for progress bars when parsing large files:
+Optionally, install `[extras]` for progress bars when parsing large files and faster bytecode save/load in-memory:
 
 ```bash
-pip install crashlink[tqdm]
+pip install crashlink[extras]
 ```
 
 You also need to have Graphviz installed to generate control flow graphs. On most *nix systems, on Windows (with Chocolatey or Scoop), and on MacOS (with Homebrew), you can install it with your package manager under `graphviz`.

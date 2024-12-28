@@ -316,6 +316,20 @@ class Commands:
             print("String not found.")
         print("String set.")
 
+    def pickle(self, args: List[str]) -> None:
+        """Pickle the bytecode to a given path. `pickle <path>`"""
+        if len(args) == 0:
+            print("Usage: pickle <path>")
+            return
+        try:
+            import dill
+
+            with open(args[0], "wb") as f:
+                dill.dump(self.code, f)
+            print("Bytecode pickled.")
+        except ImportError:
+            print("Dill not found. Install dill to pickle bytecode, or install crashlink with the [extras] option.")
+
     def _get_commands(self) -> Dict[str, Callable[[List[str]], None]]:
         """Get all command methods using reflection"""
         return {
@@ -368,9 +382,21 @@ def main() -> None:
         os.system(f"haxe -hl {stripped}.hl -main {args.file}")
         with open(f"{stripped}.hl", "rb") as f:
             code = Bytecode().deserialise(f)
-    else:
+    elif not args.file.endswith(".pkl"):
         with open(args.file, "rb") as f:
             code = Bytecode().deserialise(f)
+    elif args.file.endswith(".pkl"):
+        try:
+            import dill
+
+            with open(args.file, "rb") as f:
+                code = dill.load(f)
+        except ImportError:
+            print("Dill not found. Install dill to unpickle bytecode, or install crashlink with the [extras] option.")
+            return
+    else:
+        print("Unknown file format.")
+        return
 
     if args.command:
         handle_cmd(code, args.hlbc, args.command)
