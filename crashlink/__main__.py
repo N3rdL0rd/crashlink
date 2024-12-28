@@ -231,7 +231,7 @@ class Commands:
         if len(args) == 0:
             print("Usage: save <path>")
             return
-        print("Serialising...")
+        print("Serialising... (don't panic if it looks stuck!)")
         ser = self.code.serialise()
         print("Saving...")
         with open(args[0], "wb") as f:
@@ -258,6 +258,63 @@ class Commands:
                 print(decomp.TARGETS[target](self.code).translate(f))
                 return
         print("Function not found.")
+
+    def savestrings(self, args: List[str]) -> None:
+        """Save all strings in the bytecode to a given path. `savestrings <path>`"""
+        if len(args) == 0:
+            print("Usage: savestrings <path>")
+            return
+        with open(args[0], "wb") as f:
+            for string in self.code.strings.value:
+                f.write(string.encode("utf-8", errors="surrogateescape") + b"\n")
+        print("Strings saved.")
+        
+    def ss(self, args: List[str]) -> None:
+        """
+        Search for a string in the bytecode by substring. `ss <query>`
+        """
+        if len(args) == 0:
+            print("Usage: ss <query>")
+            return
+        query = " ".join(args)
+        for i, string in enumerate(self.code.strings.value):
+            if query.lower() in string.lower():
+                print(f"String {i}: {string}")
+                
+    def string(self, args: List[str]) -> None:
+        """
+        Print a string by index. `string <index>`
+        """
+        if len(args) == 0:
+            print("Usage: string <index>")
+            return
+        try:
+            index = int(args[0])
+        except ValueError:
+            print("Invalid index.")
+            return
+        try:
+            print(self.code.strings.value[index])
+        except IndexError:
+            print("String not found.")
+    
+    def setstring(self, args: List[str]) -> None:
+        """
+        Set a string by index. `setstring <index> <string>`
+        """
+        if len(args) < 2:
+            print("Usage: setstring <index> <string>")
+            return
+        try:
+            index = int(args[0])
+        except ValueError:
+            print("Invalid index.")
+            return
+        try:
+            self.code.strings.value[index] = " ".join(args[1:])
+        except IndexError:
+            print("String not found.")
+        print("String set.")
 
     def _get_commands(self) -> Dict[str, Callable[[List[str]], None]]:
         """Get all command methods using reflection"""
