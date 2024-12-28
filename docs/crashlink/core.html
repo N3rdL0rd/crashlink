@@ -3380,36 +3380,43 @@ def serialise(self) -&gt; bytes:
         strings: List[str] = []
         lengths: List[VarInt] = []
         curpos = 0
+
         for _ in range(nstrings):
             sz = VarInt().deserialise(f)
-            if curpos + sz.value &gt;= size:
+            # Check if we can read string + null terminator
+            if curpos + sz.value + 1 &gt; size:
+                raise ValueError(&#34;Invalid string&#34;)
+
+            # Verify null terminator
+            if sdata[curpos + sz.value] != 0:
                 raise ValueError(&#34;Invalid string&#34;)
 
             str_value = sdata[curpos : curpos + sz.value]
-            if curpos + sz.value &lt; size and sdata[curpos + sz.value] != 0:
-                raise ValueError(&#34;Invalid string&#34;)
-
             strings.append(str_value.decode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;))
             lengths.append(sz)
 
-            curpos += sz.value + 1  # +1 for null terminator
+            curpos += sz.value + 1  # Move past string and null terminator
+
         self.value = strings
         self.lengths = lengths
         return self
 
     def serialise(self) -&gt; bytes:
-        strings_data = b&#34;&#34;
+        strings_data = bytearray()
         for string in self.value:
-            strings_data += string.encode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;) + b&#34;\x00&#34;
+            encoded = string.encode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;)
+            strings_data.extend(encoded)
+            strings_data.append(0)  # null terminator
+
         self.length.value = len(strings_data)
-        self.lengths = [VarInt(len(string)) for string in self.value]
-        return b&#34;&#34;.join(
-            [
-                self.length.serialise(),
-                strings_data,
-                b&#34;&#34;.join([i.serialise() for i in self.lengths]),
-            ]
-        )</code></pre>
+        self.lengths = [VarInt(len(string.encode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;))) for string in self.value]
+
+        result = bytearray(self.length.serialise())
+        result.extend(strings_data)
+        for length in self.lengths:
+            result.extend(length.serialise())
+
+        return bytes(result)</code></pre>
 </details>
 <div class="desc"><p>Block of strings in the bytecode. Contains a list of strings and their lengths.</p></div>
 <h3>Ancestors</h3>
@@ -3434,19 +3441,23 @@ def serialise(self) -&gt; bytes:
     strings: List[str] = []
     lengths: List[VarInt] = []
     curpos = 0
+
     for _ in range(nstrings):
         sz = VarInt().deserialise(f)
-        if curpos + sz.value &gt;= size:
+        # Check if we can read string + null terminator
+        if curpos + sz.value + 1 &gt; size:
+            raise ValueError(&#34;Invalid string&#34;)
+
+        # Verify null terminator
+        if sdata[curpos + sz.value] != 0:
             raise ValueError(&#34;Invalid string&#34;)
 
         str_value = sdata[curpos : curpos + sz.value]
-        if curpos + sz.value &lt; size and sdata[curpos + sz.value] != 0:
-            raise ValueError(&#34;Invalid string&#34;)
-
         strings.append(str_value.decode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;))
         lengths.append(sz)
 
-        curpos += sz.value + 1  # +1 for null terminator
+        curpos += sz.value + 1  # Move past string and null terminator
+
     self.value = strings
     self.lengths = lengths
     return self</code></pre>
@@ -3462,18 +3473,21 @@ def serialise(self) -&gt; bytes:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def serialise(self) -&gt; bytes:
-    strings_data = b&#34;&#34;
+    strings_data = bytearray()
     for string in self.value:
-        strings_data += string.encode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;) + b&#34;\x00&#34;
+        encoded = string.encode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;)
+        strings_data.extend(encoded)
+        strings_data.append(0)  # null terminator
+
     self.length.value = len(strings_data)
-    self.lengths = [VarInt(len(string)) for string in self.value]
-    return b&#34;&#34;.join(
-        [
-            self.length.serialise(),
-            strings_data,
-            b&#34;&#34;.join([i.serialise() for i in self.lengths]),
-        ]
-    )</code></pre>
+    self.lengths = [VarInt(len(string.encode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;))) for string in self.value]
+
+    result = bytearray(self.length.serialise())
+    result.extend(strings_data)
+    for length in self.lengths:
+        result.extend(length.serialise())
+
+    return bytes(result)</code></pre>
 </details>
 <div class="desc"></div>
 </dd>

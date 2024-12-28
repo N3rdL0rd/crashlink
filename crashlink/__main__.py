@@ -268,7 +268,7 @@ class Commands:
             for string in self.code.strings.value:
                 f.write(string.encode("utf-8", errors="surrogateescape") + b"\n")
         print("Strings saved.")
-        
+
     def ss(self, args: List[str]) -> None:
         """
         Search for a string in the bytecode by substring. `ss <query>`
@@ -280,7 +280,7 @@ class Commands:
         for i, string in enumerate(self.code.strings.value):
             if query.lower() in string.lower():
                 print(f"String {i}: {string}")
-                
+
     def string(self, args: List[str]) -> None:
         """
         Print a string by index. `string <index>`
@@ -297,7 +297,7 @@ class Commands:
             print(self.code.strings.value[index])
         except IndexError:
             print("String not found.")
-    
+
     def setstring(self, args: List[str]) -> None:
         """
         Set a string by index. `setstring <index> <string>`
