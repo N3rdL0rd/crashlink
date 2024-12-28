@@ -11,7 +11,7 @@ Pure Python HashLink bytecode parser/disassembler/decompiler/modding tool
 
 - Pure Python with zero dependencies, integrates nicely in a lot of places (IDAPython compatible!)
 - Allows values to be externally modified and reserialised through a scriptable interface
-- A very nice little CLI with [hlbc](https://github.com/Gui-Yom/hlbc)-compatible mode.
+- A very nice little CLI with [hlbc](https://github.com/Gui-Yom/hlbc)-compatible mode (coming soon)
 
 ## Installation
 
@@ -37,6 +37,22 @@ You also need to have Graphviz installed to generate control flow graphs. On mos
 
 Either:
 
+```txt
+$ crashlink path/to/file.hl # or python -m crashlink
+crashlink> funcs
+f@22 static Clazz.main () -> Void (from Clazz.hx)
+f@23 Clazz.method (Clazz) -> I32 (from Clazz.hx)
+crashlink> fn 22
+f@22 static Clazz.main () -> Void (from Clazz.hx)
+Reg types:
+  0. Void
+
+Ops:
+  0. Ret             {'ret': 0}                                       return
+```
+
+Or:
+
 ```py
 from crashlink import *
 code = Bytecode.from_path("path/to/file.hl")
@@ -52,21 +68,7 @@ elif code.fn(240):
 # >   0. Ret             {'ret': 0}                                       return
 ```
 
-Or:
-
-```txt
-$ crashlink path/to/file.hl # or python -m crashlink
-crashlink> funcs
-f@22 static Clazz.main () -> Void (from Clazz.hx)
-f@23 Clazz.method (Clazz) -> I32 (from Clazz.hx)
-crashlink> fn 22
-f@22 static Clazz.main () -> Void (from Clazz.hx)
-Reg types:
-  0. Void
-
-Ops:
-  0. Ret             {'ret': 0}                                       return
-```
+Read the [API documentation](https://n3rdl0rd.github.io/crashlink/crashlink) for more information.
 
 ## Development
 
