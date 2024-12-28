@@ -5,7 +5,7 @@ crashlink-specific errors.
 
 class CrashlinkError(Exception):
     """
-    Base exception class for all errors raised by crashlink.
+    Base exception class for most specific errors raised by crashlink.
     """
 
 
