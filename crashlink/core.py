@@ -402,36 +402,43 @@ class StringsBlock(Serialisable):
         strings: List[str] = []
         lengths: List[VarInt] = []
         curpos = 0
+        
         for _ in range(nstrings):
             sz = VarInt().deserialise(f)
-            if curpos + sz.value >= size:
+            # Check if we can read string + null terminator
+            if curpos + sz.value + 1 > size:
                 raise ValueError("Invalid string")
-
-            str_value = sdata[curpos : curpos + sz.value]
-            if curpos + sz.value < size and sdata[curpos + sz.value] != 0:
+                
+            # Verify null terminator
+            if sdata[curpos + sz.value] != 0:
                 raise ValueError("Invalid string")
-
+                
+            str_value = sdata[curpos:curpos + sz.value]
             strings.append(str_value.decode("utf-8", errors="surrogateescape"))
             lengths.append(sz)
-
-            curpos += sz.value + 1  # +1 for null terminator
+            
+            curpos += sz.value + 1  # Move past string and null terminator
+            
         self.value = strings
         self.lengths = lengths
         return self
 
     def serialise(self) -> bytes:
-        strings_data = b""
+        strings_data = bytearray()
         for string in self.value:
-            strings_data += string.encode("utf-8", errors="surrogateescape") + b"\x00"
+            encoded = string.encode("utf-8", errors="surrogateescape")
+            strings_data.extend(encoded)
+            strings_data.append(0)  # null terminator
+            
         self.length.value = len(strings_data)
-        self.lengths = [VarInt(len(string)) for string in self.value]
-        return b"".join(
-            [
-                self.length.serialise(),
-                strings_data,
-                b"".join([i.serialise() for i in self.lengths]),
-            ]
-        )
+        self.lengths = [VarInt(len(string.encode("utf-8", errors="surrogateescape"))) for string in self.value]
+        
+        result = bytearray(self.length.serialise())
+        result.extend(strings_data)
+        for length in self.lengths:
+            result.extend(length.serialise())
+            
+        return bytes(result)
 
 
 class BytesBlock(Serialisable):
