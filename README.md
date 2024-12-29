@@ -1,6 +1,6 @@
 # crashlink
 
-![workflow](https://github.com/N3rdL0rd/crashlink/actions/workflows/python-package.yml/badge.svg)
+![workflow](https://github.com/N3rdL0rd/crashlink/actions/workflows/python-package.yml/badge.svg) ![PyPI](https://img.shields.io/pypi/v/crashlink) ![PyPI - Downloads](https://img.shields.io/pypi/dm/crashlink)
 
 Pure Python HashLink bytecode parser/disassembler/decompiler/modding tool
 
