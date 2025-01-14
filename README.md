@@ -1,6 +1,7 @@
 # crashlink
 
-![workflow](https://github.com/N3rdL0rd/crashlink/actions/workflows/python-package.yml/badge.svg) ![PyPI](https://img.shields.io/pypi/v/crashlink) ![PyPI - Downloads](https://img.shields.io/pypi/dm/crashlink)
+![workflow](https://github.com/N3rdL0rd/crashlink/actions/workflows/python-package.yml/badge.svg) ![wakatime](https://wakatime.com/badge/user/959c37b8-6a50-4f37-8cc5-e2b14b687b80/project/7ce1f674-75d5-4525-88f2-ea4e5532e73a.svg) ![PyPI - Version](https://img.shields.io/pypi/v/crashlink)
+ ![PyPI - Downloads](https://img.shields.io/pypi/dd/crashlink)
 
 Pure Python HashLink bytecode parser/disassembler/decompiler/modding tool
 
@@ -24,6 +25,8 @@ Optionally, install `[extras]` for progress bars when parsing large files and fa
 ```bash
 pip install crashlink[extras]
 ```
+
+Or, for bleeding-edge features, see the [Development](#development) section.
 
 You also need to have Graphviz installed to generate control flow graphs. On most *nix systems, on Windows (with Chocolatey or Scoop), and on MacOS (with Homebrew), you can install it with your package manager under `graphviz`.
 
@@ -137,6 +140,7 @@ You can use the following pre-defined commands with `just`:
 
 - Thank you to [Gui-Yom](https://github.com/Gui-Yom) for writing hlbc and for maintaining documentation on the HashLink bytecode format, as well as for providing tests and helping me during development.
 - Thank you to [Haxe Foundation](https://haxe.org/) for creating the HashLink VM and the Haxe programming language.
+- Thank you to the Dead Cells community on Discord for providing me with the motivation to start this project.
 - And a big thank you to you, dear user, for being at least partially interested in this project.
 
 ❤ N3rdL0rd
