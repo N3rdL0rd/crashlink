@@ -331,10 +331,6 @@ class Commands:
         except IndexError:
             print("String not found.")
         print("String set.")
-
-    def entrypoint(self, args: List[str]) -> None:
-        """Get the entrypoint of the bytecode. `entrypoint`"""
-        print(self.code.entrypoint)
     
     def pickle(self, args: List[str]) -> None:
         """Pickle the bytecode to a given path. `pickle <path>`"""
