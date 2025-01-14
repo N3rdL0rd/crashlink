@@ -237,6 +237,12 @@ class fIndex(ResolvableVarInt):
             if function.findex.value == self.value:
                 return function
         raise MalformedBytecode(f"Function index {self.value} not found.")
+    
+    def __str__(self):
+        return f"f@{self.value}"
+    
+    def __repr__(self):
+        return f"f@{self.value}"
 
 
 class tIndex(ResolvableVarInt):
