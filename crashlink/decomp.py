@@ -11,6 +11,7 @@ from . import disasm
 from .core import *
 from .errors import *
 from .globals import dbg_print
+from .pseudo import Translatable
 
 
 def _get_type_in_code(code: Bytecode, name: str) -> Type:
@@ -796,9 +797,9 @@ class IRFunction:
                 ), "Label should be the first operation in a CFNode unconditionally. If this breaks, check CFG generation."
 
                 # helper to find jumps down cfg back up to our label
-                def find_jumps_to_label(start_node: CFNode, label_node: CFNode, visited: Set[CFNode]) -> List[CFNode]:
+                def find_jumps_to_label(start_node: CFNode, label_node: CFNode, visited: Set[CFNode]) -> List[Tuple[CFNode, List[CFNode]]]:
                     jumpers = []
-                    to_visit = [(start_node, [])]
+                    to_visit: List[Tuple[CFNode, List[CFNode]]] = [(start_node, [])]
                     while to_visit:
                         current, path = to_visit.pop(0)
                         if current in visited:
@@ -1058,35 +1059,3 @@ class IRFunction:
 
     def print(self) -> None:
         print(self.block)
-
-
-class PseudoTarget(ABC):
-    """
-    Abstract base class for a pseudocode language backend. Implementations translate from IR to the target language.
-    """
-
-    def __init__(self, code: Bytecode):
-        self.code = code
-
-    @abstractmethod
-    def translate(self, ir: IRFunction) -> str:
-        """Translate IR to the target language"""
-        pass
-
-
-class HaxeTarget(PseudoTarget):
-    """Haxe pseudocode language backend"""
-
-    def translate(self, ir: IRFunction) -> str:
-        output = []
-        for local in ir.locals:
-            output.append(f"var {local.name}:{disasm.type_to_haxe(disasm.type_name(self.code, local.get_type()))};")
-        return "\n".join(output)
-
-
-TARGETS = {
-    "haxe": HaxeTarget,
-}
-"""
-Targets for pseudocode generation.
-"""
