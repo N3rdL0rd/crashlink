@@ -256,11 +256,7 @@ class Commands:
         for func in self.code.functions:
             if func.findex.value == index:
                 f = decomp.IRFunction(self.code, func)
-                if not target in decomp.TARGETS:
-                    print(f"Unknown target language: {target}")
-                    return
-                print(decomp.TARGETS[target](self.code).translate(f))
-                return
+                print("TODO")
         print("Function not found.")
 
     def savestrings(self, args: List[str]) -> None:
