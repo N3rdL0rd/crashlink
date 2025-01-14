@@ -15,3 +15,4 @@ build*.bat
 pypi_token.txt
 testenv
 .crashlink_debug
+stubs/
