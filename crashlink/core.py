@@ -232,10 +232,13 @@ class fIndex(ResolvableVarInt):
     Abstract class based on VarInt to represent a distinct function index instead of just an arbitrary number.
     """
 
-    def resolve(self, code: "Bytecode") -> "Function":
+    def resolve(self, code: "Bytecode") -> "Function|Native":
         for function in code.functions:
             if function.findex.value == self.value:
                 return function
+        for native in code.natives:
+            if native.findex.value == self.value:
+                return native
         raise MalformedBytecode(f"Function index {self.value} not found.")
 
 

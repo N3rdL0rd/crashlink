@@ -784,12 +784,45 @@ class IRFunction:
 
         visited.add(node)
 
-        visited.add(node)
         block = IRBlock(self.code)
 
         # Process operations in current block
-        for op in node.ops:
-            if op.op in [
+        for i, op in enumerate(node.ops):
+            if (
+                op.op == "Label"
+            ):  # HACK: loop handling should be done with cfg, not with labels. but this works, so whatever.
+                assert (
+                    i == 0
+                ), "Label should be the first operation in a CFNode unconditionally. If this breaks, check CFG generation."
+
+                # helper to find jumps down cfg back up to our label
+                def find_jumps_to_label(start_node: CFNode, label_node: CFNode, visited: Set[CFNode]) -> List[CFNode]:
+                    jumpers = []
+                    to_visit = [(start_node, [])]
+                    while to_visit:
+                        current, path = to_visit.pop(0)
+                        if current in visited:
+                            continue
+                        visited.add(current)
+
+                        for next_node, _ in current.branches:
+                            if next_node == label_node:
+                                jumpers.append((current, path))
+                                continue
+
+                            if next_node not in visited:
+                                to_visit.append((next_node, path + [current]))
+
+                    return jumpers
+
+                visited = set()
+                jumpers = find_jumps_to_label(node, node, visited)
+
+                if jumpers:
+                    dbg_print(f"Found loop - jumpers: {jumpers}")
+                    # TODO: Process loop body and condition
+
+            elif op.op in [
                 "Add",
                 "Sub",
                 "Mul",
@@ -844,7 +877,6 @@ class IRFunction:
                 "JNotEq",
             ]:
                 # conditionals create a diamond shape in the IR - the two branches will at some point converge again.
-                # TODO: loop support and detection
                 true_branch = None
                 false_branch = None
                 for branch_node, edge_type in node.branches:
@@ -1008,6 +1040,18 @@ class IRFunction:
 
                 if convergence:
                     next_block = self._lift_block(convergence, visited)
+                    block.statements.append(next_block)
+
+            elif op.op == "JAlways":
+                jump_idx = node.base_offset + len(node.ops) + op.definition["offset"].value
+                target_node = None
+                for nod in self.cfg.nodes:
+                    if nod.base_offset == jump_idx:
+                        target_node = nod
+                        break
+
+                if target_node:
+                    next_block = self._lift_block(target_node, visited)
                     block.statements.append(next_block)
 
         return block
