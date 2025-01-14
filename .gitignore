@@ -16,3 +16,4 @@ pypi_token.txt
 testenv
 .crashlink_debug
 stubs/
+*.pkl

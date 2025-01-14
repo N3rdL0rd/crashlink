@@ -301,6 +301,22 @@ class Commands:
             print(self.code.strings.value[index])
         except IndexError:
             print("String not found.")
+            
+    def int(self, args: List[str]) -> None:
+        """
+        Print an int by index. `int <index>`
+        """
+        if len(args) == 0:
+            print("Usage: int <index>")
+        try:
+            index = int(args[0])
+        except ValueError:
+            print("Invalid index.")
+            return
+        try:
+            print(self.code.ints[index].value)
+        except IndexError:
+            print("Int not found.")
 
     def setstring(self, args: List[str]) -> None:
         """
@@ -319,7 +335,7 @@ class Commands:
         except IndexError:
             print("String not found.")
         print("String set.")
-
+    
     def pickle(self, args: List[str]) -> None:
         """Pickle the bytecode to a given path. `pickle <path>`"""
         if len(args) == 0:
@@ -332,7 +348,7 @@ class Commands:
                 dill.dump(self.code, f)
             print("Bytecode pickled.")
         except ImportError:
-            print("Dill not found. Install dill to pickle bytecode, or install crashlink with the [extras] option.")
+            print("dill not found. Install dill to pickle bytecode, or install crashlink with the [extras] option.")
 
     def stub(self, args: List[str]) -> None:
         """Generate files in the same structure as the original Haxe source. Requires debuginfo. `stub <path>`"""
