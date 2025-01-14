@@ -607,16 +607,16 @@ class IRConditional(IRStatement):
         return f"<IRConditional: if {self.condition} then\n\t{self.true_block}\nelse\n\t{self.false_block}>"
 
 
-class IRLoop(IRStatement):
-    """Loop statement"""
+class IRPrimitiveLoop(IRStatement):
+    """2-block simplistic loop. Has no differentiation between while/for/comprehension, this should be done in later IR layers."""
 
-    def __init__(self, code: Bytecode, condition: IRExpression, body: IRBlock):
+    def __init__(self, code: Bytecode, condition: IRBlock, body: IRBlock):
         super().__init__(code)
         self.condition = condition
         self.body = body
 
     def __repr__(self) -> str:
-        return f"<IRLoop: while {self.condition}\n{self.body}>"
+        return f"<IRPrimitiveLoop: {self.condition}\n{self.body}>"
 
 
 class IRBreak(IRStatement):
@@ -683,6 +683,39 @@ class IRSwitch(IRStatement):
         cases += f"\n\tdefault: {self.default}"
         return f"<IRSwitch: {self.value}{cases}>"
 
+class IsolatedCFGraph(CFGraph):
+    """A control flow graph that contains only a subset of nodes from another graph."""
+    
+    def __init__(self, parent: CFGraph, nodes: List[CFNode], find_entry_intelligently: bool=True):
+        """Initialize from parent graph and list of nodes to isolate."""
+        if not self.nodes:
+            raise ValueError("Got empty list of nodes to isolate!")
+        
+        super().__init__(parent.func)
+        
+        node_map: Dict[CFNode, CFNode] = {}
+        
+        for node in nodes:
+            new_node = self.add_node(node.ops, node.base_offset)
+            node_map[node] = new_node
+            
+            if node == nodes[0]:
+                self.entry = new_node
+
+        for old_node in nodes:
+            new_node = node_map[old_node]
+            for target, edge_type in old_node.branches:
+                if target in node_map:
+                    self.add_branch(new_node, node_map[target], edge_type)
+                    
+        if find_entry_intelligently and self.nodes:
+            entry_candidates = []
+            for node in self.nodes:
+                if not self.predecessors(node):
+                    entry_candidates.append(node)
+                    
+            if len(entry_candidates) == 1:
+                self.entry = entry_candidates[0]
 
 class IRFunction:
     """
@@ -782,12 +815,10 @@ class IRFunction:
 
         if node in visited:
             return IRBlock(self.code)
-
         visited.add(node)
 
         block = IRBlock(self.code)
 
-        # Process operations in current block
         for i, op in enumerate(node.ops):
             if (
                 op.op == "Label"
