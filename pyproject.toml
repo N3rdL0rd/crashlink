@@ -33,7 +33,8 @@ dev = [
   "snakeviz",
   "typeguard",
   "types-tqdm",
-  "dill"
+  "dill",
+  "pytest-xdist"
 ]
 extras = [
   "tqdm",
