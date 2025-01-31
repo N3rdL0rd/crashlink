@@ -44,7 +44,7 @@ serve-docs:
 
 # Run tests
 test:
-    pytest
+    pytest -n 4
 
 # Profile the codebase running tests
 profile:
