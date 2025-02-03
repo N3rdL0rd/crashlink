@@ -686,7 +686,7 @@ class IRSwitch(IRStatement):
 class IsolatedCFGraph(CFGraph):
     """A control flow graph that contains only a subset of nodes from another graph."""
     
-    def __init__(self, parent: CFGraph, nodes: List[CFNode], find_entry_intelligently: bool=True):
+    def __init__(self, parent: CFGraph, nodes: List[CFNode]|Set[CFNode], find_entry_intelligently: bool=True):
         """Initialize from parent graph and list of nodes to isolate."""
         if not self.nodes:
             raise ValueError("Got empty list of nodes to isolate!")
@@ -716,6 +716,28 @@ class IsolatedCFGraph(CFGraph):
                     
             if len(entry_candidates) == 1:
                 self.entry = entry_candidates[0]
+
+
+def _find_jumps_to_label(start_node: CFNode, label_node: CFNode, visited: Set[CFNode]) -> List[Tuple[CFNode, List[CFNode]]]:
+    """Helper function to find all jumps back up to a node by traversing down the CFG."""
+    jumpers = []
+    to_visit: List[Tuple[CFNode, List[CFNode]]] = [(start_node, [])]
+    while to_visit:
+        current, path = to_visit.pop(0)
+        if current in visited:
+            continue
+        visited.add(current)
+
+        for next_node, _ in current.branches:
+            if next_node == label_node:
+                jumpers.append((current, path))
+                continue
+
+            if next_node not in visited:
+                to_visit.append((next_node, path + [current]))
+
+    return jumpers
+
 
 class IRFunction:
     """
@@ -766,7 +788,6 @@ class IRFunction:
                 if reg is not None:
                     reg_assigns[reg].add(assign[0].resolve(self.code))
         # loop through arg names: all with value < 0, eg:
-        # Assigns:
         # Op -1: argument_name (corresponds to reg 0)
         # Op -1: other_arg_name (corresponds to reg 1)
         # Op -1: third_arg_name (corresponds to reg 2)
@@ -827,32 +848,20 @@ class IRFunction:
                     i == 0
                 ), "Label should be the first operation in a CFNode unconditionally. If this breaks, check CFG generation."
 
-                # helper to find jumps down cfg back up to our label
-                def find_jumps_to_label(start_node: CFNode, label_node: CFNode, visited: Set[CFNode]) -> List[Tuple[CFNode, List[CFNode]]]:
-                    jumpers = []
-                    to_visit: List[Tuple[CFNode, List[CFNode]]] = [(start_node, [])]
-                    while to_visit:
-                        current, path = to_visit.pop(0)
-                        if current in visited:
-                            continue
-                        visited.add(current)
-
-                        for next_node, _ in current.branches:
-                            if next_node == label_node:
-                                jumpers.append((current, path))
-                                continue
-
-                            if next_node not in visited:
-                                to_visit.append((next_node, path + [current]))
-
-                    return jumpers
-
                 visited = set()
-                jumpers = find_jumps_to_label(node, node, visited)
+                jumpers = _find_jumps_to_label(node, node, visited)
 
                 if jumpers:
                     dbg_print(f"Found loop - jumpers: {jumpers}")
-                    # TODO: Process loop body and condition
+                    condition_node = node
+                    body_nodes: Set[CFNode] = set()
+                    for jumper, path in jumpers:
+                        body_nodes.add(jumper)
+                        for _node in path:
+                            body_nodes.add(_node)
+                    body_nodes.remode(node)
+                    body_graph = IsolatedCFGraph(self.cfg, body_nodes, find_entry_intelligently=False)
+                    
 
             elif op.op in [
                 "Add",
@@ -931,6 +940,7 @@ class IRFunction:
 
                 if not should_lift_t and not should_lift_f:
                     dbg_print("Warning: Skipping conditional due to weird incoming branches.")
+                    block.comment += "WARNING: Skipping conditional due to weird incoming branches."
                     continue
 
                 cond_map = {
