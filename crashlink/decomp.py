@@ -12,7 +12,7 @@ from .core import *
 from .errors import *
 from .globals import dbg_print
 from .pseudo import Translatable
-from .opcodes import conditionals
+from .opcodes import conditionals, arithmetic
 
 
 def _get_type_in_code(code: Bytecode, name: str) -> Type:
@@ -886,21 +886,7 @@ class IRFunction:
                     )
                 )
                 
-            elif op.op in [
-                "Add",
-                "Sub",
-                "Mul",
-                "SDiv",
-                "UDiv",
-                "SMod",
-                "UMod",
-                "Shl",
-                "SShr",
-                "UShr",
-                "And",
-                "Or",
-                "Xor",
-            ]:
+            elif op.op in arithmetic:
                 dst = self.locals[op.definition["dst"].value]
                 lhs = self.locals[op.definition["a"].value]
                 rhs = self.locals[op.definition["b"].value]
