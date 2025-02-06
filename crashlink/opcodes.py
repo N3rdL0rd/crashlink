@@ -2,6 +2,11 @@
 Definitions of all 98 supported opcodes in the HashLink VM.
 """
 
+conditionals = ["JTrue", "JFalse", "JNull", "JNotNull", "JSLt", "JSGte", "JSGt", "JSLte", "JULt", "JUGte", "JNotLt", "JNotGte", "JEq", "JNotEq"]
+"""
+List of all conditional opcodes.
+"""
+
 opcodes = {
     "Mov": {"dst": "Reg", "src": "Reg"},  # 0
     "Int": {"dst": "Reg", "ptr": "RefInt"},  # 1
