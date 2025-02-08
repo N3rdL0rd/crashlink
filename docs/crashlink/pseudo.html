@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
 <meta name="generator" content="pdoc3 0.11.1">
-<title>crashlink.errors API documentation</title>
-<meta name="description" content="crashlink-specific errors.">
+<title>crashlink.pseudo API documentation</title>
+<meta name="description" content="">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
@@ -24,10 +24,9 @@ hljs.highlightAll();
 <main>
 <article id="content">
 <header>
-<h1 class="title">Module <code>crashlink.errors</code></h1>
+<h1 class="title">Module <code>crashlink.pseudo</code></h1>
 </header>
 <section id="section-intro">
-<p>crashlink-specific errors.</p>
 </section>
 <section>
 </section>
@@ -38,144 +37,34 @@ hljs.highlightAll();
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
 <dl>
-<dt id="crashlink.errors.CrashlinkError"><code class="flex name class">
-<span>class <span class="ident">CrashlinkError</span></span>
-<span>(</span><span>*args, **kwargs)</span>
+<dt id="crashlink.pseudo.Translatable"><code class="flex name class">
+<span>class <span class="ident">Translatable</span></span>
 </code></dt>
 <dd>
-<div class="desc"><p>Base exception class for most specific errors raised by crashlink.</p></div>
+<div class="desc"><p>Helper class that provides a standard way to create an ABC using
+inheritance.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class CrashlinkError(Exception):
-    &#34;&#34;&#34;
-    Base exception class for most specific errors raised by crashlink.
-    &#34;&#34;&#34;</code></pre>
+<pre><code class="python">class Translatable(ABC):
+    @abstractmethod
+    def translate(self, comment: Optional[str]=None) -&gt; str:
+        pass</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
-<li>builtins.Exception</li>
-<li>builtins.BaseException</li>
+<li>abc.ABC</li>
 </ul>
-<h3>Subclasses</h3>
-<ul class="hlist">
-<li><a title="crashlink.errors.DecompError" href="#crashlink.errors.DecompError">DecompError</a></li>
-<li><a title="crashlink.errors.FailedSerialisation" href="#crashlink.errors.FailedSerialisation">FailedSerialisation</a></li>
-<li><a title="crashlink.errors.InvalidOpCode" href="#crashlink.errors.InvalidOpCode">InvalidOpCode</a></li>
-<li><a title="crashlink.errors.MalformedBytecode" href="#crashlink.errors.MalformedBytecode">MalformedBytecode</a></li>
-<li><a title="crashlink.errors.NoMagic" href="#crashlink.errors.NoMagic">NoMagic</a></li>
-</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.pseudo.Translatable.translate"><code class="name flex">
+<span>def <span class="ident">translate</span></span>(<span>self, comment: Optional[str] = None) ‑> str</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
 </dd>
-<dt id="crashlink.errors.DecompError"><code class="flex name class">
-<span>class <span class="ident">DecompError</span></span>
-<span>(</span><span>*args, **kwargs)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Raised when an error occurs during decompilation.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class DecompError(CrashlinkError):
-    &#34;&#34;&#34;
-    Raised when an error occurs during decompilation.
-    &#34;&#34;&#34;</code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li><a title="crashlink.errors.CrashlinkError" href="#crashlink.errors.CrashlinkError">CrashlinkError</a></li>
-<li>builtins.Exception</li>
-<li>builtins.BaseException</li>
-</ul>
-</dd>
-<dt id="crashlink.errors.FailedSerialisation"><code class="flex name class">
-<span>class <span class="ident">FailedSerialisation</span></span>
-<span>(</span><span>*args, **kwargs)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Raised when reserialisation of bytecode fails.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class FailedSerialisation(CrashlinkError):
-    &#34;&#34;&#34;
-    Raised when reserialisation of bytecode fails.
-    &#34;&#34;&#34;</code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li><a title="crashlink.errors.CrashlinkError" href="#crashlink.errors.CrashlinkError">CrashlinkError</a></li>
-<li>builtins.Exception</li>
-<li>builtins.BaseException</li>
-</ul>
-</dd>
-<dt id="crashlink.errors.InvalidOpCode"><code class="flex name class">
-<span>class <span class="ident">InvalidOpCode</span></span>
-<span>(</span><span>*args, **kwargs)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Raised when an invalid opcode is encountered.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class InvalidOpCode(CrashlinkError):
-    &#34;&#34;&#34;
-    Raised when an invalid opcode is encountered.
-    &#34;&#34;&#34;</code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li><a title="crashlink.errors.CrashlinkError" href="#crashlink.errors.CrashlinkError">CrashlinkError</a></li>
-<li>builtins.Exception</li>
-<li>builtins.BaseException</li>
-</ul>
-</dd>
-<dt id="crashlink.errors.MalformedBytecode"><code class="flex name class">
-<span>class <span class="ident">MalformedBytecode</span></span>
-<span>(</span><span>*args, **kwargs)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Raised when malformed bytecode is deserialised.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class MalformedBytecode(CrashlinkError):
-    &#34;&#34;&#34;
-    Raised when malformed bytecode is deserialised.
-    &#34;&#34;&#34;</code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li><a title="crashlink.errors.CrashlinkError" href="#crashlink.errors.CrashlinkError">CrashlinkError</a></li>
-<li>builtins.Exception</li>
-<li>builtins.BaseException</li>
-</ul>
-</dd>
-<dt id="crashlink.errors.NoMagic"><code class="flex name class">
-<span>class <span class="ident">NoMagic</span></span>
-<span>(</span><span>*args, **kwargs)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Raised when no magic b"HLB" can be found in a file.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class NoMagic(CrashlinkError):
-    &#34;&#34;&#34;
-    Raised when no magic b&#34;HLB&#34; can be found in a file.
-    &#34;&#34;&#34;</code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li><a title="crashlink.errors.CrashlinkError" href="#crashlink.errors.CrashlinkError">CrashlinkError</a></li>
-<li>builtins.Exception</li>
-<li>builtins.BaseException</li>
-</ul>
+</dl>
 </dd>
 </dl>
 </section>
@@ -193,22 +82,10 @@ hljs.highlightAll();
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
 <li>
-<h4><code><a title="crashlink.errors.CrashlinkError" href="#crashlink.errors.CrashlinkError">CrashlinkError</a></code></h4>
-</li>
-<li>
-<h4><code><a title="crashlink.errors.DecompError" href="#crashlink.errors.DecompError">DecompError</a></code></h4>
-</li>
-<li>
-<h4><code><a title="crashlink.errors.FailedSerialisation" href="#crashlink.errors.FailedSerialisation">FailedSerialisation</a></code></h4>
-</li>
-<li>
-<h4><code><a title="crashlink.errors.InvalidOpCode" href="#crashlink.errors.InvalidOpCode">InvalidOpCode</a></code></h4>
-</li>
-<li>
-<h4><code><a title="crashlink.errors.MalformedBytecode" href="#crashlink.errors.MalformedBytecode">MalformedBytecode</a></code></h4>
-</li>
-<li>
-<h4><code><a title="crashlink.errors.NoMagic" href="#crashlink.errors.NoMagic">NoMagic</a></code></h4>
+<h4><code><a title="crashlink.pseudo.Translatable" href="#crashlink.pseudo.Translatable">Translatable</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.pseudo.Translatable.translate" href="#crashlink.pseudo.Translatable.translate">translate</a></code></li>
+</ul>
 </li>
 </ul>
 </li>

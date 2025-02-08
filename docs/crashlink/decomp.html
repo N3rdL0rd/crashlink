@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
-<meta name="generator" content="pdoc3 0.11.5">
+<meta name="generator" content="pdoc3 0.11.1">
 <title>crashlink.decomp API documentation</title>
 <meta name="description" content="Decompilation, IR and control flow graph generation">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
-<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin-bottom:1em}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
 <style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
 <style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
 <script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
@@ -18,17 +18,6 @@
 <script>window.addEventListener('DOMContentLoaded', () => {
 hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
 hljs.highlightAll();
-/* Collapse source docstrings */
-setTimeout(() => {
-[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
-.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
-.forEach(el => {
-let d = document.createElement('details');
-d.classList.add('hljs-string');
-d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
-el.replaceWith(d);
-});
-}, 100);
 })</script>
 </head>
 <body>
@@ -43,13 +32,6 @@ el.replaceWith(d);
 <section>
 </section>
 <section>
-<h2 class="section-title" id="header-variables">Global variables</h2>
-<dl>
-<dt id="crashlink.decomp.TARGETS"><code class="name">var <span class="ident">TARGETS</span></code></dt>
-<dd>
-<div class="desc"><p>Targets for pseudocode generation.</p></div>
-</dd>
-</dl>
 </section>
 <section>
 </section>
@@ -61,6 +43,7 @@ el.replaceWith(d);
 <span>(</span><span>graph: <a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a>)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>Remove unreachable code blocks</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -83,7 +66,6 @@ el.replaceWith(d);
 
         self.graph.nodes = [n for n in self.graph.nodes if n in reachable]</code></pre>
 </details>
-<div class="desc"><p>Remove unreachable code blocks</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.CFOptimizer" href="#crashlink.decomp.CFOptimizer">CFOptimizer</a></li>
@@ -94,23 +76,6 @@ el.replaceWith(d);
 <span>def <span class="ident">optimize</span></span>(<span>self) ‑> None</span>
 </code></dt>
 <dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def optimize(self) -&gt; None:
-    reachable: Set[CFNode] = set()
-    worklist = [self.graph.entry]
-
-    while worklist:
-        node = worklist.pop()
-        if node not in reachable and node:
-            reachable.add(node)
-            for next_node, _ in node.branches:
-                worklist.append(next_node)
-
-    self.graph.nodes = [n for n in self.graph.nodes if n in reachable]</code></pre>
-</details>
 <div class="desc"></div>
 </dd>
 </dl>
@@ -120,6 +85,7 @@ el.replaceWith(d);
 <span>(</span><span>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a>)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>A control flow graph.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -319,261 +285,52 @@ el.replaceWith(d);
                     preds.append(n)
         return preds</code></pre>
 </details>
-<div class="desc"><p>A control flow graph.</p></div>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IsolatedCFGraph" href="#crashlink.decomp.IsolatedCFGraph">IsolatedCFGraph</a></li>
+</ul>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.decomp.CFGraph.add_branch"><code class="name flex">
-<span>def <span class="ident">add_branch</span></span>(<span>self,<br>src: <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>,<br>dst: <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>,<br>edge_type: str) ‑> None</span>
+<span>def <span class="ident">add_branch</span></span>(<span>self, src: <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>, dst: <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>, edge_type: str) ‑> None</span>
 </code></dt>
 <dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def add_branch(self, src: CFNode, dst: CFNode, edge_type: str) -&gt; None:
-    src.branches.append((dst, edge_type))</code></pre>
-</details>
 <div class="desc"></div>
 </dd>
 <dt id="crashlink.decomp.CFGraph.add_node"><code class="name flex">
-<span>def <span class="ident">add_node</span></span>(<span>self,<br>ops: List[<a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>],<br>base_offset: int = 0) ‑> <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a></span>
+<span>def <span class="ident">add_node</span></span>(<span>self, ops: List[<a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>], base_offset: int = 0) ‑> <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a></span>
 </code></dt>
 <dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def add_node(self, ops: List[Opcode], base_offset: int = 0) -&gt; CFNode:
-    node = CFNode(ops)
-    self.nodes.append(node)
-    node.base_offset = base_offset
-    return node</code></pre>
-</details>
 <div class="desc"></div>
 </dd>
 <dt id="crashlink.decomp.CFGraph.build"><code class="name flex">
 <span>def <span class="ident">build</span></span>(<span>self, do_optimize: bool = True) ‑> None</span>
 </code></dt>
 <dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def build(self, do_optimize: bool = True) -&gt; None:
-    &#34;&#34;&#34;Build the control flow graph.&#34;&#34;&#34;
-    if not self.func.ops:
-        return
-
-    jump_targets = set()
-    for i, op in enumerate(self.func.ops):
-        # fmt: off
-        if op.op in [&#34;JTrue&#34;, &#34;JFalse&#34;, &#34;JNull&#34;, &#34;JNotNull&#34;, 
-                    &#34;JSLt&#34;, &#34;JSGte&#34;, &#34;JSGt&#34;, &#34;JSLte&#34;,
-                    &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;,
-                    &#34;JEq&#34;, &#34;JNotEq&#34;, &#34;JAlways&#34;, &#34;Trap&#34;]:
-        # fmt: on
-            jump_targets.add(i + op.definition[&#34;offset&#34;].value + 1)
-
-    current_ops: List[Opcode] = []
-    current_start = 0
-    blocks: List[Tuple[int, List[Opcode]]] = []  # (start_idx, ops) tuples
-
-    for i, op in enumerate(self.func.ops):
-        if i in jump_targets and current_ops:
-            blocks.append((current_start, current_ops))
-            current_ops = []
-            current_start = i
-
-        current_ops.append(op)
-
-        # fmt: off
-        if op.op in [&#34;JTrue&#34;, &#34;JFalse&#34;, &#34;JNull&#34;, &#34;JNotNull&#34;,
-                    &#34;JSLt&#34;, &#34;JSGte&#34;, &#34;JSGt&#34;, &#34;JSLte&#34;, 
-                    &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;,
-                    &#34;JEq&#34;, &#34;JNotEq&#34;, &#34;JAlways&#34;, &#34;Switch&#34;, &#34;Ret&#34;,
-                    &#34;Trap&#34;, &#34;EndTrap&#34;]:
-        # fmt: on
-            blocks.append((current_start, current_ops))
-            current_ops = []
-            current_start = i + 1
-
-    if current_ops:
-        blocks.append((current_start, current_ops))
-
-    nodes_by_idx = {}
-    for start_idx, ops in blocks:
-        node = self.add_node(ops, start_idx)
-        nodes_by_idx[start_idx] = node
-        if start_idx == 0:
-            self.entry = node
-
-    for start_idx, ops in blocks:
-        src_node = nodes_by_idx[start_idx]
-        last_op = ops[-1]
-
-        next_idx = start_idx + len(ops)
-
-        # conditionals
-        # fmt: off
-        if last_op.op in [&#34;JTrue&#34;, &#34;JFalse&#34;, &#34;JNull&#34;, &#34;JNotNull&#34;,
-                        &#34;JSLt&#34;, &#34;JSGte&#34;, &#34;JSGt&#34;, &#34;JSLte&#34;,
-                        &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;, 
-                        &#34;JEq&#34;, &#34;JNotEq&#34;]:
-        # fmt: on
-            
-            jump_idx = start_idx + len(ops) + last_op.definition[&#34;offset&#34;].value
-            
-            # - jump target is &#34;true&#34; branch
-            # - fall-through is &#34;false&#34; branch
-                
-            if jump_idx in nodes_by_idx:
-                edge_type = &#34;true&#34;
-                self.add_branch(src_node, nodes_by_idx[jump_idx], edge_type)
-                
-            if next_idx in nodes_by_idx:
-                edge_type = &#34;false&#34; 
-                self.add_branch(src_node, nodes_by_idx[next_idx], edge_type)
-        
-        elif last_op.op == &#34;Switch&#34;:
-            for i, offset in enumerate(last_op.definition[&#39;offsets&#39;].value):
-                if offset.value != 0:
-                    jump_idx = start_idx + len(ops) + offset.value
-                    self.add_branch(src_node, nodes_by_idx[jump_idx], f&#34;switch: case: {i} &#34;)
-            if next_idx in nodes_by_idx:
-                self.add_branch(src_node, nodes_by_idx[next_idx], &#34;switch: default&#34;)
-        
-        elif last_op.op == &#34;Trap&#34;:
-            jump_idx = start_idx + len(ops) + last_op.definition[&#34;offset&#34;].value
-            if jump_idx in nodes_by_idx:
-                self.add_branch(src_node, nodes_by_idx[jump_idx], &#34;trap&#34;)
-            if next_idx in nodes_by_idx:
-                self.add_branch(src_node, nodes_by_idx[next_idx], &#34;fall-through&#34;)
-        
-        elif last_op.op == &#34;EndTrap&#34;:
-            if next_idx in nodes_by_idx:
-                self.add_branch(src_node, nodes_by_idx[next_idx], &#34;endtrap&#34;)
-        
-        elif last_op.op == &#34;JAlways&#34;:
-            jump_idx = start_idx + len(ops) + last_op.definition[&#34;offset&#34;].value
-            if jump_idx in nodes_by_idx:
-                self.add_branch(src_node, nodes_by_idx[jump_idx], &#34;unconditional&#34;)
-        elif last_op.op != &#34;Ret&#34; and next_idx in nodes_by_idx:
-            self.add_branch(src_node, nodes_by_idx[next_idx], &#34;unconditional&#34;)
-
-    if do_optimize:
-        # fmt: off
-        self.optimize([
-            CFJumpThreader(self),
-            CFDeadCodeEliminator(self),
-        ])
-        # fmt: on</code></pre>
-</details>
 <div class="desc"><p>Build the control flow graph.</p></div>
 </dd>
 <dt id="crashlink.decomp.CFGraph.graph"><code class="name flex">
-<span>def <span class="ident">graph</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
+<span>def <span class="ident">graph</span></span>(<span>self, code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
 </code></dt>
 <dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def graph(self, code: Bytecode) -&gt; str:
-    &#34;&#34;&#34;Generate DOT format graph visualization.&#34;&#34;&#34;
-    dot = [&#34;digraph G {&#34;]
-    dot.append(&#39;  labelloc=&#34;t&#34;;&#39;)
-    dot.append(&#39;  label=&#34;CFG for %s&#34;;&#39; % disasm.func_header(code, self.func))
-    dot.append(&#39;  fontname=&#34;Arial&#34;;&#39;)
-    dot.append(&#34;  labelfontsize=20;&#34;)
-    dot.append(&#34;  forcelabels=true;&#34;)
-    dot.append(&#39;  node [shape=box, fontname=&#34;Courier&#34;];&#39;)
-    dot.append(&#39;  edge [fontname=&#34;Courier&#34;, fontsize=9];&#39;)
-
-    for node in self.nodes:
-        label = (
-            &#34;\n&#34;.join(
-                [
-                    disasm.pseudo_from_op(op, node.base_offset + i, self.func.regs, code, terse=True)
-                    for i, op in enumerate(node.ops)
-                ]
-            )
-            .replace(&#39;&#34;&#39;, &#39;\\&#34;&#39;)
-            .replace(&#34;\n&#34;, &#34;\\n&#34;)
-        )
-        style = self.style_node(node)
-        dot.append(f&#39;  node_{id(node)} [label=&#34;{label}&#34;, {style}, xlabel=&#34;{node.base_offset}.&#34;];&#39;)
-
-    for node in self.nodes:
-        for branch, edge_type in node.branches:
-            if edge_type == &#34;true&#34;:
-                style = &#39;color=&#34;green&#34;, label=&#34;true&#34;&#39;
-            elif edge_type == &#34;false&#34;:
-                style = &#39;color=&#34;crimson&#34;, label=&#34;false&#34;&#39;
-            elif edge_type.startswith(&#34;switch: &#34;):
-                style = f&#39;color=&#34;{&#34;purple&#34; if not edge_type.split(&#34;switch: &#34;)[1].strip() == &#34;default&#34; else &#34;crimson&#34;}&#34;, label=&#34;{edge_type.split(&#34;switch: &#34;)[1].strip()}&#34;&#39;
-            elif edge_type == &#34;trap&#34;:
-                style = &#39;color=&#34;yellow3&#34;, label=&#34;trap&#34;&#39;
-            else:  # unconditionals and unmatched
-                style = &#39;color=&#34;cornflowerblue&#34;&#39;
-
-            dot.append(f&#34;  node_{id(node)} -&gt; node_{id(branch)} [{style}];&#34;)
-
-    dot.append(&#34;}&#34;)
-    return &#34;\n&#34;.join(dot)</code></pre>
-</details>
 <div class="desc"><p>Generate DOT format graph visualization.</p></div>
 </dd>
 <dt id="crashlink.decomp.CFGraph.optimize"><code class="name flex">
-<span>def <span class="ident">optimize</span></span>(<span>self,<br>optimizers: List[<a title="crashlink.decomp.CFOptimizer" href="#crashlink.decomp.CFOptimizer">CFOptimizer</a>]) ‑> None</span>
+<span>def <span class="ident">optimize</span></span>(<span>self, optimizers: List[<a title="crashlink.decomp.CFOptimizer" href="#crashlink.decomp.CFOptimizer">CFOptimizer</a>]) ‑> None</span>
 </code></dt>
 <dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def optimize(self, optimizers: List[CFOptimizer]) -&gt; None:
-    for optimizer in optimizers:
-        if optimizer not in self.applied_optimizers:
-            optimizer.optimize()
-            self.applied_optimizers.append(optimizer)</code></pre>
-</details>
 <div class="desc"></div>
 </dd>
 <dt id="crashlink.decomp.CFGraph.predecessors"><code class="name flex">
-<span>def <span class="ident">predecessors</span></span>(<span>self,<br>node: <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>) ‑> List[<a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>]</span>
+<span>def <span class="ident">predecessors</span></span>(<span>self, node: <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>) ‑> List[<a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>]</span>
 </code></dt>
 <dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def predecessors(self, node: CFNode) -&gt; List[CFNode]:
-    &#34;&#34;&#34;Get predecessors of a node&#34;&#34;&#34;
-    preds = []
-    for n in self.nodes:
-        for succ, _ in n.branches:
-            if succ == node:
-                preds.append(n)
-    return preds</code></pre>
-</details>
 <div class="desc"><p>Get predecessors of a node</p></div>
 </dd>
 <dt id="crashlink.decomp.CFGraph.style_node"><code class="name flex">
-<span>def <span class="ident">style_node</span></span>(<span>self,<br>node: <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>) ‑> str</span>
+<span>def <span class="ident">style_node</span></span>(<span>self, node: <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>) ‑> str</span>
 </code></dt>
 <dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def style_node(self, node: CFNode) -&gt; str:
-    if node == self.entry:
-        return &#34;style=filled, fillcolor=pink1&#34;
-    for op in node.ops:
-        if op.op == &#34;Ret&#34;:
-            return &#34;style=filled, fillcolor=aquamarine&#34;
-    return &#34;style=filled, fillcolor=lightblue&#34;</code></pre>
-</details>
 <div class="desc"></div>
 </dd>
 </dl>
@@ -583,6 +340,7 @@ el.replaceWith(d);
 <span>(</span><span>graph: <a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a>)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>Thread jumps to reduce the number of nodes in the graph.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -615,7 +373,6 @@ el.replaceWith(d);
         # remove nodes from graph
         self.graph.nodes = [n for n in self.graph.nodes if n not in nodes_to_remove]</code></pre>
 </details>
-<div class="desc"><p>Thread jumps to reduce the number of nodes in the graph.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.CFOptimizer" href="#crashlink.decomp.CFOptimizer">CFOptimizer</a></li>
@@ -626,33 +383,6 @@ el.replaceWith(d);
 <span>def <span class="ident">optimize</span></span>(<span>self) ‑> None</span>
 </code></dt>
 <dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def optimize(self) -&gt; None:
-    # map each node to its predecessors
-    predecessors: Dict[CFNode, List[CFNode]] = {}
-    for node in self.graph.nodes:
-        for branch, _ in node.branches:
-            predecessors.setdefault(branch, []).append(node)
-
-    nodes_to_remove = set()
-    for node in self.graph.nodes:
-        if len(node.ops) == 1 and node.ops[0].op == &#34;JAlways&#34;:
-            if len(node.branches) == 1:
-                target_node, edge_type = node.branches[0]
-                # redirect all predecessors to target_node
-                for pred in predecessors.get(node, []):
-                    pred.branches = [
-                        (target_node if branch == node else branch, etype) for branch, etype in pred.branches
-                    ]
-                    predecessors.setdefault(target_node, []).append(pred)
-                nodes_to_remove.add(node)
-
-    # remove nodes from graph
-    self.graph.nodes = [n for n in self.graph.nodes if n not in nodes_to_remove]</code></pre>
-</details>
 <div class="desc"></div>
 </dd>
 </dl>
@@ -662,6 +392,7 @@ el.replaceWith(d);
 <span>(</span><span>ops: List[<a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>])</span>
 </code></dt>
 <dd>
+<div class="desc"><p>A control flow node.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -679,13 +410,13 @@ el.replaceWith(d);
     def __repr__(self) -&gt; str:
         return &#34;&lt;CFNode: %s&gt;&#34; % self.ops</code></pre>
 </details>
-<div class="desc"><p>A control flow node.</p></div>
 </dd>
 <dt id="crashlink.decomp.CFOptimizer"><code class="flex name class">
 <span>class <span class="ident">CFOptimizer</span></span>
 <span>(</span><span>graph: <a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a>)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>Base class for control flow graph optimizers.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -701,7 +432,6 @@ el.replaceWith(d);
     def optimize(self) -&gt; None:
         raise NotImplementedError()</code></pre>
 </details>
-<div class="desc"><p>Base class for control flow graph optimizers.</p></div>
 <h3>Subclasses</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.CFDeadCodeEliminator" href="#crashlink.decomp.CFDeadCodeEliminator">CFDeadCodeEliminator</a></li>
@@ -713,55 +443,16 @@ el.replaceWith(d);
 <span>def <span class="ident">optimize</span></span>(<span>self) ‑> None</span>
 </code></dt>
 <dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def optimize(self) -&gt; None:
-    raise NotImplementedError()</code></pre>
-</details>
 <div class="desc"></div>
 </dd>
 </dl>
 </dd>
-<dt id="crashlink.decomp.HaxeTarget"><code class="flex name class">
-<span>class <span class="ident">HaxeTarget</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
-</code></dt>
-<dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class HaxeTarget(PseudoTarget):
-    &#34;&#34;&#34;Haxe pseudocode language backend&#34;&#34;&#34;
-
-    def translate(self, ir: IRFunction) -&gt; str:
-        output = []
-        for local in ir.locals:
-            output.append(f&#34;var {local.name}:{disasm.type_to_haxe(disasm.type_name(self.code, local.get_type()))};&#34;)
-        return &#34;\n&#34;.join(output)</code></pre>
-</details>
-<div class="desc"><p>Haxe pseudocode language backend</p></div>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li><a title="crashlink.decomp.PseudoTarget" href="#crashlink.decomp.PseudoTarget">PseudoTarget</a></li>
-<li>abc.ABC</li>
-</ul>
-<h3>Inherited members</h3>
-<ul class="hlist">
-<li><code><b><a title="crashlink.decomp.PseudoTarget" href="#crashlink.decomp.PseudoTarget">PseudoTarget</a></b></code>:
-<ul class="hlist">
-<li><code><a title="crashlink.decomp.PseudoTarget.translate" href="#crashlink.decomp.PseudoTarget.translate">translate</a></code></li>
-</ul>
-</li>
-</ul>
-</dd>
 <dt id="crashlink.decomp.IRArithmetic"><code class="flex name class">
 <span>class <span class="ident">IRArithmetic</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>left: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>right: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>op: <a title="crashlink.decomp.IRArithmetic.ArithmeticType" href="#crashlink.decomp.IRArithmetic.ArithmeticType">IRArithmetic.ArithmeticType</a>)</span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, left: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>, right: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>, op: <a title="crashlink.decomp.IRArithmetic.ArithmeticType" href="#crashlink.decomp.IRArithmetic.ArithmeticType">IRArithmetic.ArithmeticType</a>)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>Abstract base class for expressions that produce a value</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -801,7 +492,6 @@ el.replaceWith(d);
     def __repr__(self) -&gt; str:
         return f&#34;&lt;IRArithmetic: {self.left} {self.op.value} {self.right}&gt;&#34;</code></pre>
 </details>
-<div class="desc"><p>Abstract base class for expressions that produce a value</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
@@ -826,9 +516,10 @@ el.replaceWith(d);
 </dd>
 <dt id="crashlink.decomp.IRAssign"><code class="flex name class">
 <span>class <span class="ident">IRAssign</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>target: <a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>,<br>expr: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>)</span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, target: <a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>, expr: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>Assignment of an expression result to a local variable</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -844,7 +535,6 @@ el.replaceWith(d);
     def __repr__(self) -&gt; str:
         return f&#34;&lt;IRAssign: {self.target} = {self.expr} ({disasm.type_name(self.code, self.expr.get_type())})&gt;&#34;</code></pre>
 </details>
-<div class="desc"><p>Assignment of an expression result to a local variable</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
@@ -856,6 +546,7 @@ el.replaceWith(d);
 <span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>A basic unit block of IR. Contains a list of IRStatements, and can contain other IRBlocks.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -878,7 +569,6 @@ el.replaceWith(d);
 
         return f&#34;&lt;IRBlock:\n{statements}&gt;&#34;</code></pre>
 </details>
-<div class="desc"><p>A basic unit block of IR. Contains a list of IRStatements, and can contain other IRBlocks.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
@@ -887,9 +577,10 @@ el.replaceWith(d);
 </dd>
 <dt id="crashlink.decomp.IRBoolExpr"><code class="flex name class">
 <span>class <span class="ident">IRBoolExpr</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>op: <a title="crashlink.decomp.IRBoolExpr.CompareType" href="#crashlink.decomp.IRBoolExpr.CompareType">IRBoolExpr.CompareType</a>,<br>left: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a> | None = None,<br>right: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a> | None = None)</span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, op: <a title="crashlink.decomp.IRBoolExpr.CompareType" href="#crashlink.decomp.IRBoolExpr.CompareType">IRBoolExpr.CompareType</a>, left: Optional[<a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>] = None, right: Optional[<a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>] = None)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>Base class for boolean expressions</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -972,7 +663,6 @@ el.replaceWith(d);
             return f&#34;&lt;IRBoolExpr: {self.left} {self.op.value}&gt;&#34;
         return f&#34;&lt;IRBoolExpr: {self.left} {self.op.value} {self.right}&gt;&#34;</code></pre>
 </details>
-<div class="desc"><p>Base class for boolean expressions</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
@@ -992,40 +682,6 @@ el.replaceWith(d);
 <span>def <span class="ident">invert</span></span>(<span>self) ‑> None</span>
 </code></dt>
 <dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def invert(self) -&gt; None:
-    if self.op == IRBoolExpr.CompareType.NOT:
-        raise DecompError(&#34;Cannot invert NOT operation&#34;)
-    elif self.op == IRBoolExpr.CompareType.TRUE:
-        self.op = IRBoolExpr.CompareType.FALSE
-    elif self.op == IRBoolExpr.CompareType.FALSE:
-        self.op = IRBoolExpr.CompareType.TRUE
-    elif self.op == IRBoolExpr.CompareType.ISTRUE:
-        self.op = IRBoolExpr.CompareType.ISFALSE
-    elif self.op == IRBoolExpr.CompareType.ISFALSE:
-        self.op = IRBoolExpr.CompareType.ISTRUE
-    elif self.op == IRBoolExpr.CompareType.NULL:
-        self.op = IRBoolExpr.CompareType.NOT_NULL
-    elif self.op == IRBoolExpr.CompareType.NOT_NULL:
-        self.op = IRBoolExpr.CompareType.NULL
-    elif self.op == IRBoolExpr.CompareType.EQ:
-        self.op = IRBoolExpr.CompareType.NEQ
-    elif self.op == IRBoolExpr.CompareType.NEQ:
-        self.op = IRBoolExpr.CompareType.EQ
-    elif self.op == IRBoolExpr.CompareType.LT:
-        self.op = IRBoolExpr.CompareType.GTE
-    elif self.op == IRBoolExpr.CompareType.GTE:
-        self.op = IRBoolExpr.CompareType.LT
-    elif self.op == IRBoolExpr.CompareType.GT:
-        self.op = IRBoolExpr.CompareType.LTE
-    elif self.op == IRBoolExpr.CompareType.LTE:
-        self.op = IRBoolExpr.CompareType.GT
-    else:
-        raise DecompError(f&#34;Unknown IRBoolExpr type: {self.op}&#34;)</code></pre>
-</details>
 <div class="desc"></div>
 </dd>
 </dl>
@@ -1043,6 +699,7 @@ el.replaceWith(d);
 <span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>Break statement</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1056,7 +713,6 @@ el.replaceWith(d);
     def __repr__(self) -&gt; str:
         return &#34;&lt;IRBreak&gt;&#34;</code></pre>
 </details>
-<div class="desc"><p>Break statement</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
@@ -1065,9 +721,10 @@ el.replaceWith(d);
 </dd>
 <dt id="crashlink.decomp.IRCall"><code class="flex name class">
 <span>class <span class="ident">IRCall</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>call_type: <a title="crashlink.decomp.IRCall.CallType" href="#crashlink.decomp.IRCall.CallType">IRCall.CallType</a>,<br>target: <a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a>|<a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>|None,<br>args: List[<a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>])</span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, call_type: <a title="crashlink.decomp.IRCall.CallType" href="#crashlink.decomp.IRCall.CallType">IRCall.CallType</a>, target: <a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a>|<a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>|None, args: List[<a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>])</span>
 </code></dt>
 <dd>
+<div class="desc"><p>Function call expression</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1112,7 +769,6 @@ el.replaceWith(d);
     def __repr__(self) -&gt; str:
         return f&#34;&lt;IRCall: {self.target}({&#39;, &#39;.join([str(arg) for arg in self.args])})&gt;&#34;</code></pre>
 </details>
-<div class="desc"><p>Function call expression</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
@@ -1137,9 +793,10 @@ el.replaceWith(d);
 </dd>
 <dt id="crashlink.decomp.IRConditional"><code class="flex name class">
 <span>class <span class="ident">IRConditional</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>condition: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>true_block: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>,<br>false_block: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>)</span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, condition: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>, true_block: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>, false_block: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>A conditional statement</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1170,7 +827,6 @@ el.replaceWith(d);
     def __repr__(self) -&gt; str:
         return f&#34;&lt;IRConditional: if {self.condition} then\n\t{self.true_block}\nelse\n\t{self.false_block}&gt;&#34;</code></pre>
 </details>
-<div class="desc"><p>A conditional statement</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
@@ -1182,27 +838,16 @@ el.replaceWith(d);
 <span>def <span class="ident">invert</span></span>(<span>self) ‑> None</span>
 </code></dt>
 <dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def invert(self) -&gt; None:
-    self.true_block, self.false_block = self.false_block, self.true_block
-    if isinstance(self.condition, IRBoolExpr):
-        self.condition.invert()
-    else:
-        old_cond = self.condition
-        self.condition = IRBoolExpr(self.code, IRBoolExpr.CompareType.NOT, old_cond)</code></pre>
-</details>
 <div class="desc"></div>
 </dd>
 </dl>
 </dd>
 <dt id="crashlink.decomp.IRConst"><code class="flex name class">
 <span>class <span class="ident">IRConst</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>const_type: <a title="crashlink.decomp.IRConst.ConstType" href="#crashlink.decomp.IRConst.ConstType">IRConst.ConstType</a>,<br>idx: <a title="crashlink.core.ResolvableVarInt" href="core.html#crashlink.core.ResolvableVarInt">ResolvableVarInt</a> | None = None,<br>value: bool | int | None = None)</span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, const_type: <a title="crashlink.decomp.IRConst.ConstType" href="#crashlink.decomp.IRConst.ConstType">IRConst.ConstType</a>, idx: Optional[<a title="crashlink.core.ResolvableVarInt" href="core.html#crashlink.core.ResolvableVarInt">ResolvableVarInt</a>] = None, value: Union[bool, int, ForwardRef(None)] = None)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>Represents a constant value expression</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1270,7 +915,6 @@ el.replaceWith(d);
             return f&#34;&lt;IRConst: {disasm.func_header(self.code, self.value)}&gt;&#34;
         return f&#34;&lt;IRConst: {self.value}&gt;&#34;</code></pre>
 </details>
-<div class="desc"><p>Represents a constant value expression</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
@@ -1298,6 +942,7 @@ el.replaceWith(d);
 <span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>Abstract base class for expressions that produce a value</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1313,7 +958,6 @@ el.replaceWith(d);
         &#34;&#34;&#34;Get the type of value this expression produces&#34;&#34;&#34;
         pass</code></pre>
 </details>
-<div class="desc"><p>Abstract base class for expressions that produce a value</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
@@ -1326,6 +970,7 @@ el.replaceWith(d);
 <li><a title="crashlink.decomp.IRCall" href="#crashlink.decomp.IRCall">IRCall</a></li>
 <li><a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a></li>
 <li><a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a></li>
+<li><a title="crashlink.decomp.IRPrimitveJump" href="#crashlink.decomp.IRPrimitveJump">IRPrimitveJump</a></li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -1333,24 +978,16 @@ el.replaceWith(d);
 <span>def <span class="ident">get_type</span></span>(<span>self) ‑> <a title="crashlink.core.Type" href="core.html#crashlink.core.Type">Type</a></span>
 </code></dt>
 <dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">@abstractmethod
-def get_type(self) -&gt; Type:
-    &#34;&#34;&#34;Get the type of value this expression produces&#34;&#34;&#34;
-    pass</code></pre>
-</details>
 <div class="desc"><p>Get the type of value this expression produces</p></div>
 </dd>
 </dl>
 </dd>
 <dt id="crashlink.decomp.IRFunction"><code class="flex name class">
 <span>class <span class="ident">IRFunction</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a>)</span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a>)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>Intermediate representation of a function.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1404,7 +1041,6 @@ def get_type(self) -&gt; Type:
                 if reg is not None:
                     reg_assigns[reg].add(assign[0].resolve(self.code))
         # loop through arg names: all with value &lt; 0, eg:
-        # Assigns:
         # Op -1: argument_name (corresponds to reg 0)
         # Op -1: other_arg_name (corresponds to reg 1)
         # Op -1: third_arg_name (corresponds to reg 2)
@@ -1446,36 +1082,47 @@ def get_type(self) -&gt; Type:
                         false_queue.append(next_node)
 
         return None  # No convergence found
+    
+    def _patch_loop_condition(self, node: CFNode) -&gt; None:
+        &#34;&#34;&#34;Patches a loop condition block to remove the Label and anything else that could get it detected as a nested loop or other statement unintentionally.&#34;&#34;&#34;
+        node.ops = node.ops[1:]  # remove Label
+        assert node.ops[-1].op in conditionals
 
-    def _lift_block(self, node: CFNode, visited: Optional[Set[CFNode]] = None) -&gt; IRBlock:
+    def _lift_block(self, node: CFNode, visited: Optional[Set[CFNode]] = None, convert_jumps_to_primitive: bool = False) -&gt; IRBlock:
         if visited is None:
             visited = set()
 
         if node in visited:
             return IRBlock(self.code)
-
         visited.add(node)
 
-        visited.add(node)
         block = IRBlock(self.code)
 
-        # Process operations in current block
-        for op in node.ops:
-            if op.op in [
-                &#34;Add&#34;,
-                &#34;Sub&#34;,
-                &#34;Mul&#34;,
-                &#34;SDiv&#34;,
-                &#34;UDiv&#34;,
-                &#34;SMod&#34;,
-                &#34;UMod&#34;,
-                &#34;Shl&#34;,
-                &#34;SShr&#34;,
-                &#34;UShr&#34;,
-                &#34;And&#34;,
-                &#34;Or&#34;,
-                &#34;Xor&#34;,
-            ]:
+        for i, op in enumerate(node.ops):
+            if op.op == &#34;Label&#34;:
+                assert i == 0, &#34;Label should be the first operation in a CFNode.&#34;
+                jumpers = _find_jumps_to_label(node, node, set())
+                body: Set[CFNode] = set()
+                for jumper in jumpers:
+                    body.add(jumper[0])
+                    for n2 in jumper[1]:
+                        body.add(n2)
+                body.discard(node)
+                isolated = IsolatedCFGraph(self.cfg, list(body))
+                condition = IsolatedCFGraph(self.cfg, [node], find_entry_intelligently=False)
+                self._patch_loop_condition(condition.entry)
+                if not condition.entry and isolated.entry:
+                    dbg_print(&#34;Warning: Empty condition or loop block found.&#34;)
+                    block.comment += &#34;WARNING: Empty condition or loop block found.&#34;
+                block.statements.append(
+                    IRPrimitiveLoop(
+                        self.code,
+                        self._lift_block(condition.entry, visited, convert_jumps_to_primitive=True),
+                        self._lift_block(isolated.entry, visited),
+                    )
+                )
+                
+            elif op.op in arithmetic:
                 dst = self.locals[op.definition[&#34;dst&#34;].value]
                 lhs = self.locals[op.definition[&#34;a&#34;].value]
                 rhs = self.locals[op.definition[&#34;b&#34;].value]
@@ -1501,94 +1148,86 @@ def get_type(self) -&gt; Type:
                     const = IRConst(self.code, const_type, value=value)
                 block.statements.append(IRAssign(self.code, dst, const))
 
-            elif op.op in [
-                &#34;JTrue&#34;,
-                &#34;JFalse&#34;,
-                &#34;JNull&#34;,
-                &#34;JNotNull&#34;,
-                &#34;JSLt&#34;,
-                &#34;JSGte&#34;,
-                &#34;JSGt&#34;,
-                &#34;JSLte&#34;,
-                &#34;JULt&#34;,
-                &#34;JUGte&#34;,
-                &#34;JEq&#34;,
-                &#34;JNotEq&#34;,
-            ]:
-                # conditionals create a diamond shape in the IR - the two branches will at some point converge again.
-                # TODO: loop support and detection
-                true_branch = None
-                false_branch = None
-                for branch_node, edge_type in node.branches:
-                    if edge_type == &#34;true&#34;:
-                        true_branch = branch_node
-                    elif edge_type == &#34;false&#34;:
-                        false_branch = branch_node
-                if true_branch is None or false_branch is None:
-                    raise DecompError(&#34;Conditional jump missing true/false branch. Check CFG generation maybe?&#34;)
+            elif op.op in conditionals:
+                if not convert_jumps_to_primitive:
+                    # conditionals create a diamond shape in the IR - the two branches will at some point converge again.
+                    true_branch = None
+                    false_branch = None
+                    for branch_node, edge_type in node.branches:
+                        if edge_type == &#34;true&#34;:
+                            true_branch = branch_node
+                        elif edge_type == &#34;false&#34;:
+                            false_branch = branch_node
+                    if true_branch is None or false_branch is None:
+                        raise DecompError(&#34;Conditional jump missing true/false branch. Check CFG generation maybe?&#34;)
 
-                # HACK: blocks that have multiple branches coming into them shouldn&#39;t exist for generated if statements.
-                # therefore, we can assume that if a conditional branch leads to a node that has multiple incoming branches,
-                # it&#39;s an empty block and that&#39;s what comes *after* the conditional branches altogether.
-                should_lift_t = True
-                should_lift_f = True
-                if len(self.cfg.predecessors(true_branch)) &gt; 1:
-                    should_lift_t = False
-                if len(self.cfg.predecessors(false_branch)) &gt; 1:
-                    should_lift_f = False
+                    # HACK: blocks that have multiple branches coming into them shouldn&#39;t exist for generated if statements.
+                    # therefore, we can assume that if a conditional branch leads to a node that has multiple incoming branches,
+                    # it&#39;s an empty block and that&#39;s what comes *after* the conditional branches altogether.
+                    should_lift_t = True
+                    should_lift_f = True
+                    if len(self.cfg.predecessors(true_branch)) &gt; 1:
+                        should_lift_t = False
+                    if len(self.cfg.predecessors(false_branch)) &gt; 1:
+                        should_lift_f = False
 
-                if not should_lift_t and not should_lift_f:
-                    dbg_print(&#34;Warning: Skipping conditional due to weird incoming branches.&#34;)
-                    continue
+                    if not should_lift_t and not should_lift_f:
+                        dbg_print(&#34;Warning: Skipping conditional due to weird incoming branches.&#34;)
+                        block.comment += &#34;WARNING: Skipping conditional due to weird incoming branches.&#34;
+                        continue
 
-                cond_map = {
-                    &#34;JTrue&#34;: IRBoolExpr.CompareType.ISTRUE,
-                    &#34;JFalse&#34;: IRBoolExpr.CompareType.ISFALSE,
-                    &#34;JNull&#34;: IRBoolExpr.CompareType.NULL,
-                    &#34;JNotNull&#34;: IRBoolExpr.CompareType.NOT_NULL,
-                    &#34;JSLt&#34;: IRBoolExpr.CompareType.LT,
-                    &#34;JSGte&#34;: IRBoolExpr.CompareType.GTE,
-                    &#34;JSGt&#34;: IRBoolExpr.CompareType.GT,
-                    &#34;JSLte&#34;: IRBoolExpr.CompareType.LTE,
-                    &#34;JULt&#34;: IRBoolExpr.CompareType.LT,
-                    &#34;JUGte&#34;: IRBoolExpr.CompareType.GTE,
-                    &#34;JEq&#34;: IRBoolExpr.CompareType.EQ,
-                    &#34;JNotEq&#34;: IRBoolExpr.CompareType.NEQ,
-                }
-                cond = cond_map[op.op]
-                left, right = None, None
-                if cond not in [
-                    IRBoolExpr.CompareType.ISTRUE,
-                    IRBoolExpr.CompareType.ISFALSE,
-                    IRBoolExpr.CompareType.NULL,
-                    IRBoolExpr.CompareType.NOT_NULL,
-                ]:
-                    left = self.locals[op.definition[&#34;a&#34;].value]
-                    right = self.locals[op.definition[&#34;b&#34;].value]
+                    cond_map = {
+                        &#34;JTrue&#34;: IRBoolExpr.CompareType.ISTRUE,
+                        &#34;JFalse&#34;: IRBoolExpr.CompareType.ISFALSE,
+                        &#34;JNull&#34;: IRBoolExpr.CompareType.NULL,
+                        &#34;JNotNull&#34;: IRBoolExpr.CompareType.NOT_NULL,
+                        &#34;JSLt&#34;: IRBoolExpr.CompareType.LT,
+                        &#34;JSGte&#34;: IRBoolExpr.CompareType.GTE,
+                        &#34;JSGt&#34;: IRBoolExpr.CompareType.GT,
+                        &#34;JSLte&#34;: IRBoolExpr.CompareType.LTE,
+                        &#34;JULt&#34;: IRBoolExpr.CompareType.LT,
+                        &#34;JUGte&#34;: IRBoolExpr.CompareType.GTE,
+                        &#34;JEq&#34;: IRBoolExpr.CompareType.EQ,
+                        &#34;JNotEq&#34;: IRBoolExpr.CompareType.NEQ,
+                    }
+                    cond = cond_map[op.op]
+                    left, right = None, None
+                    if cond not in [
+                        IRBoolExpr.CompareType.ISTRUE,
+                        IRBoolExpr.CompareType.ISFALSE,
+                        IRBoolExpr.CompareType.NULL,
+                        IRBoolExpr.CompareType.NOT_NULL,
+                    ]:
+                        left = self.locals[op.definition[&#34;a&#34;].value]
+                        right = self.locals[op.definition[&#34;b&#34;].value]
 
-                condition = IRBoolExpr(self.code, cond, left, right)
-                true_block = self._lift_block(true_branch, visited) if should_lift_t else IRBlock(self.code)
-                false_block = self._lift_block(false_branch, visited) if should_lift_f else IRBlock(self.code)
-                _cond = IRConditional(self.code, condition, true_block, false_block)
-                _cond.invert()  # invert the condition so the one full block isn&#39;t the else block
-                block.statements.append(_cond)
+                    condition = IRBoolExpr(self.code, cond, left, right)
+                    true_block = self._lift_block(true_branch, visited) if should_lift_t else IRBlock(self.code)
+                    false_block = self._lift_block(false_branch, visited) if should_lift_f else IRBlock(self.code)
+                    _cond = IRConditional(self.code, condition, true_block, false_block)
+                    _cond.invert()  # invert the condition so the one full block isn&#39;t the else block
+                    block.statements.append(_cond)
 
-                # now, find the next block and lift it.
-                next_node = None
-                if not should_lift_f:
-                    next_node = false_branch
-                elif not should_lift_t:
-                    next_node = true_branch
-                else:
-                    convergence = self._find_convergence(true_branch, false_branch, visited)
-                    if convergence:
-                        next_node = convergence
+                    # now, find the next block and lift it.
+                    next_node = None
+                    if not should_lift_f:
+                        next_node = false_branch
+                    elif not should_lift_t:
+                        next_node = true_branch
                     else:
-                        dbg_print(&#34;WARNING: No convergence point found for conditional branches&#34;)
-                if not next_node:
-                    raise DecompError(&#34;No next node found for conditional branches&#34;)
-                next_block = self._lift_block(next_node, visited)
-                block.statements.append(next_block)
+                        convergence = self._find_convergence(true_branch, false_branch, visited)
+                        if convergence:
+                            next_node = convergence
+                        else:
+                            dbg_print(&#34;WARNING: No convergence point found for conditional branches&#34;)
+                    if not next_node:
+                        raise DecompError(&#34;No next node found for conditional branches&#34;)
+                    next_block = self._lift_block(next_node, visited)
+                    block.statements.append(next_block)
+                else:
+                    # convert jumps to IRPrimitiveJump so that later lifting stages can handle them
+                    # TODO: instead of just wrapping an opcode, we can resolve this to a local and generate a Bool-type IRExpression
+                    block.statements.append(IRPrimitveJump(self.code, op))
 
             elif op.op in [&#34;Call0&#34;, &#34;Call1&#34;, &#34;Call2&#34;, &#34;Call3&#34;, &#34;Call4&#34;]:
                 n = int(op.op[-1])
@@ -1682,34 +1321,44 @@ def get_type(self) -&gt; Type:
                     next_block = self._lift_block(convergence, visited)
                     block.statements.append(next_block)
 
+            elif op.op == &#34;JAlways&#34;:
+                jump_idx = node.base_offset + len(node.ops) + op.definition[&#34;offset&#34;].value
+                target_node = None
+                for nod in self.cfg.nodes:
+                    if nod.base_offset == jump_idx:
+                        target_node = nod
+                        break
+
+                if target_node:
+                    next_block = self._lift_block(target_node, visited)
+                    block.statements.append(next_block)
+        
+        if len(node.branches) == 1:
+            next_node, _ = node.branches[0]
+            next_block = self._lift_block(next_node, visited)
+            block.statements.append(next_block)
+
         return block
 
     def print(self) -&gt; None:
         print(self.block)</code></pre>
 </details>
-<div class="desc"><p>Intermediate representation of a function.</p></div>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.decomp.IRFunction.print"><code class="name flex">
 <span>def <span class="ident">print</span></span>(<span>self) ‑> None</span>
 </code></dt>
 <dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def print(self) -&gt; None:
-    print(self.block)</code></pre>
-</details>
 <div class="desc"></div>
 </dd>
 </dl>
 </dd>
 <dt id="crashlink.decomp.IRLocal"><code class="flex name class">
 <span>class <span class="ident">IRLocal</span></span>
-<span>(</span><span>name: str,<br>type: <a title="crashlink.core.tIndex" href="core.html#crashlink.core.tIndex">tIndex</a>,<br>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
+<span>(</span><span>name: str, type: <a title="crashlink.core.tIndex" href="core.html#crashlink.core.tIndex">tIndex</a>, code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>Abstract base class for expressions that produce a value</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1726,7 +1375,6 @@ def get_type(self) -&gt; Type:
     def __repr__(self) -&gt; str:
         return f&#34;&lt;IRLocal: {self.name} {disasm.type_name(self.code, self.type.resolve(self.code))}&gt;&#34;</code></pre>
 </details>
-<div class="desc"><p>Abstract base class for expressions that produce a value</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
@@ -1742,38 +1390,77 @@ def get_type(self) -&gt; Type:
 </li>
 </ul>
 </dd>
-<dt id="crashlink.decomp.IRLoop"><code class="flex name class">
-<span>class <span class="ident">IRLoop</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>condition: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>body: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>)</span>
+<dt id="crashlink.decomp.IRPrimitiveLoop"><code class="flex name class">
+<span>class <span class="ident">IRPrimitiveLoop</span></span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, condition: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>, body: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>2-block simplistic loop. Has no differentiation between while/for/comprehension, this should be done in later IR layers.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class IRLoop(IRStatement):
-    &#34;&#34;&#34;Loop statement&#34;&#34;&#34;
+<pre><code class="python">class IRPrimitiveLoop(IRStatement):
+    &#34;&#34;&#34;2-block simplistic loop. Has no differentiation between while/for/comprehension, this should be done in later IR layers.&#34;&#34;&#34;
 
-    def __init__(self, code: Bytecode, condition: IRExpression, body: IRBlock):
+    def __init__(self, code: Bytecode, condition: IRBlock, body: IRBlock):
         super().__init__(code)
         self.condition = condition
         self.body = body
 
     def __repr__(self) -&gt; str:
-        return f&#34;&lt;IRLoop: while {self.condition}\n{self.body}&gt;&#34;</code></pre>
+        return f&#34;&lt;IRPrimitiveLoop: {self.condition}\n{self.body}&gt;&#34;</code></pre>
 </details>
-<div class="desc"><p>Loop statement</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
 <li>abc.ABC</li>
 </ul>
 </dd>
-<dt id="crashlink.decomp.IRReturn"><code class="flex name class">
-<span>class <span class="ident">IRReturn</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>value: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a> | None = None)</span>
+<dt id="crashlink.decomp.IRPrimitveJump"><code class="flex name class">
+<span>class <span class="ident">IRPrimitveJump</span></span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, op: <a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>An unlifted jump to be handled by further optimization stages.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRPrimitveJump(IRExpression):
+    &#34;&#34;&#34;An unlifted jump to be handled by further optimization stages.&#34;&#34;&#34;
+    def __init__(self, code: Bytecode, op: Opcode):
+        super().__init__(code)
+        self.op = op
+        assert op.op in conditionals
+    
+    def get_type(self) -&gt; Type:
+        return _get_type_in_code(self.code, &#34;Bool&#34;)
+
+    def __repr__(self) -&gt; str:
+        return f&#34;&lt;IRPrimitiveJump: {self.op}&gt;&#34;</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
+<li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.IRExpression.get_type" href="#crashlink.decomp.IRExpression.get_type">get_type</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.IRReturn"><code class="flex name class">
+<span>class <span class="ident">IRReturn</span></span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, value: Optional[<a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>] = None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Return statement</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1788,7 +1475,6 @@ def get_type(self) -&gt; Type:
     def __repr__(self) -&gt; str:
         return f&#34;&lt;IRReturn: {self.value}&gt;&#34;</code></pre>
 </details>
-<div class="desc"><p>Return statement</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
@@ -1800,6 +1486,8 @@ def get_type(self) -&gt; Type:
 <span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>Helper class that provides a standard way to create an ABC using
+inheritance.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1807,7 +1495,7 @@ def get_type(self) -&gt; Type:
 <pre><code class="python">class IRStatement(ABC):
     def __init__(self, code: Bytecode):
         self.code = code
-        self.comment: Optional[str] = None
+        self.comment: str = &#34;&#34;
 
     @abstractmethod
     def __repr__(self) -&gt; str:
@@ -1816,8 +1504,6 @@ def get_type(self) -&gt; Type:
     def __str__(self) -&gt; str:
         return self.__repr__()</code></pre>
 </details>
-<div class="desc"><p>Helper class that provides a standard way to create an ABC using
-inheritance.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li>abc.ABC</li>
@@ -1829,7 +1515,7 @@ inheritance.</p></div>
 <li><a title="crashlink.decomp.IRBreak" href="#crashlink.decomp.IRBreak">IRBreak</a></li>
 <li><a title="crashlink.decomp.IRConditional" href="#crashlink.decomp.IRConditional">IRConditional</a></li>
 <li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
-<li><a title="crashlink.decomp.IRLoop" href="#crashlink.decomp.IRLoop">IRLoop</a></li>
+<li><a title="crashlink.decomp.IRPrimitiveLoop" href="#crashlink.decomp.IRPrimitiveLoop">IRPrimitiveLoop</a></li>
 <li><a title="crashlink.decomp.IRReturn" href="#crashlink.decomp.IRReturn">IRReturn</a></li>
 <li><a title="crashlink.decomp.IRSwitch" href="#crashlink.decomp.IRSwitch">IRSwitch</a></li>
 <li><a title="crashlink.decomp.IRTrace" href="#crashlink.decomp.IRTrace">IRTrace</a></li>
@@ -1837,9 +1523,10 @@ inheritance.</p></div>
 </dd>
 <dt id="crashlink.decomp.IRSwitch"><code class="flex name class">
 <span>class <span class="ident">IRSwitch</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>value: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>cases: Dict[<a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a>, <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>],<br>default: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>)</span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, value: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>, cases: Dict[<a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a>, <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>], default: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>Switch statement</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1866,7 +1553,6 @@ inheritance.</p></div>
         cases += f&#34;\n\tdefault: {self.default}&#34;
         return f&#34;&lt;IRSwitch: {self.value}{cases}&gt;&#34;</code></pre>
 </details>
-<div class="desc"><p>Switch statement</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
@@ -1875,9 +1561,10 @@ inheritance.</p></div>
 </dd>
 <dt id="crashlink.decomp.IRTrace"><code class="flex name class">
 <span>class <span class="ident">IRTrace</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>filename: <a title="crashlink.core.gIndex" href="core.html#crashlink.core.gIndex">gIndex</a>,<br>line: int,<br>class_name: <a title="crashlink.core.gIndex" href="core.html#crashlink.core.gIndex">gIndex</a>,<br>method_name: <a title="crashlink.core.gIndex" href="core.html#crashlink.core.gIndex">gIndex</a>)</span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, filename: <a title="crashlink.core.gIndex" href="core.html#crashlink.core.gIndex">gIndex</a>, line: int, class_name: <a title="crashlink.core.gIndex" href="core.html#crashlink.core.gIndex">gIndex</a>, method_name: <a title="crashlink.core.gIndex" href="core.html#crashlink.core.gIndex">gIndex</a>)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>Trace statement</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1902,62 +1589,71 @@ inheritance.</p></div>
     def __repr__(self) -&gt; str:
         return f&#34;&lt;IRTrace: {self.filename.resolve_str(self.code)} {self.line} {self.class_name.resolve_str(self.code)} {self.method_name.resolve_str(self.code)}&gt;&#34;</code></pre>
 </details>
-<div class="desc"><p>Trace statement</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
 <li>abc.ABC</li>
 </ul>
 </dd>
-<dt id="crashlink.decomp.PseudoTarget"><code class="flex name class">
-<span>class <span class="ident">PseudoTarget</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
+<dt id="crashlink.decomp.IsolatedCFGraph"><code class="flex name class">
+<span>class <span class="ident">IsolatedCFGraph</span></span>
+<span>(</span><span>parent: <a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a>, nodes: List[<a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>], find_entry_intelligently: bool = True)</span>
 </code></dt>
 <dd>
+<div class="desc"><p>A control flow graph that contains only a subset of nodes from another graph.</p>
+<p>Initialize from parent graph and list of nodes to isolate.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class PseudoTarget(ABC):
-    &#34;&#34;&#34;
-    Abstract base class for a pseudocode language backend. Implementations translate from IR to the target language.
-    &#34;&#34;&#34;
+<pre><code class="python">class IsolatedCFGraph(CFGraph):
+    &#34;&#34;&#34;A control flow graph that contains only a subset of nodes from another graph.&#34;&#34;&#34;
+    
+    def __init__(self, parent: CFGraph, nodes: List[CFNode], find_entry_intelligently: bool=True):
+        &#34;&#34;&#34;Initialize from parent graph and list of nodes to isolate.&#34;&#34;&#34;
+        if not nodes:
+            raise ValueError(&#34;Got empty list of nodes to isolate!&#34;)
+        
+        super().__init__(parent.func)
+        
+        node_map: Dict[CFNode, CFNode] = {}
+        
+        for node in nodes:
+            new_node = self.add_node(node.ops, node.base_offset)
+            node_map[node] = new_node
+            
+            if node == nodes[0]:
+                self.entry = new_node
 
-    def __init__(self, code: Bytecode):
-        self.code = code
-
-    @abstractmethod
-    def translate(self, ir: IRFunction) -&gt; str:
-        &#34;&#34;&#34;Translate IR to the target language&#34;&#34;&#34;
-        pass</code></pre>
+        for old_node in nodes:
+            new_node = node_map[old_node]
+            for target, edge_type in old_node.branches:
+                if target in node_map:
+                    self.add_branch(new_node, node_map[target], edge_type)
+                    
+        if find_entry_intelligently and self.nodes:
+            entry_candidates = []
+            for node in self.nodes:
+                if not self.predecessors(node):
+                    entry_candidates.append(node)
+                    
+            if len(entry_candidates) == 1:
+                self.entry = entry_candidates[0]</code></pre>
 </details>
-<div class="desc"><p>Abstract base class for a pseudocode language backend. Implementations translate from IR to the target language.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
-<li>abc.ABC</li>
+<li><a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a></li>
 </ul>
-<h3>Subclasses</h3>
+<h3>Inherited members</h3>
 <ul class="hlist">
-<li><a title="crashlink.decomp.HaxeTarget" href="#crashlink.decomp.HaxeTarget">HaxeTarget</a></li>
+<li><code><b><a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.CFGraph.build" href="#crashlink.decomp.CFGraph.build">build</a></code></li>
+<li><code><a title="crashlink.decomp.CFGraph.graph" href="#crashlink.decomp.CFGraph.graph">graph</a></code></li>
+<li><code><a title="crashlink.decomp.CFGraph.predecessors" href="#crashlink.decomp.CFGraph.predecessors">predecessors</a></code></li>
 </ul>
-<h3>Methods</h3>
-<dl>
-<dt id="crashlink.decomp.PseudoTarget.translate"><code class="name flex">
-<span>def <span class="ident">translate</span></span>(<span>self,<br>ir: <a title="crashlink.decomp.IRFunction" href="#crashlink.decomp.IRFunction">IRFunction</a>) ‑> str</span>
-</code></dt>
-<dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">@abstractmethod
-def translate(self, ir: IRFunction) -&gt; str:
-    &#34;&#34;&#34;Translate IR to the target language&#34;&#34;&#34;
-    pass</code></pre>
-</details>
-<div class="desc"><p>Translate IR to the target language</p></div>
-</dd>
-</dl>
+</li>
+</ul>
 </dd>
 </dl>
 </section>
@@ -1970,11 +1666,6 @@ def translate(self, ir: IRFunction) -&gt; str:
 <li><h3>Super-module</h3>
 <ul>
 <li><code><a title="crashlink" href="index.html">crashlink</a></code></li>
-</ul>
-</li>
-<li><h3><a href="#header-variables">Global variables</a></h3>
-<ul class="">
-<li><code><a title="crashlink.decomp.TARGETS" href="#crashlink.decomp.TARGETS">TARGETS</a></code></li>
 </ul>
 </li>
 <li><h3><a href="#header-classes">Classes</a></h3>
@@ -2011,9 +1702,6 @@ def translate(self, ir: IRFunction) -&gt; str:
 <ul class="">
 <li><code><a title="crashlink.decomp.CFOptimizer.optimize" href="#crashlink.decomp.CFOptimizer.optimize">optimize</a></code></li>
 </ul>
-</li>
-<li>
-<h4><code><a title="crashlink.decomp.HaxeTarget" href="#crashlink.decomp.HaxeTarget">HaxeTarget</a></code></h4>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRArithmetic" href="#crashlink.decomp.IRArithmetic">IRArithmetic</a></code></h4>
@@ -2071,7 +1759,10 @@ def translate(self, ir: IRFunction) -&gt; str:
 <h4><code><a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a></code></h4>
 </li>
 <li>
-<h4><code><a title="crashlink.decomp.IRLoop" href="#crashlink.decomp.IRLoop">IRLoop</a></code></h4>
+<h4><code><a title="crashlink.decomp.IRPrimitiveLoop" href="#crashlink.decomp.IRPrimitiveLoop">IRPrimitiveLoop</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.IRPrimitveJump" href="#crashlink.decomp.IRPrimitveJump">IRPrimitveJump</a></code></h4>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRReturn" href="#crashlink.decomp.IRReturn">IRReturn</a></code></h4>
@@ -2086,10 +1777,7 @@ def translate(self, ir: IRFunction) -&gt; str:
 <h4><code><a title="crashlink.decomp.IRTrace" href="#crashlink.decomp.IRTrace">IRTrace</a></code></h4>
 </li>
 <li>
-<h4><code><a title="crashlink.decomp.PseudoTarget" href="#crashlink.decomp.PseudoTarget">PseudoTarget</a></code></h4>
-<ul class="">
-<li><code><a title="crashlink.decomp.PseudoTarget.translate" href="#crashlink.decomp.PseudoTarget.translate">translate</a></code></li>
-</ul>
+<h4><code><a title="crashlink.decomp.IsolatedCFGraph" href="#crashlink.decomp.IsolatedCFGraph">IsolatedCFGraph</a></code></h4>
 </li>
 </ul>
 </li>
@@ -2097,7 +1785,7 @@ def translate(self, ir: IRFunction) -&gt; str:
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.1</a>.</p>
 </footer>
 </body>
 </html>
