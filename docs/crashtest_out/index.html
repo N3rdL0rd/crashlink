@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>crashtest</title>
+    <style>
+        :root {
+            --visible-columns: 2;
+        }
+        body { margin: 0; font-family: sans-serif; }
+        .test-case {
+            margin: 2rem 0;
+            border-top: 2px solid #eee;
+        }
+        .test-header {
+            padding: 1rem;
+            background: #f8f9fa;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .test-header h2 {
+            margin: 0;
+            font-size: 1.25rem;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: repeat(var(--visible-columns), 1fr);
+            transition: grid-template-columns 0.3s ease;
+        }
+        .code-panel {
+            padding: 1rem;
+            border-right: 1px solid #ccc;
+            overflow: auto;
+        }
+
+        small {
+            font-size: 0.8rem;
+            color: #525252;
+        }
+
+        h1 {
+            padding-left: 1rem;
+        }
+
+        h1 > small > a {
+            color: #f59357;
+            background-color: transparent;
+        }
+
+        .test-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            background: #f8f9fa;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            gap: 1rem;
+        }
+    
+        .toggle-ir {
+            background: #cba6f7;
+            color: black;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+    
+        .toggle-ir:hover {
+            background: #b4befe;
+        }
+    
+        .toggle-ir:active {
+            background: #74c7ec;
+        }        
+    
+        .test-header h2 {
+            margin: 0;
+            font-size: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+    
+        .fa-link {
+            color: #666;
+            font-size: 0.8em;
+            transition: color 0.2s ease;
+        }
+    
+        .fa-link:hover {
+            color: #f5c2e7;
+        }
+
+        .a {
+            color: #fab387 !important;
+            background-color: transparent;
+        }
+
+        .runs-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1rem;
+            padding: 1rem;
+        }
+
+        .run-card {
+            background: #313244;
+            border-radius: 8px;
+            padding: 1rem;
+            transition: transform 0.2s ease;
+        }
+
+        .run-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .run-meta {
+            color: #cdd6f4;
+            margin-bottom: 0.5rem;
+        }
+
+        .run-title {
+            color: #cba6f7;
+            font-size: 1.2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .run-stats {
+            font-size: 0.9rem;
+        }
+
+        .view-run {
+            background: #cba6f7;
+            color: black;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            margin-top: 1rem;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .view-run:hover {
+            background: #b4befe;
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <link href="https://prismjs.catppuccin.com/frappe.css" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/line-numbers/prism-line-numbers.min.css" rel="stylesheet" />
+</head>
+<body class="line-numbers">
+    <h1>crashtest</h1>
+    <div class="runs-grid">
+        
+            <div class="run-card">
+                <div class="run-title">Run #20250216082724</div>
+                <div class="run-meta">
+                    crashlink v0.0.2a
+                    
+                        
+                            <b>(dirty!)</b>
+                        
+                        on dev
+                    
+                </div>
+                <div class="run-stats" style="color: #a6e3a1;">
+                    TODO with
+                    30 test cases
+                </div>
+                <a href="./run/20250216082724">
+                    <button class="view-run">View Results</button>
+                </a>
+            </div>
+        
+            <div class="run-card">
+                <div class="run-title">Run #20250216082832</div>
+                <div class="run-meta">
+                    crashlink v0.0.2a
+                    
+                        
+                            <b>(dirty!)</b>
+                        
+                        on dev
+                    
+                </div>
+                <div class="run-stats" style="color: #a6e3a1;">
+                    TODO with
+                    30 test cases
+                </div>
+                <a href="./run/20250216082832">
+                    <button class="view-run">View Results</button>
+                </a>
+            </div>
+        
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-haxe.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/line-numbers/prism-line-numbers.min.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            Prism.highlightAll();
+        });
+        
+        document.querySelectorAll('.toggle-ir').forEach(button => {
+            button.addEventListener('click', function() {
+                const testCase = this.closest('.test-case');
+                const container = testCase.querySelector('.container');
+                const irPanel = testCase.querySelector('.ir-panel');
+                const icon = this.querySelector('i');
+                
+                irPanel.style.display = irPanel.style.display === 'none' ? 'block' : 'none';
+                const visibleColumns = parseInt(getComputedStyle(container)
+                    .getPropertyValue('--visible-columns'));
+                container.style.setProperty('--visible-columns', 
+                    visibleColumns === 2 ? 3 : 2);
+                
+                icon.classList.toggle('fa-eye');
+                icon.classList.toggle('fa-eye-slash');
+                
+                if (irPanel.style.display === 'block') {
+                    Prism.highlightAllUnder(irPanel);
+                }
+            });
+        });
+        document.querySelectorAll('.ir-panel').forEach(panel => {
+            panel.style.display = 'none';
+        });
+    </script>
+</body>
+</html>

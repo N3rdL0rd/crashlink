@@ -85,7 +85,7 @@ git clone https://github.com/N3rdL0rd/crashlink
 cd crashlink
 # optionally, create and activate a venv here.
 just install # or pip install -e .[dev]
-just test # or pytest
+just test # or pytest && crashtest
 ```
 
 Before committing, please run `just dev` to format the code, run tests, and generate documentation in `docs/`. If you're adding new features to the core serialisation/deserialisation code (`core.py`), please also add a test case in `tests/haxe/` for the new language feature you're adding. If you're adding a feature to the decompiler or disassembler, please add a normal test case (in Python) in `tests/` that tests the new feature.
@@ -105,6 +105,10 @@ You can use the following pre-defined commands with `just`:
 - `just clean`: Clean up build artifacts.
 - `just profile`: Run the test suite with cProfile and then open the results in a browser.
 - `just serve-docs`: Serve the documentation locally.
+
+### `crashtest` CLI
+
+`crashtest` is a built-in testing system that is used to score the decompiler's output against the original source code. It is used to ensure that the decompiler is working correctly, that the output is correct, that the decompiler is not regressing, and to allow those interested in the project to easily see the state of the decompiler without installing it or running the test suite themselves. You can call it with `just test` (which will run the complete test suite, including tests implemented with `pytest`), or just calling `crashtest` (or `python -m crashtest`) directly. Make sure you call it from the root of the repository, since it uses relative paths to find the test files and the output directory.
 
 ## Architecture
 

@@ -323,6 +323,9 @@ class IRBlock(IRStatement):
 
         return f"<IRBlock:\n{statements}>"
 
+    def __str__(self) -> str:
+        return self.__repr__()
+
 
 class IRExpression(IRStatement, ABC):
     """Abstract base class for expressions that produce a value"""
@@ -874,10 +877,15 @@ class IRFunction:
                 body.discard(node)
                 isolated = IsolatedCFGraph(self.cfg, list(body))
                 condition = IsolatedCFGraph(self.cfg, [node], find_entry_intelligently=False)
+                if not condition.entry:
+                    raise DecompError("Empty condition block found.")
                 self._patch_loop_condition(condition.entry)
                 if not condition.entry and isolated.entry:
                     dbg_print("Warning: Empty condition or loop block found.")
                     block.comment += "WARNING: Empty condition or loop block found."
+                if not isolated.entry:
+                    dbg_print("Warning: Empty loop block found.")
+                    block.comment += "WARNING: Empty loop block found."
                 block.statements.append(
                     IRPrimitiveLoop(
                         self.code,

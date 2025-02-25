@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.1">
+<title>crashtest.models API documentation</title>
+<meta name="description" content="Dataclass models.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin-bottom:1em}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>crashtest.models</code></h1>
+</header>
+<section id="section-intro">
+<p>Dataclass models.</p>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="crashtest.models.load_runs"><code class="name flex">
+<span>def <span class="ident">load_runs</span></span>(<span>path: str) ‑> List[<a title="crashtest.models.Run" href="#crashtest.models.Run">Run</a>]</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Load test runs from a folder.</p></div>
+</dd>
+<dt id="crashtest.models.save_run"><code class="name flex">
+<span>def <span class="ident">save_run</span></span>(<span>run: <a title="crashtest.models.Run" href="#crashtest.models.Run">Run</a>, path: str) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Save run to JSON file.</p></div>
+</dd>
+</dl>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="crashtest.models.GitInfo"><code class="flex name class">
+<span>class <span class="ident">GitInfo</span></span>
+<span>(</span><span>is_release: bool, dirty: bool, branch: Optional[str] = None, commit: Optional[str] = None, github: Optional[str] = None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Represents information about the git branch and commit, or lack thereof.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dataclass
+class GitInfo:
+    &#34;&#34;&#34;
+    Represents information about the git branch and commit, or lack thereof.
+    &#34;&#34;&#34;
+    is_release: bool
+    dirty: bool
+    branch: Optional[str] = None
+    commit: Optional[str] = None
+    github: Optional[str] = None
+
+    def to_json(self) -&gt; dict:
+        return asdict(self)
+
+    @classmethod
+    def from_json(cls, data: dict) -&gt; &#39;GitInfo&#39;:
+        return cls(**data)</code></pre>
+</details>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashtest.models.GitInfo.branch"><code class="name">var <span class="ident">branch</span> : Optional[str]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashtest.models.GitInfo.commit"><code class="name">var <span class="ident">commit</span> : Optional[str]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashtest.models.GitInfo.dirty"><code class="name">var <span class="ident">dirty</span> : bool</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashtest.models.GitInfo.github"><code class="name">var <span class="ident">github</span> : Optional[str]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashtest.models.GitInfo.is_release"><code class="name">var <span class="ident">is_release</span> : bool</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Static methods</h3>
+<dl>
+<dt id="crashtest.models.GitInfo.from_json"><code class="name flex">
+<span>def <span class="ident">from_json</span></span>(<span>data: dict) ‑> <a title="crashtest.models.GitInfo" href="#crashtest.models.GitInfo">GitInfo</a></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashtest.models.GitInfo.to_json"><code class="name flex">
+<span>def <span class="ident">to_json</span></span>(<span>self) ‑> dict</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashtest.models.Run"><code class="flex name class">
+<span>class <span class="ident">Run</span></span>
+<span>(</span><span>git: <a title="crashtest.models.GitInfo" href="#crashtest.models.GitInfo">GitInfo</a>, context: <a title="crashtest.models.TestContext" href="#crashtest.models.TestContext">TestContext</a>, cases: List[<a title="crashtest.models.TestCase" href="#crashtest.models.TestCase">TestCase</a>], id: str, timestamp: str, status: str, status_color: str = '#a6e3a1')</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Represents a complete test run with git+version info and multiple test cases.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dataclass
+class Run:
+    &#34;&#34;&#34;
+    Represents a complete test run with git+version info and multiple test cases.
+    &#34;&#34;&#34;
+    git: GitInfo
+    context: TestContext
+    cases: List[TestCase]
+    id: str
+    timestamp: str
+    status: str
+    status_color: str = &#39;#a6e3a1&#39;
+
+    def to_json(self) -&gt; dict:
+        return {
+            &#39;git&#39;: self.git.to_json(),
+            &#39;context&#39;: self.context.to_json(),
+            &#39;cases&#39;: [case.to_json() for case in self.cases],
+            &#39;id&#39;: self.id,
+            &#39;timestamp&#39;: self.timestamp,
+            &#39;status&#39;: self.status,
+            &#39;status_color&#39;: self.status_color
+        }
+
+    @classmethod
+    def from_json(cls, data: dict) -&gt; &#39;Run&#39;:
+        return cls(
+            git=GitInfo.from_json(data[&#39;git&#39;]),
+            context=TestContext.from_json(data[&#39;context&#39;]),
+            cases=[TestCase.from_json(case) for case in data[&#39;cases&#39;]],
+            id=data[&#39;id&#39;],
+            timestamp=data[&#39;timestamp&#39;],
+            status=data[&#39;status&#39;],
+            status_color=data[&#39;status_color&#39;]
+        )</code></pre>
+</details>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashtest.models.Run.cases"><code class="name">var <span class="ident">cases</span> : List[<a title="crashtest.models.TestCase" href="#crashtest.models.TestCase">TestCase</a>]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashtest.models.Run.context"><code class="name">var <span class="ident">context</span> : <a title="crashtest.models.TestContext" href="#crashtest.models.TestContext">TestContext</a></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashtest.models.Run.git"><code class="name">var <span class="ident">git</span> : <a title="crashtest.models.GitInfo" href="#crashtest.models.GitInfo">GitInfo</a></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashtest.models.Run.id"><code class="name">var <span class="ident">id</span> : str</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashtest.models.Run.status"><code class="name">var <span class="ident">status</span> : str</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashtest.models.Run.status_color"><code class="name">var <span class="ident">status_color</span> : str</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashtest.models.Run.timestamp"><code class="name">var <span class="ident">timestamp</span> : str</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Static methods</h3>
+<dl>
+<dt id="crashtest.models.Run.from_json"><code class="name flex">
+<span>def <span class="ident">from_json</span></span>(<span>data: dict) ‑> <a title="crashtest.models.Run" href="#crashtest.models.Run">Run</a></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashtest.models.Run.to_json"><code class="name flex">
+<span>def <span class="ident">to_json</span></span>(<span>self) ‑> dict</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashtest.models.TestCase"><code class="flex name class">
+<span>class <span class="ident">TestCase</span></span>
+<span>(</span><span>original: <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a>, decompiled: <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a>, ir: <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a>, test_id: int, test_name: Optional[str] = None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Represents a test case.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dataclass
+class TestCase:
+    &#34;&#34;&#34;
+    Represents a test case.
+    &#34;&#34;&#34;
+    original: TestFile
+    decompiled: TestFile
+    ir: TestFile
+    test_id: int
+    test_name: Optional[str] = None
+
+    def to_json(self) -&gt; dict:
+        return {
+            &#39;original&#39;: self.original.to_json(),
+            &#39;decompiled&#39;: self.decompiled.to_json(),
+            &#39;ir&#39;: self.ir.to_json(),
+            &#39;test_id&#39;: self.test_id,
+            &#39;test_name&#39;: self.test_name
+        }
+
+    @classmethod
+    def from_json(cls, data: dict) -&gt; &#39;TestCase&#39;:
+        return cls(
+            original=TestFile.from_json(data[&#39;original&#39;]),
+            decompiled=TestFile.from_json(data[&#39;decompiled&#39;]),
+            ir=TestFile.from_json(data[&#39;ir&#39;]),
+            test_id=data[&#39;test_id&#39;],
+            test_name=data[&#39;test_name&#39;]
+        )</code></pre>
+</details>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashtest.models.TestCase.decompiled"><code class="name">var <span class="ident">decompiled</span> : <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashtest.models.TestCase.ir"><code class="name">var <span class="ident">ir</span> : <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashtest.models.TestCase.original"><code class="name">var <span class="ident">original</span> : <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashtest.models.TestCase.test_id"><code class="name">var <span class="ident">test_id</span> : int</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashtest.models.TestCase.test_name"><code class="name">var <span class="ident">test_name</span> : Optional[str]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Static methods</h3>
+<dl>
+<dt id="crashtest.models.TestCase.from_json"><code class="name flex">
+<span>def <span class="ident">from_json</span></span>(<span>data: dict) ‑> <a title="crashtest.models.TestCase" href="#crashtest.models.TestCase">TestCase</a></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashtest.models.TestCase.to_json"><code class="name flex">
+<span>def <span class="ident">to_json</span></span>(<span>self) ‑> dict</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashtest.models.TestContext"><code class="flex name class">
+<span>class <span class="ident">TestContext</span></span>
+<span>(</span><span>version: str)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Represents the context for a complete test suite run.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dataclass
+class TestContext:
+    &#34;&#34;&#34;
+    Represents the context for a complete test suite run.
+    &#34;&#34;&#34;
+    version: str
+
+    def to_json(self) -&gt; dict:
+        return asdict(self)
+
+    @classmethod
+    def from_json(cls, data: dict) -&gt; &#39;TestContext&#39;:
+        return cls(**data)</code></pre>
+</details>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashtest.models.TestContext.version"><code class="name">var <span class="ident">version</span> : str</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Static methods</h3>
+<dl>
+<dt id="crashtest.models.TestContext.from_json"><code class="name flex">
+<span>def <span class="ident">from_json</span></span>(<span>data: dict) ‑> <a title="crashtest.models.TestContext" href="#crashtest.models.TestContext">TestContext</a></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashtest.models.TestContext.to_json"><code class="name flex">
+<span>def <span class="ident">to_json</span></span>(<span>self) ‑> dict</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashtest.models.TestFile"><code class="flex name class">
+<span>class <span class="ident">TestFile</span></span>
+<span>(</span><span>name: str, content: str)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Represents a file and its content.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dataclass
+class TestFile:
+    &#34;&#34;&#34;
+    Represents a file and its content.
+    &#34;&#34;&#34;
+    name: str
+    content: str
+
+    def to_json(self) -&gt; dict:
+        return asdict(self)
+
+    @classmethod
+    def from_json(cls, data: dict) -&gt; &#39;TestFile&#39;:
+        return cls(**data)</code></pre>
+</details>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashtest.models.TestFile.content"><code class="name">var <span class="ident">content</span> : str</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashtest.models.TestFile.name"><code class="name">var <span class="ident">name</span> : str</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Static methods</h3>
+<dl>
+<dt id="crashtest.models.TestFile.from_json"><code class="name flex">
+<span>def <span class="ident">from_json</span></span>(<span>data: dict) ‑> <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashtest.models.TestFile.to_json"><code class="name flex">
+<span>def <span class="ident">to_json</span></span>(<span>self) ‑> dict</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashtest" href="index.html">crashtest</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="crashtest.models.load_runs" href="#crashtest.models.load_runs">load_runs</a></code></li>
+<li><code><a title="crashtest.models.save_run" href="#crashtest.models.save_run">save_run</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="crashtest.models.GitInfo" href="#crashtest.models.GitInfo">GitInfo</a></code></h4>
+<ul class="two-column">
+<li><code><a title="crashtest.models.GitInfo.branch" href="#crashtest.models.GitInfo.branch">branch</a></code></li>
+<li><code><a title="crashtest.models.GitInfo.commit" href="#crashtest.models.GitInfo.commit">commit</a></code></li>
+<li><code><a title="crashtest.models.GitInfo.dirty" href="#crashtest.models.GitInfo.dirty">dirty</a></code></li>
+<li><code><a title="crashtest.models.GitInfo.from_json" href="#crashtest.models.GitInfo.from_json">from_json</a></code></li>
+<li><code><a title="crashtest.models.GitInfo.github" href="#crashtest.models.GitInfo.github">github</a></code></li>
+<li><code><a title="crashtest.models.GitInfo.is_release" href="#crashtest.models.GitInfo.is_release">is_release</a></code></li>
+<li><code><a title="crashtest.models.GitInfo.to_json" href="#crashtest.models.GitInfo.to_json">to_json</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashtest.models.Run" href="#crashtest.models.Run">Run</a></code></h4>
+<ul class="two-column">
+<li><code><a title="crashtest.models.Run.cases" href="#crashtest.models.Run.cases">cases</a></code></li>
+<li><code><a title="crashtest.models.Run.context" href="#crashtest.models.Run.context">context</a></code></li>
+<li><code><a title="crashtest.models.Run.from_json" href="#crashtest.models.Run.from_json">from_json</a></code></li>
+<li><code><a title="crashtest.models.Run.git" href="#crashtest.models.Run.git">git</a></code></li>
+<li><code><a title="crashtest.models.Run.id" href="#crashtest.models.Run.id">id</a></code></li>
+<li><code><a title="crashtest.models.Run.status" href="#crashtest.models.Run.status">status</a></code></li>
+<li><code><a title="crashtest.models.Run.status_color" href="#crashtest.models.Run.status_color">status_color</a></code></li>
+<li><code><a title="crashtest.models.Run.timestamp" href="#crashtest.models.Run.timestamp">timestamp</a></code></li>
+<li><code><a title="crashtest.models.Run.to_json" href="#crashtest.models.Run.to_json">to_json</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashtest.models.TestCase" href="#crashtest.models.TestCase">TestCase</a></code></h4>
+<ul class="two-column">
+<li><code><a title="crashtest.models.TestCase.decompiled" href="#crashtest.models.TestCase.decompiled">decompiled</a></code></li>
+<li><code><a title="crashtest.models.TestCase.from_json" href="#crashtest.models.TestCase.from_json">from_json</a></code></li>
+<li><code><a title="crashtest.models.TestCase.ir" href="#crashtest.models.TestCase.ir">ir</a></code></li>
+<li><code><a title="crashtest.models.TestCase.original" href="#crashtest.models.TestCase.original">original</a></code></li>
+<li><code><a title="crashtest.models.TestCase.test_id" href="#crashtest.models.TestCase.test_id">test_id</a></code></li>
+<li><code><a title="crashtest.models.TestCase.test_name" href="#crashtest.models.TestCase.test_name">test_name</a></code></li>
+<li><code><a title="crashtest.models.TestCase.to_json" href="#crashtest.models.TestCase.to_json">to_json</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashtest.models.TestContext" href="#crashtest.models.TestContext">TestContext</a></code></h4>
+<ul class="">
+<li><code><a title="crashtest.models.TestContext.from_json" href="#crashtest.models.TestContext.from_json">from_json</a></code></li>
+<li><code><a title="crashtest.models.TestContext.to_json" href="#crashtest.models.TestContext.to_json">to_json</a></code></li>
+<li><code><a title="crashtest.models.TestContext.version" href="#crashtest.models.TestContext.version">version</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a></code></h4>
+<ul class="">
+<li><code><a title="crashtest.models.TestFile.content" href="#crashtest.models.TestFile.content">content</a></code></li>
+<li><code><a title="crashtest.models.TestFile.from_json" href="#crashtest.models.TestFile.from_json">from_json</a></code></li>
+<li><code><a title="crashtest.models.TestFile.name" href="#crashtest.models.TestFile.name">name</a></code></li>
+<li><code><a title="crashtest.models.TestFile.to_json" href="#crashtest.models.TestFile.to_json">to_json</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.1</a>.</p>
+</footer>
+</body>
+</html>
