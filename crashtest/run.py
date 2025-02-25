@@ -2,14 +2,16 @@
 Functions to run tests, collect results, and produce run reports.
 """
 
-from .models import GitInfo, TestContext, TestCase, TestFile, Run, save_run
-import os
-import subprocess
-from crashlink import decomp, Bytecode, globals
 import datetime
+import os
 import re
-
+import subprocess
 from typing import List, Tuple
+
+from crashlink import Bytecode, decomp, globals
+
+from .models import GitInfo, Run, TestCase, TestContext, TestFile, save_run
+
 
 def get_repo_info() -> GitInfo:
     """
@@ -21,32 +23,46 @@ def get_repo_info() -> GitInfo:
         os.chdir(script_dir)
 
         try:
-            branch = subprocess.check_output(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode("utf-8")
-            commit = subprocess.check_output(
-                ["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
-            dirty = subprocess.check_output(
-                ["git", "status", "--porcelain"]).strip().decode("utf-8") != ""
-            return GitInfo(is_release=False, branch=branch, commit=commit[:8], dirty=dirty, github=f"https://github.com/N3rdL0rd/crashlink/commit/{commit}")
+            branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode("utf-8")
+            commit = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
+            dirty = subprocess.check_output(["git", "status", "--porcelain"]).strip().decode("utf-8") != ""
+            return GitInfo(
+                is_release=False,
+                branch=branch,
+                commit=commit[:8],
+                dirty=dirty,
+                github=f"https://github.com/N3rdL0rd/crashlink/commit/{commit}",
+            )
         finally:
             os.chdir(original_dir)
     except (subprocess.CalledProcessError, FileNotFoundError):
         return GitInfo(is_release=True, dirty=False)
 
+
 def file_to_name(file: str) -> str:
-    return " ".join(re.sub('([A-Z][a-z]+)', r' \1', re.sub('([A-Z]+)', r' \1', file.replace(".hx", "").replace("_", " "))).split()).title()
+    return " ".join(
+        re.sub("([A-Z][a-z]+)", r" \1", re.sub("([A-Z]+)", r" \1", file.replace(".hx", "").replace("_", " "))).split()
+    ).title()
+
 
 def run_case(case: str, id: int) -> TestCase:
     """
     Runs a single test case.
     """
     try:
-        code = Bytecode.from_path(os.path.join(os.path.dirname(__file__), "..", "tests", "haxe", case.replace(".hx", ".hl")))
+        code = Bytecode.from_path(
+            os.path.join(os.path.dirname(__file__), "..", "tests", "haxe", case.replace(".hx", ".hl"))
+        )
         irf = decomp.IRFunction(code, code.get_test_main())
         # TODO: pseudo output
         return TestCase(
-            original=TestFile(name=case, content=open(os.path.join(os.path.dirname(__file__), "..", "tests", "haxe", case), "r").read()),
-            decompiled=TestFile(name=f"{case.replace('.hx', '')} (Decompiled)", content="Failed to produce pseudocode."),
+            original=TestFile(
+                name=case,
+                content=open(os.path.join(os.path.dirname(__file__), "..", "tests", "haxe", case), "r").read(),
+            ),
+            decompiled=TestFile(
+                name=f"{case.replace('.hx', '')} (Decompiled)", content="Failed to produce pseudocode."
+            ),
             ir=TestFile(name=f"{case.replace('.hx', '')} (IR)", content=str(irf.block)),
             failed=False,
             test_name=file_to_name(case),
@@ -54,13 +70,18 @@ def run_case(case: str, id: int) -> TestCase:
         )
     except Exception as e:
         return TestCase(
-            original=TestFile(name=case, content=open(os.path.join(os.path.dirname(__file__), "..", "tests", "haxe", case), "r").read()),
-            decompiled=TestFile(name=f"{case.replace('.hx', '')} (Decompiled)", content="Failed to produce pseudocode."),
+            original=TestFile(
+                name=case,
+                content=open(os.path.join(os.path.dirname(__file__), "..", "tests", "haxe", case), "r").read(),
+            ),
+            decompiled=TestFile(
+                name=f"{case.replace('.hx', '')} (Decompiled)", content="Failed to produce pseudocode."
+            ),
             ir=TestFile(name=f"{case.replace('.hx', '')} (IR)", content="Failed to produce IR."),
             failed=True,
             test_name=case.replace(".hx", "").replace("_", " ").title(),
             test_id=file_to_name(case),
-            error=str(e)
+            error=str(e),
         )
 
 
@@ -69,12 +90,13 @@ def gen_id() -> str:
     Generate a unique ID for a test run.
     """
     return datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    
+
+
 def gen_status(results: List[TestCase]) -> Tuple[str, str]:
     """
     Generate a status message and color based on test results.
     Returns a tuple of (status_message, color_hex).
-    
+
     Colors:
     - Green (#22C55E): All tests passed
     - Yellow (#EAB308): < 10% failures
@@ -85,7 +107,7 @@ def gen_status(results: List[TestCase]) -> Tuple[str, str]:
     """
     if not results:
         return "No Tests Run", "#6B7280"  # Gray for no tests
-        
+
     total = len(results)
     failed = sum(1 for case in results if case.failed)
     failure_rate = (failed / total) * 100
@@ -104,6 +126,7 @@ def gen_status(results: List[TestCase]) -> Tuple[str, str]:
         else:
             return f"Critical failures ({failure_rate:.1f}%)", "#DC2626"
 
+
 def run() -> None:
     """
     Run all tests.
@@ -111,9 +134,11 @@ def run() -> None:
     print("Getting repo info...")
     git = get_repo_info()
     if git.is_release:
-        print("Cannot run tests from a release build (eg. installed fro PyPI). Please clone the repo and run from there.")
-        return # TODO: add support for autodownloading and building test samples
-    
+        print(
+            "Cannot run tests from a release build (eg. installed fro PyPI). Please clone the repo and run from there."
+        )
+        return  # TODO: add support for autodownloading and building test samples
+
     print("Finding test cases...")
     files = os.listdir(os.path.join(os.path.dirname(__file__), "..", "tests", "haxe"))
     cases = [f for f in files if f.endswith(".hx")]
@@ -121,14 +146,14 @@ def run() -> None:
         if not case.replace(".hx", ".hl") in files:
             print(f"Warning: no compiled bytecode found for {case}. Skipping.")
             cases.remove(case)
-    
+
     print("Running tests...")
     results = []
     for i, case in enumerate(cases):
         print(f"Running {case}...")
         result = run_case(case, i)
         results.append(result)
-    
+
     print("Generating run...")
     status, status_color = gen_status(results)
     r = Run(
@@ -138,7 +163,7 @@ def run() -> None:
         id=gen_id(),
         timestamp=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         status=status,
-        status_color=status_color
+        status_color=status_color,
     )
     os.makedirs(os.path.join(os.path.dirname(__file__), "runs"), exist_ok=True)
     save_run(r, os.path.join(os.path.dirname(__file__), "runs", f"{gen_id()}.json"))
