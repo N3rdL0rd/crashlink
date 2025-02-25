@@ -5,9 +5,11 @@ Functions to run tests, collect results, and produce run reports.
 from .models import GitInfo, TestContext, TestCase, TestFile, Run, save_run
 import os
 import subprocess
-import traceback
 from crashlink import decomp, Bytecode, globals
 import datetime
+import re
+
+from typing import List, Tuple
 
 def get_repo_info() -> GitInfo:
     """
@@ -31,6 +33,9 @@ def get_repo_info() -> GitInfo:
     except (subprocess.CalledProcessError, FileNotFoundError):
         return GitInfo(is_release=True, dirty=False)
 
+def file_to_name(file: str) -> str:
+    return " ".join(re.sub('([A-Z][a-z]+)', r' \1', re.sub('([A-Z]+)', r' \1', file.replace(".hx", "").replace("_", " "))).split()).title()
+
 def run_case(case: str, id: int) -> TestCase:
     """
     Runs a single test case.
@@ -44,7 +49,7 @@ def run_case(case: str, id: int) -> TestCase:
             decompiled=TestFile(name=f"{case.replace('.hx', '')} (Decompiled)", content="Failed to produce pseudocode."),
             ir=TestFile(name=f"{case.replace('.hx', '')} (IR)", content=str(irf.block)),
             failed=False,
-            test_name=case.replace(".hx", "").replace("_", " ").title(),
+            test_name=file_to_name(case),
             test_id=id,
         )
     except Exception as e:
@@ -54,7 +59,7 @@ def run_case(case: str, id: int) -> TestCase:
             ir=TestFile(name=f"{case.replace('.hx', '')} (IR)", content="Failed to produce IR."),
             failed=True,
             test_name=case.replace(".hx", "").replace("_", " ").title(),
-            test_id=id,
+            test_id=file_to_name(case),
             error=str(e)
         )
 
@@ -65,6 +70,40 @@ def gen_id() -> str:
     """
     return datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     
+def gen_status(results: List[TestCase]) -> Tuple[str, str]:
+    """
+    Generate a status message and color based on test results.
+    Returns a tuple of (status_message, color_hex).
+    
+    Colors:
+    - Green (#22C55E): All tests passed
+    - Yellow (#EAB308): < 10% failures
+    - Orange (#F97316): 10-20% failures
+    - Red-Orange (#EF4444): 20-50% failures
+    - Red (#DC2626): > 50% failures
+    - Dark Red (#991B1B): All tests failed
+    """
+    if not results:
+        return "No Tests Run", "#6B7280"  # Gray for no tests
+        
+    total = len(results)
+    failed = sum(1 for case in results if case.failed)
+    failure_rate = (failed / total) * 100
+
+    if failed == 0:
+        return "All tests passed", "#22C55E"
+    elif failed == total:
+        return "All tests failed", "#991B1B"
+    else:
+        if failure_rate < 10:
+            return f"Partial failure ({failure_rate:.1f}%)", "#EAB308"
+        elif failure_rate < 20:
+            return f"Partial failure ({failure_rate:.1f}%)", "#F97316"
+        elif failure_rate < 50:
+            return f"Major failures ({failure_rate:.1f}%)", "#EF4444"
+        else:
+            return f"Critical failures ({failure_rate:.1f}%)", "#DC2626"
+
 def run() -> None:
     """
     Run all tests.
@@ -91,12 +130,15 @@ def run() -> None:
         results.append(result)
     
     print("Generating run...")
+    status, status_color = gen_status(results)
     r = Run(
         git=git,
         context=TestContext(version=globals.VERSION),
         cases=results,
         id=gen_id(),
-        timestamp="TODO",
-        status="TODO",
+        timestamp=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        status=status,
+        status_color=status_color
     )
+    os.makedirs(os.path.join(os.path.dirname(__file__), "runs"), exist_ok=True)
     save_run(r, os.path.join(os.path.dirname(__file__), "runs", f"{gen_id()}.json"))

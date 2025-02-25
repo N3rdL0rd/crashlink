@@ -58,6 +58,14 @@
             z-index: 100;
             gap: 1rem;
         }
+
+        .test-header.pass {
+            background: #a2ff9e;
+        }
+
+        .test-header.fail {
+            background: #ff8888;
+        }
     
         .toggle-ir {
             background: #cba6f7;
@@ -112,7 +120,7 @@
     <h1><small><a href="../../">Back to all runs</a></small><br>crashtest <small>crashlink {{context.version}}{% if git.is_release %} (release build){% else %}{% if git.dirty %} <b>(dirty!)</b>{% endif %} on <a href="{{ git.github }}">{{ git.branch }}@{{git.commit}}</a> {% endif %}</small></h1>
     {% for case in cases %}
     <div class="test-case" id="{{ case.test_id }}">
-        <div class="test-header">
+        <div class="test-header {% if not case.failed %}pass{% else %}fail{% endif %}">
             <h2>
                 <a href="#{{ case.test_id }}"><i class="fa fa-link"></i></a>
                 {{ case.test_name }}
