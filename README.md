@@ -6,7 +6,7 @@
 Pure Python HashLink bytecode parser/disassembler/decompiler/modding tool
 
 > [!WARNING]
-> This project is under active development. Breaking changes may be made to APIs with zero notice.
+> This project is under active development. Breaking changes may be made to APIs with zero notice. Also, the decompiler is broken right now so...
 
 ## Features
 
@@ -119,20 +119,23 @@ You can use the following pre-defined commands with `just`:
 
 ## Roadmap
 
+- [x] Bytecode parsing
+- [x] Opcode disassembly
+  - [x] Local resolution and naming
 - [ ] IR lifter (layer 0)
   - [x] If statements
   - [ ] Loops
   - [x] Switch opcode statements
   - [ ] Function calls
     - [ ] CallClosure
-  - [ ] Closures
+  - [ ] Closures, lambdas
 - [ ] IR optimization layers
   - [ ] SSA locals
   - [ ] Trace optimization
   - [ ] Nested if/else/if/else -> switch
 - [ ] Pseudocode targets
   - [ ] Haxe (main target)
-  - [ ] Any others? We'll see.
+  - [ ] Any others? We'll see...
 - [ ] Partial recompilation (against stubs of other functions)
 - [ ] GUI? (customtkinter or dearpygui)
   - [ ] Graphical disassembler
