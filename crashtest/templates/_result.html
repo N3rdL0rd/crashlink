@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>crashtest (crashlink {{context.version}})</title>
+    <style>
+        :root {
+            --visible-columns: 2;
+        }
+        body { margin: 0; font-family: sans-serif; }
+        .test-case {
+            margin: 2rem 0;
+            border-top: 2px solid #eee;
+        }
+        .test-header {
+            padding: 1rem;
+            background: #f8f9fa;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .test-header h2 {
+            margin: 0;
+            font-size: 1.25rem;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: repeat(var(--visible-columns), 1fr);
+            transition: grid-template-columns 0.3s ease;
+        }
+        .code-panel {
+            padding: 1rem;
+            border-right: 1px solid #ccc;
+            overflow: auto;
+        }
+
+        small {
+            font-size: 0.8rem;
+            color: #525252;
+        }
+
+        h1 {
+            padding-left: 1rem;
+        }
+
+        h1 > small > a {
+            color: #36007e;
+            background-color: transparent;
+        }
+
+        .test-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            background: #f8f9fa;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            gap: 1rem;
+        }
+    
+        .toggle-ir {
+            background: #cba6f7;
+            color: black;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+    
+        .toggle-ir:hover {
+            background: #b4befe;
+        }
+    
+        .toggle-ir:active {
+            background: #74c7ec;
+        }        
+    
+        .test-header h2 {
+            margin: 0;
+            font-size: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+    
+        .fa-link {
+            color: #666;
+            font-size: 0.8em;
+            transition: color 0.2s ease;
+        }
+    
+        .fa-link:hover {
+            color: #f5c2e7;
+        }
+
+        .a {
+            color: #36007e !important;
+            background-color: transparent;
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <link href="https://prismjs.catppuccin.com/frappe.css" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/line-numbers/prism-line-numbers.min.css" rel="stylesheet" />
+</head>
+<body class="line-numbers">
+    <h1><small><a href="../../">Back to all runs</a></small><br>crashtest <small>crashlink {{context.version}}{% if git.is_release %} (release build){% else %}{% if git.dirty %} <b>(dirty!)</b>{% endif %} on <a href="{{ git.github }}">{{ git.branch }}@{{git.commit}}</a> {% endif %}</small></h1>
+    {% for case in cases %}
+    <div class="test-case" id="{{ case.test_id }}">
+        <div class="test-header">
+            <h2>
+                <a href="#{{ case.test_id }}"><i class="fa fa-link"></i></a>
+                {{ case.test_name }}
+            </h2>
+            <button class="toggle-ir" data-testid="{{ case.test_id }}">
+                <i class="fas fa-eye"></i>
+                Toggle IR
+            </button>
+        </div>
+        <div class="container">
+            <div class="code-panel">
+                <div class="filename">Original</div>
+                <pre><code class="language-haxe">{{ case.original.content }}</code></pre>
+            </div>
+            
+            <div class="code-panel">
+                <div class="filename">Decompiled</div>
+                <pre><code class="language-haxe">{{ case.decompiled.content }}</code></pre>
+            </div>
+
+            <div class="code-panel ir-panel">
+                <div class="filename">IR</div>
+                <pre><code class="language-txt">{{ case.ir.content }}</code></pre>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-haxe.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/line-numbers/prism-line-numbers.min.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            Prism.highlightAll();
+        });
+        
+        document.querySelectorAll('.toggle-ir').forEach(button => {
+            button.addEventListener('click', function() {
+                const testCase = this.closest('.test-case');
+                const container = testCase.querySelector('.container');
+                const irPanel = testCase.querySelector('.ir-panel');
+                const icon = this.querySelector('i');
+                
+                irPanel.style.display = irPanel.style.display === 'none' ? 'block' : 'none';
+                const visibleColumns = parseInt(getComputedStyle(container)
+                    .getPropertyValue('--visible-columns'));
+                container.style.setProperty('--visible-columns', 
+                    visibleColumns === 2 ? 3 : 2);
+                
+                icon.classList.toggle('fa-eye');
+                icon.classList.toggle('fa-eye-slash');
+                
+                if (irPanel.style.display === 'block') {
+                    Prism.highlightAllUnder(irPanel);
+                }
+            });
+        });
+        document.querySelectorAll('.ir-panel').forEach(panel => {
+            panel.style.display = 'none';
+        });
+    </script>
+</body>
+</html>

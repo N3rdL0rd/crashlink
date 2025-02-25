@@ -1623,6 +1623,12 @@ class Bytecode(Serialisable):
         dbg_print(f"Final size: {hex(len(res))}")
         dbg_print(f"{(datetime.now() - start_time).total_seconds()}s elapsed.")
         return res
+    
+    def get_test_main(self) -> Function:
+        for f in self.functions:
+            if full_func_name(self, f).endswith("main"):
+                return f
+        raise ValueError("No main function found!")
 
     def is_ok(self) -> bool:
         if len(self.ints) != self.nints.value:
@@ -1676,3 +1682,63 @@ class Bytecode(Serialisable):
             if offset >= section_offset:
                 return section_name
         return None
+
+def get_field_for(code: Bytecode, idx: int) -> Optional[Field]:
+    """
+    Gets the field for a standalone function index.
+    """
+    for type in code.types:
+        if type.kind.value == Type.TYPEDEFS.index(Obj):
+            if not isinstance(type.definition, Obj):
+                raise TypeError(f"Expected Obj, got {type.definition}")
+            definition: Obj = type.definition
+            fields = definition.resolve_fields(code)
+            for binding in definition.bindings:  # binding binds a field to a function
+                if binding.findex.value == idx:
+                    return fields[binding.field.value]
+    return None
+
+def get_proto_for(code: Bytecode, idx: int) -> Optional[Proto]:
+    """
+    Gets the proto for a standalone function index.
+    """
+    for type in code.types:
+        if type.kind.value == Type.TYPEDEFS.index(Obj):
+            if not isinstance(type.definition, Obj):
+                raise TypeError(f"Expected Obj, got {type.definition}")
+            definition: Obj = type.definition
+            for proto in definition.protos:
+                if proto.findex.value == idx:
+                    return proto
+    return None
+
+def full_func_name(code: Bytecode, func: Function | Native) -> str:
+    """
+    Generates a human-readable name for a function or native.
+    """
+    proto = get_proto_for(code, func.findex.value)
+    if proto:
+        name = proto.name.resolve(code)
+        for type in code.types:
+            if type.kind.value == Type.TYPEDEFS.index(Obj):
+                if not isinstance(type.definition, Obj):
+                    continue
+                obj_def: Obj = type.definition
+                for fun in obj_def.protos:
+                    if fun.findex.value == func.findex.value:
+                        return f"{obj_def.name.resolve(code)}.{name}"
+    else:
+        name = "<none>"
+        field = get_field_for(code, func.findex.value)
+        if field:
+            name = field.name.resolve(code)
+            for type in code.types:
+                if type.kind.value == Type.TYPEDEFS.index(Obj):
+                    if not isinstance(type.definition, Obj):
+                        continue
+                    _obj_def: Obj = type.definition
+                    fields = _obj_def.resolve_fields(code)
+                    for binding in _obj_def.bindings:
+                        if binding.findex.value == func.findex.value:
+                            return f"{_obj_def.name.resolve(code)}.{name}"
+    return name

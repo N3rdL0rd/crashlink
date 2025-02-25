@@ -34,7 +34,8 @@ dev = [
   "typeguard",
   "types-tqdm",
   "dill",
-  "pytest-xdist"
+  "pytest-xdist",
+  "staticjinja"
 ]
 extras = [
   "tqdm",
@@ -47,7 +48,8 @@ build-backend = "setuptools.build_meta"
 
 [project.scripts]
 crashlink = "crashlink.__main__:main"
+crashtest = "crashtest.__main__:main"
 
 [tool.setuptools.packages.find]
-include = ["crashlink", "crashlink.*"]
+include = ["crashlink", "crashlink.*", "crashtest", "crashtest.*"]
 exclude = ["tests", "tests.*", "local", "local.*", "env", "env.*"]
