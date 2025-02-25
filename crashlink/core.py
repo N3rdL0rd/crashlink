@@ -1623,7 +1623,7 @@ class Bytecode(Serialisable):
         dbg_print(f"Final size: {hex(len(res))}")
         dbg_print(f"{(datetime.now() - start_time).total_seconds()}s elapsed.")
         return res
-    
+
     def get_test_main(self) -> Function:
         for f in self.functions:
             if full_func_name(self, f).endswith("main"):
@@ -1683,6 +1683,7 @@ class Bytecode(Serialisable):
                 return section_name
         return None
 
+
 def get_field_for(code: Bytecode, idx: int) -> Optional[Field]:
     """
     Gets the field for a standalone function index.
@@ -1698,6 +1699,7 @@ def get_field_for(code: Bytecode, idx: int) -> Optional[Field]:
                     return fields[binding.field.value]
     return None
 
+
 def get_proto_for(code: Bytecode, idx: int) -> Optional[Proto]:
     """
     Gets the proto for a standalone function index.
@@ -1711,6 +1713,7 @@ def get_proto_for(code: Bytecode, idx: int) -> Optional[Proto]:
                 if proto.findex.value == idx:
                     return proto
     return None
+
 
 def full_func_name(code: Bytecode, func: Function | Native) -> str:
     """

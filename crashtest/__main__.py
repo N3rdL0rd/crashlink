@@ -4,13 +4,14 @@ Main entry point.
 
 import argparse
 
-from .build import build
-from .run import run
 from crashlink.globals import VERSION
 
+from .build import build
+from .run import run
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="crashtest - crashlink's decompiler test runner")
+    parser = argparse.ArgumentParser(description="crashtest - crashlink's decompiler test runner")
     parser.add_argument("--version", action="version", version=VERSION)
     parser.add_argument("command", choices=["run", "build", "auto"], help="Command to run")
     args = parser.parse_args()
@@ -23,6 +24,7 @@ def main() -> None:
         run()
         print("Building site...")
         build()
+
 
 if __name__ == "__main__":
     main()

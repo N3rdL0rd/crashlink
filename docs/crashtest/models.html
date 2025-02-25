@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
-<meta name="generator" content="pdoc3 0.11.1">
+<meta name="generator" content="pdoc3 0.11.5">
 <title>crashtest.models API documentation</title>
 <meta name="description" content="Dataclass models.">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
-<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin-bottom:1em}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
 <style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
 <style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
 <script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
@@ -18,6 +18,17 @@
 <script>window.addEventListener('DOMContentLoaded', () => {
 hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
 hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
 })</script>
 </head>
 <body>
@@ -40,12 +51,35 @@ hljs.highlightAll();
 <span>def <span class="ident">load_runs</span></span>(<span>path: str) ‑> List[<a title="crashtest.models.Run" href="#crashtest.models.Run">Run</a>]</span>
 </code></dt>
 <dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def load_runs(path: str) -&gt; List[Run]:
+    &#34;&#34;&#34;Load test runs from a folder.&#34;&#34;&#34;
+    runs = []
+    for root, _, files in os.walk(path):
+        for file in files:
+            if file.endswith(&#34;.json&#34;):
+                with open(os.path.join(root, file), &#34;r&#34;) as f:
+                    runs.append(Run.from_json(json.load(f)))
+    return runs</code></pre>
+</details>
 <div class="desc"><p>Load test runs from a folder.</p></div>
 </dd>
 <dt id="crashtest.models.save_run"><code class="name flex">
-<span>def <span class="ident">save_run</span></span>(<span>run: <a title="crashtest.models.Run" href="#crashtest.models.Run">Run</a>, path: str) ‑> None</span>
+<span>def <span class="ident">save_run</span></span>(<span>run: <a title="crashtest.models.Run" href="#crashtest.models.Run">Run</a>,<br>path: str) ‑> None</span>
 </code></dt>
 <dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def save_run(run: Run, path: str) -&gt; None:
+    &#34;&#34;&#34;Save run to JSON file.&#34;&#34;&#34;
+    with open(path, &#34;w&#34;, encoding=&#34;utf-8&#34;) as f:
+        json.dump(run.to_json(), f, indent=4)</code></pre>
+</details>
 <div class="desc"><p>Save run to JSON file.</p></div>
 </dd>
 </dl>
@@ -55,10 +89,9 @@ hljs.highlightAll();
 <dl>
 <dt id="crashtest.models.GitInfo"><code class="flex name class">
 <span>class <span class="ident">GitInfo</span></span>
-<span>(</span><span>is_release: bool, dirty: bool, branch: Optional[str] = None, commit: Optional[str] = None, github: Optional[str] = None)</span>
+<span>(</span><span>is_release: bool,<br>dirty: bool,<br>branch: str | None = None,<br>commit: str | None = None,<br>github: str | None = None)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Represents information about the git branch and commit, or lack thereof.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -68,6 +101,7 @@ class GitInfo:
     &#34;&#34;&#34;
     Represents information about the git branch and commit, or lack thereof.
     &#34;&#34;&#34;
+
     is_release: bool
     dirty: bool
     branch: Optional[str] = None
@@ -78,16 +112,17 @@ class GitInfo:
         return asdict(self)
 
     @classmethod
-    def from_json(cls, data: dict) -&gt; &#39;GitInfo&#39;:
+    def from_json(cls, data: dict) -&gt; &#34;GitInfo&#34;:
         return cls(**data)</code></pre>
 </details>
+<div class="desc"><p>Represents information about the git branch and commit, or lack thereof.</p></div>
 <h3>Class variables</h3>
 <dl>
-<dt id="crashtest.models.GitInfo.branch"><code class="name">var <span class="ident">branch</span> : Optional[str]</code></dt>
+<dt id="crashtest.models.GitInfo.branch"><code class="name">var <span class="ident">branch</span> : str | None</code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
-<dt id="crashtest.models.GitInfo.commit"><code class="name">var <span class="ident">commit</span> : Optional[str]</code></dt>
+<dt id="crashtest.models.GitInfo.commit"><code class="name">var <span class="ident">commit</span> : str | None</code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -95,7 +130,7 @@ class GitInfo:
 <dd>
 <div class="desc"></div>
 </dd>
-<dt id="crashtest.models.GitInfo.github"><code class="name">var <span class="ident">github</span> : Optional[str]</code></dt>
+<dt id="crashtest.models.GitInfo.github"><code class="name">var <span class="ident">github</span> : str | None</code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -119,16 +154,22 @@ class GitInfo:
 <span>def <span class="ident">to_json</span></span>(<span>self) ‑> dict</span>
 </code></dt>
 <dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def to_json(self) -&gt; dict:
+    return asdict(self)</code></pre>
+</details>
 <div class="desc"></div>
 </dd>
 </dl>
 </dd>
 <dt id="crashtest.models.Run"><code class="flex name class">
 <span>class <span class="ident">Run</span></span>
-<span>(</span><span>git: <a title="crashtest.models.GitInfo" href="#crashtest.models.GitInfo">GitInfo</a>, context: <a title="crashtest.models.TestContext" href="#crashtest.models.TestContext">TestContext</a>, cases: List[<a title="crashtest.models.TestCase" href="#crashtest.models.TestCase">TestCase</a>], id: str, timestamp: str, status: str, status_color: str = '#a6e3a1')</span>
+<span>(</span><span>git: <a title="crashtest.models.GitInfo" href="#crashtest.models.GitInfo">GitInfo</a>,<br>context: <a title="crashtest.models.TestContext" href="#crashtest.models.TestContext">TestContext</a>,<br>cases: List[<a title="crashtest.models.TestCase" href="#crashtest.models.TestCase">TestCase</a>],<br>id: str,<br>timestamp: str,<br>status: str,<br>status_color: str = '#a6e3a1')</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Represents a complete test run with git+version info and multiple test cases.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -138,37 +179,39 @@ class Run:
     &#34;&#34;&#34;
     Represents a complete test run with git+version info and multiple test cases.
     &#34;&#34;&#34;
+
     git: GitInfo
     context: TestContext
     cases: List[TestCase]
     id: str
     timestamp: str
     status: str
-    status_color: str = &#39;#a6e3a1&#39;
+    status_color: str = &#34;#a6e3a1&#34;
 
     def to_json(self) -&gt; dict:
         return {
-            &#39;git&#39;: self.git.to_json(),
-            &#39;context&#39;: self.context.to_json(),
-            &#39;cases&#39;: [case.to_json() for case in self.cases],
-            &#39;id&#39;: self.id,
-            &#39;timestamp&#39;: self.timestamp,
-            &#39;status&#39;: self.status,
-            &#39;status_color&#39;: self.status_color
+            &#34;git&#34;: self.git.to_json(),
+            &#34;context&#34;: self.context.to_json(),
+            &#34;cases&#34;: [case.to_json() for case in self.cases],
+            &#34;id&#34;: self.id,
+            &#34;timestamp&#34;: self.timestamp,
+            &#34;status&#34;: self.status,
+            &#34;status_color&#34;: self.status_color,
         }
 
     @classmethod
-    def from_json(cls, data: dict) -&gt; &#39;Run&#39;:
+    def from_json(cls, data: dict) -&gt; &#34;Run&#34;:
         return cls(
-            git=GitInfo.from_json(data[&#39;git&#39;]),
-            context=TestContext.from_json(data[&#39;context&#39;]),
-            cases=[TestCase.from_json(case) for case in data[&#39;cases&#39;]],
-            id=data[&#39;id&#39;],
-            timestamp=data[&#39;timestamp&#39;],
-            status=data[&#39;status&#39;],
-            status_color=data[&#39;status_color&#39;]
+            git=GitInfo.from_json(data[&#34;git&#34;]),
+            context=TestContext.from_json(data[&#34;context&#34;]),
+            cases=[TestCase.from_json(case) for case in data[&#34;cases&#34;]],
+            id=data[&#34;id&#34;],
+            timestamp=data[&#34;timestamp&#34;],
+            status=data[&#34;status&#34;],
+            status_color=data[&#34;status_color&#34;],
         )</code></pre>
 </details>
+<div class="desc"><p>Represents a complete test run with git+version info and multiple test cases.</p></div>
 <h3>Class variables</h3>
 <dl>
 <dt id="crashtest.models.Run.cases"><code class="name">var <span class="ident">cases</span> : List[<a title="crashtest.models.TestCase" href="#crashtest.models.TestCase">TestCase</a>]</code></dt>
@@ -215,16 +258,30 @@ class Run:
 <span>def <span class="ident">to_json</span></span>(<span>self) ‑> dict</span>
 </code></dt>
 <dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def to_json(self) -&gt; dict:
+    return {
+        &#34;git&#34;: self.git.to_json(),
+        &#34;context&#34;: self.context.to_json(),
+        &#34;cases&#34;: [case.to_json() for case in self.cases],
+        &#34;id&#34;: self.id,
+        &#34;timestamp&#34;: self.timestamp,
+        &#34;status&#34;: self.status,
+        &#34;status_color&#34;: self.status_color,
+    }</code></pre>
+</details>
 <div class="desc"></div>
 </dd>
 </dl>
 </dd>
 <dt id="crashtest.models.TestCase"><code class="flex name class">
 <span>class <span class="ident">TestCase</span></span>
-<span>(</span><span>original: <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a>, decompiled: <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a>, ir: <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a>, test_id: int, test_name: Optional[str] = None)</span>
+<span>(</span><span>original: <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a>,<br>decompiled: <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a>,<br>ir: <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a>,<br>test_id: int,<br>failed: bool,<br>test_name: str | None = None,<br>error: str | None = None)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Represents a test case.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -234,34 +291,50 @@ class TestCase:
     &#34;&#34;&#34;
     Represents a test case.
     &#34;&#34;&#34;
+
     original: TestFile
     decompiled: TestFile
     ir: TestFile
     test_id: int
+    failed: bool
     test_name: Optional[str] = None
+    error: Optional[str] = None
 
     def to_json(self) -&gt; dict:
         return {
-            &#39;original&#39;: self.original.to_json(),
-            &#39;decompiled&#39;: self.decompiled.to_json(),
-            &#39;ir&#39;: self.ir.to_json(),
-            &#39;test_id&#39;: self.test_id,
-            &#39;test_name&#39;: self.test_name
+            &#34;original&#34;: self.original.to_json(),
+            &#34;decompiled&#34;: self.decompiled.to_json(),
+            &#34;ir&#34;: self.ir.to_json(),
+            &#34;test_id&#34;: self.test_id,
+            &#34;test_name&#34;: self.test_name,
+            &#34;failed&#34;: self.failed,
+            &#34;error&#34;: self.error,
         }
 
     @classmethod
-    def from_json(cls, data: dict) -&gt; &#39;TestCase&#39;:
+    def from_json(cls, data: dict) -&gt; &#34;TestCase&#34;:
         return cls(
-            original=TestFile.from_json(data[&#39;original&#39;]),
-            decompiled=TestFile.from_json(data[&#39;decompiled&#39;]),
-            ir=TestFile.from_json(data[&#39;ir&#39;]),
-            test_id=data[&#39;test_id&#39;],
-            test_name=data[&#39;test_name&#39;]
+            original=TestFile.from_json(data[&#34;original&#34;]),
+            decompiled=TestFile.from_json(data[&#34;decompiled&#34;]),
+            ir=TestFile.from_json(data[&#34;ir&#34;]),
+            test_id=data[&#34;test_id&#34;],
+            test_name=data[&#34;test_name&#34;],
+            failed=data[&#34;failed&#34;],
+            error=data[&#34;error&#34;] if data[&#34;error&#34;] else None,
         )</code></pre>
 </details>
+<div class="desc"><p>Represents a test case.</p></div>
 <h3>Class variables</h3>
 <dl>
 <dt id="crashtest.models.TestCase.decompiled"><code class="name">var <span class="ident">decompiled</span> : <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashtest.models.TestCase.error"><code class="name">var <span class="ident">error</span> : str | None</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashtest.models.TestCase.failed"><code class="name">var <span class="ident">failed</span> : bool</code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -277,7 +350,7 @@ class TestCase:
 <dd>
 <div class="desc"></div>
 </dd>
-<dt id="crashtest.models.TestCase.test_name"><code class="name">var <span class="ident">test_name</span> : Optional[str]</code></dt>
+<dt id="crashtest.models.TestCase.test_name"><code class="name">var <span class="ident">test_name</span> : str | None</code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -297,6 +370,21 @@ class TestCase:
 <span>def <span class="ident">to_json</span></span>(<span>self) ‑> dict</span>
 </code></dt>
 <dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def to_json(self) -&gt; dict:
+    return {
+        &#34;original&#34;: self.original.to_json(),
+        &#34;decompiled&#34;: self.decompiled.to_json(),
+        &#34;ir&#34;: self.ir.to_json(),
+        &#34;test_id&#34;: self.test_id,
+        &#34;test_name&#34;: self.test_name,
+        &#34;failed&#34;: self.failed,
+        &#34;error&#34;: self.error,
+    }</code></pre>
+</details>
 <div class="desc"></div>
 </dd>
 </dl>
@@ -306,7 +394,6 @@ class TestCase:
 <span>(</span><span>version: str)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Represents the context for a complete test suite run.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -316,15 +403,17 @@ class TestContext:
     &#34;&#34;&#34;
     Represents the context for a complete test suite run.
     &#34;&#34;&#34;
+
     version: str
 
     def to_json(self) -&gt; dict:
         return asdict(self)
 
     @classmethod
-    def from_json(cls, data: dict) -&gt; &#39;TestContext&#39;:
+    def from_json(cls, data: dict) -&gt; &#34;TestContext&#34;:
         return cls(**data)</code></pre>
 </details>
+<div class="desc"><p>Represents the context for a complete test suite run.</p></div>
 <h3>Class variables</h3>
 <dl>
 <dt id="crashtest.models.TestContext.version"><code class="name">var <span class="ident">version</span> : str</code></dt>
@@ -347,6 +436,13 @@ class TestContext:
 <span>def <span class="ident">to_json</span></span>(<span>self) ‑> dict</span>
 </code></dt>
 <dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def to_json(self) -&gt; dict:
+    return asdict(self)</code></pre>
+</details>
 <div class="desc"></div>
 </dd>
 </dl>
@@ -356,7 +452,6 @@ class TestContext:
 <span>(</span><span>name: str, content: str)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Represents a file and its content.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -366,6 +461,7 @@ class TestFile:
     &#34;&#34;&#34;
     Represents a file and its content.
     &#34;&#34;&#34;
+
     name: str
     content: str
 
@@ -373,9 +469,10 @@ class TestFile:
         return asdict(self)
 
     @classmethod
-    def from_json(cls, data: dict) -&gt; &#39;TestFile&#39;:
+    def from_json(cls, data: dict) -&gt; &#34;TestFile&#34;:
         return cls(**data)</code></pre>
 </details>
+<div class="desc"><p>Represents a file and its content.</p></div>
 <h3>Class variables</h3>
 <dl>
 <dt id="crashtest.models.TestFile.content"><code class="name">var <span class="ident">content</span> : str</code></dt>
@@ -402,6 +499,13 @@ class TestFile:
 <span>def <span class="ident">to_json</span></span>(<span>self) ‑> dict</span>
 </code></dt>
 <dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def to_json(self) -&gt; dict:
+    return asdict(self)</code></pre>
+</details>
 <div class="desc"></div>
 </dd>
 </dl>
@@ -457,6 +561,8 @@ class TestFile:
 <h4><code><a title="crashtest.models.TestCase" href="#crashtest.models.TestCase">TestCase</a></code></h4>
 <ul class="two-column">
 <li><code><a title="crashtest.models.TestCase.decompiled" href="#crashtest.models.TestCase.decompiled">decompiled</a></code></li>
+<li><code><a title="crashtest.models.TestCase.error" href="#crashtest.models.TestCase.error">error</a></code></li>
+<li><code><a title="crashtest.models.TestCase.failed" href="#crashtest.models.TestCase.failed">failed</a></code></li>
 <li><code><a title="crashtest.models.TestCase.from_json" href="#crashtest.models.TestCase.from_json">from_json</a></code></li>
 <li><code><a title="crashtest.models.TestCase.ir" href="#crashtest.models.TestCase.ir">ir</a></code></li>
 <li><code><a title="crashtest.models.TestCase.original" href="#crashtest.models.TestCase.original">original</a></code></li>
@@ -488,7 +594,7 @@ class TestFile:
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.1</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
 </footer>
 </body>
 </html>

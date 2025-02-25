@@ -11,8 +11,8 @@ from . import disasm
 from .core import *
 from .errors import *
 from .globals import dbg_print
+from .opcodes import arithmetic, conditionals
 from .pseudo import Translatable
-from .opcodes import conditionals, arithmetic
 
 
 def _get_type_in_code(code: Bytecode, name: str) -> Type:
@@ -686,39 +686,39 @@ class IRSwitch(IRStatement):
             cases += f"\n\t{case}: {block}"
         cases += f"\n\tdefault: {self.default}"
         return f"<IRSwitch: {self.value}{cases}>"
-    
+
 
 class IRPrimitveJump(IRExpression):
     """An unlifted jump to be handled by further optimization stages."""
+
     def __init__(self, code: Bytecode, op: Opcode):
         super().__init__(code)
         self.op = op
         assert op.op in conditionals
-    
+
     def get_type(self) -> Type:
         return _get_type_in_code(self.code, "Bool")
 
     def __repr__(self) -> str:
         return f"<IRPrimitiveJump: {self.op}>"
-    
 
 
 class IsolatedCFGraph(CFGraph):
     """A control flow graph that contains only a subset of nodes from another graph."""
-    
-    def __init__(self, parent: CFGraph, nodes: List[CFNode], find_entry_intelligently: bool=True):
+
+    def __init__(self, parent: CFGraph, nodes: List[CFNode], find_entry_intelligently: bool = True):
         """Initialize from parent graph and list of nodes to isolate."""
         if not nodes:
             raise ValueError("Got empty list of nodes to isolate!")
-        
+
         super().__init__(parent.func)
-        
+
         node_map: Dict[CFNode, CFNode] = {}
-        
+
         for node in nodes:
             new_node = self.add_node(node.ops, node.base_offset)
             node_map[node] = new_node
-            
+
             if node == nodes[0]:
                 self.entry = new_node
 
@@ -727,18 +727,20 @@ class IsolatedCFGraph(CFGraph):
             for target, edge_type in old_node.branches:
                 if target in node_map:
                     self.add_branch(new_node, node_map[target], edge_type)
-                    
+
         if find_entry_intelligently and self.nodes:
             entry_candidates = []
             for node in self.nodes:
                 if not self.predecessors(node):
                     entry_candidates.append(node)
-                    
+
             if len(entry_candidates) == 1:
                 self.entry = entry_candidates[0]
 
 
-def _find_jumps_to_label(start_node: CFNode, label_node: CFNode, visited: Set[CFNode]) -> List[Tuple[CFNode, List[CFNode]]]:
+def _find_jumps_to_label(
+    start_node: CFNode, label_node: CFNode, visited: Set[CFNode]
+) -> List[Tuple[CFNode, List[CFNode]]]:
     """Helper function to find all jumps back up to a node by traversing down the CFG."""
     jumpers = []
     to_visit: List[Tuple[CFNode, List[CFNode]]] = [(start_node, [])]
@@ -849,13 +851,15 @@ class IRFunction:
                         false_queue.append(next_node)
 
         return None  # No convergence found
-    
+
     def _patch_loop_condition(self, node: CFNode) -> None:
         """Patches a loop condition block to remove the Label and anything else that could get it detected as a nested loop or other statement unintentionally."""
         node.ops = node.ops[1:]  # remove Label
         assert node.ops[-1].op in conditionals
 
-    def _lift_block(self, node: CFNode, visited: Optional[Set[CFNode]] = None, convert_jumps_to_primitive: bool = False) -> IRBlock:
+    def _lift_block(
+        self, node: CFNode, visited: Optional[Set[CFNode]] = None, convert_jumps_to_primitive: bool = False
+    ) -> IRBlock:
         if visited is None:
             visited = set()
 
@@ -886,6 +890,7 @@ class IRFunction:
                 if not isolated.entry:
                     dbg_print("Warning: Empty loop block found.")
                     block.comment += "WARNING: Empty loop block found."
+                    continue
                 block.statements.append(
                     IRPrimitiveLoop(
                         self.code,
@@ -893,7 +898,7 @@ class IRFunction:
                         self._lift_block(isolated.entry, visited),
                     )
                 )
-                
+
             elif op.op in arithmetic:
                 dst = self.locals[op.definition["dst"].value]
                 lhs = self.locals[op.definition["a"].value]
@@ -973,10 +978,10 @@ class IRFunction:
                         left = self.locals[op.definition["a"].value]
                         right = self.locals[op.definition["b"].value]
 
-                    condition = IRBoolExpr(self.code, cond, left, right)
+                    condition_expr = IRBoolExpr(self.code, cond, left, right)
                     true_block = self._lift_block(true_branch, visited) if should_lift_t else IRBlock(self.code)
                     false_block = self._lift_block(false_branch, visited) if should_lift_f else IRBlock(self.code)
-                    _cond = IRConditional(self.code, condition, true_block, false_block)
+                    _cond = IRConditional(self.code, condition_expr, true_block, false_block)
                     _cond.invert()  # invert the condition so the one full block isn't the else block
                     block.statements.append(_cond)
 
@@ -1104,7 +1109,7 @@ class IRFunction:
                 if target_node:
                     next_block = self._lift_block(target_node, visited)
                     block.statements.append(next_block)
-        
+
         if len(node.branches) == 1:
             next_node, _ = node.branches[0]
             next_block = self._lift_block(next_node, visited)

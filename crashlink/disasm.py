@@ -9,7 +9,6 @@ from .core import *
 from .opcodes import opcodes
 
 
-
 def type_name(code: Bytecode, typ: Type) -> str:
     """
     Generates a human-readable name for a type.
