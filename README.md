@@ -143,6 +143,16 @@ You can use the following pre-defined commands with `just`:
   - [ ] Decompiler and patching interface
   - [ ] IR layer viewer
 
+## Portability
+
+crashlink is written in pure typed Python with a minimum version of 3.10 (for the `|` operator and `match` statement). It should run on any modern platform, and has been tested heavily on Windows, Linux, and MacOS. As well as this, it is portable to many interpreters:
+
+- CPython 3.10+ is the main target - deserialising Dead Cells v35 takes 103.16s and 4.6gb of RAM
+- PyPy just works - the same benchmark takes 26s and 2.9gb of RAM
+  - tqdm displays broken progress bars, but this is a PyPy issue and it still works.
+- IronPython and Jython are not supported due to their earlier Python version targets.
+- RustPython would work, but it doesn't support `match` statements.
+
 ## Credits
 
 - Thank you to [Gui-Yom](https://github.com/Gui-Yom) for writing hlbc and for maintaining documentation on the HashLink bytecode format, as well as for providing tests and helping me during development.
