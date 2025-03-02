@@ -150,6 +150,69 @@
         .view-run:hover {
             background: #b4befe;
         }
+    
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            overflow: auto;
+        }
+    
+        .modal-content {
+            background-color: #313244;
+            margin: 15% auto;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 600px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+            animation: modalFadeIn 0.3s ease;
+        }
+    
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #45475a;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+    
+        .modal-header h2 {
+            color: #cba6f7;
+            margin: 0;
+        }
+    
+        .modal-body {
+            color: #cdd6f4;
+            line-height: 1.6;
+        }
+    
+        .modal-body code {
+            background: #1e1e2e;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+    
+        .close {
+            color: #a6adc8;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    
+        .close:hover {
+            color: #f38ba8;
+        }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism-tomorrow.min.css" rel="stylesheet" />
@@ -158,6 +221,7 @@
 </head>
 <body class="line-numbers">
     <h1>crashtest</h1>
+    <a role="button" onclick="show_about();" href="#" style="padding-left: 10px;">WTF is this?</a>
     <div class="runs-grid">
         {% for run in runs %}
             <div class="run-card">
@@ -170,7 +234,7 @@
                         {% if run.git.dirty %}
                             <b>(dirty!)</b>
                         {% endif %}
-                        on {{ run.git.branch }}
+                        on {{ run.git.branch }}@{{ run.git.commit }}
                     {% endif %}
                 </div>
                 <div class="run-stats" style="color: {{ run.status_color }};">
@@ -182,6 +246,19 @@
                 </a>
             </div>
         {% endfor %}
+    </div>
+
+    <div id="about-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>About crashtest</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p>crashtest is a built-in testing system for crashlink that is used to score the decompiler's output against the original source code. It is used to ensure that the decompiler is working correctly, that the output is correct, that the decompiler is not regressing, and to allow those interested in the project to easily see the state of the decompiler without installing it or running the test suite themselves.</p>
+                <p>You can call it with <code>just test</code> (which will run the complete test suite, including tests implemented with <code>pytest</code>), or just calling <code>crashtest</code> (or <code>python -m crashtest</code>) directly. Make sure you call it from the root of the repository, since it uses relative paths to find the test files and the output directory.</p>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/prism.min.js"></script>
@@ -216,6 +293,21 @@
         });
         document.querySelectorAll('.ir-panel').forEach(panel => {
             panel.style.display = 'none';
+        });
+
+        function show_about() {
+            document.getElementById('about-modal').style.display = 'block';
+        }
+        
+        document.querySelector('.close').addEventListener('click', function() {
+            document.getElementById('about-modal').style.display = 'none';
+        });
+        
+        window.addEventListener('click', function(event) {
+            const modal = document.getElementById('about-modal');
+            if (event.target === modal) {
+                modal.style.display = 'none';
+            }
         });
     </script>
 </body>
