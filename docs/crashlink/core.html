@@ -538,6 +538,7 @@ you.</p>
                 else:
                     res[name] = field.value
             final[const._global.value] = res
+        assert len(final) == len(self.constants), &#34;Not all constants were resolved! Somehow...&#34;
         self.initialized_globals = final
 
     def fn(self, findex: int, native: bool = True) -&gt; Function | Native:
@@ -993,6 +994,7 @@ you.</p>
             else:
                 res[name] = field.value
         final[const._global.value] = res
+    assert len(final) == len(self.constants), &#34;Not all constants were resolved! Somehow...&#34;
     self.initialized_globals = final</code></pre>
 </details>
 <div class="desc"></div>
@@ -2546,7 +2548,16 @@ you.</p>
                 if not isinstance(defn, Obj):
                     raise ValueError(&#34;Invalid superclass type.&#34;)
                 current_type = defn
-        return fields</code></pre>
+        return fields
+
+    def __str__(self) -&gt; str:
+        return f&#34;&lt;Obj: f@{self.name}&gt;&#34;
+
+    def __repr__(self) -&gt; str:
+        return self.__str__()
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        return f&#34;&lt;Obj: {self.name.resolve(code)}&gt;&#34;</code></pre>
 </details>
 <div class="desc"><p>Represents a class definition. Contains:</p>
 <ul>
@@ -2660,6 +2671,19 @@ you.</p>
 </details>
 <div class="desc"></div>
 </dd>
+<dt id="crashlink.core.Obj.str_resolve"><code class="name flex">
+<span>def <span class="ident">str_resolve</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+    return f&#34;&lt;Obj: {self.name.resolve(code)}&gt;&#34;</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
 </dl>
 </dd>
 <dt id="crashlink.core.Opcode"><code class="flex name class">
@@ -2742,7 +2766,7 @@ you.</p>
 <dl>
 <dt id="crashlink.core.Opcode.TYPE_MAP"><code class="name">var <span class="ident">TYPE_MAP</span> : Dict[str, type]</code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -3704,7 +3728,18 @@ def serialise(self) -&gt; bytes:
                 self.kind.serialise(),
                 self.definition.serialise() if self.definition else b&#34;&#34;,
             ]
-        )</code></pre>
+        )
+
+    def __str__(self) -&gt; str:
+        return f&#34;&lt;Type: {self.kind.value} ({self.definition.__class__.__name__})&gt;&#34;
+
+    def __repr__(self) -&gt; str:
+        return self.__str__()
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        if isinstance(self.definition, Obj):
+            return self.definition.str_resolve(code)
+        return f&#34;&lt;Type: {self.kind.value} ({self.definition.__class__.__name__})&gt;&#34;</code></pre>
 </details>
 <div class="desc"><p>Type definition:</p>
 <ul>
@@ -3720,7 +3755,7 @@ def serialise(self) -&gt; bytes:
 <dl>
 <dt id="crashlink.core.Type.TYPEDEFS"><code class="name">var <span class="ident">TYPEDEFS</span> : List[type]</code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -3761,6 +3796,21 @@ def serialise(self) -&gt; bytes:
             self.definition.serialise() if self.definition else b&#34;&#34;,
         ]
     )</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Type.str_resolve"><code class="name flex">
+<span>def <span class="ident">str_resolve</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+    if isinstance(self.definition, Obj):
+        return self.definition.str_resolve(code)
+    return f&#34;&lt;Type: {self.kind.value} ({self.definition.__class__.__name__})&gt;&#34;</code></pre>
 </details>
 <div class="desc"></div>
 </dd>
@@ -4355,7 +4405,7 @@ def serialise(self) -&gt; bytes:
 <dl>
 <dt id="crashlink.core.fieldRef.obj"><code class="name">var <span class="ident">obj</span> : <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a> | None</code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -4875,6 +4925,7 @@ def serialise(self) -&gt; bytes:
 <li><code><a title="crashlink.core.Obj.deserialise" href="#crashlink.core.Obj.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.Obj.resolve_fields" href="#crashlink.core.Obj.resolve_fields">resolve_fields</a></code></li>
 <li><code><a title="crashlink.core.Obj.serialise" href="#crashlink.core.Obj.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.Obj.str_resolve" href="#crashlink.core.Obj.str_resolve">str_resolve</a></code></li>
 </ul>
 </li>
 <li>
@@ -4969,6 +5020,7 @@ def serialise(self) -&gt; bytes:
 <li><code><a title="crashlink.core.Type.TYPEDEFS" href="#crashlink.core.Type.TYPEDEFS">TYPEDEFS</a></code></li>
 <li><code><a title="crashlink.core.Type.deserialise" href="#crashlink.core.Type.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.Type.serialise" href="#crashlink.core.Type.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.Type.str_resolve" href="#crashlink.core.Type.str_resolve">str_resolve</a></code></li>
 </ul>
 </li>
 <li>
