@@ -752,6 +752,15 @@ class Obj(TypeDef):
                 current_type = defn
         return fields
 
+    def __str__(self) -> str:
+        return f"<Obj: f@{self.name}>"
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def str_resolve(self, code: "Bytecode") -> str:
+        return f"<Obj: {self.name.resolve(code)}>"
+
 
 class Array(_NoDataType):
     """
@@ -997,6 +1006,17 @@ class Type(Serialisable):
                 self.definition.serialise() if self.definition else b"",
             ]
         )
+
+    def __str__(self) -> str:
+        return f"<Type: {self.kind.value} ({self.definition.__class__.__name__})>"
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def str_resolve(self, code: "Bytecode") -> str:
+        if isinstance(self.definition, Obj):
+            return self.definition.str_resolve(code)
+        return f"<Type: {self.kind.value} ({self.definition.__class__.__name__})>"
 
 
 class Native(Serialisable):
@@ -1517,6 +1537,7 @@ class Bytecode(Serialisable):
                 else:
                     res[name] = field.value
             final[const._global.value] = res
+        assert len(final) == len(self.constants), "Not all constants were resolved! Somehow..."
         self.initialized_globals = final
 
     def fn(self, findex: int, native: bool = True) -> Function | Native:

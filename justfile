@@ -26,7 +26,7 @@ build-tests:
 # Format the codebase
 format:
     black --exclude env . --line-length 120
-    isort . -s env
+    isort . -s .venv --verbose --skip-gitignore
     no_implicit_optional crashlink
 
 # Run type checking
@@ -38,15 +38,18 @@ docs:
     python -m pdoc crashlink --html -o docs --force --template-dir docs/templates
     python -m pdoc crashtest --html -o docs --force --template-dir docs/templates
 
-# Host documentation locally
-serve-docs:
+# Host and open documentation locally
+open-docs:
     python -m webbrowser -t "http://127.0.0.1:80"
+    python -m http.server -b 127.0.0.1 80 -d docs
+
+# Serve documentation locally
+serve-docs:
     python -m http.server -b 127.0.0.1 80 -d docs
 
 # Run tests
 test:
     pytest -n 4
-    crashtest auto
 
 # Profile the codebase running tests
 profile:
