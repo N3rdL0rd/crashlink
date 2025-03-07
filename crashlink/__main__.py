@@ -297,7 +297,7 @@ class Commands:
             print(self.code.strings.value[index])
         except IndexError:
             print("String not found.")
-            
+
     def int(self, args: List[str]) -> None:
         """
         Print an int by index. `int <index>`
@@ -331,7 +331,7 @@ class Commands:
         except IndexError:
             print("String not found.")
         print("String set.")
-    
+
     def pickle(self, args: List[str]) -> None:
         """Pickle the bytecode to a given path. `pickle <path>`"""
         if len(args) == 0:

@@ -224,6 +224,9 @@ class ResolvableVarInt(VarInt, ABC):
 
     @abstractmethod
     def resolve(self, code: "Bytecode") -> Any:
+        """
+        Resolve this reference to a specific reference in the bytecode.
+        """
         pass
 
 
@@ -722,14 +725,16 @@ class Obj(TypeDef):
         )
 
     def resolve_fields(self, code: "Bytecode") -> List[Field]:
-        # field references are relative to the entire class hierarchy - for instance:
-        # class A {
-        #     var a: Int;
-        # }
-        # class B extends A {
-        #     var b: Int;
-        # }
-        # where a is field 0 and b is field 1
+        """
+        Resolves all fields across the class heirarchy. For instance:
+        class A {
+            var a: Int;
+        }
+        class B extends A {
+            var b: Int;
+        }
+        Where a is field 0 and b is field 1
+        """
         if self.super.value < 0:  # no superclass
             return self.fields
         fields: List[Field] = []
@@ -1103,14 +1108,23 @@ class fileRef(ResolvableVarInt):
         self.line = line
 
     def resolve(self, code: "Bytecode") -> str:
+        """
+        Resolve to the filename of the reference.
+        """
         if not code.debugfiles:
             raise MalformedBytecode("No debug files found.")
         return code.debugfiles.value[self.value]
 
     def resolve_line(self, code: "Bytecode") -> int:
+        """
+        Resolve to the line number in the file of the reference.
+        """
         return self.line
 
     def resolve_pretty(self, code: "Bytecode") -> str:
+        """
+        Resolve a pretty-printed string: <filename>:<line number>
+        """
         return f"{self.resolve(code)}:{self.line}"
 
     def __eq__(self, other: object) -> bool:
@@ -1158,13 +1172,12 @@ class DebugInfo(Serialisable):
         self.value = tmp
         return self
 
-    def flush_repeat(self, w: BinaryIO | BytesIO, curpos: ctypes.c_size_t, rcount: ctypes.c_size_t, pos: int) -> None:
-        """Helper function to handle repeat encoding."""
+    def _flush_repeat(self, w: BinaryIO | BytesIO, curpos: ctypes.c_size_t, rcount: ctypes.c_size_t, pos: int) -> None:
         if rcount.value > 0:
             if rcount.value > 15:
                 w.write(ctypes.c_uint8((15 << 2) | 2).value.to_bytes(1, "little"))
                 rcount.value -= 15
-                self.flush_repeat(w, curpos, rcount, pos)
+                self._flush_repeat(w, curpos, rcount, pos)
             else:
                 delta = pos - curpos.value
                 delta = delta if 0 < delta < 4 else 0
@@ -1182,13 +1195,13 @@ class DebugInfo(Serialisable):
             f = ref.value
             p = ref.line
             if f != curfile:
-                self.flush_repeat(w, curpos, rcount, p)
+                self._flush_repeat(w, curpos, rcount, p)
                 curfile = f
                 w.write(ctypes.c_uint8(((f >> 7) | 1)).value.to_bytes(1, "little"))
                 w.write(ctypes.c_uint8(f & 0xFF).value.to_bytes(1, "little"))
 
             if p != curpos.value:
-                self.flush_repeat(w, curpos, rcount, p)
+                self._flush_repeat(w, curpos, rcount, p)
 
             if p == curpos.value:
                 rcount.value += 1
@@ -1202,7 +1215,7 @@ class DebugInfo(Serialisable):
                     w.write(ctypes.c_uint8((p >> 13) & 0xFF).value.to_bytes(1, "little"))
                 curpos.value = p
 
-        self.flush_repeat(w, curpos, rcount, curpos.value)
+        self._flush_repeat(w, curpos, rcount, curpos.value)
 
         return w.getvalue()
 
@@ -1231,6 +1244,9 @@ class Function(Serialisable):
         self.assigns: Optional[List[Tuple[strRef, VarInt]]] = None
 
     def resolve_file(self, code: "Bytecode") -> str:
+        """
+        Resolves (in the Bytecode's debugfiles blob) the name of the file this function originates from. Note that this assumes the first opcode's file is the only file this Function was derived from - Functions that derive from multiple files (such as compiler-generated closures or entrypoints) will be resolved to a single file, sometimes incorrectly.
+        """
         if not self.has_debug or not self.debuginfo:
             raise ValueError("Cannot get file from non-debug bytecode!")
         return self.debuginfo.value[0].resolve(code)
@@ -1345,7 +1361,7 @@ class Bytecode(Serialisable):
 
         self.section_offsets: Dict[str, int] = {}
 
-    def find_magic(self, f: BinaryIO | BytesIO, magic: bytes = b"HLB") -> None:
+    def _find_magic(self, f: BinaryIO | BytesIO, magic: bytes = b"HLB") -> None:
         buffer_size = 1024
         offset = 0
         while True:
@@ -1360,18 +1376,87 @@ class Bytecode(Serialisable):
             offset += buffer_size
 
     @classmethod
-    def from_path(cls, path: str) -> "Bytecode":
+    def from_path(cls, path: str, search_magic: bool = True) -> "Bytecode":
+        """
+        Create a new Bytecode instance from a file path.
+        """
         f = open(path, "rb")
-        instance = cls().deserialise(f)
+        instance = cls().deserialise(f, search_magic=search_magic)
         f.close()
         return instance
 
+    @classmethod
+    def from_bytes(cls, data: bytes, search_magic: bool = True) -> "Bytecode":
+        """
+        Create a new Bytecode instance from a `bytes` object.
+        """
+        f = BytesIO(data)
+        instance = cls().deserialise(f, search_magic=search_magic)
+        f.close()
+        return instance
+
+    @classmethod
+    def create_empty(cls, version: int = 4, no_extra_types: bool = False) -> "Bytecode":
+        """
+        Creates an empty HashLink bytecode object, ideal for adding custom functions or code to for testing. By default, contains the following types already defined:
+
+        - t@0: Void
+        - t@1: I32
+        - t@2: F64
+        - t@3: Bool
+
+        Optionally, it can be created with only the Void type defined by passing `no_extra_types=True`. Note that for the bytecode to be valid and executable, there must be at least a single function, and this function must have a valid return type, meaning that the bytecode must contain **at least** 1 type.
+        """
+        instance = Bytecode()
+        instance.magic.value = b"HLB"
+        instance.version.value = version
+        instance.has_debug_info = False
+        instance.entrypoint.value = 22
+
+        void = Type()
+        void.kind.value = 0  # Void (_NoDataType)
+        void.definition = Void()
+
+        if not no_extra_types:
+            i32 = Type()
+            i32.kind.value = 3
+            i32.definition = I32()
+
+            f64 = Type()
+            f64.kind.value = 6
+            f64.definition = F64()
+
+            bool_t = Type()
+            bool_t.kind.value = 7
+            bool_t.definition = Bool()
+
+        func = Function()
+        func.type.value = 0  # Void return type
+        func.findex.value = 22
+        func.has_debug = False
+        func.version = version
+
+        instance.types.append(void)
+        instance.functions.append(func)
+
+        if not no_extra_types:
+            instance.types.append(i32)
+            instance.types.append(f64)
+            instance.types.append(bool_t)
+
+        instance.set_meta()
+
+        return instance
+
     def deserialise(self, f: BinaryIO | BytesIO, search_magic: bool = True) -> "Bytecode":
+        """
+        Deserialise the bytecode in-place from an open binary file handle or a BytesIO object. By default will search for the bytecode magic (b'HLB') anywhere in the file, pass `search_magic=False` to disable.
+        """
         start_time = datetime.now()
         dbg_print("---- Deserialise ----")
         if search_magic:
             dbg_print("Searching for magic...")
-            self.find_magic(f)
+            self._find_magic(f)
         self.track_section(f, "magic")
         self.magic.deserialise(f)
         assert self.magic.value == b"HLB", "Incorrect magic found!"
@@ -1490,6 +1575,9 @@ class Bytecode(Serialisable):
         return self
 
     def init_globals(self) -> None:
+        """
+        Internal method to initialize global instances of objects.
+        """
         final: Dict[int, Any] = {}
         for const in self.constants:
             res: Dict[str, Any] = {}
@@ -1517,6 +1605,9 @@ class Bytecode(Serialisable):
         self.initialized_globals = final
 
     def fn(self, findex: int, native: bool = True) -> Function | Native:
+        """
+        Shorthand to to get a Function or a Native by its fIndex.
+        """
         for f in self.functions:
             if f.findex.value == findex:
                 return f
@@ -1527,15 +1618,24 @@ class Bytecode(Serialisable):
         raise ValueError(f"Function {findex} not found!")
 
     def t(self, tindex: int) -> Type:
+        """
+        Shorthand to get a Type by its index. Equivalent to code.types[tindex]
+        """
         return self.types[tindex]
 
-    def g(self, gindex: int) -> tIndex:
+    def g(self, gindex: int) -> Type:
+        """
+        Shorthand to get a global's type by gIndex.
+        """
         for g in self.global_types:
             if g.value == gindex:
-                return g
+                return g.resolve(self)
         raise ValueError(f"Global {gindex} not found!")
 
     def const_str(self, gindex: int) -> str:
+        """
+        Gets the value of an initialized global constant `String`.
+        """
         # TODO: is this overcomplicated?
         if gindex not in self.initialized_globals:
             if gindex < 0 or gindex >= len(self.global_types):
@@ -1555,24 +1655,14 @@ class Bytecode(Serialisable):
         return res
 
     def serialise(self, auto_set_meta: bool = True) -> bytes:
+        """
+        Serialise the bytecode to a `bytes` object.
+        """
         start_time = datetime.now()
         dbg_print("---- Serialise ----")
         if auto_set_meta:
             dbg_print("Setting meta...")
-            self.flags.value = 1 if self.has_debug_info else 0
-            self.nints.value = len(self.ints)
-            self.nfloats.value = len(self.floats)
-            self.nstrings.value = len(self.strings.value)
-            if self.version.value >= 5 and self.bytes and self.nbytes:
-                self.nbytes.value = len(self.bytes.value)
-            self.ntypes.value = len(self.types)
-            self.nglobals.value = len(self.global_types)
-            self.nnatives.value = len(self.natives)
-            self.nfunctions.value = len(self.functions)
-            if self.version.value >= 4 and self.nconstants:
-                self.nconstants.value = len(self.constants)
-            if self.has_debug_info and self.ndebugfiles and self.debugfiles:
-                self.ndebugfiles.value = len(self.debugfiles.value)
+            self.set_meta()
         res = b"".join(
             [
                 self.magic.serialise(),
@@ -1621,7 +1711,35 @@ class Bytecode(Serialisable):
         dbg_print(f"{(datetime.now() - start_time).total_seconds()}s elapsed.")
         return res
 
+    def set_meta(self) -> None:
+        """
+        Sets bytecode metadata automatically.
+        """
+        self.flags.value = 1 if self.has_debug_info else 0
+        self.nints.value = len(self.ints)
+        self.nfloats.value = len(self.floats)
+        self.nstrings.value = len(self.strings.value)
+        if self.version.value >= 5 and self.bytes and self.nbytes:
+            self.nbytes.value = len(self.bytes.value)
+        self.ntypes.value = len(self.types)
+        self.nglobals.value = len(self.global_types)
+        self.nnatives.value = len(self.natives)
+        self.nfunctions.value = len(self.functions)
+        if self.version.value >= 4 and self.nconstants:
+            self.nconstants.value = len(self.constants)
+        if self.has_debug_info and self.ndebugfiles and self.debugfiles:
+            self.ndebugfiles.value = len(self.debugfiles.value)
+
+    def repair(self) -> None:
+        """
+        Alternate notation for code.set_meta() for the purpose of clarity.
+        """
+        self.set_meta()
+
     def is_ok(self) -> bool:
+        """
+        Runs a set of basic sanity checks to make sure the bytecode is correct-ish.
+        """
         if len(self.ints) != self.nints.value:
             return False
 
@@ -1664,9 +1782,15 @@ class Bytecode(Serialisable):
         return True
 
     def track_section(self, f: BinaryIO | BytesIO, section_name: str) -> None:
+        """
+        Internal helper function to denote the location of a data section at a given offset.
+        """
         self.section_offsets[section_name] = f.tell()
 
     def section_at(self, offset: int) -> Optional[str]:
+        """
+        Returns the name of the bytecode data section at the offset.
+        """
         # returns the name of the section at the offset:
         # if the offset is after a section start and before the next section start, it's still in the first section
         for section_name, section_offset in list(reversed(self.section_offsets.items())):
