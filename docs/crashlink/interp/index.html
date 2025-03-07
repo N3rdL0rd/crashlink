@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
 <meta name="generator" content="pdoc3 0.11.5">
-<title>crashtest API documentation</title>
-<meta name="description" content="crashtest is a built-in testing system for crashlink that is used to score the decompiler&#39;s output against the original source code. It is used to …">
+<title>crashlink.interp API documentation</title>
+<meta name="description" content="A toy implementation of a HashLink VM that can sorta run bytecode. Not statically typed, but it&#39;s a start.">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
@@ -35,25 +35,21 @@ el.replaceWith(d);
 <main>
 <article id="content">
 <header>
-<h1 class="title">Package <code>crashtest</code></h1>
+<h1 class="title">Module <code>crashlink.interp</code></h1>
 </header>
 <section id="section-intro">
-<p>crashtest is a built-in testing system for crashlink that is used to score the decompiler's output against the original source code. It is used to ensure that the decompiler is working correctly, that the output is correct, that the decompiler is not regressing, and to allow those interested in the project to easily see the state of the decompiler without installing it or running the test suite themselves. Make sure you call it from the root of the repository, since it uses relative paths to find the test files and the output directory.</p>
+<p>A toy implementation of a HashLink VM that can sorta run bytecode. Not statically typed, but it's a start.</p>
 </section>
 <section>
 <h2 class="section-title" id="header-submodules">Sub-modules</h2>
 <dl>
-<dt><code class="name"><a title="crashtest.build" href="build.html">crashtest.build</a></code></dt>
+<dt><code class="name"><a title="crashlink.interp.std" href="std.html">crashlink.interp.std</a></code></dt>
 <dd>
-<div class="desc"><p>Functions to build the crashtest results site.</p></div>
+<div class="desc"><p>Port of HashLink's std C bindings to pure Python. Entirely functional due to the nature of the library and C bindings.</p></div>
 </dd>
-<dt><code class="name"><a title="crashtest.models" href="models.html">crashtest.models</a></code></dt>
+<dt><code class="name"><a title="crashlink.interp.vm" href="vm.html">crashlink.interp.vm</a></code></dt>
 <dd>
-<div class="desc"><p>Dataclass models.</p></div>
-</dd>
-<dt><code class="name"><a title="crashtest.run" href="run.html">crashtest.run</a></code></dt>
-<dd>
-<div class="desc"><p>Functions to run tests, collect results, and produce run reports.</p></div>
+<div class="desc"><p>Core VM types, values, and the VM itself.</p></div>
 </dd>
 </dl>
 </section>
@@ -69,11 +65,15 @@ el.replaceWith(d);
 <ul></ul>
 </div>
 <ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashlink" href="../index.html">crashlink</a></code></li>
+</ul>
+</li>
 <li><h3><a href="#header-submodules">Sub-modules</a></h3>
 <ul>
-<li><code><a title="crashtest.build" href="build.html">crashtest.build</a></code></li>
-<li><code><a title="crashtest.models" href="models.html">crashtest.models</a></code></li>
-<li><code><a title="crashtest.run" href="run.html">crashtest.run</a></code></li>
+<li><code><a title="crashlink.interp.std" href="std.html">crashlink.interp.std</a></code></li>
+<li><code><a title="crashlink.interp.vm" href="vm.html">crashlink.interp.vm</a></code></li>
 </ul>
 </li>
 </ul>
