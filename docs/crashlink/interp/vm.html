@@ -1,0 +1,899 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.5">
+<title>crashlink.interp.vm API documentation</title>
+<meta name="description" content="Core VM types, values, and the VM itself.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>crashlink.interp.vm</code></h1>
+</header>
+<section id="section-intro">
+<p>Core VM types, values, and the VM itself.</p>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="crashlink.interp.vm.cast_prim"><code class="name flex">
+<span>def <span class="ident">cast_prim</span></span>(<span>value: <a title="crashlink.interp.vm.VMPrim" href="#crashlink.interp.vm.VMPrim">VMPrim</a>,<br>target: <a title="crashlink.core.Type" href="../core.html#crashlink.core.Type">Type</a>) ‑> <a title="crashlink.interp.vm.VMPrim" href="#crashlink.interp.vm.VMPrim">VMPrim</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def cast_prim(value: VMPrim, target: Type) -&gt; VMPrim:
+    &#34;&#34;&#34;
+    Casts a VMPrim to another target type - only supports numeric types (and bools) for now, but will eventually support Dyn/Obj casts.
+    &#34;&#34;&#34;
+    match target.kind.value:
+        case 1:  # U8
+            return VMInt(int(value.value) &amp; 0xFF)
+        case 2:  # U16
+            return VMInt(int(value.value) &amp; 0xFFFF)
+        case 3:  # I32
+            return VMInt(int(value.value))
+        case 4:  # I64
+            return VMInt(int(value.value))
+        case 5:  # F32
+            return VMFloat(float(value.value))
+        case 6:  # F64
+            return VMFloat(float(value.value))
+        case 7:  # Bool
+            return VMBool(bool(value.value))
+    return None</code></pre>
+</details>
+<div class="desc"><p>Casts a VMPrim to another target type - only supports numeric types (and bools) for now, but will eventually support Dyn/Obj casts.</p></div>
+</dd>
+<dt id="crashlink.interp.vm.prim_from_value"><code class="name flex">
+<span>def <span class="ident">prim_from_value</span></span>(<span>value: Any) ‑> <a title="crashlink.interp.vm.VMPrim" href="#crashlink.interp.vm.VMPrim">VMPrim</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def prim_from_value(value: Any) -&gt; VMPrim:
+    &#34;&#34;&#34;
+    Creates a primitive from a Python object.
+    int -&gt; VMInt
+    float -&gt; VMFloat
+    bool -&gt; VMBool
+    bytes -&gt; VMBytes
+    str -&gt; VMBytes (encoded as utf-8)
+    &#34;&#34;&#34;
+    if isinstance(value, int):
+        return VMInt(value)
+    if isinstance(value, float):
+        return VMFloat(value)
+    if isinstance(value, bool):
+        return VMBool(value)
+    if isinstance(value, bytes) or isinstance(value, bytearray):
+        return VMBytes(value)
+    if isinstance(value, str):
+        return VMBytes(value.encode(&#34;utf-8&#34;))
+    raise ValueError(f&#34;Cannot convert {value} to VMPrim&#34;)</code></pre>
+</details>
+<div class="desc"><p>Creates a primitive from a Python object.
+int -&gt; VMInt
+float -&gt; VMFloat
+bool -&gt; VMBool
+bytes -&gt; VMBytes
+str -&gt; VMBytes (encoded as utf-8)</p></div>
+</dd>
+</dl>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="crashlink.interp.vm.VM"><code class="flex name class">
+<span>class <span class="ident">VM</span></span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class VM:
+    &#34;&#34;&#34;
+    HashLink VM implementation.
+    &#34;&#34;&#34;
+
+    def __init__(self, code: Bytecode) -&gt; None:
+        dbg_print(&#34;---- Interp ----&#34;)
+        self.code = code
+        self.callstack: List[VMFunction] = []
+        dbg_print(&#34;Wrapping functions...&#34;)
+        self.funcs = [VMFunction(code, func) for func in code.functions]
+        self.globals: List[Optional[VMValue]] = []
+        dbg_print(&#34;Initializing and allocating globals...&#34;)
+        for i, g in enumerate(code.global_types):
+            if i in code.initialized_globals:
+                self.globals.append(VMValue.from_constant(g.resolve(code), code, i))
+            else:
+                self.globals.append(VMValue.from_type_empty(g.resolve(code), code))
+
+    def find_by_findex(self, findex: int) -&gt; VMFunction | StdBinding:
+        &#34;&#34;&#34;
+        Finds a wrapped VMFunction or a binding to a native by its findex in the bytecode.
+        &#34;&#34;&#34;
+        for func in self.funcs:
+            if func.func.findex.value == findex:
+                return func
+        for native in self.code.natives:
+            if native.findex.value == findex:
+                name = native.name.resolve(self.code)
+                lib = native.lib.resolve(self.code)
+                for binding in NATIVE_BINDINGS:
+                    if binding.name == name and binding.lib == lib:
+                        return binding
+                raise NameError(f&#34;Native {name} (from {lib}) not found in crashlink std implementation.&#34;)
+
+    def run(self, entry: Optional[int] = None) -&gt; None:
+        &#34;&#34;&#34;
+        Runs the VM from the bytecode&#39;s entrypoint, or from an arbitrary findex.
+        &#34;&#34;&#34;
+        if entry is None:
+            entry = self.code.entrypoint.value
+        fn = self.find_by_findex(entry)
+        self.callstack.append(fn)
+        self._call(fn)
+
+    def _call(self, fn: VMFunction, *args: VMValue) -&gt; Optional[VMObj]:
+        ip = 0
+        dbg_print(f&#34;{&#39;-&#39;*30} Calling {fn.func.findex.value} {&#39;-&#39;*30}&#34;)
+        dbg_print(self.callstack)
+        for i, arg in enumerate(args):
+            fn.regs[i] = arg
+        dbg_print(f&#34;Regs: {fn.regs}&#34;)
+        while ip &lt; len(fn.ops):
+            op = fn.ops[ip]
+            s = op.op
+            df = op.definition
+            dbg_print(op)
+            match s:
+                case &#34;Bool&#34;:
+                    fn.regs[df[&#34;dst&#34;].value] = VMBool(df[&#34;value&#34;].value)
+
+                case &#34;Mov&#34;:
+                    fn.regs[df[&#34;dst&#34;].value] = fn.regs[df[&#34;src&#34;].value]
+
+                case &#34;Ret&#34;:
+                    self.callstack.pop()
+                    dbg_print(f&#34;{&#39;-&#39;*30} Returning from {fn.func.findex.value} {&#39;-&#39;*30}&#34;)
+                    print(self.callstack)
+                    return fn.regs[df[&#34;ret&#34;].value]
+
+                case &#34;Call0&#34; | &#34;Call1&#34; | &#34;Call2&#34; | &#34;Call3&#34; | &#34;Call4&#34;:
+                    args = [fn.regs[df[f&#34;arg{i}&#34;].value] for i in range(int(s[-1]))]
+                    callee = self.find_by_findex(df[&#34;fun&#34;].value)
+                    if isinstance(callee, StdBinding):
+                        print(&#34;---- Native Call:&#34;, callee.name, &#34;----&#34;)
+                        fn.regs[df[&#34;dst&#34;].value] = callee.func(self.code, self, *args)
+                    else:
+                        self.callstack.append(callee)
+                        fn.regs[df[&#34;dst&#34;].value] = self._call(callee, *args)
+
+                case &#34;GetGlobal&#34;:
+                    fn.regs[df[&#34;dst&#34;].value] = self.globals[df[&#34;global&#34;].value]
+
+                case &#34;SetGlobal&#34;:
+                    self.globals[df[&#34;global&#34;].value] = fn.regs[df[&#34;src&#34;].value]
+
+                case &#34;NullCheck&#34;:
+                    if fn.regs[df[&#34;reg&#34;].value] is None or fn.regs[df[&#34;reg&#34;].value].is_null():
+                        raise ValueError(f&#34;Null check failed on reg {df[&#39;reg&#39;].value}&#34;)
+
+                case &#34;JNull&#34;:
+                    if fn.regs[df[&#34;reg&#34;].value] is None or fn.regs[df[&#34;reg&#34;].value].is_null():
+                        ip += df[&#34;offset&#34;].value
+                        dbg_print(f&#34;{bcolors.OKBLUE}ip += {df[&#39;offset&#39;].value}{bcolors.ENDC}&#34;)
+
+                case &#34;Type&#34;:
+                    fn.regs[df[&#34;dst&#34;].value] = VMType(df[&#34;ty&#34;].resolve(self.code))
+
+                case &#34;String&#34;:
+                    fn.regs[df[&#34;dst&#34;].value] = VMBytes(df[&#34;ptr&#34;].resolve(self.code).encode(&#34;utf-8&#34;))
+                    dbg_print(
+                        bcolors.OKBLUE + &#34;Loaded string:&#34;, &#34;&#39;&#34; + df[&#34;ptr&#34;].resolve(self.code) + &#34;&#39;&#34; + bcolors.ENDC
+                    )
+
+                case &#34;SafeCast&#34;:
+                    original_type: Type = fn.func.regs[df[&#34;src&#34;].value].resolve(self.code)
+                    target_type: Type = fn.func.regs[df[&#34;dst&#34;].value].resolve(self.code)
+                    if original_type is target_type:
+                        fn.regs[df[&#34;dst&#34;].value] = fn.regs[df[&#34;src&#34;].value]
+                    else:
+                        fn.regs[df[&#34;dst&#34;].value] = cast_prim(fn.regs[df[&#34;src&#34;].value], target_type)
+                    dbg_print(f&#34;{bcolors.OKBLUE}SafeCast: {original_type} -&gt; {target_type}{bcolors.ENDC}&#34;)
+
+                case _:
+                    dbg_print(f&#34;{bcolors.WARNING}---- UNKNOWN OP: {s} ----{bcolors.ENDC}&#34;)
+                    pass
+            ip += 1
+        dbg_print(&#34;Warning: implicit return!&#34;)
+        self.callstack.pop()
+        return None</code></pre>
+</details>
+<div class="desc"><p>HashLink VM implementation.</p></div>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.interp.vm.VM.find_by_findex"><code class="name flex">
+<span>def <span class="ident">find_by_findex</span></span>(<span>self, findex: int) ‑> <a title="crashlink.interp.vm.VMFunction" href="#crashlink.interp.vm.VMFunction">VMFunction</a> | <a title="crashlink.interp.std.StdBinding" href="std.html#crashlink.interp.std.StdBinding">StdBinding</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def find_by_findex(self, findex: int) -&gt; VMFunction | StdBinding:
+    &#34;&#34;&#34;
+    Finds a wrapped VMFunction or a binding to a native by its findex in the bytecode.
+    &#34;&#34;&#34;
+    for func in self.funcs:
+        if func.func.findex.value == findex:
+            return func
+    for native in self.code.natives:
+        if native.findex.value == findex:
+            name = native.name.resolve(self.code)
+            lib = native.lib.resolve(self.code)
+            for binding in NATIVE_BINDINGS:
+                if binding.name == name and binding.lib == lib:
+                    return binding
+            raise NameError(f&#34;Native {name} (from {lib}) not found in crashlink std implementation.&#34;)</code></pre>
+</details>
+<div class="desc"><p>Finds a wrapped VMFunction or a binding to a native by its findex in the bytecode.</p></div>
+</dd>
+<dt id="crashlink.interp.vm.VM.run"><code class="name flex">
+<span>def <span class="ident">run</span></span>(<span>self, entry: int | None = None) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def run(self, entry: Optional[int] = None) -&gt; None:
+    &#34;&#34;&#34;
+    Runs the VM from the bytecode&#39;s entrypoint, or from an arbitrary findex.
+    &#34;&#34;&#34;
+    if entry is None:
+        entry = self.code.entrypoint.value
+    fn = self.find_by_findex(entry)
+    self.callstack.append(fn)
+    self._call(fn)</code></pre>
+</details>
+<div class="desc"><p>Runs the VM from the bytecode's entrypoint, or from an arbitrary findex.</p></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.interp.vm.VMBool"><code class="flex name class">
+<span>class <span class="ident">VMBool</span></span>
+<span>(</span><span>value: bool)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class VMBool(VMPrim):
+    &#34;&#34;&#34;
+    VM bool primitive.
+    &#34;&#34;&#34;
+
+    def __init__(self, value: bool) -&gt; None:
+        self.value = value</code></pre>
+</details>
+<div class="desc"><p>VM bool primitive.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.interp.vm.VMPrim" href="#crashlink.interp.vm.VMPrim">VMPrim</a></li>
+<li><a title="crashlink.interp.vm.VMValue" href="#crashlink.interp.vm.VMValue">VMValue</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.interp.vm.VMPrim" href="#crashlink.interp.vm.VMPrim">VMPrim</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.interp.vm.VMPrim.from_constant" href="#crashlink.interp.vm.VMValue.from_constant">from_constant</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.from_type_empty" href="#crashlink.interp.vm.VMValue.from_type_empty">from_type_empty</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.is_null" href="#crashlink.interp.vm.VMValue.is_null">is_null</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.typeof" href="#crashlink.interp.vm.VMValue.typeof">typeof</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.interp.vm.VMBytes"><code class="flex name class">
+<span>class <span class="ident">VMBytes</span></span>
+<span>(</span><span>value: bytes)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class VMBytes(VMPrim):
+    &#34;&#34;&#34;
+    VM byte array primitive.
+    &#34;&#34;&#34;
+
+    def __init__(self, value: bytes) -&gt; None:
+        self.value = value</code></pre>
+</details>
+<div class="desc"><p>VM byte array primitive.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.interp.vm.VMPrim" href="#crashlink.interp.vm.VMPrim">VMPrim</a></li>
+<li><a title="crashlink.interp.vm.VMValue" href="#crashlink.interp.vm.VMValue">VMValue</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.interp.vm.VMPrim" href="#crashlink.interp.vm.VMPrim">VMPrim</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.interp.vm.VMPrim.from_constant" href="#crashlink.interp.vm.VMValue.from_constant">from_constant</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.from_type_empty" href="#crashlink.interp.vm.VMValue.from_type_empty">from_type_empty</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.is_null" href="#crashlink.interp.vm.VMValue.is_null">is_null</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.typeof" href="#crashlink.interp.vm.VMValue.typeof">typeof</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.interp.vm.VMFloat"><code class="flex name class">
+<span>class <span class="ident">VMFloat</span></span>
+<span>(</span><span>value: float)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class VMFloat(VMPrim):
+    &#34;&#34;&#34;
+    VM float primitive.
+    &#34;&#34;&#34;
+
+    def __init__(self, value: float) -&gt; None:
+        self.value = value</code></pre>
+</details>
+<div class="desc"><p>VM float primitive.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.interp.vm.VMPrim" href="#crashlink.interp.vm.VMPrim">VMPrim</a></li>
+<li><a title="crashlink.interp.vm.VMValue" href="#crashlink.interp.vm.VMValue">VMValue</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.interp.vm.VMPrim" href="#crashlink.interp.vm.VMPrim">VMPrim</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.interp.vm.VMPrim.from_constant" href="#crashlink.interp.vm.VMValue.from_constant">from_constant</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.from_type_empty" href="#crashlink.interp.vm.VMValue.from_type_empty">from_type_empty</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.is_null" href="#crashlink.interp.vm.VMValue.is_null">is_null</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.typeof" href="#crashlink.interp.vm.VMValue.typeof">typeof</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.interp.vm.VMFunction"><code class="flex name class">
+<span>class <span class="ident">VMFunction</span></span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>,<br>func: <a title="crashlink.core.Function" href="../core.html#crashlink.core.Function">Function</a>)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class VMFunction:
+    &#34;&#34;&#34;
+    Represents a function in the VM, and wraps a Function object from the bytecode.
+    &#34;&#34;&#34;
+
+    def __init__(self, code: Bytecode, func: Function) -&gt; None:
+        self.func = func
+        self.code = code
+        self.regs: List[Optional[VMObj]] = [None] * len(func.regs)
+        self.ops = func.ops
+        self.findex = func.findex.value
+
+    def __repr__(self) -&gt; str:
+        return f&#34;f@{self.findex}&#34;
+
+    def __str__(self) -&gt; str:
+        return self.__repr__()</code></pre>
+</details>
+<div class="desc"><p>Represents a function in the VM, and wraps a Function object from the bytecode.</p></div>
+</dd>
+<dt id="crashlink.interp.vm.VMInt"><code class="flex name class">
+<span>class <span class="ident">VMInt</span></span>
+<span>(</span><span>value: int)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class VMInt(VMPrim):
+    &#34;&#34;&#34;
+    VM int primitive.
+    &#34;&#34;&#34;
+
+    def __init__(self, value: int) -&gt; None:
+        self.value = value</code></pre>
+</details>
+<div class="desc"><p>VM int primitive.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.interp.vm.VMPrim" href="#crashlink.interp.vm.VMPrim">VMPrim</a></li>
+<li><a title="crashlink.interp.vm.VMValue" href="#crashlink.interp.vm.VMValue">VMValue</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.interp.vm.VMPrim" href="#crashlink.interp.vm.VMPrim">VMPrim</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.interp.vm.VMPrim.from_constant" href="#crashlink.interp.vm.VMValue.from_constant">from_constant</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.from_type_empty" href="#crashlink.interp.vm.VMValue.from_type_empty">from_type_empty</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.is_null" href="#crashlink.interp.vm.VMValue.is_null">is_null</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.typeof" href="#crashlink.interp.vm.VMValue.typeof">typeof</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.interp.vm.VMObj"><code class="flex name class">
+<span>class <span class="ident">VMObj</span></span>
+<span>(</span><span>*args, **kwargs)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class VMObj(VMValue):
+    &#34;&#34;&#34;
+    Object instance value for the VM.
+    &#34;&#34;&#34;
+
+    def __init__(self, *args, **kwargs) -&gt; None:
+        &#34;&#34;&#34;
+        Do not use this constructor directly - use VMObj.create_empty() or VMObj.create_with_fields() instead.
+        &#34;&#34;&#34;
+        raise ValueError(&#34;Please use VMObj.create_empty() or VMObj.create_with_fields()&#34;)
+
+    @classmethod
+    def create_empty(cls, obj: Obj, code: Bytecode) -&gt; &#34;VMObj&#34;:
+        &#34;&#34;&#34;
+        Create an empty object instance
+        &#34;&#34;&#34;
+        self = cls.__new__(cls)
+        self.obj = obj
+        self.code = code
+        self.field_meta = obj.resolve_fields(code)
+        self.field_values = [VMValue.from_type_empty(t.type.resolve(code), code) for t in self.field_meta]
+        return self
+
+    @classmethod
+    def create_with_fields(cls, obj: Obj, code: Bytecode, fields: List[VMValue]) -&gt; &#34;VMObj&#34;:
+        &#34;&#34;&#34;
+        Create an object instance with a given set of fields
+        &#34;&#34;&#34;
+        self = cls.__new__(cls)
+        self.obj = obj
+        self.code = code
+        self.field_meta = obj.resolve_fields(code)
+        self.field_values = fields
+        return self
+
+    def _fields_to_dict(self) -&gt; dict:
+        return {f.name.resolve(self.code): v for f, v in zip(self.field_meta, self.field_values)}
+
+    def typeof(self, code: Bytecode) -&gt; Type:
+        return self.obj
+
+    def is_null(self):
+        return True if all(f.is_null() for f in self.field_values) else False
+
+    def __repr__(self) -&gt; str:
+        return f&#34;&lt;Class {self.obj.name.resolve(self.code)} - {self.fields}&gt;&#34;</code></pre>
+</details>
+<div class="desc"><p>Object instance value for the VM.</p>
+<p>Do not use this constructor directly - use VMObj.create_empty() or VMObj.create_with_fields() instead.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.interp.vm.VMValue" href="#crashlink.interp.vm.VMValue">VMValue</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Static methods</h3>
+<dl>
+<dt id="crashlink.interp.vm.VMObj.create_empty"><code class="name flex">
+<span>def <span class="ident">create_empty</span></span>(<span>obj: <a title="crashlink.core.Obj" href="../core.html#crashlink.core.Obj">Obj</a>,<br>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>) ‑> <a title="crashlink.interp.vm.VMObj" href="#crashlink.interp.vm.VMObj">VMObj</a></span>
+</code></dt>
+<dd>
+<div class="desc"><p>Create an empty object instance</p></div>
+</dd>
+<dt id="crashlink.interp.vm.VMObj.create_with_fields"><code class="name flex">
+<span>def <span class="ident">create_with_fields</span></span>(<span>obj: <a title="crashlink.core.Obj" href="../core.html#crashlink.core.Obj">Obj</a>,<br>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>,<br>fields: List[<a title="crashlink.interp.vm.VMValue" href="#crashlink.interp.vm.VMValue">VMValue</a>]) ‑> <a title="crashlink.interp.vm.VMObj" href="#crashlink.interp.vm.VMObj">VMObj</a></span>
+</code></dt>
+<dd>
+<div class="desc"><p>Create an object instance with a given set of fields</p></div>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.interp.vm.VMValue" href="#crashlink.interp.vm.VMValue">VMValue</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.interp.vm.VMValue.from_constant" href="#crashlink.interp.vm.VMValue.from_constant">from_constant</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMValue.from_type_empty" href="#crashlink.interp.vm.VMValue.from_type_empty">from_type_empty</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMValue.is_null" href="#crashlink.interp.vm.VMValue.is_null">is_null</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMValue.typeof" href="#crashlink.interp.vm.VMValue.typeof">typeof</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.interp.vm.VMPrim"><code class="flex name class">
+<span>class <span class="ident">VMPrim</span></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class VMPrim(VMValue):
+    &#34;&#34;&#34;
+    Abstract base class for primitive VM values (ints, floats, bools, byte arrays, etc.).
+    &#34;&#34;&#34;
+
+    def __repr__(self) -&gt; str:
+        return f&#34;&lt;VMPrim {self.value}&gt;&#34;
+
+    def __str__(self) -&gt; str:
+        return self.__repr__()
+
+    def is_null(self):
+        return False</code></pre>
+</details>
+<div class="desc"><p>Abstract base class for primitive VM values (ints, floats, bools, byte arrays, etc.).</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.interp.vm.VMValue" href="#crashlink.interp.vm.VMValue">VMValue</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.interp.vm.VMBool" href="#crashlink.interp.vm.VMBool">VMBool</a></li>
+<li><a title="crashlink.interp.vm.VMBytes" href="#crashlink.interp.vm.VMBytes">VMBytes</a></li>
+<li><a title="crashlink.interp.vm.VMFloat" href="#crashlink.interp.vm.VMFloat">VMFloat</a></li>
+<li><a title="crashlink.interp.vm.VMInt" href="#crashlink.interp.vm.VMInt">VMInt</a></li>
+<li><a title="crashlink.interp.vm.VMString" href="#crashlink.interp.vm.VMString">VMString</a></li>
+<li><a title="crashlink.interp.vm.VMType" href="#crashlink.interp.vm.VMType">VMType</a></li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.interp.vm.VMValue" href="#crashlink.interp.vm.VMValue">VMValue</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.interp.vm.VMValue.from_constant" href="#crashlink.interp.vm.VMValue.from_constant">from_constant</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMValue.from_type_empty" href="#crashlink.interp.vm.VMValue.from_type_empty">from_type_empty</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMValue.is_null" href="#crashlink.interp.vm.VMValue.is_null">is_null</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMValue.typeof" href="#crashlink.interp.vm.VMValue.typeof">typeof</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.interp.vm.VMString"><code class="flex name class">
+<span>class <span class="ident">VMString</span></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class VMString(VMPrim):
+    &#34;&#34;&#34;
+    VM string primitive. TODO: not needed? only byte arrays are primitive
+    &#34;&#34;&#34;
+
+    # TODO
+    pass</code></pre>
+</details>
+<div class="desc"><p>VM string primitive. TODO: not needed? only byte arrays are primitive</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.interp.vm.VMPrim" href="#crashlink.interp.vm.VMPrim">VMPrim</a></li>
+<li><a title="crashlink.interp.vm.VMValue" href="#crashlink.interp.vm.VMValue">VMValue</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.interp.vm.VMPrim" href="#crashlink.interp.vm.VMPrim">VMPrim</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.interp.vm.VMPrim.from_constant" href="#crashlink.interp.vm.VMValue.from_constant">from_constant</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.from_type_empty" href="#crashlink.interp.vm.VMValue.from_type_empty">from_type_empty</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.is_null" href="#crashlink.interp.vm.VMValue.is_null">is_null</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.typeof" href="#crashlink.interp.vm.VMValue.typeof">typeof</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.interp.vm.VMType"><code class="flex name class">
+<span>class <span class="ident">VMType</span></span>
+<span>(</span><span>value: <a title="crashlink.core.Type" href="../core.html#crashlink.core.Type">Type</a>)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class VMType(VMPrim):
+    &#34;&#34;&#34;
+    VM primitive for the type of an object. (See core.TypeType)
+    &#34;&#34;&#34;
+
+    def __init__(self, value: Type) -&gt; None:
+        self.value = value
+
+    def __repr__(self) -&gt; str:
+        return f&#34;&lt;VMType {self.value}&gt;&#34;</code></pre>
+</details>
+<div class="desc"><p>VM primitive for the type of an object. (See core.TypeType)</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.interp.vm.VMPrim" href="#crashlink.interp.vm.VMPrim">VMPrim</a></li>
+<li><a title="crashlink.interp.vm.VMValue" href="#crashlink.interp.vm.VMValue">VMValue</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.interp.vm.VMPrim" href="#crashlink.interp.vm.VMPrim">VMPrim</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.interp.vm.VMPrim.from_constant" href="#crashlink.interp.vm.VMValue.from_constant">from_constant</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.from_type_empty" href="#crashlink.interp.vm.VMValue.from_type_empty">from_type_empty</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.is_null" href="#crashlink.interp.vm.VMValue.is_null">is_null</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMPrim.typeof" href="#crashlink.interp.vm.VMValue.typeof">typeof</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.interp.vm.VMValue"><code class="flex name class">
+<span>class <span class="ident">VMValue</span></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class VMValue(ABC):
+    &#34;&#34;&#34;
+    Abstract base class for all VM values.
+    &#34;&#34;&#34;
+
+    @abstractmethod
+    def __init__(self) -&gt; None:
+        pass
+
+    @classmethod
+    def from_type_empty(cls, typ: Type, code: Bytecode) -&gt; Optional[&#34;VMValue&#34;]:
+        &#34;&#34;&#34;
+        Creates a new empty VMValue from a type with a placeholder value.
+        &#34;&#34;&#34;
+        def_type = type(typ.definition)
+        if def_type is Obj:
+            obj: Obj = typ.definition
+            created = VMObj.create_empty(obj, code)
+            return created
+        elif def_type in [I32, U8, U16, I64]:
+            return VMInt(0)
+        elif def_type in [F32, F64]:
+            return VMFloat(0.0)
+        elif def_type is Bool:
+            return VMBool(False)
+        elif def_type is Bytes:
+            return VMBytes(b&#34;&#34;)
+        elif def_type is type(None):
+            return None
+        return None
+
+    @classmethod
+    def from_constant(cls, typ: Type, code: Bytecode, gIndex: int) -&gt; Optional[&#34;VMValue&#34;]:
+        &#34;&#34;&#34;
+        Creates a VMValue from an initialized global (constant).
+        &#34;&#34;&#34;
+        def_type = type(typ.definition)
+        if def_type is Obj:
+            obj: Obj = typ.definition
+            obj_fields = obj.resolve_fields(code)
+            fields = [VMValue.from_type_empty(t.type.resolve(code), code) for t in obj_fields]
+            values = code.initialized_globals[gIndex]
+            for name, value in values.items():
+                for i, field in enumerate(obj_fields):
+                    if field.name.resolve(code) == name:
+                        fields[i] = prim_from_value(value)
+                        break
+            created = VMObj.create_with_fields(obj, code, fields)
+            return created
+        else:
+            raise ValueError(f&#34;Cannot create constant from {def_type} - {typ} - non-obj constants not supported&#34;)
+
+    def typeof(self, code: Bytecode) -&gt; Type:
+        &#34;&#34;&#34;
+        Returns the bytecode Type of this object.
+        &#34;&#34;&#34;
+        return NotImplemented
+
+    def is_null(self) -&gt; bool:
+        &#34;&#34;&#34;
+        Is this object null or uninitialized?
+        &#34;&#34;&#34;
+        return True</code></pre>
+</details>
+<div class="desc"><p>Abstract base class for all VM values.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>abc.ABC</li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.interp.vm.VMObj" href="#crashlink.interp.vm.VMObj">VMObj</a></li>
+<li><a title="crashlink.interp.vm.VMPrim" href="#crashlink.interp.vm.VMPrim">VMPrim</a></li>
+</ul>
+<h3>Static methods</h3>
+<dl>
+<dt id="crashlink.interp.vm.VMValue.from_constant"><code class="name flex">
+<span>def <span class="ident">from_constant</span></span>(<span>typ: <a title="crashlink.core.Type" href="../core.html#crashlink.core.Type">Type</a>,<br>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>,<br>gIndex: int) ‑> <a title="crashlink.interp.vm.VMValue" href="#crashlink.interp.vm.VMValue">VMValue</a> | None</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Creates a VMValue from an initialized global (constant).</p></div>
+</dd>
+<dt id="crashlink.interp.vm.VMValue.from_type_empty"><code class="name flex">
+<span>def <span class="ident">from_type_empty</span></span>(<span>typ: <a title="crashlink.core.Type" href="../core.html#crashlink.core.Type">Type</a>,<br>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>) ‑> <a title="crashlink.interp.vm.VMValue" href="#crashlink.interp.vm.VMValue">VMValue</a> | None</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Creates a new empty VMValue from a type with a placeholder value.</p></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.interp.vm.VMValue.is_null"><code class="name flex">
+<span>def <span class="ident">is_null</span></span>(<span>self) ‑> bool</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_null(self) -&gt; bool:
+    &#34;&#34;&#34;
+    Is this object null or uninitialized?
+    &#34;&#34;&#34;
+    return True</code></pre>
+</details>
+<div class="desc"><p>Is this object null or uninitialized?</p></div>
+</dd>
+<dt id="crashlink.interp.vm.VMValue.typeof"><code class="name flex">
+<span>def <span class="ident">typeof</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>) ‑> <a title="crashlink.core.Type" href="../core.html#crashlink.core.Type">Type</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def typeof(self, code: Bytecode) -&gt; Type:
+    &#34;&#34;&#34;
+    Returns the bytecode Type of this object.
+    &#34;&#34;&#34;
+    return NotImplemented</code></pre>
+</details>
+<div class="desc"><p>Returns the bytecode Type of this object.</p></div>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashlink.interp" href="index.html">crashlink.interp</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="crashlink.interp.vm.cast_prim" href="#crashlink.interp.vm.cast_prim">cast_prim</a></code></li>
+<li><code><a title="crashlink.interp.vm.prim_from_value" href="#crashlink.interp.vm.prim_from_value">prim_from_value</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="crashlink.interp.vm.VM" href="#crashlink.interp.vm.VM">VM</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.interp.vm.VM.find_by_findex" href="#crashlink.interp.vm.VM.find_by_findex">find_by_findex</a></code></li>
+<li><code><a title="crashlink.interp.vm.VM.run" href="#crashlink.interp.vm.VM.run">run</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.interp.vm.VMBool" href="#crashlink.interp.vm.VMBool">VMBool</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.interp.vm.VMBytes" href="#crashlink.interp.vm.VMBytes">VMBytes</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.interp.vm.VMFloat" href="#crashlink.interp.vm.VMFloat">VMFloat</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.interp.vm.VMFunction" href="#crashlink.interp.vm.VMFunction">VMFunction</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.interp.vm.VMInt" href="#crashlink.interp.vm.VMInt">VMInt</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.interp.vm.VMObj" href="#crashlink.interp.vm.VMObj">VMObj</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.interp.vm.VMObj.create_empty" href="#crashlink.interp.vm.VMObj.create_empty">create_empty</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMObj.create_with_fields" href="#crashlink.interp.vm.VMObj.create_with_fields">create_with_fields</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.interp.vm.VMPrim" href="#crashlink.interp.vm.VMPrim">VMPrim</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.interp.vm.VMString" href="#crashlink.interp.vm.VMString">VMString</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.interp.vm.VMType" href="#crashlink.interp.vm.VMType">VMType</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.interp.vm.VMValue" href="#crashlink.interp.vm.VMValue">VMValue</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.interp.vm.VMValue.from_constant" href="#crashlink.interp.vm.VMValue.from_constant">from_constant</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMValue.from_type_empty" href="#crashlink.interp.vm.VMValue.from_type_empty">from_type_empty</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMValue.is_null" href="#crashlink.interp.vm.VMValue.is_null">is_null</a></code></li>
+<li><code><a title="crashlink.interp.vm.VMValue.typeof" href="#crashlink.interp.vm.VMValue.typeof">typeof</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+</footer>
+</body>
+</html>
