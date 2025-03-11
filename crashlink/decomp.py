@@ -621,7 +621,7 @@ class IRPrimitiveLoop(IRStatement):
         self.body = body
 
     def __repr__(self) -> str:
-        return f"<IRPrimitiveLoop: {self.condition}\n{self.body}>"
+        return f"<IRPrimitiveLoop: cond -> {self.condition}\n body -> {self.body}>"
 
 
 class IRBreak(IRStatement):
@@ -859,7 +859,11 @@ class IRFunction:
         assert node.ops[-1].op in conditionals
 
     def _lift_block(
-        self, node: CFNode, visited: Optional[Set[CFNode]] = None, convert_jumps_to_primitive: bool = False
+        self,
+        node: CFNode,
+        visited: Optional[Set[CFNode]] = None,
+        convert_jumps_to_primitive: bool = False,
+        flag_conditionals: bool = False,
     ) -> IRBlock:
         if visited is None:
             visited = set()
@@ -896,9 +900,10 @@ class IRFunction:
                     IRPrimitiveLoop(
                         self.code,
                         self._lift_block(condition.entry, visited, convert_jumps_to_primitive=True),
-                        self._lift_block(isolated.entry, visited),
+                        self._lift_block(isolated.entry, visited, flag_conditionals=True),
                     )
                 )
+                break
 
             elif op.op in arithmetic:
                 dst = self.locals[op.definition["dst"].value]
@@ -927,6 +932,8 @@ class IRFunction:
                 block.statements.append(IRAssign(self.code, dst, const))
 
             elif op.op in conditionals:
+                if flag_conditionals:
+                    dbg_print("!!! Conditional !!!")
                 if not convert_jumps_to_primitive:
                     # conditionals create a diamond shape in the IR - the two branches will at some point converge again.
                     true_branch = None
@@ -1099,6 +1106,13 @@ class IRFunction:
                     next_block = self._lift_block(convergence, visited)
                     block.statements.append(next_block)
 
+            elif op.op == "Mov":
+                block.statements.append(
+                    IRAssign(
+                        self.code, self.locals[op.definition["dst"].value], self.locals[op.definition["src"].value]
+                    )
+                )
+
             elif op.op == "JAlways":
                 jump_idx = node.base_offset + len(node.ops) + op.definition["offset"].value
                 target_node = None
@@ -1110,6 +1124,9 @@ class IRFunction:
                 if target_node:
                     next_block = self._lift_block(target_node, visited)
                     block.statements.append(next_block)
+
+            else:
+                dbg_print("Skipping opcode:", op)
 
         if len(node.branches) == 1:
             next_node, _ = node.branches[0]

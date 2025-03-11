@@ -1428,7 +1428,11 @@ def get_type(self) -&gt; Type:
         assert node.ops[-1].op in conditionals
 
     def _lift_block(
-        self, node: CFNode, visited: Optional[Set[CFNode]] = None, convert_jumps_to_primitive: bool = False
+        self,
+        node: CFNode,
+        visited: Optional[Set[CFNode]] = None,
+        convert_jumps_to_primitive: bool = False,
+        flag_conditionals: bool = False,
     ) -&gt; IRBlock:
         if visited is None:
             visited = set()
@@ -1465,9 +1469,10 @@ def get_type(self) -&gt; Type:
                     IRPrimitiveLoop(
                         self.code,
                         self._lift_block(condition.entry, visited, convert_jumps_to_primitive=True),
-                        self._lift_block(isolated.entry, visited),
+                        self._lift_block(isolated.entry, visited, flag_conditionals=True),
                     )
                 )
+                break
 
             elif op.op in arithmetic:
                 dst = self.locals[op.definition[&#34;dst&#34;].value]
@@ -1496,6 +1501,8 @@ def get_type(self) -&gt; Type:
                 block.statements.append(IRAssign(self.code, dst, const))
 
             elif op.op in conditionals:
+                if flag_conditionals:
+                    dbg_print(&#34;!!! Conditional !!!&#34;)
                 if not convert_jumps_to_primitive:
                     # conditionals create a diamond shape in the IR - the two branches will at some point converge again.
                     true_branch = None
@@ -1668,6 +1675,13 @@ def get_type(self) -&gt; Type:
                     next_block = self._lift_block(convergence, visited)
                     block.statements.append(next_block)
 
+            elif op.op == &#34;Mov&#34;:
+                block.statements.append(
+                    IRAssign(
+                        self.code, self.locals[op.definition[&#34;dst&#34;].value], self.locals[op.definition[&#34;src&#34;].value]
+                    )
+                )
+
             elif op.op == &#34;JAlways&#34;:
                 jump_idx = node.base_offset + len(node.ops) + op.definition[&#34;offset&#34;].value
                 target_node = None
@@ -1679,6 +1693,9 @@ def get_type(self) -&gt; Type:
                 if target_node:
                     next_block = self._lift_block(target_node, visited)
                     block.statements.append(next_block)
+
+            else:
+                dbg_print(&#34;Skipping opcode:&#34;, op)
 
         if len(node.branches) == 1:
             next_node, _ = node.branches[0]
@@ -1763,7 +1780,7 @@ def get_type(self) -&gt; Type:
         self.body = body
 
     def __repr__(self) -&gt; str:
-        return f&#34;&lt;IRPrimitiveLoop: {self.condition}\n{self.body}&gt;&#34;</code></pre>
+        return f&#34;&lt;IRPrimitiveLoop: cond -&gt; {self.condition}\n body -&gt; {self.body}&gt;&#34;</code></pre>
 </details>
 <div class="desc"><p>2-block simplistic loop. Has no differentiation between while/for/comprehension, this should be done in later IR layers.</p></div>
 <h3>Ancestors</h3>
