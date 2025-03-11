@@ -80,6 +80,7 @@ el.replaceWith(d);
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.CFOptimizer" href="#crashlink.decomp.CFOptimizer">CFOptimizer</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -616,6 +617,7 @@ el.replaceWith(d);
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.CFOptimizer" href="#crashlink.decomp.CFOptimizer">CFOptimizer</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -687,7 +689,7 @@ el.replaceWith(d);
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class CFOptimizer:
+<pre><code class="python">class CFOptimizer(ABC):
     &#34;&#34;&#34;
     Base class for control flow graph optimizers.
     &#34;&#34;&#34;
@@ -695,10 +697,15 @@ el.replaceWith(d);
     def __init__(self, graph: &#34;CFGraph&#34;):
         self.graph = graph
 
+    @abstractmethod
     def optimize(self) -&gt; None:
-        raise NotImplementedError()</code></pre>
+        pass</code></pre>
 </details>
 <div class="desc"><p>Base class for control flow graph optimizers.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>abc.ABC</li>
+</ul>
 <h3>Subclasses</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.CFDeadCodeEliminator" href="#crashlink.decomp.CFDeadCodeEliminator">CFDeadCodeEliminator</a></li>
@@ -714,8 +721,9 @@ el.replaceWith(d);
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def optimize(self) -&gt; None:
-    raise NotImplementedError()</code></pre>
+<pre><code class="python">@abstractmethod
+def optimize(self) -&gt; None:
+    pass</code></pre>
 </details>
 <div class="desc"></div>
 </dd>
@@ -776,56 +784,7 @@ el.replaceWith(d);
 <dl>
 <dt id="crashlink.decomp.IRArithmetic.ArithmeticType"><code class="name">var <span class="ident">ArithmeticType</span></code></dt>
 <dd>
-<div class="desc"><p>Create a collection of name/value pairs.</p>
-<p>Example enumeration:</p>
-<pre><code class="language-python-repl">&gt;&gt;&gt; class Color(Enum):
-...     RED = 1
-...     BLUE = 2
-...     GREEN = 3
-</code></pre>
-<p>Access them by:</p>
-<ul>
-<li>attribute access:</li>
-</ul>
-<blockquote>
-<blockquote>
-<blockquote>
-<p>Color.RED
-<Color.RED: 1></p>
-</blockquote>
-</blockquote>
-</blockquote>
-<ul>
-<li>value lookup:</li>
-</ul>
-<blockquote>
-<blockquote>
-<blockquote>
-<p>Color(1)
-<Color.RED: 1></p>
-</blockquote>
-</blockquote>
-</blockquote>
-<ul>
-<li>name lookup:</li>
-</ul>
-<blockquote>
-<blockquote>
-<blockquote>
-<p>Color['RED']
-<Color.RED: 1></p>
-</blockquote>
-</blockquote>
-</blockquote>
-<p>Enumerations can be iterated over, and know how many members they have:</p>
-<pre><code class="language-python-repl">&gt;&gt;&gt; len(Color)
-3
-</code></pre>
-<pre><code class="language-python-repl">&gt;&gt;&gt; list(Color)
-[&lt;Color.RED: 1&gt;, &lt;Color.BLUE: 2&gt;, &lt;Color.GREEN: 3&gt;]
-</code></pre>
-<p>Methods can be added to enumerations, and members can have their own
-attributes &ndash; see the documentation for details.</p></div>
+<div class="desc"><p>An enumeration.</p></div>
 </dd>
 </dl>
 <h3>Inherited members</h3>
@@ -999,56 +958,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <dl>
 <dt id="crashlink.decomp.IRBoolExpr.CompareType"><code class="name">var <span class="ident">CompareType</span></code></dt>
 <dd>
-<div class="desc"><p>Create a collection of name/value pairs.</p>
-<p>Example enumeration:</p>
-<pre><code class="language-python-repl">&gt;&gt;&gt; class Color(Enum):
-...     RED = 1
-...     BLUE = 2
-...     GREEN = 3
-</code></pre>
-<p>Access them by:</p>
-<ul>
-<li>attribute access:</li>
-</ul>
-<blockquote>
-<blockquote>
-<blockquote>
-<p>Color.RED
-<Color.RED: 1></p>
-</blockquote>
-</blockquote>
-</blockquote>
-<ul>
-<li>value lookup:</li>
-</ul>
-<blockquote>
-<blockquote>
-<blockquote>
-<p>Color(1)
-<Color.RED: 1></p>
-</blockquote>
-</blockquote>
-</blockquote>
-<ul>
-<li>name lookup:</li>
-</ul>
-<blockquote>
-<blockquote>
-<blockquote>
-<p>Color['RED']
-<Color.RED: 1></p>
-</blockquote>
-</blockquote>
-</blockquote>
-<p>Enumerations can be iterated over, and know how many members they have:</p>
-<pre><code class="language-python-repl">&gt;&gt;&gt; len(Color)
-3
-</code></pre>
-<pre><code class="language-python-repl">&gt;&gt;&gt; list(Color)
-[&lt;Color.RED: 1&gt;, &lt;Color.BLUE: 2&gt;, &lt;Color.GREEN: 3&gt;]
-</code></pre>
-<p>Methods can be added to enumerations, and members can have their own
-attributes &ndash; see the documentation for details.</p></div>
+<div class="desc"><p>An enumeration.</p></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -1188,56 +1098,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <dl>
 <dt id="crashlink.decomp.IRCall.CallType"><code class="name">var <span class="ident">CallType</span></code></dt>
 <dd>
-<div class="desc"><p>Create a collection of name/value pairs.</p>
-<p>Example enumeration:</p>
-<pre><code class="language-python-repl">&gt;&gt;&gt; class Color(Enum):
-...     RED = 1
-...     BLUE = 2
-...     GREEN = 3
-</code></pre>
-<p>Access them by:</p>
-<ul>
-<li>attribute access:</li>
-</ul>
-<blockquote>
-<blockquote>
-<blockquote>
-<p>Color.RED
-<Color.RED: 1></p>
-</blockquote>
-</blockquote>
-</blockquote>
-<ul>
-<li>value lookup:</li>
-</ul>
-<blockquote>
-<blockquote>
-<blockquote>
-<p>Color(1)
-<Color.RED: 1></p>
-</blockquote>
-</blockquote>
-</blockquote>
-<ul>
-<li>name lookup:</li>
-</ul>
-<blockquote>
-<blockquote>
-<blockquote>
-<p>Color['RED']
-<Color.RED: 1></p>
-</blockquote>
-</blockquote>
-</blockquote>
-<p>Enumerations can be iterated over, and know how many members they have:</p>
-<pre><code class="language-python-repl">&gt;&gt;&gt; len(Color)
-3
-</code></pre>
-<pre><code class="language-python-repl">&gt;&gt;&gt; list(Color)
-[&lt;Color.RED: 1&gt;, &lt;Color.BLUE: 2&gt;, &lt;Color.GREEN: 3&gt;]
-</code></pre>
-<p>Methods can be added to enumerations, and members can have their own
-attributes &ndash; see the documentation for details.</p></div>
+<div class="desc"><p>An enumeration.</p></div>
 </dd>
 </dl>
 <h3>Inherited members</h3>
@@ -1395,56 +1256,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <dl>
 <dt id="crashlink.decomp.IRConst.ConstType"><code class="name">var <span class="ident">ConstType</span></code></dt>
 <dd>
-<div class="desc"><p>Create a collection of name/value pairs.</p>
-<p>Example enumeration:</p>
-<pre><code class="language-python-repl">&gt;&gt;&gt; class Color(Enum):
-...     RED = 1
-...     BLUE = 2
-...     GREEN = 3
-</code></pre>
-<p>Access them by:</p>
-<ul>
-<li>attribute access:</li>
-</ul>
-<blockquote>
-<blockquote>
-<blockquote>
-<p>Color.RED
-<Color.RED: 1></p>
-</blockquote>
-</blockquote>
-</blockquote>
-<ul>
-<li>value lookup:</li>
-</ul>
-<blockquote>
-<blockquote>
-<blockquote>
-<p>Color(1)
-<Color.RED: 1></p>
-</blockquote>
-</blockquote>
-</blockquote>
-<ul>
-<li>name lookup:</li>
-</ul>
-<blockquote>
-<blockquote>
-<blockquote>
-<p>Color['RED']
-<Color.RED: 1></p>
-</blockquote>
-</blockquote>
-</blockquote>
-<p>Enumerations can be iterated over, and know how many members they have:</p>
-<pre><code class="language-python-repl">&gt;&gt;&gt; len(Color)
-3
-</code></pre>
-<pre><code class="language-python-repl">&gt;&gt;&gt; list(Color)
-[&lt;Color.RED: 1&gt;, &lt;Color.BLUE: 2&gt;, &lt;Color.GREEN: 3&gt;]
-</code></pre>
-<p>Methods can be added to enumerations, and members can have their own
-attributes &ndash; see the documentation for details.</p></div>
+<div class="desc"><p>An enumeration.</p></div>
 </dd>
 </dl>
 <h3>Inherited members</h3>

@@ -48,6 +48,7 @@ class CFOptimizer(ABC):
     def optimize(self) -> None:
         pass
 
+
 class CFJumpThreader(CFOptimizer):
     """
     Thread jumps to reduce the number of nodes in the graph.
