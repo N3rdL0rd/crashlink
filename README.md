@@ -6,7 +6,7 @@
 Pure Python HashLink bytecode parser/disassembler/decompiler/modding tool
 
 > [!WARNING]
-> This project is under active development. Breaking changes may be made to APIs with zero notice. Also, the decompiler is broken right now so...
+> This project is under active development. Breaking changes may be made to APIs with zero notice.
 
 ## Features
 
@@ -106,6 +106,10 @@ You can use the following pre-defined commands with `just`:
 - `just profile`: Run the test suite with cProfile and then open the results in a browser.
 - `just serve-docs`: Serve the documentation locally.
 
+### `crashtest` CLI
+
+`crashtest` is a built-in testing system that is used to score the decompiler's output against the original source code. It is used to ensure that the decompiler is working correctly, that the output is correct, that the decompiler is not regressing, and to allow those interested in the project to easily see the state of the decompiler without installing it or running the test suite themselves. You can call it with `crashtest auto` (or `python -m crashtest auto`). Make sure you call it from the root of the repository, since it uses relative paths to find the test files and the output directory.
+
 ## Architecture
 
 ![Architecture](docs/static/flow.svg)
@@ -138,6 +142,16 @@ You can use the following pre-defined commands with `just`:
   - [ ] Embedded CFG viewer through some Graphviz bindings
   - [ ] Decompiler and patching interface
   - [ ] IR layer viewer
+
+## Portability
+
+crashlink is written in pure typed Python with a minimum version of 3.10 (for the `|` operator and `match` statement). It should run on any modern platform, and has been tested heavily on Windows, Linux, and MacOS. As well as this, it is portable to many interpreters:
+
+- CPython 3.10+ is the main target - deserialising Dead Cells v35 takes 103.16s and 4.6gb of RAM
+- PyPy just works - the same benchmark takes 26s and 2.9gb of RAM
+  - tqdm displays broken progress bars, but this is a PyPy issue and it still works.
+- IronPython and Jython are not supported due to their earlier Python version targets.
+- RustPython would work, but it doesn't support `match` statements.
 
 ## Credits
 

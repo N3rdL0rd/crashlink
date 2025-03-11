@@ -49,6 +49,99 @@ you.</p>
 <section>
 </section>
 <section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="crashlink.core.full_func_name"><code class="name flex">
+<span>def <span class="ident">full_func_name</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>,<br>func: <a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a> | <a title="crashlink.core.Native" href="#crashlink.core.Native">Native</a>) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def full_func_name(code: Bytecode, func: Function | Native) -&gt; str:
+    &#34;&#34;&#34;
+    Generates a human-readable name for a function or native.
+    &#34;&#34;&#34;
+    proto = get_proto_for(code, func.findex.value)
+    if proto:
+        name = proto.name.resolve(code)
+        for type in code.types:
+            if type.kind.value == Type.TYPEDEFS.index(Obj):
+                if not isinstance(type.definition, Obj):
+                    continue
+                obj_def: Obj = type.definition
+                for fun in obj_def.protos:
+                    if fun.findex.value == func.findex.value:
+                        return f&#34;{obj_def.name.resolve(code)}.{name}&#34;
+    else:
+        name = &#34;&lt;none&gt;&#34;
+        field = get_field_for(code, func.findex.value)
+        if field:
+            name = field.name.resolve(code)
+            for type in code.types:
+                if type.kind.value == Type.TYPEDEFS.index(Obj):
+                    if not isinstance(type.definition, Obj):
+                        continue
+                    _obj_def: Obj = type.definition
+                    fields = _obj_def.resolve_fields(code)
+                    for binding in _obj_def.bindings:
+                        if binding.findex.value == func.findex.value:
+                            return f&#34;{_obj_def.name.resolve(code)}.{name}&#34;
+    return name</code></pre>
+</details>
+<div class="desc"><p>Generates a human-readable name for a function or native.</p></div>
+</dd>
+<dt id="crashlink.core.get_field_for"><code class="name flex">
+<span>def <span class="ident">get_field_for</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>,<br>idx: int) ‑> <a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a> | None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_field_for(code: Bytecode, idx: int) -&gt; Optional[Field]:
+    &#34;&#34;&#34;
+    Gets the field for a standalone function index.
+    &#34;&#34;&#34;
+    for type in code.types:
+        if type.kind.value == Type.TYPEDEFS.index(Obj):
+            if not isinstance(type.definition, Obj):
+                raise TypeError(f&#34;Expected Obj, got {type.definition}&#34;)
+            definition: Obj = type.definition
+            fields = definition.resolve_fields(code)
+            for binding in definition.bindings:  # binding binds a field to a function
+                if binding.findex.value == idx:
+                    return fields[binding.field.value]
+    return None</code></pre>
+</details>
+<div class="desc"><p>Gets the field for a standalone function index.</p></div>
+</dd>
+<dt id="crashlink.core.get_proto_for"><code class="name flex">
+<span>def <span class="ident">get_proto_for</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>,<br>idx: int) ‑> <a title="crashlink.core.Proto" href="#crashlink.core.Proto">Proto</a> | None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_proto_for(code: Bytecode, idx: int) -&gt; Optional[Proto]:
+    &#34;&#34;&#34;
+    Gets the proto for a standalone function index.
+    &#34;&#34;&#34;
+    for type in code.types:
+        if type.kind.value == Type.TYPEDEFS.index(Obj):
+            if not isinstance(type.definition, Obj):
+                raise TypeError(f&#34;Expected Obj, got {type.definition}&#34;)
+            definition: Obj = type.definition
+            for proto in definition.protos:
+                if proto.findex.value == idx:
+                    return proto
+    return None</code></pre>
+</details>
+<div class="desc"><p>Gets the proto for a standalone function index.</p></div>
+</dd>
+</dl>
 </section>
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
@@ -517,6 +610,7 @@ you.</p>
                 else:
                     res[name] = field.value
             final[const._global.value] = res
+        assert len(final) == len(self.constants), &#34;Not all constants were resolved! Somehow...&#34;
         self.initialized_globals = final
 
     def fn(self, findex: int, native: bool = True) -&gt; Function | Native:
@@ -650,6 +744,12 @@ you.</p>
         Alternate notation for code.set_meta() for the purpose of clarity.
         &#34;&#34;&#34;
         self.set_meta()
+
+    def get_test_main(self) -&gt; Function:
+        for f in self.functions:
+            if full_func_name(self, f).endswith(&#34;main&#34;):
+                return f
+        raise ValueError(&#34;No main function found!&#34;)
 
     def is_ok(self) -&gt; bool:
         &#34;&#34;&#34;
@@ -960,6 +1060,22 @@ you.</p>
 </details>
 <div class="desc"><p>Shorthand to get a global's type by gIndex.</p></div>
 </dd>
+<dt id="crashlink.core.Bytecode.get_test_main"><code class="name flex">
+<span>def <span class="ident">get_test_main</span></span>(<span>self) ‑> <a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_test_main(self) -&gt; Function:
+    for f in self.functions:
+        if full_func_name(self, f).endswith(&#34;main&#34;):
+            return f
+    raise ValueError(&#34;No main function found!&#34;)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
 <dt id="crashlink.core.Bytecode.init_globals"><code class="name flex">
 <span>def <span class="ident">init_globals</span></span>(<span>self) ‑> None</span>
 </code></dt>
@@ -996,6 +1112,7 @@ you.</p>
             else:
                 res[name] = field.value
         final[const._global.value] = res
+    assert len(final) == len(self.constants), &#34;Not all constants were resolved! Somehow...&#34;
     self.initialized_globals = final</code></pre>
 </details>
 <div class="desc"><p>Internal method to initialize global instances of objects.</p></div>
@@ -2579,7 +2696,16 @@ you.</p>
                 if not isinstance(defn, Obj):
                     raise ValueError(&#34;Invalid superclass type.&#34;)
                 current_type = defn
-        return fields</code></pre>
+        return fields
+
+    def __str__(self) -&gt; str:
+        return f&#34;&lt;Obj: f@{self.name}&gt;&#34;
+
+    def __repr__(self) -&gt; str:
+        return self.__str__()
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        return f&#34;&lt;Obj: {self.name.resolve(code)}&gt;&#34;</code></pre>
 </details>
 <div class="desc"><p>Represents a class definition. Contains:</p>
 <ul>
@@ -2699,6 +2825,19 @@ Where a is field 0 and b is field 1</p></div>
             b&#34;&#34;.join([binding.serialise() for binding in self.bindings]),
         ]
     )</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Obj.str_resolve"><code class="name flex">
+<span>def <span class="ident">str_resolve</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+    return f&#34;&lt;Obj: {self.name.resolve(code)}&gt;&#34;</code></pre>
 </details>
 <div class="desc"></div>
 </dd>
@@ -3752,7 +3891,18 @@ def serialise(self) -&gt; bytes:
                 self.kind.serialise(),
                 self.definition.serialise() if self.definition else b&#34;&#34;,
             ]
-        )</code></pre>
+        )
+
+    def __str__(self) -&gt; str:
+        return f&#34;&lt;Type: {self.kind.value} ({self.definition.__class__.__name__})&gt;&#34;
+
+    def __repr__(self) -&gt; str:
+        return self.__str__()
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        if isinstance(self.definition, Obj):
+            return self.definition.str_resolve(code)
+        return f&#34;&lt;Type: {self.kind.value} ({self.definition.__class__.__name__})&gt;&#34;</code></pre>
 </details>
 <div class="desc"><p>Type definition:</p>
 <ul>
@@ -3809,6 +3959,21 @@ def serialise(self) -&gt; bytes:
             self.definition.serialise() if self.definition else b&#34;&#34;,
         ]
     )</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Type.str_resolve"><code class="name flex">
+<span>def <span class="ident">str_resolve</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+    if isinstance(self.definition, Obj):
+        return self.definition.str_resolve(code)
+    return f&#34;&lt;Type: {self.kind.value} ({self.definition.__class__.__name__})&gt;&#34;</code></pre>
 </details>
 <div class="desc"></div>
 </dd>
@@ -4313,10 +4478,13 @@ def serialise(self) -&gt; bytes:
     Abstract class based on VarInt to represent a distinct function index instead of just an arbitrary number.
     &#34;&#34;&#34;
 
-    def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Function&#34;:
+    def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Function|Native&#34;:
         for function in code.functions:
             if function.findex.value == self.value:
                 return function
+        for native in code.natives:
+            if native.findex.value == self.value:
+                return native
         raise MalformedBytecode(f&#34;Function index {self.value} not found.&#34;)</code></pre>
 </details>
 <div class="desc"><p>Abstract class based on VarInt to represent a distinct function index instead of just an arbitrary number.</p></div>
@@ -4711,6 +4879,13 @@ def serialise(self) -&gt; bytes:
 <li><code><a title="crashlink" href="index.html">crashlink</a></code></li>
 </ul>
 </li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="crashlink.core.full_func_name" href="#crashlink.core.full_func_name">full_func_name</a></code></li>
+<li><code><a title="crashlink.core.get_field_for" href="#crashlink.core.get_field_for">get_field_for</a></code></li>
+<li><code><a title="crashlink.core.get_proto_for" href="#crashlink.core.get_proto_for">get_proto_for</a></code></li>
+</ul>
+</li>
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
 <li>
@@ -4743,6 +4918,7 @@ def serialise(self) -&gt; bytes:
 <li><code><a title="crashlink.core.Bytecode.from_bytes" href="#crashlink.core.Bytecode.from_bytes">from_bytes</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.from_path" href="#crashlink.core.Bytecode.from_path">from_path</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.g" href="#crashlink.core.Bytecode.g">g</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.get_test_main" href="#crashlink.core.Bytecode.get_test_main">get_test_main</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.init_globals" href="#crashlink.core.Bytecode.init_globals">init_globals</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.is_ok" href="#crashlink.core.Bytecode.is_ok">is_ok</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.repair" href="#crashlink.core.Bytecode.repair">repair</a></code></li>
@@ -4861,6 +5037,7 @@ def serialise(self) -&gt; bytes:
 <li><code><a title="crashlink.core.Obj.deserialise" href="#crashlink.core.Obj.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.Obj.resolve_fields" href="#crashlink.core.Obj.resolve_fields">resolve_fields</a></code></li>
 <li><code><a title="crashlink.core.Obj.serialise" href="#crashlink.core.Obj.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.Obj.str_resolve" href="#crashlink.core.Obj.str_resolve">str_resolve</a></code></li>
 </ul>
 </li>
 <li>
@@ -4952,6 +5129,7 @@ def serialise(self) -&gt; bytes:
 <li><code><a title="crashlink.core.Type.TYPEDEFS" href="#crashlink.core.Type.TYPEDEFS">TYPEDEFS</a></code></li>
 <li><code><a title="crashlink.core.Type.deserialise" href="#crashlink.core.Type.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.Type.serialise" href="#crashlink.core.Type.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.Type.str_resolve" href="#crashlink.core.Type.str_resolve">str_resolve</a></code></li>
 </ul>
 </li>
 <li>

@@ -15,6 +15,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 from . import decomp, disasm
 from .core import Bytecode, Native
 from .globals import VERSION
+from .interp.vm import VM  # type: ignore
 
 
 class Commands:
@@ -75,7 +76,11 @@ class Commands:
     def entry(self, args: List[str]) -> None:
         """Prints the entrypoint of the bytecode."""
         entry = self.code.entrypoint.resolve(self.code)
-        print("    Entrypoint:", disasm.func_header(self.code, entry))
+        if isinstance(entry, Native):
+            print("Entrypoint: Native")
+            print("    Name:", entry.name.resolve(self.code))
+        else:
+            print("    Entrypoint:", disasm.func_header(self.code, entry))
 
     def fn(self, args: List[str]) -> None:
         """Disassembles a function to pseudocode by findex. `fn <idx>`"""
@@ -252,11 +257,7 @@ class Commands:
         for func in self.code.functions:
             if func.findex.value == index:
                 f = decomp.IRFunction(self.code, func)
-                if not target in decomp.TARGETS:
-                    print(f"Unknown target language: {target}")
-                    return
-                print(decomp.TARGETS[target](self.code).translate(f))
-                return
+                print("TODO")
         print("Function not found.")
 
     def savestrings(self, args: List[str]) -> None:
@@ -345,6 +346,39 @@ class Commands:
             print("Bytecode pickled.")
         except ImportError:
             print("dill not found. Install dill to pickle bytecode, or install crashlink with the [extras] option.")
+
+    def stub(self, args: List[str]) -> None:
+        """Generate files in the same structure as the original Haxe source. Requires debuginfo. `stub <path>`"""
+        if len(args) == 0:
+            print("Usage: stub <path>")
+            return
+        if not self.code.has_debug_info:
+            print("Debug info not found.")
+            return
+        path = args[0]
+        if not os.path.exists(path):
+            os.makedirs(path)
+        if not self.code.debugfiles:
+            print("No debug files found.")
+            return
+        for file in self.code.debugfiles.value:
+            if (
+                file == "std" or file == "?" or file.startswith("C:") or file.startswith("D:") or file.startswith("/")
+            ):  # FIXME: lazy sanitization
+                continue
+            try:
+                os.makedirs(os.path.join(path, os.path.dirname(file)), exist_ok=True)
+                with open(os.path.join(path, file), "w") as f:
+                    f.write("")
+            except OSError:
+                print(f"Failed to write to {os.path.join(path, file)}")
+        print(f"Files generated in {os.path.abspath(path)}")
+
+    def interp(self, args: List[str]) -> None:
+        """Run the bytecode in crashlink's integrated interpreter."""
+
+        vm = VM(self.code)
+        vm.run()
 
     def _get_commands(self) -> Dict[str, Callable[[List[str]], None]]:
         """Get all command methods using reflection"""

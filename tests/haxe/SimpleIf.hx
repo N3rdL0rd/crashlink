@@ -5,6 +5,12 @@ class SimpleIf {
         var a = 500;
         if (a > 400) {
             call();
+            call();
+            call();
+        } else {
+            call();
         }
+        a = 300;
+        var b = 999;
     }
 }

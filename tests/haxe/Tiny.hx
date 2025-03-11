@@ -3,7 +3,6 @@ class Tiny {
         var b = 10;
         while (b > 3) {
             b -= 1;
-            //trace("Hello, world!");
         }
     }
 }

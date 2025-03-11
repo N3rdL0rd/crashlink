@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>crashtest</title>
+    <style>
+        :root {
+            --visible-columns: 2;
+        }
+        body { margin: 0; font-family: sans-serif; }
+        .test-case {
+            margin: 2rem 0;
+            border-top: 2px solid #eee;
+        }
+        .test-header {
+            padding: 1rem;
+            background: #f8f9fa;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .test-header h2 {
+            margin: 0;
+            font-size: 1.25rem;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: repeat(var(--visible-columns), 1fr);
+            transition: grid-template-columns 0.3s ease;
+        }
+        .code-panel {
+            padding: 1rem;
+            border-right: 1px solid #ccc;
+            overflow: auto;
+        }
+
+        small {
+            font-size: 0.8rem;
+            color: #525252;
+        }
+
+        h1 {
+            padding-left: 1rem;
+        }
+
+        h1 > small > a {
+            color: #f59357;
+            background-color: transparent;
+        }
+
+        .test-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            background: #f8f9fa;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            gap: 1rem;
+        }
+    
+        .toggle-ir {
+            background: #cba6f7;
+            color: black;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+    
+        .toggle-ir:hover {
+            background: #b4befe;
+        }
+    
+        .toggle-ir:active {
+            background: #74c7ec;
+        }        
+    
+        .test-header h2 {
+            margin: 0;
+            font-size: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+    
+        .fa-link {
+            color: #666;
+            font-size: 0.8em;
+            transition: color 0.2s ease;
+        }
+    
+        .fa-link:hover {
+            color: #f5c2e7;
+        }
+
+        .a {
+            color: #fab387 !important;
+            background-color: transparent;
+        }
+
+        .runs-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1rem;
+            padding: 1rem;
+        }
+
+        .run-card {
+            background: #313244;
+            border-radius: 8px;
+            padding: 1rem;
+            transition: transform 0.2s ease;
+        }
+
+        .run-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .run-meta {
+            color: #cdd6f4;
+            margin-bottom: 0.5rem;
+        }
+
+        .run-title {
+            color: #cba6f7;
+            font-size: 1.2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .run-stats {
+            font-size: 0.9rem;
+        }
+
+        .view-run {
+            background: #cba6f7;
+            color: black;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            margin-top: 1rem;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .view-run:hover {
+            background: #b4befe;
+        }
+    
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            overflow: auto;
+        }
+    
+        .modal-content {
+            background-color: #313244;
+            margin: 15% auto;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 600px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+            animation: modalFadeIn 0.3s ease;
+        }
+    
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #45475a;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+    
+        .modal-header h2 {
+            color: #cba6f7;
+            margin: 0;
+        }
+    
+        .modal-body {
+            color: #cdd6f4;
+            line-height: 1.6;
+        }
+    
+        .modal-body code {
+            background: #1e1e2e;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+    
+        .close {
+            color: #a6adc8;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    
+        .close:hover {
+            color: #f38ba8;
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <link href="https://prismjs.catppuccin.com/frappe.css" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/line-numbers/prism-line-numbers.min.css" rel="stylesheet" />
+</head>
+<body class="line-numbers">
+    <h1>crashtest</h1>
+    <a role="button" onclick="show_about();" href="#" style="padding-left: 10px;">WTF is this?</a>
+    <div class="runs-grid">
+        
+            <div class="run-card">
+                <div class="run-title">Run #20250225094803</div>
+                <div class="run-meta">
+                    crashlink v0.0.2a
+                    
+                        
+                            <b>(dirty!)</b>
+                        
+                        on dev@879ed36d
+                    
+                </div>
+                <div class="run-stats" style="color: #EF4444;">
+                    Major failures (43.3%) with
+                    30 test cases
+                </div>
+                <a href="./run/20250225094803">
+                    <button class="view-run">View Results</button>
+                </a>
+            </div>
+        
+            <div class="run-card">
+                <div class="run-title">Run #20250225094916</div>
+                <div class="run-meta">
+                    crashlink v0.0.2a
+                    
+                        
+                        on dev@0879cf22
+                    
+                </div>
+                <div class="run-stats" style="color: #EF4444;">
+                    Major failures (43.3%) with
+                    30 test cases
+                </div>
+                <a href="./run/20250225094916">
+                    <button class="view-run">View Results</button>
+                </a>
+            </div>
+        
+            <div class="run-card">
+                <div class="run-title">Run #20250304083600</div>
+                <div class="run-meta">
+                    crashlink v0.0.2a
+                    
+                        
+                        on dev@bd24b33c
+                    
+                </div>
+                <div class="run-stats" style="color: #EF4444;">
+                    Major failures (41.9%) with
+                    31 test cases
+                </div>
+                <a href="./run/20250304083600">
+                    <button class="view-run">View Results</button>
+                </a>
+            </div>
+        
+            <div class="run-card">
+                <div class="run-title">Run #20250311103311</div>
+                <div class="run-meta">
+                    crashlink v0.0.2a
+                    
+                        
+                            <b>(dirty!)</b>
+                        
+                        on dev@85e961fc
+                    
+                </div>
+                <div class="run-stats" style="color: #EF4444;">
+                    Major failures (38.7%) with
+                    31 test cases
+                </div>
+                <a href="./run/20250311103311">
+                    <button class="view-run">View Results</button>
+                </a>
+            </div>
+        
+    </div>
+
+    <div id="about-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>About crashtest</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p>crashtest is a built-in testing system for crashlink that is used to score the decompiler's output against the original source code. It is used to ensure that the decompiler is working correctly, that the output is correct, that the decompiler is not regressing, and to allow those interested in the project to easily see the state of the decompiler without installing it or running the test suite themselves.</p>
+                <p>You can call it with <code>just test</code> (which will run the complete test suite, including tests implemented with <code>pytest</code>), or just calling <code>crashtest</code> (or <code>python -m crashtest</code>) directly. Make sure you call it from the root of the repository, since it uses relative paths to find the test files and the output directory.</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-haxe.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/line-numbers/prism-line-numbers.min.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            Prism.highlightAll();
+        });
+        
+        document.querySelectorAll('.toggle-ir').forEach(button => {
+            button.addEventListener('click', function() {
+                const testCase = this.closest('.test-case');
+                const container = testCase.querySelector('.container');
+                const irPanel = testCase.querySelector('.ir-panel');
+                const icon = this.querySelector('i');
+                
+                irPanel.style.display = irPanel.style.display === 'none' ? 'block' : 'none';
+                const visibleColumns = parseInt(getComputedStyle(container)
+                    .getPropertyValue('--visible-columns'));
+                container.style.setProperty('--visible-columns', 
+                    visibleColumns === 2 ? 3 : 2);
+                
+                icon.classList.toggle('fa-eye');
+                icon.classList.toggle('fa-eye-slash');
+                
+                if (irPanel.style.display === 'block') {
+                    Prism.highlightAllUnder(irPanel);
+                }
+            });
+        });
+        document.querySelectorAll('.ir-panel').forEach(panel => {
+            panel.style.display = 'none';
+        });
+
+        function show_about() {
+            document.getElementById('about-modal').style.display = 'block';
+        }
+        
+        document.querySelector('.close').addEventListener('click', function() {
+            document.getElementById('about-modal').style.display = 'none';
+        });
+        
+        window.addEventListener('click', function(event) {
+            const modal = document.getElementById('about-modal');
+            if (event.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>
