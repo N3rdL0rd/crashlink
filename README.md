@@ -6,7 +6,7 @@
 Pure Python HashLink bytecode parser/disassembler/decompiler/modding tool
 
 > [!WARNING]
-> This project is under active development. Breaking changes may be made to APIs with zero notice. Also, the decompiler is broken right now so...
+> This project is under active development. Breaking changes may be made to APIs with zero notice.
 
 ## Features
 
