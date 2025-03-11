@@ -43,13 +43,6 @@ el.replaceWith(d);
 <section>
 </section>
 <section>
-<h2 class="section-title" id="header-variables">Global variables</h2>
-<dl>
-<dt id="crashlink.decomp.TARGETS"><code class="name">var <span class="ident">TARGETS</span></code></dt>
-<dd>
-<div class="desc"><p>Targets for pseudocode generation.</p></div>
-</dd>
-</dl>
 </section>
 <section>
 </section>
@@ -87,6 +80,7 @@ el.replaceWith(d);
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.CFOptimizer" href="#crashlink.decomp.CFOptimizer">CFOptimizer</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -320,6 +314,10 @@ el.replaceWith(d);
         return preds</code></pre>
 </details>
 <div class="desc"><p>A control flow graph.</p></div>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IsolatedCFGraph" href="#crashlink.decomp.IsolatedCFGraph">IsolatedCFGraph</a></li>
+</ul>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.decomp.CFGraph.add_branch"><code class="name flex">
@@ -619,6 +617,7 @@ el.replaceWith(d);
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.CFOptimizer" href="#crashlink.decomp.CFOptimizer">CFOptimizer</a></li>
+<li>abc.ABC</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -690,7 +689,7 @@ el.replaceWith(d);
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class CFOptimizer:
+<pre><code class="python">class CFOptimizer(ABC):
     &#34;&#34;&#34;
     Base class for control flow graph optimizers.
     &#34;&#34;&#34;
@@ -698,10 +697,15 @@ el.replaceWith(d);
     def __init__(self, graph: &#34;CFGraph&#34;):
         self.graph = graph
 
+    @abstractmethod
     def optimize(self) -&gt; None:
-        raise NotImplementedError()</code></pre>
+        pass</code></pre>
 </details>
 <div class="desc"><p>Base class for control flow graph optimizers.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>abc.ABC</li>
+</ul>
 <h3>Subclasses</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.CFDeadCodeEliminator" href="#crashlink.decomp.CFDeadCodeEliminator">CFDeadCodeEliminator</a></li>
@@ -717,45 +721,13 @@ el.replaceWith(d);
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def optimize(self) -&gt; None:
-    raise NotImplementedError()</code></pre>
+<pre><code class="python">@abstractmethod
+def optimize(self) -&gt; None:
+    pass</code></pre>
 </details>
 <div class="desc"></div>
 </dd>
 </dl>
-</dd>
-<dt id="crashlink.decomp.HaxeTarget"><code class="flex name class">
-<span>class <span class="ident">HaxeTarget</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
-</code></dt>
-<dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class HaxeTarget(PseudoTarget):
-    &#34;&#34;&#34;Haxe pseudocode language backend&#34;&#34;&#34;
-
-    def translate(self, ir: IRFunction) -&gt; str:
-        output = []
-        for local in ir.locals:
-            output.append(f&#34;var {local.name}:{disasm.type_to_haxe(disasm.type_name(self.code, local.get_type()))};&#34;)
-        return &#34;\n&#34;.join(output)</code></pre>
-</details>
-<div class="desc"><p>Haxe pseudocode language backend</p></div>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li><a title="crashlink.decomp.PseudoTarget" href="#crashlink.decomp.PseudoTarget">PseudoTarget</a></li>
-<li>abc.ABC</li>
-</ul>
-<h3>Inherited members</h3>
-<ul class="hlist">
-<li><code><b><a title="crashlink.decomp.PseudoTarget" href="#crashlink.decomp.PseudoTarget">PseudoTarget</a></b></code>:
-<ul class="hlist">
-<li><code><a title="crashlink.decomp.PseudoTarget.translate" href="#crashlink.decomp.PseudoTarget.translate">translate</a></code></li>
-</ul>
-</li>
-</ul>
 </dd>
 <dt id="crashlink.decomp.IRArithmetic"><code class="flex name class">
 <span>class <span class="ident">IRArithmetic</span></span>
@@ -876,7 +848,10 @@ el.replaceWith(d);
         # uniform indentation
         statements = pformat(self.statements, indent=0).replace(&#34;\n&#34;, &#34;\n\t&#34;)
 
-        return f&#34;&lt;IRBlock:\n{statements}&gt;&#34;</code></pre>
+        return f&#34;&lt;IRBlock:\n{statements}&gt;&#34;
+
+    def __str__(self) -&gt; str:
+        return self.__repr__()</code></pre>
 </details>
 <div class="desc"><p>A basic unit block of IR. Contains a list of IRStatements, and can contain other IRBlocks.</p></div>
 <h3>Ancestors</h3>
@@ -1326,6 +1301,7 @@ el.replaceWith(d);
 <li><a title="crashlink.decomp.IRCall" href="#crashlink.decomp.IRCall">IRCall</a></li>
 <li><a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a></li>
 <li><a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a></li>
+<li><a title="crashlink.decomp.IRPrimitveJump" href="#crashlink.decomp.IRPrimitveJump">IRPrimitveJump</a></li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -1404,7 +1380,6 @@ def get_type(self) -&gt; Type:
                 if reg is not None:
                     reg_assigns[reg].add(assign[0].resolve(self.code))
         # loop through arg names: all with value &lt; 0, eg:
-        # Assigns:
         # Op -1: argument_name (corresponds to reg 0)
         # Op -1: other_arg_name (corresponds to reg 1)
         # Op -1: third_arg_name (corresponds to reg 2)
@@ -1447,35 +1422,59 @@ def get_type(self) -&gt; Type:
 
         return None  # No convergence found
 
-    def _lift_block(self, node: CFNode, visited: Optional[Set[CFNode]] = None) -&gt; IRBlock:
+    def _patch_loop_condition(self, node: CFNode) -&gt; None:
+        &#34;&#34;&#34;Patches a loop condition block to remove the Label and anything else that could get it detected as a nested loop or other statement unintentionally.&#34;&#34;&#34;
+        node.ops = node.ops[1:]  # remove Label
+        assert node.ops[-1].op in conditionals
+
+    def _lift_block(
+        self,
+        node: CFNode,
+        visited: Optional[Set[CFNode]] = None,
+        convert_jumps_to_primitive: bool = False,
+        flag_conditionals: bool = False,
+    ) -&gt; IRBlock:
         if visited is None:
             visited = set()
 
         if node in visited:
             return IRBlock(self.code)
-
         visited.add(node)
 
-        visited.add(node)
         block = IRBlock(self.code)
 
-        # Process operations in current block
-        for op in node.ops:
-            if op.op in [
-                &#34;Add&#34;,
-                &#34;Sub&#34;,
-                &#34;Mul&#34;,
-                &#34;SDiv&#34;,
-                &#34;UDiv&#34;,
-                &#34;SMod&#34;,
-                &#34;UMod&#34;,
-                &#34;Shl&#34;,
-                &#34;SShr&#34;,
-                &#34;UShr&#34;,
-                &#34;And&#34;,
-                &#34;Or&#34;,
-                &#34;Xor&#34;,
-            ]:
+        for i, op in enumerate(node.ops):
+            if op.op == &#34;Label&#34;:
+                assert i == 0, &#34;Label should be the first operation in a CFNode.&#34;
+                jumpers = _find_jumps_to_label(node, node, set())
+                body: Set[CFNode] = set()
+                for jumper in jumpers:
+                    body.add(jumper[0])
+                    for n2 in jumper[1]:
+                        body.add(n2)
+                body.discard(node)
+                isolated = IsolatedCFGraph(self.cfg, list(body))
+                condition = IsolatedCFGraph(self.cfg, [node], find_entry_intelligently=False)
+                if not condition.entry:
+                    raise DecompError(&#34;Empty condition block found.&#34;)
+                self._patch_loop_condition(condition.entry)
+                if not condition.entry and isolated.entry:
+                    dbg_print(&#34;Warning: Empty condition or loop block found.&#34;)
+                    block.comment += &#34;WARNING: Empty condition or loop block found.&#34;
+                if not isolated.entry:
+                    dbg_print(&#34;Warning: Empty loop block found.&#34;)
+                    block.comment += &#34;WARNING: Empty loop block found.&#34;
+                    continue
+                block.statements.append(
+                    IRPrimitiveLoop(
+                        self.code,
+                        self._lift_block(condition.entry, visited, convert_jumps_to_primitive=True),
+                        self._lift_block(isolated.entry, visited, flag_conditionals=True),
+                    )
+                )
+                break
+
+            elif op.op in arithmetic:
                 dst = self.locals[op.definition[&#34;dst&#34;].value]
                 lhs = self.locals[op.definition[&#34;a&#34;].value]
                 rhs = self.locals[op.definition[&#34;b&#34;].value]
@@ -1501,94 +1500,88 @@ def get_type(self) -&gt; Type:
                     const = IRConst(self.code, const_type, value=value)
                 block.statements.append(IRAssign(self.code, dst, const))
 
-            elif op.op in [
-                &#34;JTrue&#34;,
-                &#34;JFalse&#34;,
-                &#34;JNull&#34;,
-                &#34;JNotNull&#34;,
-                &#34;JSLt&#34;,
-                &#34;JSGte&#34;,
-                &#34;JSGt&#34;,
-                &#34;JSLte&#34;,
-                &#34;JULt&#34;,
-                &#34;JUGte&#34;,
-                &#34;JEq&#34;,
-                &#34;JNotEq&#34;,
-            ]:
-                # conditionals create a diamond shape in the IR - the two branches will at some point converge again.
-                # TODO: loop support and detection
-                true_branch = None
-                false_branch = None
-                for branch_node, edge_type in node.branches:
-                    if edge_type == &#34;true&#34;:
-                        true_branch = branch_node
-                    elif edge_type == &#34;false&#34;:
-                        false_branch = branch_node
-                if true_branch is None or false_branch is None:
-                    raise DecompError(&#34;Conditional jump missing true/false branch. Check CFG generation maybe?&#34;)
+            elif op.op in conditionals:
+                if flag_conditionals:
+                    dbg_print(&#34;!!! Conditional !!!&#34;)
+                if not convert_jumps_to_primitive:
+                    # conditionals create a diamond shape in the IR - the two branches will at some point converge again.
+                    true_branch = None
+                    false_branch = None
+                    for branch_node, edge_type in node.branches:
+                        if edge_type == &#34;true&#34;:
+                            true_branch = branch_node
+                        elif edge_type == &#34;false&#34;:
+                            false_branch = branch_node
+                    if true_branch is None or false_branch is None:
+                        raise DecompError(&#34;Conditional jump missing true/false branch. Check CFG generation maybe?&#34;)
 
-                # HACK: blocks that have multiple branches coming into them shouldn&#39;t exist for generated if statements.
-                # therefore, we can assume that if a conditional branch leads to a node that has multiple incoming branches,
-                # it&#39;s an empty block and that&#39;s what comes *after* the conditional branches altogether.
-                should_lift_t = True
-                should_lift_f = True
-                if len(self.cfg.predecessors(true_branch)) &gt; 1:
-                    should_lift_t = False
-                if len(self.cfg.predecessors(false_branch)) &gt; 1:
-                    should_lift_f = False
+                    # HACK: blocks that have multiple branches coming into them shouldn&#39;t exist for generated if statements.
+                    # therefore, we can assume that if a conditional branch leads to a node that has multiple incoming branches,
+                    # it&#39;s an empty block and that&#39;s what comes *after* the conditional branches altogether.
+                    should_lift_t = True
+                    should_lift_f = True
+                    if len(self.cfg.predecessors(true_branch)) &gt; 1:
+                        should_lift_t = False
+                    if len(self.cfg.predecessors(false_branch)) &gt; 1:
+                        should_lift_f = False
 
-                if not should_lift_t and not should_lift_f:
-                    dbg_print(&#34;Warning: Skipping conditional due to weird incoming branches.&#34;)
-                    continue
+                    if not should_lift_t and not should_lift_f:
+                        dbg_print(&#34;Warning: Skipping conditional due to weird incoming branches.&#34;)
+                        block.comment += &#34;WARNING: Skipping conditional due to weird incoming branches.&#34;
+                        continue
 
-                cond_map = {
-                    &#34;JTrue&#34;: IRBoolExpr.CompareType.ISTRUE,
-                    &#34;JFalse&#34;: IRBoolExpr.CompareType.ISFALSE,
-                    &#34;JNull&#34;: IRBoolExpr.CompareType.NULL,
-                    &#34;JNotNull&#34;: IRBoolExpr.CompareType.NOT_NULL,
-                    &#34;JSLt&#34;: IRBoolExpr.CompareType.LT,
-                    &#34;JSGte&#34;: IRBoolExpr.CompareType.GTE,
-                    &#34;JSGt&#34;: IRBoolExpr.CompareType.GT,
-                    &#34;JSLte&#34;: IRBoolExpr.CompareType.LTE,
-                    &#34;JULt&#34;: IRBoolExpr.CompareType.LT,
-                    &#34;JUGte&#34;: IRBoolExpr.CompareType.GTE,
-                    &#34;JEq&#34;: IRBoolExpr.CompareType.EQ,
-                    &#34;JNotEq&#34;: IRBoolExpr.CompareType.NEQ,
-                }
-                cond = cond_map[op.op]
-                left, right = None, None
-                if cond not in [
-                    IRBoolExpr.CompareType.ISTRUE,
-                    IRBoolExpr.CompareType.ISFALSE,
-                    IRBoolExpr.CompareType.NULL,
-                    IRBoolExpr.CompareType.NOT_NULL,
-                ]:
-                    left = self.locals[op.definition[&#34;a&#34;].value]
-                    right = self.locals[op.definition[&#34;b&#34;].value]
+                    cond_map = {
+                        &#34;JTrue&#34;: IRBoolExpr.CompareType.ISTRUE,
+                        &#34;JFalse&#34;: IRBoolExpr.CompareType.ISFALSE,
+                        &#34;JNull&#34;: IRBoolExpr.CompareType.NULL,
+                        &#34;JNotNull&#34;: IRBoolExpr.CompareType.NOT_NULL,
+                        &#34;JSLt&#34;: IRBoolExpr.CompareType.LT,
+                        &#34;JSGte&#34;: IRBoolExpr.CompareType.GTE,
+                        &#34;JSGt&#34;: IRBoolExpr.CompareType.GT,
+                        &#34;JSLte&#34;: IRBoolExpr.CompareType.LTE,
+                        &#34;JULt&#34;: IRBoolExpr.CompareType.LT,
+                        &#34;JUGte&#34;: IRBoolExpr.CompareType.GTE,
+                        &#34;JEq&#34;: IRBoolExpr.CompareType.EQ,
+                        &#34;JNotEq&#34;: IRBoolExpr.CompareType.NEQ,
+                    }
+                    cond = cond_map[op.op]
+                    left, right = None, None
+                    if cond not in [
+                        IRBoolExpr.CompareType.ISTRUE,
+                        IRBoolExpr.CompareType.ISFALSE,
+                        IRBoolExpr.CompareType.NULL,
+                        IRBoolExpr.CompareType.NOT_NULL,
+                    ]:
+                        left = self.locals[op.definition[&#34;a&#34;].value]
+                        right = self.locals[op.definition[&#34;b&#34;].value]
 
-                condition = IRBoolExpr(self.code, cond, left, right)
-                true_block = self._lift_block(true_branch, visited) if should_lift_t else IRBlock(self.code)
-                false_block = self._lift_block(false_branch, visited) if should_lift_f else IRBlock(self.code)
-                _cond = IRConditional(self.code, condition, true_block, false_block)
-                _cond.invert()  # invert the condition so the one full block isn&#39;t the else block
-                block.statements.append(_cond)
+                    condition_expr = IRBoolExpr(self.code, cond, left, right)
+                    true_block = self._lift_block(true_branch, visited) if should_lift_t else IRBlock(self.code)
+                    false_block = self._lift_block(false_branch, visited) if should_lift_f else IRBlock(self.code)
+                    _cond = IRConditional(self.code, condition_expr, true_block, false_block)
+                    _cond.invert()  # invert the condition so the one full block isn&#39;t the else block
+                    block.statements.append(_cond)
 
-                # now, find the next block and lift it.
-                next_node = None
-                if not should_lift_f:
-                    next_node = false_branch
-                elif not should_lift_t:
-                    next_node = true_branch
-                else:
-                    convergence = self._find_convergence(true_branch, false_branch, visited)
-                    if convergence:
-                        next_node = convergence
+                    # now, find the next block and lift it.
+                    next_node = None
+                    if not should_lift_f:
+                        next_node = false_branch
+                    elif not should_lift_t:
+                        next_node = true_branch
                     else:
-                        dbg_print(&#34;WARNING: No convergence point found for conditional branches&#34;)
-                if not next_node:
-                    raise DecompError(&#34;No next node found for conditional branches&#34;)
-                next_block = self._lift_block(next_node, visited)
-                block.statements.append(next_block)
+                        convergence = self._find_convergence(true_branch, false_branch, visited)
+                        if convergence:
+                            next_node = convergence
+                        else:
+                            dbg_print(&#34;WARNING: No convergence point found for conditional branches&#34;)
+                    if not next_node:
+                        raise DecompError(&#34;No next node found for conditional branches&#34;)
+                    next_block = self._lift_block(next_node, visited)
+                    block.statements.append(next_block)
+                else:
+                    # convert jumps to IRPrimitiveJump so that later lifting stages can handle them
+                    # TODO: instead of just wrapping an opcode, we can resolve this to a local and generate a Bool-type IRExpression
+                    block.statements.append(IRPrimitveJump(self.code, op))
 
             elif op.op in [&#34;Call0&#34;, &#34;Call1&#34;, &#34;Call2&#34;, &#34;Call3&#34;, &#34;Call4&#34;]:
                 n = int(op.op[-1])
@@ -1682,6 +1675,33 @@ def get_type(self) -&gt; Type:
                     next_block = self._lift_block(convergence, visited)
                     block.statements.append(next_block)
 
+            elif op.op == &#34;Mov&#34;:
+                block.statements.append(
+                    IRAssign(
+                        self.code, self.locals[op.definition[&#34;dst&#34;].value], self.locals[op.definition[&#34;src&#34;].value]
+                    )
+                )
+
+            elif op.op == &#34;JAlways&#34;:
+                jump_idx = node.base_offset + len(node.ops) + op.definition[&#34;offset&#34;].value
+                target_node = None
+                for nod in self.cfg.nodes:
+                    if nod.base_offset == jump_idx:
+                        target_node = nod
+                        break
+
+                if target_node:
+                    next_block = self._lift_block(target_node, visited)
+                    block.statements.append(next_block)
+
+            else:
+                dbg_print(&#34;Skipping opcode:&#34;, op)
+
+        if len(node.branches) == 1:
+            next_node, _ = node.branches[0]
+            next_block = self._lift_block(next_node, visited)
+            block.statements.append(next_block)
+
         return block
 
     def print(self) -&gt; None:
@@ -1742,31 +1762,70 @@ def get_type(self) -&gt; Type:
 </li>
 </ul>
 </dd>
-<dt id="crashlink.decomp.IRLoop"><code class="flex name class">
-<span>class <span class="ident">IRLoop</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>condition: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>body: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>)</span>
+<dt id="crashlink.decomp.IRPrimitiveLoop"><code class="flex name class">
+<span>class <span class="ident">IRPrimitiveLoop</span></span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>condition: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>,<br>body: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>)</span>
 </code></dt>
 <dd>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class IRLoop(IRStatement):
-    &#34;&#34;&#34;Loop statement&#34;&#34;&#34;
+<pre><code class="python">class IRPrimitiveLoop(IRStatement):
+    &#34;&#34;&#34;2-block simplistic loop. Has no differentiation between while/for/comprehension, this should be done in later IR layers.&#34;&#34;&#34;
 
-    def __init__(self, code: Bytecode, condition: IRExpression, body: IRBlock):
+    def __init__(self, code: Bytecode, condition: IRBlock, body: IRBlock):
         super().__init__(code)
         self.condition = condition
         self.body = body
 
     def __repr__(self) -&gt; str:
-        return f&#34;&lt;IRLoop: while {self.condition}\n{self.body}&gt;&#34;</code></pre>
+        return f&#34;&lt;IRPrimitiveLoop: cond -&gt; {self.condition}\n body -&gt; {self.body}&gt;&#34;</code></pre>
 </details>
-<div class="desc"><p>Loop statement</p></div>
+<div class="desc"><p>2-block simplistic loop. Has no differentiation between while/for/comprehension, this should be done in later IR layers.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
 <li>abc.ABC</li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.IRPrimitveJump"><code class="flex name class">
+<span>class <span class="ident">IRPrimitveJump</span></span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>op: <a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRPrimitveJump(IRExpression):
+    &#34;&#34;&#34;An unlifted jump to be handled by further optimization stages.&#34;&#34;&#34;
+
+    def __init__(self, code: Bytecode, op: Opcode):
+        super().__init__(code)
+        self.op = op
+        assert op.op in conditionals
+
+    def get_type(self) -&gt; Type:
+        return _get_type_in_code(self.code, &#34;Bool&#34;)
+
+    def __repr__(self) -&gt; str:
+        return f&#34;&lt;IRPrimitiveJump: {self.op}&gt;&#34;</code></pre>
+</details>
+<div class="desc"><p>An unlifted jump to be handled by further optimization stages.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
+<li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.IRExpression.get_type" href="#crashlink.decomp.IRExpression.get_type">get_type</a></code></li>
+</ul>
+</li>
 </ul>
 </dd>
 <dt id="crashlink.decomp.IRReturn"><code class="flex name class">
@@ -1807,7 +1866,7 @@ def get_type(self) -&gt; Type:
 <pre><code class="python">class IRStatement(ABC):
     def __init__(self, code: Bytecode):
         self.code = code
-        self.comment: Optional[str] = None
+        self.comment: str = &#34;&#34;
 
     @abstractmethod
     def __repr__(self) -&gt; str:
@@ -1829,7 +1888,7 @@ inheritance.</p></div>
 <li><a title="crashlink.decomp.IRBreak" href="#crashlink.decomp.IRBreak">IRBreak</a></li>
 <li><a title="crashlink.decomp.IRConditional" href="#crashlink.decomp.IRConditional">IRConditional</a></li>
 <li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
-<li><a title="crashlink.decomp.IRLoop" href="#crashlink.decomp.IRLoop">IRLoop</a></li>
+<li><a title="crashlink.decomp.IRPrimitiveLoop" href="#crashlink.decomp.IRPrimitiveLoop">IRPrimitiveLoop</a></li>
 <li><a title="crashlink.decomp.IRReturn" href="#crashlink.decomp.IRReturn">IRReturn</a></li>
 <li><a title="crashlink.decomp.IRSwitch" href="#crashlink.decomp.IRSwitch">IRSwitch</a></li>
 <li><a title="crashlink.decomp.IRTrace" href="#crashlink.decomp.IRTrace">IRTrace</a></li>
@@ -1909,55 +1968,65 @@ inheritance.</p></div>
 <li>abc.ABC</li>
 </ul>
 </dd>
-<dt id="crashlink.decomp.PseudoTarget"><code class="flex name class">
-<span>class <span class="ident">PseudoTarget</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
+<dt id="crashlink.decomp.IsolatedCFGraph"><code class="flex name class">
+<span>class <span class="ident">IsolatedCFGraph</span></span>
+<span>(</span><span>parent: <a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a>,<br>nodes: List[<a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>],<br>find_entry_intelligently: bool = True)</span>
 </code></dt>
 <dd>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class PseudoTarget(ABC):
-    &#34;&#34;&#34;
-    Abstract base class for a pseudocode language backend. Implementations translate from IR to the target language.
-    &#34;&#34;&#34;
+<pre><code class="python">class IsolatedCFGraph(CFGraph):
+    &#34;&#34;&#34;A control flow graph that contains only a subset of nodes from another graph.&#34;&#34;&#34;
 
-    def __init__(self, code: Bytecode):
-        self.code = code
+    def __init__(self, parent: CFGraph, nodes: List[CFNode], find_entry_intelligently: bool = True):
+        &#34;&#34;&#34;Initialize from parent graph and list of nodes to isolate.&#34;&#34;&#34;
+        if not nodes:
+            raise ValueError(&#34;Got empty list of nodes to isolate!&#34;)
 
-    @abstractmethod
-    def translate(self, ir: IRFunction) -&gt; str:
-        &#34;&#34;&#34;Translate IR to the target language&#34;&#34;&#34;
-        pass</code></pre>
+        super().__init__(parent.func)
+
+        node_map: Dict[CFNode, CFNode] = {}
+
+        for node in nodes:
+            new_node = self.add_node(node.ops, node.base_offset)
+            node_map[node] = new_node
+
+            if node == nodes[0]:
+                self.entry = new_node
+
+        for old_node in nodes:
+            new_node = node_map[old_node]
+            for target, edge_type in old_node.branches:
+                if target in node_map:
+                    self.add_branch(new_node, node_map[target], edge_type)
+
+        if find_entry_intelligently and self.nodes:
+            entry_candidates = []
+            for node in self.nodes:
+                if not self.predecessors(node):
+                    entry_candidates.append(node)
+
+            if len(entry_candidates) == 1:
+                self.entry = entry_candidates[0]</code></pre>
 </details>
-<div class="desc"><p>Abstract base class for a pseudocode language backend. Implementations translate from IR to the target language.</p></div>
+<div class="desc"><p>A control flow graph that contains only a subset of nodes from another graph.</p>
+<p>Initialize from parent graph and list of nodes to isolate.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
-<li>abc.ABC</li>
+<li><a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a></li>
 </ul>
-<h3>Subclasses</h3>
+<h3>Inherited members</h3>
 <ul class="hlist">
-<li><a title="crashlink.decomp.HaxeTarget" href="#crashlink.decomp.HaxeTarget">HaxeTarget</a></li>
+<li><code><b><a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.CFGraph.build" href="#crashlink.decomp.CFGraph.build">build</a></code></li>
+<li><code><a title="crashlink.decomp.CFGraph.graph" href="#crashlink.decomp.CFGraph.graph">graph</a></code></li>
+<li><code><a title="crashlink.decomp.CFGraph.predecessors" href="#crashlink.decomp.CFGraph.predecessors">predecessors</a></code></li>
 </ul>
-<h3>Methods</h3>
-<dl>
-<dt id="crashlink.decomp.PseudoTarget.translate"><code class="name flex">
-<span>def <span class="ident">translate</span></span>(<span>self,<br>ir: <a title="crashlink.decomp.IRFunction" href="#crashlink.decomp.IRFunction">IRFunction</a>) ‑> str</span>
-</code></dt>
-<dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">@abstractmethod
-def translate(self, ir: IRFunction) -&gt; str:
-    &#34;&#34;&#34;Translate IR to the target language&#34;&#34;&#34;
-    pass</code></pre>
-</details>
-<div class="desc"><p>Translate IR to the target language</p></div>
-</dd>
-</dl>
+</li>
+</ul>
 </dd>
 </dl>
 </section>
@@ -1970,11 +2039,6 @@ def translate(self, ir: IRFunction) -&gt; str:
 <li><h3>Super-module</h3>
 <ul>
 <li><code><a title="crashlink" href="index.html">crashlink</a></code></li>
-</ul>
-</li>
-<li><h3><a href="#header-variables">Global variables</a></h3>
-<ul class="">
-<li><code><a title="crashlink.decomp.TARGETS" href="#crashlink.decomp.TARGETS">TARGETS</a></code></li>
 </ul>
 </li>
 <li><h3><a href="#header-classes">Classes</a></h3>
@@ -2011,9 +2075,6 @@ def translate(self, ir: IRFunction) -&gt; str:
 <ul class="">
 <li><code><a title="crashlink.decomp.CFOptimizer.optimize" href="#crashlink.decomp.CFOptimizer.optimize">optimize</a></code></li>
 </ul>
-</li>
-<li>
-<h4><code><a title="crashlink.decomp.HaxeTarget" href="#crashlink.decomp.HaxeTarget">HaxeTarget</a></code></h4>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRArithmetic" href="#crashlink.decomp.IRArithmetic">IRArithmetic</a></code></h4>
@@ -2071,7 +2132,10 @@ def translate(self, ir: IRFunction) -&gt; str:
 <h4><code><a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a></code></h4>
 </li>
 <li>
-<h4><code><a title="crashlink.decomp.IRLoop" href="#crashlink.decomp.IRLoop">IRLoop</a></code></h4>
+<h4><code><a title="crashlink.decomp.IRPrimitiveLoop" href="#crashlink.decomp.IRPrimitiveLoop">IRPrimitiveLoop</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.IRPrimitveJump" href="#crashlink.decomp.IRPrimitveJump">IRPrimitveJump</a></code></h4>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRReturn" href="#crashlink.decomp.IRReturn">IRReturn</a></code></h4>
@@ -2086,10 +2150,7 @@ def translate(self, ir: IRFunction) -&gt; str:
 <h4><code><a title="crashlink.decomp.IRTrace" href="#crashlink.decomp.IRTrace">IRTrace</a></code></h4>
 </li>
 <li>
-<h4><code><a title="crashlink.decomp.PseudoTarget" href="#crashlink.decomp.PseudoTarget">PseudoTarget</a></code></h4>
-<ul class="">
-<li><code><a title="crashlink.decomp.PseudoTarget.translate" href="#crashlink.decomp.PseudoTarget.translate">translate</a></code></li>
-</ul>
+<h4><code><a title="crashlink.decomp.IsolatedCFGraph" href="#crashlink.decomp.IsolatedCFGraph">IsolatedCFGraph</a></code></h4>
 </li>
 </ul>
 </li>

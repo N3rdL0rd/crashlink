@@ -235,10 +235,13 @@ class fIndex(ResolvableVarInt):
     Abstract class based on VarInt to represent a distinct function index instead of just an arbitrary number.
     """
 
-    def resolve(self, code: "Bytecode") -> "Function":
+    def resolve(self, code: "Bytecode") -> "Function|Native":
         for function in code.functions:
             if function.findex.value == self.value:
                 return function
+        for native in code.natives:
+            if native.findex.value == self.value:
+                return native
         raise MalformedBytecode(f"Function index {self.value} not found.")
 
 
@@ -754,6 +757,15 @@ class Obj(TypeDef):
                 current_type = defn
         return fields
 
+    def __str__(self) -> str:
+        return f"<Obj: f@{self.name}>"
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def str_resolve(self, code: "Bytecode") -> str:
+        return f"<Obj: {self.name.resolve(code)}>"
+
 
 class Array(_NoDataType):
     """
@@ -999,6 +1011,17 @@ class Type(Serialisable):
                 self.definition.serialise() if self.definition else b"",
             ]
         )
+
+    def __str__(self) -> str:
+        return f"<Type: {self.kind.value} ({self.definition.__class__.__name__})>"
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def str_resolve(self, code: "Bytecode") -> str:
+        if isinstance(self.definition, Obj):
+            return self.definition.str_resolve(code)
+        return f"<Type: {self.kind.value} ({self.definition.__class__.__name__})>"
 
 
 class Native(Serialisable):
@@ -1602,6 +1625,7 @@ class Bytecode(Serialisable):
                 else:
                     res[name] = field.value
             final[const._global.value] = res
+        assert len(final) == len(self.constants), "Not all constants were resolved! Somehow..."
         self.initialized_globals = final
 
     def fn(self, findex: int, native: bool = True) -> Function | Native:
@@ -1736,6 +1760,12 @@ class Bytecode(Serialisable):
         """
         self.set_meta()
 
+    def get_test_main(self) -> Function:
+        for f in self.functions:
+            if full_func_name(self, f).endswith("main"):
+                return f
+        raise ValueError("No main function found!")
+
     def is_ok(self) -> bool:
         """
         Runs a set of basic sanity checks to make sure the bytecode is correct-ish.
@@ -1797,3 +1827,66 @@ class Bytecode(Serialisable):
             if offset >= section_offset:
                 return section_name
         return None
+
+
+def get_field_for(code: Bytecode, idx: int) -> Optional[Field]:
+    """
+    Gets the field for a standalone function index.
+    """
+    for type in code.types:
+        if type.kind.value == Type.TYPEDEFS.index(Obj):
+            if not isinstance(type.definition, Obj):
+                raise TypeError(f"Expected Obj, got {type.definition}")
+            definition: Obj = type.definition
+            fields = definition.resolve_fields(code)
+            for binding in definition.bindings:  # binding binds a field to a function
+                if binding.findex.value == idx:
+                    return fields[binding.field.value]
+    return None
+
+
+def get_proto_for(code: Bytecode, idx: int) -> Optional[Proto]:
+    """
+    Gets the proto for a standalone function index.
+    """
+    for type in code.types:
+        if type.kind.value == Type.TYPEDEFS.index(Obj):
+            if not isinstance(type.definition, Obj):
+                raise TypeError(f"Expected Obj, got {type.definition}")
+            definition: Obj = type.definition
+            for proto in definition.protos:
+                if proto.findex.value == idx:
+                    return proto
+    return None
+
+
+def full_func_name(code: Bytecode, func: Function | Native) -> str:
+    """
+    Generates a human-readable name for a function or native.
+    """
+    proto = get_proto_for(code, func.findex.value)
+    if proto:
+        name = proto.name.resolve(code)
+        for type in code.types:
+            if type.kind.value == Type.TYPEDEFS.index(Obj):
+                if not isinstance(type.definition, Obj):
+                    continue
+                obj_def: Obj = type.definition
+                for fun in obj_def.protos:
+                    if fun.findex.value == func.findex.value:
+                        return f"{obj_def.name.resolve(code)}.{name}"
+    else:
+        name = "<none>"
+        field = get_field_for(code, func.findex.value)
+        if field:
+            name = field.name.resolve(code)
+            for type in code.types:
+                if type.kind.value == Type.TYPEDEFS.index(Obj):
+                    if not isinstance(type.definition, Obj):
+                        continue
+                    _obj_def: Obj = type.definition
+                    fields = _obj_def.resolve_fields(code)
+                    for binding in _obj_def.bindings:
+                        if binding.findex.value == func.findex.value:
+                            return f"{_obj_def.name.resolve(code)}.{name}"
+    return name

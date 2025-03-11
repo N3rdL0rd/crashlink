@@ -2,6 +2,7 @@ class Arithmetic {
     static function main() {
         var first_var = 3;
         var second_var = 4;
+        var third_var = first_var;
         var test = "test!!!";
         var res = first_var + second_var;
         var res2 = first_var - second_var;

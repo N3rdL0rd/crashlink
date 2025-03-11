@@ -11,6 +11,7 @@ hl/
 *.dat
 *.prof
 *.json
+!crashtest/runs/*
 build*.bat
 pypi_token.txt
 testenv
