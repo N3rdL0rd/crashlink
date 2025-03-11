@@ -37,3 +37,9 @@ def test_reser_basic(path: str):
                     break
                 c += 1
             assert False, "Failed during reser: " + msg
+
+
+def test_create_empty():
+    code = Bytecode.create_empty()
+    assert code.is_ok(), "Bad code!"
+    assert Bytecode.from_bytes(code.serialise()).serialise() == code.serialise()
