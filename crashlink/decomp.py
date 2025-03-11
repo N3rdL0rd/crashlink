@@ -36,7 +36,7 @@ class CFNode:
         return "<CFNode: %s>" % self.ops
 
 
-class CFOptimizer:
+class CFOptimizer(ABC):
     """
     Base class for control flow graph optimizers.
     """
@@ -44,9 +44,9 @@ class CFOptimizer:
     def __init__(self, graph: "CFGraph"):
         self.graph = graph
 
+    @abstractmethod
     def optimize(self) -> None:
-        raise NotImplementedError()
-
+        pass
 
 class CFJumpThreader(CFOptimizer):
     """
