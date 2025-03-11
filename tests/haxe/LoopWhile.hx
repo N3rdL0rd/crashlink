@@ -4,5 +4,6 @@ class LoopWhile {
         while (b > 5) {
             b -= 2;
         }
+        b = 999;
     }
 }
