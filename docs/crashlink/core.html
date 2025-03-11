@@ -1058,6 +1058,22 @@ you.</p>
             return g.resolve(self)
     raise ValueError(f&#34;Global {gindex} not found!&#34;)</code></pre>
 </details>
+<div class="desc"><p>Shorthand to get a global's type by gIndex.</p></div>
+</dd>
+<dt id="crashlink.core.Bytecode.get_test_main"><code class="name flex">
+<span>def <span class="ident">get_test_main</span></span>(<span>self) ‑> <a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_test_main(self) -&gt; Function:
+    for f in self.functions:
+        if full_func_name(self, f).endswith(&#34;main&#34;):
+            return f
+    raise ValueError(&#34;No main function found!&#34;)</code></pre>
+</details>
 <div class="desc"></div>
 </dd>
 <dt id="crashlink.core.Bytecode.init_globals"><code class="name flex">
@@ -2907,7 +2923,7 @@ Where a is field 0 and b is field 1</p></div>
 <dl>
 <dt id="crashlink.core.Opcode.TYPE_MAP"><code class="name">var <span class="ident">TYPE_MAP</span> : Dict[str, type]</code></dt>
 <dd>
-<div class="desc"><p>The type of the None singleton.</p></div>
+<div class="desc"></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -3902,7 +3918,7 @@ def serialise(self) -&gt; bytes:
 <dl>
 <dt id="crashlink.core.Type.TYPEDEFS"><code class="name">var <span class="ident">TYPEDEFS</span> : List[type]</code></dt>
 <dd>
-<div class="desc"><p>The type of the None singleton.</p></div>
+<div class="desc"></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -4479,25 +4495,14 @@ def serialise(self) -&gt; bytes:
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
-<h3>Methods</h3>
-<dl>
-<dt id="crashlink.core.fIndex.resolve"><code class="name flex">
-<span>def <span class="ident">resolve</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> <a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a></span>
-</code></dt>
-<dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Function&#34;:
-    for function in code.functions:
-        if function.findex.value == self.value:
-            return function
-    raise MalformedBytecode(f&#34;Function index {self.value} not found.&#34;)</code></pre>
-</details>
-<div class="desc"></div>
-</dd>
-</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.core.ResolvableVarInt.resolve" href="#crashlink.core.ResolvableVarInt.resolve">resolve</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.core.fieldRef"><code class="flex name class">
 <span>class <span class="ident">fieldRef</span></span>
@@ -4538,7 +4543,7 @@ def serialise(self) -&gt; bytes:
 <dl>
 <dt id="crashlink.core.fieldRef.obj"><code class="name">var <span class="ident">obj</span> : <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a> | None</code></dt>
 <dd>
-<div class="desc"><p>The type of the None singleton.</p></div>
+<div class="desc"></div>
 </dd>
 </dl>
 <h3>Methods</h3>

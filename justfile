@@ -26,8 +26,7 @@ build-tests:
 # Format the codebase
 format:
     black --exclude env . --line-length 120
-    isort . -s .venv --verbose --skip-gitignore
-    no_implicit_optional crashlink
+    isort . -s .venv --verbose --gitignore
 
 # Run type checking
 check:
