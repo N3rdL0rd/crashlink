@@ -8,8 +8,9 @@ from pprint import pformat
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from . import disasm
-from .core import *
-from .errors import *
+from .core import (Bytecode, Function, Opcode, ResolvableVarInt, Type, Void,
+                   gIndex, tIndex)
+from .errors import DecompError
 from .globals import dbg_print
 from .opcodes import arithmetic, conditionals
 from .pseudo import Translatable
@@ -1137,3 +1138,30 @@ class IRFunction:
 
     def print(self) -> None:
         print(self.block)
+
+
+__all__ = [
+    "CFDeadCodeEliminator",
+    "CFGraph",
+    "CFJumpThreader",
+    "CFNode",
+    "CFOptimizer",
+    "IsolatedCFGraph",
+    "IRArithmetic",
+    "IRAssign",
+    "IRBlock",
+    "IRBoolExpr",
+    "IRBreak",
+    "IRCall",
+    "IRConditional",
+    "IRConst",
+    "IRExpression",
+    "IRFunction",
+    "IRLocal",
+    "IRPrimitiveLoop",
+    "IRPrimitveJump",
+    "IRReturn",
+    "IRStatement",
+    "IRSwitch",
+    "IRTrace",
+]

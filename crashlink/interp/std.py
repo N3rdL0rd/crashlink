@@ -8,7 +8,7 @@ Port of HashLink's std C bindings to pure Python. Entirely functional due to the
 from dataclasses import dataclass
 from typing import Any, Callable, List
 
-from ..core import *
+from ..core import Bytecode, Obj
 
 
 @dataclass

@@ -13,6 +13,7 @@ import webbrowser
 from typing import Callable, Dict, List, Optional, Tuple
 
 from . import decomp, disasm
+from .asm import AsmFile
 from .core import Bytecode, Native
 from .globals import VERSION
 from .interp.vm import VM  # type: ignore
@@ -57,18 +58,19 @@ class Commands:
     def wiki(self, args: List[str]) -> None:
         """Open the HLBC wiki in your default browser"""
         webbrowser.open("https://n3rdl0rd.github.io/ModDocCE/files/hlboot")
-    
+
     def op(self, args: List[str]) -> None:
         """Prints the documentation for a given opcode. `op <opcode>`"""
+
         def _args(args: Dict[str, str]) -> str:
             return "Args -> " + ", ".join(f"{k}: {v}" for k, v in args.items())
-        
+
         if len(args) == 0:
             print("Usage: op <opcode>")
             return
-        
+
         query = args[0].lower()
-        
+
         for opcode in opcode_docs:
             if opcode.lower() == query:
                 print()
@@ -77,13 +79,13 @@ class Commands:
                 print("Desc -> " + opcode_docs[opcode])
                 print()
                 return
-        
+
         matches = [opcode for opcode in opcode_docs if query in opcode.lower()]
-        
+
         if not matches:
             print("Unknown opcode.")
             return
-        
+
         if len(matches) == 1:
             print()
             print(f"--- {matches[0]} ---")
@@ -467,10 +469,25 @@ def main() -> None:
     Main entrypoint.
     """
     parser = argparse.ArgumentParser(description=f"crashlink CLI ({VERSION})", prog="crashlink")
-    parser.add_argument("file", help="The file to open - can be HashLink bytecode or a Haxe source file")
+    parser.add_argument(
+        "file", help="The file to open - can be HashLink bytecode, a Haxe source file or a crashlink assembly file."
+    )
+    parser.add_argument("-a", "--assemble", help="Assemble the passed file", action="store_true")
+    parser.add_argument("-o", "--output", help="The output filename for the assembled bytecode.")
     parser.add_argument("-c", "--command", help="The command to run on startup")
     parser.add_argument("-H", "--hlbc", help="Run in HLBC compatibility mode", action="store_true")
     args = parser.parse_args()
+
+    if args.assemble:
+        out = (
+            args.output
+            if args.output
+            else os.path.join(os.path.dirname(args.file), ".".join(os.path.basename(args.file).split(".")[:-1]) + ".hl")
+        )
+        with open(out, "wb") as f:
+            f.write(AsmFile.from_path(args.file).assemble().serialise())
+            print(f"{args.file} -> {'.'.join(os.path.basename(args.file).split('.')[:-1]) + '.hl'}")
+            return
 
     is_haxe = True
     with open(args.file, "rb") as f:
@@ -516,3 +533,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+__all__: List[str] = []

@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.5">
+<title>crashlink.asm API documentation</title>
+<meta name="description" content="Prettier HashLink bytecode notation.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>crashlink.asm</code></h1>
+</header>
+<section id="section-intro">
+<p>Prettier HashLink bytecode notation.</p>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="crashlink.asm.AsmFile"><code class="flex name class">
+<span>class <span class="ident">AsmFile</span></span>
+<span>(</span><span>content: str)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class AsmFile:
+    def __init__(self, content: str) -&gt; None:
+        self.content = content
+        self.raw_sections: Dict[str, AsmSection] = {}
+        self.strings: List[str] = []
+        self._parse()
+
+    @classmethod
+    def from_path(cls, path: str) -&gt; &#34;AsmFile&#34;:
+        with open(path, &#34;r&#34;, encoding=&#34;utf-8&#34;) as file:
+            content = file.read()
+        return cls(content)
+
+    def _parse(self) -&gt; None:
+        self.content = self.content.replace(&#34;    &#34;, &#34;\t&#34;)  # for consistency
+        lines = self.content.splitlines()
+        section_stack: List[AsmSection] = []
+        for line in lines:
+            if not line.strip() or line.strip().startswith(&#34;#&#34;):
+                continue
+            indent_level = len(line) - len(line.lstrip(&#34;\t&#34;))
+            # pop extra sections if we decreased the indent level
+            while len(section_stack) &gt; indent_level:
+                section_stack.pop()
+            stripped = line.lstrip(&#34;\t&#34;)
+            if stripped.startswith(&#34;.&#34;):
+                tokens = stripped.split()
+                section_name = tokens[0][1:]
+                new_section = AsmSection(value=[])
+                new_section.name = section_name
+                if len(tokens) &gt; 1:
+                    for token in tokens[1:]:
+                        new_section.value.append(AsmValueStr(token))
+                if section_stack:
+                    section_stack[-1].value.append(new_section)
+                else:
+                    self.raw_sections[section_name] = new_section
+                section_stack.append(new_section)
+            else:
+                if not section_stack:
+                    raise SyntaxError(&#34;Encountered a value outside any section!&#34;)
+                section_stack[-1].value.append(AsmValueStr(stripped))
+
+    def _add_types(self, code: Bytecode, section: AsmSection) -&gt; None:
+        name_to_def = {
+            &#34;Void&#34;: Void,
+            &#34;U8&#34;: U8,
+            &#34;U16&#34;: U16,
+            &#34;I32&#34;: I32,
+            &#34;I64&#34;: I64,
+            &#34;F32&#34;: F32,
+            &#34;F64&#34;: F64,
+            &#34;Bool&#34;: Bool,
+            &#34;Bytes&#34;: Bytes,
+            &#34;Dyn&#34;: Dyn,
+            &#34;Array&#34;: Array,
+            &#34;Type&#34;: TypeType,
+        }
+        def_to_kind = {
+            Void: 0,
+            U8: 1,
+            U16: 2,
+            I32: 3,
+            I64: 4,
+            F32: 5,
+            F64: 6,
+            Bool: 7,
+            Bytes: 8,
+            Dyn: 9,
+            Array: 12,
+            TypeType: 13,
+        }
+        for val in section.value:
+            if not isinstance(val, AsmValueStr):
+                continue
+            parts = val.value.split()
+            if parts[0] in name_to_def:
+                typedef = name_to_def[parts[0]]
+                m_def = typedef()
+                typ = Type()
+                typ.kind.value = def_to_kind[typedef]
+                typ.definition = m_def
+                code.types.append(typ)
+            elif parts[0] == &#34;Fun&#34;:
+                fun = Fun()
+                tokens = re.findall(r&#34;\([^)]*\)|\S+&#34;, val.value)
+                _, args, _, ret = tokens
+                r = self._parse_ref(ret)
+                assert isinstance(r, tIndex), &#34;Expected a type reference for return!&#34;
+                fun.ret = r
+                a = [self._parse_ref(arg.strip()) for arg in args.strip(&#34;()&#34;).split(&#34;,&#34;)]
+                assert all([isinstance(arg, tIndex) for arg in a]), &#34;Expected a type reference in args!&#34;
+                fun.args = a  # type: ignore
+                typ = Type()
+                typ.kind.value = 10  # Fun
+                typ.definition = m_def
+                code.types.append(typ)
+
+    def _parse_ref(self, val: str) -&gt; ResolvableVarInt:
+        if val[1] != &#34;@&#34;:
+            raise SyntaxError(&#34;Expected a reference!&#34;)
+        match val[0]:  # TODO: float, field support
+            case &#34;f&#34;:
+                return fIndex(int(val[2:]))
+            case &#34;t&#34;:
+                return tIndex(int(val[2:]))
+            case &#34;s&#34;:
+                return strRef(int(val[2:]))
+            case &#34;g&#34;:
+                return gIndex(int(val[2:]))
+            case &#34;i&#34;:
+                return intRef(int(val[2:]))
+            case &#34;b&#34;:
+                return bytesRef(int(val[2:]))
+        raise SyntaxError(f&#34;Unknown prefix &#39;{val[0]}&#39;!&#34;)
+
+    def _parse_opcode_ref(self, val: str) -&gt; Any:
+        if val[1] != &#34;@&#34;:
+            if val[0] == &#39;&#34;&#39;:
+                return self._get_str_idx(val[1:-1])
+            elif val.startswith(&#34;reg&#34;):
+                return Reg(int(val[3:]))
+        match val[0]:  # TODO: float, field support
+            case &#34;f&#34;:
+                return fIndex(int(val[2:]))
+            case &#34;t&#34;:
+                return tIndex(int(val[2:]))
+            case &#34;s&#34;:
+                return strRef(int(val[2:]))
+            case &#34;g&#34;:
+                return gIndex(int(val[2:]))
+            case &#34;i&#34;:
+                return intRef(int(val[2:]))
+            case &#34;b&#34;:
+                return bytesRef(int(val[2:]))
+        raise SyntaxError(f&#34;Unknown prefix &#39;{val[0]}&#39;!&#34;)
+
+    def _get_single_val(self, name: str) -&gt; str:
+        if len(self.raw_sections[name].value) != 1:
+            raise SyntaxError(f&#34;Expected exactly one value for &#39;{name}&#39;!&#34;)
+        val = self.raw_sections[name].value[0]
+        if isinstance(val, AsmValueStr):
+            return val.value
+        raise SyntaxError(f&#34;Expected a string value for &#39;{name}&#39;!&#34;)
+
+    def _get_str_idx(self, val: str) -&gt; strRef:
+        if val not in self.strings:
+            self.strings.append(val)
+        return strRef(self.strings.index(val))
+
+    def _validate(self, code: Bytecode) -&gt; None:
+        if not code.entrypoint:
+            raise SyntaxError(&#34;No entrypoint specified!&#34;)
+        if not code.types:
+            raise SyntaxError(&#34;No types specified!&#34;)
+        code.entrypoint.resolve(code)
+
+    def _add_natives(self, code: Bytecode, section: AsmSection) -&gt; None:
+        for n in section.value:
+            if not isinstance(n, AsmValueStr):
+                continue
+            parts = n.value.split()
+            assert len(parts) == 3, &#34;Incorrect native structure!&#34;
+            assert parts[1].startswith(&#34;(&#34;), f&#34;Unexpected token {parts[1][0]}&#34;
+            idx, typ, name = parts
+            _idx = self._parse_ref(idx)
+            assert isinstance(_idx, fIndex), &#34;Native index must be a function reference!&#34;
+            _typ = self._parse_ref(typ.strip(&#34;()&#34;))
+            assert isinstance(_typ, tIndex), &#34;Native Fun type must be a type reference!&#34;
+            lib, name = name.split(&#34;.&#34;)
+            _lib = self._get_str_idx(lib)
+            _name = self._get_str_idx(name)
+            obj = Native()
+            obj.findex = _idx
+            obj.lib = _lib
+            obj.name = _name
+            obj.type = _typ
+            code.natives.append(obj)
+
+    def _opcode(self, val: str) -&gt; Opcode:
+        def remove_commas_outside_quotes(text: str) -&gt; str:
+            result = &#34;&#34;
+            in_quotes = False
+            for char in text:
+                if char == &#39;&#34;&#39;:
+                    in_quotes = not in_quotes
+                if char == &#34;,&#34; and not in_quotes:
+                    result += &#34; &#34;
+                else:
+                    result += char
+            return result
+
+        val = remove_commas_outside_quotes(val)
+
+        parts = re.findall(r&#34;\&#34;[^\&#34;]*\&#34;|\S+&#34;, val)
+        assert len(parts) &gt;= 1, &#34;Opcode must have at least one part!&#34;
+
+        op = Opcode()
+        name = parts[0]
+        assert name in opcodes, f&#34;Unknown opcode &#39;{name}&#39;!&#34;
+        op.op = name
+        op.definition = {}
+
+        for i, (k, v) in enumerate(opcodes[name].items()):
+            if i + 1 &gt;= len(parts):
+                raise SyntaxError(f&#34;Not enough arguments for opcode {name}, expected {k}&#34;)
+            typ = Opcode.TYPE_MAP[v]
+            parsed = self._parse_opcode_ref(parts[i + 1])
+            assert isinstance(parsed, typ), f&#34;Expected type {typ} for argument {k} of opcode {name}, got {type(parsed)}&#34;
+            op.definition[k] = parsed
+
+        return op
+
+    def _add_functions(self, code: Bytecode) -&gt; None:
+        for section in self.raw_sections.values():
+            if section.name.startswith(&#34;f@&#34;):
+                func = Function()
+                returns_section = section.get(&#34;returns&#34;)
+                if isinstance(returns_section.value[0], AsmValueStr):
+                    typ = self._parse_ref(returns_section.value[0].value)
+                else:
+                    raise SyntaxError(&#34;Return type must be a string reference!&#34;)
+
+                assert isinstance(typ, tIndex), &#34;Return type must be a type reference!&#34;
+                func.type = typ
+                findex = self._parse_ref(section.name)
+                assert isinstance(findex, fIndex), &#34;Function index must be a function reference!&#34;
+                func.findex = findex
+
+                regs_section = section.get(&#34;regs&#34;)
+                regs: List[tIndex] = []
+                for reg in regs_section.value:
+                    if isinstance(reg, AsmValueStr):
+                        res = self._parse_ref(reg.value)
+                        assert isinstance(res, tIndex), &#34;Register must be a type index!&#34;
+                        regs.append(res)
+                    else:
+                        raise SyntaxError(&#34;Register must be a string reference!&#34;)
+
+                assert all(isinstance(r, tIndex) for r in regs), &#34;All registers must be types!&#34;
+                func.regs = regs
+
+                ops_section = section.get(&#34;ops&#34;)
+                ops = []
+                for op in ops_section.value:
+                    if isinstance(op, AsmValueStr):
+                        ops.append(self._opcode(op.value))
+                    else:
+                        raise SyntaxError(&#34;Operation must be a string!&#34;)
+
+                func.ops = ops
+                func.has_debug = False
+                func.version = code.version.value
+                code.functions.append(func)
+
+    def _add_strings(self, code: Bytecode) -&gt; None:
+        for s in self.strings:
+            code.strings.value.append(s)
+
+    def assemble(self) -&gt; Bytecode:
+        required = [&#34;version&#34;, &#34;types&#34;, &#34;entrypoint&#34;]
+        for req in required:
+            assert req in self.raw_sections
+        code = Bytecode.create_empty(
+            no_extra_types=True,
+            version=int(self._get_single_val(&#34;version&#34;)),
+        )
+        self._add_types(code, self.raw_sections[&#34;types&#34;])
+        e = self._parse_ref(self._get_single_val(&#34;entrypoint&#34;))
+        assert isinstance(e, fIndex), &#34;Entrypoint must be a function reference!&#34;
+        code.entrypoint = e
+        if &#34;natives&#34; in self.raw_sections:
+            self._add_natives(code, self.raw_sections[&#34;natives&#34;])
+        self._add_functions(code)
+        self._add_strings(code)
+        self._validate(code)
+        return code</code></pre>
+</details>
+<div class="desc"></div>
+<h3>Static methods</h3>
+<dl>
+<dt id="crashlink.asm.AsmFile.from_path"><code class="name flex">
+<span>def <span class="ident">from_path</span></span>(<span>path: str) ‑> <a title="crashlink.asm.AsmFile" href="#crashlink.asm.AsmFile">AsmFile</a></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.asm.AsmFile.assemble"><code class="name flex">
+<span>def <span class="ident">assemble</span></span>(<span>self) ‑> <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def assemble(self) -&gt; Bytecode:
+    required = [&#34;version&#34;, &#34;types&#34;, &#34;entrypoint&#34;]
+    for req in required:
+        assert req in self.raw_sections
+    code = Bytecode.create_empty(
+        no_extra_types=True,
+        version=int(self._get_single_val(&#34;version&#34;)),
+    )
+    self._add_types(code, self.raw_sections[&#34;types&#34;])
+    e = self._parse_ref(self._get_single_val(&#34;entrypoint&#34;))
+    assert isinstance(e, fIndex), &#34;Entrypoint must be a function reference!&#34;
+    code.entrypoint = e
+    if &#34;natives&#34; in self.raw_sections:
+        self._add_natives(code, self.raw_sections[&#34;natives&#34;])
+    self._add_functions(code)
+    self._add_strings(code)
+    self._validate(code)
+    return code</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.asm.AsmSection"><code class="flex name class">
+<span>class <span class="ident">AsmSection</span></span>
+<span>(</span><span>value: List[<a title="crashlink.asm.AsmValueStr" href="#crashlink.asm.AsmValueStr">AsmValueStr</a>|<a title="crashlink.asm.AsmSection" href="#crashlink.asm.AsmSection">AsmSection</a>] = &lt;factory&gt;,<br>name: str = '')</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dataclass
+class AsmSection(AsmValue):
+    name: str = &#34;&#34;
+    value: &#34;List[AsmValueStr|AsmSection]&#34; = field(default_factory=list)
+
+    def get(self, subsection_name: str) -&gt; &#34;AsmSection&#34;:
+        for val in self.value:
+            if isinstance(val, AsmSection) and val.name == subsection_name:
+                return val
+        raise KeyError(f&#34;No subsection &#39;{subsection_name}&#39; found!&#34;)</code></pre>
+</details>
+<div class="desc"><p>AsmSection(value: 'List[AsmValueStr|AsmSection]' = <factory>, name: str = '')</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.asm.AsmValue" href="#crashlink.asm.AsmValue">AsmValue</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashlink.asm.AsmSection.name"><code class="name">var <span class="ident">name</span> : str</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.asm.AsmSection.value"><code class="name">var <span class="ident">value</span> : List[<a title="crashlink.asm.AsmValueStr" href="#crashlink.asm.AsmValueStr">AsmValueStr</a> | <a title="crashlink.asm.AsmSection" href="#crashlink.asm.AsmSection">AsmSection</a>]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.asm.AsmSection.get"><code class="name flex">
+<span>def <span class="ident">get</span></span>(<span>self, subsection_name: str) ‑> <a title="crashlink.asm.AsmSection" href="#crashlink.asm.AsmSection">AsmSection</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get(self, subsection_name: str) -&gt; &#34;AsmSection&#34;:
+    for val in self.value:
+        if isinstance(val, AsmSection) and val.name == subsection_name:
+            return val
+    raise KeyError(f&#34;No subsection &#39;{subsection_name}&#39; found!&#34;)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.asm.AsmValue"><code class="flex name class">
+<span>class <span class="ident">AsmValue</span></span>
+<span>(</span><span>value: Any)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dataclass
+class AsmValue(ABC):
+    value: Any</code></pre>
+</details>
+<div class="desc"><p>AsmValue(value: Any)</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>abc.ABC</li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.asm.AsmSection" href="#crashlink.asm.AsmSection">AsmSection</a></li>
+<li><a title="crashlink.asm.AsmValueStr" href="#crashlink.asm.AsmValueStr">AsmValueStr</a></li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashlink.asm.AsmValue.value"><code class="name">var <span class="ident">value</span> : Any</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.asm.AsmValueStr"><code class="flex name class">
+<span>class <span class="ident">AsmValueStr</span></span>
+<span>(</span><span>value: Any)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class AsmValueStr(AsmValue):
+    value: str</code></pre>
+</details>
+<div class="desc"><p>AsmValue(value: Any)</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.asm.AsmValue" href="#crashlink.asm.AsmValue">AsmValue</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashlink.asm.AsmValueStr.value"><code class="name">var <span class="ident">value</span> : str</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashlink" href="index.html">crashlink</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="crashlink.asm.AsmFile" href="#crashlink.asm.AsmFile">AsmFile</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.asm.AsmFile.assemble" href="#crashlink.asm.AsmFile.assemble">assemble</a></code></li>
+<li><code><a title="crashlink.asm.AsmFile.from_path" href="#crashlink.asm.AsmFile.from_path">from_path</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.asm.AsmSection" href="#crashlink.asm.AsmSection">AsmSection</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.asm.AsmSection.get" href="#crashlink.asm.AsmSection.get">get</a></code></li>
+<li><code><a title="crashlink.asm.AsmSection.name" href="#crashlink.asm.AsmSection.name">name</a></code></li>
+<li><code><a title="crashlink.asm.AsmSection.value" href="#crashlink.asm.AsmSection.value">value</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.asm.AsmValue" href="#crashlink.asm.AsmValue">AsmValue</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.asm.AsmValue.value" href="#crashlink.asm.AsmValue.value">value</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.asm.AsmValueStr" href="#crashlink.asm.AsmValueStr">AsmValueStr</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.asm.AsmValueStr.value" href="#crashlink.asm.AsmValueStr.value">value</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+</footer>
+</body>
+</html>

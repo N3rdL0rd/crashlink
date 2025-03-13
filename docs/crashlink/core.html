@@ -2093,6 +2093,7 @@ you.</p>
         return self
 
     def serialise(self) -&gt; bytes:
+        self.nargs.value = len(self.args)
         return b&#34;&#34;.join(
             [
                 self.nargs.serialise(),
@@ -2140,6 +2141,7 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def serialise(self) -&gt; bytes:
+    self.nargs.value = len(self.args)
     return b&#34;&#34;.join(
         [
             self.nargs.serialise(),
@@ -2208,6 +2210,10 @@ you.</p>
         return self
 
     def serialise(self) -&gt; bytes:
+        self.nops.value = len(self.ops)
+        self.nregs.value = len(self.regs)
+        if self.assigns:
+            self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
         res = b&#34;&#34;.join(
             [
                 self.type.serialise(),
@@ -2291,6 +2297,10 @@ you.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def serialise(self) -&gt; bytes:
+    self.nops.value = len(self.ops)
+    self.nregs.value = len(self.regs)
+    if self.assigns:
+        self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
     res = b&#34;&#34;.join(
         [
             self.type.serialise(),
