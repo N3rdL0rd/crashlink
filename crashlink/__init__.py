@@ -106,6 +106,7 @@ You can use the following pre-defined commands with `just`:
 """
 
 from . import decomp, disasm, interp
+from .asm import *
 from .core import *
 from .errors import *
 from .globals import *

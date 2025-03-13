@@ -16,6 +16,7 @@ from . import decomp, disasm
 from .core import Bytecode, Native
 from .globals import VERSION
 from .interp.vm import VM  # type: ignore
+from .opcodes import opcode_docs, opcodes
 
 
 class Commands:
@@ -55,11 +56,47 @@ class Commands:
 
     def wiki(self, args: List[str]) -> None:
         """Open the HLBC wiki in your default browser"""
-        webbrowser.open("https://github.com/Gui-Yom/hlbc/wiki/Bytecode-file-format")
-
-    def opcodes(self, args: List[str]) -> None:
-        """Open the HLBC source to opcodes.rs in your default browser"""
-        webbrowser.open("https://github.com/Gui-Yom/hlbc/blob/master/crates/hlbc/src/opcodes.rs")
+        webbrowser.open("https://n3rdl0rd.github.io/ModDocCE/files/hlboot")
+    
+    def op(self, args: List[str]) -> None:
+        """Prints the documentation for a given opcode. `op <opcode>`"""
+        def _args(args: Dict[str, str]) -> str:
+            return "Args -> " + ", ".join(f"{k}: {v}" for k, v in args.items())
+        
+        if len(args) == 0:
+            print("Usage: op <opcode>")
+            return
+        
+        query = args[0].lower()
+        
+        for opcode in opcode_docs:
+            if opcode.lower() == query:
+                print()
+                print("--- " + opcode + " ---")
+                print(_args(opcodes[opcode]))
+                print("Desc -> " + opcode_docs[opcode])
+                print()
+                return
+        
+        matches = [opcode for opcode in opcode_docs if query in opcode.lower()]
+        
+        if not matches:
+            print("Unknown opcode.")
+            return
+        
+        if len(matches) == 1:
+            print()
+            print(f"--- {matches[0]} ---")
+            print(_args(opcodes[matches[0]]))
+            print(f"Desc -> {opcode_docs[matches[0]]}")
+            print()
+        else:
+            print()
+            print(f"Found {len(matches)} matching opcodes:")
+            for match in matches:
+                print(f"- {match}")
+            print("\nUse 'op <exact_opcode>' to see documentation for a specific opcode.")
+            print()
 
     def funcs(self, args: List[str]) -> None:
         """List all functions in the bytecode - pass 'std' to not exclude stdlib"""
@@ -260,6 +297,16 @@ class Commands:
                 print("TODO")
         print("Function not found.")
 
+    def strings(self, args: List[str]) -> None:
+        """List all strings in the bytecode."""
+        for i, string in enumerate(self.code.strings.value):
+            print(f"String {i}: {string}")
+
+    def types(self, args: List[str]) -> None:
+        """List all types in the bytecode."""
+        for i, type in enumerate(self.code.types):
+            print(f"Type {i}: {type}")
+
     def savestrings(self, args: List[str]) -> None:
         """Save all strings in the bytecode to a given path. `savestrings <path>`"""
         if len(args) == 0:
@@ -376,9 +423,17 @@ class Commands:
 
     def interp(self, args: List[str]) -> None:
         """Run the bytecode in crashlink's integrated interpreter."""
+        if len(args) == 0:
+            idx = self.code.entrypoint.value
+        else:
+            try:
+                idx = int(args[0])
+            except ValueError:
+                print("Invalid index.")
+                return
 
         vm = VM(self.code)
-        vm.run()
+        vm.run(entry=idx)
 
     def _get_commands(self) -> Dict[str, Callable[[List[str]], None]]:
         """Get all command methods using reflection"""

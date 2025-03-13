@@ -1296,6 +1296,10 @@ class Function(Serialisable):
         return self
 
     def serialise(self) -> bytes:
+        self.nops.value = len(self.ops)
+        self.nregs.value = len(self.regs)
+        if self.assigns:
+            self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
         res = b"".join(
             [
                 self.type.serialise(),

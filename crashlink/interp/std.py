@@ -91,3 +91,15 @@ def alloc_obj(code: Bytecode, vm: "VM", typ: "VMType") -> "VMValue":
     obj = typ.value.definition
     assert isinstance(obj, Obj), "Not an Obj."
     return VMObj.create_empty(obj, code)
+
+
+@bind("sys_print", "std")
+def sys_print(code: Bytecode, vm: "VM", value: "VMValue") -> "VMVoid":
+    """
+    Print a value to the console.
+    """
+    from .vm import VMBytes
+
+    assert isinstance(value, VMBytes), "Can only print bytes."
+    print(value.value.decode("utf-8"), end="")
+    return None
