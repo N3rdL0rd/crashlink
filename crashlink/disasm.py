@@ -49,7 +49,7 @@ def func_header(code: Bytecode, func: Function) -> str:
     if isinstance(fun_type, Fun):
         fun: Fun = fun_type
         return f"f@{func.findex.value} {'static ' if is_static(code, func) else ''}{name} ({', '.join([type_name(code, arg.resolve(code)) for arg in fun.args])}) -> {type_name(code, fun.ret.resolve(code))} (from {func.resolve_file(code)})"
-    return f"f@{func.findex.value} {name} (no fun found, this is a bug!)"
+    return f"f@{func.findex.value} {name} (no fun found!)"
 
 
 def native_header(code: Bytecode, native: Native) -> str:
@@ -60,7 +60,7 @@ def native_header(code: Bytecode, native: Native) -> str:
     if isinstance(fun_type, Fun):
         fun: Fun = fun_type
         return f"f@{native.findex.value} {native.lib.resolve(code)}.{native.name.resolve(code)} [native] ({', '.join([type_name(code, arg.resolve(code)) for arg in fun.args])}) -> {type_name(code, fun.ret.resolve(code))} (from {native.lib.resolve(code)})"
-    return f"f@{native.findex.value} {native.lib.resolve(code)}.{native.name.resolve(code)} [native] (no fun found, this is a bug!)"
+    return f"f@{native.findex.value} {native.lib.resolve(code)}.{native.name.resolve(code)} [native] (no fun found!)"
 
 
 def is_std(code: Bytecode, func: Function | Native) -> bool:
@@ -69,8 +69,11 @@ def is_std(code: Bytecode, func: Function | Native) -> bool:
     """
     if isinstance(func, Native):
         return True
-    if "std" in func.resolve_file(code):
-        return True
+    try:
+        if "std" in func.resolve_file(code):
+            return True
+    except ValueError:
+        pass
     return False
 
 
