@@ -5,7 +5,8 @@ Human-readable disassembly of opcodes and utilities to work at a relatively low 
 from ast import literal_eval
 from typing import List, Optional
 
-from .core import *
+from .core import (Bytecode, Fun, Function, Native, Obj, Opcode, Reg, Type,
+                   Virtual, Void, fileRef, full_func_name, tIndex)
 from .opcodes import opcodes
 
 

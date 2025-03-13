@@ -350,7 +350,6 @@ opcode_docs = {
     "Bytes": "Load byte array from constant pool into dst (dst = @ptr)",
     "String": "Load string from constant pool into dst (dst = @ptr)",
     "Null": "Set dst register to null (dst = null)",
-    
     # Arithmetic
     "Add": "Add two numbers (dst = a + b)",
     "Sub": "Subtract two numbers (dst = a - b)",
@@ -359,7 +358,6 @@ opcode_docs = {
     "UDiv": "Unsigned division (dst = a / b)",
     "SMod": "Signed modulo (dst = a % b)",
     "UMod": "Unsigned modulo (dst = a % b)",
-    
     # Bitwise
     "Shl": "Left shift (dst = a << b)",
     "SShr": "Signed right shift (dst = a >> b)",
@@ -369,11 +367,9 @@ opcode_docs = {
     "Xor": "Bitwise XOR (dst = a ^ b)",
     "Neg": "Negate value (dst = -src)",
     "Not": "Boolean NOT (dst = !src)",
-    
     # Increment/Decrement
     "Incr": "Increment value (dst++)",
     "Decr": "Decrement value (dst--)",
-    
     # Function Calls
     "Call0": "Call function with no args (dst = fun())",
     "Call1": "Call function with 1 arg (dst = fun(arg0))",
@@ -384,16 +380,13 @@ opcode_docs = {
     "CallMethod": "Call method with N args (dst = obj.field(args...))",
     "CallThis": "Call this method with N args (dst = this.field(args...))",
     "CallClosure": "Call closure with N args (dst = fun(args...))",
-    
     # Closures
     "StaticClosure": "Create closure from function (dst = fun)",
     "InstanceClosure": "Create closure from object method (dst = obj.fun)",
     "VirtualClosure": "Create closure from object field (dst = obj.field)",
-    
     # Global Variables
     "GetGlobal": "Get global value (dst = @global)",
     "SetGlobal": "Set global value (@global = src)",
-    
     # Fields
     "Field": "Get object field (dst = obj.field)",
     "SetField": "Set object field (obj.field = src)",
@@ -401,7 +394,6 @@ opcode_docs = {
     "SetThis": "Set this field (this.field = src)",
     "DynGet": "Get dynamic field (dst = obj[field])",
     "DynSet": "Set dynamic field (obj[field] = src)",
-    
     # Control Flow
     "JTrue": "Jump if true (if cond jump by offset)",
     "JFalse": "Jump if false (if !cond jump by offset)",
@@ -420,7 +412,6 @@ opcode_docs = {
     "JAlways": "Unconditional jump",
     "Label": "Target for backward jumps (loops)",
     "Switch": "Multi-way branch based on integer value",
-    
     # Type Conversions
     "ToDyn": "Convert to dynamic type (dst = (dyn)src)",
     "ToSFloat": "Convert to signed float (dst = (float)src)",
@@ -429,7 +420,6 @@ opcode_docs = {
     "SafeCast": "Safe type cast with runtime check",
     "UnsafeCast": "Unchecked type cast",
     "ToVirtual": "Convert to virtual type",
-    
     # Exception Handling
     "Ret": "Return from function (return ret)",
     "Throw": "Throw exception",
@@ -437,7 +427,6 @@ opcode_docs = {
     "Trap": "Setup try-catch block",
     "EndTrap": "End try-catch block",
     "NullCheck": "Throw if null (if reg == null throw)",
-    
     # Memory Operations
     "GetI8": "Read i8 from bytes (dst = bytes[index])",
     "GetI16": "Read i16 from bytes (dst = bytes[index])",
@@ -447,31 +436,29 @@ opcode_docs = {
     "SetI16": "Write i16 to bytes (bytes[index] = src)",
     "SetMem": "Write to memory (bytes[index] = src)",
     "SetArray": "Set array element (array[index] = src)",
-    
     # Objects
     "New": "Allocate new object (dst = new typeof(dst))",
     "ArraySize": "Get array length (dst = len(array))",
     "Type": "Get type object (dst = type ty)",
     "GetType": "Get value's type (dst = typeof src)",
     "GetTID": "Get type ID (dst = typeof src)",
-    
     # References
     "Ref": "Create reference (dst = &src)",
     "Unref": "Read reference (dst = *src)",
     "Setref": "Write reference (*dst = src)",
     "RefData": "Get reference data",
     "RefOffset": "Get reference with offset",
-    
     # Enums
     "MakeEnum": "Create enum variant (dst = construct(args...))",
     "EnumAlloc": "Create enum with defaults (dst = construct())",
     "EnumIndex": "Get enum tag (dst = variant of value)",
     "EnumField": "Get enum field (dst = (value as construct).field)",
     "SetEnumField": "Set enum field (value.field = src)",
-    
     # Other
     "Assert": "Debug break",
     "Nop": "No operation",
     "Prefetch": "CPU memory prefetch hint",
-    "Asm": "Inline x86 assembly"
+    "Asm": "Inline x86 assembly",
 }
+
+__all__ = ["conditionals", "arithmetic", "opcodes", "opcode_docs"]

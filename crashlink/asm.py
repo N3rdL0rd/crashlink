@@ -8,7 +8,10 @@ from dataclasses import dataclass, field
 from pprint import pprint
 from typing import Any, Dict, List, Set
 
-from .core import *
+from .core import (F32, F64, I32, I64, U8, U16, Array, Bool, Bytecode, Bytes,
+                   Dyn, Fun, Function, Native, Opcode, Reg, ResolvableVarInt,
+                   Type, TypeType, Void, bytesRef, fIndex, gIndex, intRef,
+                   strRef, tIndex)
 from .opcodes import opcodes
 
 
@@ -106,6 +109,8 @@ class AsmFile:
             TypeType: 13,
         }
         for val in section.value:
+            if not isinstance(val, AsmValueStr):
+                continue
             parts = val.value.split()
             if parts[0] in name_to_def:
                 typedef = name_to_def[parts[0]]
@@ -115,13 +120,17 @@ class AsmFile:
                 typ.definition = m_def
                 code.types.append(typ)
             elif parts[0] == "Fun":
-                m_def = Fun()
-                tokens = re.findall(r'\([^)]*\)|\S+', val.value)
+                fun = Fun()
+                tokens = re.findall(r"\([^)]*\)|\S+", val.value)
                 _, args, _, ret = tokens
-                m_def.ret = self._parse_ref(ret)
-                m_def.args = [self._parse_ref(arg.strip()) for arg in args.strip("()").split(",")]
+                r = self._parse_ref(ret)
+                assert isinstance(r, tIndex), "Expected a type reference for return!"
+                fun.ret = r
+                a = [self._parse_ref(arg.strip()) for arg in args.strip("()").split(",")]
+                assert all([isinstance(arg, tIndex) for arg in a]), "Expected a type reference in args!"
+                fun.args = a  # type: ignore
                 typ = Type()
-                typ.kind.value = 10 # Fun
+                typ.kind.value = 10  # Fun
                 typ.definition = m_def
                 code.types.append(typ)
 
@@ -167,7 +176,10 @@ class AsmFile:
     def _get_single_val(self, name: str) -> str:
         if len(self.raw_sections[name].value) != 1:
             raise SyntaxError(f"Expected exactly one value for '{name}'!")
-        return self.raw_sections[name].value[0].value
+        val = self.raw_sections[name].value[0]
+        if isinstance(val, AsmValueStr):
+            return val.value
+        raise SyntaxError(f"Expected a string value for '{name}'!")
 
     def _get_str_idx(self, val: str) -> strRef:
         if val not in self.strings:
@@ -183,22 +195,24 @@ class AsmFile:
 
     def _add_natives(self, code: Bytecode, section: AsmSection) -> None:
         for n in section.value:
+            if not isinstance(n, AsmValueStr):
+                continue
             parts = n.value.split()
             assert len(parts) == 3, "Incorrect native structure!"
             assert parts[1].startswith("("), f"Unexpected token {parts[1][0]}"
             idx, typ, name = parts
-            idx = self._parse_ref(idx)
-            assert isinstance(idx, fIndex), "Native index must be a function reference!"
-            typ = self._parse_ref(typ.strip("()"))
-            assert isinstance(typ, tIndex), "Native Fun type must be a type reference!"
+            _idx = self._parse_ref(idx)
+            assert isinstance(_idx, fIndex), "Native index must be a function reference!"
+            _typ = self._parse_ref(typ.strip("()"))
+            assert isinstance(_typ, tIndex), "Native Fun type must be a type reference!"
             lib, name = name.split(".")
-            lib = self._get_str_idx(lib)
-            name = self._get_str_idx(name)
+            _lib = self._get_str_idx(lib)
+            _name = self._get_str_idx(name)
             obj = Native()
-            obj.findex = idx
-            obj.lib = lib
-            obj.name = name
-            obj.type = typ
+            obj.findex = _idx
+            obj.lib = _lib
+            obj.name = _name
+            obj.type = _typ
             code.natives.append(obj)
 
     def _opcode(self, val: str) -> Opcode:
@@ -239,16 +253,40 @@ class AsmFile:
         for section in self.raw_sections.values():
             if section.name.startswith("f@"):
                 func = Function()
-                typ = self._parse_ref(section.get("returns").value[0].value)
+                returns_section = section.get("returns")
+                if isinstance(returns_section.value[0], AsmValueStr):
+                    typ = self._parse_ref(returns_section.value[0].value)
+                else:
+                    raise SyntaxError("Return type must be a string reference!")
+
                 assert isinstance(typ, tIndex), "Return type must be a type reference!"
                 func.type = typ
                 findex = self._parse_ref(section.name)
                 assert isinstance(findex, fIndex), "Function index must be a function reference!"
                 func.findex = findex
-                regs = [self._parse_ref(reg.value) for reg in section.get("regs").value]
+
+                regs_section = section.get("regs")
+                regs: List[tIndex] = []
+                for reg in regs_section.value:
+                    if isinstance(reg, AsmValueStr):
+                        res = self._parse_ref(reg.value)
+                        assert isinstance(res, tIndex), "Register must be a type index!"
+                        regs.append(res)
+                    else:
+                        raise SyntaxError("Register must be a string reference!")
+
                 assert all(isinstance(r, tIndex) for r in regs), "All registers must be types!"
-                func.regs = regs # type: ignore
-                func.ops = [self._opcode(op.value) for op in section.get("ops").value]
+                func.regs = regs
+
+                ops_section = section.get("ops")
+                ops = []
+                for op in ops_section.value:
+                    if isinstance(op, AsmValueStr):
+                        ops.append(self._opcode(op.value))
+                    else:
+                        raise SyntaxError("Operation must be a string!")
+
+                func.ops = ops
                 func.has_debug = False
                 func.version = code.version.value
                 code.functions.append(func)
@@ -275,3 +313,6 @@ class AsmFile:
         self._add_strings(code)
         self._validate(code)
         return code
+
+
+__all__ = ["AsmValue", "AsmValueStr", "AsmFile", "AsmSection"]
