@@ -606,6 +606,7 @@ class Fun(TypeDef):
         return self
 
     def serialise(self) -> bytes:
+        self.nargs.value = len(self.args)
         return b"".join(
             [
                 self.nargs.serialise(),
