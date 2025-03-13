@@ -106,12 +106,24 @@ class AsmFile:
             TypeType: 13,
         }
         for val in section.value:
-            typedef = name_to_def[val.value]
-            m_def = typedef()
-            typ = Type()
-            typ.kind.value = def_to_kind[typedef]
-            typ.definition = m_def
-            code.types.append(typ)
+            parts = val.value.split()
+            if parts[0] in name_to_def:
+                typedef = name_to_def[parts[0]]
+                m_def = typedef()
+                typ = Type()
+                typ.kind.value = def_to_kind[typedef]
+                typ.definition = m_def
+                code.types.append(typ)
+            elif parts[0] == "Fun":
+                m_def = Fun()
+                tokens = re.findall(r'\([^)]*\)|\S+', val.value)
+                _, args, _, ret = tokens
+                m_def.ret = self._parse_ref(ret)
+                m_def.args = [self._parse_ref(arg.strip()) for arg in args.strip("()").split(",")]
+                typ = Type()
+                typ.kind.value = 10 # Fun
+                typ.definition = m_def
+                code.types.append(typ)
 
     def _parse_ref(self, val: str) -> ResolvableVarInt:
         if val[1] != "@":
@@ -172,13 +184,13 @@ class AsmFile:
     def _add_natives(self, code: Bytecode, section: AsmSection) -> None:
         for n in section.value:
             parts = n.value.split()
-            assert len(parts) == 4, "Incorrect native structure!"
-            assert parts[2] == "->", "Expected '->' (return type definition) in native import!"
-            idx, name, _, typ = parts
+            assert len(parts) == 3, "Incorrect native structure!"
+            assert parts[1].startswith("("), f"Unexpected token {parts[1][0]}"
+            idx, typ, name = parts
             idx = self._parse_ref(idx)
             assert isinstance(idx, fIndex), "Native index must be a function reference!"
-            typ = self._parse_ref(typ)
-            assert isinstance(typ, tIndex), "Native return type must be a type reference!"
+            typ = self._parse_ref(typ.strip("()"))
+            assert isinstance(typ, tIndex), "Native Fun type must be a type reference!"
             lib, name = name.split(".")
             lib = self._get_str_idx(lib)
             name = self._get_str_idx(name)

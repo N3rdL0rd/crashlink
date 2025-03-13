@@ -3,9 +3,10 @@
 # type 0 is always Void
 .types
     Bytes
+    Fun (t@1) -> t@0
 
 .natives
-    f@1 std.sys_print -> t@0
+    f@1 (t@2) std.sys_print
 
 .f@0
     .returns t@0
