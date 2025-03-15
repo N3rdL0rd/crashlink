@@ -156,7 +156,7 @@ el.replaceWith(d);
     if isinstance(fun_type, Fun):
         fun: Fun = fun_type
         return f&#34;f@{func.findex.value} {&#39;static &#39; if is_static(code, func) else &#39;&#39;}{name} ({&#39;, &#39;.join([type_name(code, arg.resolve(code)) for arg in fun.args])}) -&gt; {type_name(code, fun.ret.resolve(code))} (from {func.resolve_file(code)})&#34;
-    return f&#34;f@{func.findex.value} {name} (no fun found, this is a bug!)&#34;</code></pre>
+    return f&#34;f@{func.findex.value} {name} (no fun found!)&#34;</code></pre>
 </details>
 <div class="desc"><p>Generates a human-readable header for a function.</p></div>
 </dd>
@@ -199,8 +199,11 @@ el.replaceWith(d);
     &#34;&#34;&#34;
     if isinstance(func, Native):
         return True
-    if &#34;std&#34; in func.resolve_file(code):
-        return True
+    try:
+        if &#34;std&#34; in func.resolve_file(code):
+            return True
+    except ValueError:
+        pass
     return False</code></pre>
 </details>
 <div class="desc"><p>Checks if a function is from the standard library. This is a heuristic and is a bit broken still.</p></div>
@@ -221,7 +224,7 @@ el.replaceWith(d);
     if isinstance(fun_type, Fun):
         fun: Fun = fun_type
         return f&#34;f@{native.findex.value} {native.lib.resolve(code)}.{native.name.resolve(code)} [native] ({&#39;, &#39;.join([type_name(code, arg.resolve(code)) for arg in fun.args])}) -&gt; {type_name(code, fun.ret.resolve(code))} (from {native.lib.resolve(code)})&#34;
-    return f&#34;f@{native.findex.value} {native.lib.resolve(code)}.{native.name.resolve(code)} [native] (no fun found, this is a bug!)&#34;</code></pre>
+    return f&#34;f@{native.findex.value} {native.lib.resolve(code)}.{native.name.resolve(code)} [native] (no fun found!)&#34;</code></pre>
 </details>
 <div class="desc"><p>Generates a human-readable header for a native function.</p></div>
 </dd>

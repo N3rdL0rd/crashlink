@@ -6,9 +6,10 @@ Core VM types, values, and the VM itself.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from ..core import *
+from ..core import (F32, F64, I32, I64, U8, U16, Bool, Bytecode, Bytes,
+                    Function, Obj, Type)
 from ..globals import bcolors, dbg_print
 from .std import BINDINGS as NATIVE_BINDINGS
 from .std import StdBinding

@@ -606,6 +606,7 @@ class Fun(TypeDef):
         return self
 
     def serialise(self) -> bytes:
+        self.nargs.value = len(self.args)
         return b"".join(
             [
                 self.nargs.serialise(),
@@ -1296,6 +1297,10 @@ class Function(Serialisable):
         return self
 
     def serialise(self) -> bytes:
+        self.nops.value = len(self.ops)
+        self.nregs.value = len(self.regs)
+        if self.assigns:
+            self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
         res = b"".join(
             [
                 self.type.serialise(),
@@ -1890,3 +1895,66 @@ def full_func_name(code: Bytecode, func: Function | Native) -> str:
                         if binding.findex.value == func.findex.value:
                             return f"{_obj_def.name.resolve(code)}.{name}"
     return name
+
+
+__all__ = [
+    "full_func_name",
+    "get_field_for",
+    "get_proto_for",
+    "Abstract",
+    "Array",
+    "Binding",
+    "Bool",
+    "Bytecode",
+    "Bytes",
+    "BytesBlock",
+    "Constant",
+    "DebugInfo",
+    "Dyn",
+    "DynObj",
+    "Enum",
+    "EnumConstruct",
+    "F32",
+    "F64",
+    "Field",
+    "Fun",
+    "Function",
+    "I32",
+    "I64",
+    "InlineBool",
+    "Method",
+    "Native",
+    "Null",
+    "Obj",
+    "Opcode",
+    "Packed",
+    "Proto",
+    "RawData",
+    "Ref",
+    "Reg",
+    "Regs",
+    "ResolvableVarInt",
+    "Serialisable",
+    "SerialisableF64",
+    "SerialisableInt",
+    "StringsBlock",
+    "Struct",
+    "Type",
+    "TypeDef",
+    "TypeType",
+    "U16",
+    "U8",
+    "VarInt",
+    "VarInts",
+    "Virtual",
+    "Void",
+    "bytesRef",
+    "fIndex",
+    "fieldRef",
+    "fileRef",
+    "floatRef",
+    "gIndex",
+    "intRef",
+    "strRef",
+    "tIndex",
+]

@@ -6,3 +6,6 @@ class Translatable(ABC):
     @abstractmethod
     def translate(self, comment: Optional[str] = None) -> str:
         pass
+
+
+__all__ = ["Translatable"]
