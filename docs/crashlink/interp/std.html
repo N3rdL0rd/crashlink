@@ -108,6 +108,27 @@ def hballoc(code: Bytecode, vm: &#34;VM&#34;) -&gt; &#34;VMBytes&#34;:
 </details>
 <div class="desc"><p>Allocate a byte array.</p></div>
 </dd>
+<dt id="crashlink.interp.std.sys_print"><code class="name flex">
+<span>def <span class="ident">sys_print</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>,<br>vm: VM,<br>value: VMValue) ‑> VMVoid</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@bind(&#34;sys_print&#34;, &#34;std&#34;)
+def sys_print(code: Bytecode, vm: &#34;VM&#34;, value: &#34;VMValue&#34;) -&gt; &#34;VMVoid&#34;:
+    &#34;&#34;&#34;
+    Print a value to the console.
+    &#34;&#34;&#34;
+    from .vm import VMBytes
+
+    assert isinstance(value, VMBytes), &#34;Can only print bytes.&#34;
+    print(value.value.decode(&#34;utf-8&#34;), end=&#34;&#34;)
+    return None</code></pre>
+</details>
+<div class="desc"><p>Print a value to the console.</p></div>
+</dd>
 <dt id="crashlink.interp.std.type_get_global"><code class="name flex">
 <span>def <span class="ident">type_get_global</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="../core.html#crashlink.core.Bytecode">Bytecode</a>,<br>vm: VM,<br>typ: VMType) ‑> VMPrim</span>
 </code></dt>
@@ -216,10 +237,11 @@ class StdBinding:
 </ul>
 </li>
 <li><h3><a href="#header-functions">Functions</a></h3>
-<ul class="">
+<ul class="two-column">
 <li><code><a title="crashlink.interp.std.alloc_obj" href="#crashlink.interp.std.alloc_obj">alloc_obj</a></code></li>
 <li><code><a title="crashlink.interp.std.bind" href="#crashlink.interp.std.bind">bind</a></code></li>
 <li><code><a title="crashlink.interp.std.hballoc" href="#crashlink.interp.std.hballoc">hballoc</a></code></li>
+<li><code><a title="crashlink.interp.std.sys_print" href="#crashlink.interp.std.sys_print">sys_print</a></code></li>
 <li><code><a title="crashlink.interp.std.type_get_global" href="#crashlink.interp.std.type_get_global">type_get_global</a></code></li>
 <li><code><a title="crashlink.interp.std.type_set_global" href="#crashlink.interp.std.type_set_global">type_set_global</a></code></li>
 </ul>

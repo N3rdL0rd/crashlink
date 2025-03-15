@@ -1,0 +1,21 @@
+.version 5
+
+# type 0 is always Void
+.types
+    Bytes
+    Fun (t@1) -> t@0
+
+.natives
+    f@1 (t@2) std.sys_print
+
+.f@0
+    .returns t@0
+    .regs
+        t@0
+        t@1
+    .ops
+        String reg1, "Hello, World!"
+        Call1 reg0, f@1, reg1
+        Ret reg0
+
+.entrypoint f@0
