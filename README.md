@@ -3,7 +3,7 @@
 ![workflow](https://github.com/N3rdL0rd/crashlink/actions/workflows/python-package.yml/badge.svg) ![wakatime](https://wakatime.com/badge/user/959c37b8-6a50-4f37-8cc5-e2b14b687b80/project/7ce1f674-75d5-4525-88f2-ea4e5532e73a.svg) ![PyPI - Version](https://img.shields.io/pypi/v/crashlink)
  ![PyPI - Downloads](https://img.shields.io/pypi/dd/crashlink)
 
-Pure Python HashLink bytecode parser/disassembler/decompiler/modding tool
+Pure-Python HashLink bytecode Swiss Army knife.
 
 > [!WARNING]
 > This project is under active development. Breaking changes may be made to APIs with zero notice.
@@ -11,8 +11,11 @@ Pure Python HashLink bytecode parser/disassembler/decompiler/modding tool
 ## Features
 
 - Pure Python with zero dependencies, integrates nicely in a lot of places (IDAPython compatible!)
-- Allows values to be externally modified and reserialised through a scriptable interface
-- A very nice little CLI with [hlbc](https://github.com/Gui-Yom/hlbc)-compatible mode (coming soon)
+- Deserialisation, disassembly, and (currently limited) decompilation of HashLink bytecode
+- Reserialisation and first-class support for patching bytecode assembly
+- A bytecode assembler for creating HashLink bytecode from scratch
+- A scriptable interface for easy integration into other tools
+- A little CLI similar to [hlbc](https://github.com/Gui-Yom/hlbc)
 
 ## Installation
 
