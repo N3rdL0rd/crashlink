@@ -310,7 +310,7 @@ class fieldRef(ResolvableVarInt):
     Reference to a field in an object definition.
     """
 
-    obj: Optional["Obj"] = None
+    obj: Optional["Obj|Virtual"] = None
 
     def resolve(self, code: "Bytecode") -> "Field":
         if self.obj:
@@ -319,7 +319,7 @@ class fieldRef(ResolvableVarInt):
             "Cannot resolve field without context. Try setting `field.obj` to an instance of `Obj`, or use `field.resolve_obj(code, obj)` instead."
         )
 
-    def resolve_obj(self, code: "Bytecode", obj: "Obj") -> "Field":
+    def resolve_obj(self, code: "Bytecode", obj: "Obj|Virtual") -> "Field":
         self.obj = obj
         return obj.resolve_fields(code)[self.value]
 
@@ -822,6 +822,9 @@ class Virtual(TypeDef):
                 b"".join([field.serialise() for field in self.fields]),
             ]
         )
+        
+    def resolve_fields(self, code: "Bytecode") -> List[Field]:
+        return self.fields
 
 
 class DynObj(_NoDataType):
