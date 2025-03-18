@@ -4,17 +4,17 @@ default:
 
 # Install locally with dev dependencies
 install:
-    pip install -e .[dev]
+    uv pip install -e .[dev]
 
 # Build crashlink
 build:
     rm -rf build dist crashlink.egg-info
-    python -m build
+    uv build
     rm -rf build crashlink.egg-info
 
 # Publish crashlink to PyPI
 publish:
-    twine upload dist/*
+    uv publish -u "__token__" -p "$(cat PYPI_TOKEN.txt)"
 
 # Build test samples
 build-tests:
