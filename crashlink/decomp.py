@@ -5,7 +5,7 @@ Decompilation, IR and control flow graph generation
 from abc import ABC, abstractmethod
 from enum import Enum as _Enum  # Enum is already defined in crashlink.core
 from pprint import pformat
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, ClassVar
 
 from . import disasm
 from .core import (Bytecode, Function, Opcode, ResolvableVarInt, Type, Void,
@@ -763,12 +763,39 @@ def _find_jumps_to_label(
     return jumpers
 
 
+class IROptimizer(ABC):
+    """
+    Base class for intermediate representation optimization routines.
+    """
+
+    def __init__(self, function: "IRFunction"):
+        self.func = function
+
+    @abstractmethod
+    def optimize(self) -> None:
+        pass
+
+
+class IRLoopConditionOptimizer(IROptimizer):
+    """
+    Convert abstract jumps in loop condition blocks to bool expressions.
+    """
+    
+    def optimize(self) -> None:
+        pass
+
+
 class IRFunction:
     """
     Intermediate representation of a function.
     """
 
-    def __init__(self, code: Bytecode, func: Function) -> None:
+    def __init__(
+        self, 
+        code: Bytecode, 
+        func: Function,
+        do_optimize: bool = True
+    ) -> None:
         self.func = func
         self.cfg = CFGraph(func)
         self.cfg.build()
@@ -777,7 +804,11 @@ class IRFunction:
         self.locals: List[IRLocal] = []
         self.block: IRBlock
         self._lift()
-        self._optimize()
+        if do_optimize:
+            self.optimizers: List[IROptimizer] = [
+                IRLoopConditionOptimizer(self)
+            ]
+            self._optimize()
 
     def _lift(self) -> None:
         """Lift function to IR"""
@@ -791,7 +822,11 @@ class IRFunction:
 
     def _optimize(self) -> None:
         """Optimize the IR"""
-        pass  # TODO
+        # TODO: store layers
+        for o in self.optimizers:
+            dbg_print(f"----- {o.__class__.__name__} -----")
+            o.optimize()
+            dbg_print(self.block)
 
     def _name_locals(self) -> None:
         """Name locals based on debug info"""
@@ -922,6 +957,7 @@ class IRFunction:
                         ),
                     )
                 )
+
             elif op.op in ["Int", "Float", "Bool", "Bytes", "String", "Null"]:
                 dst = self.locals[op.definition["dst"].value]
                 const_type = IRConst.ConstType[op.op.upper()]
