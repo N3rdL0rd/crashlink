@@ -18,3 +18,4 @@ testenv
 .crashlink_debug
 stubs/
 *.pkl
+memray*.*

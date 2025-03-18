@@ -142,14 +142,13 @@ class SerialisableF64(Serialisable):
         return struct.pack("<d", self.value)
 
 
+_struct_short = struct.Struct(">H")  # big-endian unsigned short
+_struct_medium = struct.Struct(">I")  # big-endian unsigned int (for 3 bytes)
+
 class VarInt(Serialisable):
     """
     Variable-length integer - can be 1, 2, or 4 bytes.
     """
-
-    # Cache struct formats
-    _struct_short = struct.Struct(">H")  # big-endian unsigned short
-    _struct_medium = struct.Struct(">I")  # big-endian unsigned int (for 3 bytes)
 
     def __init__(self, value: int = 0):
         self.value: int = value
@@ -175,7 +174,7 @@ class VarInt(Serialisable):
             return self
 
         # Four byte format (11xxxxxx)
-        remaining = self._struct_medium.unpack(b"\x00" + f.read(3))[0]
+        remaining = _struct_medium.unpack(b"\x00" + f.read(3))[0]
 
         # Combine all bytes and handle sign
         self.value = ((b & 0x1F) << 24) | remaining
