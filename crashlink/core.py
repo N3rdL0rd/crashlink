@@ -145,6 +145,7 @@ class SerialisableF64(Serialisable):
 _struct_short = struct.Struct(">H")  # big-endian unsigned short
 _struct_medium = struct.Struct(">I")  # big-endian unsigned int (for 3 bytes)
 
+
 class VarInt(Serialisable):
     """
     Variable-length integer - can be 1, 2, or 4 bytes.

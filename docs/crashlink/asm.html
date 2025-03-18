@@ -409,11 +409,7 @@ class AsmSection(AsmValue):
 <dl>
 <dt id="crashlink.asm.AsmSection.name"><code class="name">var <span class="ident">name</span> : str</code></dt>
 <dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashlink.asm.AsmSection.value"><code class="name">var <span class="ident">value</span> : List[<a title="crashlink.asm.AsmValueStr" href="#crashlink.asm.AsmValueStr">AsmValueStr</a> | <a title="crashlink.asm.AsmSection" href="#crashlink.asm.AsmSection">AsmSection</a>]</code></dt>
-<dd>
-<div class="desc"></div>
+<div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -435,6 +431,14 @@ class AsmSection(AsmValue):
 <div class="desc"></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.asm.AsmValue" href="#crashlink.asm.AsmValue">AsmValue</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.asm.AsmValue.value" href="#crashlink.asm.AsmValue.value">value</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.asm.AsmValue"><code class="flex name class">
 <span>class <span class="ident">AsmValue</span></span>
@@ -463,7 +467,7 @@ class AsmValue(ABC):
 <dl>
 <dt id="crashlink.asm.AsmValue.value"><code class="name">var <span class="ident">value</span> : Any</code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
 </dd>
@@ -485,13 +489,14 @@ class AsmValue(ABC):
 <li><a title="crashlink.asm.AsmValue" href="#crashlink.asm.AsmValue">AsmValue</a></li>
 <li>abc.ABC</li>
 </ul>
-<h3>Class variables</h3>
-<dl>
-<dt id="crashlink.asm.AsmValueStr.value"><code class="name">var <span class="ident">value</span> : str</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.asm.AsmValue" href="#crashlink.asm.AsmValue">AsmValue</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.asm.AsmValue.value" href="#crashlink.asm.AsmValue.value">value</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 </dl>
 </section>
@@ -520,7 +525,6 @@ class AsmValue(ABC):
 <ul class="">
 <li><code><a title="crashlink.asm.AsmSection.get" href="#crashlink.asm.AsmSection.get">get</a></code></li>
 <li><code><a title="crashlink.asm.AsmSection.name" href="#crashlink.asm.AsmSection.name">name</a></code></li>
-<li><code><a title="crashlink.asm.AsmSection.value" href="#crashlink.asm.AsmSection.value">value</a></code></li>
 </ul>
 </li>
 <li>
@@ -531,9 +535,6 @@ class AsmValue(ABC):
 </li>
 <li>
 <h4><code><a title="crashlink.asm.AsmValueStr" href="#crashlink.asm.AsmValueStr">AsmValueStr</a></code></h4>
-<ul class="">
-<li><code><a title="crashlink.asm.AsmValueStr.value" href="#crashlink.asm.AsmValueStr.value">value</a></code></li>
-</ul>
 </li>
 </ul>
 </li>
