@@ -2933,7 +2933,7 @@ Where a is field 0 and b is field 1</p></div>
 <dl>
 <dt id="crashlink.core.Opcode.TYPE_MAP"><code class="name">var <span class="ident">TYPE_MAP</span> : Dict[str, type]</code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -3928,7 +3928,7 @@ def serialise(self) -&gt; bytes:
 <dl>
 <dt id="crashlink.core.Type.TYPEDEFS"><code class="name">var <span class="ident">TYPEDEFS</span> : List[type]</code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -4107,10 +4107,6 @@ def serialise(self) -&gt; bytes:
     Variable-length integer - can be 1, 2, or 4 bytes.
     &#34;&#34;&#34;
 
-    # Cache struct formats
-    _struct_short = struct.Struct(&#34;&gt;H&#34;)  # big-endian unsigned short
-    _struct_medium = struct.Struct(&#34;&gt;I&#34;)  # big-endian unsigned int (for 3 bytes)
-
     def __init__(self, value: int = 0):
         self.value: int = value
 
@@ -4135,7 +4131,7 @@ def serialise(self) -&gt; bytes:
             return self
 
         # Four byte format (11xxxxxx)
-        remaining = self._struct_medium.unpack(b&#34;\x00&#34; + f.read(3))[0]
+        remaining = _struct_medium.unpack(b&#34;\x00&#34; + f.read(3))[0]
 
         # Combine all bytes and handle sign
         self.value = ((b &amp; 0x1F) &lt;&lt; 24) | remaining
@@ -4217,7 +4213,7 @@ def serialise(self) -&gt; bytes:
         return self
 
     # Four byte format (11xxxxxx)
-    remaining = self._struct_medium.unpack(b&#34;\x00&#34; + f.read(3))[0]
+    remaining = _struct_medium.unpack(b&#34;\x00&#34; + f.read(3))[0]
 
     # Combine all bytes and handle sign
     self.value = ((b &amp; 0x1F) &lt;&lt; 24) | remaining
@@ -4553,7 +4549,7 @@ def serialise(self) -&gt; bytes:
 <dl>
 <dt id="crashlink.core.fieldRef.obj"><code class="name">var <span class="ident">obj</span> : <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a> | None</code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
 <h3>Methods</h3>
