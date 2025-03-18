@@ -29,14 +29,13 @@ def test_reser_basic(path: str):
             while True:
                 a = f.read(1)
                 b = ser[c : c + 1]
+                t = f.tell() - 1
                 if a != b:
-                    print(
-                        f"First mismatch at {f.tell() - 1}: {a!r} != {b!r} (in section '{code.section_at(f.tell() - 1)}')"
-                    )
-                    msg = f"First mismatch at {f.tell() - 1}: {a!r} != {b!r} (in section '{code.section_at(f.tell() - 1)}')"
+                    msg = f"First mismatch at {hex(t)}: {a!r} != {b!r} (in section '{code.section_at(t)}')"
+                    print(msg)
                     break
                 c += 1
-            assert False, "Failed during reser: " + msg
+            assert False, "Failed matching reser: " + msg
 
 
 def test_create_empty():
