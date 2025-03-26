@@ -109,6 +109,7 @@ class AsmFile:
             TypeType: 13,
         }
         for val in section.value:
+            print(val.value)
             if not isinstance(val, AsmValueStr):
                 continue
             parts = val.value.split()
@@ -120,15 +121,20 @@ class AsmFile:
                 typ.definition = m_def
                 code.types.append(typ)
             elif parts[0] == "Fun":
+                print("Adding Fun...")
                 fun = Fun()
                 tokens = re.findall(r"\([^)]*\)|\S+", val.value)
                 _, args, _, ret = tokens
                 r = self._parse_ref(ret)
                 assert isinstance(r, tIndex), "Expected a type reference for return!"
                 fun.ret = r
-                a = [self._parse_ref(arg.strip()) for arg in args.strip("()").split(",")]
-                assert all([isinstance(arg, tIndex) for arg in a]), "Expected a type reference in args!"
-                fun.args = a  # type: ignore
+                args_s = args.strip("()").split(",")
+                if len(args_s) == 1 and not args_s[0]:
+                    fun.args = []
+                else:  
+                    a = [self._parse_ref(arg.strip()) for arg in args.strip("()").split(",")]
+                    assert all([isinstance(arg, tIndex) for arg in a]), "Expected a type reference in args!"
+                    fun.args = a  # type: ignore
                 typ = Type()
                 typ.kind.value = 10  # Fun
                 typ.definition = m_def
