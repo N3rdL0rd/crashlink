@@ -55,6 +55,22 @@ profile:
     python -m cProfile -o tests.prof -m pytest
     snakeviz tests.prof
 
+# Build the pyhl native HDLL
+pyhl:
+    cd pyhl && make clean && make
+    cp pyhl/pyhl.hdll pyhl/hashlink/bin/
+
+# Updates the hashlink submodule in pyhl/
+update-hl:
+    rm -Rf pyhl/hashlink
+    rm -f .gitmodules
+    touch .gitmodules
+    git submodule add --force https://github.com/HaxeFoundation/hashlink pyhl/hashlink
+
+# Builds the hashlink submodule in pyhl/ to pyhl/hashlink/bin/
+build-hl:
+    cd pyhl/hashlink && cmake . && make -j $(nproc)
+
 # Clean the codebase
 clean:
     rm -rf build dist crashlink.egg-info .mypy_cache .pytest_cache .coverage .coverage.* .tox .nox .hypothesis .pytest_cache tests.prof *_reser.dat

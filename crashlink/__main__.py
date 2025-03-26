@@ -11,13 +11,16 @@ import sys
 import tempfile
 import webbrowser
 from typing import Callable, Dict, List, Optional, Tuple
+import importlib
+import traceback
 
-from . import decomp, disasm
+from . import decomp, disasm, globals
 from .asm import AsmFile
 from .core import Bytecode, Native
 from .globals import VERSION
 from .interp.vm import VM  # type: ignore
 from .opcodes import opcode_docs, opcodes
+from .patch import Patch, Args
 
 
 class Commands:
@@ -436,6 +439,70 @@ class Commands:
 
         vm = VM(self.code)
         vm.run(entry=idx)
+        
+    def repl(self, args: List[str]) -> None:
+        """Drop into a Python REPL with direct access to the Bytecode object."""
+        code = self.code
+    
+        banner = (
+            "Interactive crashlink Python REPL\n"
+            "Available globals:\n"
+            "  - code: The Bytecode object\n"
+            "  - disasm: The crashlink.disasm module\n"
+            "  - decomp: The crashlink.decomp module\n"
+        )
+    
+        local_vars = {
+            "code": code,
+            "disasm": disasm,
+            "decomp": decomp,
+        }
+    
+        try:
+            import IPython # type: ignore
+            IPython.embed(banner1=banner, user_ns=local_vars)
+        except ImportError:
+            import code as cd
+            cd.interact(banner=banner, local=local_vars)
+            
+    def offset(self, args: List[str]) -> None:
+        """Print the bytecode section at a given offset. `offset <offset in hex>`"""
+        if len(args) == 0:
+            print("Usage: offset <offset in hex>")
+            return
+        try:
+            offset = int(args[0], 16)
+        except ValueError:
+            print("Invalid offset.")
+            return
+        print(self.code.section_at(offset))
+        
+    def floats(self, args: List[str]) -> None:
+        """List all floats in the bytecode."""
+        for i, float in enumerate(self.code.floats):
+            print(f"Float {i}: {float.value}")
+            
+    def infile(self, args: List[str]) -> None:
+        """Finds all functions from a given file in the bytecode. `infile <file>`"""
+        if len(args) == 0:
+            print("Usage: infile <file>")
+            return
+        file = args[0]
+        if not self.code.has_debug_info:
+            print("Debug info not found.")
+            return
+        for func in self.code.functions:
+            if func.resolve_file(self.code) == file:
+                print(disasm.func_header(self.code, func))
+                
+    def debugfiles(self, args: List[str]) -> None:
+        """List all debug files in the bytecode."""
+        if self.code.debugfiles and self.code.has_debug_info:
+            for i, file in enumerate(self.code.debugfiles.value):
+                print(f"{i}: {file}")
+        else:
+            print("No debug info in bytecode!")
+            return
 
     def _get_commands(self) -> Dict[str, Callable[[List[str]], None]]:
         """Get all command methods using reflection"""
@@ -473,10 +540,21 @@ def main() -> None:
         "file", help="The file to open - can be HashLink bytecode, a Haxe source file or a crashlink assembly file."
     )
     parser.add_argument("-a", "--assemble", help="Assemble the passed file", action="store_true")
-    parser.add_argument("-o", "--output", help="The output filename for the assembled bytecode.")
+    parser.add_argument("-o", "--output", help="The output filename for the assembled or patched bytecode.")
     parser.add_argument("-c", "--command", help="The command to run on startup")
     parser.add_argument("-H", "--hlbc", help="Run in HLBC compatibility mode", action="store_true")
+    parser.add_argument("-p", "--patch", help="Patch the passed file with the following patch definition")
+    parser.add_argument("-t", "--traceback", help="Print tracebacks for debugging when catching exceptions", action="store_true")
+    parser.add_argument("-N", "--no-constants", help="Don't resolve constants during deserialisation - helpful for problematic or otherwise weird bytecode files", action="store_true")
+    parser.add_argument("-d", "--debug", help="Enable addtional debug output", action="store_true")
+    parser.add_argument("-D", "--no-debug", help="Disable debug output that may have been implicitly activted somewhere else", action="store_true")
     args = parser.parse_args()
+
+    if args.debug:
+        globals.DEBUG = True
+    
+    if args.no_debug:
+        globals.DEBUG = False 
 
     if args.assemble:
         out = (
@@ -503,10 +581,10 @@ def main() -> None:
         stripped = args.file.split(".")[0]
         os.system(f"haxe -hl {stripped}.hl -main {args.file}")
         with open(f"{stripped}.hl", "rb") as f:
-            code = Bytecode().deserialise(f)
+            code = Bytecode().deserialise(f, init_globals=True if not args.no_constants else False)
     elif not args.file.endswith(".pkl"):
         with open(args.file, "rb") as f:
-            code = Bytecode().deserialise(f)
+            code = Bytecode().deserialise(f, init_globals=True if not args.no_constants else False)
     elif args.file.endswith(".pkl"):
         try:
             import dill
@@ -518,6 +596,37 @@ def main() -> None:
             return
     else:
         print("Unknown file format.")
+        return
+    
+    if args.patch:
+        print(f"Loading patch: {args.patch}")
+        patch_dir = os.path.dirname(args.patch)
+        patch_name = os.path.basename(args.patch)
+        
+        if patch_name.endswith('.py'):
+            patch_name = patch_name[:-3]
+            
+        sys.path.insert(0, patch_dir)
+        
+        try:
+            patch_module = importlib.import_module(patch_name)
+            print(f"Successfully loaded patch module: {patch_module}")
+            assert isinstance(patch_module.patch, Patch), "`patch` is not an instance of crashlink.patch.Patch!"
+            patch_module.patch.apply(code)
+            if not args.output:
+                args.output = args.file + ".patch"
+            with open(args.output, "wb") as f:
+                f.write(code.serialise())
+        except ImportError as e:
+            print(f"Failed to import patch module: {e}")
+            if args.traceback:
+                traceback.print_exc()
+        except AttributeError as e:
+            print(f"Could not find `patch`, did you define it?")
+            if args.traceback:
+                traceback.print_exc()
+        finally:
+            sys.path.pop(0)
         return
 
     if args.command:
