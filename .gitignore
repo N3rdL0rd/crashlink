@@ -19,3 +19,8 @@ testenv
 stubs/
 *.pkl
 memray*.*
+*.hl.patch
+local/
+*.hdll
+*.so
+*.a

@@ -1,0 +1,3 @@
+[submodule "pyhl/hashlink"]
+	path = pyhl/hashlink
+	url = https://github.com/HaxeFoundation/hashlink

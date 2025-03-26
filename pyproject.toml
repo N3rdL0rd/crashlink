@@ -34,11 +34,13 @@ dev = [
   "types-tqdm",
   "dill",
   "pytest-xdist",
-  "staticjinja"
+  "staticjinja",
+  "IPython"
 ]
 extras = [
   "tqdm",
-  "dill"
+  "dill",
+  "IPython"
 ]
 
 [build-system]
