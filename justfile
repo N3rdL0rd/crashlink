@@ -58,7 +58,7 @@ profile:
 # Build the pyhl native HDLL
 pyhl:
     cd pyhl && make clean && make
-    cp pyhl/pyhl.hdll pyhl/hashlink/bin/
+    cp pyhl/pyhl.hdll pyhl/hashlink/bin/ || true
 
 # Updates the hashlink submodule in pyhl/
 update-hl:
