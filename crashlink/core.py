@@ -11,14 +11,13 @@ import ctypes
 import struct
 from abc import ABC, abstractmethod
 from datetime import datetime
+from enum import Enum as _Enum
 from io import BytesIO
 from typing import Any, BinaryIO, Dict, List, Literal, Optional, Tuple, TypeVar
-from enum import Enum as _Enum
 
 T = TypeVar("T", bound="VarInt")  # easier than reimplementing deserialise for each subclass
 
-from .errors import (InvalidOpCode, MalformedBytecode,
-                     NoMagic)
+from .errors import InvalidOpCode, MalformedBytecode, NoMagic
 from .globals import dbg_print, fmt_bytes, tell
 from .opcodes import opcodes
 
@@ -430,7 +429,7 @@ class StringsBlock(Serialisable):
         self.lengths = lengths
         return self
 
-    def serialise(self) -> bytes:        
+    def serialise(self) -> bytes:
         strings_data = bytearray()
         for string in self.value:
             encoded = string.encode("utf-8", errors="surrogateescape")
@@ -446,7 +445,7 @@ class StringsBlock(Serialisable):
             result.extend(length.serialise())
 
         return bytes(result)
-    
+
     def find_or_add(self, val: str) -> int:
         """
         Finds and returns the index of a string value in this block, or adds it to this block and returns its index.
@@ -838,7 +837,7 @@ class Virtual(TypeDef):
                 b"".join([field.serialise() for field in self.fields]),
             ]
         )
-        
+
     def resolve_fields(self, code: "Bytecode") -> List[Field]:
         return self.fields
 
@@ -1007,7 +1006,7 @@ class Type(Serialisable):
         Packed,   # 22
     ]
     # fmt: on
-    
+
     class Kind(_Enum):
         VOID = 0
         U8 = 1
@@ -1032,7 +1031,6 @@ class Type(Serialisable):
         METHOD = 20
         STRUCT = 21
         PACKED = 22
-        
 
     def __init__(self) -> None:
         self.kind = SerialisableInt()
@@ -1338,18 +1336,15 @@ class Function(Serialisable):
                 for _ in range(self.nassigns.value):
                     self.assigns.append((strRef().deserialise(f), VarInt().deserialise(f)))
         return self
-    
+
     def insert_op(self, code: "Bytecode", idx: int, op: Opcode, debugRef: Optional[fileRef] = None) -> None:
         """
         Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.
         """
         self.ops.insert(idx, op)
-        if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo: # fucking typing...
+        if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo:  # fucking typing...
             if not debugRef:
-                debugRef = fileRef(
-                    fid=code.debugfiles.find_or_add("?"),
-                    line=42 # life, the universe, and everything
-                )
+                debugRef = fileRef(fid=code.debugfiles.find_or_add("?"), line=42)  # life, the universe, and everything
             self.debuginfo.value.insert(idx, debugRef)
 
     def serialise(self) -> bytes:
@@ -1358,7 +1353,9 @@ class Function(Serialisable):
         if self.assigns:
             self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
         if self.has_debug and self.debuginfo:
-            assert len(self.debuginfo.value) == self.nops.value, f"Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?"
+            assert (
+                len(self.debuginfo.value) == self.nops.value
+            ), f"Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?"
         res = b"".join(
             [
                 self.type.serialise(),
@@ -1681,7 +1678,9 @@ class Bytecode(Serialisable):
                 else:
                     res[name] = field.value
             final[const._global.value] = res
-        assert len(final) == len(self.constants), "Not all constants were resolved! This is often due to bad DebugInfo blocks causing buffer overrun, try passing -N to troubleshoot."
+        assert len(final) == len(
+            self.constants
+        ), "Not all constants were resolved! This is often due to bad DebugInfo blocks causing buffer overrun, try passing -N to troubleshoot."
         self.initialized_globals = final
 
     def fn(self, findex: int, native: bool = True) -> Function | Native:
@@ -1826,9 +1825,10 @@ class Bytecode(Serialisable):
         """
         Runs a set of basic sanity checks to make sure the bytecode is correct-ish.
         """
+
         def fail(msg: str) -> None:
             print(f"--- FAILED CHECK ---\n{msg}")
-        
+
         if len(self.ints) != self.nints.value:
             fail("ints != nints")
             return False
@@ -1900,7 +1900,7 @@ class Bytecode(Serialisable):
             if offset >= section_offset:
                 return section_name
         return None
-    
+
     def add_string(self, string: str) -> strRef:
         """
         Adds a string to the bytecode's string block and returns a reference to it.
@@ -1916,23 +1916,37 @@ class Bytecode(Serialisable):
             used_indexes.add(function.findex.value)
         for native in self.natives:
             used_indexes.add(native.findex.value)
-        
+
         index = 0
         while index in used_indexes:
             index += 1
-        
+
         return fIndex(index)
-    
+
     def find_prim_type(self, kind: Type.Kind) -> tIndex:
         """
         Finds the index of a primitive type in the bytecode.
         """
-        assert kind.value in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 16], f"This method can only find primitive types! Got: {kind}"
+        assert kind.value in [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            12,
+            13,
+            16,
+        ], f"This method can only find primitive types! Got: {kind}"
         for i, typ in enumerate(self.types):
             if typ.kind.value == kind.value:
                 return tIndex(i)
         raise ValueError(f"Primitive type {kind} not found!")
-    
+
     def add_type(self, typ: Type) -> tIndex:
         """
         Adds a type and returns its tIndex.
