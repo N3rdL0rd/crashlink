@@ -131,6 +131,7 @@ el.replaceWith(d);
             TypeType: 13,
         }
         for val in section.value:
+            print(val.value)
             if not isinstance(val, AsmValueStr):
                 continue
             parts = val.value.split()
@@ -142,15 +143,20 @@ el.replaceWith(d);
                 typ.definition = m_def
                 code.types.append(typ)
             elif parts[0] == &#34;Fun&#34;:
+                print(&#34;Adding Fun...&#34;)
                 fun = Fun()
                 tokens = re.findall(r&#34;\([^)]*\)|\S+&#34;, val.value)
                 _, args, _, ret = tokens
                 r = self._parse_ref(ret)
                 assert isinstance(r, tIndex), &#34;Expected a type reference for return!&#34;
                 fun.ret = r
-                a = [self._parse_ref(arg.strip()) for arg in args.strip(&#34;()&#34;).split(&#34;,&#34;)]
-                assert all([isinstance(arg, tIndex) for arg in a]), &#34;Expected a type reference in args!&#34;
-                fun.args = a  # type: ignore
+                args_s = args.strip(&#34;()&#34;).split(&#34;,&#34;)
+                if len(args_s) == 1 and not args_s[0]:
+                    fun.args = []
+                else:
+                    a = [self._parse_ref(arg.strip()) for arg in args.strip(&#34;()&#34;).split(&#34;,&#34;)]
+                    assert all([isinstance(arg, tIndex) for arg in a]), &#34;Expected a type reference in args!&#34;
+                    fun.args = a  # type: ignore
                 typ = Type()
                 typ.kind.value = 10  # Fun
                 typ.definition = m_def
@@ -409,7 +415,11 @@ class AsmSection(AsmValue):
 <dl>
 <dt id="crashlink.asm.AsmSection.name"><code class="name">var <span class="ident">name</span> : str</code></dt>
 <dd>
-<div class="desc"><p>The type of the None singleton.</p></div>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.asm.AsmSection.value"><code class="name">var <span class="ident">value</span> : List[<a title="crashlink.asm.AsmValueStr" href="#crashlink.asm.AsmValueStr">AsmValueStr</a> | <a title="crashlink.asm.AsmSection" href="#crashlink.asm.AsmSection">AsmSection</a>]</code></dt>
+<dd>
+<div class="desc"></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -431,14 +441,6 @@ class AsmSection(AsmValue):
 <div class="desc"></div>
 </dd>
 </dl>
-<h3>Inherited members</h3>
-<ul class="hlist">
-<li><code><b><a title="crashlink.asm.AsmValue" href="#crashlink.asm.AsmValue">AsmValue</a></b></code>:
-<ul class="hlist">
-<li><code><a title="crashlink.asm.AsmValue.value" href="#crashlink.asm.AsmValue.value">value</a></code></li>
-</ul>
-</li>
-</ul>
 </dd>
 <dt id="crashlink.asm.AsmValue"><code class="flex name class">
 <span>class <span class="ident">AsmValue</span></span>
@@ -467,7 +469,7 @@ class AsmValue(ABC):
 <dl>
 <dt id="crashlink.asm.AsmValue.value"><code class="name">var <span class="ident">value</span> : Any</code></dt>
 <dd>
-<div class="desc"><p>The type of the None singleton.</p></div>
+<div class="desc"></div>
 </dd>
 </dl>
 </dd>
@@ -489,14 +491,13 @@ class AsmValue(ABC):
 <li><a title="crashlink.asm.AsmValue" href="#crashlink.asm.AsmValue">AsmValue</a></li>
 <li>abc.ABC</li>
 </ul>
-<h3>Inherited members</h3>
-<ul class="hlist">
-<li><code><b><a title="crashlink.asm.AsmValue" href="#crashlink.asm.AsmValue">AsmValue</a></b></code>:
-<ul class="hlist">
-<li><code><a title="crashlink.asm.AsmValue.value" href="#crashlink.asm.AsmValue.value">value</a></code></li>
-</ul>
-</li>
-</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashlink.asm.AsmValueStr.value"><code class="name">var <span class="ident">value</span> : str</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
 </dd>
 </dl>
 </section>
@@ -525,6 +526,7 @@ class AsmValue(ABC):
 <ul class="">
 <li><code><a title="crashlink.asm.AsmSection.get" href="#crashlink.asm.AsmSection.get">get</a></code></li>
 <li><code><a title="crashlink.asm.AsmSection.name" href="#crashlink.asm.AsmSection.name">name</a></code></li>
+<li><code><a title="crashlink.asm.AsmSection.value" href="#crashlink.asm.AsmSection.value">value</a></code></li>
 </ul>
 </li>
 <li>
@@ -535,6 +537,9 @@ class AsmValue(ABC):
 </li>
 <li>
 <h4><code><a title="crashlink.asm.AsmValueStr" href="#crashlink.asm.AsmValueStr">AsmValueStr</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.asm.AsmValueStr.value" href="#crashlink.asm.AsmValueStr.value">value</a></code></li>
+</ul>
 </li>
 </ul>
 </li>

@@ -5,7 +5,7 @@ Decompilation, IR and control flow graph generation
 from abc import ABC, abstractmethod
 from enum import Enum as _Enum  # Enum is already defined in crashlink.core
 from pprint import pformat
-from typing import Any, Dict, List, Optional, Set, Tuple, ClassVar
+from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple
 
 from . import disasm
 from .core import (Bytecode, Function, Opcode, ResolvableVarInt, Type, Void,
@@ -780,7 +780,7 @@ class IRLoopConditionOptimizer(IROptimizer):
     """
     Convert abstract jumps in loop condition blocks to bool expressions.
     """
-    
+
     def optimize(self) -> None:
         pass
 
@@ -790,12 +790,7 @@ class IRFunction:
     Intermediate representation of a function.
     """
 
-    def __init__(
-        self, 
-        code: Bytecode, 
-        func: Function,
-        do_optimize: bool = True
-    ) -> None:
+    def __init__(self, code: Bytecode, func: Function, do_optimize: bool = True) -> None:
         self.func = func
         self.cfg = CFGraph(func)
         self.cfg.build()
@@ -805,9 +800,7 @@ class IRFunction:
         self.block: IRBlock
         self._lift()
         if do_optimize:
-            self.optimizers: List[IROptimizer] = [
-                IRLoopConditionOptimizer(self)
-            ]
+            self.optimizers: List[IROptimizer] = [IRLoopConditionOptimizer(self)]
             self._optimize()
 
     def _lift(self) -> None:

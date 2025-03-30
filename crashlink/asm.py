@@ -131,7 +131,7 @@ class AsmFile:
                 args_s = args.strip("()").split(",")
                 if len(args_s) == 1 and not args_s[0]:
                     fun.args = []
-                else:  
+                else:
                     a = [self._parse_ref(arg.strip()) for arg in args.strip("()").split(",")]
                     assert all([isinstance(arg, tIndex) for arg in a]), "Expected a type reference in args!"
                     fun.args = a  # type: ignore
