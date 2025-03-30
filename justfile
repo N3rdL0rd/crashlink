@@ -69,7 +69,7 @@ update-hl:
 
 # Builds the hashlink submodule in pyhl/ to pyhl/hashlink/bin/
 build-hl:
-    cd pyhl/hashlink && cmake . && make -j $(nproc)
+    cd pyhl/hashlink && mkdir -p build && cd build && cmake .. && make -j$(nproc)
 
 # Clean the codebase
 clean:

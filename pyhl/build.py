@@ -1,9 +1,11 @@
 import urllib3
 import os
 import subprocess
+import platform
 
 CURRENT_PYTHON = "https://www.python.org/ftp/python/3.14.0/Python-3.14.0a6.tar.xz"
 DIR = "Python-3.14.0a6"
+LIBPYTHON = "libpython3.14.a"
 INITIAL_DIR = os.getcwd()
 
 def download_file(url: str, dest: str) -> None:
@@ -33,7 +35,7 @@ def gen_prefix() -> str:
         os.makedirs(prefix)
     return prefix
 
-def main() -> None:
+def main_nix() -> None:
     print("Downloading Python...")
     download_file(CURRENT_PYTHON, "python.tar.xz")
     print("Extracting...")
@@ -41,7 +43,7 @@ def main() -> None:
     print("Configuring...")
     os.chdir(DIR)
     prefix = gen_prefix()
-    configure_cmd = f'./configure --enable-optimizations --with-ensurepip=install --prefix="{prefix}" --disable-test-modules'
+    configure_cmd = f'./configure CFLAGS="-fPIC" --enable-optimizations --with-ensurepip=install --prefix="{prefix}" --disable-test-modules'
     subprocess.run(configure_cmd, shell=True, check=True)
     print("Building...")
     subprocess.run("make -j$(($(nproc) + 1))", shell=True, check=True)
@@ -51,7 +53,17 @@ def main() -> None:
     os.chdir(INITIAL_DIR)
     subprocess.run(["rm", "-rf", DIR], check=True)
     subprocess.run(["rm", "python.tar.xz"], check=True)
+    print("Copying libpython...")
+    os.system("cp python/lib/libpython3.14.a libpython.a")
+    print("Copying include...")
+    os.system("cp -r python/include/python* include")
     print("Python built!")
+    
+def main_win() -> None:
+    raise NotImplementedError("Windows build is not implemented yet.")
 
 if __name__ == "__main__":
-    main()
+    if platform.system() == "Linux":
+        main_nix()
+    else:
+        main_win()
