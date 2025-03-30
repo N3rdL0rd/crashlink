@@ -55,9 +55,18 @@ profile:
     python -m cProfile -o tests.prof -m pytest
     snakeviz tests.prof
 
-# Build the pyhl native HDLL (Linux)
+# Download or build libpython for pyhl
+pyhl-prepare:
+    cd pyhl && python install_python.py
+
+# Build the pyhl native HDLL (Linux) - run pyhl-prepare
 pyhl:
     cd pyhl && make clean && make
+    cp pyhl/pyhl.hdll pyhl/hashlink/bin/ || true
+
+# Build the pyhl native HDLL (Windows) - run vcvarsall.bat and pyhl-prepare first
+pyhl-win:
+    cd pyhl && nmake /f Makefile.win
     cp pyhl/pyhl.hdll pyhl/hashlink/bin/ || true
 
 # Updates the hashlink submodule in pyhl/
