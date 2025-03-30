@@ -1,0 +1,18 @@
+CC = cl
+CFLAGS = /LD /MD /EHsc /Zi /W3 /D_CRT_SECURE_NO_WARNINGS
+PYTHON_INCLUDE = .\include
+HASHLINK_INCLUDE = .\hashlink\src
+INCLUDES = /I$(PYTHON_INCLUDE) /I$(HASHLINK_INCLUDE)
+
+PYTHON_LIBS = python313.lib
+WIN_LIBS = kernel32.lib user32.lib
+
+TARGET = pyhl.hdll
+
+all: $(TARGET)
+
+$(TARGET): pyhl.c
+    $(CC) $(CFLAGS) $(INCLUDES) /Fe:$@ pyhl.c $(PYTHON_LIBS) $(WIN_LIBS)
+
+clean:
+    -del $(TARGET) *.obj *.lib *.exp *.pdb
