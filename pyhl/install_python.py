@@ -1,5 +1,6 @@
 import os
 import platform
+import shutil
 import subprocess
 import zipfile
 
@@ -122,9 +123,9 @@ def main_win() -> None:
 
     print("Cleaning up...")
     os.remove("python.nupkg")
-    import shutil
 
     shutil.rmtree("python_nuget")
+    shutil.rmtree("python", ignore_errors=True)
 
     if (
         os.path.exists(include_dir)
