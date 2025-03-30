@@ -30,3 +30,13 @@ pyhl/include
 pyhl/python.tar.xz
 pyhl/libpython.a
 pyhl/lib
+pyhl/*.obj
+pyhl/*.pdb
+pyhl/*.exp
+pyhl/*.ilk
+pyhl/*.lib
+*.id*
+*.nam
+*.til
+*.idb
+*.i64

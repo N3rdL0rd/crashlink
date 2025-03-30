@@ -55,7 +55,7 @@ profile:
     python -m cProfile -o tests.prof -m pytest
     snakeviz tests.prof
 
-# Build the pyhl native HDLL
+# Build the pyhl native HDLL (Linux)
 pyhl:
     cd pyhl && make clean && make
     cp pyhl/pyhl.hdll pyhl/hashlink/bin/ || true

@@ -11,7 +11,7 @@ HL_PRIM void HL_NAME(init)() {
     if (!Py_IsInitialized()) {
         Py_Initialize();
         dbg_print(" done...\n");
-        PyRun_SimpleString("print('[pyhl] Hello from Python!')");
+        dbg_print("[pyhl] Python %s initialized successfully\n", Py_GetVersion());
     } else {
         dbg_print(" already loaded\n");
     }
@@ -86,11 +86,12 @@ HL_PRIM bool HL_NAME(intercept)(vdynamic* args, signed char nargs, vbyte* fn_nam
     // convert
     char fn_name[256] = {0};
     int i, j;
-    for (i = 0, j = 0; i < 256 && fn_name[i] != 0; i += 2, j++) {
-        fn_name[j] = fn_name[i];
+    for (i = 0, j = 0; i < 256 && fn_name_utf16[i] != 0; i += 2, j++) {
+        fn_name[j] = fn_name_utf16[i];
     }
     fn_name[j] = '\0';
 
+    return true;
 }
 
 DEFINE_PRIM(_VOID, init, _NO_ARG);
