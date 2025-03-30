@@ -18,8 +18,11 @@ make
 Windows:
 
 ```bash
+"C:\Program Files\Microsoft Visual Studio\2022\VC\Auxiliary\Build\vcvarsall.bat" x64 # assuming you're using VS2022
 python intall_python.py
 nmake /f Makefile.win
 ```
 
 The resulting `pyhl.hdll` should be there in the same directory as the `Makefile`.
+
+If you're building as part of crashlink, you can also run `just pyhl-prepare` and `just pyhl`/`just pyhl-win` to build it.

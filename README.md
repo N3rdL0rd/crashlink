@@ -109,6 +109,9 @@ You can use the following pre-defined commands with `just`:
 - `just profile`: Run the test suite with cProfile and then open the results in a browser.
 - `just serve-docs`: Serve the documentation locally.
 
+> [!NOTE]
+> A lot of very WIP development is done on `dev`. If you want to see the latest and greatest, checkout that branch. If you want something semi-stable, checkout `main` instead.
+
 ### `crashtest` CLI
 
 `crashtest` is a built-in testing system that is used to score the decompiler's output against the original source code. It is used to ensure that the decompiler is working correctly, that the output is correct, that the decompiler is not regressing, and to allow those interested in the project to easily see the state of the decompiler without installing it or running the test suite themselves. You can call it with `crashtest auto` (or `python -m crashtest auto`). Make sure you call it from the root of the repository, since it uses relative paths to find the test files and the output directory.
