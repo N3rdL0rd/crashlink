@@ -80,9 +80,13 @@ update-hl:
 build-hl:
     cd pyhl/hashlink && mkdir -p build && cd build && cmake .. && make -j$(nproc)
 
-# Clean the codebase
-clean:
+# Cleans files
+clean-f:
     rm -rf build dist crashlink.egg-info .mypy_cache .pytest_cache .coverage .coverage.* .tox .nox .hypothesis .pytest_cache tests.prof *_reser.dat
+    rm -rf pyhl/include pyhl/libpython* pyhl/pyhl.hdll pyhl/hashlink/bin/pyhl.hdll pyhl/*.lib pyhl/*.dll pyhl/*.a pyhl/*.pdb pyhl/python
+
+# Clean the codebase
+clean: clean-f update-hl
 
 # Full development workflow: format, check, test and generate docs
 dev: format check test docs
