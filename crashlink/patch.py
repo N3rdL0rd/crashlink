@@ -36,7 +36,12 @@ class Args:
     def __len__(self) -> int:
         return len(self._values)
     
-    # TODO: iter
+    def __iter__(self) -> Iterable[Any]:
+        return iter(self._values)
+    
+    def items(self) -> Iterable[Tuple[Any, Any]]:
+        """Iterate over (value, type) pairs"""
+        return zip(self._values, self._types)
 
 class Patch:
     """
