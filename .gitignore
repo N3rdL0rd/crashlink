@@ -24,3 +24,8 @@ local/
 *.hdll
 *.so
 *.a
+pyhl/Python-*
+pyhl/python*
+pyhl/include
+pyhl/python.tar.xz
+pyhl/libpython.a
