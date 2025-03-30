@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.5">
+<title>crashlink.patch API documentation</title>
+<meta name="description" content="A Python-based system for patching and hooking of bytecode, similar to [DCCM](https://github.com/dead-cells-core-modding/core).">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>crashlink.patch</code></h1>
+</header>
+<section id="section-intro">
+<p>A Python-based system for patching and hooking of bytecode, similar to <a href="https://github.com/dead-cells-core-modding/core">DCCM</a>.</p>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="crashlink.patch.Args"><code class="flex name class">
+<span>class <span class="ident">Args</span></span>
+<span>(</span><span>values: List[Any], types: List[Any])</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Args:
+    &#34;&#34;&#34;
+    Wrapper for function arguments that tracks their types.
+    Allows accessing arguments by index and supports type tracking.
+    &#34;&#34;&#34;
+
+    def __init__(self, values: List[Any], types: List[Any]) -&gt; None:
+        self._values = values
+        self._types = types
+
+    def __getitem__(self, index: int) -&gt; Any:
+        return self._values[index]
+
+    def __setitem__(self, index: int, value: Any) -&gt; None:
+        self._values[index] = value
+
+    def get_type(self, index: int) -&gt; Any:
+        &#34;&#34;&#34;Get the type object for the argument at the given index&#34;&#34;&#34;
+        return self._types[index]
+
+    def set_type(self, index: int, type_obj: Any) -&gt; None:
+        &#34;&#34;&#34;Set the type object for the argument at the given index&#34;&#34;&#34;
+        # TODO: enforce type
+        self._types[index] = type_obj
+
+    def __len__(self) -&gt; int:
+        return len(self._values)
+
+    def __iter__(self) -&gt; Iterable[Any]:
+        return iter(self._values)
+
+    def items(self) -&gt; Iterable[Tuple[Any, Any]]:
+        &#34;&#34;&#34;Iterate over (value, type) pairs&#34;&#34;&#34;
+        return zip(self._values, self._types)</code></pre>
+</details>
+<div class="desc"><p>Wrapper for function arguments that tracks their types.
+Allows accessing arguments by index and supports type tracking.</p></div>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.patch.Args.get_type"><code class="name flex">
+<span>def <span class="ident">get_type</span></span>(<span>self, index: int) ‑> Any</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_type(self, index: int) -&gt; Any:
+    &#34;&#34;&#34;Get the type object for the argument at the given index&#34;&#34;&#34;
+    return self._types[index]</code></pre>
+</details>
+<div class="desc"><p>Get the type object for the argument at the given index</p></div>
+</dd>
+<dt id="crashlink.patch.Args.items"><code class="name flex">
+<span>def <span class="ident">items</span></span>(<span>self) ‑> Iterable[Tuple[Any, Any]]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def items(self) -&gt; Iterable[Tuple[Any, Any]]:
+    &#34;&#34;&#34;Iterate over (value, type) pairs&#34;&#34;&#34;
+    return zip(self._values, self._types)</code></pre>
+</details>
+<div class="desc"><p>Iterate over (value, type) pairs</p></div>
+</dd>
+<dt id="crashlink.patch.Args.set_type"><code class="name flex">
+<span>def <span class="ident">set_type</span></span>(<span>self, index: int, type_obj: Any) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_type(self, index: int, type_obj: Any) -&gt; None:
+    &#34;&#34;&#34;Set the type object for the argument at the given index&#34;&#34;&#34;
+    # TODO: enforce type
+    self._types[index] = type_obj</code></pre>
+</details>
+<div class="desc"><p>Set the type object for the argument at the given index</p></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.patch.Patch"><code class="flex name class">
+<span>class <span class="ident">Patch</span></span>
+<span>(</span><span>name: str | None = None, author: str | None = None, sha256: str | None = None)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Patch:
+    &#34;&#34;&#34;
+    Main patching class that manages bytecode hooks and patches.
+    &#34;&#34;&#34;
+
+    def __init__(self, name: Optional[str] = None, author: Optional[str] = None, sha256: Optional[str] = None):
+        &#34;&#34;&#34;
+        Initialize a new patch.
+
+        Args:
+            name: Descriptive name of the patch
+            author: Author of the patch
+            sha256: SHA256 hash of the input bytecode file
+        &#34;&#34;&#34;
+        self.name = name
+        self.author = author
+        self.sha256 = sha256
+        self.interceptions: Dict[str | int, Callable[[Args], Args]] = {}
+        self.needs_pyhl = True
+        self.custom_fns: Dict[str, fIndex] = {}
+
+    def intercept(self, fn: str | int) -&gt; Callable[[Callable[[Args], Args]], Callable[[Args], Args]]:
+        &#34;&#34;&#34;
+        Decorator to intercept function calls.
+
+        Args:
+            target_path: Path to the target function (e.g., &#34;$PatchMe.thing&#34;)
+
+        Returns:
+            Decorator function
+        &#34;&#34;&#34;
+
+        def decorator(func: Callable[[Args], Args]) -&gt; Callable[[Args], Args]:
+            self.interceptions[fn] = func
+            return func
+
+        return decorator
+
+    def _intercept(self, code: Bytecode, fn: Function, interceptor: Callable[[Args], Args]) -&gt; None:
+        &#34;&#34;&#34;
+        Apply an interception.
+        &#34;&#34;&#34;
+        # HACK: finds arg regs by looking at where the first Void arg appears. terrible and i hate it but... probably the best way to do this w/out looking at xrefs
+        arg_regs: List[tIndex] = []
+        for reg in fn.regs:
+            if reg.resolve(code).kind.value == Type.Kind.VOID.value:
+                break
+            arg_regs.append(reg)
+
+        arg_virt = Virtual()
+        arg_virt.fields.extend([Field(code.add_string(f&#34;arg_{i}&#34;), typ) for i, typ in enumerate(arg_regs)])
+        arg_typ = Type()
+        arg_typ.kind.value = Type.Kind.VIRTUAL.value
+        arg_typ.definition = arg_virt
+        # arg_tid = code.add_type(arg_typ)
+        # TODO: why does this cause overruns???
+
+        fn.regs.append(code.find_prim_type(Type.Kind.VOID))
+        void_reg = Reg(len(fn.regs) - 1)
+        bytes_type = code.find_prim_type(Type.Kind.BYTES)
+        fn.regs.extend([bytes_type, bytes_type])
+        mod_reg = Reg(len(fn.regs) - 2)
+        fn_reg = Reg(len(fn.regs) - 1)
+
+        op = Opcode()
+        op.op = &#34;Call2&#34;
+        op.definition = {&#34;dst&#34;: void_reg, &#34;fun&#34;: self.custom_fns[&#34;call&#34;], &#34;arg0&#34;: mod_reg, &#34;arg1&#34;: fn_reg}
+        fn.insert_op(code, 0, op)
+
+        op = Opcode()
+        op.op = &#34;String&#34;
+        op.definition = {&#34;dst&#34;: mod_reg, &#34;ptr&#34;: code.add_string(&#34;mod&#34;)}
+        fn.insert_op(code, 0, op)
+
+        op = Opcode()
+        op.op = &#34;String&#34;
+        op.definition = {&#34;dst&#34;: fn_reg, &#34;ptr&#34;: code.add_string(&#34;test&#34;)}
+        fn.insert_op(code, 0, op)
+
+    def _apply_pyhl(self, code: Bytecode) -&gt; None:
+        print(&#34;Installing pyhl native...&#34;)
+        pyhl_funcs: Dict[str, Optional[tIndex]] = {&#34;init&#34;: None, &#34;deinit&#34;: None, &#34;call&#34;: None}
+        indices: Dict[str, Optional[fIndex]] = {&#34;init&#34;: None, &#34;deinit&#34;: None, &#34;call&#34;: None}
+        for func in pyhl_funcs.keys():
+            print(f&#34;Generating types for pyhl.{func}&#34;)
+            voi = code.find_prim_type(Type.Kind.VOID)
+            match func:
+                case &#34;init&#34; | &#34;deinit&#34;:
+                    typ = Type()
+                    typ.kind.value = Type.Kind.FUN.value
+                    fun = Fun()
+                    fun.args = []
+                    fun.ret = voi
+                    typ.definition = fun
+                    pyhl_funcs[func] = code.add_type(typ)
+                case &#34;call&#34;:
+                    typ = Type()
+                    typ.kind.value = Type.Kind.FUN.value
+                    fun = Fun()
+                    byt = code.find_prim_type(Type.Kind.BYTES)
+                    fun.args = [byt, byt]
+                    fun.ret = code.find_prim_type(Type.Kind.BOOL)
+                    typ.definition = fun
+                    pyhl_funcs[func] = code.add_type(typ)
+                case _:
+                    raise NameError(&#34;No such pyhl function typedefs: &#34; + func)
+
+        for func, tid in pyhl_funcs.items():
+            print(f&#34;Injecting pyhl.{func}&#34;)
+            native = Native()
+            native.lib = code.add_string(&#34;pyhl&#34;)
+            native.name = code.add_string(func)
+            assert tid is not None, &#34;Something goofed!&#34;
+            native.type = tid
+            native.findex = code.next_free_findex()
+            indices[func] = native.findex
+            code.natives.append(native)
+
+        assert all(tid is not None for tid in indices.values()), &#34;Some indices are None!&#34;
+        for k, v in indices.items():
+            self.custom_fns[k] = v  # type: ignore
+
+    def apply(self, code: Bytecode) -&gt; None:
+        &#34;&#34;&#34;
+        Apply all registered hooks and patches.
+        &#34;&#34;&#34;
+        assert code.is_ok()
+        print(f&#34;----- Applying patch:{&#39; &#39; + self.name if self.name else &#39;&#39;} -----&#34;)
+
+        if self.needs_pyhl:
+            self._apply_pyhl(code)
+
+            print(&#34;Applying entrypoint patches&#34;)
+            entry = code.entrypoint.resolve(code)
+            assert isinstance(entry, Function), &#34;Entry can&#39;t be a native!&#34;
+
+            entry.regs.append(code.find_prim_type(Type.Kind.VOID))
+            void_reg = Reg(len(entry.regs) - 1)
+            op = Opcode()
+            op.op = &#34;Call0&#34;
+            assert self.custom_fns[&#34;init&#34;] is not None, &#34;Invalid fIndex!&#34;
+            op.definition = {&#34;dst&#34;: void_reg, &#34;fun&#34;: self.custom_fns[&#34;init&#34;]}
+            entry.insert_op(code, 0, op)
+
+        for identifier, interceptor in self.interceptions.items():
+            if isinstance(identifier, int):
+                fn = fIndex(identifier).resolve(code)
+            else:
+                match: Optional[Function] = None
+                for fn in code.functions:
+                    if full_func_name(code, fn) == identifier:
+                        match = fn
+                if not match:
+                    raise NameError(f&#34;No such function &#39;{identifier}&#39;&#34;)
+                fn = match
+            assert not isinstance(fn, Native), &#34;Cannot intercept a native! (Yet...)&#34;  # TODO: native intercept
+            print(
+                f&#34;(Intercept) {func_header(code, fn)}\n\tTO -&gt; pyhl&#34;
+            )  # TODO: other handlers than pyhl, custom hdll injection, etc.
+            self._intercept(code, fn, interceptor)
+
+        code.set_meta()
+        assert code.is_ok()</code></pre>
+</details>
+<div class="desc"><p>Main patching class that manages bytecode hooks and patches.</p>
+<p>Initialize a new patch.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>name</code></strong></dt>
+<dd>Descriptive name of the patch</dd>
+<dt><strong><code>author</code></strong></dt>
+<dd>Author of the patch</dd>
+<dt><strong><code>sha256</code></strong></dt>
+<dd>SHA256 hash of the input bytecode file</dd>
+</dl></div>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.patch.Patch.apply"><code class="name flex">
+<span>def <span class="ident">apply</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def apply(self, code: Bytecode) -&gt; None:
+    &#34;&#34;&#34;
+    Apply all registered hooks and patches.
+    &#34;&#34;&#34;
+    assert code.is_ok()
+    print(f&#34;----- Applying patch:{&#39; &#39; + self.name if self.name else &#39;&#39;} -----&#34;)
+
+    if self.needs_pyhl:
+        self._apply_pyhl(code)
+
+        print(&#34;Applying entrypoint patches&#34;)
+        entry = code.entrypoint.resolve(code)
+        assert isinstance(entry, Function), &#34;Entry can&#39;t be a native!&#34;
+
+        entry.regs.append(code.find_prim_type(Type.Kind.VOID))
+        void_reg = Reg(len(entry.regs) - 1)
+        op = Opcode()
+        op.op = &#34;Call0&#34;
+        assert self.custom_fns[&#34;init&#34;] is not None, &#34;Invalid fIndex!&#34;
+        op.definition = {&#34;dst&#34;: void_reg, &#34;fun&#34;: self.custom_fns[&#34;init&#34;]}
+        entry.insert_op(code, 0, op)
+
+    for identifier, interceptor in self.interceptions.items():
+        if isinstance(identifier, int):
+            fn = fIndex(identifier).resolve(code)
+        else:
+            match: Optional[Function] = None
+            for fn in code.functions:
+                if full_func_name(code, fn) == identifier:
+                    match = fn
+            if not match:
+                raise NameError(f&#34;No such function &#39;{identifier}&#39;&#34;)
+            fn = match
+        assert not isinstance(fn, Native), &#34;Cannot intercept a native! (Yet...)&#34;  # TODO: native intercept
+        print(
+            f&#34;(Intercept) {func_header(code, fn)}\n\tTO -&gt; pyhl&#34;
+        )  # TODO: other handlers than pyhl, custom hdll injection, etc.
+        self._intercept(code, fn, interceptor)
+
+    code.set_meta()
+    assert code.is_ok()</code></pre>
+</details>
+<div class="desc"><p>Apply all registered hooks and patches.</p></div>
+</dd>
+<dt id="crashlink.patch.Patch.intercept"><code class="name flex">
+<span>def <span class="ident">intercept</span></span>(<span>self, fn: str | int) ‑> Callable[[Callable[[<a title="crashlink.patch.Args" href="#crashlink.patch.Args">Args</a>], <a title="crashlink.patch.Args" href="#crashlink.patch.Args">Args</a>]], Callable[[<a title="crashlink.patch.Args" href="#crashlink.patch.Args">Args</a>], <a title="crashlink.patch.Args" href="#crashlink.patch.Args">Args</a>]]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def intercept(self, fn: str | int) -&gt; Callable[[Callable[[Args], Args]], Callable[[Args], Args]]:
+    &#34;&#34;&#34;
+    Decorator to intercept function calls.
+
+    Args:
+        target_path: Path to the target function (e.g., &#34;$PatchMe.thing&#34;)
+
+    Returns:
+        Decorator function
+    &#34;&#34;&#34;
+
+    def decorator(func: Callable[[Args], Args]) -&gt; Callable[[Args], Args]:
+        self.interceptions[fn] = func
+        return func
+
+    return decorator</code></pre>
+</details>
+<div class="desc"><p>Decorator to intercept function calls.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>target_path</code></strong></dt>
+<dd>Path to the target function (e.g., "$PatchMe.thing")</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>Decorator function</p></div>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashlink" href="index.html">crashlink</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="crashlink.patch.Args" href="#crashlink.patch.Args">Args</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.patch.Args.get_type" href="#crashlink.patch.Args.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.patch.Args.items" href="#crashlink.patch.Args.items">items</a></code></li>
+<li><code><a title="crashlink.patch.Args.set_type" href="#crashlink.patch.Args.set_type">set_type</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.patch.Patch" href="#crashlink.patch.Patch">Patch</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.patch.Patch.apply" href="#crashlink.patch.Patch.apply">apply</a></code></li>
+<li><code><a title="crashlink.patch.Patch.intercept" href="#crashlink.patch.Patch.intercept">intercept</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+</footer>
+</body>
+</html>

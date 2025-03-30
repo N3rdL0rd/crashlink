@@ -3,16 +3,16 @@ Entrypoint for the crashlink CLI.
 """
 
 import argparse
+import importlib
 import inspect
 import os
 import platform
 import subprocess
 import sys
 import tempfile
+import traceback
 import webbrowser
 from typing import Callable, Dict, List, Optional, Tuple
-import importlib
-import traceback
 
 from . import decomp, disasm, globals
 from .asm import AsmFile
@@ -20,7 +20,7 @@ from .core import Bytecode, Native
 from .globals import VERSION
 from .interp.vm import VM  # type: ignore
 from .opcodes import opcode_docs, opcodes
-from .patch import Patch, Args
+from .patch import Args, Patch
 
 
 class Commands:
@@ -439,11 +439,11 @@ class Commands:
 
         vm = VM(self.code)
         vm.run(entry=idx)
-        
+
     def repl(self, args: List[str]) -> None:
         """Drop into a Python REPL with direct access to the Bytecode object."""
         code = self.code
-    
+
         banner = (
             "Interactive crashlink Python REPL\n"
             "Available globals:\n"
@@ -451,20 +451,22 @@ class Commands:
             "  - disasm: The crashlink.disasm module\n"
             "  - decomp: The crashlink.decomp module\n"
         )
-    
+
         local_vars = {
             "code": code,
             "disasm": disasm,
             "decomp": decomp,
         }
-    
+
         try:
-            import IPython # type: ignore
+            import IPython  # type: ignore
+
             IPython.embed(banner1=banner, user_ns=local_vars)
         except ImportError:
             import code as cd
+
             cd.interact(banner=banner, local=local_vars)
-            
+
     def offset(self, args: List[str]) -> None:
         """Print the bytecode section at a given offset. `offset <offset in hex>`"""
         if len(args) == 0:
@@ -476,12 +478,12 @@ class Commands:
             print("Invalid offset.")
             return
         print(self.code.section_at(offset))
-        
+
     def floats(self, args: List[str]) -> None:
         """List all floats in the bytecode."""
         for i, float in enumerate(self.code.floats):
             print(f"Float {i}: {float.value}")
-            
+
     def infile(self, args: List[str]) -> None:
         """Finds all functions from a given file in the bytecode. `infile <file>`"""
         if len(args) == 0:
@@ -494,7 +496,7 @@ class Commands:
         for func in self.code.functions:
             if func.resolve_file(self.code) == file:
                 print(disasm.func_header(self.code, func))
-                
+
     def debugfiles(self, args: List[str]) -> None:
         """List all debug files in the bytecode."""
         if self.code.debugfiles and self.code.has_debug_info:
@@ -544,17 +546,29 @@ def main() -> None:
     parser.add_argument("-c", "--command", help="The command to run on startup")
     parser.add_argument("-H", "--hlbc", help="Run in HLBC compatibility mode", action="store_true")
     parser.add_argument("-p", "--patch", help="Patch the passed file with the following patch definition")
-    parser.add_argument("-t", "--traceback", help="Print tracebacks for debugging when catching exceptions", action="store_true")
-    parser.add_argument("-N", "--no-constants", help="Don't resolve constants during deserialisation - helpful for problematic or otherwise weird bytecode files", action="store_true")
+    parser.add_argument(
+        "-t", "--traceback", help="Print tracebacks for debugging when catching exceptions", action="store_true"
+    )
+    parser.add_argument(
+        "-N",
+        "--no-constants",
+        help="Don't resolve constants during deserialisation - helpful for problematic or otherwise weird bytecode files",
+        action="store_true",
+    )
     parser.add_argument("-d", "--debug", help="Enable addtional debug output", action="store_true")
-    parser.add_argument("-D", "--no-debug", help="Disable debug output that may have been implicitly activted somewhere else", action="store_true")
+    parser.add_argument(
+        "-D",
+        "--no-debug",
+        help="Disable debug output that may have been implicitly activted somewhere else",
+        action="store_true",
+    )
     args = parser.parse_args()
 
     if args.debug:
         globals.DEBUG = True
-    
+
     if args.no_debug:
-        globals.DEBUG = False 
+        globals.DEBUG = False
 
     if args.assemble:
         out = (
@@ -597,17 +611,17 @@ def main() -> None:
     else:
         print("Unknown file format.")
         return
-    
+
     if args.patch:
         print(f"Loading patch: {args.patch}")
         patch_dir = os.path.dirname(args.patch)
         patch_name = os.path.basename(args.patch)
-        
-        if patch_name.endswith('.py'):
+
+        if patch_name.endswith(".py"):
             patch_name = patch_name[:-3]
-            
+
         sys.path.insert(0, patch_dir)
-        
+
         try:
             patch_module = importlib.import_module(patch_name)
             print(f"Successfully loaded patch module: {patch_module}")

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
 <meta name="generator" content="pdoc3 0.11.5">
 <title>crashlink API documentation</title>
-<meta name="description" content="Pure Python HashLink bytecode parser/disassembler/decompiler/modding tool …">
+<meta name="description" content="Pure-Python HashLink bytecode Swiss Army knife …">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
@@ -38,19 +38,27 @@ el.replaceWith(d);
 <h1 class="title">Package <code>crashlink</code></h1>
 </header>
 <section id="section-intro">
-<p>Pure Python HashLink bytecode parser/disassembler/decompiler/modding tool</p>
+<p>Pure-Python HashLink bytecode Swiss Army knife.</p>
+<blockquote>
+<p>[!WARNING]
+This project is under active development. Breaking changes may be made to APIs with zero notice.</p>
+</blockquote>
 <h2 id="features">Features</h2>
 <ul>
 <li>Pure Python with zero dependencies, integrates nicely in a lot of places (IDAPython compatible!)</li>
-<li>Allows values to be externally modified and reserialised through a scriptable interface</li>
-<li>A very nice little CLI with <a href="https://github.com/Gui-Yom/hlbc">hlbc</a>-compatible mode.</li>
+<li>Deserialisation, disassembly, and (currently limited) decompilation of HashLink bytecode</li>
+<li>Reserialisation and first-class support for patching bytecode assembly</li>
+<li>A bytecode assembler for creating HashLink bytecode from scratch</li>
+<li>A scriptable interface for easy integration into other tools</li>
+<li>A little CLI similar to <a href="https://github.com/Gui-Yom/hlbc">hlbc</a></li>
 </ul>
 <h2 id="installation">Installation</h2>
 <pre><code class="language-bash">pip install crashlink
 </code></pre>
-<p>Optionally, install <code>tqdm</code> for progress bars when parsing large files:</p>
-<pre><code class="language-bash">pip install crashlink[tqdm]
+<p>Optionally, install <code>[extras]</code> for progress bars when parsing large files and faster bytecode save/load in-memory:</p>
+<pre><code class="language-bash">pip install crashlink[extras]
 </code></pre>
+<p>Or, for bleeding-edge features, see the <a href="#development">Development</a> section.</p>
 <p>You also need to have Graphviz installed to generate control flow graphs. On most *nix systems, on Windows (with Chocolatey or Scoop), and on MacOS (with Homebrew), you can install it with your package manager under <code>graphviz</code>.</p>
 <ul>
 <li>Windows: <code>choco install graphviz</code></li>
@@ -61,6 +69,19 @@ el.replaceWith(d);
 </ul>
 <h2 id="usage">Usage</h2>
 <p>Either:</p>
+<pre><code class="language-txt">$ crashlink path/to/file.hl # or python -m crashlink
+crashlink&gt; funcs
+f@22 static Clazz.main () -&gt; Void (from Clazz.hx)
+f@23 Clazz.method (Clazz) -&gt; I32 (from Clazz.hx)
+crashlink&gt; fn 22
+f@22 static Clazz.main () -&gt; Void (from Clazz.hx)
+Reg types:
+  0. Void
+
+Ops:
+  0. Ret             {'ret': 0}                                       return
+</code></pre>
+<p>Or:</p>
 <pre><code class="language-py">from crashlink import *
 code = Bytecode.from_path(&quot;path/to/file.hl&quot;)
 if code.fn(22): # 22 and 240 are typical entry points for the compiler to generate
@@ -74,32 +95,20 @@ elif code.fn(240):
 # &gt; Ops:
 # &gt;   0. Ret             {'ret': 0}                                       return
 </code></pre>
-<p>Or:</p>
-<pre><code class="language-bash">$ crashlink path/to/file.hl # or python -m crashlink
-crashlink&gt; funcs
-f@22 static Clazz.main () -&gt; Void (from Clazz.hx)
-f@23 Clazz.method (Clazz) -&gt; I32 (from Clazz.hx)
-crashlink&gt; fn 22
-f@22 static Clazz.main () -&gt; Void (from Clazz.hx)
-Reg types:
-  0. Void
-
-Ops:
-  0. Ret             {'ret': 0}                                       return
-</code></pre>
+<p>Read the <a href="https://n3rdl0rd.github.io/crashlink/crashlink">API documentation</a> for more information.</p>
 <h2 id="development">Development</h2>
 <blockquote>
-<p>Note:
-This project is configured for the <a href="https://just.systems/">just</a> command runner. If you don't have it installed, you can still run the commands in the <code>justfile</code> manually, but I don't recommend it.</p>
+<p>[!NOTE]
+This project is configured for the <a href="https://just.systems/">just</a> command runner and <a href="https://docs.astral.sh/uv/">uv</a>. If you don't have them installed, you can still run the commands in the <code>justfile</code> manually, but I don't recommend it.</p>
 </blockquote>
 <p>For development purposes, you can clone the repo, install development dependencies, and run the tests:</p>
 <pre><code class="language-bash">git clone https://github.com/N3rdL0rd/crashlink
 cd crashlink
 # optionally, create and activate a venv here.
-just install # or pip install -e .[dev]
+just install # or uv pip install -e .[dev]
 just test # or pytest
 </code></pre>
-<p>Before committing, please run <code>just dev</code> to format the code, run tests, and generate documentation in <code>docs/</code>. If you're adding new features to the core serialisation/deserialisation code (<code><a title="crashlink.core" href="core.html">crashlink.core</a></code>), please also add a test case in <code>tests/haxe/</code> for the new language feature you're adding. If you're adding a feature to the decompiler or disassembler, please add a normal test case (in Python) in <code>tests/</code> that tests the new feature.</p>
+<p>Before committing, please run <code>just dev</code> to format the code, run tests, and generate documentation in <code>docs/</code>. If you're adding new features to the core serialisation/deserialisation code (<code>core.py</code>), please also add a test case in <code>tests/haxe/</code> for the new language feature you're adding. If you're adding a feature to the decompiler or disassembler, please add a normal test case (in Python) in <code>tests/</code> that tests the new feature.</p>
 <p>Pull requests are always welcome! For major changes, please open an issue first to discuss what you would like to change.</p>
 <p>You can use the following pre-defined commands with <code>just</code>:</p>
 <ul>
@@ -115,10 +124,52 @@ just test # or pytest
 <li><code>just profile</code>: Run the test suite with cProfile and then open the results in a browser.</li>
 <li><code>just serve-docs</code>: Serve the documentation locally.</li>
 </ul>
+<blockquote>
+<p>[!NOTE]
+A lot of very WIP development is done on <code>dev</code>. If you want to see the latest and greatest, checkout that branch. If you want something semi-stable, checkout <code>main</code> instead.</p>
+</blockquote>
+<h2 id="roadmap">Roadmap</h2>
+<ul>
+<li>[x] Bytecode parsing</li>
+<li>[x] Opcode disassembly</li>
+<li>[x] Local resolution and naming</li>
+<li>[ ] IR lifter (layer 0)</li>
+<li>[x] If statements</li>
+<li>[ ] Loops</li>
+<li>[x] Switch opcode statements</li>
+<li>[ ] Function calls<ul>
+<li>[ ] CallClosure</li>
+</ul>
+</li>
+<li>[ ] Closures, lambdas</li>
+<li>[ ] IR optimization layers</li>
+<li>[ ] SSA locals</li>
+<li>[ ] Trace optimization</li>
+<li>[ ] Nested if/else/if/else -&gt; switch</li>
+<li>[ ] Pseudocode targets</li>
+<li>[ ] Haxe (main target)</li>
+<li>[ ] Any others? We'll see&hellip;</li>
+<li>[ ] Partial recompilation (against stubs of other functions)</li>
+<li>[ ] GUI? (customtkinter or dearpygui)</li>
+<li>[ ] Graphical disassembler</li>
+<li>[ ] Embedded CFG viewer through some Graphviz bindings</li>
+<li>[ ] Decompiler and patching interface</li>
+<li>[ ] IR layer viewer</li>
+</ul>
+<h2 id="portability">Portability</h2>
+<p>crashlink is written in pure typed Python with a minimum version of 3.10 (for the <code>|</code> operator and <code>match</code> statement). It should run on any modern platform, and has been tested heavily on Windows, Linux, and MacOS. As well as this, it is portable to many interpreters:</p>
+<ul>
+<li>CPython 3.10+ is the main target - deserialising Dead Cells v35 takes 103.16s and 4.6gb of RAM</li>
+<li>PyPy just works - the same benchmark takes 26s and 2.9gb of RAM</li>
+<li>tqdm displays broken progress bars, but this is a PyPy issue and it still works.</li>
+<li>IronPython and Jython are not supported due to their earlier Python version targets.</li>
+<li>RustPython would work, but it doesn't support <code>match</code> statements.</li>
+</ul>
 <h2 id="credits">Credits</h2>
 <ul>
 <li>Thank you to <a href="https://github.com/Gui-Yom">Gui-Yom</a> for writing hlbc and for maintaining documentation on the HashLink bytecode format, as well as for providing tests and helping me during development.</li>
 <li>Thank you to <a href="https://haxe.org/">Haxe Foundation</a> for creating the HashLink VM and the Haxe programming language.</li>
+<li>Thank you to the Dead Cells community on Discord for providing me with the motivation to start this project.</li>
 <li>And a big thank you to you, dear user, for being at least partially interested in this project.</li>
 </ul>
 <p>❤ N3rdL0rd</p>
@@ -158,6 +209,10 @@ just test # or pytest
 <dd>
 <div class="desc"><p>Definitions of all 98 supported opcodes in the HashLink VM.</p></div>
 </dd>
+<dt><code class="name"><a title="crashlink.patch" href="patch.html">crashlink.patch</a></code></dt>
+<dd>
+<div class="desc"><p>A Python-based system for patching and hooking of bytecode, similar to <a href="https://github.com/dead-cells-core-modding/core">DCCM</a>.</p></div>
+</dd>
 <dt><code class="name"><a title="crashlink.pseudo" href="pseudo.html">crashlink.pseudo</a></code></dt>
 <dd>
 <div class="desc"></div>
@@ -178,6 +233,8 @@ just test # or pytest
 <li><a href="#installation">Installation</a></li>
 <li><a href="#usage">Usage</a></li>
 <li><a href="#development">Development</a></li>
+<li><a href="#roadmap">Roadmap</a></li>
+<li><a href="#portability">Portability</a></li>
 <li><a href="#credits">Credits</a></li>
 </ul>
 </div>
@@ -192,6 +249,7 @@ just test # or pytest
 <li><code><a title="crashlink.globals" href="globals.html">crashlink.globals</a></code></li>
 <li><code><a title="crashlink.interp" href="interp/index.html">crashlink.interp</a></code></li>
 <li><code><a title="crashlink.opcodes" href="opcodes.html">crashlink.opcodes</a></code></li>
+<li><code><a title="crashlink.patch" href="patch.html">crashlink.patch</a></code></li>
 <li><code><a title="crashlink.pseudo" href="pseudo.html">crashlink.pseudo</a></code></li>
 </ul>
 </li>

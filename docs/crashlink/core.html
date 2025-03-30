@@ -419,7 +419,6 @@ you.</p>
         instance.magic.value = b&#34;HLB&#34;
         instance.version.value = version
         instance.has_debug_info = False
-        instance.entrypoint.value = 22
 
         void = Type()
         void.kind.value = 0  # Void (_NoDataType)
@@ -438,14 +437,7 @@ you.</p>
             bool_t.kind.value = 7
             bool_t.definition = Bool()
 
-        func = Function()
-        func.type.value = 0  # Void return type
-        func.findex.value = 22
-        func.has_debug = False
-        func.version = version
-
         instance.types.append(void)
-        instance.functions.append(func)
 
         if not no_extra_types:
             instance.types.append(i32)
@@ -456,7 +448,7 @@ you.</p>
 
         return instance
 
-    def deserialise(self, f: BinaryIO | BytesIO, search_magic: bool = True) -&gt; &#34;Bytecode&#34;:
+    def deserialise(self, f: BinaryIO | BytesIO, search_magic: bool = True, init_globals: bool = True) -&gt; &#34;Bytecode&#34;:
         &#34;&#34;&#34;
         Deserialise the bytecode in-place from an open binary file handle or a BytesIO object. By default will search for the bytecode magic (b&#39;HLB&#39;) anywhere in the file, pass `search_magic=False` to disable.
         &#34;&#34;&#34;
@@ -577,8 +569,9 @@ you.</p>
                 self.constants.append(Constant().deserialise(f))
         dbg_print(f&#34;Bytecode end at {tell(f)}.&#34;)
         self.deserialised = True
-        dbg_print(&#34;Initializing globals...&#34;)
-        self.init_globals()
+        if init_globals:
+            dbg_print(&#34;Initializing globals...&#34;)
+            self.init_globals()
         dbg_print(f&#34;{(datetime.now() - start_time).total_seconds()}s elapsed.&#34;)
         return self
 
@@ -610,7 +603,9 @@ you.</p>
                 else:
                     res[name] = field.value
             final[const._global.value] = res
-        assert len(final) == len(self.constants), &#34;Not all constants were resolved! Somehow...&#34;
+        assert len(final) == len(
+            self.constants
+        ), &#34;Not all constants were resolved! This is often due to bad DebugInfo blocks causing buffer overrun, try passing -N to troubleshoot.&#34;
         self.initialized_globals = final
 
     def fn(self, findex: int, native: bool = True) -&gt; Function | Native:
@@ -755,43 +750,61 @@ you.</p>
         &#34;&#34;&#34;
         Runs a set of basic sanity checks to make sure the bytecode is correct-ish.
         &#34;&#34;&#34;
+
+        def fail(msg: str) -&gt; None:
+            print(f&#34;--- FAILED CHECK ---\n{msg}&#34;)
+
         if len(self.ints) != self.nints.value:
+            fail(&#34;ints != nints&#34;)
             return False
 
         if len(self.floats) != self.nfloats.value:
+            fail(&#34;floats != nfloats&#34;)
             return False
 
         if len(self.strings.value) != self.nstrings.value:
+            fail(&#34;strings != nstrings&#34;)
+            print(len(self.strings.value), self.nstrings.value)
             return False
 
         if self.version.value &gt;= 5:
             if self.nbytes is None or self.bytes is None:
+                fail(&#34;nbytes or bytes is None and version &gt;= 5&#34;)
                 return False
             if len(self.bytes.value) != self.nbytes.value:
+                fail(&#34;bytes != nbytes&#34;)
                 return False
 
         if len(self.types) != self.ntypes.value:
+            fail(&#34;types != ntypes&#34;)
             return False
 
         if len(self.global_types) != self.nglobals.value:
+            fail(&#34;globals != nglobals&#34;)
             return False
 
         if len(self.natives) != self.nnatives.value:
+            fail(&#34;natives != nnatives&#34;)
             return False
 
         if len(self.functions) != self.nfunctions.value:
+            fail(&#34;functions != nfunctions&#34;)
             return False
 
         if self.version.value &gt;= 4:
             if self.nconstants is None:
+                fail(&#34;nconstants is None and version &gt;= 4&#34;)
                 return False
             if len(self.constants) != self.nconstants.value:
+                fail(&#34;constants != nconstants&#34;)
                 return False
 
         if self.has_debug_info:
             if self.ndebugfiles is None or self.debugfiles is None:
+                fail(&#34;ndebugfiles or debugfiles is None and has_debug_info&#34;)
                 return False
             if len(self.debugfiles.value) != self.ndebugfiles.value:
+                fail(&#34;debugfiles != ndebugfiles&#34;)
                 return False
 
         return True
@@ -811,7 +824,60 @@ you.</p>
         for section_name, section_offset in list(reversed(self.section_offsets.items())):
             if offset &gt;= section_offset:
                 return section_name
-        return None</code></pre>
+        return None
+
+    def add_string(self, string: str) -&gt; strRef:
+        &#34;&#34;&#34;
+        Adds a string to the bytecode&#39;s string block and returns a reference to it.
+        &#34;&#34;&#34;
+        return strRef(self.strings.find_or_add(string))
+
+    def next_free_findex(self) -&gt; fIndex:
+        &#34;&#34;&#34;
+        Find the next available fIndex that is not already used by any function or native.
+        &#34;&#34;&#34;
+        used_indexes = set()
+        for function in self.functions:
+            used_indexes.add(function.findex.value)
+        for native in self.natives:
+            used_indexes.add(native.findex.value)
+
+        index = 0
+        while index in used_indexes:
+            index += 1
+
+        return fIndex(index)
+
+    def find_prim_type(self, kind: Type.Kind) -&gt; tIndex:
+        &#34;&#34;&#34;
+        Finds the index of a primitive type in the bytecode.
+        &#34;&#34;&#34;
+        assert kind.value in [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            12,
+            13,
+            16,
+        ], f&#34;This method can only find primitive types! Got: {kind}&#34;
+        for i, typ in enumerate(self.types):
+            if typ.kind.value == kind.value:
+                return tIndex(i)
+        raise ValueError(f&#34;Primitive type {kind} not found!&#34;)
+
+    def add_type(self, typ: Type) -&gt; tIndex:
+        &#34;&#34;&#34;
+        Adds a type and returns its tIndex.
+        &#34;&#34;&#34;
+        self.types.append(typ)
+        return tIndex(len(self.types) - 1)</code></pre>
 </details>
 <div class="desc"><p>The main bytecode class. To read a bytecode file, use the <code>from_path</code> class method.</p>
 <p>For more information about the overall structure, see <a href="https://n3rdl0rd.github.io/ModDocCE/files/hlboot">here</a></p></div>
@@ -850,6 +916,39 @@ you.</p>
 </dl>
 <h3>Methods</h3>
 <dl>
+<dt id="crashlink.core.Bytecode.add_string"><code class="name flex">
+<span>def <span class="ident">add_string</span></span>(<span>self, string: str) ‑> <a title="crashlink.core.strRef" href="#crashlink.core.strRef">strRef</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def add_string(self, string: str) -&gt; strRef:
+    &#34;&#34;&#34;
+    Adds a string to the bytecode&#39;s string block and returns a reference to it.
+    &#34;&#34;&#34;
+    return strRef(self.strings.find_or_add(string))</code></pre>
+</details>
+<div class="desc"><p>Adds a string to the bytecode's string block and returns a reference to it.</p></div>
+</dd>
+<dt id="crashlink.core.Bytecode.add_type"><code class="name flex">
+<span>def <span class="ident">add_type</span></span>(<span>self,<br>typ: <a title="crashlink.core.Type" href="#crashlink.core.Type">Type</a>) ‑> <a title="crashlink.core.tIndex" href="#crashlink.core.tIndex">tIndex</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def add_type(self, typ: Type) -&gt; tIndex:
+    &#34;&#34;&#34;
+    Adds a type and returns its tIndex.
+    &#34;&#34;&#34;
+    self.types.append(typ)
+    return tIndex(len(self.types) - 1)</code></pre>
+</details>
+<div class="desc"><p>Adds a type and returns its tIndex.</p></div>
+</dd>
 <dt id="crashlink.core.Bytecode.const_str"><code class="name flex">
 <span>def <span class="ident">const_str</span></span>(<span>self, gindex: int) ‑> str</span>
 </code></dt>
@@ -883,14 +982,14 @@ you.</p>
 <div class="desc"><p>Gets the value of an initialized global constant <code>String</code>.</p></div>
 </dd>
 <dt id="crashlink.core.Bytecode.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO, search_magic: bool = True) ‑> <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self,<br>f: typing.BinaryIO | _io.BytesIO,<br>search_magic: bool = True,<br>init_globals: bool = True) ‑> <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></span>
 </code></dt>
 <dd>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO, search_magic: bool = True) -&gt; &#34;Bytecode&#34;:
+<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO, search_magic: bool = True, init_globals: bool = True) -&gt; &#34;Bytecode&#34;:
     &#34;&#34;&#34;
     Deserialise the bytecode in-place from an open binary file handle or a BytesIO object. By default will search for the bytecode magic (b&#39;HLB&#39;) anywhere in the file, pass `search_magic=False` to disable.
     &#34;&#34;&#34;
@@ -1011,12 +1110,47 @@ you.</p>
             self.constants.append(Constant().deserialise(f))
     dbg_print(f&#34;Bytecode end at {tell(f)}.&#34;)
     self.deserialised = True
-    dbg_print(&#34;Initializing globals...&#34;)
-    self.init_globals()
+    if init_globals:
+        dbg_print(&#34;Initializing globals...&#34;)
+        self.init_globals()
     dbg_print(f&#34;{(datetime.now() - start_time).total_seconds()}s elapsed.&#34;)
     return self</code></pre>
 </details>
 <div class="desc"><p>Deserialise the bytecode in-place from an open binary file handle or a BytesIO object. By default will search for the bytecode magic (b'HLB') anywhere in the file, pass <code>search_magic=False</code> to disable.</p></div>
+</dd>
+<dt id="crashlink.core.Bytecode.find_prim_type"><code class="name flex">
+<span>def <span class="ident">find_prim_type</span></span>(<span>self,<br>kind: <a title="crashlink.core.Type.Kind" href="#crashlink.core.Type.Kind">Type.Kind</a>) ‑> <a title="crashlink.core.tIndex" href="#crashlink.core.tIndex">tIndex</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def find_prim_type(self, kind: Type.Kind) -&gt; tIndex:
+    &#34;&#34;&#34;
+    Finds the index of a primitive type in the bytecode.
+    &#34;&#34;&#34;
+    assert kind.value in [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        12,
+        13,
+        16,
+    ], f&#34;This method can only find primitive types! Got: {kind}&#34;
+    for i, typ in enumerate(self.types):
+        if typ.kind.value == kind.value:
+            return tIndex(i)
+    raise ValueError(f&#34;Primitive type {kind} not found!&#34;)</code></pre>
+</details>
+<div class="desc"><p>Finds the index of a primitive type in the bytecode.</p></div>
 </dd>
 <dt id="crashlink.core.Bytecode.fn"><code class="name flex">
 <span>def <span class="ident">fn</span></span>(<span>self, findex: int, native: bool = True) ‑> <a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a> | <a title="crashlink.core.Native" href="#crashlink.core.Native">Native</a></span>
@@ -1112,7 +1246,9 @@ you.</p>
             else:
                 res[name] = field.value
         final[const._global.value] = res
-    assert len(final) == len(self.constants), &#34;Not all constants were resolved! Somehow...&#34;
+    assert len(final) == len(
+        self.constants
+    ), &#34;Not all constants were resolved! This is often due to bad DebugInfo blocks causing buffer overrun, try passing -N to troubleshoot.&#34;
     self.initialized_globals = final</code></pre>
 </details>
 <div class="desc"><p>Internal method to initialize global instances of objects.</p></div>
@@ -1129,48 +1265,92 @@ you.</p>
     &#34;&#34;&#34;
     Runs a set of basic sanity checks to make sure the bytecode is correct-ish.
     &#34;&#34;&#34;
+
+    def fail(msg: str) -&gt; None:
+        print(f&#34;--- FAILED CHECK ---\n{msg}&#34;)
+
     if len(self.ints) != self.nints.value:
+        fail(&#34;ints != nints&#34;)
         return False
 
     if len(self.floats) != self.nfloats.value:
+        fail(&#34;floats != nfloats&#34;)
         return False
 
     if len(self.strings.value) != self.nstrings.value:
+        fail(&#34;strings != nstrings&#34;)
+        print(len(self.strings.value), self.nstrings.value)
         return False
 
     if self.version.value &gt;= 5:
         if self.nbytes is None or self.bytes is None:
+            fail(&#34;nbytes or bytes is None and version &gt;= 5&#34;)
             return False
         if len(self.bytes.value) != self.nbytes.value:
+            fail(&#34;bytes != nbytes&#34;)
             return False
 
     if len(self.types) != self.ntypes.value:
+        fail(&#34;types != ntypes&#34;)
         return False
 
     if len(self.global_types) != self.nglobals.value:
+        fail(&#34;globals != nglobals&#34;)
         return False
 
     if len(self.natives) != self.nnatives.value:
+        fail(&#34;natives != nnatives&#34;)
         return False
 
     if len(self.functions) != self.nfunctions.value:
+        fail(&#34;functions != nfunctions&#34;)
         return False
 
     if self.version.value &gt;= 4:
         if self.nconstants is None:
+            fail(&#34;nconstants is None and version &gt;= 4&#34;)
             return False
         if len(self.constants) != self.nconstants.value:
+            fail(&#34;constants != nconstants&#34;)
             return False
 
     if self.has_debug_info:
         if self.ndebugfiles is None or self.debugfiles is None:
+            fail(&#34;ndebugfiles or debugfiles is None and has_debug_info&#34;)
             return False
         if len(self.debugfiles.value) != self.ndebugfiles.value:
+            fail(&#34;debugfiles != ndebugfiles&#34;)
             return False
 
     return True</code></pre>
 </details>
 <div class="desc"><p>Runs a set of basic sanity checks to make sure the bytecode is correct-ish.</p></div>
+</dd>
+<dt id="crashlink.core.Bytecode.next_free_findex"><code class="name flex">
+<span>def <span class="ident">next_free_findex</span></span>(<span>self) ‑> <a title="crashlink.core.fIndex" href="#crashlink.core.fIndex">fIndex</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def next_free_findex(self) -&gt; fIndex:
+    &#34;&#34;&#34;
+    Find the next available fIndex that is not already used by any function or native.
+    &#34;&#34;&#34;
+    used_indexes = set()
+    for function in self.functions:
+        used_indexes.add(function.findex.value)
+    for native in self.natives:
+        used_indexes.add(native.findex.value)
+
+    index = 0
+    while index in used_indexes:
+        index += 1
+
+    return fIndex(index)</code></pre>
+</details>
+<div class="desc"><p>Find the next available fIndex that is not already used by any function or native.</p></div>
 </dd>
 <dt id="crashlink.core.Bytecode.repair"><code class="name flex">
 <span>def <span class="ident">repair</span></span>(<span>self) ‑> None</span>
@@ -2006,6 +2186,7 @@ you.</p>
 </dd>
 <dt id="crashlink.core.Field"><code class="flex name class">
 <span>class <span class="ident">Field</span></span>
+<span>(</span><span>name: <a title="crashlink.core.strRef" href="#crashlink.core.strRef">strRef</a> | None = None,<br>type: <a title="crashlink.core.tIndex" href="#crashlink.core.tIndex">tIndex</a> | None = None)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2017,9 +2198,15 @@ you.</p>
     Represents a field in a class definition.
     &#34;&#34;&#34;
 
-    def __init__(self) -&gt; None:
-        self.name = strRef()
-        self.type = tIndex()
+    def __init__(self, name: Optional[strRef] = None, type: Optional[tIndex] = None) -&gt; None:
+        if not name:
+            self.name = strRef()
+        else:
+            self.name = name
+        if not type:
+            self.type = tIndex()
+        else:
+            self.type = type
 
     def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Field&#34;:
         self.name.deserialise(f)
@@ -2193,7 +2380,6 @@ you.</p>
         self.version = version
         self.type.deserialise(f)
         self.findex.deserialise(f)
-        # dbg_print(f&#34;----- {self.findex.value} ({tell(f)}) -----&#34;)
         self.nregs.deserialise(f)
         self.nops.deserialise(f)
         for _ in range(self.nregs.value):
@@ -2209,11 +2395,25 @@ you.</p>
                     self.assigns.append((strRef().deserialise(f), VarInt().deserialise(f)))
         return self
 
+    def insert_op(self, code: &#34;Bytecode&#34;, idx: int, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; None:
+        &#34;&#34;&#34;
+        Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.
+        &#34;&#34;&#34;
+        self.ops.insert(idx, op)
+        if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo:  # fucking typing...
+            if not debugRef:
+                debugRef = fileRef(fid=code.debugfiles.find_or_add(&#34;?&#34;), line=42)  # life, the universe, and everything
+            self.debuginfo.value.insert(idx, debugRef)
+
     def serialise(self) -&gt; bytes:
         self.nops.value = len(self.ops)
         self.nregs.value = len(self.regs)
         if self.assigns:
             self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
+        if self.has_debug and self.debuginfo:
+            assert (
+                len(self.debuginfo.value) == self.nops.value
+            ), f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
         res = b&#34;&#34;.join(
             [
                 self.type.serialise(),
@@ -2252,7 +2452,6 @@ you.</p>
     self.version = version
     self.type.deserialise(f)
     self.findex.deserialise(f)
-    # dbg_print(f&#34;----- {self.findex.value} ({tell(f)}) -----&#34;)
     self.nregs.deserialise(f)
     self.nops.deserialise(f)
     for _ in range(self.nregs.value):
@@ -2269,6 +2468,26 @@ you.</p>
     return self</code></pre>
 </details>
 <div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Function.insert_op"><code class="name flex">
+<span>def <span class="ident">insert_op</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>,<br>idx: int,<br>op: <a title="crashlink.core.Opcode" href="#crashlink.core.Opcode">Opcode</a>,<br>debugRef: <a title="crashlink.core.fileRef" href="#crashlink.core.fileRef">fileRef</a> | None = None) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def insert_op(self, code: &#34;Bytecode&#34;, idx: int, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; None:
+    &#34;&#34;&#34;
+    Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.
+    &#34;&#34;&#34;
+    self.ops.insert(idx, op)
+    if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo:  # fucking typing...
+        if not debugRef:
+            debugRef = fileRef(fid=code.debugfiles.find_or_add(&#34;?&#34;), line=42)  # life, the universe, and everything
+        self.debuginfo.value.insert(idx, debugRef)</code></pre>
+</details>
+<div class="desc"><p>Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.</p></div>
 </dd>
 <dt id="crashlink.core.Function.resolve_file"><code class="name flex">
 <span>def <span class="ident">resolve_file</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
@@ -2301,6 +2520,10 @@ you.</p>
     self.nregs.value = len(self.regs)
     if self.assigns:
         self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
+    if self.has_debug and self.debuginfo:
+        assert (
+            len(self.debuginfo.value) == self.nops.value
+        ), f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
     res = b&#34;&#34;.join(
         [
             self.type.serialise(),
@@ -2897,8 +3120,7 @@ Where a is field 0 and b is field 1</p></div>
         try:
             _def = opcodes[list(opcodes.keys())[self.code.value]]
         except IndexError:
-            # dbg_print()
-            raise InvalidOpCode(f&#34;Unknown opcode at {tell(f)}&#34;)
+            raise InvalidOpCode(f&#34;Unknown opcode at {tell(f)} - {self.code.value}&#34;)
         for param, _type in _def.items():
             if _type in self.TYPE_MAP:
                 self.definition[param] = self.TYPE_MAP[_type]().deserialise(f)
@@ -2933,7 +3155,7 @@ Where a is field 0 and b is field 1</p></div>
 <dl>
 <dt id="crashlink.core.Opcode.TYPE_MAP"><code class="name">var <span class="ident">TYPE_MAP</span> : Dict[str, type]</code></dt>
 <dd>
-<div class="desc"><p>The type of the None singleton.</p></div>
+<div class="desc"></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -2953,8 +3175,7 @@ Where a is field 0 and b is field 1</p></div>
     try:
         _def = opcodes[list(opcodes.keys())[self.code.value]]
     except IndexError:
-        # dbg_print()
-        raise InvalidOpCode(f&#34;Unknown opcode at {tell(f)}&#34;)
+        raise InvalidOpCode(f&#34;Unknown opcode at {tell(f)} - {self.code.value}&#34;)
     for param, _type in _def.items():
         if _type in self.TYPE_MAP:
             self.definition[param] = self.TYPE_MAP[_type]().deserialise(f)
@@ -3726,7 +3947,16 @@ def serialise(self) -&gt; bytes:
         for length in self.lengths:
             result.extend(length.serialise())
 
-        return bytes(result)</code></pre>
+        return bytes(result)
+
+    def find_or_add(self, val: str) -&gt; int:
+        &#34;&#34;&#34;
+        Finds and returns the index of a string value in this block, or adds it to this block and returns its index.
+        &#34;&#34;&#34;
+        if val in self.value:
+            return self.value.index(val)
+        self.value.append(val)
+        return len(self.value) - 1</code></pre>
 </details>
 <div class="desc"><p>Block of strings in the bytecode. Contains a list of strings and their lengths.</p></div>
 <h3>Ancestors</h3>
@@ -3773,6 +4003,25 @@ def serialise(self) -&gt; bytes:
     return self</code></pre>
 </details>
 <div class="desc"></div>
+</dd>
+<dt id="crashlink.core.StringsBlock.find_or_add"><code class="name flex">
+<span>def <span class="ident">find_or_add</span></span>(<span>self, val: str) ‑> int</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def find_or_add(self, val: str) -&gt; int:
+    &#34;&#34;&#34;
+    Finds and returns the index of a string value in this block, or adds it to this block and returns its index.
+    &#34;&#34;&#34;
+    if val in self.value:
+        return self.value.index(val)
+    self.value.append(val)
+    return len(self.value) - 1</code></pre>
+</details>
+<div class="desc"><p>Finds and returns the index of a string value in this block, or adds it to this block and returns its index.</p></div>
 </dd>
 <dt id="crashlink.core.StringsBlock.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
@@ -3879,6 +4128,31 @@ def serialise(self) -&gt; bytes:
     ]
     # fmt: on
 
+    class Kind(_Enum):
+        VOID = 0
+        U8 = 1
+        U16 = 2
+        I32 = 3
+        I64 = 4
+        F32 = 5
+        F64 = 6
+        BOOL = 7
+        BYTES = 8
+        DYN = 9
+        FUN = 10
+        OBJ = 11
+        ARRAY = 12
+        TYPETYPE = 13
+        REF = 14
+        VIRTUAL = 15
+        DYNOBJ = 16
+        ABSTRACT = 17
+        ENUM = 18
+        NULL = 19
+        METHOD = 20
+        STRUCT = 21
+        PACKED = 22
+
     def __init__(self) -&gt; None:
         self.kind = SerialisableInt()
         self.kind.length = 1
@@ -3926,9 +4200,13 @@ def serialise(self) -&gt; bytes:
 </ul>
 <h3>Class variables</h3>
 <dl>
+<dt id="crashlink.core.Type.Kind"><code class="name">var <span class="ident">Kind</span></code></dt>
+<dd>
+<div class="desc"><p>An enumeration.</p></div>
+</dd>
 <dt id="crashlink.core.Type.TYPEDEFS"><code class="name">var <span class="ident">TYPEDEFS</span> : List[type]</code></dt>
 <dd>
-<div class="desc"><p>The type of the None singleton.</p></div>
+<div class="desc"></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -4362,7 +4640,10 @@ def serialise(self) -&gt; bytes:
                 self.nfields.serialise(),
                 b&#34;&#34;.join([field.serialise() for field in self.fields]),
             ]
-        )</code></pre>
+        )
+
+    def resolve_fields(self, code: &#34;Bytecode&#34;) -&gt; List[Field]:
+        return self.fields</code></pre>
 </details>
 <div class="desc"><p>Virtual type, used for virtual/abstract classes.</p></div>
 <h3>Ancestors</h3>
@@ -4386,6 +4667,19 @@ def serialise(self) -&gt; bytes:
     for _ in range(self.nfields.value):
         self.fields.append(Field().deserialise(f))
     return self</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Virtual.resolve_fields"><code class="name flex">
+<span>def <span class="ident">resolve_fields</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> List[<a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve_fields(self, code: &#34;Bytecode&#34;) -&gt; List[Field]:
+    return self.fields</code></pre>
 </details>
 <div class="desc"></div>
 </dd>
@@ -4524,7 +4818,7 @@ def serialise(self) -&gt; bytes:
     Reference to a field in an object definition.
     &#34;&#34;&#34;
 
-    obj: Optional[&#34;Obj&#34;] = None
+    obj: Optional[&#34;Obj|Virtual&#34;] = None
 
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Field&#34;:
         if self.obj:
@@ -4533,7 +4827,7 @@ def serialise(self) -&gt; bytes:
             &#34;Cannot resolve field without context. Try setting `field.obj` to an instance of `Obj`, or use `field.resolve_obj(code, obj)` instead.&#34;
         )
 
-    def resolve_obj(self, code: &#34;Bytecode&#34;, obj: &#34;Obj&#34;) -&gt; &#34;Field&#34;:
+    def resolve_obj(self, code: &#34;Bytecode&#34;, obj: &#34;Obj|Virtual&#34;) -&gt; &#34;Field&#34;:
         self.obj = obj
         return obj.resolve_fields(code)[self.value]</code></pre>
 </details>
@@ -4547,22 +4841,22 @@ def serialise(self) -&gt; bytes:
 </ul>
 <h3>Class variables</h3>
 <dl>
-<dt id="crashlink.core.fieldRef.obj"><code class="name">var <span class="ident">obj</span> : <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a> | None</code></dt>
+<dt id="crashlink.core.fieldRef.obj"><code class="name">var <span class="ident">obj</span> : <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a> | <a title="crashlink.core.Virtual" href="#crashlink.core.Virtual">Virtual</a> | None</code></dt>
 <dd>
-<div class="desc"><p>The type of the None singleton.</p></div>
+<div class="desc"></div>
 </dd>
 </dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.fieldRef.resolve_obj"><code class="name flex">
-<span>def <span class="ident">resolve_obj</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>,<br>obj: <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a>) ‑> <a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a></span>
+<span>def <span class="ident">resolve_obj</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>,<br>obj: <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a>|<a title="crashlink.core.Virtual" href="#crashlink.core.Virtual">Virtual</a>) ‑> <a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a></span>
 </code></dt>
 <dd>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def resolve_obj(self, code: &#34;Bytecode&#34;, obj: &#34;Obj&#34;) -&gt; &#34;Field&#34;:
+<pre><code class="python">def resolve_obj(self, code: &#34;Bytecode&#34;, obj: &#34;Obj|Virtual&#34;) -&gt; &#34;Field&#34;:
     self.obj = obj
     return obj.resolve_fields(code)[self.value]</code></pre>
 </details>
@@ -4917,9 +5211,12 @@ def serialise(self) -&gt; bytes:
 <li>
 <h4><code><a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></code></h4>
 <ul class="two-column">
+<li><code><a title="crashlink.core.Bytecode.add_string" href="#crashlink.core.Bytecode.add_string">add_string</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.add_type" href="#crashlink.core.Bytecode.add_type">add_type</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.const_str" href="#crashlink.core.Bytecode.const_str">const_str</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.create_empty" href="#crashlink.core.Bytecode.create_empty">create_empty</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.deserialise" href="#crashlink.core.Bytecode.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.find_prim_type" href="#crashlink.core.Bytecode.find_prim_type">find_prim_type</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.fn" href="#crashlink.core.Bytecode.fn">fn</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.from_bytes" href="#crashlink.core.Bytecode.from_bytes">from_bytes</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.from_path" href="#crashlink.core.Bytecode.from_path">from_path</a></code></li>
@@ -4927,6 +5224,7 @@ def serialise(self) -&gt; bytes:
 <li><code><a title="crashlink.core.Bytecode.get_test_main" href="#crashlink.core.Bytecode.get_test_main">get_test_main</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.init_globals" href="#crashlink.core.Bytecode.init_globals">init_globals</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.is_ok" href="#crashlink.core.Bytecode.is_ok">is_ok</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.next_free_findex" href="#crashlink.core.Bytecode.next_free_findex">next_free_findex</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.repair" href="#crashlink.core.Bytecode.repair">repair</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.section_at" href="#crashlink.core.Bytecode.section_at">section_at</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.serialise" href="#crashlink.core.Bytecode.serialise">serialise</a></code></li>
@@ -5003,6 +5301,7 @@ def serialise(self) -&gt; bytes:
 <h4><code><a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.Function.deserialise" href="#crashlink.core.Function.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Function.insert_op" href="#crashlink.core.Function.insert_op">insert_op</a></code></li>
 <li><code><a title="crashlink.core.Function.resolve_file" href="#crashlink.core.Function.resolve_file">resolve_file</a></code></li>
 <li><code><a title="crashlink.core.Function.serialise" href="#crashlink.core.Function.serialise">serialise</a></code></li>
 </ul>
@@ -5123,6 +5422,7 @@ def serialise(self) -&gt; bytes:
 <h4><code><a title="crashlink.core.StringsBlock" href="#crashlink.core.StringsBlock">StringsBlock</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.StringsBlock.deserialise" href="#crashlink.core.StringsBlock.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.StringsBlock.find_or_add" href="#crashlink.core.StringsBlock.find_or_add">find_or_add</a></code></li>
 <li><code><a title="crashlink.core.StringsBlock.serialise" href="#crashlink.core.StringsBlock.serialise">serialise</a></code></li>
 </ul>
 </li>
@@ -5132,6 +5432,7 @@ def serialise(self) -&gt; bytes:
 <li>
 <h4><code><a title="crashlink.core.Type" href="#crashlink.core.Type">Type</a></code></h4>
 <ul class="">
+<li><code><a title="crashlink.core.Type.Kind" href="#crashlink.core.Type.Kind">Kind</a></code></li>
 <li><code><a title="crashlink.core.Type.TYPEDEFS" href="#crashlink.core.Type.TYPEDEFS">TYPEDEFS</a></code></li>
 <li><code><a title="crashlink.core.Type.deserialise" href="#crashlink.core.Type.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.Type.serialise" href="#crashlink.core.Type.serialise">serialise</a></code></li>
@@ -5168,6 +5469,7 @@ def serialise(self) -&gt; bytes:
 <h4><code><a title="crashlink.core.Virtual" href="#crashlink.core.Virtual">Virtual</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.Virtual.deserialise" href="#crashlink.core.Virtual.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Virtual.resolve_fields" href="#crashlink.core.Virtual.resolve_fields">resolve_fields</a></code></li>
 <li><code><a title="crashlink.core.Virtual.serialise" href="#crashlink.core.Virtual.serialise">serialise</a></code></li>
 </ul>
 </li>
