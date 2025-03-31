@@ -2,9 +2,8 @@ import os
 import platform
 import shutil
 import subprocess
+import requests
 import zipfile
-
-import urllib3
 
 CURRENT_PYTHON = "https://www.python.org/ftp/python/3.14.0/Python-3.14.0a6.tar.xz"
 DIR = "Python-3.14.0a6"
@@ -14,22 +13,12 @@ INITIAL_DIR = os.getcwd()
 
 def download_file(url: str, dest: str) -> None:
     """
-    Download a file from a URL to a local destination.
+    Download a file from a URL to a local destination using urllib.request.
     """
-    http = urllib3.PoolManager()
-    response = http.request("GET", url, preload_content=False)
-    if response.status != 200:
-        raise RuntimeError(f"Failed to download file: {response.status}")
-
-    with open(dest, "wb") as out_file:
-        while True:
-            data = response.read(1024)
-            if not data:
-                break
-            out_file.write(data)
-
-    response.release_conn()
-
+    print(f"Downloading {url} to {dest}...")
+    r = requests.get(url)
+    with open(dest, "wb") as f:
+        f.write(r.content)
 
 def gen_prefix() -> str:
     """

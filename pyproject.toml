@@ -35,7 +35,8 @@ dev = [
   "dill",
   "pytest-xdist",
   "staticjinja",
-  "IPython"
+  "IPython",
+  "requests"
 ]
 extras = [
   "tqdm",
