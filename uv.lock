@@ -210,10 +210,6 @@ wheels = [
 name = "crashlink"
 version = "0.0.3"
 source = { editable = "." }
-dependencies = [
-    { name = "requests" },
-    { name = "urllib3" },
-]
 
 [package.optional-dependencies]
 dev = [
@@ -228,6 +224,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-xdist" },
     { name = "radon" },
+    { name = "requests" },
     { name = "snakeviz" },
     { name = "staticjinja" },
     { name = "tqdm" },
@@ -256,7 +253,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-xdist", marker = "extra == 'dev'" },
     { name = "radon", marker = "extra == 'dev'" },
-    { name = "requests", specifier = ">=2.32.3" },
+    { name = "requests", marker = "extra == 'dev'" },
     { name = "snakeviz", marker = "extra == 'dev'" },
     { name = "staticjinja", marker = "extra == 'dev'" },
     { name = "tqdm", marker = "extra == 'dev'" },
@@ -264,7 +261,6 @@ requires-dist = [
     { name = "twine", marker = "extra == 'dev'" },
     { name = "typeguard", marker = "extra == 'dev'" },
     { name = "types-tqdm", marker = "extra == 'dev'" },
-    { name = "urllib3", specifier = ">=2.3.0" },
 ]
 provides-extras = ["dev", "extras"]
 
