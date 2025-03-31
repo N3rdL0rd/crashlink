@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""
+Shim for HashLink compiled in pyhl/hashlink/build/bin
+"""
+
+import os
+import sys
+import subprocess
+import platform
+
+def main():
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    hashlink_dir = os.path.join(script_dir, "pyhl", "hashlink", "build", "bin")
+    
+    executable_name = "hl.exe" if platform.system() == "Windows" else "hl"
+    hashlink_path = os.path.join(hashlink_dir, executable_name)
+    
+    if not os.path.exists(hashlink_path):
+        sys.stderr.write(f"Error: HashLink executable not found at {hashlink_path}\n")
+        sys.exit(1)
+    
+    args = sys.argv[1:]
+    
+    cmd = [hashlink_path] + args
+    
+    env = os.environ.copy()
+    if platform.system() != "Windows":
+        env["LD_LIBRARY_PATH"] = hashlink_dir + ":" + env.get("LD_LIBRARY_PATH", "")
+    
+    try:
+        process = subprocess.run(cmd, env=env)
+        sys.exit(process.returncode)
+    except Exception as e:
+        sys.stderr.write(f"Error executing HashLink: {e}\n")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
