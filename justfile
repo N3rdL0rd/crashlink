@@ -62,12 +62,12 @@ pyhl-prepare:
 # Build the pyhl native hdll (Linux) - run pyhl-prepare
 pyhl:
     cd pyhl && make clean && make
-    cp pyhl/pyhl.hdll pyhl/hashlink/bin/ || true
+    cp pyhl/pyhl.hdll pyhl/hashlink/build/bin/ || true
 
 # Build the pyhl native hdll (Windows) - run vcvarsall.bat and pyhl-prepare first
 pyhl-win:
     cd pyhl && nmake /f Makefile.win
-    cp pyhl/pyhl.hdll pyhl/hashlink/bin/ || true
+    cp pyhl/pyhl.hdll pyhl/hashlink/build/bin/ || true
 
 # Updates the hashlink submodule in pyhl/
 update-hl:
@@ -76,7 +76,7 @@ update-hl:
     touch .gitmodules
     git submodule add --force https://github.com/HaxeFoundation/hashlink pyhl/hashlink
 
-# Builds the hashlink submodule in pyhl/ to pyhl/hashlink/bin/
+# Builds the hashlink submodule in pyhl/ to pyhl/hashlink/build/bin/
 build-hl:
     cd pyhl/hashlink && mkdir -p build && cd build && cmake .. && make -j$(nproc)
 
