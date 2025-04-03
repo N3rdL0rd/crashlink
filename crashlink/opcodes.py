@@ -41,14 +41,7 @@ arithmetic = [
 List of all arithmetic opcodes.
 """
 
-simple_calls = [
-    "Call0",
-    "Call1",
-    "Call2",
-    "Call3",
-    "Call4",
-    "CallN"
-]
+simple_calls = ["Call0", "Call1", "Call2", "Call3", "Call4", "CallN"]
 """
 List of all function call opcodes.
 """

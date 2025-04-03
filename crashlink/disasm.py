@@ -41,7 +41,7 @@ def type_to_haxe(type: str) -> str:
     return mapping.get(type, type)
 
 
-def func_header(code: Bytecode, func: Function|Native) -> str:
+def func_header(code: Bytecode, func: Function | Native) -> str:
     """
     Generates a human-readable header for a function.
     """
@@ -103,7 +103,7 @@ def pseudo_from_op(
     regs: List[Reg] | List[tIndex],
     code: Bytecode,
     terse: bool = False,
-    func: Optional[Function] = None
+    func: Optional[Function] = None,
 ) -> str:
     """
     Generates pseudocode disassembly from an opcode.
@@ -174,7 +174,9 @@ def pseudo_from_op(
                     this = reg.resolve(code)
                     break
             if this:
-                return f"reg{op.df['dst']} = this.{op.df['field'].resolve_obj(code, this.definition).name.resolve(code)}"
+                return (
+                    f"reg{op.df['dst']} = this.{op.df['field'].resolve_obj(code, this.definition).name.resolve(code)}"
+                )
             return f"reg{op.df['dst']} = this.f@{op.df['field'].value} (this not found!)"
         case "GetGlobal":
             glob = type_name(code, op.df["global"].resolve(code))
@@ -202,7 +204,7 @@ def pseudo_from_op(
             obj = func.regs[0].resolve(code)
             assert isinstance(obj.definition, Obj), "reg0 should be an Obj of the type of this (is this static?)"
             fields = obj.definition.resolve_fields(code)
-            field = fields[op.df['field'].value]
+            field = fields[op.df["field"].value]
             return f"reg{op.df['dst']} = this.{field.name.resolve(code)}"
         case "SetThis":
             if not func:
@@ -210,7 +212,7 @@ def pseudo_from_op(
             obj = func.regs[0].resolve(code)
             assert isinstance(obj.definition, Obj), "reg0 should be an Obj of the type of this (is this static?)"
             fields = obj.definition.resolve_fields(code)
-            field = fields[op.df['field'].value]
+            field = fields[op.df["field"].value]
             return f"this.{field.name.resolve(code)} = reg{op.df['src']}"
         case "InstanceClosure":
             return f"reg{op.df['dst']} = f@{op.df['fun']} (as method of reg{op.df['obj']})"
@@ -243,7 +245,9 @@ def pseudo_from_op(
             return f"reg{op.df['dst']} = f@{op.df['fun']}(reg{op.df['arg0']})"
         case "Call2":
             fun = full_func_name(code, code.fn(op.df["fun"].value))
-            return f"reg{op.df['dst']} = f@{op.df['fun']}({', '.join([f'reg{op.df[arg]}' for arg in ['arg0', 'arg1']])})"
+            return (
+                f"reg{op.df['dst']} = f@{op.df['fun']}({', '.join([f'reg{op.df[arg]}' for arg in ['arg0', 'arg1']])})"
+            )
         case "Call3":
             return f"reg{op.df['dst']} = f@{op.df['fun']}({', '.join([f'reg{op.df[arg]}' for arg in ['arg0', 'arg1', 'arg2']])})"
         case "Call4":
@@ -256,7 +260,7 @@ def pseudo_from_op(
             obj = func.regs[0].resolve(code)
             assert isinstance(obj.definition, Obj), "reg0 should be an Obj of the type of this (is this static?)"
             fields = obj.definition.resolve_fields(code)
-            field = fields[op.df['field'].value]
+            field = fields[op.df["field"].value]
             return f"reg{op.df['dst']} = this.{field.name.resolve(code)}({', '.join([f'reg{arg}' for arg in op.df['args'].value])})"
 
         # Error Handling
@@ -301,7 +305,7 @@ def fmt_op(
     idx: int,
     width: int = 15,
     debug: Optional[List[fileRef]] = None,
-    func: Optional[Function] = None
+    func: Optional[Function] = None,
 ) -> str:
     """
     Formats an opcode into a table row.
