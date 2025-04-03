@@ -119,33 +119,33 @@ class Patch:
 
         op = Opcode()
         op.op = "Call4"
-        op.definition = {"dst": ret_reg, "fun": self.custom_fns["intercept"], "arg0": virt_reg, "arg1": nargs_reg, "arg2": fn_name_reg, "arg3": types_reg}
+        op.df = {"dst": ret_reg, "fun": self.custom_fns["intercept"], "arg0": virt_reg, "arg1": nargs_reg, "arg2": fn_name_reg, "arg3": types_reg}
         fn.insert_op(code, 0, op)
 
         op = Opcode()
         op.op = "String"
-        op.definition = {"dst": fn_name_reg, "ptr": code.add_string(identifier)}
+        op.df = {"dst": fn_name_reg, "ptr": code.add_string(identifier)}
         fn.insert_op(code, 0, op)
         
         op = Opcode()
         op.op = "String"
-        op.definition = {"dst": types_reg, "ptr": code.add_string(types_str)}
+        op.df = {"dst": types_reg, "ptr": code.add_string(types_str)}
         fn.insert_op(code, 0, op)
         
         op = Opcode()
         op.op = "Int"
-        op.definition = {"dst": nargs_reg, "ptr": code.add_i32(len(arg_regs))}
+        op.df = {"dst": nargs_reg, "ptr": code.add_i32(len(arg_regs))}
         fn.insert_op(code, 0, op)
         
         for i in reversed(range(len(arg_regs))):
             op = Opcode()
             op.op = "SetField"
-            op.definition = {"obj": virt_reg, "field": fieldRef(i), "src": Reg(i)}
+            op.df = {"obj": virt_reg, "field": fieldRef(i), "src": Reg(i)}
             fn.insert_op(code, 0, op)
             
         op = Opcode()
         op.op = "New"
-        op.definition = {"dst": virt_reg}
+        op.df = {"dst": virt_reg}
         fn.insert_op(code, 0, op)
         
 
@@ -224,7 +224,7 @@ class Patch:
             op = Opcode()
             op.op = "Call0"
             assert self.custom_fns["init"] is not None, "Invalid fIndex!"
-            op.definition = {"dst": void_reg, "fun": self.custom_fns["init"]}
+            op.df = {"dst": void_reg, "fun": self.custom_fns["init"]}
             entry.insert_op(code, 0, op)
 
         for identifier, interceptor in self.interceptions.items():

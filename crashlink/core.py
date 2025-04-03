@@ -1127,14 +1127,14 @@ class Opcode(Serialisable):
         "InlineInt": VarInt,
     }
 
-    def __init__(self, op: Optional[str] = None, definition: Dict[Any, Any] = None) -> None:
+    def __init__(self, op: Optional[str] = None, df: Dict[Any, Any] = None) -> None:
         self.code = VarInt()
         self.op: Optional[str] = None
         if op:
             self.op = op
-        self.definition: Dict[Any, Any] = {}
-        if definition:
-            self.definition = definition
+        self.df: Dict[Any, Any] = {}
+        if df:
+            self.df = df
 
     def deserialise(self, f: BinaryIO | BytesIO) -> "Opcode":
         # dbg_print(f"Deserialising opcode at {tell(f)}... ", end="")
@@ -1146,7 +1146,7 @@ class Opcode(Serialisable):
             raise InvalidOpCode(f"Unknown opcode at {tell(f)} - {self.code.value}")
         for param, _type in _def.items():
             if _type in self.TYPE_MAP:
-                self.definition[param] = self.TYPE_MAP[_type]().deserialise(f)
+                self.df[param] = self.TYPE_MAP[_type]().deserialise(f)
                 continue
             raise InvalidOpCode(f"Invalid opcode definition for {param, _type} at {tell(f)}")
         self.op = list(opcodes.keys())[self.code.value]
@@ -1158,12 +1158,12 @@ class Opcode(Serialisable):
         return b"".join(
             [
                 self.code.serialise(),
-                b"".join([definition.serialise() for name, definition in self.definition.items()]),
+                b"".join([definition.serialise() for name, definition in self.df.items()]),
             ]
         )
 
     def __repr__(self) -> str:
-        return f"<Opcode: {self.op} {self.definition}>"
+        return f"<Opcode: {self.op} {self.df}>"
 
     def __str__(self) -> str:
         return self.__repr__()
@@ -1351,7 +1351,7 @@ class Function(Serialisable):
         for _ in range(self.nops.value):
             self.ops.append(Opcode().deserialise(f))
             if self.ops[-1].op in simple_calls:
-                self.calls.append(self.ops[-1].definition["fun"])
+                self.calls.append(self.ops[-1].df["fun"])
         if self.has_debug:
             self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
             if self.version >= 3:
