@@ -56,28 +56,20 @@ class Patch:
     def __init__(self, name: Optional[str] = None, author: Optional[str] = None, sha256: Optional[str] = None):
         """
         Initialize a new patch.
-
-        Args:
-            name: Descriptive name of the patch
-            author: Author of the patch
-            sha256: SHA256 hash of the input bytecode file
+        
+        Note: sha256 is hash of input file
         """
         self.name = name
         self.author = author
         self.sha256 = sha256
         self.interceptions: Dict[str | int, Callable[[Args], Args]] = {}
+        self.patches: Dict[str | int, Callable[[Bytecode, Function], None]] = {}
         self.needs_pyhl = True
         self.custom_fns: Dict[str, fIndex] = {}
 
     def intercept(self, fn: str | int) -> Callable[[Callable[[Args], Args]], Callable[[Args], Args]]:
         """
-        Decorator to intercept function calls.
-
-        Args:
-            target_path: Path to the target function (e.g., "$PatchMe.thing")
-
-        Returns:
-            Decorator function
+        Decorator to intercept and modify a function's arguments at call-time.
         """
 
         def decorator(func: Callable[[Args], Args]) -> Callable[[Args], Args]:
@@ -85,52 +77,82 @@ class Patch:
             return func
 
         return decorator
+    
+    def patch(self, fn: str | int):
+        """
+        Decorator to patch a function's opcodes directly.
+        """
+        
+        def decorator(func: Callable[[Bytecode, Function], None]) -> Callable[[Bytecode, Function], None]:
+            self.patches[fn] = func
+            return func
+        
+        return decorator
 
-    def _intercept(self, code: Bytecode, fn: Function, interceptor: Callable[[Args], Args]) -> None:
+    def _intercept(self, code: Bytecode, fn: Function, interceptor: Callable[[Args], Args], identifier: str) -> None:
         """
         Apply an interception.
         """
-        # HACK: finds arg regs by looking at where the first Void arg appears. terrible and i hate it but... probably the best way to do this w/out looking at xrefs
-        arg_regs: List[tIndex] = []
-        for reg in fn.regs:
-            if reg.resolve(code).kind.value == Type.Kind.VOID.value:
-                break
-            arg_regs.append(reg)
-
+        arg_regs = fn.resolve_fun(code).args
         arg_virt = Virtual()
         arg_virt.fields.extend([Field(code.add_string(f"arg_{i}"), typ) for i, typ in enumerate(arg_regs)])
         arg_typ = Type()
         arg_typ.kind.value = Type.Kind.VIRTUAL.value
         arg_typ.definition = arg_virt
-        # arg_tid = code.add_type(arg_typ)
-        # TODO: why does this cause overruns???
+        arg_tid = code.add_type(arg_typ)
+        
+        types_str = ",".join([str(arg.resolve(code).kind.value) for arg in arg_regs])
 
-        fn.regs.append(code.find_prim_type(Type.Kind.VOID))
-        void_reg = Reg(len(fn.regs) - 1)
+        # fn.regs.append(code.find_prim_type(Type.Kind.VOID))
+        # void_reg = Reg(len(fn.regs) - 1)
         bytes_type = code.find_prim_type(Type.Kind.BYTES)
-        fn.regs.extend([bytes_type, bytes_type])
-        mod_reg = Reg(len(fn.regs) - 2)
-        fn_reg = Reg(len(fn.regs) - 1)
+        fn.regs.append(bytes_type)
+        fn_name_reg = Reg(len(fn.regs) - 1)
+        fn.regs.append(code.find_prim_type(Type.Kind.I32))
+        nargs_reg = Reg(len(fn.regs) - 1)
+        fn.regs.append(arg_tid)
+        virt_reg = Reg(len(fn.regs) - 1)
+        fn.regs.append(code.find_prim_type(Type.Kind.BOOL))
+        ret_reg = Reg(len(fn.regs) - 1)
+        fn.regs.append(code.find_prim_type(Type.Kind.BYTES))
+        types_reg = Reg(len(fn.regs) - 1)
 
         op = Opcode()
-        op.op = "Call2"
-        op.definition = {"dst": void_reg, "fun": self.custom_fns["call"], "arg0": mod_reg, "arg1": fn_reg}
+        op.op = "Call4"
+        op.definition = {"dst": ret_reg, "fun": self.custom_fns["intercept"], "arg0": virt_reg, "arg1": nargs_reg, "arg2": fn_name_reg, "arg3": types_reg}
         fn.insert_op(code, 0, op)
 
         op = Opcode()
         op.op = "String"
-        op.definition = {"dst": mod_reg, "ptr": code.add_string("mod")}
+        op.definition = {"dst": fn_name_reg, "ptr": code.add_string(identifier)}
         fn.insert_op(code, 0, op)
-
+        
         op = Opcode()
         op.op = "String"
-        op.definition = {"dst": fn_reg, "ptr": code.add_string("test")}
+        op.definition = {"dst": types_reg, "ptr": code.add_string(types_str)}
         fn.insert_op(code, 0, op)
+        
+        op = Opcode()
+        op.op = "Int"
+        op.definition = {"dst": nargs_reg, "ptr": code.add_i32(len(arg_regs))}
+        fn.insert_op(code, 0, op)
+        
+        for i in reversed(range(len(arg_regs))):
+            op = Opcode()
+            op.op = "SetField"
+            op.definition = {"obj": virt_reg, "field": fieldRef(i), "src": Reg(i)}
+            fn.insert_op(code, 0, op)
+            
+        op = Opcode()
+        op.op = "New"
+        op.definition = {"dst": virt_reg}
+        fn.insert_op(code, 0, op)
+        
 
     def _apply_pyhl(self, code: Bytecode) -> None:
         print("Installing pyhl native...")
-        pyhl_funcs: Dict[str, Optional[tIndex]] = {"init": None, "deinit": None, "call": None}
-        indices: Dict[str, Optional[fIndex]] = {"init": None, "deinit": None, "call": None}
+        pyhl_funcs: Dict[str, Optional[tIndex]] = {"init": None, "deinit": None, "call": None, "intercept": None}
+        indices: Dict[str, Optional[fIndex]] = {"init": None, "deinit": None, "call": None, "intercept": None}
         for func in pyhl_funcs.keys():
             print(f"Generating types for pyhl.{func}")
             voi = code.find_prim_type(Type.Kind.VOID)
@@ -149,6 +171,19 @@ class Patch:
                     fun = Fun()
                     byt = code.find_prim_type(Type.Kind.BYTES)
                     fun.args = [byt, byt]
+                    fun.ret = code.find_prim_type(Type.Kind.BOOL)
+                    typ.definition = fun
+                    pyhl_funcs[func] = code.add_type(typ)
+                case "intercept":
+                    typ = Type()
+                    typ.kind.value = Type.Kind.FUN.value
+                    fun = Fun()
+                    fun.args = [
+                        code.find_prim_type(Type.Kind.DYN),
+                        code.find_prim_type(Type.Kind.I32),
+                        code.find_prim_type(Type.Kind.BYTES),
+                        code.find_prim_type(Type.Kind.BYTES),
+                    ]
                     fun.ret = code.find_prim_type(Type.Kind.BOOL)
                     typ.definition = fun
                     pyhl_funcs[func] = code.add_type(typ)
@@ -205,9 +240,26 @@ class Patch:
                 fn = match
             assert not isinstance(fn, Native), "Cannot intercept a native! (Yet...)"  # TODO: native intercept
             print(
-                f"(Intercept) {func_header(code, fn)}\n\tTO -> pyhl"
+                f"(Intercept) {func_header(code, fn)}"
             )  # TODO: other handlers than pyhl, custom hdll injection, etc.
-            self._intercept(code, fn, interceptor)
+            self._intercept(code, fn, interceptor, identifier)
+        
+        for identifier, patch in self.patches.items():
+            if isinstance(identifier, int):
+                fn = fIndex(identifier).resolve(code)
+            else:
+                match: Optional[Function] = None
+                for fn in code.functions:
+                    if full_func_name(code, fn) == identifier:
+                        match = fn
+                if not match:
+                    raise NameError(f"No such function '{identifier}'")
+                fn = match
+            assert not isinstance(fn, Native), "Cannot patch a native!"
+            print(
+                f"(Patch) {func_header(code, fn)}"
+            )
+            patch(code, fn)
 
         code.set_meta()
         assert code.is_ok()

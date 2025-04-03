@@ -19,7 +19,7 @@ T = TypeVar("T", bound="VarInt")  # easier than reimplementing deserialise for e
 
 from .errors import InvalidOpCode, MalformedBytecode, NoMagic
 from .globals import dbg_print, fmt_bytes, tell
-from .opcodes import opcodes
+from .opcodes import opcodes, simple_calls
 
 try:
     from tqdm import tqdm
@@ -831,6 +831,7 @@ class Virtual(TypeDef):
         return self
 
     def serialise(self) -> bytes:
+        self.nfields.value = len(self.fields)
         return b"".join(
             [
                 self.nfields.serialise(),
@@ -1126,10 +1127,14 @@ class Opcode(Serialisable):
         "InlineInt": VarInt,
     }
 
-    def __init__(self) -> None:
+    def __init__(self, op: Optional[str] = None, definition: Dict[Any, Any] = None) -> None:
         self.code = VarInt()
         self.op: Optional[str] = None
+        if op:
+            self.op = op
         self.definition: Dict[Any, Any] = {}
+        if definition:
+            self.definition = definition
 
     def deserialise(self, f: BinaryIO | BytesIO) -> "Opcode":
         # dbg_print(f"Deserialising opcode at {tell(f)}... ", end="")
@@ -1308,6 +1313,23 @@ class Function(Serialisable):
         self.debuginfo: Optional[DebugInfo] = None
         self.nassigns: Optional[VarInt] = None
         self.assigns: Optional[List[Tuple[strRef, VarInt]]] = None
+        self.calls: List[fIndex] = []
+
+    def called_by(self, code: "Bytecode") -> List[fIndex]:
+        """
+        Resolves all functions that call this function.
+        """
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+    
+    def resolve_fun(self, code: "Bytecode") -> Fun:
+        """
+        Resolves the function signature of this function.
+        """
+        return self.type.resolve(code).definition
 
     def resolve_file(self, code: "Bytecode") -> str:
         """
@@ -1328,6 +1350,8 @@ class Function(Serialisable):
             self.regs.append(tIndex().deserialise(f))
         for _ in range(self.nops.value):
             self.ops.append(Opcode().deserialise(f))
+            if self.ops[-1].op in simple_calls:
+                self.calls.append(self.ops[-1].definition["fun"])
         if self.has_debug:
             self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
             if self.version >= 3:
@@ -1906,6 +1930,15 @@ class Bytecode(Serialisable):
         Adds a string to the bytecode's string block and returns a reference to it.
         """
         return strRef(self.strings.find_or_add(string))
+    
+    def add_i32(self, value: int) -> intRef:
+        """
+        Adds an integer to the bytecode's integer block and returns a reference to it.
+        """
+        val = SerialisableInt()
+        val.value = value
+        self.ints.append(val)
+        return intRef(len(self.ints) - 1)
 
     def next_free_findex(self) -> fIndex:
         """
