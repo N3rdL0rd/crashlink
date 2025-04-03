@@ -41,6 +41,18 @@ arithmetic = [
 List of all arithmetic opcodes.
 """
 
+simple_calls = [
+    "Call0",
+    "Call1",
+    "Call2",
+    "Call3",
+    "Call4",
+    "CallN"
+]
+"""
+List of all function call opcodes.
+"""
+
 opcodes = {
     "Mov": {"dst": "Reg", "src": "Reg"},  # 0
     "Int": {"dst": "Reg", "ptr": "RefInt"},  # 1

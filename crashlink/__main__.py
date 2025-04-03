@@ -16,7 +16,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from . import decomp, disasm, globals
 from .asm import AsmFile
-from .core import Bytecode, Native
+from .core import Bytecode, Native, tIndex, Virtual
 from .globals import VERSION
 from .interp.vm import VM  # type: ignore
 from .opcodes import opcode_docs, opcodes
@@ -505,6 +505,41 @@ class Commands:
         else:
             print("No debug info in bytecode!")
             return
+
+    def virt(self, args: List[str]) -> None:
+        """Prints a virtual type by tIndex. `virt <index`"""
+        if len(args) == 0:
+            print("Usage: virt <index>")
+            return
+        try:
+            index = int(args[0])
+        except ValueError:
+            print("Invalid index.")
+            return
+        try:
+            virt = tIndex(index).resolve(self.code)
+        except IndexError:
+            print("Type not found.")
+            return
+        if not isinstance(virt.definition, Virtual):
+            print("Type is not a Virtual.")
+            return
+        print(f"Virtual t@{index}")
+        print("Fields:")
+        for field in virt.definition.fields:
+            print(f"  {field.name.resolve(self.code)}: {field.type.resolve(self.code)}")
+            
+    def fnn(self, args: List[str]) -> None:
+        """Prints a function by name. `fnn <name>`"""
+        if len(args) == 0:
+            print("Usage: fnn <name>")
+            return
+        name = " ".join(args[0:])
+        for func in self.code.functions:
+            if disasm.full_func_name(self.code, func) == name:
+                print(disasm.func_header(self.code, func))
+                return
+        print("Function not found.")
 
     def _get_commands(self) -> Dict[str, Callable[[List[str]], None]]:
         """Get all command methods using reflection"""

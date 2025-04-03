@@ -1,4 +1,5 @@
 from crashlink.patch import *
+from crashlink import *
 
 patch = Patch(
     name="crashlink PatchMe test",
@@ -11,3 +12,14 @@ patch = Patch(
 def thing(args: Args) -> Args:
     args[0] = 2.0
     return args
+
+@patch.patch("$PatchMe.main")
+def main(code: Bytecode, fn: Function) -> None:
+    fn.insert_op(
+        code,
+        0,
+        Opcode(
+            op="Nop",
+            definition={}
+        )
+    )
