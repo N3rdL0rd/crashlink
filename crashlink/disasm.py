@@ -41,10 +41,13 @@ def type_to_haxe(type: str) -> str:
     return mapping.get(type, type)
 
 
-def func_header(code: Bytecode, func: Function) -> str:
+def func_header(code: Bytecode, func: Function|Native) -> str:
     """
     Generates a human-readable header for a function.
     """
+    if isinstance(func, Native):
+        return native_header(code, func)
+    assert isinstance(func, Function)
     name = full_func_name(code, func)
     fun_type = func.type.resolve(code).definition
     if isinstance(fun_type, Fun):
@@ -100,6 +103,7 @@ def pseudo_from_op(
     regs: List[Reg] | List[tIndex],
     code: Bytecode,
     terse: bool = False,
+    func: Optional[Function] = None
 ) -> str:
     """
     Generates pseudocode disassembly from an opcode.
@@ -138,6 +142,8 @@ def pseudo_from_op(
             return f"if reg{op.definition['a']} != reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
         case "JSGt":
             return f"if reg{op.definition['a']} > reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+        case "JNotNull":
+            return f"if reg{op.definition['reg']} is not null: jump to {idx + (op.definition['offset'].value + 1)}"
 
         # Arithmetic
         case "Mul":
@@ -190,6 +196,24 @@ def pseudo_from_op(
             return f"reg{op.definition['dst']} = new {type_name(code, typ)}"
         case "DynSet":
             return f"reg{op.definition['obj']}.{op.definition['field'].resolve(code)} = reg{op.definition['src']}"
+        case "GetThis":
+            if not func:
+                return f"reg{op.definition['dst']} = this.field{op.definition['field']}"
+            obj = func.regs[0].resolve(code)
+            assert isinstance(obj.definition, Obj), "reg0 should be an Obj of the type of this (is this static?)"
+            fields = obj.definition.resolve_fields(code)
+            field = fields[op.definition['field'].value]
+            return f"reg{op.definition['dst']} = this.{field.name.resolve(code)}"
+        case "SetThis":
+            if not func:
+                return f"this.field{op.definition['field']} = reg{op.definition['src']}"
+            obj = func.regs[0].resolve(code)
+            assert isinstance(obj.definition, Obj), "reg0 should be an Obj of the type of this (is this static?)"
+            fields = obj.definition.resolve_fields(code)
+            field = fields[op.definition['field'].value]
+            return f"this.{field.name.resolve(code)} = reg{op.definition['src']}"
+        case "InstanceClosure":
+            return f"reg{op.definition['dst']} = f@{op.definition['fun']} (as method of reg{op.definition['obj']})"
 
         # Type Conversions
         case "ToSFloat":
@@ -222,8 +246,18 @@ def pseudo_from_op(
             return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1']])})"
         case "Call3":
             return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1', 'arg2']])})"
+        case "Call4":
+            return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1', 'arg2', 'arg3']])})"
         case "CallN":
             return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{arg}' for arg in op.definition['args'].value])})"
+        case "CallThis":
+            if not func:
+                return f"reg{op.definition['dst']} = this.field{op.definition['field']}({', '.join([f'reg{arg}' for arg in op.definition['args'].value])})"
+            obj = func.regs[0].resolve(code)
+            assert isinstance(obj.definition, Obj), "reg0 should be an Obj of the type of this (is this static?)"
+            fields = obj.definition.resolve_fields(code)
+            field = fields[op.definition['field'].value]
+            return f"reg{op.definition['dst']} = this.{field.name.resolve(code)}({', '.join([f'reg{arg}' for arg in op.definition['args'].value])})"
 
         # Error Handling
         case "NullCheck":
@@ -267,6 +301,7 @@ def fmt_op(
     idx: int,
     width: int = 15,
     debug: Optional[List[fileRef]] = None,
+    func: Optional[Function] = None
 ) -> str:
     """
     Formats an opcode into a table row.
@@ -277,7 +312,7 @@ def fmt_op(
         file = debug[idx].resolve_pretty(code)  # str: "file:line"
         file_info = f"[{file}] "
 
-    return f"{file_info}{idx:>3}. {op.op:<{width}} {str(defn):<{48}} {pseudo_from_op(op, idx, regs, code):<{width}}"
+    return f"{file_info}{idx:>3}. {op.op:<{width}} {str(defn):<{48}} {pseudo_from_op(op, idx, regs, code, func=func):<{width}}"
 
 
 def func(code: Bytecode, func: Function | Native) -> str:
@@ -297,7 +332,13 @@ def func(code: Bytecode, func: Function | Native) -> str:
             res += f"Op {assign[1].value - 1}: {assign[0].resolve(code)}\n"
     res += "\nOps:\n"
     for i, op in enumerate(func.ops):
-        res += fmt_op(code, func.regs, op, i, debug=func.debuginfo.value if func.debuginfo else None) + "\n"
+        res += fmt_op(code, func.regs, op, i, debug=func.debuginfo.value if func.debuginfo else None, func=func) + "\n"
+    res += "\nCalls:\n"
+    for i, call in enumerate(func.calls):
+        res += f"  {i}. {func_header(code, call.resolve(code))}\n"
+    res += "\nXrefs:\n"
+    for i, caller in enumerate(func.called_by(code)):
+        res += f"  {i}. {func_header(code, caller.resolve(code))}\n"
     return res
 
 

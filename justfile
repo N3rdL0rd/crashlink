@@ -63,6 +63,7 @@ pyhl-prepare:
 pyhl:
     cd pyhl && make clean && make
     cp pyhl/pyhl.hdll pyhl/hashlink/build/bin/ || true
+    cp pyhl/pyhl.py pyhl/hashlink/build/bin/ || true
 
 # Build the pyhl native hdll (Windows) - run vcvarsall.bat and pyhl-prepare first
 pyhl-win:
