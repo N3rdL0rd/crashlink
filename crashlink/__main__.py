@@ -16,7 +16,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from . import decomp, disasm, globals
 from .asm import AsmFile
-from .core import Bytecode, Native, tIndex, Virtual
+from .core import Bytecode, Native, Virtual, tIndex
 from .globals import VERSION
 from .interp.vm import VM  # type: ignore
 from .opcodes import opcode_docs, opcodes
@@ -459,9 +459,9 @@ class Commands:
         }
 
         try:
-            import IPython  # type: ignore
+            import IPython
 
-            IPython.embed(banner1=banner, user_ns=local_vars)
+            IPython.embed(banner1=banner, user_ns=local_vars) # type: ignore
         except ImportError:
             import code as cd
 
@@ -528,7 +528,7 @@ class Commands:
         print("Fields:")
         for field in virt.definition.fields:
             print(f"  {field.name.resolve(self.code)}: {field.type.resolve(self.code)}")
-            
+
     def fnn(self, args: List[str]) -> None:
         """Prints a function by name. `fnn <name>`"""
         if len(args) == 0:

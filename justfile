@@ -25,7 +25,7 @@ build-tests:
 
 # Format the codebase
 format:
-    black --exclude env . --line-length 120
+    black . --line-length 120 --exclude '(env|pyhl/include|pyhl/python|\.venv|\.venv-cpy)'
     isort . -s .venv --verbose --gitignore
 
 # Run type checking

@@ -4,9 +4,10 @@ Shim for HashLink compiled in pyhl/hashlink/build/bin
 """
 
 import os
-import sys
-import subprocess
 import platform
+import subprocess
+import sys
+
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))

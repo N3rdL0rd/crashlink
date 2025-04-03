@@ -56,7 +56,7 @@ class Patch:
     def __init__(self, name: Optional[str] = None, author: Optional[str] = None, sha256: Optional[str] = None):
         """
         Initialize a new patch.
-        
+
         Note: sha256 is hash of input file
         """
         self.name = name
@@ -77,19 +77,19 @@ class Patch:
             return func
 
         return decorator
-    
-    def patch(self, fn: str | int):
+
+    def patch(self, fn: str | int) -> Callable[[Callable[[Bytecode, Function], None]], Callable[[Bytecode, Function], None]]:
         """
         Decorator to patch a function's opcodes directly.
         """
-        
+
         def decorator(func: Callable[[Bytecode, Function], None]) -> Callable[[Bytecode, Function], None]:
             self.patches[fn] = func
             return func
-        
+
         return decorator
 
-    def _intercept(self, code: Bytecode, fn: Function, interceptor: Callable[[Args], Args], identifier: str) -> None:
+    def _intercept(self, code: Bytecode, fn: Function, interceptor: Callable[[Args], Args], identifier: str | int) -> None:
         """
         Apply an interception.
         """
@@ -100,7 +100,7 @@ class Patch:
         arg_typ.kind.value = Type.Kind.VIRTUAL.value
         arg_typ.definition = arg_virt
         arg_tid = code.add_type(arg_typ)
-        
+
         types_str = ",".join([str(arg.resolve(code).kind.value) for arg in arg_regs])
 
         # fn.regs.append(code.find_prim_type(Type.Kind.VOID))
@@ -119,35 +119,41 @@ class Patch:
 
         op = Opcode()
         op.op = "Call4"
-        op.df = {"dst": ret_reg, "fun": self.custom_fns["intercept"], "arg0": virt_reg, "arg1": nargs_reg, "arg2": fn_name_reg, "arg3": types_reg}
+        op.df = {
+            "dst": ret_reg,
+            "fun": self.custom_fns["intercept"],
+            "arg0": virt_reg,
+            "arg1": nargs_reg,
+            "arg2": fn_name_reg,
+            "arg3": types_reg,
+        }
         fn.insert_op(code, 0, op)
 
         op = Opcode()
         op.op = "String"
-        op.df = {"dst": fn_name_reg, "ptr": code.add_string(identifier)}
+        op.df = {"dst": fn_name_reg, "ptr": code.add_string(str(identifier))}
         fn.insert_op(code, 0, op)
-        
+
         op = Opcode()
         op.op = "String"
         op.df = {"dst": types_reg, "ptr": code.add_string(types_str)}
         fn.insert_op(code, 0, op)
-        
+
         op = Opcode()
         op.op = "Int"
         op.df = {"dst": nargs_reg, "ptr": code.add_i32(len(arg_regs))}
         fn.insert_op(code, 0, op)
-        
+
         for i in reversed(range(len(arg_regs))):
             op = Opcode()
             op.op = "SetField"
             op.df = {"obj": virt_reg, "field": fieldRef(i), "src": Reg(i)}
             fn.insert_op(code, 0, op)
-            
+
         op = Opcode()
         op.op = "New"
         op.df = {"dst": virt_reg}
         fn.insert_op(code, 0, op)
-        
 
     def _apply_pyhl(self, code: Bytecode) -> None:
         print("Installing pyhl native...")
@@ -231,34 +237,30 @@ class Patch:
             if isinstance(identifier, int):
                 fn = fIndex(identifier).resolve(code)
             else:
-                match: Optional[Function] = None
+                mtch: Optional[Function] = None
                 for fn in code.functions:
                     if full_func_name(code, fn) == identifier:
-                        match = fn
-                if not match:
+                        mtch = fn
+                if not mtch:
                     raise NameError(f"No such function '{identifier}'")
-                fn = match
+                fn = mtch
             assert not isinstance(fn, Native), "Cannot intercept a native! (Yet...)"  # TODO: native intercept
-            print(
-                f"(Intercept) {func_header(code, fn)}"
-            )  # TODO: other handlers than pyhl, custom hdll injection, etc.
+            print(f"(Intercept) {func_header(code, fn)}")  # TODO: other handlers than pyhl, custom hdll injection, etc.
             self._intercept(code, fn, interceptor, identifier)
-        
+
         for identifier, patch in self.patches.items():
             if isinstance(identifier, int):
                 fn = fIndex(identifier).resolve(code)
             else:
-                match: Optional[Function] = None
+                mtch = None
                 for fn in code.functions:
                     if full_func_name(code, fn) == identifier:
-                        match = fn
-                if not match:
+                        mtch = fn
+                if not mtch:
                     raise NameError(f"No such function '{identifier}'")
-                fn = match
+                fn = mtch
             assert not isinstance(fn, Native), "Cannot patch a native!"
-            print(
-                f"(Patch) {func_header(code, fn)}"
-            )
+            print(f"(Patch) {func_header(code, fn)}")
             patch(code, fn)
 
         code.set_meta()
