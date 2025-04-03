@@ -243,7 +243,7 @@ class AsmFile:
         name = parts[0]
         assert name in opcodes, f"Unknown opcode '{name}'!"
         op.op = name
-        op.definition = {}
+        op.df = {}
 
         for i, (k, v) in enumerate(opcodes[name].items()):
             if i + 1 >= len(parts):
@@ -251,7 +251,7 @@ class AsmFile:
             typ = Opcode.TYPE_MAP[v]
             parsed = self._parse_opcode_ref(parts[i + 1])
             assert isinstance(parsed, typ), f"Expected type {typ} for argument {k} of opcode {name}, got {type(parsed)}"
-            op.definition[k] = parsed
+            op.df[k] = parsed
 
         return op
 

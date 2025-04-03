@@ -131,7 +131,7 @@ class CFGraph:
                         "JULt", "JUGte", "JNotLt", "JNotGte",
                         "JEq", "JNotEq", "JAlways", "Trap"]:
             # fmt: on
-                jump_targets.add(i + op.definition["offset"].value + 1)
+                jump_targets.add(i + op.df["offset"].value + 1)
 
         current_ops: List[Opcode] = []
         current_start = 0
@@ -180,7 +180,7 @@ class CFGraph:
                             "JEq", "JNotEq"]:
             # fmt: on
                 
-                jump_idx = start_idx + len(ops) + last_op.definition["offset"].value
+                jump_idx = start_idx + len(ops) + last_op.df["offset"].value
                 
                 # - jump target is "true" branch
                 # - fall-through is "false" branch
@@ -194,7 +194,7 @@ class CFGraph:
                     self.add_branch(src_node, nodes_by_idx[next_idx], edge_type)
             
             elif last_op.op == "Switch":
-                for i, offset in enumerate(last_op.definition['offsets'].value):
+                for i, offset in enumerate(last_op.df['offsets'].value):
                     if offset.value != 0:
                         jump_idx = start_idx + len(ops) + offset.value
                         self.add_branch(src_node, nodes_by_idx[jump_idx], f"switch: case: {i} ")
@@ -202,7 +202,7 @@ class CFGraph:
                     self.add_branch(src_node, nodes_by_idx[next_idx], "switch: default")
             
             elif last_op.op == "Trap":
-                jump_idx = start_idx + len(ops) + last_op.definition["offset"].value
+                jump_idx = start_idx + len(ops) + last_op.df["offset"].value
                 if jump_idx in nodes_by_idx:
                     self.add_branch(src_node, nodes_by_idx[jump_idx], "trap")
                 if next_idx in nodes_by_idx:
@@ -213,7 +213,7 @@ class CFGraph:
                     self.add_branch(src_node, nodes_by_idx[next_idx], "endtrap")
             
             elif last_op.op == "JAlways":
-                jump_idx = start_idx + len(ops) + last_op.definition["offset"].value
+                jump_idx = start_idx + len(ops) + last_op.df["offset"].value
                 if jump_idx in nodes_by_idx:
                     self.add_branch(src_node, nodes_by_idx[jump_idx], "unconditional")
             elif last_op.op != "Ret" and next_idx in nodes_by_idx:
@@ -833,8 +833,8 @@ class IRFunction:
                 reg: Optional[int] = None
                 op = self.ops[val]
                 try:
-                    op.definition["dst"]
-                    reg = op.definition["dst"].value
+                    op.df["dst"]
+                    reg = op.df["dst"].value
                 except KeyError:
                     pass
                 if reg is not None:
@@ -935,9 +935,9 @@ class IRFunction:
                 break
 
             elif op.op in arithmetic:
-                dst = self.locals[op.definition["dst"].value]
-                lhs = self.locals[op.definition["a"].value]
-                rhs = self.locals[op.definition["b"].value]
+                dst = self.locals[op.df["dst"].value]
+                lhs = self.locals[op.df["a"].value]
+                rhs = self.locals[op.df["b"].value]
                 block.statements.append(
                     IRAssign(
                         self.code,
@@ -952,11 +952,11 @@ class IRFunction:
                 )
 
             elif op.op in ["Int", "Float", "Bool", "Bytes", "String", "Null"]:
-                dst = self.locals[op.definition["dst"].value]
+                dst = self.locals[op.df["dst"].value]
                 const_type = IRConst.ConstType[op.op.upper()]
-                value = op.definition["value"].value if op.op == "Bool" else None
+                value = op.df["value"].value if op.op == "Bool" else None
                 if op.op not in ["Bool"]:
-                    const = IRConst(self.code, const_type, op.definition["ptr"], value)
+                    const = IRConst(self.code, const_type, op.df["ptr"], value)
                 else:
                     const = IRConst(self.code, const_type, value=value)
                 block.statements.append(IRAssign(self.code, dst, const))
@@ -1013,8 +1013,8 @@ class IRFunction:
                         IRBoolExpr.CompareType.NULL,
                         IRBoolExpr.CompareType.NOT_NULL,
                     ]:
-                        left = self.locals[op.definition["a"].value]
-                        right = self.locals[op.definition["b"].value]
+                        left = self.locals[op.df["a"].value]
+                        right = self.locals[op.df["b"].value]
 
                     condition_expr = IRBoolExpr(self.code, cond, left, right)
                     true_block = self._lift_block(true_branch, visited) if should_lift_t else IRBlock(self.code)
@@ -1046,9 +1046,9 @@ class IRFunction:
 
             elif op.op in ["Call0", "Call1", "Call2", "Call3", "Call4"]:
                 n = int(op.op[-1])
-                dst = self.locals[op.definition["dst"].value]
-                fun = IRConst(self.code, IRConst.ConstType.FUN, op.definition["fun"])
-                args = [self.locals[op.definition[f"arg{i}"].value] for i in range(n)]
+                dst = self.locals[op.df["dst"].value]
+                fun = IRConst(self.code, IRConst.ConstType.FUN, op.df["fun"])
+                args = [self.locals[op.df[f"arg{i}"].value] for i in range(n)]
                 block.statements.append(
                     IRAssign(
                         self.code,
@@ -1058,9 +1058,9 @@ class IRFunction:
                 )
 
             elif op.op == "CallMethod":
-                dst = self.locals[op.definition["dst"].value]
-                target = self.locals[op.definition["target"].value]
-                args = [self.locals[op.definition[f"arg{i}"].value] for i in range(op.definition["nargs"].value)]
+                dst = self.locals[op.df["dst"].value]
+                target = self.locals[op.df["target"].value]
+                args = [self.locals[op.df[f"arg{i}"].value] for i in range(op.df["nargs"].value)]
                 block.statements.append(
                     IRAssign(
                         self.code,
@@ -1070,8 +1070,8 @@ class IRFunction:
                 )
 
             elif op.op == "CallThis":
-                dst = self.locals[op.definition["dst"].value]
-                args = [self.locals[op.definition[f"arg{i}"].value] for i in range(op.definition["nargs"].value)]
+                dst = self.locals[op.df["dst"].value]
+                args = [self.locals[op.df[f"arg{i}"].value] for i in range(op.df["nargs"].value)]
                 block.statements.append(
                     IRAssign(
                         self.code,
@@ -1081,14 +1081,14 @@ class IRFunction:
                 )
 
             elif op.op == "Ret":
-                if isinstance(op.definition["ret"].resolve(self.code).definition, Void):
+                if isinstance(op.df["ret"].resolve(self.code).definition, Void):
                     block.statements.append(IRReturn(self.code))
                 else:
-                    block.statements.append(IRReturn(self.code, self.locals[op.definition["ret"].value]))
+                    block.statements.append(IRReturn(self.code, self.locals[op.df["ret"].value]))
 
             elif op.op == "Switch":
-                val = self.locals[op.definition["reg"].value]
-                offsets = op.definition["offsets"].value
+                val = self.locals[op.df["reg"].value]
+                offsets = op.df["offsets"].value
                 cases = {}
                 case_nodes = []
 
@@ -1139,12 +1139,12 @@ class IRFunction:
             elif op.op == "Mov":
                 block.statements.append(
                     IRAssign(
-                        self.code, self.locals[op.definition["dst"].value], self.locals[op.definition["src"].value]
+                        self.code, self.locals[op.df["dst"].value], self.locals[op.df["src"].value]
                     )
                 )
 
             elif op.op == "JAlways":
-                jump_idx = node.base_offset + len(node.ops) + op.definition["offset"].value
+                jump_idx = node.base_offset + len(node.ops) + op.df["offset"].value
                 target_node = None
                 for nod in self.cfg.nodes:
                     if nod.base_offset == jump_idx:

@@ -111,59 +111,59 @@ def pseudo_from_op(
     match op.op:
         # Constants
         case "Int" | "Float":
-            return f"reg{op.definition['dst']} = {op.definition['ptr'].resolve(code)}"
+            return f"reg{op.df['dst']} = {op.df['ptr'].resolve(code)}"
         case "Bool":
-            return f"reg{op.definition['dst']} = {op.definition['value'].value}"
+            return f"reg{op.df['dst']} = {op.df['value'].value}"
         case "String":
-            return f"reg{op.definition['dst']} = \"{op.definition['ptr'].resolve(code)}\""
+            return f"reg{op.df['dst']} = \"{op.df['ptr'].resolve(code)}\""
         case "Null":
-            return f"reg{op.definition['dst']} = null"
+            return f"reg{op.df['dst']} = null"
 
         # Control Flow
         case "Label":
             return "label"
         case "JAlways":
-            return f"jump to {idx + (op.definition['offset'].value + 1)}"
+            return f"jump to {idx + (op.df['offset'].value + 1)}"
         case "JEq" | "JSEq":
-            return f"if reg{op.definition['a']} == reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+            return f"if reg{op.df['a']} == reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
         case "JNull":
-            return f"if reg{op.definition['reg']} is null: jump to {idx + (op.definition['offset'].value + 1)}"
+            return f"if reg{op.df['reg']} is null: jump to {idx + (op.df['offset'].value + 1)}"
         case "JFalse":
-            return f"if reg{op.definition['cond']} is false: jump to {idx + (op.definition['offset'].value + 1)}"
+            return f"if reg{op.df['cond']} is false: jump to {idx + (op.df['offset'].value + 1)}"
         case "JTrue":
-            return f"if reg{op.definition['cond']} is true: jump to {idx + (op.definition['offset'].value + 1)}"
+            return f"if reg{op.df['cond']} is true: jump to {idx + (op.df['offset'].value + 1)}"
         case "JSGte":
-            return f"if reg{op.definition['a']} >= reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+            return f"if reg{op.df['a']} >= reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
         case "JULt" | "JSLt":
-            return f"if reg{op.definition['a']} < reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+            return f"if reg{op.df['a']} < reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
         case "JNotLt":
-            return f"if reg{op.definition['a']} >= reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+            return f"if reg{op.df['a']} >= reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
         case "JNotEq":
-            return f"if reg{op.definition['a']} != reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+            return f"if reg{op.df['a']} != reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
         case "JSGt":
-            return f"if reg{op.definition['a']} > reg{op.definition['b']}: jump to {idx + (op.definition['offset'].value + 1)}"
+            return f"if reg{op.df['a']} > reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
         case "JNotNull":
-            return f"if reg{op.definition['reg']} is not null: jump to {idx + (op.definition['offset'].value + 1)}"
+            return f"if reg{op.df['reg']} is not null: jump to {idx + (op.df['offset'].value + 1)}"
 
         # Arithmetic
         case "Mul":
-            return f"reg{op.definition['dst']} = reg{op.definition['a']} * reg{op.definition['b']}"
+            return f"reg{op.df['dst']} = reg{op.df['a']} * reg{op.df['b']}"
         case "SDiv":
-            return f"reg{op.definition['dst']} = reg{op.definition['a']} / reg{op.definition['b']}"
+            return f"reg{op.df['dst']} = reg{op.df['a']} / reg{op.df['b']}"
         case "Incr":
-            return f"reg{op.definition['dst']}++"
+            return f"reg{op.df['dst']}++"
         case "Decr":
-            return f"reg{op.definition['dst']}--"
+            return f"reg{op.df['dst']}--"
         case "Sub":
-            return f"reg{op.definition['dst']} = reg{op.definition['a']} - reg{op.definition['b']}"
+            return f"reg{op.df['dst']} = reg{op.df['a']} - reg{op.df['b']}"
         case "Add":
-            return f"reg{op.definition['dst']} = reg{op.definition['a']} + reg{op.definition['b']}"
+            return f"reg{op.df['dst']} = reg{op.df['a']} + reg{op.df['b']}"
         case "Shl":
-            return f"reg{op.definition['dst']} = reg{op.definition['a']} << reg{op.definition['b']}"
+            return f"reg{op.df['dst']} = reg{op.df['a']} << reg{op.df['b']}"
         case "SMod":
-            return f"reg{op.definition['dst']} = reg{op.definition['a']} % reg{op.definition['b']}"
+            return f"reg{op.df['dst']} = reg{op.df['a']} % reg{op.df['b']}"
         case "Xor":
-            return f"reg{op.definition['dst']} = reg{op.definition['a']} ^ reg{op.definition['b']}"
+            return f"reg{op.df['dst']} = reg{op.df['a']} ^ reg{op.df['b']}"
 
         # Memory/Object Operations
         case "GetThis":
@@ -174,103 +174,103 @@ def pseudo_from_op(
                     this = reg.resolve(code)
                     break
             if this:
-                return f"reg{op.definition['dst']} = this.{op.definition['field'].resolve_obj(code, this.definition).name.resolve(code)}"
-            return f"reg{op.definition['dst']} = this.f@{op.definition['field'].value} (this not found!)"
+                return f"reg{op.df['dst']} = this.{op.df['field'].resolve_obj(code, this.definition).name.resolve(code)}"
+            return f"reg{op.df['dst']} = this.f@{op.df['field'].value} (this not found!)"
         case "GetGlobal":
-            glob = type_name(code, op.definition["global"].resolve(code))
-            return f"reg{op.definition['dst']} = {glob} (g@{op.definition['global']})"
+            glob = type_name(code, op.df["global"].resolve(code))
+            return f"reg{op.df['dst']} = {glob} (g@{op.df['global']})"
         case "Field":
-            field = op.definition["field"].resolve_obj(code, regs[op.definition["obj"].value].resolve(code).definition)
-            return f"reg{op.definition['dst']} = reg{op.definition['obj']}.{field.name.resolve(code)}"
+            field = op.df["field"].resolve_obj(code, regs[op.df["obj"].value].resolve(code).definition)
+            return f"reg{op.df['dst']} = reg{op.df['obj']}.{field.name.resolve(code)}"
         case "SetField":
-            field = op.definition["field"].resolve_obj(code, regs[op.definition["obj"].value].resolve(code).definition)
-            return f"reg{op.definition['obj']}.{field.name.resolve(code)} = reg{op.definition['src']}"
+            field = op.df["field"].resolve_obj(code, regs[op.df["obj"].value].resolve(code).definition)
+            return f"reg{op.df['obj']}.{field.name.resolve(code)} = reg{op.df['src']}"
         case "Mov":
-            return f"reg{op.definition['dst']} = reg{op.definition['src']}"
+            return f"reg{op.df['dst']} = reg{op.df['src']}"
         case "SetArray":
-            return f"reg{op.definition['array']}[reg{op.definition['index']}] = reg{op.definition['src']})"
+            return f"reg{op.df['array']}[reg{op.df['index']}] = reg{op.df['src']})"
         case "ArraySize":
-            return f"reg{op.definition['dst']} = len(reg{op.definition['array']})"
+            return f"reg{op.df['dst']} = len(reg{op.df['array']})"
         case "New":
-            typ = regs[op.definition["dst"].value].resolve(code)
-            return f"reg{op.definition['dst']} = new {type_name(code, typ)}"
+            typ = regs[op.df["dst"].value].resolve(code)
+            return f"reg{op.df['dst']} = new {type_name(code, typ)}"
         case "DynSet":
-            return f"reg{op.definition['obj']}.{op.definition['field'].resolve(code)} = reg{op.definition['src']}"
+            return f"reg{op.df['obj']}.{op.df['field'].resolve(code)} = reg{op.df['src']}"
         case "GetThis":
             if not func:
-                return f"reg{op.definition['dst']} = this.field{op.definition['field']}"
+                return f"reg{op.df['dst']} = this.field{op.df['field']}"
             obj = func.regs[0].resolve(code)
             assert isinstance(obj.definition, Obj), "reg0 should be an Obj of the type of this (is this static?)"
             fields = obj.definition.resolve_fields(code)
-            field = fields[op.definition['field'].value]
-            return f"reg{op.definition['dst']} = this.{field.name.resolve(code)}"
+            field = fields[op.df['field'].value]
+            return f"reg{op.df['dst']} = this.{field.name.resolve(code)}"
         case "SetThis":
             if not func:
-                return f"this.field{op.definition['field']} = reg{op.definition['src']}"
+                return f"this.field{op.df['field']} = reg{op.df['src']}"
             obj = func.regs[0].resolve(code)
             assert isinstance(obj.definition, Obj), "reg0 should be an Obj of the type of this (is this static?)"
             fields = obj.definition.resolve_fields(code)
-            field = fields[op.definition['field'].value]
-            return f"this.{field.name.resolve(code)} = reg{op.definition['src']}"
+            field = fields[op.df['field'].value]
+            return f"this.{field.name.resolve(code)} = reg{op.df['src']}"
         case "InstanceClosure":
-            return f"reg{op.definition['dst']} = f@{op.definition['fun']} (as method of reg{op.definition['obj']})"
+            return f"reg{op.df['dst']} = f@{op.df['fun']} (as method of reg{op.df['obj']})"
 
         # Type Conversions
         case "ToSFloat":
-            return f"reg{op.definition['dst']} = SFloat(reg{op.definition['src']})"
+            return f"reg{op.df['dst']} = SFloat(reg{op.df['src']})"
         case "ToVirtual":
-            return f"reg{op.definition['dst']} = Virtual(reg{op.definition['src']})"
+            return f"reg{op.df['dst']} = Virtual(reg{op.df['src']})"
         case "Ref":
-            return f"reg{op.definition['dst']} = &reg{op.definition['src']}"
+            return f"reg{op.df['dst']} = &reg{op.df['src']}"
         case "SetMem":
-            return f"reg{op.definition['bytes']}[reg{op.definition['index']}] = reg{op.definition['src']}"
+            return f"reg{op.df['bytes']}[reg{op.df['index']}] = reg{op.df['src']}"
         case "GetMem":
-            return f"reg{op.definition['dst']} = reg{op.definition['bytes']}[reg{op.definition['index']}]"
+            return f"reg{op.df['dst']} = reg{op.df['bytes']}[reg{op.df['index']}]"
         case "SafeCast":
-            return f"reg{op.definition['dst']} = reg{op.definition['src']} as {type_name(code, regs[op.definition['dst'].value].resolve(code))}"
+            return f"reg{op.df['dst']} = reg{op.df['src']} as {type_name(code, regs[op.df['dst'].value].resolve(code))}"
         case "UnsafeCast":
-            return f"reg{op.definition['dst']} = reg{op.definition['src']} unsafely as {type_name(code, regs[op.definition['dst'].value].resolve(code))}"
+            return f"reg{op.df['dst']} = reg{op.df['src']} unsafely as {type_name(code, regs[op.df['dst'].value].resolve(code))}"
 
         # Function Calls
         case "CallClosure":
-            args = ", ".join([f"reg{arg}" for arg in op.definition["args"].value])
-            if type(regs[op.definition["dst"].value].resolve(code).definition) == Void:
-                return f"reg{op.definition['fun']}({args})"
-            return f"reg{op.definition['dst']} = reg{op.definition['fun']}({args})"
+            args = ", ".join([f"reg{arg}" for arg in op.df["args"].value])
+            if type(regs[op.df["dst"].value].resolve(code).definition) == Void:
+                return f"reg{op.df['fun']}({args})"
+            return f"reg{op.df['dst']} = reg{op.df['fun']}({args})"
         case "Call0":
-            return f"reg{op.definition['dst']} = f@{op.definition['fun']}()"
+            return f"reg{op.df['dst']} = f@{op.df['fun']}()"
         case "Call1":
-            return f"reg{op.definition['dst']} = f@{op.definition['fun']}(reg{op.definition['arg0']})"
+            return f"reg{op.df['dst']} = f@{op.df['fun']}(reg{op.df['arg0']})"
         case "Call2":
-            fun = full_func_name(code, code.fn(op.definition["fun"].value))
-            return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1']])})"
+            fun = full_func_name(code, code.fn(op.df["fun"].value))
+            return f"reg{op.df['dst']} = f@{op.df['fun']}({', '.join([f'reg{op.df[arg]}' for arg in ['arg0', 'arg1']])})"
         case "Call3":
-            return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1', 'arg2']])})"
+            return f"reg{op.df['dst']} = f@{op.df['fun']}({', '.join([f'reg{op.df[arg]}' for arg in ['arg0', 'arg1', 'arg2']])})"
         case "Call4":
-            return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{op.definition[arg]}' for arg in ['arg0', 'arg1', 'arg2', 'arg3']])})"
+            return f"reg{op.df['dst']} = f@{op.df['fun']}({', '.join([f'reg{op.df[arg]}' for arg in ['arg0', 'arg1', 'arg2', 'arg3']])})"
         case "CallN":
-            return f"reg{op.definition['dst']} = f@{op.definition['fun']}({', '.join([f'reg{arg}' for arg in op.definition['args'].value])})"
+            return f"reg{op.df['dst']} = f@{op.df['fun']}({', '.join([f'reg{arg}' for arg in op.df['args'].value])})"
         case "CallThis":
             if not func:
-                return f"reg{op.definition['dst']} = this.field{op.definition['field']}({', '.join([f'reg{arg}' for arg in op.definition['args'].value])})"
+                return f"reg{op.df['dst']} = this.field{op.df['field']}({', '.join([f'reg{arg}' for arg in op.df['args'].value])})"
             obj = func.regs[0].resolve(code)
             assert isinstance(obj.definition, Obj), "reg0 should be an Obj of the type of this (is this static?)"
             fields = obj.definition.resolve_fields(code)
-            field = fields[op.definition['field'].value]
-            return f"reg{op.definition['dst']} = this.{field.name.resolve(code)}({', '.join([f'reg{arg}' for arg in op.definition['args'].value])})"
+            field = fields[op.df['field'].value]
+            return f"reg{op.df['dst']} = this.{field.name.resolve(code)}({', '.join([f'reg{arg}' for arg in op.df['args'].value])})"
 
         # Error Handling
         case "NullCheck":
-            return f"if reg{op.definition['reg']} is null: error"
+            return f"if reg{op.df['reg']} is null: error"
         case "Trap":
-            return f"trap to reg{op.definition['exc']} (end: {idx + (op.definition['offset'].value)})"
+            return f"trap to reg{op.df['exc']} (end: {idx + (op.df['offset'].value)})"
         case "EndTrap":
-            return f"end trap to reg{op.definition['exc']}"
+            return f"end trap to reg{op.df['exc']}"
 
         # Switch
         case "Switch":
-            reg = op.definition["reg"]
-            offsets = op.definition["offsets"].value
+            reg = op.df["reg"]
+            offsets = op.df["offsets"].value
             offset_mappings = []
             cases = []
             for i, offset in enumerate(offsets):
@@ -280,14 +280,14 @@ def pseudo_from_op(
                     offset_mappings.append(f"if {case_num} jump {target}")
                     cases.append(case_num)
             if not terse:
-                return f"switch reg{reg} [{', '.join(offset_mappings)}] (end: {idx + (op.definition['end'].value)})"
-            return f"switch reg{reg} [{', '.join(cases)}] (end: {idx + (op.definition['end'].value)})"
+                return f"switch reg{reg} [{', '.join(offset_mappings)}] (end: {idx + (op.df['end'].value)})"
+            return f"switch reg{reg} [{', '.join(cases)}] (end: {idx + (op.df['end'].value)})"
 
         # Return
         case "Ret":
-            if type(regs[op.definition["ret"].value].resolve(code).definition) == Void:
+            if type(regs[op.df["ret"].value].resolve(code).definition) == Void:
                 return "return"
-            return f"return reg{op.definition['ret']}"
+            return f"return reg{op.df['ret']}"
 
         # Unknown
         case _:
@@ -306,7 +306,7 @@ def fmt_op(
     """
     Formats an opcode into a table row.
     """
-    defn = op.definition
+    defn = op.df
     file_info = ""
     if debug:
         file = debug[idx].resolve_pretty(code)  # str: "file:line"
@@ -372,7 +372,7 @@ def to_asm(ops: List[Opcode]) -> str:
     """
     res = ""
     for op in ops:
-        res += f"{op.op}. {'. '.join([str(arg) for arg in op.definition.values()])}\n"
+        res += f"{op.op}. {'. '.join([str(arg) for arg in op.df.values()])}\n"
     return res
 
 
@@ -389,12 +389,12 @@ def from_asm(asm: str) -> List[Opcode]:
             continue
         new_opcode = Opcode()
         new_opcode.op = op
-        new_opcode.definition = {}
+        new_opcode.df = {}
         # find defn types for this op
         opargs = opcodes[op]
         for name, type in opargs.items():
             new_value = Opcode.TYPE_MAP[type]()
             new_value.value = literal_eval(args.pop(0))
-            new_opcode.definition[name] = new_value
+            new_opcode.df[name] = new_value
         ops.append(new_opcode)
     return ops

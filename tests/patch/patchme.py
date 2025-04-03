@@ -20,6 +20,6 @@ def main(code: Bytecode, fn: Function) -> None:
         0,
         Opcode(
             op="Nop",
-            definition={}
+            df={}
         )
     )

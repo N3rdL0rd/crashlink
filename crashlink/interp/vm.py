@@ -318,7 +318,7 @@ class VM:
         while ip < len(fn.ops):
             op = fn.ops[ip]
             s = op.op
-            df = op.definition
+            df = op.df
             dbg_print(op)
             match s:
                 case "Bool":
