@@ -2,8 +2,9 @@ import os
 import platform
 import shutil
 import subprocess
-import requests
 import zipfile
+
+import requests
 
 CURRENT_PYTHON = "https://www.python.org/ftp/python/3.14.0/Python-3.14.0a6.tar.xz"
 DIR = "Python-3.14.0a6"
@@ -19,6 +20,7 @@ def download_file(url: str, dest: str) -> None:
     r = requests.get(url)
     with open(dest, "wb") as f:
         f.write(r.content)
+
 
 def gen_prefix() -> str:
     """

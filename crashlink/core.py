@@ -1127,7 +1127,7 @@ class Opcode(Serialisable):
         "InlineInt": VarInt,
     }
 
-    def __init__(self, op: Optional[str] = None, df: Dict[Any, Any] = None) -> None:
+    def __init__(self, op: Optional[str] = None, df: Optional[Dict[Any, Any]] = None) -> None:
         self.code = VarInt()
         self.op: Optional[str] = None
         if op:
@@ -1324,12 +1324,15 @@ class Function(Serialisable):
             if any(call_idx.value == self.findex.value for call_idx in func.calls):
                 caller_indices.append(func.findex)
         return caller_indices
-    
+
     def resolve_fun(self, code: "Bytecode") -> Fun:
         """
         Resolves the function signature of this function.
         """
-        return self.type.resolve(code).definition
+        ret = self.type.resolve(code).definition
+        assert ret is not None
+        assert isinstance(ret, Fun)
+        return ret
 
     def resolve_file(self, code: "Bytecode") -> str:
         """
@@ -1930,7 +1933,7 @@ class Bytecode(Serialisable):
         Adds a string to the bytecode's string block and returns a reference to it.
         """
         return strRef(self.strings.find_or_add(string))
-    
+
     def add_i32(self, value: int) -> intRef:
         """
         Adds an integer to the bytecode's integer block and returns a reference to it.

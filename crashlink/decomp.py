@@ -1138,9 +1138,7 @@ class IRFunction:
 
             elif op.op == "Mov":
                 block.statements.append(
-                    IRAssign(
-                        self.code, self.locals[op.df["dst"].value], self.locals[op.df["src"].value]
-                    )
+                    IRAssign(self.code, self.locals[op.df["dst"].value], self.locals[op.df["src"].value])
                 )
 
             elif op.op == "JAlways":

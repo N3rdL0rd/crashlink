@@ -2,9 +2,10 @@
 Python side of the pyhl integration.
 """
 
-from typing import List, Any, Tuple
-from enum import Enum
 from dataclasses import dataclass
+from enum import Enum
+from typing import Any, List, Tuple
+
 
 class Type(Enum):
     VOID = 0
@@ -30,11 +31,13 @@ class Type(Enum):
     METHOD = 20
     STRUCT = 21
     PACKED = 22
-    
+
+
 @dataclass
 class HlObj:
     obj: Any
     type: Type
+
 
 def dbg_print(*args, **kwargs) -> None:
     global DEBUG
@@ -45,6 +48,7 @@ def dbg_print(*args, **kwargs) -> None:
     except NameError:
         pass
 
+
 class Args:
     def __init__(self, args: List[Any], fn_symbol: str, types: str):
         types_arr: List[Type] = [Type(int(typ)) for typ in types.split(",")]
@@ -52,8 +56,6 @@ class Args:
         args_arr: List[HlObj] = []
         for i, arg in enumerate(args):
             args_str.append(f"arg{i}: {Type(types_arr[i])}={arg}")
-            args_arr.append(HlObj(
-                arg, Type(types_arr[i])
-            ))
+            args_arr.append(HlObj(arg, Type(types_arr[i])))
         dbg_print(f"{fn_symbol}({', '.join(args_str)})")
         self.args: List[HlObj] = args_arr
