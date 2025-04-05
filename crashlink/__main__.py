@@ -20,7 +20,7 @@ from .core import Bytecode, Native, Virtual, full_func_name, tIndex
 from .globals import VERSION
 from .interp.vm import VM  # type: ignore
 from .opcodes import opcode_docs, opcodes
-from .patch import Patch
+from hlrun.patch import Patch
 
 
 class Commands:
@@ -680,7 +680,7 @@ def main() -> None:
             with open(args.patch, "r") as f:
                 content = f.read()
             print(f"Successfully loaded patch module: {patch_module}")
-            assert isinstance(patch_module.patch, Patch), "`patch` is not an instance of crashlink.patch.Patch!"
+            assert isinstance(patch_module.patch, Patch), "`patch` is not an instance of hlrun.patch.Patch!"
             patch_module.patch.apply(code)
             if not args.output:
                 args.output = args.file + ".patch"

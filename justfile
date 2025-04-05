@@ -82,13 +82,17 @@ update-hl:
 build-hl:
     cd pyhl/hashlink && mkdir -p build && cd build && cmake .. && make -j$(nproc)
 
-# Cleans files
-clean-f:
-    rm -rf build dist crashlink.egg-info .mypy_cache .pytest_cache .coverage .coverage.* .tox .nox .hypothesis .pytest_cache tests.prof *_reser.dat
-    rm -rf pyhl/include pyhl/libpython* pyhl/pyhl.hdll pyhl/hashlink/bin/pyhl.hdll pyhl/*.lib pyhl/*.dll pyhl/*.a pyhl/*.pdb pyhl/python
+# Runs the patchme test
+patchme-test:
+    @just pyhl
+    crashlink tests/haxe/PatchMe.hl -tDp tests/patch/patchme.py
+    ./hl tests/haxe/PatchMe.hl.patch
 
 # Clean the codebase
-clean: clean-f update-hl
+clean:
+    rm -rf build dist crashlink.egg-info .mypy_cache .pytest_cache .coverage .coverage.* .tox .nox .hypothesis .pytest_cache tests.prof *_reser.dat
+    rm -rf pyhl/include pyhl/libpython* pyhl/pyhl.hdll pyhl/hashlink/bin/pyhl.hdll pyhl/*.lib pyhl/*.dll pyhl/*.a pyhl/*.pdb pyhl/python
+    @just update-hl
 
 # Full development workflow: format, check, test and generate docs
 dev: format check test docs
