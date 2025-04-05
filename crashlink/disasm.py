@@ -5,8 +5,21 @@ Human-readable disassembly of opcodes and utilities to work at a relatively low 
 from ast import literal_eval
 from typing import List, Optional
 
-from .core import (Bytecode, Fun, Function, Native, Obj, Opcode, Reg, Type,
-                   Virtual, Void, fileRef, full_func_name, tIndex)
+from .core import (
+    Bytecode,
+    Fun,
+    Function,
+    Native,
+    Obj,
+    Opcode,
+    Reg,
+    Type,
+    Virtual,
+    Void,
+    fileRef,
+    full_func_name,
+    tIndex,
+)
 from .opcodes import opcodes
 
 
@@ -115,7 +128,7 @@ def pseudo_from_op(
         case "Bool":
             return f"reg{op.df['dst']} = {op.df['value'].value}"
         case "String":
-            return f"reg{op.df['dst']} = \"{op.df['ptr'].resolve(code)}\""
+            return f'reg{op.df["dst"]} = "{op.df["ptr"].resolve(code)}"'
         case "Null":
             return f"reg{op.df['dst']} = null"
 
@@ -336,7 +349,17 @@ def func(code: Bytecode, func: Function | Native) -> str:
             res += f"Op {assign[1].value - 1}: {assign[0].resolve(code)}\n"
     res += "\nOps:\n"
     for i, op in enumerate(func.ops):
-        res += fmt_op(code, func.regs, op, i, debug=func.debuginfo.value if func.debuginfo else None, func=func) + "\n"
+        res += (
+            fmt_op(
+                code,
+                func.regs,
+                op,
+                i,
+                debug=func.debuginfo.value if func.debuginfo else None,
+                func=func,
+            )
+            + "\n"
+        )
     res += "\nCalls:\n"
     for i, call in enumerate(func.calls):
         res += f"  {i}. {func_header(code, call.resolve(code))}\n"
@@ -402,3 +425,20 @@ def from_asm(asm: str) -> List[Opcode]:
             new_opcode.df[name] = new_value
         ops.append(new_opcode)
     return ops
+
+
+# ...existing code...
+
+__all__ = [
+    "type_name",
+    "type_to_haxe",
+    "func_header",
+    "native_header",
+    "is_std",
+    "is_static",
+    "pseudo_from_op",
+    "fmt_op",
+    "func",
+    "to_asm",
+    "from_asm",
+]

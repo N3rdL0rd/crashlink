@@ -83,4 +83,12 @@ class bcolors:
     UNDERLINE = "\033[4m"
 
 
-__all__ = ["VERSION", "LONG_VERSION", "DEBUG", "dbg_print", "tell", "fmt_bytes", "bcolors"]
+__all__ = [
+    "VERSION",
+    "LONG_VERSION",
+    "DEBUG",
+    "dbg_print",
+    "tell",
+    "fmt_bytes",
+    "bcolors",
+]

@@ -5,7 +5,7 @@ Dataclass models.
 import json
 import os
 from dataclasses import asdict, dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
 
 
 @dataclass

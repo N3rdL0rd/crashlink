@@ -40,3 +40,4 @@ pyhl/*.lib
 *.til
 *.idb
 *.i64
+*crashlink_patch.py*

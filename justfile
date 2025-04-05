@@ -25,8 +25,7 @@ build-tests:
 
 # Format the codebase
 format:
-    black . --line-length 120 --exclude '(env|pyhl/include|pyhl/python|\.venv|\.venv-cpy)'
-    isort . -s .venv --verbose --gitignore
+    ruff format --line-length 120
 
 # Run type checking
 check:
@@ -36,6 +35,7 @@ check:
 docs:
     python -m pdoc crashlink --html -o docs --force --template-dir docs/templates
     python -m pdoc crashtest --html -o docs --force --template-dir docs/templates
+    python -m pdoc hlrun --html -o docs --force --template-dir docs/templates
 
 # Host and open documentation locally
 open-docs:
@@ -48,7 +48,7 @@ serve-docs:
 
 # Run tests
 test:
-    pytest -n 4
+    pytest -n 4 --ignore pyhl/
 
 # Profile the codebase running tests
 profile:
@@ -63,7 +63,8 @@ pyhl-prepare:
 pyhl:
     cd pyhl && make clean && make
     cp pyhl/pyhl.hdll pyhl/hashlink/build/bin/ || true
-    cp pyhl/pyhl.py pyhl/hashlink/build/bin/ || true
+    cp -r pyhl/python/lib/python3.14/ pyhl/hashlink/build/bin/lib-py || true
+    cp -r hlrun/ pyhl/hashlink/build/bin/lib-py/hlrun/ || true
 
 # Build the pyhl native hdll (Windows) - run vcvarsall.bat and pyhl-prepare first
 pyhl-win:

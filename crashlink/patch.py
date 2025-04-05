@@ -2,9 +2,9 @@
 A Python-based system for patching and hooking of bytecode, similar to [DCCM](https://github.com/dead-cells-core-modding/core).
 """
 
-from io import BytesIO
-from typing import (Any, BinaryIO, Callable, Dict, Iterable, List, Optional,
-                    Tuple, TypeVar)
+from typing import Callable, Dict, Optional, TypeVar
+
+import hlrun
 
 from .core import *
 from .disasm import func_header
@@ -12,48 +12,17 @@ from .disasm import func_header
 T = TypeVar("T")
 
 
-class Args:
-    """
-    Wrapper for function arguments that tracks their types.
-    Allows accessing arguments by index and supports type tracking.
-    """
-
-    def __init__(self, values: List[Any], types: List[Any]) -> None:
-        self._values = values
-        self._types = types
-
-    def __getitem__(self, index: int) -> Any:
-        return self._values[index]
-
-    def __setitem__(self, index: int, value: Any) -> None:
-        self._values[index] = value
-
-    def get_type(self, index: int) -> Any:
-        """Get the type object for the argument at the given index"""
-        return self._types[index]
-
-    def set_type(self, index: int, type_obj: Any) -> None:
-        """Set the type object for the argument at the given index"""
-        # TODO: enforce type
-        self._types[index] = type_obj
-
-    def __len__(self) -> int:
-        return len(self._values)
-
-    def __iter__(self) -> Iterable[Any]:
-        return iter(self._values)
-
-    def items(self) -> Iterable[Tuple[Any, Any]]:
-        """Iterate over (value, type) pairs"""
-        return zip(self._values, self._types)
-
-
 class Patch:
     """
     Main patching class that manages bytecode hooks and patches.
     """
 
-    def __init__(self, name: Optional[str] = None, author: Optional[str] = None, sha256: Optional[str] = None):
+    def __init__(
+        self,
+        name: Optional[str] = None,
+        author: Optional[str] = None,
+        sha256: Optional[str] = None,
+    ):
         """
         Initialize a new patch.
 
@@ -62,34 +31,44 @@ class Patch:
         self.name = name
         self.author = author
         self.sha256 = sha256
-        self.interceptions: Dict[str | int, Callable[[Args], Args]] = {}
+        self.interceptions: Dict[str | int, Callable[[hlrun.Args], hlrun.Args]] = {}
         self.patches: Dict[str | int, Callable[[Bytecode, Function], None]] = {}
-        self.needs_pyhl = True
+        self.needs_pyhl = False
         self.custom_fns: Dict[str, fIndex] = {}
 
-    def intercept(self, fn: str | int) -> Callable[[Callable[[Args], Args]], Callable[[Args], Args]]:
+    def intercept(
+        self, fn: str | int
+    ) -> Callable[[Callable[[hlrun.Args], hlrun.Args]], Callable[[hlrun.Args], hlrun.Args]]:
         """
         Decorator to intercept and modify a function's arguments at call-time.
         """
 
-        def decorator(func: Callable[[Args], Args]) -> Callable[[Args], Args]:
+        self.needs_pyhl = True
+
+        def decorator(
+            func: Callable[[hlrun.Args], hlrun.Args],
+        ) -> Callable[[hlrun.Args], hlrun.Args]:
             self.interceptions[fn] = func
             return func
 
         return decorator
 
-    def patch(self, fn: str | int) -> Callable[[Callable[[Bytecode, Function], None]], Callable[[Bytecode, Function], None]]:
+    def patch(
+        self, fn: str | int
+    ) -> Callable[[Callable[[Bytecode, Function], None]], Callable[[Bytecode, Function], None]]:
         """
         Decorator to patch a function's opcodes directly.
         """
 
-        def decorator(func: Callable[[Bytecode, Function], None]) -> Callable[[Bytecode, Function], None]:
+        def decorator(
+            func: Callable[[Bytecode, Function], None],
+        ) -> Callable[[Bytecode, Function], None]:
             self.patches[fn] = func
             return func
 
         return decorator
 
-    def _intercept(self, code: Bytecode, fn: Function, interceptor: Callable[[Args], Args], identifier: str | int) -> None:
+    def _intercept(self, code: Bytecode, fn: Function, identifier: str | int) -> None:
         """
         Apply an interception.
         """
@@ -157,8 +136,18 @@ class Patch:
 
     def _apply_pyhl(self, code: Bytecode) -> None:
         print("Installing pyhl native...")
-        pyhl_funcs: Dict[str, Optional[tIndex]] = {"init": None, "deinit": None, "call": None, "intercept": None}
-        indices: Dict[str, Optional[fIndex]] = {"init": None, "deinit": None, "call": None, "intercept": None}
+        pyhl_funcs: Dict[str, Optional[tIndex]] = {
+            "init": None,
+            "deinit": None,
+            "call": None,
+            "intercept": None,
+        }
+        indices: Dict[str, Optional[fIndex]] = {
+            "init": None,
+            "deinit": None,
+            "call": None,
+            "intercept": None,
+        }
         for func in pyhl_funcs.keys():
             print(f"Generating types for pyhl.{func}")
             voi = code.find_prim_type(Type.Kind.VOID)
@@ -213,7 +202,7 @@ class Patch:
 
     def apply(self, code: Bytecode) -> None:
         """
-        Apply all registered hooks and patches.
+        Apply all registered hooks and patches. own_source should be a string containing the entire source code of the module containing the initialization of this class.
         """
         assert code.is_ok()
         print(f"----- Applying patch:{' ' + self.name if self.name else ''} -----")
@@ -245,8 +234,8 @@ class Patch:
                     raise NameError(f"No such function '{identifier}'")
                 fn = mtch
             assert not isinstance(fn, Native), "Cannot intercept a native! (Yet...)"  # TODO: native intercept
-            print(f"(Intercept) {func_header(code, fn)}")  # TODO: other handlers than pyhl, custom hdll injection, etc.
-            self._intercept(code, fn, interceptor, identifier)
+            print(f"(Intercept) {func_header(code, fn)}")  # TODO: other handlers than pyhl
+            self._intercept(code, fn, identifier)
 
         for identifier, patch in self.patches.items():
             if isinstance(identifier, int):
@@ -263,8 +252,14 @@ class Patch:
             print(f"(Patch) {func_header(code, fn)}")
             patch(code, fn)
 
-        code.set_meta()
+        code.set_meta()  # just to be safe
         assert code.is_ok()
 
+    def do_intercept(self, args: hlrun.Args, identifier: str | int) -> hlrun.Args:
+        """
+        Called at runtime by pyhl to intercept a call. Do not call manually!
+        """
+        return self.interceptions[identifier](args)
 
-__all__ = ["Patch", "Args"]
+
+__all__ = ["Patch"]

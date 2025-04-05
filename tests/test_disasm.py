@@ -14,9 +14,9 @@ def test_diasm_equivalency(path: str):
     for function in code.functions:
         if len(function.ops) > 1:  # skip small functions since they don't tell us much
             try:
-                assert disasm.to_asm(function.ops) == disasm.to_asm(
-                    disasm.from_asm(disasm.to_asm(function.ops))
-                ), f"Function f@{function.findex} in {path} failed"
+                assert disasm.to_asm(function.ops) == disasm.to_asm(disasm.from_asm(disasm.to_asm(function.ops))), (
+                    f"Function f@{function.findex} in {path} failed"
+                )
             except:
                 print(f"Function f@{function.findex} in {path} failed")
                 raise

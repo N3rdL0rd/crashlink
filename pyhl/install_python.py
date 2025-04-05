@@ -32,7 +32,39 @@ def gen_prefix() -> str:
     return prefix
 
 
+def check_libffi() -> bool:
+    """
+    Check if the libffi development package is installed by using pkg-config.
+    If not found, print instructions based on the detected Linux distro.
+    """
+    print("Checking for libffi development package...")
+    try:
+        subprocess.run(["pkg-config", "--exists", "libffi"], check=True)
+        print("libffi found.")
+        return True
+    except subprocess.CalledProcessError:
+        print("libffi not found.")
+        distro_id = "unknown"
+        if os.path.exists("/etc/os-release"):
+            with open("/etc/os-release", "r") as f:
+                content = f.read().lower()
+                if "fedora" in content or "red hat" in content or "centos" in content:
+                    distro_id = "fedora"
+                elif "ubuntu" in content or "debian" in content:
+                    distro_id = "debian"
+        if distro_id == "fedora":
+            print("Please install libffi-devel via: sudo dnf install libffi-devel")
+        elif distro_id == "debian":
+            print("Please install libffi-dev via: sudo apt-get install libffi-dev")
+        else:
+            print("Please install the libffi development package for your distribution.")
+        return False
+
+
 def main_nix() -> None:
+    if not check_libffi():
+        print("Missing libffi. Cannot proceed with Python build.")
+        exit(1)
     print("Downloading Python...")
     download_file(CURRENT_PYTHON, "python.tar.xz")
     print("Extracting...")
@@ -40,7 +72,7 @@ def main_nix() -> None:
     print("Configuring...")
     os.chdir(DIR)
     prefix = gen_prefix()
-    configure_cmd = f'./configure CFLAGS="-fPIC" --enable-optimizations --with-ensurepip=install --prefix="{prefix}" --disable-test-modules'
+    configure_cmd = f'./configure CFLAGS="-fPIC" --with-ensurepip=install --prefix="{prefix}" --disable-test-modules'
     subprocess.run(configure_cmd, shell=True, check=True)
     print("Building...")
     subprocess.run("make -j$(($(nproc) + 1))", shell=True, check=True)

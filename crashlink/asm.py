@@ -5,13 +5,36 @@ Prettier HashLink bytecode notation.
 import re
 from abc import ABC
 from dataclasses import dataclass, field
-from pprint import pprint
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List
 
-from .core import (F32, F64, I32, I64, U8, U16, Array, Bool, Bytecode, Bytes,
-                   Dyn, Fun, Function, Native, Opcode, Reg, ResolvableVarInt,
-                   Type, TypeType, Void, bytesRef, fIndex, gIndex, intRef,
-                   strRef, tIndex)
+from .core import (
+    F32,
+    F64,
+    I32,
+    I64,
+    U8,
+    U16,
+    Array,
+    Bool,
+    Bytecode,
+    Bytes,
+    Dyn,
+    Fun,
+    Function,
+    Native,
+    Opcode,
+    Reg,
+    ResolvableVarInt,
+    Type,
+    TypeType,
+    Void,
+    bytesRef,
+    fIndex,
+    gIndex,
+    intRef,
+    strRef,
+    tIndex,
+)
 from .opcodes import opcodes
 
 

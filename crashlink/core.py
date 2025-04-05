@@ -18,7 +18,7 @@ from typing import Any, BinaryIO, Dict, List, Literal, Optional, Tuple, TypeVar
 T = TypeVar("T", bound="VarInt")  # easier than reimplementing deserialise for each subclass
 
 from .errors import InvalidOpCode, MalformedBytecode, NoMagic
-from .globals import dbg_print, fmt_bytes, tell
+from .globals import dbg_print, tell
 from .opcodes import opcodes, simple_calls
 
 try:
@@ -1243,7 +1243,13 @@ class DebugInfo(Serialisable):
         self.value = tmp
         return self
 
-    def _flush_repeat(self, w: BinaryIO | BytesIO, curpos: ctypes.c_size_t, rcount: ctypes.c_size_t, pos: int) -> None:
+    def _flush_repeat(
+        self,
+        w: BinaryIO | BytesIO,
+        curpos: ctypes.c_size_t,
+        rcount: ctypes.c_size_t,
+        pos: int,
+    ) -> None:
         if rcount.value > 0:
             if rcount.value > 15:
                 w.write(ctypes.c_uint8((15 << 2) | 2).value.to_bytes(1, "little"))
@@ -1380,9 +1386,9 @@ class Function(Serialisable):
         if self.assigns:
             self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
         if self.has_debug and self.debuginfo:
-            assert (
-                len(self.debuginfo.value) == self.nops.value
-            ), f"Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?"
+            assert len(self.debuginfo.value) == self.nops.value, (
+                f"Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?"
+            )
         res = b"".join(
             [
                 self.type.serialise(),
@@ -1550,7 +1556,12 @@ class Bytecode(Serialisable):
 
         return instance
 
-    def deserialise(self, f: BinaryIO | BytesIO, search_magic: bool = True, init_globals: bool = True) -> "Bytecode":
+    def deserialise(
+        self,
+        f: BinaryIO | BytesIO,
+        search_magic: bool = True,
+        init_globals: bool = True,
+    ) -> "Bytecode":
         """
         Deserialise the bytecode in-place from an open binary file handle or a BytesIO object. By default will search for the bytecode magic (b'HLB') anywhere in the file, pass `search_magic=False` to disable.
         """
@@ -1705,9 +1716,9 @@ class Bytecode(Serialisable):
                 else:
                     res[name] = field.value
             final[const._global.value] = res
-        assert len(final) == len(
-            self.constants
-        ), "Not all constants were resolved! This is often due to bad DebugInfo blocks causing buffer overrun, try passing -N to troubleshoot."
+        assert len(final) == len(self.constants), (
+            "Not all constants were resolved! This is often due to bad DebugInfo blocks causing buffer overrun, try passing -N to troubleshoot."
+        )
         self.initialized_globals = final
 
     def fn(self, findex: int, native: bool = True) -> Function | Native:
@@ -1757,7 +1768,7 @@ class Bytecode(Serialisable):
             raise ValueError(f"Global {gindex} seems malformed!")
         res = self.initialized_globals[gindex][obj_fields[0].name.resolve(self)]
         if not isinstance(res, str):
-            raise TypeError(f"This should never happen!")
+            raise TypeError("This should never happen!")
         return res
 
     def serialise(self, auto_set_meta: bool = True) -> bytes:

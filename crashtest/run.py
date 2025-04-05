@@ -41,7 +41,11 @@ def get_repo_info() -> GitInfo:
 
 def file_to_name(file: str) -> str:
     return " ".join(
-        re.sub("([A-Z][a-z]+)", r" \1", re.sub("([A-Z]+)", r" \1", file.replace(".hx", "").replace("_", " "))).split()
+        re.sub(
+            "([A-Z][a-z]+)",
+            r" \1",
+            re.sub("([A-Z]+)", r" \1", file.replace(".hx", "").replace("_", " ")),
+        ).split()
     ).title()
 
 
@@ -51,17 +55,27 @@ def run_case(case: str, id: int) -> TestCase:
     """
     try:
         code = Bytecode.from_path(
-            os.path.join(os.path.dirname(__file__), "..", "tests", "haxe", case.replace(".hx", ".hl"))
+            os.path.join(
+                os.path.dirname(__file__),
+                "..",
+                "tests",
+                "haxe",
+                case.replace(".hx", ".hl"),
+            )
         )
         irf = decomp.IRFunction(code, code.get_test_main())
         # TODO: pseudo output
         return TestCase(
             original=TestFile(
                 name=case,
-                content=open(os.path.join(os.path.dirname(__file__), "..", "tests", "haxe", case), "r").read(),
+                content=open(
+                    os.path.join(os.path.dirname(__file__), "..", "tests", "haxe", case),
+                    "r",
+                ).read(),
             ),
             decompiled=TestFile(
-                name=f"{case.replace('.hx', '')} (Decompiled)", content="Failed to produce pseudocode."
+                name=f"{case.replace('.hx', '')} (Decompiled)",
+                content="Failed to produce pseudocode.",
             ),
             ir=TestFile(name=f"{case.replace('.hx', '')} (IR)", content=str(irf.block)),
             failed=False,
@@ -72,10 +86,14 @@ def run_case(case: str, id: int) -> TestCase:
         return TestCase(
             original=TestFile(
                 name=case,
-                content=open(os.path.join(os.path.dirname(__file__), "..", "tests", "haxe", case), "r").read(),
+                content=open(
+                    os.path.join(os.path.dirname(__file__), "..", "tests", "haxe", case),
+                    "r",
+                ).read(),
             ),
             decompiled=TestFile(
-                name=f"{case.replace('.hx', '')} (Decompiled)", content="Failed to produce pseudocode."
+                name=f"{case.replace('.hx', '')} (Decompiled)",
+                content="Failed to produce pseudocode.",
             ),
             ir=TestFile(name=f"{case.replace('.hx', '')} (IR)", content="Failed to produce IR."),
             failed=True,
@@ -143,7 +161,7 @@ def run() -> None:
     files = os.listdir(os.path.join(os.path.dirname(__file__), "..", "tests", "haxe"))
     cases = [f for f in files if f.endswith(".hx")]
     for case in cases:
-        if not case.replace(".hx", ".hl") in files:
+        if case.replace(".hx", ".hl") not in files:
             print(f"Warning: no compiled bytecode found for {case}. Skipping.")
             cases.remove(case)
 

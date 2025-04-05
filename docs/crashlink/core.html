@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
-<meta name="generator" content="pdoc3 0.11.5">
+<meta name="generator" content="pdoc3 0.11.6">
 <title>crashlink.core API documentation</title>
 <meta name="description" content="Core bytecode format definitions …">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
@@ -448,7 +448,12 @@ you.</p>
 
         return instance
 
-    def deserialise(self, f: BinaryIO | BytesIO, search_magic: bool = True, init_globals: bool = True) -&gt; &#34;Bytecode&#34;:
+    def deserialise(
+        self,
+        f: BinaryIO | BytesIO,
+        search_magic: bool = True,
+        init_globals: bool = True,
+    ) -&gt; &#34;Bytecode&#34;:
         &#34;&#34;&#34;
         Deserialise the bytecode in-place from an open binary file handle or a BytesIO object. By default will search for the bytecode magic (b&#39;HLB&#39;) anywhere in the file, pass `search_magic=False` to disable.
         &#34;&#34;&#34;
@@ -603,9 +608,9 @@ you.</p>
                 else:
                     res[name] = field.value
             final[const._global.value] = res
-        assert len(final) == len(
-            self.constants
-        ), &#34;Not all constants were resolved! This is often due to bad DebugInfo blocks causing buffer overrun, try passing -N to troubleshoot.&#34;
+        assert len(final) == len(self.constants), (
+            &#34;Not all constants were resolved! This is often due to bad DebugInfo blocks causing buffer overrun, try passing -N to troubleshoot.&#34;
+        )
         self.initialized_globals = final
 
     def fn(self, findex: int, native: bool = True) -&gt; Function | Native:
@@ -655,7 +660,7 @@ you.</p>
             raise ValueError(f&#34;Global {gindex} seems malformed!&#34;)
         res = self.initialized_globals[gindex][obj_fields[0].name.resolve(self)]
         if not isinstance(res, str):
-            raise TypeError(f&#34;This should never happen!&#34;)
+            raise TypeError(&#34;This should never happen!&#34;)
         return res
 
     def serialise(self, auto_set_meta: bool = True) -&gt; bytes:
@@ -832,6 +837,15 @@ you.</p>
         &#34;&#34;&#34;
         return strRef(self.strings.find_or_add(string))
 
+    def add_i32(self, value: int) -&gt; intRef:
+        &#34;&#34;&#34;
+        Adds an integer to the bytecode&#39;s integer block and returns a reference to it.
+        &#34;&#34;&#34;
+        val = SerialisableInt()
+        val.value = value
+        self.ints.append(val)
+        return intRef(len(self.ints) - 1)
+
     def next_free_findex(self) -&gt; fIndex:
         &#34;&#34;&#34;
         Find the next available fIndex that is not already used by any function or native.
@@ -916,6 +930,25 @@ you.</p>
 </dl>
 <h3>Methods</h3>
 <dl>
+<dt id="crashlink.core.Bytecode.add_i32"><code class="name flex">
+<span>def <span class="ident">add_i32</span></span>(<span>self, value: int) ‑> <a title="crashlink.core.intRef" href="#crashlink.core.intRef">intRef</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def add_i32(self, value: int) -&gt; intRef:
+    &#34;&#34;&#34;
+    Adds an integer to the bytecode&#39;s integer block and returns a reference to it.
+    &#34;&#34;&#34;
+    val = SerialisableInt()
+    val.value = value
+    self.ints.append(val)
+    return intRef(len(self.ints) - 1)</code></pre>
+</details>
+<div class="desc"><p>Adds an integer to the bytecode's integer block and returns a reference to it.</p></div>
+</dd>
 <dt id="crashlink.core.Bytecode.add_string"><code class="name flex">
 <span>def <span class="ident">add_string</span></span>(<span>self, string: str) ‑> <a title="crashlink.core.strRef" href="#crashlink.core.strRef">strRef</a></span>
 </code></dt>
@@ -976,7 +1009,7 @@ you.</p>
         raise ValueError(f&#34;Global {gindex} seems malformed!&#34;)
     res = self.initialized_globals[gindex][obj_fields[0].name.resolve(self)]
     if not isinstance(res, str):
-        raise TypeError(f&#34;This should never happen!&#34;)
+        raise TypeError(&#34;This should never happen!&#34;)
     return res</code></pre>
 </details>
 <div class="desc"><p>Gets the value of an initialized global constant <code>String</code>.</p></div>
@@ -989,7 +1022,12 @@ you.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def deserialise(self, f: BinaryIO | BytesIO, search_magic: bool = True, init_globals: bool = True) -&gt; &#34;Bytecode&#34;:
+<pre><code class="python">def deserialise(
+    self,
+    f: BinaryIO | BytesIO,
+    search_magic: bool = True,
+    init_globals: bool = True,
+) -&gt; &#34;Bytecode&#34;:
     &#34;&#34;&#34;
     Deserialise the bytecode in-place from an open binary file handle or a BytesIO object. By default will search for the bytecode magic (b&#39;HLB&#39;) anywhere in the file, pass `search_magic=False` to disable.
     &#34;&#34;&#34;
@@ -1246,9 +1284,9 @@ you.</p>
             else:
                 res[name] = field.value
         final[const._global.value] = res
-    assert len(final) == len(
-        self.constants
-    ), &#34;Not all constants were resolved! This is often due to bad DebugInfo blocks causing buffer overrun, try passing -N to troubleshoot.&#34;
+    assert len(final) == len(self.constants), (
+        &#34;Not all constants were resolved! This is often due to bad DebugInfo blocks causing buffer overrun, try passing -N to troubleshoot.&#34;
+    )
     self.initialized_globals = final</code></pre>
 </details>
 <div class="desc"><p>Internal method to initialize global instances of objects.</p></div>
@@ -1775,7 +1813,13 @@ you.</p>
         self.value = tmp
         return self
 
-    def _flush_repeat(self, w: BinaryIO | BytesIO, curpos: ctypes.c_size_t, rcount: ctypes.c_size_t, pos: int) -&gt; None:
+    def _flush_repeat(
+        self,
+        w: BinaryIO | BytesIO,
+        curpos: ctypes.c_size_t,
+        rcount: ctypes.c_size_t,
+        pos: int,
+    ) -&gt; None:
         if rcount.value &gt; 0:
             if rcount.value &gt; 15:
                 w.write(ctypes.c_uint8((15 &lt;&lt; 2) | 2).value.to_bytes(1, &#34;little&#34;))
@@ -2366,6 +2410,26 @@ you.</p>
         self.debuginfo: Optional[DebugInfo] = None
         self.nassigns: Optional[VarInt] = None
         self.assigns: Optional[List[Tuple[strRef, VarInt]]] = None
+        self.calls: List[fIndex] = []
+
+    def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+        &#34;&#34;&#34;
+        Resolves all functions that call this function.
+        &#34;&#34;&#34;
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+
+    def resolve_fun(self, code: &#34;Bytecode&#34;) -&gt; Fun:
+        &#34;&#34;&#34;
+        Resolves the function signature of this function.
+        &#34;&#34;&#34;
+        ret = self.type.resolve(code).definition
+        assert ret is not None
+        assert isinstance(ret, Fun)
+        return ret
 
     def resolve_file(self, code: &#34;Bytecode&#34;) -&gt; str:
         &#34;&#34;&#34;
@@ -2386,6 +2450,8 @@ you.</p>
             self.regs.append(tIndex().deserialise(f))
         for _ in range(self.nops.value):
             self.ops.append(Opcode().deserialise(f))
+            if self.ops[-1].op in simple_calls:
+                self.calls.append(self.ops[-1].df[&#34;fun&#34;])
         if self.has_debug:
             self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
             if self.version &gt;= 3:
@@ -2411,9 +2477,9 @@ you.</p>
         if self.assigns:
             self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
         if self.has_debug and self.debuginfo:
-            assert (
-                len(self.debuginfo.value) == self.nops.value
-            ), f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
+            assert len(self.debuginfo.value) == self.nops.value, (
+                f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
+            )
         res = b&#34;&#34;.join(
             [
                 self.type.serialise(),
@@ -2439,6 +2505,26 @@ you.</p>
 </ul>
 <h3>Methods</h3>
 <dl>
+<dt id="crashlink.core.Function.called_by"><code class="name flex">
+<span>def <span class="ident">called_by</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> List[<a title="crashlink.core.fIndex" href="#crashlink.core.fIndex">fIndex</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+    &#34;&#34;&#34;
+    Resolves all functions that call this function.
+    &#34;&#34;&#34;
+    caller_indices = []
+    for func in code.functions:
+        if any(call_idx.value == self.findex.value for call_idx in func.calls):
+            caller_indices.append(func.findex)
+    return caller_indices</code></pre>
+</details>
+<div class="desc"><p>Resolves all functions that call this function.</p></div>
+</dd>
 <dt id="crashlink.core.Function.deserialise"><code class="name flex">
 <span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO, has_debug: bool, version: int) ‑> <a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a></span>
 </code></dt>
@@ -2458,6 +2544,8 @@ you.</p>
         self.regs.append(tIndex().deserialise(f))
     for _ in range(self.nops.value):
         self.ops.append(Opcode().deserialise(f))
+        if self.ops[-1].op in simple_calls:
+            self.calls.append(self.ops[-1].df[&#34;fun&#34;])
     if self.has_debug:
         self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
         if self.version &gt;= 3:
@@ -2507,6 +2595,25 @@ you.</p>
 </details>
 <div class="desc"><p>Resolves (in the Bytecode's debugfiles blob) the name of the file this function originates from. Note that this assumes the first opcode's file is the only file this Function was derived from - Functions that derive from multiple files (such as compiler-generated closures or entrypoints) will be resolved to a single file, sometimes incorrectly.</p></div>
 </dd>
+<dt id="crashlink.core.Function.resolve_fun"><code class="name flex">
+<span>def <span class="ident">resolve_fun</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> <a title="crashlink.core.Fun" href="#crashlink.core.Fun">Fun</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve_fun(self, code: &#34;Bytecode&#34;) -&gt; Fun:
+    &#34;&#34;&#34;
+    Resolves the function signature of this function.
+    &#34;&#34;&#34;
+    ret = self.type.resolve(code).definition
+    assert ret is not None
+    assert isinstance(ret, Fun)
+    return ret</code></pre>
+</details>
+<div class="desc"><p>Resolves the function signature of this function.</p></div>
+</dd>
 <dt id="crashlink.core.Function.serialise"><code class="name flex">
 <span>def <span class="ident">serialise</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
@@ -2521,9 +2628,9 @@ you.</p>
     if self.assigns:
         self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
     if self.has_debug and self.debuginfo:
-        assert (
-            len(self.debuginfo.value) == self.nops.value
-        ), f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
+        assert len(self.debuginfo.value) == self.nops.value, (
+            f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
+        )
     res = b&#34;&#34;.join(
         [
             self.type.serialise(),
@@ -3078,6 +3185,7 @@ Where a is field 0 and b is field 1</p></div>
 </dd>
 <dt id="crashlink.core.Opcode"><code class="flex name class">
 <span>class <span class="ident">Opcode</span></span>
+<span>(</span><span>op: str | None = None, df: Dict[Any, Any] | None = None)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -3108,10 +3216,14 @@ Where a is field 0 and b is field 1</p></div>
         &#34;InlineInt&#34;: VarInt,
     }
 
-    def __init__(self) -&gt; None:
+    def __init__(self, op: Optional[str] = None, df: Optional[Dict[Any, Any]] = None) -&gt; None:
         self.code = VarInt()
         self.op: Optional[str] = None
-        self.definition: Dict[Any, Any] = {}
+        if op:
+            self.op = op
+        self.df: Dict[Any, Any] = {}
+        if df:
+            self.df = df
 
     def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Opcode&#34;:
         # dbg_print(f&#34;Deserialising opcode at {tell(f)}... &#34;, end=&#34;&#34;)
@@ -3123,7 +3235,7 @@ Where a is field 0 and b is field 1</p></div>
             raise InvalidOpCode(f&#34;Unknown opcode at {tell(f)} - {self.code.value}&#34;)
         for param, _type in _def.items():
             if _type in self.TYPE_MAP:
-                self.definition[param] = self.TYPE_MAP[_type]().deserialise(f)
+                self.df[param] = self.TYPE_MAP[_type]().deserialise(f)
                 continue
             raise InvalidOpCode(f&#34;Invalid opcode definition for {param, _type} at {tell(f)}&#34;)
         self.op = list(opcodes.keys())[self.code.value]
@@ -3135,12 +3247,12 @@ Where a is field 0 and b is field 1</p></div>
         return b&#34;&#34;.join(
             [
                 self.code.serialise(),
-                b&#34;&#34;.join([definition.serialise() for name, definition in self.definition.items()]),
+                b&#34;&#34;.join([definition.serialise() for name, definition in self.df.items()]),
             ]
         )
 
     def __repr__(self) -&gt; str:
-        return f&#34;&lt;Opcode: {self.op} {self.definition}&gt;&#34;
+        return f&#34;&lt;Opcode: {self.op} {self.df}&gt;&#34;
 
     def __str__(self) -&gt; str:
         return self.__repr__()</code></pre>
@@ -3155,7 +3267,7 @@ Where a is field 0 and b is field 1</p></div>
 <dl>
 <dt id="crashlink.core.Opcode.TYPE_MAP"><code class="name">var <span class="ident">TYPE_MAP</span> : Dict[str, type]</code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -3178,7 +3290,7 @@ Where a is field 0 and b is field 1</p></div>
         raise InvalidOpCode(f&#34;Unknown opcode at {tell(f)} - {self.code.value}&#34;)
     for param, _type in _def.items():
         if _type in self.TYPE_MAP:
-            self.definition[param] = self.TYPE_MAP[_type]().deserialise(f)
+            self.df[param] = self.TYPE_MAP[_type]().deserialise(f)
             continue
         raise InvalidOpCode(f&#34;Invalid opcode definition for {param, _type} at {tell(f)}&#34;)
     self.op = list(opcodes.keys())[self.code.value]
@@ -3200,7 +3312,7 @@ Where a is field 0 and b is field 1</p></div>
     return b&#34;&#34;.join(
         [
             self.code.serialise(),
-            b&#34;&#34;.join([definition.serialise() for name, definition in self.definition.items()]),
+            b&#34;&#34;.join([definition.serialise() for name, definition in self.df.items()]),
         ]
     )</code></pre>
 </details>
@@ -4202,11 +4314,60 @@ def serialise(self) -&gt; bytes:
 <dl>
 <dt id="crashlink.core.Type.Kind"><code class="name">var <span class="ident">Kind</span></code></dt>
 <dd>
-<div class="desc"><p>An enumeration.</p></div>
+<div class="desc"><p>Create a collection of name/value pairs.</p>
+<p>Example enumeration:</p>
+<pre><code class="language-python-repl">&gt;&gt;&gt; class Color(Enum):
+...     RED = 1
+...     BLUE = 2
+...     GREEN = 3
+</code></pre>
+<p>Access them by:</p>
+<ul>
+<li>attribute access:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color.RED
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<ul>
+<li>value lookup:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color(1)
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<ul>
+<li>name lookup:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color['RED']
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<p>Enumerations can be iterated over, and know how many members they have:</p>
+<pre><code class="language-python-repl">&gt;&gt;&gt; len(Color)
+3
+</code></pre>
+<pre><code class="language-python-repl">&gt;&gt;&gt; list(Color)
+[&lt;Color.RED: 1&gt;, &lt;Color.BLUE: 2&gt;, &lt;Color.GREEN: 3&gt;]
+</code></pre>
+<p>Methods can be added to enumerations, and members can have their own
+attributes &ndash; see the documentation for details.</p></div>
 </dd>
 <dt id="crashlink.core.Type.TYPEDEFS"><code class="name">var <span class="ident">TYPEDEFS</span> : List[type]</code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -4635,6 +4796,7 @@ def serialise(self) -&gt; bytes:
         return self
 
     def serialise(self) -&gt; bytes:
+        self.nfields.value = len(self.fields)
         return b&#34;&#34;.join(
             [
                 self.nfields.serialise(),
@@ -4692,6 +4854,7 @@ def serialise(self) -&gt; bytes:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def serialise(self) -&gt; bytes:
+    self.nfields.value = len(self.fields)
     return b&#34;&#34;.join(
         [
             self.nfields.serialise(),
@@ -4843,7 +5006,7 @@ def serialise(self) -&gt; bytes:
 <dl>
 <dt id="crashlink.core.fieldRef.obj"><code class="name">var <span class="ident">obj</span> : <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a> | <a title="crashlink.core.Virtual" href="#crashlink.core.Virtual">Virtual</a> | None</code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -5211,6 +5374,7 @@ def serialise(self) -&gt; bytes:
 <li>
 <h4><code><a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></code></h4>
 <ul class="two-column">
+<li><code><a title="crashlink.core.Bytecode.add_i32" href="#crashlink.core.Bytecode.add_i32">add_i32</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.add_string" href="#crashlink.core.Bytecode.add_string">add_string</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.add_type" href="#crashlink.core.Bytecode.add_type">add_type</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.const_str" href="#crashlink.core.Bytecode.const_str">const_str</a></code></li>
@@ -5299,10 +5463,12 @@ def serialise(self) -&gt; bytes:
 </li>
 <li>
 <h4><code><a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a></code></h4>
-<ul class="">
+<ul class="two-column">
+<li><code><a title="crashlink.core.Function.called_by" href="#crashlink.core.Function.called_by">called_by</a></code></li>
 <li><code><a title="crashlink.core.Function.deserialise" href="#crashlink.core.Function.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.Function.insert_op" href="#crashlink.core.Function.insert_op">insert_op</a></code></li>
 <li><code><a title="crashlink.core.Function.resolve_file" href="#crashlink.core.Function.resolve_file">resolve_file</a></code></li>
+<li><code><a title="crashlink.core.Function.resolve_fun" href="#crashlink.core.Function.resolve_fun">resolve_fun</a></code></li>
 <li><code><a title="crashlink.core.Function.serialise" href="#crashlink.core.Function.serialise">serialise</a></code></li>
 </ul>
 </li>
@@ -5521,7 +5687,7 @@ def serialise(self) -&gt; bytes:
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
 </footer>
 </body>
 </html>
