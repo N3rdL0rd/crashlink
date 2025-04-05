@@ -4,7 +4,8 @@ Core classes, handling, and casting for primitives.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Iterable, List
+from typing import Any, Iterable, List, Tuple
+
 
 from .globals import dbg_print
 
@@ -63,6 +64,9 @@ class Args:
             args_arr.append(HlPrim(arg, Type(types_arr[i])))
         dbg_print(f"{fn_symbol}({', '.join(args_str)})")
         self.args: List[HlPrim] = args_arr
+
+    def to_hl(self) -> List[Any]:
+        return [arg.obj for arg in self.args]
 
     def __getitem__(self, index: int) -> HlPrim:
         return self.args[index]
