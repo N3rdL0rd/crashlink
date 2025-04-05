@@ -5,15 +5,22 @@ Decompilation, IR and control flow graph generation
 from abc import ABC, abstractmethod
 from enum import Enum as _Enum  # Enum is already defined in crashlink.core
 from pprint import pformat
-from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from . import disasm
-from .core import (Bytecode, Function, Opcode, ResolvableVarInt, Type, Void,
-                   gIndex, tIndex)
+from .core import (
+    Bytecode,
+    Function,
+    Opcode,
+    ResolvableVarInt,
+    Type,
+    Void,
+    gIndex,
+    tIndex,
+)
 from .errors import DecompError
 from .globals import dbg_print
 from .opcodes import arithmetic, conditionals
-from .pseudo import Translatable
 
 
 def _get_type_in_code(code: Bytecode, name: str) -> Type:
@@ -179,45 +186,53 @@ class CFGraph:
                             "JULt", "JUGte", "JNotLt", "JNotGte", 
                             "JEq", "JNotEq"]:
             # fmt: on
-                
+
                 jump_idx = start_idx + len(ops) + last_op.df["offset"].value
-                
+
                 # - jump target is "true" branch
                 # - fall-through is "false" branch
-                    
+
                 if jump_idx in nodes_by_idx:
                     edge_type = "true"
-                    self.add_branch(src_node, nodes_by_idx[jump_idx], edge_type)
-                    
+                    self.add_branch(
+                        src_node, nodes_by_idx[jump_idx], edge_type)
+
                 if next_idx in nodes_by_idx:
-                    edge_type = "false" 
-                    self.add_branch(src_node, nodes_by_idx[next_idx], edge_type)
-            
+                    edge_type = "false"
+                    self.add_branch(
+                        src_node, nodes_by_idx[next_idx], edge_type)
+
             elif last_op.op == "Switch":
                 for i, offset in enumerate(last_op.df['offsets'].value):
                     if offset.value != 0:
                         jump_idx = start_idx + len(ops) + offset.value
-                        self.add_branch(src_node, nodes_by_idx[jump_idx], f"switch: case: {i} ")
+                        self.add_branch(
+                            src_node, nodes_by_idx[jump_idx], f"switch: case: {i} ")
                 if next_idx in nodes_by_idx:
-                    self.add_branch(src_node, nodes_by_idx[next_idx], "switch: default")
-            
+                    self.add_branch(
+                        src_node, nodes_by_idx[next_idx], "switch: default")
+
             elif last_op.op == "Trap":
                 jump_idx = start_idx + len(ops) + last_op.df["offset"].value
                 if jump_idx in nodes_by_idx:
                     self.add_branch(src_node, nodes_by_idx[jump_idx], "trap")
                 if next_idx in nodes_by_idx:
-                    self.add_branch(src_node, nodes_by_idx[next_idx], "fall-through")
-            
+                    self.add_branch(
+                        src_node, nodes_by_idx[next_idx], "fall-through")
+
             elif last_op.op == "EndTrap":
                 if next_idx in nodes_by_idx:
-                    self.add_branch(src_node, nodes_by_idx[next_idx], "endtrap")
-            
+                    self.add_branch(
+                        src_node, nodes_by_idx[next_idx], "endtrap")
+
             elif last_op.op == "JAlways":
                 jump_idx = start_idx + len(ops) + last_op.df["offset"].value
                 if jump_idx in nodes_by_idx:
-                    self.add_branch(src_node, nodes_by_idx[jump_idx], "unconditional")
+                    self.add_branch(
+                        src_node, nodes_by_idx[jump_idx], "unconditional")
             elif last_op.op != "Ret" and next_idx in nodes_by_idx:
-                self.add_branch(src_node, nodes_by_idx[next_idx], "unconditional")
+                self.add_branch(
+                    src_node, nodes_by_idx[next_idx], "unconditional")
 
         if do_optimize:
             # fmt: off
@@ -708,7 +723,12 @@ class IRPrimitveJump(IRExpression):
 class IsolatedCFGraph(CFGraph):
     """A control flow graph that contains only a subset of nodes from another graph."""
 
-    def __init__(self, parent: CFGraph, nodes: List[CFNode], find_entry_intelligently: bool = True):
+    def __init__(
+        self,
+        parent: CFGraph,
+        nodes: List[CFNode],
+        find_entry_intelligently: bool = True,
+    ):
         """Initialize from parent graph and list of nodes to isolate."""
         if not nodes:
             raise ValueError("Got empty list of nodes to isolate!")
@@ -790,7 +810,13 @@ class IRFunction:
     Intermediate representation of a function.
     """
 
-    def __init__(self, code: Bytecode, func: Function, do_optimize: bool = True) -> None:
+    def __init__(
+        self,
+        code: Bytecode,
+        func: Function,
+        do_optimize: bool = True,
+        no_lift: bool = False,
+    ) -> None:
         self.func = func
         self.cfg = CFGraph(func)
         self.cfg.build()
@@ -798,20 +824,23 @@ class IRFunction:
         self.ops = func.ops
         self.locals: List[IRLocal] = []
         self.block: IRBlock
-        self._lift()
+        self._lift(no_lift=no_lift)
         if do_optimize:
             self.optimizers: List[IROptimizer] = [IRLoopConditionOptimizer(self)]
             self._optimize()
 
-    def _lift(self) -> None:
+    def _lift(self, no_lift: bool = False) -> None:
         """Lift function to IR"""
         for i, reg in enumerate(self.func.regs):
             self.locals.append(IRLocal(f"reg{i}", reg, code=self.code))
         self._name_locals()
-        if self.cfg.entry:
-            self.block = self._lift_block(self.cfg.entry)
+        if not no_lift:
+            if self.cfg.entry:
+                self.block = self._lift_block(self.cfg.entry)
+            else:
+                raise DecompError("Function CFG has no entry node, cannot lift to IR")
         else:
-            raise DecompError("Function CFG has no entry node, cannot lift to IR")
+            dbg_print("Skipping lift.")
 
     def _optimize(self) -> None:
         """Optimize the IR"""
@@ -1138,7 +1167,11 @@ class IRFunction:
 
             elif op.op == "Mov":
                 block.statements.append(
-                    IRAssign(self.code, self.locals[op.df["dst"].value], self.locals[op.df["src"].value])
+                    IRAssign(
+                        self.code,
+                        self.locals[op.df["dst"].value],
+                        self.locals[op.df["src"].value],
+                    )
                 )
 
             elif op.op == "JAlways":

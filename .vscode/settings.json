@@ -96,5 +96,6 @@
     "mypy.targets": [
         "crashlink",
         "tests"
-    ]
+    ],
+    "python.analysis.autoImportCompletions": true
 }

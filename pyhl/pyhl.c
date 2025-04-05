@@ -1,3 +1,5 @@
+// wait, what's the c equivalent of a docstring?
+
 #define HL_NAME(n) pyhl_##n
 #include <hl.h>
 #include <Python.h>
@@ -5,19 +7,22 @@
 #include <libgen.h>
 #include <limits.h>
 #include <unistd.h>
+#include <string.h>
 
 #define DEBUG true
 #define dbg_print(...) do { if (DEBUG) printf("[pyhl] "); printf(__VA_ARGS__); } while(0)
 
 // Global references
-static PyObject* g_pyhl_module = NULL;
-static PyObject* g_args_class = NULL;
+static PyObject* g_patch = NULL;
+static PyObject* g_hlrun = NULL;
+static PyObject* g_argsc = NULL;
 
 HL_PRIM void HL_NAME(init)() {
     if (!Py_IsInitialized()) {
         Py_Initialize();
         
         PyRun_SimpleString("import sys");
+        PyRun_SimpleString("sys.path = []");
         PyRun_SimpleString("sys.path.insert(0, '')");
         
         // Get executable path and add to Python path
@@ -32,6 +37,12 @@ HL_PRIM void HL_NAME(init)() {
             PyRun_SimpleString(py_command);
             
             dbg_print("Added binary path to Python sys.path: %s\n", dir_path);
+
+            char bin_lib_py[PATH_MAX];
+            snprintf(bin_lib_py, sizeof(bin_lib_py), "%s/lib-py", dir_path);
+            snprintf(py_command, sizeof(py_command), "sys.path.insert(0, '%s')", bin_lib_py);
+            PyRun_SimpleString(py_command);
+            dbg_print("Added binary lib-py to Python sys.path: %s\n", bin_lib_py);
             
             // Also add current working directory to Python path
             char cwd[PATH_MAX];
@@ -44,9 +55,53 @@ HL_PRIM void HL_NAME(init)() {
             dbg_print("Warning: Could not determine binary path\n");
         }
         
+        // Read from /proc/self/cmdline to find input file directory
+        FILE* cmdline = fopen("/proc/self/cmdline", "r");
+        if (cmdline) {
+            char cmd_args[PATH_MAX * 4] = {0};
+            size_t bytes_read = fread(cmd_args, 1, sizeof(cmd_args) - 1, cmdline);
+            fclose(cmdline);
+            
+            if (bytes_read > 0) {
+                // Find the last argument (likely the input file)
+                char* last_arg = NULL;
+                char* arg = cmd_args;
+                
+                while (arg < cmd_args + bytes_read) {
+                    if (*arg != '\0') {
+                        last_arg = arg;
+                        // Move to the end of this argument
+                        while (*arg != '\0' && arg < cmd_args + bytes_read) {
+                            arg++;
+                        }
+                    }
+                    arg++;
+                }
+                
+                // Process the last argument if found
+                if (last_arg && *last_arg) {
+                    char* input_path = strdup(last_arg);
+                    if (input_path) {
+                        char* input_dir = dirname(input_path);
+                        if (input_dir) {
+                            char py_command[PATH_MAX + 32];
+                            snprintf(py_command, sizeof(py_command), "sys.path.insert(0, '%s')", input_dir);
+                            PyRun_SimpleString(py_command);
+                            dbg_print("Added input file directory to Python sys.path: %s\n", input_dir);
+                        }
+                        free(input_path);
+                    }
+                }
+            }
+        } else {
+            dbg_print("Warning: Could not read command line arguments\n");
+        }
+
+        PyRun_SimpleString("import builtins\n");
+        PyRun_SimpleString("builtins.RUNTIME = True\n");
+        
         if (DEBUG) {
             PyRun_SimpleString(
-                "import builtins\n"
                 "builtins.DEBUG = True\n"
             );
             PyRun_SimpleString("import __main__\n__main__.DEBUG = True");
@@ -54,33 +109,54 @@ HL_PRIM void HL_NAME(init)() {
             PyRun_SimpleString("print('[pyhl] [py] Python path:', sys.path)");
         }
         
-        // Import pyhl module globally
-        g_pyhl_module = PyImport_ImportModule("pyhl");
-        if (g_pyhl_module) {
-            dbg_print("Successfully imported pyhl module\n");
+        dbg_print("Looking for patches...\n");
+        g_patch = PyImport_ImportModule("crashlink_patch");
+        if (g_patch) {
+            dbg_print("Successfully imported patch module\n");
             
             // Add to sys.modules to ensure it persists
             PyObject* sys_modules = PyImport_GetModuleDict(); // borrowed reference
             if (sys_modules) {
-                PyObject* module_name = PyUnicode_FromString("pyhl");
+                PyObject* module_name = PyUnicode_FromString("patch_mod");
                 if (module_name) {
-                    PyDict_SetItem(sys_modules, module_name, g_pyhl_module);
+                    PyDict_SetItem(sys_modules, module_name, g_patch);
                     Py_DECREF(module_name);
                 }
-            }
-            
-            PyRun_SimpleString("import __main__\nfrom pyhl import *\n__main__.pyhl = sys.modules['pyhl']");
-            
-            g_args_class = PyObject_GetAttrString(g_pyhl_module, "Args");
-            if (!g_args_class) {
-                PyErr_Print();
-                dbg_print("Warning: Could not find Args class in pyhl module\n");
             }
         } else {
             if (PyErr_Occurred()) {
                 PyErr_Print();
             }
-            dbg_print("Failed to import pyhl module\n");
+            dbg_print("Failed to import patch module\n");
+        }
+
+        dbg_print("Loading runtime...\n");
+        g_hlrun = PyImport_ImportModule("hlrun");
+        if (g_hlrun) {
+            dbg_print("Successfully imported hlrun module\n");
+        } else {
+            if (PyErr_Occurred()) {
+                PyErr_Print();
+            }
+            
+            PyObject* sys_modules = PyImport_GetModuleDict();
+            if (sys_modules) {
+                PyObject* module_name = PyUnicode_FromString("hlrun");
+                if (module_name) {
+                    PyDict_SetItem(sys_modules, module_name, g_hlrun);
+                    Py_DECREF(module_name);
+                }
+            }
+
+            PyRun_SimpleString("import __main__\nfrom hlrun import *\n__main__.hlrun = sys.modules['hlrun']");
+            
+            g_argsc = PyObject_GetAttrString(g_hlrun, "Args");
+            if (!g_argsc) {
+                PyErr_Print();
+                dbg_print("Warning: Could not find Args class in hlrun\n");
+            }
+
+            dbg_print("Failed to import hlrun module\n");
         }
         
         dbg_print("Python %s\n", Py_GetVersion());
@@ -93,11 +169,11 @@ HL_PRIM void HL_NAME(deinit)() {
     dbg_print("deinit... ");
     
     // Clean up global references
-    Py_XDECREF(g_args_class);
-    g_args_class = NULL;
+    Py_XDECREF(g_argsc);
+    g_argsc = NULL;
     
-    Py_XDECREF(g_pyhl_module);
-    g_pyhl_module = NULL;
+    Py_XDECREF(g_patch);
+    g_patch = NULL;
     
     if (Py_IsInitialized()) {
         Py_Finalize();
@@ -240,7 +316,7 @@ HL_PRIM bool HL_NAME(intercept)(vdynamic* args, signed int nargs, vbyte* fn_name
     types[j] = '\0';
 
     // Ensure Python is initialized and pyhl module is loaded
-    if (!Py_IsInitialized() || !g_pyhl_module) {
+    if (!Py_IsInitialized() || !g_patch) {
         HL_NAME(init)();
     }
 
@@ -259,11 +335,9 @@ HL_PRIM bool HL_NAME(intercept)(vdynamic* args, signed int nargs, vbyte* fn_name
         token = strtok(NULL, ",");
     }
 
-
-    
     // Check if we have the Args class available
-    if (!g_pyhl_module || !g_args_class) {
-        dbg_print("Error: pyhl module or Args class not available\n");
+    if (!g_patch || !g_argsc) {
+        dbg_print("Error: patch module or Args class not available\n");
         return false;
     }
 
@@ -303,7 +377,7 @@ HL_PRIM bool HL_NAME(intercept)(vdynamic* args, signed int nargs, vbyte* fn_name
     PyTuple_SetItem(pArgs, 1, pName);
     PyTuple_SetItem(pArgs, 2, pTypes);
     
-    PyObject *pInstance = PyObject_CallObject(g_args_class, pArgs);
+    PyObject *pInstance = PyObject_CallObject(g_argsc, pArgs);
     if (!pInstance) {
         PyErr_Print();
         Py_DECREF(pArgs);
@@ -313,15 +387,7 @@ HL_PRIM bool HL_NAME(intercept)(vdynamic* args, signed int nargs, vbyte* fn_name
     
     Py_DECREF(pArgs);
     Py_DECREF(pName);
-    
-    // Store the instance in the global module
-    if (PyObject_SetAttrString(g_pyhl_module, "last_args", pInstance) != 0) {
-        PyErr_Print();
-        Py_DECREF(pInstance);
-        return false;
-    }
-    
-    Py_DECREF(pInstance);
+
     return true;
 }
 

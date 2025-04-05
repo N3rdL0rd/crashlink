@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
 <meta name="generator" content="pdoc3 0.11.6">
-<title>crashtest API documentation</title>
-<meta name="description" content="crashtest is a built-in testing system for crashlink that is used to score the decompiler&#39;s output against the original source code. It is used to …">
+<title>hlrun.globals API documentation</title>
+<meta name="description" content="Global constants and utility functions.">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
@@ -35,31 +35,38 @@ el.replaceWith(d);
 <main>
 <article id="content">
 <header>
-<h1 class="title">Package <code>crashtest</code></h1>
+<h1 class="title">Module <code>hlrun.globals</code></h1>
 </header>
 <section id="section-intro">
-<p>crashtest is a built-in testing system for crashlink that is used to score the decompiler's output against the original source code. It is used to ensure that the decompiler is working correctly, that the output is correct, that the decompiler is not regressing, and to allow those interested in the project to easily see the state of the decompiler without installing it or running the test suite themselves. Make sure you call it from the root of the repository, since it uses relative paths to find the test files and the output directory.</p>
+<p>Global constants and utility functions.</p>
 </section>
 <section>
-<h2 class="section-title" id="header-submodules">Sub-modules</h2>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
-<dt><code class="name"><a title="crashtest.build" href="build.html">crashtest.build</a></code></dt>
+<dt id="hlrun.globals.dbg_print"><code class="name flex">
+<span>def <span class="ident">dbg_print</span></span>(<span>*args: Any, **kwargs: Any) ‑> None</span>
+</code></dt>
 <dd>
-<div class="desc"><p>Functions to build the crashtest results site.</p></div>
-</dd>
-<dt><code class="name"><a title="crashtest.models" href="models.html">crashtest.models</a></code></dt>
-<dd>
-<div class="desc"><p>Dataclass models.</p></div>
-</dd>
-<dt><code class="name"><a title="crashtest.run" href="run.html">crashtest.run</a></code></dt>
-<dd>
-<div class="desc"><p>Functions to run tests, collect results, and produce run reports.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def dbg_print(*args: Any, **kwargs: Any) -&gt; None:
+    global DEBUG
+    try:
+        if DEBUG:  # type: ignore
+            print(&#34;[pyhl] [py] &#34;, end=&#34;&#34;)
+            print(*args, **kwargs)
+    except NameError:
+        pass</code></pre>
+</details>
+<div class="desc"></div>
 </dd>
 </dl>
-</section>
-<section>
-</section>
-<section>
 </section>
 <section>
 </section>
@@ -69,11 +76,14 @@ el.replaceWith(d);
 <ul></ul>
 </div>
 <ul id="index">
-<li><h3><a href="#header-submodules">Sub-modules</a></h3>
+<li><h3>Super-module</h3>
 <ul>
-<li><code><a title="crashtest.build" href="build.html">crashtest.build</a></code></li>
-<li><code><a title="crashtest.models" href="models.html">crashtest.models</a></code></li>
-<li><code><a title="crashtest.run" href="run.html">crashtest.run</a></code></li>
+<li><code><a title="hlrun" href="index.html">hlrun</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="hlrun.globals.dbg_print" href="#hlrun.globals.dbg_print">dbg_print</a></code></li>
 </ul>
 </li>
 </ul>

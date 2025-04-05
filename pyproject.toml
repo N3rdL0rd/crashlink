@@ -21,10 +21,8 @@ dependencies = []
 [project.optional-dependencies]
 dev = [
   "pdoc3",
-  "black",
   "build",
   "twine",
-  "isort",
   "mypy",
   "radon",
   "pytest",
@@ -36,7 +34,8 @@ dev = [
   "pytest-xdist",
   "staticjinja",
   "IPython",
-  "requests"
+  "requests",
+  "ruff"
 ]
 extras = [
   "tqdm",
@@ -53,5 +52,5 @@ crashlink = "crashlink.__main__:main"
 crashtest = "crashtest.__main__:main"
 
 [tool.setuptools.packages.find]
-include = ["crashlink", "crashlink.*", "crashtest", "crashtest.*"]
+include = ["crashlink", "crashlink.*", "crashtest", "crashtest.*", "hlrun", "hlrun.*"]
 exclude = ["tests", "tests.*", "local", "local.*", "env", "env.*"]

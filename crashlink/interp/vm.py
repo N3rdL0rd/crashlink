@@ -8,8 +8,20 @@ Core VM types, values, and the VM itself.
 from abc import ABC, abstractmethod
 from typing import Any, List, Optional
 
-from ..core import (F32, F64, I32, I64, U8, U16, Bool, Bytecode, Bytes,
-                    Function, Obj, Type)
+from ..core import (
+    F32,
+    F64,
+    I32,
+    I64,
+    U8,
+    U16,
+    Bool,
+    Bytecode,
+    Bytes,
+    Function,
+    Obj,
+    Type,
+)
 from ..globals import bcolors, dbg_print
 from .std import BINDINGS as NATIVE_BINDINGS
 from .std import StdBinding
@@ -310,7 +322,7 @@ class VM:
 
     def _call(self, fn: VMFunction, *args: VMValue) -> Optional[VMObj]:
         ip = 0
-        dbg_print(f"{'-'*30} Calling {fn.func.findex.value} {'-'*30}")
+        dbg_print(f"{'-' * 30} Calling {fn.func.findex.value} {'-' * 30}")
         dbg_print(self.callstack)
         for i, arg in enumerate(args):
             fn.regs[i] = arg
@@ -329,7 +341,7 @@ class VM:
 
                 case "Ret":
                     self.callstack.pop()
-                    dbg_print(f"{'-'*30} Returning from {fn.func.findex.value} {'-'*30}")
+                    dbg_print(f"{'-' * 30} Returning from {fn.func.findex.value} {'-' * 30}")
                     print(self.callstack)
                     return fn.regs[df["ret"].value]
 
@@ -364,7 +376,8 @@ class VM:
                 case "String":
                     fn.regs[df["dst"].value] = VMBytes(df["ptr"].resolve(self.code).encode("utf-8"))
                     dbg_print(
-                        bcolors.OKBLUE + "Loaded string:", "'" + df["ptr"].resolve(self.code) + "'" + bcolors.ENDC
+                        bcolors.OKBLUE + "Loaded string:",
+                        "'" + df["ptr"].resolve(self.code) + "'" + bcolors.ENDC,
                     )
 
                 case "SafeCast":
