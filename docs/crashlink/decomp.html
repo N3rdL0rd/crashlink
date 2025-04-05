@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
-<meta name="generator" content="pdoc3 0.11.5">
+<meta name="generator" content="pdoc3 0.11.6">
 <title>crashlink.decomp API documentation</title>
 <meta name="description" content="Decompilation, IR and control flow graph generation">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
@@ -151,7 +151,7 @@ el.replaceWith(d);
                         &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;,
                         &#34;JEq&#34;, &#34;JNotEq&#34;, &#34;JAlways&#34;, &#34;Trap&#34;]:
             # fmt: on
-                jump_targets.add(i + op.definition[&#34;offset&#34;].value + 1)
+                jump_targets.add(i + op.df[&#34;offset&#34;].value + 1)
 
         current_ops: List[Opcode] = []
         current_start = 0
@@ -199,45 +199,53 @@ el.replaceWith(d);
                             &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;, 
                             &#34;JEq&#34;, &#34;JNotEq&#34;]:
             # fmt: on
-                
-                jump_idx = start_idx + len(ops) + last_op.definition[&#34;offset&#34;].value
-                
+
+                jump_idx = start_idx + len(ops) + last_op.df[&#34;offset&#34;].value
+
                 # - jump target is &#34;true&#34; branch
                 # - fall-through is &#34;false&#34; branch
-                    
+
                 if jump_idx in nodes_by_idx:
                     edge_type = &#34;true&#34;
-                    self.add_branch(src_node, nodes_by_idx[jump_idx], edge_type)
-                    
+                    self.add_branch(
+                        src_node, nodes_by_idx[jump_idx], edge_type)
+
                 if next_idx in nodes_by_idx:
-                    edge_type = &#34;false&#34; 
-                    self.add_branch(src_node, nodes_by_idx[next_idx], edge_type)
-            
+                    edge_type = &#34;false&#34;
+                    self.add_branch(
+                        src_node, nodes_by_idx[next_idx], edge_type)
+
             elif last_op.op == &#34;Switch&#34;:
-                for i, offset in enumerate(last_op.definition[&#39;offsets&#39;].value):
+                for i, offset in enumerate(last_op.df[&#39;offsets&#39;].value):
                     if offset.value != 0:
                         jump_idx = start_idx + len(ops) + offset.value
-                        self.add_branch(src_node, nodes_by_idx[jump_idx], f&#34;switch: case: {i} &#34;)
+                        self.add_branch(
+                            src_node, nodes_by_idx[jump_idx], f&#34;switch: case: {i} &#34;)
                 if next_idx in nodes_by_idx:
-                    self.add_branch(src_node, nodes_by_idx[next_idx], &#34;switch: default&#34;)
-            
+                    self.add_branch(
+                        src_node, nodes_by_idx[next_idx], &#34;switch: default&#34;)
+
             elif last_op.op == &#34;Trap&#34;:
-                jump_idx = start_idx + len(ops) + last_op.definition[&#34;offset&#34;].value
+                jump_idx = start_idx + len(ops) + last_op.df[&#34;offset&#34;].value
                 if jump_idx in nodes_by_idx:
                     self.add_branch(src_node, nodes_by_idx[jump_idx], &#34;trap&#34;)
                 if next_idx in nodes_by_idx:
-                    self.add_branch(src_node, nodes_by_idx[next_idx], &#34;fall-through&#34;)
-            
+                    self.add_branch(
+                        src_node, nodes_by_idx[next_idx], &#34;fall-through&#34;)
+
             elif last_op.op == &#34;EndTrap&#34;:
                 if next_idx in nodes_by_idx:
-                    self.add_branch(src_node, nodes_by_idx[next_idx], &#34;endtrap&#34;)
-            
+                    self.add_branch(
+                        src_node, nodes_by_idx[next_idx], &#34;endtrap&#34;)
+
             elif last_op.op == &#34;JAlways&#34;:
-                jump_idx = start_idx + len(ops) + last_op.definition[&#34;offset&#34;].value
+                jump_idx = start_idx + len(ops) + last_op.df[&#34;offset&#34;].value
                 if jump_idx in nodes_by_idx:
-                    self.add_branch(src_node, nodes_by_idx[jump_idx], &#34;unconditional&#34;)
+                    self.add_branch(
+                        src_node, nodes_by_idx[jump_idx], &#34;unconditional&#34;)
             elif last_op.op != &#34;Ret&#34; and next_idx in nodes_by_idx:
-                self.add_branch(src_node, nodes_by_idx[next_idx], &#34;unconditional&#34;)
+                self.add_branch(
+                    src_node, nodes_by_idx[next_idx], &#34;unconditional&#34;)
 
         if do_optimize:
             # fmt: off
@@ -370,7 +378,7 @@ el.replaceWith(d);
                     &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;,
                     &#34;JEq&#34;, &#34;JNotEq&#34;, &#34;JAlways&#34;, &#34;Trap&#34;]:
         # fmt: on
-            jump_targets.add(i + op.definition[&#34;offset&#34;].value + 1)
+            jump_targets.add(i + op.df[&#34;offset&#34;].value + 1)
 
     current_ops: List[Opcode] = []
     current_start = 0
@@ -418,45 +426,53 @@ el.replaceWith(d);
                         &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;, 
                         &#34;JEq&#34;, &#34;JNotEq&#34;]:
         # fmt: on
-            
-            jump_idx = start_idx + len(ops) + last_op.definition[&#34;offset&#34;].value
-            
+
+            jump_idx = start_idx + len(ops) + last_op.df[&#34;offset&#34;].value
+
             # - jump target is &#34;true&#34; branch
             # - fall-through is &#34;false&#34; branch
-                
+
             if jump_idx in nodes_by_idx:
                 edge_type = &#34;true&#34;
-                self.add_branch(src_node, nodes_by_idx[jump_idx], edge_type)
-                
+                self.add_branch(
+                    src_node, nodes_by_idx[jump_idx], edge_type)
+
             if next_idx in nodes_by_idx:
-                edge_type = &#34;false&#34; 
-                self.add_branch(src_node, nodes_by_idx[next_idx], edge_type)
-        
+                edge_type = &#34;false&#34;
+                self.add_branch(
+                    src_node, nodes_by_idx[next_idx], edge_type)
+
         elif last_op.op == &#34;Switch&#34;:
-            for i, offset in enumerate(last_op.definition[&#39;offsets&#39;].value):
+            for i, offset in enumerate(last_op.df[&#39;offsets&#39;].value):
                 if offset.value != 0:
                     jump_idx = start_idx + len(ops) + offset.value
-                    self.add_branch(src_node, nodes_by_idx[jump_idx], f&#34;switch: case: {i} &#34;)
+                    self.add_branch(
+                        src_node, nodes_by_idx[jump_idx], f&#34;switch: case: {i} &#34;)
             if next_idx in nodes_by_idx:
-                self.add_branch(src_node, nodes_by_idx[next_idx], &#34;switch: default&#34;)
-        
+                self.add_branch(
+                    src_node, nodes_by_idx[next_idx], &#34;switch: default&#34;)
+
         elif last_op.op == &#34;Trap&#34;:
-            jump_idx = start_idx + len(ops) + last_op.definition[&#34;offset&#34;].value
+            jump_idx = start_idx + len(ops) + last_op.df[&#34;offset&#34;].value
             if jump_idx in nodes_by_idx:
                 self.add_branch(src_node, nodes_by_idx[jump_idx], &#34;trap&#34;)
             if next_idx in nodes_by_idx:
-                self.add_branch(src_node, nodes_by_idx[next_idx], &#34;fall-through&#34;)
-        
+                self.add_branch(
+                    src_node, nodes_by_idx[next_idx], &#34;fall-through&#34;)
+
         elif last_op.op == &#34;EndTrap&#34;:
             if next_idx in nodes_by_idx:
-                self.add_branch(src_node, nodes_by_idx[next_idx], &#34;endtrap&#34;)
-        
+                self.add_branch(
+                    src_node, nodes_by_idx[next_idx], &#34;endtrap&#34;)
+
         elif last_op.op == &#34;JAlways&#34;:
-            jump_idx = start_idx + len(ops) + last_op.definition[&#34;offset&#34;].value
+            jump_idx = start_idx + len(ops) + last_op.df[&#34;offset&#34;].value
             if jump_idx in nodes_by_idx:
-                self.add_branch(src_node, nodes_by_idx[jump_idx], &#34;unconditional&#34;)
+                self.add_branch(
+                    src_node, nodes_by_idx[jump_idx], &#34;unconditional&#34;)
         elif last_op.op != &#34;Ret&#34; and next_idx in nodes_by_idx:
-            self.add_branch(src_node, nodes_by_idx[next_idx], &#34;unconditional&#34;)
+            self.add_branch(
+                src_node, nodes_by_idx[next_idx], &#34;unconditional&#34;)
 
     if do_optimize:
         # fmt: off
@@ -784,7 +800,56 @@ def optimize(self) -&gt; None:
 <dl>
 <dt id="crashlink.decomp.IRArithmetic.ArithmeticType"><code class="name">var <span class="ident">ArithmeticType</span></code></dt>
 <dd>
-<div class="desc"><p>An enumeration.</p></div>
+<div class="desc"><p>Create a collection of name/value pairs.</p>
+<p>Example enumeration:</p>
+<pre><code class="language-python-repl">&gt;&gt;&gt; class Color(Enum):
+...     RED = 1
+...     BLUE = 2
+...     GREEN = 3
+</code></pre>
+<p>Access them by:</p>
+<ul>
+<li>attribute access:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color.RED
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<ul>
+<li>value lookup:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color(1)
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<ul>
+<li>name lookup:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color['RED']
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<p>Enumerations can be iterated over, and know how many members they have:</p>
+<pre><code class="language-python-repl">&gt;&gt;&gt; len(Color)
+3
+</code></pre>
+<pre><code class="language-python-repl">&gt;&gt;&gt; list(Color)
+[&lt;Color.RED: 1&gt;, &lt;Color.BLUE: 2&gt;, &lt;Color.GREEN: 3&gt;]
+</code></pre>
+<p>Methods can be added to enumerations, and members can have their own
+attributes &ndash; see the documentation for details.</p></div>
 </dd>
 </dl>
 <h3>Inherited members</h3>
@@ -958,7 +1023,56 @@ def optimize(self) -&gt; None:
 <dl>
 <dt id="crashlink.decomp.IRBoolExpr.CompareType"><code class="name">var <span class="ident">CompareType</span></code></dt>
 <dd>
-<div class="desc"><p>An enumeration.</p></div>
+<div class="desc"><p>Create a collection of name/value pairs.</p>
+<p>Example enumeration:</p>
+<pre><code class="language-python-repl">&gt;&gt;&gt; class Color(Enum):
+...     RED = 1
+...     BLUE = 2
+...     GREEN = 3
+</code></pre>
+<p>Access them by:</p>
+<ul>
+<li>attribute access:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color.RED
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<ul>
+<li>value lookup:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color(1)
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<ul>
+<li>name lookup:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color['RED']
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<p>Enumerations can be iterated over, and know how many members they have:</p>
+<pre><code class="language-python-repl">&gt;&gt;&gt; len(Color)
+3
+</code></pre>
+<pre><code class="language-python-repl">&gt;&gt;&gt; list(Color)
+[&lt;Color.RED: 1&gt;, &lt;Color.BLUE: 2&gt;, &lt;Color.GREEN: 3&gt;]
+</code></pre>
+<p>Methods can be added to enumerations, and members can have their own
+attributes &ndash; see the documentation for details.</p></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -1098,7 +1212,56 @@ def optimize(self) -&gt; None:
 <dl>
 <dt id="crashlink.decomp.IRCall.CallType"><code class="name">var <span class="ident">CallType</span></code></dt>
 <dd>
-<div class="desc"><p>An enumeration.</p></div>
+<div class="desc"><p>Create a collection of name/value pairs.</p>
+<p>Example enumeration:</p>
+<pre><code class="language-python-repl">&gt;&gt;&gt; class Color(Enum):
+...     RED = 1
+...     BLUE = 2
+...     GREEN = 3
+</code></pre>
+<p>Access them by:</p>
+<ul>
+<li>attribute access:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color.RED
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<ul>
+<li>value lookup:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color(1)
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<ul>
+<li>name lookup:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color['RED']
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<p>Enumerations can be iterated over, and know how many members they have:</p>
+<pre><code class="language-python-repl">&gt;&gt;&gt; len(Color)
+3
+</code></pre>
+<pre><code class="language-python-repl">&gt;&gt;&gt; list(Color)
+[&lt;Color.RED: 1&gt;, &lt;Color.BLUE: 2&gt;, &lt;Color.GREEN: 3&gt;]
+</code></pre>
+<p>Methods can be added to enumerations, and members can have their own
+attributes &ndash; see the documentation for details.</p></div>
 </dd>
 </dl>
 <h3>Inherited members</h3>
@@ -1256,7 +1419,56 @@ def optimize(self) -&gt; None:
 <dl>
 <dt id="crashlink.decomp.IRConst.ConstType"><code class="name">var <span class="ident">ConstType</span></code></dt>
 <dd>
-<div class="desc"><p>An enumeration.</p></div>
+<div class="desc"><p>Create a collection of name/value pairs.</p>
+<p>Example enumeration:</p>
+<pre><code class="language-python-repl">&gt;&gt;&gt; class Color(Enum):
+...     RED = 1
+...     BLUE = 2
+...     GREEN = 3
+</code></pre>
+<p>Access them by:</p>
+<ul>
+<li>attribute access:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color.RED
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<ul>
+<li>value lookup:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color(1)
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<ul>
+<li>name lookup:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color['RED']
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<p>Enumerations can be iterated over, and know how many members they have:</p>
+<pre><code class="language-python-repl">&gt;&gt;&gt; len(Color)
+3
+</code></pre>
+<pre><code class="language-python-repl">&gt;&gt;&gt; list(Color)
+[&lt;Color.RED: 1&gt;, &lt;Color.BLUE: 2&gt;, &lt;Color.GREEN: 3&gt;]
+</code></pre>
+<p>Methods can be added to enumerations, and members can have their own
+attributes &ndash; see the documentation for details.</p></div>
 </dd>
 </dl>
 <h3>Inherited members</h3>
@@ -1324,7 +1536,7 @@ def get_type(self) -&gt; Type:
 </dd>
 <dt id="crashlink.decomp.IRFunction"><code class="flex name class">
 <span>class <span class="ident">IRFunction</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a>,<br>do_optimize: bool = True)</span>
+<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a>,<br>do_optimize: bool = True,<br>no_lift: bool = False)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -1336,7 +1548,13 @@ def get_type(self) -&gt; Type:
     Intermediate representation of a function.
     &#34;&#34;&#34;
 
-    def __init__(self, code: Bytecode, func: Function, do_optimize: bool = True) -&gt; None:
+    def __init__(
+        self,
+        code: Bytecode,
+        func: Function,
+        do_optimize: bool = True,
+        no_lift: bool = False,
+    ) -&gt; None:
         self.func = func
         self.cfg = CFGraph(func)
         self.cfg.build()
@@ -1344,20 +1562,23 @@ def get_type(self) -&gt; Type:
         self.ops = func.ops
         self.locals: List[IRLocal] = []
         self.block: IRBlock
-        self._lift()
+        self._lift(no_lift=no_lift)
         if do_optimize:
             self.optimizers: List[IROptimizer] = [IRLoopConditionOptimizer(self)]
             self._optimize()
 
-    def _lift(self) -&gt; None:
+    def _lift(self, no_lift: bool = False) -&gt; None:
         &#34;&#34;&#34;Lift function to IR&#34;&#34;&#34;
         for i, reg in enumerate(self.func.regs):
             self.locals.append(IRLocal(f&#34;reg{i}&#34;, reg, code=self.code))
         self._name_locals()
-        if self.cfg.entry:
-            self.block = self._lift_block(self.cfg.entry)
+        if not no_lift:
+            if self.cfg.entry:
+                self.block = self._lift_block(self.cfg.entry)
+            else:
+                raise DecompError(&#34;Function CFG has no entry node, cannot lift to IR&#34;)
         else:
-            raise DecompError(&#34;Function CFG has no entry node, cannot lift to IR&#34;)
+            dbg_print(&#34;Skipping lift.&#34;)
 
     def _optimize(self) -&gt; None:
         &#34;&#34;&#34;Optimize the IR&#34;&#34;&#34;
@@ -1379,8 +1600,8 @@ def get_type(self) -&gt; Type:
                 reg: Optional[int] = None
                 op = self.ops[val]
                 try:
-                    op.definition[&#34;dst&#34;]
-                    reg = op.definition[&#34;dst&#34;].value
+                    op.df[&#34;dst&#34;]
+                    reg = op.df[&#34;dst&#34;].value
                 except KeyError:
                     pass
                 if reg is not None:
@@ -1481,9 +1702,9 @@ def get_type(self) -&gt; Type:
                 break
 
             elif op.op in arithmetic:
-                dst = self.locals[op.definition[&#34;dst&#34;].value]
-                lhs = self.locals[op.definition[&#34;a&#34;].value]
-                rhs = self.locals[op.definition[&#34;b&#34;].value]
+                dst = self.locals[op.df[&#34;dst&#34;].value]
+                lhs = self.locals[op.df[&#34;a&#34;].value]
+                rhs = self.locals[op.df[&#34;b&#34;].value]
                 block.statements.append(
                     IRAssign(
                         self.code,
@@ -1498,11 +1719,11 @@ def get_type(self) -&gt; Type:
                 )
 
             elif op.op in [&#34;Int&#34;, &#34;Float&#34;, &#34;Bool&#34;, &#34;Bytes&#34;, &#34;String&#34;, &#34;Null&#34;]:
-                dst = self.locals[op.definition[&#34;dst&#34;].value]
+                dst = self.locals[op.df[&#34;dst&#34;].value]
                 const_type = IRConst.ConstType[op.op.upper()]
-                value = op.definition[&#34;value&#34;].value if op.op == &#34;Bool&#34; else None
+                value = op.df[&#34;value&#34;].value if op.op == &#34;Bool&#34; else None
                 if op.op not in [&#34;Bool&#34;]:
-                    const = IRConst(self.code, const_type, op.definition[&#34;ptr&#34;], value)
+                    const = IRConst(self.code, const_type, op.df[&#34;ptr&#34;], value)
                 else:
                     const = IRConst(self.code, const_type, value=value)
                 block.statements.append(IRAssign(self.code, dst, const))
@@ -1559,8 +1780,8 @@ def get_type(self) -&gt; Type:
                         IRBoolExpr.CompareType.NULL,
                         IRBoolExpr.CompareType.NOT_NULL,
                     ]:
-                        left = self.locals[op.definition[&#34;a&#34;].value]
-                        right = self.locals[op.definition[&#34;b&#34;].value]
+                        left = self.locals[op.df[&#34;a&#34;].value]
+                        right = self.locals[op.df[&#34;b&#34;].value]
 
                     condition_expr = IRBoolExpr(self.code, cond, left, right)
                     true_block = self._lift_block(true_branch, visited) if should_lift_t else IRBlock(self.code)
@@ -1592,9 +1813,9 @@ def get_type(self) -&gt; Type:
 
             elif op.op in [&#34;Call0&#34;, &#34;Call1&#34;, &#34;Call2&#34;, &#34;Call3&#34;, &#34;Call4&#34;]:
                 n = int(op.op[-1])
-                dst = self.locals[op.definition[&#34;dst&#34;].value]
-                fun = IRConst(self.code, IRConst.ConstType.FUN, op.definition[&#34;fun&#34;])
-                args = [self.locals[op.definition[f&#34;arg{i}&#34;].value] for i in range(n)]
+                dst = self.locals[op.df[&#34;dst&#34;].value]
+                fun = IRConst(self.code, IRConst.ConstType.FUN, op.df[&#34;fun&#34;])
+                args = [self.locals[op.df[f&#34;arg{i}&#34;].value] for i in range(n)]
                 block.statements.append(
                     IRAssign(
                         self.code,
@@ -1604,9 +1825,9 @@ def get_type(self) -&gt; Type:
                 )
 
             elif op.op == &#34;CallMethod&#34;:
-                dst = self.locals[op.definition[&#34;dst&#34;].value]
-                target = self.locals[op.definition[&#34;target&#34;].value]
-                args = [self.locals[op.definition[f&#34;arg{i}&#34;].value] for i in range(op.definition[&#34;nargs&#34;].value)]
+                dst = self.locals[op.df[&#34;dst&#34;].value]
+                target = self.locals[op.df[&#34;target&#34;].value]
+                args = [self.locals[op.df[f&#34;arg{i}&#34;].value] for i in range(op.df[&#34;nargs&#34;].value)]
                 block.statements.append(
                     IRAssign(
                         self.code,
@@ -1616,8 +1837,8 @@ def get_type(self) -&gt; Type:
                 )
 
             elif op.op == &#34;CallThis&#34;:
-                dst = self.locals[op.definition[&#34;dst&#34;].value]
-                args = [self.locals[op.definition[f&#34;arg{i}&#34;].value] for i in range(op.definition[&#34;nargs&#34;].value)]
+                dst = self.locals[op.df[&#34;dst&#34;].value]
+                args = [self.locals[op.df[f&#34;arg{i}&#34;].value] for i in range(op.df[&#34;nargs&#34;].value)]
                 block.statements.append(
                     IRAssign(
                         self.code,
@@ -1627,14 +1848,14 @@ def get_type(self) -&gt; Type:
                 )
 
             elif op.op == &#34;Ret&#34;:
-                if isinstance(op.definition[&#34;ret&#34;].resolve(self.code).definition, Void):
+                if isinstance(op.df[&#34;ret&#34;].resolve(self.code).definition, Void):
                     block.statements.append(IRReturn(self.code))
                 else:
-                    block.statements.append(IRReturn(self.code, self.locals[op.definition[&#34;ret&#34;].value]))
+                    block.statements.append(IRReturn(self.code, self.locals[op.df[&#34;ret&#34;].value]))
 
             elif op.op == &#34;Switch&#34;:
-                val = self.locals[op.definition[&#34;reg&#34;].value]
-                offsets = op.definition[&#34;offsets&#34;].value
+                val = self.locals[op.df[&#34;reg&#34;].value]
+                offsets = op.df[&#34;offsets&#34;].value
                 cases = {}
                 case_nodes = []
 
@@ -1685,12 +1906,14 @@ def get_type(self) -&gt; Type:
             elif op.op == &#34;Mov&#34;:
                 block.statements.append(
                     IRAssign(
-                        self.code, self.locals[op.definition[&#34;dst&#34;].value], self.locals[op.definition[&#34;src&#34;].value]
+                        self.code,
+                        self.locals[op.df[&#34;dst&#34;].value],
+                        self.locals[op.df[&#34;src&#34;].value],
                     )
                 )
 
             elif op.op == &#34;JAlways&#34;:
-                jump_idx = node.base_offset + len(node.ops) + op.definition[&#34;offset&#34;].value
+                jump_idx = node.base_offset + len(node.ops) + op.df[&#34;offset&#34;].value
                 target_node = None
                 for nod in self.cfg.nodes:
                     if nod.base_offset == jump_idx:
@@ -1987,7 +2210,12 @@ inheritance.</p></div>
 <pre><code class="python">class IsolatedCFGraph(CFGraph):
     &#34;&#34;&#34;A control flow graph that contains only a subset of nodes from another graph.&#34;&#34;&#34;
 
-    def __init__(self, parent: CFGraph, nodes: List[CFNode], find_entry_intelligently: bool = True):
+    def __init__(
+        self,
+        parent: CFGraph,
+        nodes: List[CFNode],
+        find_entry_intelligently: bool = True,
+    ):
         &#34;&#34;&#34;Initialize from parent graph and list of nodes to isolate.&#34;&#34;&#34;
         if not nodes:
             raise ValueError(&#34;Got empty list of nodes to isolate!&#34;)
@@ -2165,7 +2393,7 @@ inheritance.</p></div>
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
 </footer>
 </body>
 </html>

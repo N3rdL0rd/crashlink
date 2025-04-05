@@ -12,15 +12,15 @@ import sys
 import tempfile
 import traceback
 import webbrowser
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Tuple
 
 from . import decomp, disasm, globals
 from .asm import AsmFile
-from .core import Bytecode, Native, Virtual, tIndex
+from .core import Bytecode, Native, Virtual, full_func_name, tIndex
 from .globals import VERSION
 from .interp.vm import VM  # type: ignore
 from .opcodes import opcode_docs, opcodes
-from .patch import Args, Patch
+from .patch import Patch
 
 
 class Commands:
@@ -169,7 +169,10 @@ class Commands:
 
                 png_file = dot_file.replace(".dot", ".png")
                 try:
-                    subprocess.run(["dot", "-Tpng", dot_file, "-o", png_file, "-Gdpi=300"], check=True)
+                    subprocess.run(
+                        ["dot", "-Tpng", dot_file, "-o", png_file, "-Gdpi=300"],
+                        check=True,
+                    )
                 except FileNotFoundError:
                     print("Graphviz not found. Install Graphviz to generate PNGs.")
                     return
@@ -461,7 +464,7 @@ class Commands:
         try:
             import IPython
 
-            IPython.embed(banner1=banner, user_ns=local_vars) # type: ignore
+            IPython.embed(banner1=banner, user_ns=local_vars)  # type: ignore
         except ImportError:
             import code as cd
 
@@ -536,7 +539,7 @@ class Commands:
             return
         name = " ".join(args[0:])
         for func in self.code.functions:
-            if disasm.full_func_name(self.code, func) == name:
+            if full_func_name(self.code, func) == name:
                 print(disasm.func_header(self.code, func))
                 return
         print("Function not found.")
@@ -574,15 +577,27 @@ def main() -> None:
     """
     parser = argparse.ArgumentParser(description=f"crashlink CLI ({VERSION})", prog="crashlink")
     parser.add_argument(
-        "file", help="The file to open - can be HashLink bytecode, a Haxe source file or a crashlink assembly file."
+        "file",
+        help="The file to open - can be HashLink bytecode, a Haxe source file or a crashlink assembly file.",
     )
     parser.add_argument("-a", "--assemble", help="Assemble the passed file", action="store_true")
-    parser.add_argument("-o", "--output", help="The output filename for the assembled or patched bytecode.")
+    parser.add_argument(
+        "-o",
+        "--output",
+        help="The output filename for the assembled or patched bytecode.",
+    )
     parser.add_argument("-c", "--command", help="The command to run on startup")
     parser.add_argument("-H", "--hlbc", help="Run in HLBC compatibility mode", action="store_true")
-    parser.add_argument("-p", "--patch", help="Patch the passed file with the following patch definition")
     parser.add_argument(
-        "-t", "--traceback", help="Print tracebacks for debugging when catching exceptions", action="store_true"
+        "-p",
+        "--patch",
+        help="Patch the passed file with the following patch definition",
+    )
+    parser.add_argument(
+        "-t",
+        "--traceback",
+        help="Print tracebacks for debugging when catching exceptions",
+        action="store_true",
     )
     parser.add_argument(
         "-N",
@@ -609,7 +624,10 @@ def main() -> None:
         out = (
             args.output
             if args.output
-            else os.path.join(os.path.dirname(args.file), ".".join(os.path.basename(args.file).split(".")[:-1]) + ".hl")
+            else os.path.join(
+                os.path.dirname(args.file),
+                ".".join(os.path.basename(args.file).split(".")[:-1]) + ".hl",
+            )
         )
         with open(out, "wb") as f:
             f.write(AsmFile.from_path(args.file).assemble().serialise())
@@ -659,6 +677,8 @@ def main() -> None:
 
         try:
             patch_module = importlib.import_module(patch_name)
+            with open(args.patch, "r") as f:
+                content = f.read()
             print(f"Successfully loaded patch module: {patch_module}")
             assert isinstance(patch_module.patch, Patch), "`patch` is not an instance of crashlink.patch.Patch!"
             patch_module.patch.apply(code)
@@ -666,12 +686,14 @@ def main() -> None:
                 args.output = args.file + ".patch"
             with open(args.output, "wb") as f:
                 f.write(code.serialise())
+            with open(os.path.join(os.path.dirname(args.output), "crashlink_patch.py"), "w") as f:
+                f.write(content)
         except ImportError as e:
             print(f"Failed to import patch module: {e}")
             if args.traceback:
                 traceback.print_exc()
-        except AttributeError as e:
-            print(f"Could not find `patch`, did you define it?")
+        except AttributeError:
+            print("Could not find `patch`, did you define it?")
             if args.traceback:
                 traceback.print_exc()
         finally:

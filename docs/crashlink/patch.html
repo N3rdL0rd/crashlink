@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
-<meta name="generator" content="pdoc3 0.11.5">
+<meta name="generator" content="pdoc3 0.11.6">
 <title>crashlink.patch API documentation</title>
 <meta name="description" content="A Python-based system for patching and hooking of bytecode, similar to [DCCM](https://github.com/dead-cells-core-modding/core).">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
@@ -49,99 +49,6 @@ el.replaceWith(d);
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
 <dl>
-<dt id="crashlink.patch.Args"><code class="flex name class">
-<span>class <span class="ident">Args</span></span>
-<span>(</span><span>values: List[Any], types: List[Any])</span>
-</code></dt>
-<dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class Args:
-    &#34;&#34;&#34;
-    Wrapper for function arguments that tracks their types.
-    Allows accessing arguments by index and supports type tracking.
-    &#34;&#34;&#34;
-
-    def __init__(self, values: List[Any], types: List[Any]) -&gt; None:
-        self._values = values
-        self._types = types
-
-    def __getitem__(self, index: int) -&gt; Any:
-        return self._values[index]
-
-    def __setitem__(self, index: int, value: Any) -&gt; None:
-        self._values[index] = value
-
-    def get_type(self, index: int) -&gt; Any:
-        &#34;&#34;&#34;Get the type object for the argument at the given index&#34;&#34;&#34;
-        return self._types[index]
-
-    def set_type(self, index: int, type_obj: Any) -&gt; None:
-        &#34;&#34;&#34;Set the type object for the argument at the given index&#34;&#34;&#34;
-        # TODO: enforce type
-        self._types[index] = type_obj
-
-    def __len__(self) -&gt; int:
-        return len(self._values)
-
-    def __iter__(self) -&gt; Iterable[Any]:
-        return iter(self._values)
-
-    def items(self) -&gt; Iterable[Tuple[Any, Any]]:
-        &#34;&#34;&#34;Iterate over (value, type) pairs&#34;&#34;&#34;
-        return zip(self._values, self._types)</code></pre>
-</details>
-<div class="desc"><p>Wrapper for function arguments that tracks their types.
-Allows accessing arguments by index and supports type tracking.</p></div>
-<h3>Methods</h3>
-<dl>
-<dt id="crashlink.patch.Args.get_type"><code class="name flex">
-<span>def <span class="ident">get_type</span></span>(<span>self, index: int) ‑> Any</span>
-</code></dt>
-<dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_type(self, index: int) -&gt; Any:
-    &#34;&#34;&#34;Get the type object for the argument at the given index&#34;&#34;&#34;
-    return self._types[index]</code></pre>
-</details>
-<div class="desc"><p>Get the type object for the argument at the given index</p></div>
-</dd>
-<dt id="crashlink.patch.Args.items"><code class="name flex">
-<span>def <span class="ident">items</span></span>(<span>self) ‑> Iterable[Tuple[Any, Any]]</span>
-</code></dt>
-<dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def items(self) -&gt; Iterable[Tuple[Any, Any]]:
-    &#34;&#34;&#34;Iterate over (value, type) pairs&#34;&#34;&#34;
-    return zip(self._values, self._types)</code></pre>
-</details>
-<div class="desc"><p>Iterate over (value, type) pairs</p></div>
-</dd>
-<dt id="crashlink.patch.Args.set_type"><code class="name flex">
-<span>def <span class="ident">set_type</span></span>(<span>self, index: int, type_obj: Any) ‑> None</span>
-</code></dt>
-<dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def set_type(self, index: int, type_obj: Any) -&gt; None:
-    &#34;&#34;&#34;Set the type object for the argument at the given index&#34;&#34;&#34;
-    # TODO: enforce type
-    self._types[index] = type_obj</code></pre>
-</details>
-<div class="desc"><p>Set the type object for the argument at the given index</p></div>
-</dd>
-</dl>
-</dd>
 <dt id="crashlink.patch.Patch"><code class="flex name class">
 <span>class <span class="ident">Patch</span></span>
 <span>(</span><span>name: str | None = None, author: str | None = None, sha256: str | None = None)</span>
@@ -156,84 +63,137 @@ Allows accessing arguments by index and supports type tracking.</p></div>
     Main patching class that manages bytecode hooks and patches.
     &#34;&#34;&#34;
 
-    def __init__(self, name: Optional[str] = None, author: Optional[str] = None, sha256: Optional[str] = None):
+    def __init__(
+        self,
+        name: Optional[str] = None,
+        author: Optional[str] = None,
+        sha256: Optional[str] = None,
+    ):
         &#34;&#34;&#34;
         Initialize a new patch.
 
-        Args:
-            name: Descriptive name of the patch
-            author: Author of the patch
-            sha256: SHA256 hash of the input bytecode file
+        Note: sha256 is hash of input file
         &#34;&#34;&#34;
         self.name = name
         self.author = author
         self.sha256 = sha256
-        self.interceptions: Dict[str | int, Callable[[Args], Args]] = {}
-        self.needs_pyhl = True
+        self.interceptions: Dict[str | int, Callable[[hlrun.Args], hlrun.Args]] = {}
+        self.patches: Dict[str | int, Callable[[Bytecode, Function], None]] = {}
+        self.needs_pyhl = False
         self.custom_fns: Dict[str, fIndex] = {}
 
-    def intercept(self, fn: str | int) -&gt; Callable[[Callable[[Args], Args]], Callable[[Args], Args]]:
+    def intercept(
+        self, fn: str | int
+    ) -&gt; Callable[[Callable[[hlrun.Args], hlrun.Args]], Callable[[hlrun.Args], hlrun.Args]]:
         &#34;&#34;&#34;
-        Decorator to intercept function calls.
-
-        Args:
-            target_path: Path to the target function (e.g., &#34;$PatchMe.thing&#34;)
-
-        Returns:
-            Decorator function
+        Decorator to intercept and modify a function&#39;s arguments at call-time.
         &#34;&#34;&#34;
 
-        def decorator(func: Callable[[Args], Args]) -&gt; Callable[[Args], Args]:
+        self.needs_pyhl = True
+
+        def decorator(
+            func: Callable[[hlrun.Args], hlrun.Args],
+        ) -&gt; Callable[[hlrun.Args], hlrun.Args]:
             self.interceptions[fn] = func
             return func
 
         return decorator
 
-    def _intercept(self, code: Bytecode, fn: Function, interceptor: Callable[[Args], Args]) -&gt; None:
+    def patch(
+        self, fn: str | int
+    ) -&gt; Callable[[Callable[[Bytecode, Function], None]], Callable[[Bytecode, Function], None]]:
+        &#34;&#34;&#34;
+        Decorator to patch a function&#39;s opcodes directly.
+        &#34;&#34;&#34;
+
+        def decorator(
+            func: Callable[[Bytecode, Function], None],
+        ) -&gt; Callable[[Bytecode, Function], None]:
+            self.patches[fn] = func
+            return func
+
+        return decorator
+
+    def _intercept(self, code: Bytecode, fn: Function, identifier: str | int) -&gt; None:
         &#34;&#34;&#34;
         Apply an interception.
         &#34;&#34;&#34;
-        # HACK: finds arg regs by looking at where the first Void arg appears. terrible and i hate it but... probably the best way to do this w/out looking at xrefs
-        arg_regs: List[tIndex] = []
-        for reg in fn.regs:
-            if reg.resolve(code).kind.value == Type.Kind.VOID.value:
-                break
-            arg_regs.append(reg)
-
+        arg_regs = fn.resolve_fun(code).args
         arg_virt = Virtual()
         arg_virt.fields.extend([Field(code.add_string(f&#34;arg_{i}&#34;), typ) for i, typ in enumerate(arg_regs)])
         arg_typ = Type()
         arg_typ.kind.value = Type.Kind.VIRTUAL.value
         arg_typ.definition = arg_virt
-        # arg_tid = code.add_type(arg_typ)
-        # TODO: why does this cause overruns???
+        arg_tid = code.add_type(arg_typ)
 
-        fn.regs.append(code.find_prim_type(Type.Kind.VOID))
-        void_reg = Reg(len(fn.regs) - 1)
+        types_str = &#34;,&#34;.join([str(arg.resolve(code).kind.value) for arg in arg_regs])
+
+        # fn.regs.append(code.find_prim_type(Type.Kind.VOID))
+        # void_reg = Reg(len(fn.regs) - 1)
         bytes_type = code.find_prim_type(Type.Kind.BYTES)
-        fn.regs.extend([bytes_type, bytes_type])
-        mod_reg = Reg(len(fn.regs) - 2)
-        fn_reg = Reg(len(fn.regs) - 1)
+        fn.regs.append(bytes_type)
+        fn_name_reg = Reg(len(fn.regs) - 1)
+        fn.regs.append(code.find_prim_type(Type.Kind.I32))
+        nargs_reg = Reg(len(fn.regs) - 1)
+        fn.regs.append(arg_tid)
+        virt_reg = Reg(len(fn.regs) - 1)
+        fn.regs.append(code.find_prim_type(Type.Kind.BOOL))
+        ret_reg = Reg(len(fn.regs) - 1)
+        fn.regs.append(code.find_prim_type(Type.Kind.BYTES))
+        types_reg = Reg(len(fn.regs) - 1)
 
         op = Opcode()
-        op.op = &#34;Call2&#34;
-        op.definition = {&#34;dst&#34;: void_reg, &#34;fun&#34;: self.custom_fns[&#34;call&#34;], &#34;arg0&#34;: mod_reg, &#34;arg1&#34;: fn_reg}
+        op.op = &#34;Call4&#34;
+        op.df = {
+            &#34;dst&#34;: ret_reg,
+            &#34;fun&#34;: self.custom_fns[&#34;intercept&#34;],
+            &#34;arg0&#34;: virt_reg,
+            &#34;arg1&#34;: nargs_reg,
+            &#34;arg2&#34;: fn_name_reg,
+            &#34;arg3&#34;: types_reg,
+        }
         fn.insert_op(code, 0, op)
 
         op = Opcode()
         op.op = &#34;String&#34;
-        op.definition = {&#34;dst&#34;: mod_reg, &#34;ptr&#34;: code.add_string(&#34;mod&#34;)}
+        op.df = {&#34;dst&#34;: fn_name_reg, &#34;ptr&#34;: code.add_string(str(identifier))}
         fn.insert_op(code, 0, op)
 
         op = Opcode()
         op.op = &#34;String&#34;
-        op.definition = {&#34;dst&#34;: fn_reg, &#34;ptr&#34;: code.add_string(&#34;test&#34;)}
+        op.df = {&#34;dst&#34;: types_reg, &#34;ptr&#34;: code.add_string(types_str)}
+        fn.insert_op(code, 0, op)
+
+        op = Opcode()
+        op.op = &#34;Int&#34;
+        op.df = {&#34;dst&#34;: nargs_reg, &#34;ptr&#34;: code.add_i32(len(arg_regs))}
+        fn.insert_op(code, 0, op)
+
+        for i in reversed(range(len(arg_regs))):
+            op = Opcode()
+            op.op = &#34;SetField&#34;
+            op.df = {&#34;obj&#34;: virt_reg, &#34;field&#34;: fieldRef(i), &#34;src&#34;: Reg(i)}
+            fn.insert_op(code, 0, op)
+
+        op = Opcode()
+        op.op = &#34;New&#34;
+        op.df = {&#34;dst&#34;: virt_reg}
         fn.insert_op(code, 0, op)
 
     def _apply_pyhl(self, code: Bytecode) -&gt; None:
         print(&#34;Installing pyhl native...&#34;)
-        pyhl_funcs: Dict[str, Optional[tIndex]] = {&#34;init&#34;: None, &#34;deinit&#34;: None, &#34;call&#34;: None}
-        indices: Dict[str, Optional[fIndex]] = {&#34;init&#34;: None, &#34;deinit&#34;: None, &#34;call&#34;: None}
+        pyhl_funcs: Dict[str, Optional[tIndex]] = {
+            &#34;init&#34;: None,
+            &#34;deinit&#34;: None,
+            &#34;call&#34;: None,
+            &#34;intercept&#34;: None,
+        }
+        indices: Dict[str, Optional[fIndex]] = {
+            &#34;init&#34;: None,
+            &#34;deinit&#34;: None,
+            &#34;call&#34;: None,
+            &#34;intercept&#34;: None,
+        }
         for func in pyhl_funcs.keys():
             print(f&#34;Generating types for pyhl.{func}&#34;)
             voi = code.find_prim_type(Type.Kind.VOID)
@@ -252,6 +212,19 @@ Allows accessing arguments by index and supports type tracking.</p></div>
                     fun = Fun()
                     byt = code.find_prim_type(Type.Kind.BYTES)
                     fun.args = [byt, byt]
+                    fun.ret = code.find_prim_type(Type.Kind.BOOL)
+                    typ.definition = fun
+                    pyhl_funcs[func] = code.add_type(typ)
+                case &#34;intercept&#34;:
+                    typ = Type()
+                    typ.kind.value = Type.Kind.FUN.value
+                    fun = Fun()
+                    fun.args = [
+                        code.find_prim_type(Type.Kind.DYN),
+                        code.find_prim_type(Type.Kind.I32),
+                        code.find_prim_type(Type.Kind.BYTES),
+                        code.find_prim_type(Type.Kind.BYTES),
+                    ]
                     fun.ret = code.find_prim_type(Type.Kind.BOOL)
                     typ.definition = fun
                     pyhl_funcs[func] = code.add_type(typ)
@@ -275,7 +248,7 @@ Allows accessing arguments by index and supports type tracking.</p></div>
 
     def apply(self, code: Bytecode) -&gt; None:
         &#34;&#34;&#34;
-        Apply all registered hooks and patches.
+        Apply all registered hooks and patches. own_source should be a string containing the entire source code of the module containing the initialization of this class.
         &#34;&#34;&#34;
         assert code.is_ok()
         print(f&#34;----- Applying patch:{&#39; &#39; + self.name if self.name else &#39;&#39;} -----&#34;)
@@ -292,40 +265,51 @@ Allows accessing arguments by index and supports type tracking.</p></div>
             op = Opcode()
             op.op = &#34;Call0&#34;
             assert self.custom_fns[&#34;init&#34;] is not None, &#34;Invalid fIndex!&#34;
-            op.definition = {&#34;dst&#34;: void_reg, &#34;fun&#34;: self.custom_fns[&#34;init&#34;]}
+            op.df = {&#34;dst&#34;: void_reg, &#34;fun&#34;: self.custom_fns[&#34;init&#34;]}
             entry.insert_op(code, 0, op)
 
         for identifier, interceptor in self.interceptions.items():
             if isinstance(identifier, int):
                 fn = fIndex(identifier).resolve(code)
             else:
-                match: Optional[Function] = None
+                mtch: Optional[Function] = None
                 for fn in code.functions:
                     if full_func_name(code, fn) == identifier:
-                        match = fn
-                if not match:
+                        mtch = fn
+                if not mtch:
                     raise NameError(f&#34;No such function &#39;{identifier}&#39;&#34;)
-                fn = match
+                fn = mtch
             assert not isinstance(fn, Native), &#34;Cannot intercept a native! (Yet...)&#34;  # TODO: native intercept
-            print(
-                f&#34;(Intercept) {func_header(code, fn)}\n\tTO -&gt; pyhl&#34;
-            )  # TODO: other handlers than pyhl, custom hdll injection, etc.
-            self._intercept(code, fn, interceptor)
+            print(f&#34;(Intercept) {func_header(code, fn)}&#34;)  # TODO: other handlers than pyhl
+            self._intercept(code, fn, identifier)
 
-        code.set_meta()
-        assert code.is_ok()</code></pre>
+        for identifier, patch in self.patches.items():
+            if isinstance(identifier, int):
+                fn = fIndex(identifier).resolve(code)
+            else:
+                mtch = None
+                for fn in code.functions:
+                    if full_func_name(code, fn) == identifier:
+                        mtch = fn
+                if not mtch:
+                    raise NameError(f&#34;No such function &#39;{identifier}&#39;&#34;)
+                fn = mtch
+            assert not isinstance(fn, Native), &#34;Cannot patch a native!&#34;
+            print(f&#34;(Patch) {func_header(code, fn)}&#34;)
+            patch(code, fn)
+
+        code.set_meta()  # just to be safe
+        assert code.is_ok()
+
+    def do_intercept(self, args: hlrun.Args, identifier: str | int) -&gt; hlrun.Args:
+        &#34;&#34;&#34;
+        Called at runtime by pyhl to intercept a call. Do not call manually!
+        &#34;&#34;&#34;
+        return self.interceptions[identifier](args)</code></pre>
 </details>
 <div class="desc"><p>Main patching class that manages bytecode hooks and patches.</p>
 <p>Initialize a new patch.</p>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>name</code></strong></dt>
-<dd>Descriptive name of the patch</dd>
-<dt><strong><code>author</code></strong></dt>
-<dd>Author of the patch</dd>
-<dt><strong><code>sha256</code></strong></dt>
-<dd>SHA256 hash of the input bytecode file</dd>
-</dl></div>
+<p>Note: sha256 is hash of input file</p></div>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.patch.Patch.apply"><code class="name flex">
@@ -338,7 +322,7 @@ Allows accessing arguments by index and supports type tracking.</p></div>
 </summary>
 <pre><code class="python">def apply(self, code: Bytecode) -&gt; None:
     &#34;&#34;&#34;
-    Apply all registered hooks and patches.
+    Apply all registered hooks and patches. own_source should be a string containing the entire source code of the module containing the initialization of this class.
     &#34;&#34;&#34;
     assert code.is_ok()
     print(f&#34;----- Applying patch:{&#39; &#39; + self.name if self.name else &#39;&#39;} -----&#34;)
@@ -355,64 +339,111 @@ Allows accessing arguments by index and supports type tracking.</p></div>
         op = Opcode()
         op.op = &#34;Call0&#34;
         assert self.custom_fns[&#34;init&#34;] is not None, &#34;Invalid fIndex!&#34;
-        op.definition = {&#34;dst&#34;: void_reg, &#34;fun&#34;: self.custom_fns[&#34;init&#34;]}
+        op.df = {&#34;dst&#34;: void_reg, &#34;fun&#34;: self.custom_fns[&#34;init&#34;]}
         entry.insert_op(code, 0, op)
 
     for identifier, interceptor in self.interceptions.items():
         if isinstance(identifier, int):
             fn = fIndex(identifier).resolve(code)
         else:
-            match: Optional[Function] = None
+            mtch: Optional[Function] = None
             for fn in code.functions:
                 if full_func_name(code, fn) == identifier:
-                    match = fn
-            if not match:
+                    mtch = fn
+            if not mtch:
                 raise NameError(f&#34;No such function &#39;{identifier}&#39;&#34;)
-            fn = match
+            fn = mtch
         assert not isinstance(fn, Native), &#34;Cannot intercept a native! (Yet...)&#34;  # TODO: native intercept
-        print(
-            f&#34;(Intercept) {func_header(code, fn)}\n\tTO -&gt; pyhl&#34;
-        )  # TODO: other handlers than pyhl, custom hdll injection, etc.
-        self._intercept(code, fn, interceptor)
+        print(f&#34;(Intercept) {func_header(code, fn)}&#34;)  # TODO: other handlers than pyhl
+        self._intercept(code, fn, identifier)
 
-    code.set_meta()
+    for identifier, patch in self.patches.items():
+        if isinstance(identifier, int):
+            fn = fIndex(identifier).resolve(code)
+        else:
+            mtch = None
+            for fn in code.functions:
+                if full_func_name(code, fn) == identifier:
+                    mtch = fn
+            if not mtch:
+                raise NameError(f&#34;No such function &#39;{identifier}&#39;&#34;)
+            fn = mtch
+        assert not isinstance(fn, Native), &#34;Cannot patch a native!&#34;
+        print(f&#34;(Patch) {func_header(code, fn)}&#34;)
+        patch(code, fn)
+
+    code.set_meta()  # just to be safe
     assert code.is_ok()</code></pre>
 </details>
-<div class="desc"><p>Apply all registered hooks and patches.</p></div>
+<div class="desc"><p>Apply all registered hooks and patches. own_source should be a string containing the entire source code of the module containing the initialization of this class.</p></div>
 </dd>
-<dt id="crashlink.patch.Patch.intercept"><code class="name flex">
-<span>def <span class="ident">intercept</span></span>(<span>self, fn: str | int) ‑> Callable[[Callable[[<a title="crashlink.patch.Args" href="#crashlink.patch.Args">Args</a>], <a title="crashlink.patch.Args" href="#crashlink.patch.Args">Args</a>]], Callable[[<a title="crashlink.patch.Args" href="#crashlink.patch.Args">Args</a>], <a title="crashlink.patch.Args" href="#crashlink.patch.Args">Args</a>]]</span>
+<dt id="crashlink.patch.Patch.do_intercept"><code class="name flex">
+<span>def <span class="ident">do_intercept</span></span>(<span>self, args: hlrun.core.Args, identifier: str | int) ‑> hlrun.core.Args</span>
 </code></dt>
 <dd>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def intercept(self, fn: str | int) -&gt; Callable[[Callable[[Args], Args]], Callable[[Args], Args]]:
+<pre><code class="python">def do_intercept(self, args: hlrun.Args, identifier: str | int) -&gt; hlrun.Args:
     &#34;&#34;&#34;
-    Decorator to intercept function calls.
-
-    Args:
-        target_path: Path to the target function (e.g., &#34;$PatchMe.thing&#34;)
-
-    Returns:
-        Decorator function
+    Called at runtime by pyhl to intercept a call. Do not call manually!
+    &#34;&#34;&#34;
+    return self.interceptions[identifier](args)</code></pre>
+</details>
+<div class="desc"><p>Called at runtime by pyhl to intercept a call. Do not call manually!</p></div>
+</dd>
+<dt id="crashlink.patch.Patch.intercept"><code class="name flex">
+<span>def <span class="ident">intercept</span></span>(<span>self, fn: str | int) ‑> Callable[[Callable[[hlrun.core.Args], hlrun.core.Args]], Callable[[hlrun.core.Args], hlrun.core.Args]]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def intercept(
+    self, fn: str | int
+) -&gt; Callable[[Callable[[hlrun.Args], hlrun.Args]], Callable[[hlrun.Args], hlrun.Args]]:
+    &#34;&#34;&#34;
+    Decorator to intercept and modify a function&#39;s arguments at call-time.
     &#34;&#34;&#34;
 
-    def decorator(func: Callable[[Args], Args]) -&gt; Callable[[Args], Args]:
+    self.needs_pyhl = True
+
+    def decorator(
+        func: Callable[[hlrun.Args], hlrun.Args],
+    ) -&gt; Callable[[hlrun.Args], hlrun.Args]:
         self.interceptions[fn] = func
         return func
 
     return decorator</code></pre>
 </details>
-<div class="desc"><p>Decorator to intercept function calls.</p>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>target_path</code></strong></dt>
-<dd>Path to the target function (e.g., "$PatchMe.thing")</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<p>Decorator function</p></div>
+<div class="desc"><p>Decorator to intercept and modify a function's arguments at call-time.</p></div>
+</dd>
+<dt id="crashlink.patch.Patch.patch"><code class="name flex">
+<span>def <span class="ident">patch</span></span>(<span>self, fn: str | int) ‑> Callable[[Callable[[<a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a>], None]], Callable[[<a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>, <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a>], None]]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def patch(
+    self, fn: str | int
+) -&gt; Callable[[Callable[[Bytecode, Function], None]], Callable[[Bytecode, Function], None]]:
+    &#34;&#34;&#34;
+    Decorator to patch a function&#39;s opcodes directly.
+    &#34;&#34;&#34;
+
+    def decorator(
+        func: Callable[[Bytecode, Function], None],
+    ) -&gt; Callable[[Bytecode, Function], None]:
+        self.patches[fn] = func
+        return func
+
+    return decorator</code></pre>
+</details>
+<div class="desc"><p>Decorator to patch a function's opcodes directly.</p></div>
 </dd>
 </dl>
 </dd>
@@ -432,18 +463,12 @@ Allows accessing arguments by index and supports type tracking.</p></div>
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
 <li>
-<h4><code><a title="crashlink.patch.Args" href="#crashlink.patch.Args">Args</a></code></h4>
-<ul class="">
-<li><code><a title="crashlink.patch.Args.get_type" href="#crashlink.patch.Args.get_type">get_type</a></code></li>
-<li><code><a title="crashlink.patch.Args.items" href="#crashlink.patch.Args.items">items</a></code></li>
-<li><code><a title="crashlink.patch.Args.set_type" href="#crashlink.patch.Args.set_type">set_type</a></code></li>
-</ul>
-</li>
-<li>
 <h4><code><a title="crashlink.patch.Patch" href="#crashlink.patch.Patch">Patch</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.patch.Patch.apply" href="#crashlink.patch.Patch.apply">apply</a></code></li>
+<li><code><a title="crashlink.patch.Patch.do_intercept" href="#crashlink.patch.Patch.do_intercept">do_intercept</a></code></li>
 <li><code><a title="crashlink.patch.Patch.intercept" href="#crashlink.patch.Patch.intercept">intercept</a></code></li>
+<li><code><a title="crashlink.patch.Patch.patch" href="#crashlink.patch.Patch.patch">patch</a></code></li>
 </ul>
 </li>
 </ul>
@@ -452,7 +477,7 @@ Allows accessing arguments by index and supports type tracking.</p></div>
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
 </footer>
 </body>
 </html>

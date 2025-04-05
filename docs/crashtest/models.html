@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
-<meta name="generator" content="pdoc3 0.11.5">
+<meta name="generator" content="pdoc3 0.11.6">
 <title>crashtest.models API documentation</title>
 <meta name="description" content="Dataclass models.">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
@@ -116,29 +116,6 @@ class GitInfo:
         return cls(**data)</code></pre>
 </details>
 <div class="desc"><p>Represents information about the git branch and commit, or lack thereof.</p></div>
-<h3>Class variables</h3>
-<dl>
-<dt id="crashtest.models.GitInfo.branch"><code class="name">var <span class="ident">branch</span> : str | None</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashtest.models.GitInfo.commit"><code class="name">var <span class="ident">commit</span> : str | None</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashtest.models.GitInfo.dirty"><code class="name">var <span class="ident">dirty</span> : bool</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashtest.models.GitInfo.github"><code class="name">var <span class="ident">github</span> : str | None</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashtest.models.GitInfo.is_release"><code class="name">var <span class="ident">is_release</span> : bool</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-</dl>
 <h3>Static methods</h3>
 <dl>
 <dt id="crashtest.models.GitInfo.from_json"><code class="name flex">
@@ -146,6 +123,29 @@ class GitInfo:
 </code></dt>
 <dd>
 <div class="desc"></div>
+</dd>
+</dl>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashtest.models.GitInfo.branch"><code class="name">var <span class="ident">branch</span> : str | None</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.GitInfo.commit"><code class="name">var <span class="ident">commit</span> : str | None</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.GitInfo.dirty"><code class="name">var <span class="ident">dirty</span> : bool</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.GitInfo.github"><code class="name">var <span class="ident">github</span> : str | None</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.GitInfo.is_release"><code class="name">var <span class="ident">is_release</span> : bool</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -212,37 +212,6 @@ class Run:
         )</code></pre>
 </details>
 <div class="desc"><p>Represents a complete test run with git+version info and multiple test cases.</p></div>
-<h3>Class variables</h3>
-<dl>
-<dt id="crashtest.models.Run.cases"><code class="name">var <span class="ident">cases</span> : List[<a title="crashtest.models.TestCase" href="#crashtest.models.TestCase">TestCase</a>]</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashtest.models.Run.context"><code class="name">var <span class="ident">context</span> : <a title="crashtest.models.TestContext" href="#crashtest.models.TestContext">TestContext</a></code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashtest.models.Run.git"><code class="name">var <span class="ident">git</span> : <a title="crashtest.models.GitInfo" href="#crashtest.models.GitInfo">GitInfo</a></code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashtest.models.Run.id"><code class="name">var <span class="ident">id</span> : str</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashtest.models.Run.status"><code class="name">var <span class="ident">status</span> : str</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashtest.models.Run.status_color"><code class="name">var <span class="ident">status_color</span> : str</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashtest.models.Run.timestamp"><code class="name">var <span class="ident">timestamp</span> : str</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-</dl>
 <h3>Static methods</h3>
 <dl>
 <dt id="crashtest.models.Run.from_json"><code class="name flex">
@@ -250,6 +219,37 @@ class Run:
 </code></dt>
 <dd>
 <div class="desc"></div>
+</dd>
+</dl>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashtest.models.Run.cases"><code class="name">var <span class="ident">cases</span> : List[<a title="crashtest.models.TestCase" href="#crashtest.models.TestCase">TestCase</a>]</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.Run.context"><code class="name">var <span class="ident">context</span> : <a title="crashtest.models.TestContext" href="#crashtest.models.TestContext">TestContext</a></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.Run.git"><code class="name">var <span class="ident">git</span> : <a title="crashtest.models.GitInfo" href="#crashtest.models.GitInfo">GitInfo</a></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.Run.id"><code class="name">var <span class="ident">id</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.Run.status"><code class="name">var <span class="ident">status</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.Run.status_color"><code class="name">var <span class="ident">status_color</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.Run.timestamp"><code class="name">var <span class="ident">timestamp</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -324,37 +324,6 @@ class TestCase:
         )</code></pre>
 </details>
 <div class="desc"><p>Represents a test case.</p></div>
-<h3>Class variables</h3>
-<dl>
-<dt id="crashtest.models.TestCase.decompiled"><code class="name">var <span class="ident">decompiled</span> : <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a></code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashtest.models.TestCase.error"><code class="name">var <span class="ident">error</span> : str | None</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashtest.models.TestCase.failed"><code class="name">var <span class="ident">failed</span> : bool</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashtest.models.TestCase.ir"><code class="name">var <span class="ident">ir</span> : <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a></code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashtest.models.TestCase.original"><code class="name">var <span class="ident">original</span> : <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a></code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashtest.models.TestCase.test_id"><code class="name">var <span class="ident">test_id</span> : int</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashtest.models.TestCase.test_name"><code class="name">var <span class="ident">test_name</span> : str | None</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-</dl>
 <h3>Static methods</h3>
 <dl>
 <dt id="crashtest.models.TestCase.from_json"><code class="name flex">
@@ -362,6 +331,37 @@ class TestCase:
 </code></dt>
 <dd>
 <div class="desc"></div>
+</dd>
+</dl>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashtest.models.TestCase.decompiled"><code class="name">var <span class="ident">decompiled</span> : <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.TestCase.error"><code class="name">var <span class="ident">error</span> : str | None</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.TestCase.failed"><code class="name">var <span class="ident">failed</span> : bool</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.TestCase.ir"><code class="name">var <span class="ident">ir</span> : <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.TestCase.original"><code class="name">var <span class="ident">original</span> : <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.TestCase.test_id"><code class="name">var <span class="ident">test_id</span> : int</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.TestCase.test_name"><code class="name">var <span class="ident">test_name</span> : str | None</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -414,13 +414,6 @@ class TestContext:
         return cls(**data)</code></pre>
 </details>
 <div class="desc"><p>Represents the context for a complete test suite run.</p></div>
-<h3>Class variables</h3>
-<dl>
-<dt id="crashtest.models.TestContext.version"><code class="name">var <span class="ident">version</span> : str</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-</dl>
 <h3>Static methods</h3>
 <dl>
 <dt id="crashtest.models.TestContext.from_json"><code class="name flex">
@@ -428,6 +421,13 @@ class TestContext:
 </code></dt>
 <dd>
 <div class="desc"></div>
+</dd>
+</dl>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashtest.models.TestContext.version"><code class="name">var <span class="ident">version</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -473,17 +473,6 @@ class TestFile:
         return cls(**data)</code></pre>
 </details>
 <div class="desc"><p>Represents a file and its content.</p></div>
-<h3>Class variables</h3>
-<dl>
-<dt id="crashtest.models.TestFile.content"><code class="name">var <span class="ident">content</span> : str</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="crashtest.models.TestFile.name"><code class="name">var <span class="ident">name</span> : str</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-</dl>
 <h3>Static methods</h3>
 <dl>
 <dt id="crashtest.models.TestFile.from_json"><code class="name flex">
@@ -491,6 +480,17 @@ class TestFile:
 </code></dt>
 <dd>
 <div class="desc"></div>
+</dd>
+</dl>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashtest.models.TestFile.content"><code class="name">var <span class="ident">content</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.TestFile.name"><code class="name">var <span class="ident">name</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -594,7 +594,7 @@ class TestFile:
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
 </footer>
 </body>
 </html>
