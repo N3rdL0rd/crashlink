@@ -143,6 +143,8 @@ def main_win() -> None:
                 print(f"Found Python lib at {lib_src}")
                 os.system(f'copy /Y "{lib_src}" "{lib_dest}"')
                 break
+            
+    os.system(f"copy /Y python_nuget\\tools\\python313.dll ")
 
     print("Cleaning up...")
     os.remove("python.nupkg")

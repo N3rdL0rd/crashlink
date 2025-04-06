@@ -59,7 +59,7 @@ profile:
 pyhl-prepare:
     cd pyhl && python install_python.py
 
-# Build the pyhl native hdll (Linux) - run pyhl-prepare
+# Build the pyhl native hdll (Linux) - run pyhl-prepare first
 pyhl:
     cd pyhl && make clean && make
     cp pyhl/pyhl.hdll pyhl/hashlink/build/bin/ || true
@@ -70,6 +70,8 @@ pyhl:
 pyhl-win:
     cd pyhl && nmake /f Makefile.win
     cp pyhl/pyhl.hdll pyhl/hashlink/build/bin/ || true
+    cp -r pyhl/python/lib/python3.14/ pyhl/hashlink/build/bin/lib-py || true
+    cp -r hlrun/ pyhl/hashlink/build/bin/lib-py/hlrun/ || true
 
 # Updates the hashlink submodule in pyhl/
 update-hl:
