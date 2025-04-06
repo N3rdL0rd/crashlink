@@ -24,17 +24,6 @@ local/
 *.hdll
 *.so
 *.a
-pyhl/Python-*
-pyhl/python*
-pyhl/include
-pyhl/python.tar.xz
-pyhl/libpython.a
-pyhl/lib
-pyhl/*.obj
-pyhl/*.pdb
-pyhl/*.exp
-pyhl/*.ilk
-pyhl/*.lib
 *.id*
 *.nam
 *.til

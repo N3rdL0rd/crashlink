@@ -1,0 +1,12 @@
+Python-*
+python*
+include
+python.tar.xz
+libpython.a
+lib
+*.obj
+*.pdb
+*.exp
+*.ilk
+*.lib
+*.def
