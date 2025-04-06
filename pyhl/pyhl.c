@@ -4,10 +4,23 @@
 #include <hl.h>
 #include <Python.h>
 #include <stdio.h>
-#include <libgen.h>
-#include <limits.h>
-#include <unistd.h>
 #include <string.h>
+#include <limits.h>
+
+// Platform-specific includes
+#ifdef _WIN32
+#include <Windows.h>
+#include <direct.h>  // for _getcwd
+
+#ifndef PATH_MAX
+#define PATH_MAX MAX_PATH
+#endif
+
+#define getcwd _getcwd
+#else
+#include <libgen.h>
+#include <unistd.h>
+#endif
 
 //////////
 #define DEBUG true
@@ -17,7 +30,7 @@
     do                           \
     {                            \
         if (DEBUG)               \
-        {                        \
+        {                            \
             printf("[pyhl] ");   \
             printf(__VA_ARGS__); \
         }                        \
@@ -39,6 +52,29 @@
         printf("\033[0m");                 \
     } while (0)
 
+// Helper function to extract directory from path on Windows
+#ifdef _WIN32
+char* dirname(char* path) {
+    static char dir[PATH_MAX];
+    strncpy(dir, path, PATH_MAX);
+    
+    // Find last separator
+    char* last_sep = strrchr(dir, '\\');
+    if (!last_sep) {
+        last_sep = strrchr(dir, '/');
+    }
+    
+    if (last_sep) {
+        *last_sep = '\0';  // Truncate at separator
+        return dir;
+    } else {
+        // No separator found, return "."
+        strcpy(dir, ".");
+        return dir;
+    }
+}
+#endif
+
 // Global references
 static PyObject *g_patchc = NULL;
 static PyObject *g_hlrun = NULL;
@@ -56,10 +92,18 @@ HL_PRIM void HL_NAME(init)()
 
         // get executable path and add to Python path
         char exe_path[PATH_MAX];
+        
+        #ifdef _WIN32
+        // Windows: use GetModuleFileName to get executable path
+        if (GetModuleFileNameA(NULL, exe_path, PATH_MAX) > 0)
+        {
+        #else
+        // Unix: use readlink on /proc/self/exe
         ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
         if (len != -1)
         {
             exe_path[len] = '\0';
+        #endif
             char *dir_path = dirname(exe_path);
 
             char py_command[PATH_MAX + 32];
@@ -69,7 +113,11 @@ HL_PRIM void HL_NAME(init)()
             dbg_print("Added binary path to Python sys.path: %s\n", dir_path);
 
             char bin_lib_py[PATH_MAX];
+            #ifdef _WIN32
+            snprintf(bin_lib_py, sizeof(bin_lib_py), "%s\\lib-py", dir_path);
+            #else
             snprintf(bin_lib_py, sizeof(bin_lib_py), "%s/lib-py", dir_path);
+            #endif
             snprintf(py_command, sizeof(py_command), "sys.path.insert(0, '%s')", bin_lib_py);
             PyRun_SimpleString(py_command);
             dbg_print("Added binary lib-py to Python sys.path: %s\n", bin_lib_py);
@@ -88,7 +136,49 @@ HL_PRIM void HL_NAME(init)()
             warn("Could not determine binary path\n");
         }
 
-        // read from command-line to find input file
+        // read command line arguments
+        #ifdef _WIN32
+        // Windows: use GetCommandLineA and parse it
+        char cmd_args[PATH_MAX * 4] = {0};
+        strncpy(cmd_args, GetCommandLineA(), sizeof(cmd_args) - 1);
+        
+        // Simple command line parsing - find last argument
+        char *last_arg = NULL;
+        char *arg = cmd_args;
+        bool in_quotes = false;
+        
+        while (*arg) {
+            // Skip leading whitespace
+            while (*arg == ' ' || *arg == '\t') arg++;
+            
+            // Mark start of this argument
+            char *start = arg;
+            
+            // Handle quoted arguments
+            if (*arg == '"') {
+                in_quotes = true;
+                start++; // Skip the quote
+                arg++;
+                
+                // Find end of quoted section
+                while (*arg && (*arg != '"' || in_quotes)) {
+                    if (*arg == '"') in_quotes = false;
+                    arg++;
+                }
+                
+                if (*arg == '"') *arg++ = '\0'; // Replace closing quote with null
+            } else {
+                // Find end of non-quoted argument
+                while (*arg && *arg != ' ' && *arg != '\t') arg++;
+                
+                if (*arg) *arg++ = '\0';
+            }
+            
+            if (*start) last_arg = start;
+        }
+        
+        #else
+        // Unix: read from /proc/self/cmdline
         FILE *cmdline = fopen("/proc/self/cmdline", "r");
         if (cmdline)
         {
@@ -114,10 +204,16 @@ HL_PRIM void HL_NAME(init)()
                     }
                     arg++;
                 }
-
+        #endif
+                
                 if (last_arg && *last_arg)
                 {
+                    #ifdef _WIN32
+                    char *input_path = _strdup(last_arg);
+                    #else
                     char *input_path = strdup(last_arg);
+                    #endif
+                    
                     if (input_path)
                     {
                         char *input_dir = dirname(input_path);
@@ -131,12 +227,14 @@ HL_PRIM void HL_NAME(init)()
                         free(input_path);
                     }
                 }
+        #ifndef _WIN32
             }
         }
         else
         {
             warn("Could not read command line arguments\n");
         }
+        #endif
 
         PyRun_SimpleString("import builtins\n");
         PyRun_SimpleString("builtins.RUNTIME = True\n");
@@ -650,7 +748,7 @@ HL_PRIM bool HL_NAME(intercept)(vdynamic *args, signed int nargs, vbyte *fn_name
     // now, pNewArgsHl is of type List[Any], and we can convert each type back to hl
     for (int i = 0; i < nargs; i++)
     {
-        char arg_name[10];
+        char arg_name[15];
         snprintf(arg_name, sizeof(arg_name), "arg_%d", i);
 
         // create py int for the index

@@ -1,18 +1,32 @@
-CC = cl
-CFLAGS = /LD /MD /EHsc /Zi /W3 /D_CRT_SECURE_NO_WARNINGS
-PYTHON_INCLUDE = .\include
-HASHLINK_INCLUDE = .\hashlink\src
-INCLUDES = /I$(PYTHON_INCLUDE) /I$(HASHLINK_INCLUDE)
+CC = gcc
+CFLAGS = -shared -g -Wall -D_CRT_SECURE_NO_WARNINGS -DHL_DLL
+PYTHON_INCLUDE = ./include
+HASHLINK_INCLUDE = ./hashlink/src
+INCLUDES = -I$(PYTHON_INCLUDE) -I$(HASHLINK_INCLUDE)
 
-PYTHON_LIBS = python313.lib
-WIN_LIBS = kernel32.lib user32.lib
+HASHLINK_LIB = ./hashlink/x64/Debug
+WIN_LIBS = -lkernel32 -luser32 -lm -lpthread -lz
 
 TARGET = pyhl.hdll
 
 all: $(TARGET)
 
-$(TARGET): pyhl.c
-    $(CC) $(CFLAGS) $(INCLUDES) /Fe:$@ pyhl.c $(PYTHON_LIBS) $(WIN_LIBS)
+$(TARGET): pyhl.c libpython.a libhl.a
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $< -L. -lpython -lhl $(WIN_LIBS)
+
+libpython.a: python313.def
+	dlltool -d python313.def -l libpython.a
+
+python313.def:
+	gendef python313.dll
+
+libhl.a: libhl.def
+	dlltool -d libhl.def -l libhl.a
+
+libhl.def:
+	gendef $(HASHLINK_LIB)/libhl.dll
 
 clean:
-    -del $(TARGET) *.obj *.lib *.exp *.pdb
+	rm -f $(TARGET) python313.def libpython.a libhl.def libhl.a
+
+.PHONY: all clean
