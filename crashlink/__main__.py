@@ -510,7 +510,7 @@ class Commands:
             return
 
     def virt(self, args: List[str]) -> None:
-        """Prints a virtual type by tIndex. `virt <index`"""
+        """Prints a virtual type by tIndex. `virt <index>`"""
         if len(args) == 0:
             print("Usage: virt <index>")
             return
@@ -543,7 +543,28 @@ class Commands:
                 print(disasm.func_header(self.code, func))
                 return
         print("Function not found.")
-
+        
+    def apidocs(self, args: List[str]) -> None:
+        """Generate API documentation for all classes in the bytecode based on what can be inferred. Outputs to the given path. `apidocs <path>`"""
+        if len(args) == 0:
+            print("Usage: apidocs <path>")
+            return
+        path = args[0]
+        if not os.path.exists(path):
+            os.makedirs(path)
+        if not self.code.debugfiles:
+            print("No debug files found.")
+            return
+        docs: Dict[str, str] = disasm.gen_docs(self.code)
+        for file, content in docs.items():
+            try:
+                os.makedirs(os.path.join(path, os.path.dirname(file)), exist_ok=True)
+                with open(os.path.join(path, file), "w") as f:
+                    f.write(content)
+            except OSError:
+                print(f"Failed to write to {os.path.join(path, file)}")
+        print(f"Files generated in {os.path.abspath(path)}")
+        
     def _get_commands(self) -> Dict[str, Callable[[List[str]], None]]:
         """Get all command methods using reflection"""
         return {
