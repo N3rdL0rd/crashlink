@@ -148,7 +148,7 @@ def main_win() -> None:
     
     print("Copying Lib...")
     lib_src = os.path.join("python_nuget", "tools", "Lib")
-    lib_dest = os.path.join(prefix, "lib-py")
+    lib_dest = "lib-py"
     if os.path.exists(lib_src):
         print(f"Found Lib directory at {lib_src}")
         os.system(f'xcopy /E /I /Y "{lib_src}" "{lib_dest}"')

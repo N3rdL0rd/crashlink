@@ -10,3 +10,4 @@ lib
 *.ilk
 *.lib
 *.def
+lib-py/
