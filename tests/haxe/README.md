@@ -1,17 +1,19 @@
-# Decompiler test data
+# crashlink Test Samples
 
-The files in this directory are used to test the decompiler output.
+The files in this directory are test samples used to test the disassembler and the decompiler.
 
 ## Building
 
-To build a particular source file :
+To build a particular source file:
 
-```shell
+```sh
 haxe -hl <file>.hl -main <file>.hx
 ```
 
-Or with [just](https://just.systems) :
+Or with [just](https://just.systems):
 
-```shell
+```sh
 just build <file>
 ```
+
+Based on [this directory](https://github.com/Gui-Yom/hlbc/tree/master/data) from [hlbc](https://github.com/Gui-Yom/hlbc).
