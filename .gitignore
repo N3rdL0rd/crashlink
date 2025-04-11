@@ -31,3 +31,4 @@ local/
 *.i64
 *crashlink_patch.py*
 histogram.svg
+test-docs/

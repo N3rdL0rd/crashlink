@@ -3,7 +3,14 @@ Human-readable disassembly of opcodes and utilities to work at a relatively low 
 """
 
 from ast import literal_eval
-from typing import List, Optional
+from typing import List, Optional, Dict
+try:
+    from tqdm import tqdm
+
+    USE_TQDM = True
+except ImportError:
+    USE_TQDM = False
+
 
 from .core import (
     Bytecode,
@@ -427,7 +434,47 @@ def from_asm(asm: str) -> List[Opcode]:
     return ops
 
 
-# ...existing code...
+def gen_docs_for_obj(code: Bytecode, obj: Obj) -> str:
+    """
+    Generates HTML documentation for an Obj. Returns the HTML string.
+    """
+    res = f"<h1>{obj.name.resolve(code)}</h1>"
+    res += "<h2>Fields</h2><ul>"
+    for field in obj.fields:
+        res += f"<li>{field.name.resolve(code)}: {type_name(code, field.type.resolve(code))}</li>"
+    res += "</ul>"
+    res += "<h2>Methods</h2><ul>"
+    for method in obj.protos:
+        res += f"<li>{func_header(code, method.findex.resolve(code))}</li>"
+    res += "</ul>"
+    return res
+
+
+def gen_docs(code: Bytecode) -> Dict[str, str]:
+    """
+    Generates a set of HTML documentation pages for all Objects in the bytecode. Returns Dict[path, html].
+    """
+    res = {}
+    kind = Type.TYPEDEFS.index(Obj)
+    try:
+        if not USE_TQDM:
+            for obj in code.types:
+                if obj.kind.value == kind:
+                    if not isinstance(obj.definition, Obj):
+                        raise TypeError(f"Expected Obj, got {obj.definition}")
+                    defn: Obj = obj.definition
+                    res[defn.name.resolve(code) + ".html"] = gen_docs_for_obj(code, defn)
+        else:
+                for obj in tqdm(code.types):
+                    if obj.kind.value == kind:
+                        if not isinstance(obj.definition, Obj):
+                            raise TypeError(f"Expected Obj, got {obj.definition}")
+                        defn: Obj = obj.definition
+                        res[defn.name.resolve(code) + ".html"] = gen_docs_for_obj(code, defn)
+    except KeyboardInterrupt:
+        print("Aborted.")
+    return res
+
 
 __all__ = [
     "type_name",
