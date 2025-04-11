@@ -66,7 +66,7 @@ pyhl:
     cp -r pyhl/python/lib/python3.14/ pyhl/hashlink/build/bin/lib-py || true
     cp -r hlrun/ pyhl/hashlink/build/bin/lib-py/hlrun/ || true
 
-# Build the pyhl native hdll (Windows) - run vcvarsall.bat and pyhl-prepare first
+# Build the pyhl native hdll (Windows) - run pyhl-prepare first
 pyhl-win:
     cd pyhl && nmake /f Makefile.win
     cp pyhl/pyhl.hdll pyhl/hashlink/build/bin/ || true
