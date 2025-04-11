@@ -1,7 +1,7 @@
 # This workflow will install Python dependencies, run tests and lint with a variety of Python versions
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
-name: Tests
+name: Tests/Linting
 
 on:
   push:
@@ -21,24 +21,24 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
-      with:
-        python-version: ${{ matrix.python-version }}
+
     - name: Install dependencies
       run: |
         python -m pip install -e .[dev]
+
     - name: Set up Haxe
       uses: krdlab/setup-haxe@v1
       with:
         haxe-version: 4.3.4
-    - uses: extractions/setup-just@v2
+
     - name: Build test samples
       run: |
-        just build-tests
+        bash -c 'cd tests/haxe && for f in *.hx; do haxe -hl "${f%.*}.hl" -main "$f"; done'
+
     - name: Test with pytest
       run: |
         pytest
+
     - name: Check with mypy
       run: |
         mypy --strict --check-untyped-defs crashlink

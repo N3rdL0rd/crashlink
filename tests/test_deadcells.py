@@ -10,6 +10,7 @@ POSSIBLE_LOCATIONS = [
     "D:\\SteamLibrary\\steamapps\\common\\Dead Cells\\deadcells.exe",
     "E:\\SteamLibrary\\steamapps\\common\\Dead Cells\\deadcells.exe",
     "F:\\SteamLibrary\\steamapps\\common\\Dead Cells\\deadcells.exe",
+    "~/.steam/steam/steamapps/common/Dead\\ Cells/hlboot.dat"
 ]
 
 
@@ -19,5 +20,6 @@ def test_deser_deadcells():
     if loc is None:
         print("Dead Cells not found. Skipping test.")
         assert True
+        return
     code = Bytecode.from_path(loc)
     assert code.is_ok()
