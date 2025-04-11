@@ -145,6 +145,21 @@ def main_win() -> None:
                 break
             
     os.system(f"copy /Y python_nuget\\tools\\python313.dll ")
+    
+    print("Copying Lib...")
+    lib_src = os.path.join("python_nuget", "tools", "Lib")
+    lib_dest = os.path.join(prefix, "lib-py")
+    if os.path.exists(lib_src):
+        print(f"Found Lib directory at {lib_src}")
+        os.system(f'xcopy /E /I /Y "{lib_src}" "{lib_dest}"')
+    else:
+        print(f"Lib directory not found at {lib_src}, searching...")
+        for root, dirs, files in os.walk("python_nuget"):
+            if "Lib" in dirs:
+                lib_src = os.path.join(root, "Lib")
+                print(f"Found Lib directory at {lib_src}")
+                os.system(f'xcopy /E /I /Y "{lib_src}" "{lib_dest}"')
+                break
 
     print("Cleaning up...")
     os.remove("python.nupkg")
