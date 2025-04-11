@@ -72,6 +72,7 @@ pyhl-win:
     cp pyhl/pyhl.hdll pyhl/hashlink/build/bin/ || true
     cp -r pyhl/python/lib/python3.14/ pyhl/hashlink/build/bin/lib-py || true
     cp -r hlrun/ pyhl/hashlink/build/bin/lib-py/hlrun/ || true
+    cp -r pyhl/
 
 # Updates the hashlink submodule in pyhl/
 update-hl:
