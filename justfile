@@ -70,9 +70,12 @@ pyhl:
 pyhl-win:
     cd pyhl && nmake /f Makefile.win
     cp pyhl/pyhl.hdll pyhl/hashlink/build/bin/ || true
-    cp -r pyhl/python/lib/python3.14/ pyhl/hashlink/build/bin/lib-py || true
+    cp -r pyhl/lib-py/ pyhl/hashlink/build/bin/lib-py || true
     cp -r hlrun/ pyhl/hashlink/build/bin/lib-py/hlrun/ || true
-    cp -r pyhl/
+    cp pyhl/pyhl.hdll ../hashlink/pyhl.hdll || true
+    rm -Rf ../hashlink/lib-py || true
+    cp -r pyhl/lib-py/ ../hashlink/lib-py || true
+    cp -r hlrun/ ../hashlink/lib-py/hlrun/ || true
 
 # Updates the hashlink submodule in pyhl/
 update-hl:
