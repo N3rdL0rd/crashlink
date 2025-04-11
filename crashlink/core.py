@@ -2079,6 +2079,20 @@ def full_func_name(code: Bytecode, func: Function | Native) -> str:
     return name
 
 
+def partial_func_name(code: Bytecode, func: Function | Native) -> str:
+    """
+    Generates a human-readable name for a function or native. Does not qualify the name with the object it belongs to.
+    """
+    proto = get_proto_for(code, func.findex.value)
+    if proto:
+        return proto.name.resolve(code)
+    else:
+        field = get_field_for(code, func.findex.value)
+        if field:
+            return field.name.resolve(code)
+    return "<none>"
+
+
 __all__ = [
     "full_func_name",
     "get_field_for",
