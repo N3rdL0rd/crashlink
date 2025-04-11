@@ -491,45 +491,18 @@ vdynamic *py_to_hl(PyObject *arg, char type)
     case 0: // void (HVOID)
         return NULL;
     case 1: // u8 (HUI8)
-        if (PyLong_Check(arg))
-        {
-            result = hl_alloc_dynamic(&hlt_dyn);
-            result->v.ui8 = (unsigned char)PyLong_AsUnsignedLong(arg);
-            if (PyErr_Occurred())
-            {
-                PyErr_Print();
-                return NULL;
-            }
-        }
+        warn("Can't handle U8. Whoops!\n");
         break;
     case 2: // u16 (HUI16)
-        if (PyLong_Check(arg))
-        {
-            result = hl_alloc_dynamic(&hlt_dyn);
-            result->v.ui16 = (unsigned short)PyLong_AsUnsignedLong(arg);
-            if (PyErr_Occurred())
-            {
-                PyErr_Print();
-                return NULL;
-            }
-        }
+        warn("Can't handle U16. Whoops!\n");
         break;
     case 3: // i32 (HI32)
-        if (PyLong_Check(arg))
-        {
-            result = hl_alloc_dynamic(&hlt_dyn);
-            result->v.i = (int)PyLong_AsLong(arg);
-            if (PyErr_Occurred())
-            {
-                PyErr_Print();
-                return NULL;
-            }
-        }
+        warn("Can't handle I32. Whoops!\n");
         break;
     case 4: // i64 (HI64)
         if (PyLong_Check(arg))
         {
-            result = hl_alloc_dynamic(&hlt_dyn);
+            result = hl_alloc_dynamic(&hlt_i64);
             result->v.i64 = PyLong_AsLongLong(arg);
             if (PyErr_Occurred())
             {
@@ -541,7 +514,7 @@ vdynamic *py_to_hl(PyObject *arg, char type)
     case 5: // f32 (HF32)
         if (PyFloat_Check(arg))
         {
-            result = hl_alloc_dynamic(&hlt_dyn);
+            result = hl_alloc_dynamic(&hlt_f32);
             result->v.f = (float)PyFloat_AsDouble(arg);
             if (PyErr_Occurred())
             {
@@ -553,7 +526,7 @@ vdynamic *py_to_hl(PyObject *arg, char type)
     case 6: // f64 (HF64)
         if (PyFloat_Check(arg))
         {
-            result = hl_alloc_dynamic(&hlt_dyn);
+            result = hl_alloc_dynamic(&hlt_f64);
             result->v.d = PyFloat_AsDouble(arg);
             if (PyErr_Occurred())
             {
@@ -565,7 +538,7 @@ vdynamic *py_to_hl(PyObject *arg, char type)
     case 7: // bool (HBOOL)
         if (PyBool_Check(arg))
         {
-            result = hl_alloc_dynamic(&hlt_dyn);
+            result = hl_alloc_dynamic(&hlt_bool);
             result->v.b = (arg == Py_True);
         }
         break;
