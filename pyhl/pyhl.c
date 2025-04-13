@@ -1,4 +1,4 @@
-// wait, what's the c equivalent of a docstring?
+// this has become a horrible horrible horrible hodgepodge of windows and unix apis, and i apologize in advance to anyone reading this in the future (including myself)
 
 #include <stdbool.h>
 
@@ -160,15 +160,72 @@ HL_PRIM void HL_NAME(init)()
         #ifdef DID_SHIM
         dbg_print("Using shim for PyRun_SimpleString\n");
         #endif
-        
+
+        dbg_print("===== Python Environment Variables =====\n");
+        #ifdef _WIN32
+        char pythonpath[32767] = {0};
+        char pythonhome[32767] = {0};
+        if (GetEnvironmentVariableA("PYTHONPATH", pythonpath, sizeof(pythonpath)))
+            dbg_print("PYTHONPATH: %s\n", pythonpath);
+        else
+            dbg_print("PYTHONPATH not set\n");
+            
+        if (GetEnvironmentVariableA("PYTHONHOME", pythonhome, sizeof(pythonhome)))
+            dbg_print("PYTHONHOME: %s\n", pythonhome);
+        else
+            dbg_print("PYTHONHOME not set\n");
+        #else
+        const char* pythonpath = getenv("PYTHONPATH");
+        const char* pythonhome = getenv("PYTHONHOME");
+        dbg_print("PYTHONPATH: %s\n", pythonpath ? pythonpath : "not set");
+        dbg_print("PYTHONHOME: %s\n", pythonhome ? pythonhome : "not set");
+        #endif
+        dbg_print("======================================\n");
+
+        char exe_path[PATH_MAX];
+        #ifdef _WIN32
+        if (GetModuleFileNameA(NULL, exe_path, PATH_MAX) > 0) {
+            char *dir_path = dirname(exe_path);
+            dbg_print("Executable directory: %s\n", dir_path);
+            
+            char lib_py_path[PATH_MAX];
+            snprintf(lib_py_path, sizeof(lib_py_path), "%s\\lib-py", dir_path);
+            
+            dbg_print("Setting Py_SetPythonHome to: %s\n", dir_path);
+            #ifdef _WIN32
+            wchar_t wide_path[PATH_MAX];
+            MultiByteToWideChar(CP_UTF8, 0, dir_path, -1, wide_path, PATH_MAX);
+            Py_SetPythonHome(wide_path);
+            
+            wchar_t wide_lib_path[PATH_MAX];
+            MultiByteToWideChar(CP_UTF8, 0, lib_py_path, -1, wide_lib_path, PATH_MAX);
+            Py_SetPath(wide_lib_path);
+            dbg_print("Setting Py_SetPath to: %s\n", lib_py_path);
+            #else
+            Py_SetPythonHome(dir_path);
+            #endif
+        }
+        #endif
+
+        dbg_print("Starting Python...\n");
+        Py_SetProgramName("pyhl");
         Py_Initialize();
+
+        dbg_print("Python initialization %s\n", Py_IsInitialized() ? "succeeded" : "failed");
+
+        dbg_print("Attempting to import encodings module...\n");
+        PyObject *encodingsMod = PyImport_ImportModule("encodings");
+        if (encodingsMod) {
+            dbg_print("Successfully imported encodings module\n");
+            Py_DECREF(encodingsMod);
+        } else {
+            dbg_print("Failed to import encodings module!\n");
+            PyErr_Print();
+        }
 
         PyRun_SimpleString("import sys");
         PyRun_SimpleString("sys.path = []");
         PyRun_SimpleString("sys.path.insert(0, '')");
-
-        // get executable path and add to Python path
-        char exe_path[PATH_MAX];
         
         #ifdef _WIN32
         // Windows: use GetModuleFileName to get executable path
@@ -342,6 +399,14 @@ HL_PRIM void HL_NAME(init)()
                     Py_DECREF(module_name);
                 }
             }
+            else
+            {
+                PyErr_Print();
+                err("Failed to get sys.modules\n");
+                exit(1);
+            }
+            Py_DECREF(patchMod);
+            Py_DECREF(sys_modules);
 
             g_patchc = PyObject_GetAttrString(patchMod, "patch");
             if (!g_patchc)
@@ -831,6 +896,7 @@ HL_PRIM bool HL_NAME(intercept)(vdynamic *args, signed int nargs, vbyte *fn_name
     Py_DECREF(pName);
     Py_DECREF(pInterceptArgs);
     Py_DECREF(pNewArgs);
+    Py_DECREF(pNewArgsHl);
 
     return true;
 }

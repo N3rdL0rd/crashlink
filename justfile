@@ -102,8 +102,7 @@ patchme-test-win:
     crashlink tests/haxe/PatchMe.hl -tDp tests/patch/patchme.py
     cp tests/haxe/PatchMe.hl.patch ../hashlink/PatchMe.hl.patch || true
     cp tests/haxe/crashlink_patch.py ../hashlink/crashlink_patch.py || true
-    set "PYTHONHOME=../hashlink/lib-py"
-    pushd ../hashlink && ./hl.exe PatchMe.hl.patch && popd
+    pushd ../hashlink && PYTHONPATH=$(pwd)/lib-py ./hl.exe PatchMe.hl.patch && popd
 
 # Clean the codebase
 clean:
