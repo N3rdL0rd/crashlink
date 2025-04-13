@@ -4,7 +4,7 @@ pyhl is a wrapper for the Python C API for HashLink, designed for crashlink's pa
 
 ## Why?
 
-crashlink is Python through and through - embedding a second language internally just feels icky, and this feels much more elegant to end users.
+crashlink is Python through and through - embedding a second language internally just feels icky, and this feels much more elegant to end users. (Internally, this is infinitely harder to work with and uglier to write for, but that's not the point.)
 
 ## Building
 
@@ -19,7 +19,7 @@ Windows:
 
 ```bash
 "C:\Program Files\Microsoft Visual Studio\2022\VC\Auxiliary\Build\vcvarsall.bat" x64 # assuming you're using VS2022
-python intall_python.py
+python install_python.py
 nmake /f Makefile.win
 ```
 

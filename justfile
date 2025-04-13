@@ -77,6 +77,7 @@ pyhl-win:
     rm -Rf ../hashlink/lib-py || true
     cp -r pyhl/lib-py/ ../hashlink/lib-py || true
     cp -r hlrun/ ../hashlink/lib-py/hlrun/ || true
+    cp pyhl/python3.dll ../hashlink/python3.dll || true
 
 # Updates the hashlink submodule in pyhl/
 update-hl:
@@ -100,12 +101,18 @@ patchme-test-win:
     @just pyhl-win
     crashlink tests/haxe/PatchMe.hl -tDp tests/patch/patchme.py
     cp tests/haxe/PatchMe.hl.patch ../hashlink/PatchMe.hl.patch || true
+    cp tests/haxe/crashlink_patch.py ../hashlink/crashlink_patch.py || true
+    set "PYTHONHOME=../hashlink/lib-py"
     pushd ../hashlink && ./hl.exe PatchMe.hl.patch && popd
 
 # Clean the codebase
 clean:
     rm -rf build dist crashlink.egg-info .mypy_cache .pytest_cache .coverage .coverage.* .tox .nox .hypothesis .pytest_cache tests.prof *_reser.dat
     rm -rf pyhl/include pyhl/libpython* pyhl/pyhl.hdll pyhl/hashlink/bin/pyhl.hdll pyhl/*.lib pyhl/*.dll pyhl/*.a pyhl/*.pdb pyhl/python
+    rm -rf pyhl/hashlink-bin
+    rm -rf pyhl/lib-py
+    rm -rf pyhl/pyhl.obj*
+    rm -rf pyhl/pyhl.exp
     @just update-hl
 
 # Full development workflow: format, check, test and generate docs

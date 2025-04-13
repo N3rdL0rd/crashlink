@@ -142,7 +142,8 @@ int PyRun_SimpleString_Shim(const char *command) {
     return 0;
 }
 
-#ifdef _WIN32
+#ifdef PyRun_SimpleString
+#define DID_SHIM
 #define PyRun_SimpleString PyRun_SimpleString_Shim
 #endif
 
@@ -156,6 +157,10 @@ HL_PRIM void HL_NAME(init)()
 {
     if (!Py_IsInitialized())
     {
+        #ifdef DID_SHIM
+        dbg_print("Using shim for PyRun_SimpleString\n");
+        #endif
+        
         Py_Initialize();
 
         PyRun_SimpleString("import sys");

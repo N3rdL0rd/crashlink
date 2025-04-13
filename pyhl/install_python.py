@@ -140,7 +140,7 @@ def main_win() -> None:
             python_libs = [f for f in files if f.lower().startswith("python") and f.lower().endswith(".lib")]
             if python_libs:
                 lib_src = os.path.join(root, python_libs[0])
-                lib_dest = os.path.join(INITIAL_DIR, "python313.lib")
+                lib_dest = os.path.join(INITIAL_DIR, "python3.lib")
                 print(f"Found Python lib at {lib_src}")
                 os.system(f'copy /Y "{lib_src}" "{lib_dest}"')
                 break
@@ -198,15 +198,19 @@ def main_win() -> None:
         print(f"Removed nested directory: {nested_dir}")
     else:
         print("No nested hashlink directory found")
+        
+    if os.path.exists("python313.dll") and os.path.exists("python313.lib"):
+        shutil.copy("python313.dll", "python3.dll")
+        shutil.copy("python313.lib", "python3.lib")
 
     if (
         os.path.exists(include_dir)
         and os.listdir(include_dir)
-        and os.path.exists(os.path.join(INITIAL_DIR, "python.lib"))
+        and os.path.exists(os.path.join(INITIAL_DIR, "python3.lib"))
     ):
         print("Python setup complete!")
     else:
-        print("WARNING: Some files may be missing. Check the include directory and python.lib file.")
+        print("WARNING: Some files may be missing. Check the include directory and python3.lib file.")
 
 
 if __name__ == "__main__":
