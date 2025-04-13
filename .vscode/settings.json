@@ -1,5 +1,6 @@
 {
     "cSpell.words": [
+        "argsc",
         "choco",
         "Clazz",
         "cornflowerblue",
@@ -12,6 +13,7 @@
         "debugfiles",
         "debuginfo",
         "decomp",
+        "DECREF",
         "defn",
         "deser",
         "deserialisation",
@@ -30,12 +32,23 @@
         "gindex",
         "gitmodules",
         "Graphviz",
+        "HABSTRACT",
         "hashlink",
         "Haxe",
+        "HBOOL",
+        "HBYTES",
         "hdll",
+        "HDYN",
+        "HDYNOBJ",
+        "HENUM",
+        "HFUN",
         "hlasm",
         "hlbc",
         "hlrun",
+        "HNULL",
+        "HOBJ",
+        "HVIRTUAL",
+        "HVOID",
         "ISFALSE",
         "isort",
         "ISTRUE",
@@ -67,6 +80,7 @@
         "opargs",
         "outpath",
         "pacman",
+        "patchc",
         "patchme",
         "pdoc",
         "pindex",
@@ -76,6 +90,8 @@
         "pyhl",
         "PYPI",
         "pytest",
+        "pythonhome",
+        "pythonpath",
         "reserialisation",
         "reserialised",
         "SDIV",
@@ -98,6 +114,7 @@
         "varint",
         "webbrowser",
         "worklist",
+        "XDECREF",
         "xlabel"
     ],
     "python.REPL.enableREPLSmartSend": false,
@@ -106,9 +123,5 @@
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
-    "mypy.targets": [
-        "crashlink",
-        "tests"
-    ],
     "python.analysis.autoImportCompletions": true
 }
