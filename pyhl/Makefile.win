@@ -2,19 +2,19 @@ HASHLINK_BIN = ./hashlink-bin
 HASHLINK = ./hashlink-bin/include
 
 PYTHON = ./include
-PYTHON_LIB = ./python313.lib
+PYTHON_LIB = ./python3.lib
 
-DEFINES = /D Py_LIMITED_API /D Py_BUILD_CORE_MODULE
+DEFINES = /D Py_BUILD_CORE_MODULE
 
 INCLUDE_FLAGS = /I . /I $(HASHLINK) /I $(PYTHON)
 
 all: pyhl.hdll
 
 pyhl.hdll: pyhl.obj
-	cl /LD /MD pyhl.obj "$(HASHLINK_BIN)\libhl.lib" "$(PYTHON_LIB)" /OUT:pyhl.hdll /VERBOSE:LIB
+	cl /LD /MD /DEBUG:FULL pyhl.obj "$(HASHLINK_BIN)\libhl.lib" "$(PYTHON_LIB)" /OUT:pyhl.hdll /VERBOSE:LIB /PDB:pyhl.pdb
 
 pyhl.obj: pyhl.c
-	cl /c /MD $(DEFINES) pyhl.c $(INCLUDE_FLAGS)
+	cl /c /MD /Zi /Fdpyhl.pdb $(DEFINES) pyhl.c $(INCLUDE_FLAGS)
 
 check_lib:
 	dumpbin /EXPORTS $(PYTHON_LIB)
