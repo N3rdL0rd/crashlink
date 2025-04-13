@@ -77,10 +77,27 @@ char* dirname(char* path) {
 }
 #endif
 
-int PyRun_SimpleString_Shim(const char *command) {
-    // The version of python3.lib shipped on nuget doesn't export PyRun_* - so we need to do some hacky shit to get it to work
-    // Basically, this calls `exec(command)`
+char* convert_path(const char* path) {
+    static char converted[PATH_MAX];
+    int i = 0;
+    
+    while (path[i] && i < PATH_MAX - 1) {
+        converted[i] = (path[i] == '\\') ? '/' : path[i];
+        i++;
+    }
+    converted[i] = '\0';
+    return converted;
+}
 
+int PyRun_SimpleString_Shim(const char *command) {
+    PyObject *main_module = PyImport_AddModule("__main__");
+    if (!main_module) {
+        PyErr_Print();
+        return -1;
+    }
+    
+    PyObject *globals = PyModule_GetDict(main_module);
+    
     PyObject *builtins = PyImport_ImportModule("builtins");
     if (!builtins) {
         PyErr_Print();
@@ -88,9 +105,10 @@ int PyRun_SimpleString_Shim(const char *command) {
     }
     
     PyObject *exec = PyObject_GetAttrString(builtins, "exec");
+    Py_DECREF(builtins);
+    
     if (!exec) {
         PyErr_Print();
-        Py_DECREF(builtins);
         return -1;
     }
     
@@ -98,17 +116,22 @@ int PyRun_SimpleString_Shim(const char *command) {
     if (!cmd) {
         PyErr_Print();
         Py_DECREF(exec);
-        Py_DECREF(builtins);
         return -1;
     }
     
-    PyObject *args = PyTuple_Pack(1, cmd);
+    PyObject *args = PyTuple_Pack(3, cmd, globals, globals);
+    if (!args) {
+        PyErr_Print();
+        Py_DECREF(cmd);
+        Py_DECREF(exec);
+        return -1;
+    }
+    
     PyObject *result = PyObject_CallObject(exec, args);
     
     Py_DECREF(args);
     Py_DECREF(cmd);
     Py_DECREF(exec);
-    Py_DECREF(builtins);
     
     if (!result) {
         PyErr_Print();
@@ -156,7 +179,7 @@ HL_PRIM void HL_NAME(init)()
             char *dir_path = dirname(exe_path);
 
             char py_command[PATH_MAX + 32];
-            snprintf(py_command, sizeof(py_command), "sys.path.insert(0, '%s')", dir_path);
+            snprintf(py_command, sizeof(py_command), "sys.path.insert(0, '%s')", convert_path(dir_path));
             PyRun_SimpleString(py_command);
 
             dbg_print("Added binary path to Python sys.path: %s\n", dir_path);
@@ -167,7 +190,7 @@ HL_PRIM void HL_NAME(init)()
             #else
             snprintf(bin_lib_py, sizeof(bin_lib_py), "%s/lib-py", dir_path);
             #endif
-            snprintf(py_command, sizeof(py_command), "sys.path.insert(0, '%s')", bin_lib_py);
+            snprintf(py_command, sizeof(py_command), "sys.path.insert(0, '%s')", convert_path(bin_lib_py));
             PyRun_SimpleString(py_command);
             dbg_print("Added binary lib-py to Python sys.path: %s\n", bin_lib_py);
 
@@ -175,7 +198,7 @@ HL_PRIM void HL_NAME(init)()
             char cwd[PATH_MAX];
             if (getcwd(cwd, sizeof(cwd)) != NULL)
             {
-                snprintf(py_command, sizeof(py_command), "sys.path.insert(0, '%s')", cwd);
+                snprintf(py_command, sizeof(py_command), "sys.path.insert(0, '%s')", convert_path(cwd));
                 PyRun_SimpleString(py_command);
                 dbg_print("Added CWD to Python sys.path: %s\n", cwd);
             }
@@ -269,7 +292,7 @@ HL_PRIM void HL_NAME(init)()
                         if (input_dir)
                         {
                             char py_command[PATH_MAX + 32];
-                            snprintf(py_command, sizeof(py_command), "sys.path.insert(0, '%s')", input_dir);
+                            snprintf(py_command, sizeof(py_command), "sys.path.insert(0, '%s')", convert_path(input_dir));
                             PyRun_SimpleString(py_command);
                             dbg_print("Added input file directory to Python sys.path: %s\n", input_dir);
                         }
