@@ -23,6 +23,12 @@ def main():
     
     args = sys.argv[1:]
     
+    # On Windows, convert file paths in arguments to absolute paths
+    if platform.system() == "Windows":
+        for i, arg in enumerate(args):
+            if os.path.exists(arg) or (len(arg) > 0 and not arg.startswith('-')):
+                args[i] = os.path.abspath(arg)
+    
     cmd = [hashlink_path] + args
     
     env = os.environ.copy()

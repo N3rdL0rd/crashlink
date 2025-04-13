@@ -3,6 +3,7 @@ import platform
 import shutil
 import subprocess
 import zipfile
+import glob
 
 import requests
 
@@ -166,6 +167,37 @@ def main_win() -> None:
 
     shutil.rmtree("python_nuget")
     shutil.rmtree("python", ignore_errors=True)
+    
+    print("Installing hashlink binaries...")
+    download_file("https://nightly.link/HaxeFoundation/hashlink/workflows/build/master/windows-cmake-64.zip", "hl.zip")
+    with zipfile.ZipFile("hl.zip", "r") as zip_ref:
+        zip_ref.extractall("hashlink-bin")
+    with zipfile.ZipFile(glob.glob("hashlink-bin/*.zip")[0], "r") as zip_ref:
+        zip_ref.extractall("hashlink-bin")
+    os.remove("hl.zip")
+    print("Flattening hashlink directory structure...")
+    nested_dirs = glob.glob(os.path.join("hashlink-bin", "hashlink-*-win64*"))
+    if nested_dirs:
+        nested_dir = nested_dirs[0]
+        print(f"Found nested hashlink directory: {nested_dir}")
+        
+        hashlink_bin_dir = os.path.dirname(nested_dir)
+        for item in os.listdir(nested_dir):
+            src = os.path.join(nested_dir, item)
+            dst = os.path.join(hashlink_bin_dir, item)
+            if os.path.isfile(src):
+                print(f"Moving {src} to {dst}")
+                shutil.copy2(src, dst)
+            elif os.path.isdir(src):
+                print(f"Moving directory {src} to {dst}")
+                if os.path.exists(dst):
+                    shutil.rmtree(dst)
+                shutil.copytree(src, dst)
+        
+        shutil.rmtree(nested_dir)
+        print(f"Removed nested directory: {nested_dir}")
+    else:
+        print("No nested hashlink directory found")
 
     if (
         os.path.exists(include_dir)

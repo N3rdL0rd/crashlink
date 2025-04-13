@@ -1,32 +1,22 @@
-CC = gcc
-CFLAGS = -shared -g -Wall -D_CRT_SECURE_NO_WARNINGS -DHL_DLL
-PYTHON_INCLUDE = ./include
-HASHLINK_INCLUDE = ./hashlink/src
-INCLUDES = -I$(PYTHON_INCLUDE) -I$(HASHLINK_INCLUDE)
+HASHLINK_BIN = ./hashlink-bin
+HASHLINK = ./hashlink-bin/include
 
-HASHLINK_LIB = ./hashlink/x64/Debug
-WIN_LIBS = -lkernel32 -luser32 -lm -lpthread -lz
+PYTHON = ./include
+PYTHON_LIB = ./python313.lib
 
-TARGET = pyhl.hdll
+DEFINES = /D Py_LIMITED_API /D Py_BUILD_CORE_MODULE
 
-all: $(TARGET)
+INCLUDE_FLAGS = /I . /I $(HASHLINK) /I $(PYTHON)
 
-$(TARGET): pyhl.c libpython.a libhl.a
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $< -L. -lpython -lhl $(WIN_LIBS)
+all: pyhl.hdll
 
-libpython.a: python313.def
-	dlltool -d python313.def -l libpython.a
+pyhl.hdll: pyhl.obj
+	cl /LD /MD pyhl.obj "$(HASHLINK_BIN)\libhl.lib" "$(PYTHON_LIB)" /OUT:pyhl.hdll /VERBOSE:LIB
 
-python313.def:
-	gendef python313.dll
+pyhl.obj: pyhl.c
+	cl /c /MD $(DEFINES) pyhl.c $(INCLUDE_FLAGS)
 
-libhl.a: libhl.def
-	dlltool -d libhl.def -l libhl.a
+check_lib:
+	dumpbin /EXPORTS $(PYTHON_LIB)
 
-libhl.def:
-	gendef $(HASHLINK_LIB)/libhl.dll
-
-clean:
-	rm -f $(TARGET) python313.def libpython.a libhl.def libhl.a
-
-.PHONY: all clean
+.PHONY: all check_lib

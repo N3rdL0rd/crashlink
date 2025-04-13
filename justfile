@@ -69,6 +69,7 @@ pyhl:
 # Build the pyhl native hdll (Windows) - run pyhl-prepare first
 pyhl-win:
     cd pyhl && nmake /f Makefile.win
+    mv pyhl/pyhl.dll pyhl/pyhl.hdll || true
     cp pyhl/pyhl.hdll pyhl/hashlink/build/bin/ || true
     cp -r pyhl/lib-py/ pyhl/hashlink/build/bin/lib-py || true
     cp -r hlrun/ pyhl/hashlink/build/bin/lib-py/hlrun/ || true
@@ -93,6 +94,13 @@ patchme-test:
     @just pyhl
     crashlink tests/haxe/PatchMe.hl -tDp tests/patch/patchme.py
     ./hl tests/haxe/PatchMe.hl.patch
+
+# Runs the patchme test (Windows)
+patchme-test-win:
+    @just pyhl-win
+    crashlink tests/haxe/PatchMe.hl -tDp tests/patch/patchme.py
+    cp tests/haxe/PatchMe.hl.patch ../hashlink/PatchMe.hl.patch || true
+    pushd ../hashlink && ./hl.exe PatchMe.hl.patch && popd
 
 # Clean the codebase
 clean:
