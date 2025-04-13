@@ -11,3 +11,6 @@ lib
 *.lib
 *.def
 lib-py/
+!pyhl.def
+hashlink-bin/
+pyhl.dll

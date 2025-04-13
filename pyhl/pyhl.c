@@ -1,5 +1,7 @@
 // wait, what's the c equivalent of a docstring?
 
+#include <stdbool.h>
+
 #define HL_NAME(n) pyhl_##n
 #include <hl.h>
 #include <Python.h>
@@ -74,6 +76,53 @@ char* dirname(char* path) {
     }
 }
 #endif
+
+int PyRun_SimpleString_Shim(const char *command) {
+    // The version of python3.lib shipped on nuget doesn't export PyRun_* - so we need to do some hacky shit to get it to work
+    // Basically, this calls `exec(command)`
+
+    PyObject *builtins = PyImport_ImportModule("builtins");
+    if (!builtins) {
+        PyErr_Print();
+        return -1;
+    }
+    
+    PyObject *exec = PyObject_GetAttrString(builtins, "exec");
+    if (!exec) {
+        PyErr_Print();
+        Py_DECREF(builtins);
+        return -1;
+    }
+    
+    PyObject *cmd = PyUnicode_FromString(command);
+    if (!cmd) {
+        PyErr_Print();
+        Py_DECREF(exec);
+        Py_DECREF(builtins);
+        return -1;
+    }
+    
+    PyObject *args = PyTuple_Pack(1, cmd);
+    PyObject *result = PyObject_CallObject(exec, args);
+    
+    Py_DECREF(args);
+    Py_DECREF(cmd);
+    Py_DECREF(exec);
+    Py_DECREF(builtins);
+    
+    if (!result) {
+        PyErr_Print();
+        return -1;
+    }
+    
+    Py_DECREF(result);
+    return 0;
+}
+
+#ifdef _WIN32
+#define PyRun_SimpleString PyRun_SimpleString_Shim
+#endif
+
 
 // Global references
 static PyObject *g_patchc = NULL;
