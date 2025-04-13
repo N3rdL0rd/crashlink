@@ -24,5 +24,5 @@ def thing(args: Args) -> Args:
 
 # Patches are executed before runtime, so we can use crashlink with a handle on the bytecode.
 @patch.patch("$PatchMe.main")
-def main(code: Bytecode, fn: Function) -> None:
+def main(code: "Bytecode", fn: "Function") -> None:
     fn.push_op(code, Opcode(op="Nop", df={}))

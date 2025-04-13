@@ -11,7 +11,7 @@ INCLUDE_FLAGS = /I . /I $(HASHLINK) /I $(PYTHON)
 all: pyhl.hdll
 
 pyhl.hdll: pyhl.obj
-	cl /LD /MD /DEBUG:FULL pyhl.obj "$(HASHLINK_BIN)\libhl.lib" "$(PYTHON_LIB)" /OUT:pyhl.hdll /VERBOSE:LIB /PDB:pyhl.pdb
+	cl /LD /MD /DEBUG:FULL pyhl.obj "$(HASHLINK_BIN)\libhl.lib" "$(PYTHON_LIB)" /VERBOSE:LIB
 
 pyhl.obj: pyhl.c
 	cl /c /MD /Zi /Fdpyhl.pdb $(DEFINES) pyhl.c $(INCLUDE_FLAGS)
