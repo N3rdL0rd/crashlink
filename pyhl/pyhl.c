@@ -147,6 +147,83 @@ int PyRun_SimpleString_Shim(const char *command) {
 #define PyRun_SimpleString PyRun_SimpleString_Shim
 #endif
 
+static PyObject* pyhl_hl_getfield(PyObject* self, PyObject* args) {
+    PyObject* capsule;
+    char* field_name;
+    
+    if (!PyArg_ParseTuple(args, "Os", &capsule, &field_name)) {
+        PyErr_SetString(PyExc_TypeError, "Expected object and string arguments");
+        return NULL;
+    }
+    
+    if (!PyCapsule_CheckExact(capsule)) {
+        PyErr_SetString(PyExc_TypeError, "First argument must be a capsule");
+        return NULL;
+    }
+    
+    void* obj_ptr = PyCapsule_GetPointer(capsule, "hl_obj");
+    if (!obj_ptr) {
+        PyErr_SetString(PyExc_ValueError, "Invalid capsule or NULL pointer");
+        return NULL;
+    }
+    
+    vdynamic* field_value = hl_dyn_getp((vdynamic*)obj_ptr, hl_hash_utf8(field_name), &hlt_dyn);
+    if (!field_value) {
+        Py_RETURN_NONE;
+    }
+    
+    return hl_to_py(field_value, field_value->t->kind);
+}
+
+static PyObject* pyhl_hl_setfield(PyObject* self, PyObject* args) {
+    PyObject* capsule;
+    char* field_name;
+    PyObject* value;
+    
+    if (!PyArg_ParseTuple(args, "OsO", &capsule, &field_name, &value)) {
+        PyErr_SetString(PyExc_TypeError, "Expected object, string, and value arguments");
+        return NULL;
+    }
+    
+    if (!PyCapsule_CheckExact(capsule)) {
+        PyErr_SetString(PyExc_TypeError, "First argument must be a capsule");
+        return NULL;
+    }
+    
+    void* obj_ptr = PyCapsule_GetPointer(capsule, "hl_obj");
+    if (!obj_ptr) {
+        PyErr_SetString(PyExc_ValueError, "Invalid capsule or NULL pointer");
+        return NULL;
+    }
+    
+    vdynamic* hl_value = py_to_hl(value, HI32); // TODO: check type
+    if (!hl_value) {
+        PyErr_SetString(PyExc_ValueError, "Failed to convert Python value to HL value");
+        return NULL;
+    }
+    
+    hl_dyn_set((vdynamic*)obj_ptr, hl_hash_utf8(field_name), &hlt_dyn, hl_value);
+    
+    Py_RETURN_NONE;
+}
+
+static PyMethodDef PyHLMethods[] = {
+    {"hl_getfield", pyhl_hl_getfield, METH_VARARGS, "Get a field from an HL object"},
+    {"hl_setfield", pyhl_hl_setfield, METH_VARARGS, "Set a field in an HL object"},
+    {NULL, NULL, 0, NULL}
+};
+
+static struct PyModuleDef pyhlmodule = {
+    PyModuleDef_HEAD_INIT,
+    "_pyhl",
+    "Python bindings for HashLink runtime",
+    -1,
+    PyHLMethods
+};
+
+PyMODINIT_FUNC PyInit__pyhl(void) {
+    return PyModule_Create(&pyhlmodule);
+}
 
 // Global references
 static PyObject *g_patchc = NULL;
@@ -382,6 +459,22 @@ HL_PRIM void HL_NAME(init)()
             PyRun_SimpleString("print('[pyhl] [py] Python path:', sys.path)");
         }
 
+        dbg_print("Registering _pyhl module...\n");
+        PyObject* pyhl_module = PyInit__pyhl();
+        if (pyhl_module) {
+            PyObject* sys_modules = PyImport_GetModuleDict(); // borrowed reference
+            if (sys_modules) {
+                PyObject* module_name = PyUnicode_FromString("_pyhl");
+                if (module_name) {
+                    PyDict_SetItem(sys_modules, module_name, pyhl_module);
+                    Py_DECREF(module_name);
+                }
+            }
+            dbg_print("Success.\n");
+        } else {
+            err("Failed to initialize _pyhl module\n");
+        }
+
         dbg_print("Looking for patches...\n");
         PyObject *patchMod = PyImport_ImportModule("crashlink_patch");
         if (patchMod)
@@ -556,6 +649,10 @@ HL_PRIM bool HL_NAME(call)(vbyte *module_utf16, vbyte *name_utf16)
     return true;
 }
 
+HL_PRIM hl_type hlt_u8 = { HUI8 };
+HL_PRIM hl_type hlt_u16 = { HUI16 };
+HL_PRIM hl_type hlt_i32 = { HI32 };
+
 PyObject *hl_to_py(vdynamic *arg, char type)
 {
     if (!arg)
@@ -590,8 +687,7 @@ PyObject *hl_to_py(vdynamic *arg, char type)
         warn("HFUN type not implemented\n");
         Py_RETURN_NONE;
     case 11: // obj (HOBJ)
-        warn("HOBJ type not implemented\n");
-        Py_RETURN_NONE;
+        return PyCapsule_New(arg, "hl_obj", NULL); // TODO: do we integrate with the hl GC? running two competing GCs at the same time is not good
     case 12: // array (HARRAY)
         warn("HARRAY type not implemented\n");
         Py_RETURN_NONE;
@@ -633,13 +729,40 @@ vdynamic *py_to_hl(PyObject *arg, char type)
     case 0: // void (HVOID)
         return NULL;
     case 1: // u8 (HUI8)
-        warn("Can't handle U8. Whoops!\n");
+        if (PyLong_Check(arg))
+        {
+            result = hl_alloc_dynamic(&hlt_u8);
+            result->v.ui8 = (unsigned char)PyLong_AsUnsignedLong(arg);
+            if (PyErr_Occurred())
+            {
+                PyErr_Print();
+                return NULL;
+            }
+        }
         break;
     case 2: // u16 (HUI16)
-        warn("Can't handle U16. Whoops!\n");
+        if (PyLong_Check(arg))
+        {
+            result = hl_alloc_dynamic(&hlt_u16);
+            result->v.ui16 = (unsigned short)PyLong_AsUnsignedLong(arg);
+            if (PyErr_Occurred())
+            {
+                PyErr_Print();
+                return NULL;
+            }
+        }
         break;
     case 3: // i32 (HI32)
-        warn("Can't handle I32. Whoops!\n");
+        if (PyLong_Check(arg))
+        {
+            result = hl_alloc_dynamic(&hlt_i32);
+            result->v.i = PyLong_AsLong(arg);
+            if (PyErr_Occurred())
+            {
+                PyErr_Print();
+                return NULL;
+            }
+        }
         break;
     case 4: // i64 (HI64)
         if (PyLong_Check(arg))

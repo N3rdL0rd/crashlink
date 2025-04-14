@@ -496,8 +496,8 @@ def gen_docs(code: Bytecode) -> Dict[str, str]:
                     if obj.kind.value == kind:
                         if not isinstance(obj.definition, Obj):
                             raise TypeError(f"Expected Obj, got {obj.definition}")
-                        defn: Obj = obj.definition
-                        res[defn.name.resolve(code) + ".html"] = gen_docs_for_obj(code, defn)
+                        defin: Obj = obj.definition
+                        res[defin.name.resolve(code) + ".html"] = gen_docs_for_obj(code, defin)
     except KeyboardInterrupt:
         print("Aborted.")
     return res
