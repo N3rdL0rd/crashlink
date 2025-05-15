@@ -45,6 +45,32 @@ el.replaceWith(d);
 <section>
 </section>
 <section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="hlrun.core.to_hlvalue"><code class="name flex">
+<span>def <span class="ident">to_hlvalue</span></span>(<span>obj: Any,<br>kind: <a title="hlrun.core.Type" href="#hlrun.core.Type">Type</a> | int) ‑> <a title="hlrun.core.HlValue" href="#hlrun.core.HlValue">HlValue</a> | typing.Any</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def to_hlvalue(obj: Any, kind: Type | int) -&gt; HlValue | Any:
+    &#34;&#34;&#34;
+    Convert a Capsule containing a pointer to an HL object to a HlValue.
+    &#34;&#34;&#34;
+    kind = Type(kind) if isinstance(kind, int) else kind
+    match kind:
+        case Type.OBJ:
+            return _create_matching_obj(obj)
+        case Type.FUN:
+            return HlClosure(obj)
+        case _:
+            return obj</code></pre>
+</details>
+<div class="desc"><p>Convert a Capsule containing a pointer to an HL object to a HlValue.</p></div>
+</dd>
+</dl>
 </section>
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
@@ -66,29 +92,128 @@ el.replaceWith(d);
     def __init__(self, args: List[Any], fn_symbol: str, types: str):
         types_arr: List[Type] = [Type(int(typ)) for typ in types.split(&#34;,&#34;)]
         args_str: List[str] = []
-        args_arr: List[HlPrim] = []
+        args_arr: List[HlValue] = []
         for i, arg in enumerate(args):
             args_str.append(f&#34;arg{i}: {Type(types_arr[i])}={arg}&#34;)
-            args_arr.append(HlPrim(arg, Type(types_arr[i])))
+            args_arr.append(to_hlvalue(arg, types_arr[i]))
         dbg_print(f&#34;{fn_symbol}({&#39;, &#39;.join(args_str)})&#34;)
-        self.args: List[HlPrim] = args_arr
+        self.args: List[HlValue] = args_arr
 
-    def __getitem__(self, index: int) -&gt; HlPrim:
+    def to_prims(self) -&gt; List[Any | HlPrim]:
+        return [arg.obj if isinstance(arg, HlPrim) else HlPrim(None, Type.VOID) for arg in self.args]
+
+    def __getitem__(self, index: int) -&gt; HlValue:
         return self.args[index]
 
-    def __setitem__(self, index: int, value: HlPrim) -&gt; None:
+    def __setitem__(self, index: int, value: HlValue) -&gt; None:
         self.args[index] = value
 
     def __len__(self) -&gt; int:
         return len(self.args)
 
-    def __iter__(self) -&gt; Iterable[HlPrim]:
+    def __iter__(self) -&gt; Iterable[HlValue]:
         return iter(self.args)
 
     def __repr__(self) -&gt; str:
         return f&#34;Args({self.args})&#34;</code></pre>
 </details>
 <div class="desc"><p>Represents intercepted arguments passed to a function.</p></div>
+<h3>Methods</h3>
+<dl>
+<dt id="hlrun.core.Args.to_prims"><code class="name flex">
+<span>def <span class="ident">to_prims</span></span>(<span>self) ‑> List[Any | <a title="hlrun.core.HlPrim" href="#hlrun.core.HlPrim">HlPrim</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def to_prims(self) -&gt; List[Any | HlPrim]:
+    return [arg.obj if isinstance(arg, HlPrim) else HlPrim(None, Type.VOID) for arg in self.args]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="hlrun.core.HlClosure"><code class="flex name class">
+<span>class <span class="ident">HlClosure</span></span>
+<span>(</span><span>ptr: Any)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class HlClosure(HlValue):
+    &#34;&#34;&#34;
+    Proxy to a callable function, out-of-context of an object.
+    &#34;&#34;&#34;
+
+    def __init__(self, ptr: Any) -&gt; None:
+        self.__ptr = ptr
+
+    def __call__(self, *args: Any) -&gt; Any:
+        if RUNTIME:
+            return hl_closure_call(self.__ptr, list(args))
+        raise RuntimeError(&#34;This isn&#39;t the pyhl runtime!&#34;)</code></pre>
+</details>
+<div class="desc"><p>Proxy to a callable function, out-of-context of an object.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="hlrun.core.HlValue" href="#hlrun.core.HlValue">HlValue</a></li>
+</ul>
+</dd>
+<dt id="hlrun.core.HlObj"><code class="flex name class">
+<span>class <span class="ident">HlObj</span></span>
+<span>(</span><span>ptr)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class HlObj(HlValue):
+    &#34;&#34;&#34;
+    Proxy to an instance of an HL class.
+    &#34;&#34;&#34;
+
+    def __getattr__(self, name: str) -&gt; Any:
+        if RUNTIME:
+            if &#34;__ptr_impossible_to_overlap_this_name&#34; in self.__dict__:
+                return to_hlvalue(
+                    hl_obj_getfield(self.__dict__[&#34;__ptr_impossible_to_overlap_this_name&#34;], name),
+                    hl_obj_field_type(self.__dict__[&#34;__ptr_impossible_to_overlap_this_name&#34;], name),
+                )
+            else:
+                raise AttributeError(f&#34;&#39;{self.__class__.__name__}&#39; object has no attribute &#39;{name}&#39;&#34;)
+        raise RuntimeError(&#34;This isn&#39;t the pyhl runtime!&#34;)
+
+    def __setattr__(self, name: str, value: Any) -&gt; None:
+        if RUNTIME:
+            if &#34;__ptr_impossible_to_overlap_this_name&#34; in self.__dict__:
+                return hl_obj_setfield(self.__dict__[&#34;__ptr_impossible_to_overlap_this_name&#34;], name, value)
+            else:
+                raise AttributeError(&#34;Cannot set attributes before initializing the object&#34;)
+        raise RuntimeError(&#34;This isn&#39;t the pyhl runtime!&#34;)
+
+    def _classname(self) -&gt; str:
+        &#34;&#34;&#34;
+        Get the class name of the object.
+        &#34;&#34;&#34;
+        return hl_obj_classname(self.__dict__[&#34;__ptr_impossible_to_overlap_this_name&#34;])
+
+    def __init__(self, ptr):  # type: ignore
+        self.__dict__[&#34;__ptr_impossible_to_overlap_this_name&#34;] = ptr  # HACK: yeah... sorry.</code></pre>
+</details>
+<div class="desc"><p>Proxy to an instance of an HL class.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="hlrun.core.HlValue" href="#hlrun.core.HlValue">HlValue</a></li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="hlrun.obj.HlString" href="obj.html#hlrun.obj.HlString">HlString</a></li>
+</ul>
 </dd>
 <dt id="hlrun.core.HlPrim"><code class="flex name class">
 <span>class <span class="ident">HlPrim</span></span>
@@ -100,7 +225,7 @@ el.replaceWith(d);
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dataclass
-class HlPrim:
+class HlPrim(HlValue):
     &#34;&#34;&#34;
     Primitive object, stored as a castable Python object and a type kind.
     &#34;&#34;&#34;
@@ -109,6 +234,10 @@ class HlPrim:
     type: Type</code></pre>
 </details>
 <div class="desc"><p>Primitive object, stored as a castable Python object and a type kind.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="hlrun.core.HlValue" href="#hlrun.core.HlValue">HlValue</a></li>
+</ul>
 <h3>Instance variables</h3>
 <dl>
 <dt id="hlrun.core.HlPrim.obj"><code class="name">var <span class="ident">obj</span> : Any</code></dt>
@@ -120,6 +249,27 @@ class HlPrim:
 <div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
+</dd>
+<dt id="hlrun.core.HlValue"><code class="flex name class">
+<span>class <span class="ident">HlValue</span></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class HlValue:
+    &#34;&#34;&#34;
+    Value of some kind. ABC for all HL values.
+    &#34;&#34;&#34;</code></pre>
+</details>
+<div class="desc"><p>Value of some kind. ABC for all HL values.</p></div>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="hlrun.core.HlClosure" href="#hlrun.core.HlClosure">HlClosure</a></li>
+<li><a title="hlrun.core.HlObj" href="#hlrun.core.HlObj">HlObj</a></li>
+<li><a title="hlrun.core.HlPrim" href="#hlrun.core.HlPrim">HlPrim</a></li>
+</ul>
 </dd>
 <dt id="hlrun.core.Type"><code class="flex name class">
 <span>class <span class="ident">Type</span></span>
@@ -273,10 +423,24 @@ class HlPrim:
 <li><code><a title="hlrun" href="index.html">hlrun</a></code></li>
 </ul>
 </li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="hlrun.core.to_hlvalue" href="#hlrun.core.to_hlvalue">to_hlvalue</a></code></li>
+</ul>
+</li>
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
 <li>
 <h4><code><a title="hlrun.core.Args" href="#hlrun.core.Args">Args</a></code></h4>
+<ul class="">
+<li><code><a title="hlrun.core.Args.to_prims" href="#hlrun.core.Args.to_prims">to_prims</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="hlrun.core.HlClosure" href="#hlrun.core.HlClosure">HlClosure</a></code></h4>
+</li>
+<li>
+<h4><code><a title="hlrun.core.HlObj" href="#hlrun.core.HlObj">HlObj</a></code></h4>
 </li>
 <li>
 <h4><code><a title="hlrun.core.HlPrim" href="#hlrun.core.HlPrim">HlPrim</a></code></h4>
@@ -284,6 +448,9 @@ class HlPrim:
 <li><code><a title="hlrun.core.HlPrim.obj" href="#hlrun.core.HlPrim.obj">obj</a></code></li>
 <li><code><a title="hlrun.core.HlPrim.type" href="#hlrun.core.HlPrim.type">type</a></code></li>
 </ul>
+</li>
+<li>
+<h4><code><a title="hlrun.core.HlValue" href="#hlrun.core.HlValue">HlValue</a></code></h4>
 </li>
 <li>
 <h4><code><a title="hlrun.core.Type" href="#hlrun.core.Type">Type</a></code></h4>

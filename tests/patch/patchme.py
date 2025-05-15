@@ -13,6 +13,7 @@ patch = Patch(
     sha256="839d7847acdb59627f12b98a6a0ac51c1c03dfde9c49ae61277a97329ce584be",
 )
 
+
 # Intercepts are executed *at* runtime of the bytecode, so we don't have access to crashlink. Instead, we use hlrun's proxies to HL objects.
 @patch.intercept("$PatchMe.thing")
 def thing(args: Args) -> Args:
@@ -20,9 +21,10 @@ def thing(args: Args) -> Args:
     s = args[2]
     assert isinstance(s, HlString), "This isn't a correctly typed proxy object!"
     s.bytes = "Successfully intercepted! Hello from Python!".encode("utf-16")
-    #print(s.charAt(0).bytes)
+    # print(s.charAt(0).bytes)
     args[3].test = 99999999
     return args
+
 
 # Patches are executed before runtime, so we can use crashlink with a handle on the bytecode.
 @patch.patch("$PatchMe.main")

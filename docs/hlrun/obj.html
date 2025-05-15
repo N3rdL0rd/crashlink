@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
 <meta name="generator" content="pdoc3 0.11.6">
 <title>hlrun.obj API documentation</title>
-<meta name="description" content="Defined type proxies for HL -&gt; Python. TODO">
+<meta name="description" content="">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
@@ -38,15 +38,600 @@ el.replaceWith(d);
 <h1 class="title">Module <code>hlrun.obj</code></h1>
 </header>
 <section id="section-intro">
-<p>Defined type proxies for HL -&gt; Python. TODO</p>
 </section>
 <section>
 </section>
 <section>
 </section>
 <section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="hlrun.obj.method"><code class="name flex">
+<span>def <span class="ident">method</span></span>(<span>func: Callable[..., ~R]) ‑> Callable[..., ~R]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def method(func: Callable[..., R]) -&gt; Callable[..., R]:
+    &#34;&#34;&#34;
+    Decorator that forwards method calls to the underlying HashLink object.
+
+    Preserves the original function&#39;s return type and parameter types.
+    &#34;&#34;&#34;
+    method_name = func.__name__
+
+    @wraps(func)
+    def wrapper(self: HlObj, *args: Any) -&gt; R:
+        return cast(R, self.__getattr__(method_name)(self, *args))
+
+    return wrapper</code></pre>
+</details>
+<div class="desc"><p>Decorator that forwards method calls to the underlying HashLink object.</p>
+<p>Preserves the original function's return type and parameter types.</p></div>
+</dd>
+<dt id="hlrun.obj.obj"><code class="name flex">
+<span>def <span class="ident">obj</span></span>(<span>type_name: str) ‑> Callable[[~T], ~T]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def obj(type_name: str) -&gt; Callable[[T], T]:
+    &#34;&#34;&#34;
+    Decorator to register a class in the OBJ_MAP dictionary.
+    &#34;&#34;&#34;
+
+    def decorator(cls: T) -&gt; T:
+        OBJ_MAP[type_name] = cls
+        return cls
+
+    return decorator</code></pre>
+</details>
+<div class="desc"><p>Decorator to register a class in the OBJ_MAP dictionary.</p></div>
+</dd>
+</dl>
 </section>
 <section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="hlrun.obj.HlString"><code class="flex name class">
+<span>class <span class="ident">HlString</span></span>
+<span>(</span><span>ptr)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@obj(&#34;String&#34;)
+class HlString(HlObj):
+    &#34;&#34;&#34;
+    Proxy to a Hashlink string.
+    &#34;&#34;&#34;
+
+    bytes: bytes
+    &#34;&#34;&#34;
+    Internal byte array.
+    &#34;&#34;&#34;
+
+    length: int
+    &#34;&#34;&#34;
+    The number of characters in `this` String.
+    &#34;&#34;&#34;
+
+    @method
+    def toUpperCase(self) -&gt; &#34;HlString&#34;:
+        &#34;&#34;&#34;
+        Returns a String where all characters of `this` String are upper case.
+        &#34;&#34;&#34;
+        raise NotImplementedError()
+
+    @method
+    def toLowerCase(self) -&gt; &#34;HlString&#34;:
+        &#34;&#34;&#34;
+        Returns a String where all characters of `this` String are lower case.
+        &#34;&#34;&#34;
+        raise NotImplementedError()
+
+    @method
+    def charAt(self, index: int) -&gt; &#34;HlString&#34;:
+        &#34;&#34;&#34;
+        Returns the character at position `index` of `this` String.
+
+        If `index` is negative or exceeds `this.length`, the empty String `&#34;&#34;` is returned.
+        &#34;&#34;&#34;
+        raise NotImplementedError()
+
+    @method
+    def charCodeAt(self, index: int) -&gt; Optional[int]:
+        &#34;&#34;&#34;
+        Returns the character code at position `index` of `this` String.
+
+        If `index` is negative or exceeds `this.length`, `null` is returned.
+
+        To obtain the character code of a single character, `&#34;x&#34;.code` can be
+        used instead to inline the character code at compile time. Note that
+        this only works on String literals of length 1.
+        &#34;&#34;&#34;
+        raise NotImplementedError()
+
+    @method
+    def findChar(self, start: int, len: int, src: HlObj, srcLen: int) -&gt; int:
+        &#34;&#34;&#34;
+        Undocumented private inline function that only exists in Hashlink. Probably not worth using.
+        &#34;&#34;&#34;
+        raise NotImplementedError()
+
+    @method
+    def indexOf(self, str: &#34;HlString&#34;, startIndex: Optional[int]) -&gt; int:
+        &#34;&#34;&#34;
+        Returns the position of the leftmost occurrence of `str` within `this` String.
+
+        If `str` is the empty String `&#34;&#34;`, then:
+            * If `startIndex` is not specified or &lt; 0, 0 is returned.
+            * If `startIndex &gt;= this.length`, `this.length` is returned.
+            * Otherwise, `startIndex` is returned,
+
+        Otherwise, if `startIndex` is not specified or &lt; 0, it is treated as 0.
+
+        If `startIndex &gt;= this.length`, -1 is returned.
+
+        Otherwise the search is performed within the substring of `this` String starting
+        at `startIndex`. If `str` is found, the position of its first character in `this`
+        String relative to position 0 is returned.
+
+        If `str` cannot be found, -1 is returned.
+        &#34;&#34;&#34;
+        raise NotImplementedError()
+
+    @method
+    def lastIndexOf(self, str: &#34;HlString&#34;, startIndex: Optional[int]) -&gt; int:
+        &#34;&#34;&#34;
+        Returns the position of the rightmost occurrence of `str` within `this`
+        String.
+
+        If `startIndex` is given, the search is performed within the substring
+        of `this` String from 0 to `startIndex + str.length`. Otherwise the search
+        is performed within `this` String. In either case, the returned position
+        is relative to the beginning of `this` String.
+
+        If `startIndex` is negative, the result is unspecified.
+
+        If `str` cannot be found, -1 is returned.
+        &#34;&#34;&#34;
+        raise NotImplementedError()
+
+    @method
+    def split(self, delimiter: &#34;HlString&#34;) -&gt; List[HlString]:
+        &#34;&#34;&#34;
+        Splits `this` String at each occurrence of `delimiter`.
+
+        If `this` String is the empty String `&#34;&#34;`, the result is not consistent
+        across targets and may either be `[]` (on Js, Cpp) or `[&#34;&#34;]`.
+
+        If `delimiter` is the empty String `&#34;&#34;`, `this` String is split into an
+        Array of `this.length` elements, where the elements correspond to the
+        characters of `this` String.
+
+        If `delimiter` is not found within `this` String, the result is an Array
+        with one element, which equals `this` String.
+
+        If `delimiter` is null, the result is unspecified.
+
+        Otherwise, `this` String is split into parts at each occurrence of
+        `delimiter`. If `this` String starts (or ends) with `delimiter`, the
+        result `Array` contains a leading (or trailing) empty String `&#34;&#34;` element.
+        Two subsequent delimiters also result in an empty String `&#34;&#34;` element.
+        &#34;&#34;&#34;
+        raise NotImplementedError()
+
+    @method
+    def substr(self, pos: int, len: Optional[int]) -&gt; HlString:
+        &#34;&#34;&#34;
+        Returns `len` characters of `this` String, starting at position `pos`.
+
+        If `len` is omitted, all characters from position `pos` to the end of
+        `this` String are included.
+
+        If `pos` is negative, its value is calculated from the end of `this`
+        String by `this.length + pos`. If this yields a negative value, 0 is
+        used instead.
+
+        If the calculated position + `len` exceeds `this.length`, the characters
+        from that position to the end of `this` String are returned.
+
+        If `len` is negative, the result is unspecified.
+        &#34;&#34;&#34;
+        raise NotImplementedError()
+
+    @method
+    def substring(self, startIndex: int, endIndex: Optional[int]) -&gt; HlString:
+        &#34;&#34;&#34;
+        Returns the part of `this` String from `startIndex` to but not including `endIndex`.
+
+        If `startIndex` or `endIndex` are negative, 0 is used instead.
+
+        If `startIndex` exceeds `endIndex`, they are swapped.
+
+        If the (possibly swapped) `endIndex` is omitted or exceeds
+        `this.length`, `this.length` is used instead.
+
+        If the (possibly swapped) `startIndex` exceeds `this.length`, the empty
+        String `&#34;&#34;` is returned.
+        &#34;&#34;&#34;
+        raise NotImplementedError()
+
+    @method
+    def toString(self) -&gt; HlString:
+        &#34;&#34;&#34;
+        Returns the String itself.
+        &#34;&#34;&#34;
+        raise NotImplementedError()
+
+    @method
+    def fromCharCode(self, code: int) -&gt; HlString:
+        &#34;&#34;&#34;
+        Returns the String corresponding to the character code `code`.
+
+        If `code` is negative or has another invalid value, the result is
+        unspecified.
+        &#34;&#34;&#34;
+        raise NotImplementedError()</code></pre>
+</details>
+<div class="desc"><p>Proxy to a Hashlink string.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="hlrun.core.HlObj" href="core.html#hlrun.core.HlObj">HlObj</a></li>
+<li><a title="hlrun.core.HlValue" href="core.html#hlrun.core.HlValue">HlValue</a></li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="hlrun.obj.HlString.bytes"><code class="name">var <span class="ident">bytes</span> : bytes</code></dt>
+<dd>
+<div class="desc"><p>Internal byte array.</p></div>
+</dd>
+<dt id="hlrun.obj.HlString.length"><code class="name">var <span class="ident">length</span> : int</code></dt>
+<dd>
+<div class="desc"><p>The number of characters in <code>this</code> String.</p></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="hlrun.obj.HlString.charAt"><code class="name flex">
+<span>def <span class="ident">charAt</span></span>(<span>self, index: int) ‑> <a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@method
+def charAt(self, index: int) -&gt; &#34;HlString&#34;:
+    &#34;&#34;&#34;
+    Returns the character at position `index` of `this` String.
+
+    If `index` is negative or exceeds `this.length`, the empty String `&#34;&#34;` is returned.
+    &#34;&#34;&#34;
+    raise NotImplementedError()</code></pre>
+</details>
+<div class="desc"><p>Returns the character at position <code>index</code> of <code>this</code> String.</p>
+<p>If <code>index</code> is negative or exceeds <code>this.length</code>, the empty String <code>""</code> is returned.</p></div>
+</dd>
+<dt id="hlrun.obj.HlString.charCodeAt"><code class="name flex">
+<span>def <span class="ident">charCodeAt</span></span>(<span>self, index: int) ‑> int | None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@method
+def charCodeAt(self, index: int) -&gt; Optional[int]:
+    &#34;&#34;&#34;
+    Returns the character code at position `index` of `this` String.
+
+    If `index` is negative or exceeds `this.length`, `null` is returned.
+
+    To obtain the character code of a single character, `&#34;x&#34;.code` can be
+    used instead to inline the character code at compile time. Note that
+    this only works on String literals of length 1.
+    &#34;&#34;&#34;
+    raise NotImplementedError()</code></pre>
+</details>
+<div class="desc"><p>Returns the character code at position <code>index</code> of <code>this</code> String.</p>
+<p>If <code>index</code> is negative or exceeds <code>this.length</code>, <code>null</code> is returned.</p>
+<p>To obtain the character code of a single character, <code>"x".code</code> can be
+used instead to inline the character code at compile time. Note that
+this only works on String literals of length 1.</p></div>
+</dd>
+<dt id="hlrun.obj.HlString.findChar"><code class="name flex">
+<span>def <span class="ident">findChar</span></span>(<span>self,<br>start: int,<br>len: int,<br>src: <a title="hlrun.core.HlObj" href="core.html#hlrun.core.HlObj">HlObj</a>,<br>srcLen: int) ‑> int</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@method
+def findChar(self, start: int, len: int, src: HlObj, srcLen: int) -&gt; int:
+    &#34;&#34;&#34;
+    Undocumented private inline function that only exists in Hashlink. Probably not worth using.
+    &#34;&#34;&#34;
+    raise NotImplementedError()</code></pre>
+</details>
+<div class="desc"><p>Undocumented private inline function that only exists in Hashlink. Probably not worth using.</p></div>
+</dd>
+<dt id="hlrun.obj.HlString.fromCharCode"><code class="name flex">
+<span>def <span class="ident">fromCharCode</span></span>(<span>self, code: int) ‑> <a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@method
+def fromCharCode(self, code: int) -&gt; HlString:
+    &#34;&#34;&#34;
+    Returns the String corresponding to the character code `code`.
+
+    If `code` is negative or has another invalid value, the result is
+    unspecified.
+    &#34;&#34;&#34;
+    raise NotImplementedError()</code></pre>
+</details>
+<div class="desc"><p>Returns the String corresponding to the character code <code>code</code>.</p>
+<p>If <code>code</code> is negative or has another invalid value, the result is
+unspecified.</p></div>
+</dd>
+<dt id="hlrun.obj.HlString.indexOf"><code class="name flex">
+<span>def <span class="ident">indexOf</span></span>(<span>self,<br>str: <a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a>,<br>startIndex: int | None) ‑> int</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@method
+def indexOf(self, str: &#34;HlString&#34;, startIndex: Optional[int]) -&gt; int:
+    &#34;&#34;&#34;
+    Returns the position of the leftmost occurrence of `str` within `this` String.
+
+    If `str` is the empty String `&#34;&#34;`, then:
+        * If `startIndex` is not specified or &lt; 0, 0 is returned.
+        * If `startIndex &gt;= this.length`, `this.length` is returned.
+        * Otherwise, `startIndex` is returned,
+
+    Otherwise, if `startIndex` is not specified or &lt; 0, it is treated as 0.
+
+    If `startIndex &gt;= this.length`, -1 is returned.
+
+    Otherwise the search is performed within the substring of `this` String starting
+    at `startIndex`. If `str` is found, the position of its first character in `this`
+    String relative to position 0 is returned.
+
+    If `str` cannot be found, -1 is returned.
+    &#34;&#34;&#34;
+    raise NotImplementedError()</code></pre>
+</details>
+<div class="desc"><p>Returns the position of the leftmost occurrence of <code>str</code> within <code>this</code> String.</p>
+<p>If <code>str</code> is the empty String <code>""</code>, then:
+* If <code>startIndex</code> is not specified or &lt; 0, 0 is returned.
+* If <code>startIndex &gt;= this.length</code>, <code>this.length</code> is returned.
+* Otherwise, <code>startIndex</code> is returned,</p>
+<p>Otherwise, if <code>startIndex</code> is not specified or &lt; 0, it is treated as 0.</p>
+<p>If <code>startIndex &gt;= this.length</code>, -1 is returned.</p>
+<p>Otherwise the search is performed within the substring of <code>this</code> String starting
+at <code>startIndex</code>. If <code>str</code> is found, the position of its first character in <code>this</code>
+String relative to position 0 is returned.</p>
+<p>If <code>str</code> cannot be found, -1 is returned.</p></div>
+</dd>
+<dt id="hlrun.obj.HlString.lastIndexOf"><code class="name flex">
+<span>def <span class="ident">lastIndexOf</span></span>(<span>self,<br>str: <a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a>,<br>startIndex: int | None) ‑> int</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@method
+def lastIndexOf(self, str: &#34;HlString&#34;, startIndex: Optional[int]) -&gt; int:
+    &#34;&#34;&#34;
+    Returns the position of the rightmost occurrence of `str` within `this`
+    String.
+
+    If `startIndex` is given, the search is performed within the substring
+    of `this` String from 0 to `startIndex + str.length`. Otherwise the search
+    is performed within `this` String. In either case, the returned position
+    is relative to the beginning of `this` String.
+
+    If `startIndex` is negative, the result is unspecified.
+
+    If `str` cannot be found, -1 is returned.
+    &#34;&#34;&#34;
+    raise NotImplementedError()</code></pre>
+</details>
+<div class="desc"><p>Returns the position of the rightmost occurrence of <code>str</code> within <code>this</code>
+String.</p>
+<p>If <code>startIndex</code> is given, the search is performed within the substring
+of <code>this</code> String from 0 to <code>startIndex + str.length</code>. Otherwise the search
+is performed within <code>this</code> String. In either case, the returned position
+is relative to the beginning of <code>this</code> String.</p>
+<p>If <code>startIndex</code> is negative, the result is unspecified.</p>
+<p>If <code>str</code> cannot be found, -1 is returned.</p></div>
+</dd>
+<dt id="hlrun.obj.HlString.split"><code class="name flex">
+<span>def <span class="ident">split</span></span>(<span>self,<br>delimiter: <a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a>) ‑> List[<a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@method
+def split(self, delimiter: &#34;HlString&#34;) -&gt; List[HlString]:
+    &#34;&#34;&#34;
+    Splits `this` String at each occurrence of `delimiter`.
+
+    If `this` String is the empty String `&#34;&#34;`, the result is not consistent
+    across targets and may either be `[]` (on Js, Cpp) or `[&#34;&#34;]`.
+
+    If `delimiter` is the empty String `&#34;&#34;`, `this` String is split into an
+    Array of `this.length` elements, where the elements correspond to the
+    characters of `this` String.
+
+    If `delimiter` is not found within `this` String, the result is an Array
+    with one element, which equals `this` String.
+
+    If `delimiter` is null, the result is unspecified.
+
+    Otherwise, `this` String is split into parts at each occurrence of
+    `delimiter`. If `this` String starts (or ends) with `delimiter`, the
+    result `Array` contains a leading (or trailing) empty String `&#34;&#34;` element.
+    Two subsequent delimiters also result in an empty String `&#34;&#34;` element.
+    &#34;&#34;&#34;
+    raise NotImplementedError()</code></pre>
+</details>
+<div class="desc"><p>Splits <code>this</code> String at each occurrence of <code>delimiter</code>.</p>
+<p>If <code>this</code> String is the empty String <code>""</code>, the result is not consistent
+across targets and may either be <code>[]</code> (on Js, Cpp) or <code>[""]</code>.</p>
+<p>If <code>delimiter</code> is the empty String <code>""</code>, <code>this</code> String is split into an
+Array of <code>this.length</code> elements, where the elements correspond to the
+characters of <code>this</code> String.</p>
+<p>If <code>delimiter</code> is not found within <code>this</code> String, the result is an Array
+with one element, which equals <code>this</code> String.</p>
+<p>If <code>delimiter</code> is null, the result is unspecified.</p>
+<p>Otherwise, <code>this</code> String is split into parts at each occurrence of
+<code>delimiter</code>. If <code>this</code> String starts (or ends) with <code>delimiter</code>, the
+result <code>Array</code> contains a leading (or trailing) empty String <code>""</code> element.
+Two subsequent delimiters also result in an empty String <code>""</code> element.</p></div>
+</dd>
+<dt id="hlrun.obj.HlString.substr"><code class="name flex">
+<span>def <span class="ident">substr</span></span>(<span>self, pos: int, len: int | None) ‑> <a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@method
+def substr(self, pos: int, len: Optional[int]) -&gt; HlString:
+    &#34;&#34;&#34;
+    Returns `len` characters of `this` String, starting at position `pos`.
+
+    If `len` is omitted, all characters from position `pos` to the end of
+    `this` String are included.
+
+    If `pos` is negative, its value is calculated from the end of `this`
+    String by `this.length + pos`. If this yields a negative value, 0 is
+    used instead.
+
+    If the calculated position + `len` exceeds `this.length`, the characters
+    from that position to the end of `this` String are returned.
+
+    If `len` is negative, the result is unspecified.
+    &#34;&#34;&#34;
+    raise NotImplementedError()</code></pre>
+</details>
+<div class="desc"><p>Returns <code>len</code> characters of <code>this</code> String, starting at position <code>pos</code>.</p>
+<p>If <code>len</code> is omitted, all characters from position <code>pos</code> to the end of
+<code>this</code> String are included.</p>
+<p>If <code>pos</code> is negative, its value is calculated from the end of <code>this</code>
+String by <code>this.length + pos</code>. If this yields a negative value, 0 is
+used instead.</p>
+<p>If the calculated position + <code>len</code> exceeds <code>this.length</code>, the characters
+from that position to the end of <code>this</code> String are returned.</p>
+<p>If <code>len</code> is negative, the result is unspecified.</p></div>
+</dd>
+<dt id="hlrun.obj.HlString.substring"><code class="name flex">
+<span>def <span class="ident">substring</span></span>(<span>self, startIndex: int, endIndex: int | None) ‑> <a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@method
+def substring(self, startIndex: int, endIndex: Optional[int]) -&gt; HlString:
+    &#34;&#34;&#34;
+    Returns the part of `this` String from `startIndex` to but not including `endIndex`.
+
+    If `startIndex` or `endIndex` are negative, 0 is used instead.
+
+    If `startIndex` exceeds `endIndex`, they are swapped.
+
+    If the (possibly swapped) `endIndex` is omitted or exceeds
+    `this.length`, `this.length` is used instead.
+
+    If the (possibly swapped) `startIndex` exceeds `this.length`, the empty
+    String `&#34;&#34;` is returned.
+    &#34;&#34;&#34;
+    raise NotImplementedError()</code></pre>
+</details>
+<div class="desc"><p>Returns the part of <code>this</code> String from <code>startIndex</code> to but not including <code>endIndex</code>.</p>
+<p>If <code>startIndex</code> or <code>endIndex</code> are negative, 0 is used instead.</p>
+<p>If <code>startIndex</code> exceeds <code>endIndex</code>, they are swapped.</p>
+<p>If the (possibly swapped) <code>endIndex</code> is omitted or exceeds
+<code>this.length</code>, <code>this.length</code> is used instead.</p>
+<p>If the (possibly swapped) <code>startIndex</code> exceeds <code>this.length</code>, the empty
+String <code>""</code> is returned.</p></div>
+</dd>
+<dt id="hlrun.obj.HlString.toLowerCase"><code class="name flex">
+<span>def <span class="ident">toLowerCase</span></span>(<span>self) ‑> <a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@method
+def toLowerCase(self) -&gt; &#34;HlString&#34;:
+    &#34;&#34;&#34;
+    Returns a String where all characters of `this` String are lower case.
+    &#34;&#34;&#34;
+    raise NotImplementedError()</code></pre>
+</details>
+<div class="desc"><p>Returns a String where all characters of <code>this</code> String are lower case.</p></div>
+</dd>
+<dt id="hlrun.obj.HlString.toString"><code class="name flex">
+<span>def <span class="ident">toString</span></span>(<span>self) ‑> <a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@method
+def toString(self) -&gt; HlString:
+    &#34;&#34;&#34;
+    Returns the String itself.
+    &#34;&#34;&#34;
+    raise NotImplementedError()</code></pre>
+</details>
+<div class="desc"><p>Returns the String itself.</p></div>
+</dd>
+<dt id="hlrun.obj.HlString.toUpperCase"><code class="name flex">
+<span>def <span class="ident">toUpperCase</span></span>(<span>self) ‑> <a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@method
+def toUpperCase(self) -&gt; &#34;HlString&#34;:
+    &#34;&#34;&#34;
+    Returns a String where all characters of `this` String are upper case.
+    &#34;&#34;&#34;
+    raise NotImplementedError()</code></pre>
+</details>
+<div class="desc"><p>Returns a String where all characters of <code>this</code> String are upper case.</p></div>
+</dd>
+</dl>
+</dd>
+</dl>
 </section>
 </article>
 <nav id="sidebar">
@@ -57,6 +642,35 @@ el.replaceWith(d);
 <li><h3>Super-module</h3>
 <ul>
 <li><code><a title="hlrun" href="index.html">hlrun</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="hlrun.obj.method" href="#hlrun.obj.method">method</a></code></li>
+<li><code><a title="hlrun.obj.obj" href="#hlrun.obj.obj">obj</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a></code></h4>
+<ul class="two-column">
+<li><code><a title="hlrun.obj.HlString.bytes" href="#hlrun.obj.HlString.bytes">bytes</a></code></li>
+<li><code><a title="hlrun.obj.HlString.charAt" href="#hlrun.obj.HlString.charAt">charAt</a></code></li>
+<li><code><a title="hlrun.obj.HlString.charCodeAt" href="#hlrun.obj.HlString.charCodeAt">charCodeAt</a></code></li>
+<li><code><a title="hlrun.obj.HlString.findChar" href="#hlrun.obj.HlString.findChar">findChar</a></code></li>
+<li><code><a title="hlrun.obj.HlString.fromCharCode" href="#hlrun.obj.HlString.fromCharCode">fromCharCode</a></code></li>
+<li><code><a title="hlrun.obj.HlString.indexOf" href="#hlrun.obj.HlString.indexOf">indexOf</a></code></li>
+<li><code><a title="hlrun.obj.HlString.lastIndexOf" href="#hlrun.obj.HlString.lastIndexOf">lastIndexOf</a></code></li>
+<li><code><a title="hlrun.obj.HlString.length" href="#hlrun.obj.HlString.length">length</a></code></li>
+<li><code><a title="hlrun.obj.HlString.split" href="#hlrun.obj.HlString.split">split</a></code></li>
+<li><code><a title="hlrun.obj.HlString.substr" href="#hlrun.obj.HlString.substr">substr</a></code></li>
+<li><code><a title="hlrun.obj.HlString.substring" href="#hlrun.obj.HlString.substring">substring</a></code></li>
+<li><code><a title="hlrun.obj.HlString.toLowerCase" href="#hlrun.obj.HlString.toLowerCase">toLowerCase</a></code></li>
+<li><code><a title="hlrun.obj.HlString.toString" href="#hlrun.obj.HlString.toString">toString</a></code></li>
+<li><code><a title="hlrun.obj.HlString.toUpperCase" href="#hlrun.obj.HlString.toUpperCase">toUpperCase</a></code></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>

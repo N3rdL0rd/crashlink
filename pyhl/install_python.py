@@ -144,9 +144,9 @@ def main_win() -> None:
                 print(f"Found Python lib at {lib_src}")
                 os.system(f'copy /Y "{lib_src}" "{lib_dest}"')
                 break
-            
+
     os.system(f"copy /Y python_nuget\\tools\\python313.dll ")
-    
+
     print("Copying Lib...")
     lib_src = os.path.join("python_nuget", "tools", "Lib")
     lib_dest = "lib-py"
@@ -167,7 +167,7 @@ def main_win() -> None:
 
     shutil.rmtree("python_nuget")
     shutil.rmtree("python", ignore_errors=True)
-    
+
     print("Installing hashlink binaries...")
     download_file("https://nightly.link/HaxeFoundation/hashlink/workflows/build/master/windows-cmake-64.zip", "hl.zip")
     with zipfile.ZipFile("hl.zip", "r") as zip_ref:
@@ -180,7 +180,7 @@ def main_win() -> None:
     if nested_dirs:
         nested_dir = nested_dirs[0]
         print(f"Found nested hashlink directory: {nested_dir}")
-        
+
         hashlink_bin_dir = os.path.dirname(nested_dir)
         for item in os.listdir(nested_dir):
             src = os.path.join(nested_dir, item)
@@ -193,12 +193,12 @@ def main_win() -> None:
                 if os.path.exists(dst):
                     shutil.rmtree(dst)
                 shutil.copytree(src, dst)
-        
+
         shutil.rmtree(nested_dir)
         print(f"Removed nested directory: {nested_dir}")
     else:
         print("No nested hashlink directory found")
-        
+
     if os.path.exists("python313.dll") and os.path.exists("python313.lib"):
         shutil.copy("python313.dll", "python3.dll")
         shutil.copy("python313.lib", "python3.lib")

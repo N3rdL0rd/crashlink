@@ -66,6 +66,50 @@ el.replaceWith(d);
 </details>
 <div class="desc"></div>
 </dd>
+<dt id="hlrun.globals.is_debug"><code class="name flex">
+<span>def <span class="ident">is_debug</span></span>(<span>) ‑> bool</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_debug() -&gt; bool:
+    &#34;&#34;&#34;
+    Checks if pyhl has DEBUG enabled in this runtime.
+    &#34;&#34;&#34;
+    if not is_runtime():
+        return False
+    global DEBUG
+    try:
+        assert isinstance(DEBUG, bool)  # type: ignore
+        return DEBUG  # type: ignore
+    except NameError:
+        return False</code></pre>
+</details>
+<div class="desc"><p>Checks if pyhl has DEBUG enabled in this runtime.</p></div>
+</dd>
+<dt id="hlrun.globals.is_runtime"><code class="name flex">
+<span>def <span class="ident">is_runtime</span></span>(<span>) ‑> bool</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_runtime() -&gt; bool:
+    &#34;&#34;&#34;
+    Checks if the environment hlrun is running in is the pyhl runtime.
+    &#34;&#34;&#34;
+    global RUNTIME
+    try:
+        assert isinstance(RUNTIME, bool)  # type: ignore
+        return RUNTIME  # type: ignore
+    except NameError:
+        return False</code></pre>
+</details>
+<div class="desc"><p>Checks if the environment hlrun is running in is the pyhl runtime.</p></div>
+</dd>
 </dl>
 </section>
 <section>
@@ -84,6 +128,8 @@ el.replaceWith(d);
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
 <li><code><a title="hlrun.globals.dbg_print" href="#hlrun.globals.dbg_print">dbg_print</a></code></li>
+<li><code><a title="hlrun.globals.is_debug" href="#hlrun.globals.is_debug">is_debug</a></code></li>
+<li><code><a title="hlrun.globals.is_runtime" href="#hlrun.globals.is_runtime">is_runtime</a></code></li>
 </ul>
 </li>
 </ul>

@@ -543,7 +543,7 @@ class Commands:
                 print(disasm.func_header(self.code, func))
                 return
         print("Function not found.")
-        
+
     def apidocs(self, args: List[str]) -> None:
         """Generate API documentation for all classes in the bytecode based on what can be inferred. Outputs to the given path. `apidocs <path>`"""
         if len(args) == 0:
@@ -564,7 +564,7 @@ class Commands:
             except OSError:
                 print(f"Failed to write to {os.path.join(path, file)}")
         print(f"Files generated in {os.path.abspath(path)}")
-        
+
     def _get_commands(self) -> Dict[str, Callable[[List[str]], None]]:
         """Get all command methods using reflection"""
         return {

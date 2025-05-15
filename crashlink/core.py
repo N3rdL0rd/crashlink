@@ -1379,7 +1379,7 @@ class Function(Serialisable):
             if not debugRef:
                 debugRef = fileRef(fid=code.debugfiles.find_or_add("?"), line=42)  # life, the universe, and everything
             self.debuginfo.value.insert(idx, debugRef)
-            
+
     def push_op(self, code: "Bytecode", op: Opcode, debugRef: Optional[fileRef] = None) -> int:
         """
         Push an Opcode into this function at the start.

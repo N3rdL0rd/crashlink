@@ -2471,6 +2471,20 @@ you.</p>
                 debugRef = fileRef(fid=code.debugfiles.find_or_add(&#34;?&#34;), line=42)  # life, the universe, and everything
             self.debuginfo.value.insert(idx, debugRef)
 
+    def push_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Push an Opcode into this function at the start.
+        &#34;&#34;&#34;
+        self.insert_op(code, 0, op, debugRef=debugRef)
+        return 0
+
+    def append_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Append an Opcode to the end of this function.
+        &#34;&#34;&#34;
+        self.insert_op(code, -1, op, debugRef=debugRef)
+        return len(self.ops) - 1
+
     def serialise(self) -&gt; bytes:
         self.nops.value = len(self.ops)
         self.nregs.value = len(self.regs)
@@ -2505,6 +2519,23 @@ you.</p>
 </ul>
 <h3>Methods</h3>
 <dl>
+<dt id="crashlink.core.Function.append_op"><code class="name flex">
+<span>def <span class="ident">append_op</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>,<br>op: <a title="crashlink.core.Opcode" href="#crashlink.core.Opcode">Opcode</a>,<br>debugRef: <a title="crashlink.core.fileRef" href="#crashlink.core.fileRef">fileRef</a> | None = None) ‑> int</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def append_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+    &#34;&#34;&#34;
+    Append an Opcode to the end of this function.
+    &#34;&#34;&#34;
+    self.insert_op(code, -1, op, debugRef=debugRef)
+    return len(self.ops) - 1</code></pre>
+</details>
+<div class="desc"><p>Append an Opcode to the end of this function.</p></div>
+</dd>
 <dt id="crashlink.core.Function.called_by"><code class="name flex">
 <span>def <span class="ident">called_by</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> List[<a title="crashlink.core.fIndex" href="#crashlink.core.fIndex">fIndex</a>]</span>
 </code></dt>
@@ -2576,6 +2607,23 @@ you.</p>
         self.debuginfo.value.insert(idx, debugRef)</code></pre>
 </details>
 <div class="desc"><p>Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.</p></div>
+</dd>
+<dt id="crashlink.core.Function.push_op"><code class="name flex">
+<span>def <span class="ident">push_op</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>,<br>op: <a title="crashlink.core.Opcode" href="#crashlink.core.Opcode">Opcode</a>,<br>debugRef: <a title="crashlink.core.fileRef" href="#crashlink.core.fileRef">fileRef</a> | None = None) ‑> int</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def push_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+    &#34;&#34;&#34;
+    Push an Opcode into this function at the start.
+    &#34;&#34;&#34;
+    self.insert_op(code, 0, op, debugRef=debugRef)
+    return 0</code></pre>
+</details>
+<div class="desc"><p>Push an Opcode into this function at the start.</p></div>
 </dd>
 <dt id="crashlink.core.Function.resolve_file"><code class="name flex">
 <span>def <span class="ident">resolve_file</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
@@ -5464,9 +5512,11 @@ attributes &ndash; see the documentation for details.</p></div>
 <li>
 <h4><code><a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a></code></h4>
 <ul class="two-column">
+<li><code><a title="crashlink.core.Function.append_op" href="#crashlink.core.Function.append_op">append_op</a></code></li>
 <li><code><a title="crashlink.core.Function.called_by" href="#crashlink.core.Function.called_by">called_by</a></code></li>
 <li><code><a title="crashlink.core.Function.deserialise" href="#crashlink.core.Function.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.Function.insert_op" href="#crashlink.core.Function.insert_op">insert_op</a></code></li>
+<li><code><a title="crashlink.core.Function.push_op" href="#crashlink.core.Function.push_op">push_op</a></code></li>
 <li><code><a title="crashlink.core.Function.resolve_file" href="#crashlink.core.Function.resolve_file">resolve_file</a></code></li>
 <li><code><a title="crashlink.core.Function.resolve_fun" href="#crashlink.core.Function.resolve_fun">resolve_fun</a></code></li>
 <li><code><a title="crashlink.core.Function.serialise" href="#crashlink.core.Function.serialise">serialise</a></code></li>
