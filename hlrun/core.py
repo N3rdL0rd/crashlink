@@ -4,14 +4,14 @@ Core classes, handling, and casting for primitives.
 
 from dataclasses import dataclass
 from enum import Enum
-from types import CapsuleType
-from typing import Any, Iterable, List, Tuple
-
-
+from typing import Any, Iterable, List
 from .globals import dbg_print, is_runtime
 
 if is_runtime():
-    from _pyhl import hl_getfield, hl_setfield # type: ignore[import-not-found]
+    from _pyhl import hl_obj_getfield, hl_obj_setfield, hl_obj_classname, hl_closure_call, hl_obj_field_type
+    RUNTIME = True
+else:
+    RUNTIME = False
 
 class Type(Enum):
     """
@@ -57,18 +57,70 @@ class HlPrim(HlValue):
     obj: Any
     type: Type
 
+
+def _create_matching_obj(ptr: Any) -> HlObj:
+    from .obj import OBJ_MAP
+    name = hl_obj_classname(ptr)
+    return OBJ_MAP[name](ptr) if name in OBJ_MAP else HlObj(ptr) # type: ignore[no-untyped-call]
+
+
+def to_hlvalue(obj: Any, kind: Type|int) -> HlValue:
+    """
+    Convert a Capsule containing a pointer to an HL object to a HlValue.
+    """
+    kind = Type(kind) if isinstance(kind, int) else kind
+    match kind:
+        case Type.OBJ:
+            return _create_matching_obj(obj)
+        case Type.FUN:
+            return HlClosure(obj)
+        case _:
+            return obj
+
+
+class HlClosure(HlValue):
+    """
+    Proxy to a callable function, out-of-context of an object.
+    """
+    
+    def __init__(self, ptr: Any) -> None:
+        self.__ptr = ptr
+    
+    def __call__(self, *args: Any) -> Any:
+        if RUNTIME:
+            return hl_closure_call(self.__ptr, list(args))
+        raise RuntimeError("This isn't the pyhl runtime!")
+
+
 class HlObj(HlValue):
     """
     Proxy to an instance of an HL class.
     """
     
-    def __init__(self, ptr: CapsuleType):
-        self.__ptr_impossible_to_overlap_this_name = ptr # HACK: yeah... sorry.
-        
     def __getattr__(self, name: str) -> Any:
-        if is_runtime():
-            return hl_getfield(self.__ptr_impossible_to_overlap_this_name, name)
-        raise NotImplementedError("Runtime access not implemented.")
+        if RUNTIME:
+            if "__ptr_impossible_to_overlap_this_name" in self.__dict__:
+                return to_hlvalue(hl_obj_getfield(self.__dict__["__ptr_impossible_to_overlap_this_name"], name), hl_obj_field_type(self.__dict__["__ptr_impossible_to_overlap_this_name"], name))
+            else:
+                raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+        raise RuntimeError("This isn't the pyhl runtime!")
+    
+    def __setattr__(self, name: str, value: Any) -> None:
+        if RUNTIME:
+            if "__ptr_impossible_to_overlap_this_name" in self.__dict__:
+                return hl_obj_setfield(self.__dict__["__ptr_impossible_to_overlap_this_name"], name, value)
+            else:
+                raise AttributeError("Cannot set attributes before initializing the object")
+        raise RuntimeError("This isn't the pyhl runtime!")
+        
+    def _classname(self) -> str:
+        """
+        Get the class name of the object.
+        """
+        return hl_obj_classname(self.__dict__["__ptr_impossible_to_overlap_this_name"])
+
+    def __init__(self, ptr): # type: ignore
+        self.__dict__['__ptr_impossible_to_overlap_this_name'] = ptr # HACK: yeah... sorry.
 
 
 class Args:
@@ -82,11 +134,7 @@ class Args:
         args_arr: List[HlValue] = []
         for i, arg in enumerate(args):
             args_str.append(f"arg{i}: {Type(types_arr[i])}={arg}")
-            match types_arr[i]:
-                case Type.OBJ:
-                    args_arr.append(HlObj(arg))
-                case _:
-                    args_arr.append(HlPrim(arg, Type(types_arr[i])))
+            args_arr.append(to_hlvalue(arg, types_arr[i]))
         dbg_print(f"{fn_symbol}({', '.join(args_str)})")
         self.args: List[HlValue] = args_arr
 

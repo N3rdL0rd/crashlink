@@ -224,7 +224,7 @@ if USE_CRASHLINK:
 
         def apply(self, code: Bytecode) -> None:
             """
-            Apply all registered hooks and patches. own_source should be a string containing the entire source code of the module containing the initialization of this class.
+            Apply all registered hooks and patches.
             """
             assert code.is_ok()
             print(f"----- Applying patch:{' ' + self.name if self.name else ''} -----")
@@ -308,7 +308,7 @@ else:
             self, fn: str | int
         ) -> Callable[[Callable[[Args], Args]], Callable[[Args], Args]]:
             """
-            Decorator stub for intercepting functions at runtime.
+            Intercept (and modify arguments to) function calls at runtime.
             """
             def decorator(
                 func: Callable[[Args], Args],
@@ -322,7 +322,7 @@ else:
             self, fn: str | int
         ) -> Callable[[Callable[[object, object], None]], Callable[[object, object], None]]:
             """
-            Decorator stub for patching functions at runtime.
+            Patch bytecode statically before runtime.
             """
             def decorator(
                 func: Callable[[object, object], None],
