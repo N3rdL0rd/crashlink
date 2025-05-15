@@ -13,7 +13,7 @@ if is_runtime():
     USE_CRASHLINK = False
 else:
     USE_CRASHLINK = True
-        
+
     from crashlink.core import *
     from crashlink.disasm import func_header
 
@@ -25,6 +25,7 @@ T = TypeVar("T")
 # but this is really ugly. ideally, i'll come back and fix this some day.
 
 if USE_CRASHLINK:
+
     class Patch:
         """
         Main patching class that manages bytecode hooks and patches.
@@ -49,9 +50,7 @@ if USE_CRASHLINK:
             self.needs_pyhl = False
             self.custom_fns: Dict[str, fIndex] = {}
 
-        def intercept(
-            self, fn: str | int
-        ) -> Callable[[Callable[[Args], Args]], Callable[[Args], Args]]:
+        def intercept(self, fn: str | int) -> Callable[[Callable[[Args], Args]], Callable[[Args], Args]]:
             """
             Decorator to intercept and modify a function's arguments at call-time.
             """
@@ -283,12 +282,13 @@ if USE_CRASHLINK:
             """
             return self.interceptions[identifier](args)
 else:
-    class Patch: # type: ignore
+
+    class Patch:  # type: ignore
         """
         Runtime stub version of the Patch class.
         Maintains API compatibility but provides no patching functionality in runtime mode.
         """
-        
+
         def __init__(
             self,
             name: Optional[str] = None,
@@ -303,42 +303,42 @@ else:
             self.sha256 = sha256
             self.interceptions: Dict[str | int, Callable[[Args], Args]] = {}
             self.patches: Dict[str | int, Callable[[Bytecode, Function], None]] = {}
-            
-        def intercept(
-            self, fn: str | int
-        ) -> Callable[[Callable[[Args], Args]], Callable[[Args], Args]]:
+
+        def intercept(self, fn: str | int) -> Callable[[Callable[[Args], Args]], Callable[[Args], Args]]:
             """
             Intercept (and modify arguments to) function calls at runtime.
             """
+
             def decorator(
                 func: Callable[[Args], Args],
             ) -> Callable[[Args], Args]:
                 self.interceptions[fn] = func
                 return func
-            
+
             return decorator
-            
+
         def patch(
             self, fn: str | int
         ) -> Callable[[Callable[[object, object], None]], Callable[[object, object], None]]:
             """
             Patch bytecode statically before runtime.
             """
+
             def decorator(
                 func: Callable[[object, object], None],
             ) -> Callable[[object, object], None]:
                 self.patches[fn] = func
                 return func
-                
+
             return decorator
-            
+
         def apply(self, code: object) -> None:
             """
             Runtime stub for applying patches.
             """
             # No-op in runtime mode
             pass
-            
+
         def do_intercept(self, args: Args, identifier: str | int) -> Args:
             """
             Runtime handler for interception. The only function in this runtime class that does something!
