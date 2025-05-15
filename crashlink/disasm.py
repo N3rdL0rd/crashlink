@@ -4,6 +4,7 @@ Human-readable disassembly of opcodes and utilities to work at a relatively low 
 
 from ast import literal_eval
 from typing import List, Optional, Dict
+
 try:
     from tqdm import tqdm
 
@@ -76,6 +77,7 @@ def func_header(code: Bytecode, func: Function | Native) -> str:
         return f"f@{func.findex.value} {'static ' if is_static(code, func) else ''}{name} ({', '.join([type_name(code, arg.resolve(code)) for arg in fun.args])}) -> {type_name(code, fun.ret.resolve(code))} (from {func.resolve_file(code)})"
     return f"f@{func.findex.value} {name} (no fun found!)"
 
+
 def func_header_html(code: Bytecode, func: Function | Native) -> str:
     """
     Generates a human-readable header for a function in HTML format.
@@ -89,6 +91,7 @@ def func_header_html(code: Bytecode, func: Function | Native) -> str:
         fun: Fun = fun_type
         return f"f@{func.findex.value} {'static ' if is_static(code, func) else ''}<code>{name} ({', '.join([type_name(code, arg.resolve(code)) for arg in fun.args])})</code> Returns <code>{type_name(code, fun.ret.resolve(code))}</code>"
     return f"f@{func.findex.value} <code>{name}</code> (no fun found!)"
+
 
 def native_header(code: Bytecode, native: Native) -> str:
     """
@@ -492,12 +495,12 @@ def gen_docs(code: Bytecode) -> Dict[str, str]:
                     defn: Obj = obj.definition
                     res[defn.name.resolve(code) + ".html"] = gen_docs_for_obj(code, defn)
         else:
-                for obj in tqdm(code.types):
-                    if obj.kind.value == kind:
-                        if not isinstance(obj.definition, Obj):
-                            raise TypeError(f"Expected Obj, got {obj.definition}")
-                        defin: Obj = obj.definition
-                        res[defin.name.resolve(code) + ".html"] = gen_docs_for_obj(code, defin)
+            for obj in tqdm(code.types):
+                if obj.kind.value == kind:
+                    if not isinstance(obj.definition, Obj):
+                        raise TypeError(f"Expected Obj, got {obj.definition}")
+                    defin: Obj = obj.definition
+                    res[defin.name.resolve(code) + ".html"] = gen_docs_for_obj(code, defin)
     except KeyboardInterrupt:
         print("Aborted.")
     return res

@@ -21,8 +21,8 @@ def is_runtime() -> bool:
     """
     global RUNTIME
     try:
-        assert isinstance(RUNTIME, bool) # type: ignore
-        return RUNTIME # type: ignore
+        assert isinstance(RUNTIME, bool)  # type: ignore
+        return RUNTIME  # type: ignore
     except NameError:
         return False
 
@@ -35,7 +35,7 @@ def is_debug() -> bool:
         return False
     global DEBUG
     try:
-        assert isinstance(DEBUG, bool) # type: ignore
-        return DEBUG # type: ignore
+        assert isinstance(DEBUG, bool)  # type: ignore
+        return DEBUG  # type: ignore
     except NameError:
         return False
