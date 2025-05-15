@@ -94,7 +94,7 @@ build-hl:
 patchme-test:
     @just pyhl
     crashlink tests/haxe/PatchMe.hl -tDp tests/patch/patchme.py
-    ./hl tests/haxe/PatchMe.hl.patch
+    PYTHONPATH=$(pwd)/lib-py ./hl tests/haxe/PatchMe.hl.patch
 
 # Runs the patchme test (Windows)
 patchme-test-win:

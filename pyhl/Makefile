@@ -12,7 +12,7 @@ TARGET = pyhl.hdll
 all: $(TARGET)
 
 $(TARGET): pyhl.c
-	$(CC) $(CFLAGS) -o $@ $< $(INCLUDES) -Wl,--whole-archive $(LIBPYTHON) -Wl,--no-whole-archive $(EXTRA_LIBS)
+	$(CC) $(CFLAGS) -O0 -o $@ $< $(INCLUDES) -Wl,--whole-archive $(LIBPYTHON) -Wl,--no-whole-archive $(EXTRA_LIBS)
 
 clean:
 	rm -f $(TARGET)
