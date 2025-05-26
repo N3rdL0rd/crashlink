@@ -529,6 +529,7 @@ class Commands:
             return
         print(f"Virtual t@{index}")
         print("Fields:")
+        assert isinstance(virt.definition, Virtual), "Virtual type is not a Virtual."
         for field in virt.definition.fields:
             print(f"  {field.name.resolve(self.code)}: {field.type.resolve(self.code)}")
 
