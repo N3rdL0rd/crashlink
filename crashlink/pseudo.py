@@ -43,7 +43,7 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
             return disasm.partial_func_name(code, expr.value) or f"f@{expr.value.findex.value}"
         elif isinstance(expr.value, str):
             # Basic string quoting, may need more sophisticated escaping for real Haxe
-            return f'"{expr.value.replace('"', '\\"')}"'
+            return '"' + expr.value.replace('"', '\\"') + '"'
         elif isinstance(expr.value, bool):
             return "true" if expr.value else "false"
         elif expr.value is None:  # For IRConst.ConstType.NULL
