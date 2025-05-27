@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
-<meta name="generator" content="pdoc3 0.11.6">
+<meta name="generator" content="pdoc3 0.11.5">
 <title>crashlink.disasm API documentation</title>
 <meta name="description" content="Human-readable disassembly of opcodes and utilities to work at a relatively low level with HashLink bytecode.">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
@@ -48,7 +48,7 @@ el.replaceWith(d);
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="crashlink.disasm.fmt_op"><code class="name flex">
-<span>def <span class="ident">fmt_op</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>regs: List[<a title="crashlink.core.Reg" href="core.html#crashlink.core.Reg">Reg</a>] | List[<a title="crashlink.core.tIndex" href="core.html#crashlink.core.tIndex">tIndex</a>],<br>op: <a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>,<br>idx: int,<br>width: int = 15,<br>debug: List[<a title="crashlink.core.fileRef" href="core.html#crashlink.core.fileRef">fileRef</a>] | None = None,<br>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a> | None = None) ‑> str</span>
+<span>def <span class="ident">fmt_op</span></span>(<span>code: Bytecode,<br>regs: List[Reg] | List[tIndex],<br>op: Opcode,<br>idx: int,<br>width: int = 15,<br>debug: Optional[List[fileRef]] = None,<br>func: Optional[Function] = None) ‑> str</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -110,8 +110,49 @@ el.replaceWith(d);
 </details>
 <div class="desc"><p>Reads and parses a list of opcodes from a human-readable(-ish) assembly format. See <code><a title="crashlink.disasm.to_asm" href="#crashlink.disasm.to_asm">to_asm()</a></code>.</p></div>
 </dd>
+<dt id="crashlink.disasm.full_func_name"><code class="name flex">
+<span>def <span class="ident">full_func_name</span></span>(<span>code: Bytecode, func: Function | Native) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def full_func_name(code: Bytecode, func: Function | Native) -&gt; str:
+    &#34;&#34;&#34;
+    Generates a human-readable name for a function or native.
+    &#34;&#34;&#34;
+    proto = get_proto_for(code, func.findex.value)
+    if proto:
+        name = proto.name.resolve(code)
+        for type in code.types:
+            if type.kind.value == Type.TYPEDEFS.index(Obj):
+                if not isinstance(type.definition, Obj):
+                    continue
+                obj_def: Obj = type.definition
+                for fun in obj_def.protos:
+                    if fun.findex.value == func.findex.value:
+                        return f&#34;{obj_def.name.resolve(code)}.{name}&#34;
+    else:
+        name = &#34;&lt;none&gt;&#34;
+        field = get_field_for(code, func.findex.value)
+        if field:
+            name = field.name.resolve(code)
+            for type in code.types:
+                if type.kind.value == Type.TYPEDEFS.index(Obj):
+                    if not isinstance(type.definition, Obj):
+                        continue
+                    _obj_def: Obj = type.definition
+                    fields = _obj_def.resolve_fields(code)
+                    for binding in _obj_def.bindings:
+                        if binding.findex.value == func.findex.value:
+                            return f&#34;{_obj_def.name.resolve(code)}.{name}&#34;
+    return name</code></pre>
+</details>
+<div class="desc"><p>Generates a human-readable name for a function or native.</p></div>
+</dd>
 <dt id="crashlink.disasm.func"><code class="name flex">
-<span>def <span class="ident">func</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a> | <a title="crashlink.core.Native" href="core.html#crashlink.core.Native">Native</a>) ‑> str</span>
+<span>def <span class="ident">func</span></span>(<span>code: Bytecode, func: Function | Native) ‑> str</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -157,7 +198,7 @@ el.replaceWith(d);
 <div class="desc"><p>Generates a human-readable printout and disassembly of a function or native.</p></div>
 </dd>
 <dt id="crashlink.disasm.func_header"><code class="name flex">
-<span>def <span class="ident">func_header</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a> | <a title="crashlink.core.Native" href="core.html#crashlink.core.Native">Native</a>) ‑> str</span>
+<span>def <span class="ident">func_header</span></span>(<span>code: Bytecode, func: Function | Native) ‑> str</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -181,7 +222,7 @@ el.replaceWith(d);
 <div class="desc"><p>Generates a human-readable header for a function.</p></div>
 </dd>
 <dt id="crashlink.disasm.is_static"><code class="name flex">
-<span>def <span class="ident">is_static</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a>) ‑> bool</span>
+<span>def <span class="ident">is_static</span></span>(<span>code: Bytecode, func: Function) ‑> bool</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -206,7 +247,7 @@ el.replaceWith(d);
 <div class="desc"><p>Checks if a function is static.</p></div>
 </dd>
 <dt id="crashlink.disasm.is_std"><code class="name flex">
-<span>def <span class="ident">is_std</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a> | <a title="crashlink.core.Native" href="core.html#crashlink.core.Native">Native</a>) ‑> bool</span>
+<span>def <span class="ident">is_std</span></span>(<span>code: Bytecode, func: Function | Native) ‑> bool</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -229,7 +270,7 @@ el.replaceWith(d);
 <div class="desc"><p>Checks if a function is from the standard library. This is a heuristic and is a bit broken still.</p></div>
 </dd>
 <dt id="crashlink.disasm.native_header"><code class="name flex">
-<span>def <span class="ident">native_header</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>native: <a title="crashlink.core.Native" href="core.html#crashlink.core.Native">Native</a>) ‑> str</span>
+<span>def <span class="ident">native_header</span></span>(<span>code: Bytecode, native: Native) ‑> str</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -248,8 +289,31 @@ el.replaceWith(d);
 </details>
 <div class="desc"><p>Generates a human-readable header for a native function.</p></div>
 </dd>
+<dt id="crashlink.disasm.partial_func_name"><code class="name flex">
+<span>def <span class="ident">partial_func_name</span></span>(<span>code: Bytecode, func: Function | Native) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def partial_func_name(code: Bytecode, func: Function | Native) -&gt; str:
+    &#34;&#34;&#34;
+    Generates a human-readable name for a function or native. Does not qualify the name with the object it belongs to.
+    &#34;&#34;&#34;
+    proto = get_proto_for(code, func.findex.value)
+    if proto:
+        return proto.name.resolve(code)
+    else:
+        field = get_field_for(code, func.findex.value)
+        if field:
+            return field.name.resolve(code)
+    return &#34;&lt;none&gt;&#34;</code></pre>
+</details>
+<div class="desc"><p>Generates a human-readable name for a function or native. Does not qualify the name with the object it belongs to.</p></div>
+</dd>
 <dt id="crashlink.disasm.pseudo_from_op"><code class="name flex">
-<span>def <span class="ident">pseudo_from_op</span></span>(<span>op: <a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>,<br>idx: int,<br>regs: List[<a title="crashlink.core.Reg" href="core.html#crashlink.core.Reg">Reg</a>] | List[<a title="crashlink.core.tIndex" href="core.html#crashlink.core.tIndex">tIndex</a>],<br>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>terse: bool = False,<br>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a> | None = None) ‑> str</span>
+<span>def <span class="ident">pseudo_from_op</span></span>(<span>op: Opcode,<br>idx: int,<br>regs: List[Reg] | List[tIndex],<br>code: Bytecode,<br>terse: bool = False,<br>func: Optional[Function] = None) ‑> str</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -459,7 +523,7 @@ el.replaceWith(d);
 <div class="desc"><p>Generates pseudocode disassembly from an opcode.</p></div>
 </dd>
 <dt id="crashlink.disasm.to_asm"><code class="name flex">
-<span>def <span class="ident">to_asm</span></span>(<span>ops: List[<a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>]) ‑> str</span>
+<span>def <span class="ident">to_asm</span></span>(<span>ops: List[Opcode]) ‑> str</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -524,7 +588,7 @@ Ret. 1
 </code></pre></div>
 </dd>
 <dt id="crashlink.disasm.type_name"><code class="name flex">
-<span>def <span class="ident">type_name</span></span>(<span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>typ: <a title="crashlink.core.Type" href="core.html#crashlink.core.Type">Type</a>) ‑> str</span>
+<span>def <span class="ident">type_name</span></span>(<span>code: Bytecode, typ: Type) ‑> str</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -591,11 +655,13 @@ Ret. 1
 <ul class="two-column">
 <li><code><a title="crashlink.disasm.fmt_op" href="#crashlink.disasm.fmt_op">fmt_op</a></code></li>
 <li><code><a title="crashlink.disasm.from_asm" href="#crashlink.disasm.from_asm">from_asm</a></code></li>
+<li><code><a title="crashlink.disasm.full_func_name" href="#crashlink.disasm.full_func_name">full_func_name</a></code></li>
 <li><code><a title="crashlink.disasm.func" href="#crashlink.disasm.func">func</a></code></li>
 <li><code><a title="crashlink.disasm.func_header" href="#crashlink.disasm.func_header">func_header</a></code></li>
 <li><code><a title="crashlink.disasm.is_static" href="#crashlink.disasm.is_static">is_static</a></code></li>
 <li><code><a title="crashlink.disasm.is_std" href="#crashlink.disasm.is_std">is_std</a></code></li>
 <li><code><a title="crashlink.disasm.native_header" href="#crashlink.disasm.native_header">native_header</a></code></li>
+<li><code><a title="crashlink.disasm.partial_func_name" href="#crashlink.disasm.partial_func_name">partial_func_name</a></code></li>
 <li><code><a title="crashlink.disasm.pseudo_from_op" href="#crashlink.disasm.pseudo_from_op">pseudo_from_op</a></code></li>
 <li><code><a title="crashlink.disasm.to_asm" href="#crashlink.disasm.to_asm">to_asm</a></code></li>
 <li><code><a title="crashlink.disasm.type_name" href="#crashlink.disasm.type_name">type_name</a></code></li>
@@ -606,7 +672,7 @@ Ret. 1
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
 </footer>
 </body>
 </html>

@@ -520,4 +520,6 @@ __all__ = [
     "func",
     "to_asm",
     "from_asm",
+    "partial_func_name",
+    "full_func_name",
 ]

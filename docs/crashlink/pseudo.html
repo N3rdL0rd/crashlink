@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
-<meta name="generator" content="pdoc3 0.11.6">
+<meta name="generator" content="pdoc3 0.11.5">
 <title>crashlink.pseudo API documentation</title>
-<meta name="description" content="">
+<meta name="description" content="Pseudocode generation routines to create a Haxe representation of the decompiled IR.">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
@@ -38,54 +38,93 @@ el.replaceWith(d);
 <h1 class="title">Module <code>crashlink.pseudo</code></h1>
 </header>
 <section id="section-intro">
+<p>Pseudocode generation routines to create a Haxe representation of the decompiled IR.</p>
 </section>
 <section>
 </section>
 <section>
 </section>
 <section>
-</section>
-<section>
-<h2 class="section-title" id="header-classes">Classes</h2>
+<h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
-<dt id="crashlink.pseudo.Translatable"><code class="flex name class">
-<span>class <span class="ident">Translatable</span></span>
+<dt id="crashlink.pseudo.pseudo"><code class="name flex">
+<span>def <span class="ident">pseudo</span></span>(<span>ir_func: IRFunction) ‑> str</span>
 </code></dt>
 <dd>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class Translatable(ABC):
-    @abstractmethod
-    def translate(self, comment: Optional[str] = None) -&gt; str:
-        pass</code></pre>
+<pre><code class="python">def pseudo(ir_func: IRFunction) -&gt; str:
+    &#34;&#34;&#34;
+    Generates Haxe pseudocode from a given IRFunction.
+    &#34;&#34;&#34;
+    code: Bytecode = ir_func.code
+    func_core: Function = ir_func.func  # crashlink.core.Function
+
+    output_lines: List[str] = []
+    base_indent = 0
+
+    # Function Signature
+    func_name_str = disasm.partial_func_name(code, func_core) or f&#34;f{func_core.findex.value}&#34;
+    static_kw = &#34;static &#34; if disasm.is_static(code, func_core) else &#34;&#34;
+
+    params_str_list = []
+    return_type_str = &#34;Void&#34;  # Default
+
+    core_fun_type_def = func_core.type.resolve(code).definition
+    if isinstance(core_fun_type_def, Fun):  # crashlink.core.Fun
+        for i, arg_type_idx in enumerate(core_fun_type_def.args):
+            arg_core_type = arg_type_idx.resolve(code)
+            arg_haxe_type_name = disasm.type_to_haxe(disasm.type_name(code, arg_core_type))
+
+            param_name = f&#34;arg{i}&#34;  # Default name
+            # Try to get actual param name from debug assigns (op index &lt; 0)
+            if func_core.has_debug and func_core.assigns:
+                arg_assigns = [a for a in func_core.assigns if a[1].value &lt; 0]
+                if i &lt; len(arg_assigns):
+                    param_name = arg_assigns[i][0].resolve(code)
+
+            param_type_decl = f&#34;:{arg_haxe_type_name}&#34; if arg_haxe_type_name and arg_haxe_type_name != &#34;Dynamic&#34; else &#34;&#34;
+            params_str_list.append(f&#34;{param_name}{param_type_decl}&#34;)
+
+        ret_core_type = core_fun_type_def.ret.resolve(code)
+        return_type_str = disasm.type_to_haxe(disasm.type_name(code, ret_core_type))
+
+    params_joined_str = &#34;, &#34;.join(params_str_list)
+    func_header = (
+        f&#34;{_indent_str(base_indent)}{static_kw}function {func_name_str}({params_joined_str}):{return_type_str} {{&#34;
+    )
+    output_lines.append(func_header)
+
+    # Function Body
+    # Initialize declared_vars with function parameters
+    initial_declared_vars = {p_name.split(&#34;:&#34;)[0] for p_name in params_str_list}
+
+    body_lines = _generate_statements(ir_func.block.statements, code, ir_func, base_indent + 1, initial_declared_vars)
+    output_lines.extend(body_lines)
+
+    output_lines.append(f&#34;{_indent_str(base_indent)}}}&#34;)
+
+    # Attempt to wrap in a class for context if class name can be derived
+    full_name = disasm.full_func_name(code, func_core)
+    class_name_suggestion = &#34;DecompiledClass&#34;
+    if &#34;.&#34; in full_name:
+        class_name_part = full_name.split(&#34;.&#34;)[0]
+        if class_name_part and class_name_part != &#34;&lt;none&gt;&#34;:
+            class_name_suggestion = class_name_part.replace(&#34;$&#34;, &#34;_&#34;)  # Handle Haxe internal names
+
+    final_output = [f&#34;class {class_name_suggestion} {{&#34;]
+    final_output.extend([&#34;  &#34; + line for line in output_lines])  # Indent function within class
+    final_output.append(&#34;}&#34;)
+
+    return &#34;\n&#34;.join(final_output)</code></pre>
 </details>
-<div class="desc"><p>Helper class that provides a standard way to create an ABC using
-inheritance.</p></div>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li>abc.ABC</li>
-</ul>
-<h3>Methods</h3>
-<dl>
-<dt id="crashlink.pseudo.Translatable.translate"><code class="name flex">
-<span>def <span class="ident">translate</span></span>(<span>self, comment: str | None = None) ‑> str</span>
-</code></dt>
-<dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">@abstractmethod
-def translate(self, comment: Optional[str] = None) -&gt; str:
-    pass</code></pre>
-</details>
-<div class="desc"></div>
+<div class="desc"><p>Generates Haxe pseudocode from a given IRFunction.</p></div>
 </dd>
 </dl>
-</dd>
-</dl>
+</section>
+<section>
 </section>
 </article>
 <nav id="sidebar">
@@ -98,21 +137,16 @@ def translate(self, comment: Optional[str] = None) -&gt; str:
 <li><code><a title="crashlink" href="index.html">crashlink</a></code></li>
 </ul>
 </li>
-<li><h3><a href="#header-classes">Classes</a></h3>
-<ul>
-<li>
-<h4><code><a title="crashlink.pseudo.Translatable" href="#crashlink.pseudo.Translatable">Translatable</a></code></h4>
+<li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
-<li><code><a title="crashlink.pseudo.Translatable.translate" href="#crashlink.pseudo.Translatable.translate">translate</a></code></li>
-</ul>
-</li>
+<li><code><a title="crashlink.pseudo.pseudo" href="#crashlink.pseudo.pseudo">pseudo</a></code></li>
 </ul>
 </li>
 </ul>
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
 </footer>
 </body>
 </html>

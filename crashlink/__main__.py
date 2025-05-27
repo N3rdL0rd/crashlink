@@ -208,7 +208,7 @@ class Commands:
                 ir.print()
                 return
         print("Function not found.")
-        
+
     def decomp(self, args: List[str]) -> None:
         """Prints the pseudocode decompilation of a function. `decomp <idx>`"""
         if len(args) == 0:
@@ -222,14 +222,14 @@ class Commands:
             if func.findex.value == index:
                 ir = decomp.IRFunction(self.code, func)
                 res = pseudo(ir)
-                
+
                 print("\n")
-                
+
                 try:
                     from pygments import highlight
                     from pygments.lexers import HaxeLexer
                     from pygments.formatters import Terminal256Formatter
-                    
+
                     lexer = HaxeLexer()
                     formatter = Terminal256Formatter(style="dracula")
                     highlighted_output = highlight(res, lexer, formatter)
@@ -239,7 +239,6 @@ class Commands:
                     print(res)
                 return
         print("Function not found.")
-        
 
     def patch(self, args: List[str]) -> None:
         """Patches a function's raw opcodes. `patch <idx>`"""

@@ -4,6 +4,7 @@ crashlink-specific errors.
 
 from __future__ import annotations
 
+
 class CrashlinkError(Exception):
     """
     Base exception class for most specific errors raised by crashlink.
