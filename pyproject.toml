@@ -34,12 +34,14 @@ dev = [
   "staticjinja",
   "IPython",
   "requests",
-  "ruff"
+  "ruff",
+  "pygments"
 ]
 extras = [
   "tqdm",
   "dill",
-  "IPython"
+  "IPython",
+  "pygments"
 ]
 
 [build-system]
