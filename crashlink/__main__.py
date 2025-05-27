@@ -20,6 +20,7 @@ from .core import Bytecode, Native, Virtual, full_func_name, tIndex
 from .globals import VERSION
 from .interp.vm import VM  # type: ignore
 from .opcodes import opcode_docs, opcodes
+from .pseudo import pseudo
 from hlrun.patch import Patch
 
 
@@ -205,6 +206,38 @@ class Commands:
                 ir.print()
                 return
         print("Function not found.")
+        
+    def decomp(self, args: List[str]) -> None:
+        """Prints the pseudocode decompilation of a function. `decomp <idx>`"""
+        if len(args) == 0:
+            print("Usage: decomp <index>")
+        try:
+            index = int(args[0])
+        except ValueError:
+            print("Invalid index.")
+            return
+        for func in self.code.functions:
+            if func.findex.value == index:
+                ir = decomp.IRFunction(self.code, func)
+                res = pseudo(ir)
+                
+                print("\n")
+                
+                try:
+                    from pygments import highlight
+                    from pygments.lexers import HaxeLexer
+                    from pygments.formatters import Terminal256Formatter
+                    
+                    lexer = HaxeLexer()
+                    formatter = Terminal256Formatter(style="dracula")
+                    highlighted_output = highlight(res, lexer, formatter)
+                    print(highlighted_output)
+                except ImportError:
+                    print("[warning] pygments not found.")
+                    print(res)
+                return
+        print("Function not found.")
+        
 
     def patch(self, args: List[str]) -> None:
         """Patches a function's raw opcodes. `patch <idx>`"""
@@ -287,23 +320,6 @@ class Commands:
         with open(args[0], "wb") as f:
             f.write(ser)
         print("Done!")
-
-    def pseudo(self, args: List[str]) -> None:
-        """Generate pseudocode for a function with the given index. Optionally, specify target language backend. `pseudo <idx> (target: haxe)`"""
-        if len(args) == 0:
-            print("Usage: pseudo <index> (target: haxe)")
-            return
-        try:
-            index = int(args[0])
-        except ValueError:
-            print("Invalid index.")
-            return
-        target = args[1] if len(args) > 1 else "haxe"
-        for func in self.code.functions:
-            if func.findex.value == index:
-                f = decomp.IRFunction(self.code, func)
-                print("TODO")
-        print("Function not found.")
 
     def strings(self, args: List[str]) -> None:
         """List all strings in the bytecode."""

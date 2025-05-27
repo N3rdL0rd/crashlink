@@ -79,15 +79,14 @@ Read the [API documentation](https://n3rdl0rd.github.io/crashlink/crashlink) for
 ## Development
 
 > [!NOTE]
-> This project is configured for the [just](https://just.systems/) command runner and [uv](https://docs.astral.sh/uv/). If you don't have them installed, you can still run the commands in the `justfile` manually, but I don't recommend it.
+> This project is configured for the [just](https://just.systems/) command runner and [uv](https://docs.astral.sh/uv/). If you don't have them installed, you can still run the commands in the `justfile` manually and the `pip` equivalents of the `uv` commands, but I don't recommend it. At the very least, there's zero downside to switching to `uv`.
 
 For development purposes, you can clone the repo, install development dependencies, and run the tests:
 
 ```bash
 git clone https://github.com/N3rdL0rd/crashlink
 cd crashlink
-# optionally, create and activate a venv here.
-just install # or uv pip install -e .[dev]
+uv sync --extra dev
 just test # or pytest
 ```
 
