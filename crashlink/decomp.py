@@ -320,7 +320,7 @@ class IRStatement(ABC):
     @abstractmethod
     def __repr__(self) -> str:
         pass
-    
+
     @abstractmethod
     def get_children(self) -> List[IRStatement]:
         pass
@@ -340,18 +340,18 @@ class IRBlock(IRStatement):
 
     def __repr__(self) -> str:
         colors = [36, 31, 32, 33, 34, 35]
-        
+
         depth = id(self) % len(colors)
         color = colors[depth]
-        
+
         if not self.statements:
             return f"\033[{color}m[\033[0m\033[{color}m]\033[0m"
 
         # uniform indentation
         statements = pformat(self.statements, indent=0).replace("\n", "\n\t")
-        
+
         return f"\033[{color}m[\033[0m\n\t{statements}\n\033[{color}m]\033[0m"
-    
+
     def get_children(self) -> List[IRStatement]:
         return self.statements
 
@@ -369,7 +369,7 @@ class IRExpression(IRStatement, ABC):
     def get_type(self) -> Type:
         """Get the type of value this expression produces"""
         pass
-    
+
     def get_children(self) -> List[IRStatement]:
         return []
 
@@ -430,7 +430,7 @@ class IRAssign(IRStatement):
         super().__init__(code)
         self.target = target
         self.expr = expr
-    
+
     def get_children(self) -> List[IRStatement]:
         return [self.expr]
 
@@ -644,7 +644,7 @@ class IRConditional(IRStatement):
         else:
             old_cond = self.condition
             self.condition = IRBoolExpr(self.code, IRBoolExpr.CompareType.NOT, old_cond)
-    
+
     def get_children(self) -> List[IRStatement]:
         return [self.condition, self.true_block, self.false_block]
 
@@ -659,7 +659,7 @@ class IRPrimitiveLoop(IRStatement):
         super().__init__(code)
         self.condition = condition
         self.body = body
-        
+
     def get_children(self) -> List[IRStatement]:
         return [self.condition, self.body]
 
@@ -672,7 +672,7 @@ class IRBreak(IRStatement):
 
     def __init__(self, code: Bytecode):
         super().__init__(code)
-        
+
     def get_children(self) -> List[IRStatement]:
         return []
 
@@ -686,7 +686,7 @@ class IRReturn(IRStatement):
     def __init__(self, code: Bytecode, value: Optional[IRExpression] = None):
         super().__init__(code)
         self.value = value
-    
+
     def get_children(self) -> List[IRStatement]:
         return []
 
@@ -710,7 +710,7 @@ class IRTrace(IRStatement):
         self.line = line
         self.class_name = class_name
         self.method_name = method_name
-    
+
     def get_children(self) -> List[IRStatement]:
         return []
 
@@ -732,7 +732,7 @@ class IRSwitch(IRStatement):
         self.value = value
         self.cases = cases
         self.default = default
-    
+
     def get_children(self) -> List[IRStatement]:
         return [self.value, self.default] + [block for block in self.cases.values()]
 
@@ -797,29 +797,27 @@ class IsolatedCFGraph(CFGraph):
 
             if len(entry_candidates) == 1:
                 self.entry = entry_candidates[0]
-                
+
+
 class IRWhileLoop(IRStatement):
     """
     Represents a while loop: while (condition) { body }
     """
-    
-    condition: IRBlock
+
+    condition: IRStatement
     body: IRBlock
-    
+
     def __init__(self, code: Bytecode, condition: IRExpression, body: IRBlock):
         super().__init__(code)
-        
+
         condition_actual_type = condition.get_type()
-        # Check if the kind of the condition's type is Bool
         if condition_actual_type.kind.value != Type.Kind.BOOL.value:
-            # If not bool, then check if it's Dyn. Otherwise, it's an error.
-            # (Using disasm.type_name is also a good way to get a string representation for the error message)
             cond_type_name_str = disasm.type_name(code, condition_actual_type)
-            if cond_type_name_str != "Dyn": # Allow Dyn as it can implicitly convert
-                 raise DecompError(
+            if cond_type_name_str != "Dyn":  # Allow Dyn as it can implicitly convert
+                raise DecompError(
                     f"IRWhileLoop condition must be a Bool or Dyn-typed expression, got {cond_type_name_str}"
                 )
-        
+
         self.condition = condition
         self.body = body
         self.comment = ""
@@ -873,21 +871,22 @@ class IROptimizer(ABC):
     @abstractmethod
     def optimize(self) -> None:
         pass
-    
+
+
 class TraversingIROptimizer(IROptimizer):
     """
     Base class for intermediate representation optimization routines that recursively travel through the decompilation.
     """
-    
+
     def optimize(self) -> None:
         """Start the optimization by traversing the root IR block."""
-        if hasattr(self.func, 'block'):
+        if hasattr(self.func, "block"):
             self.visit(self.func.block)
-    
+
     def visit(self, statement: IRStatement) -> None:
         """
         Recursively visit an IR statement and its children.
-        
+
         The traversal performs a pre-order visit (parent first, then children):
         1. Call before_visit_statement for the current statement
         2. Handle specific statement type with visit_X methods
@@ -895,7 +894,7 @@ class TraversingIROptimizer(IROptimizer):
         4. Call after_visit_statement for the current statement
         """
         self.before_visit_statement(statement)
-        
+
         if isinstance(statement, IRBlock):
             self.visit_block(statement)
         elif isinstance(statement, IRAssign):
@@ -912,52 +911,52 @@ class TraversingIROptimizer(IROptimizer):
             self.visit_break(statement)
         elif isinstance(statement, IRExpression):
             self.visit_expression(statement)
-        
+
         for child in statement.get_children():
             self.visit(child)
-        
+
         self.after_visit_statement(statement)
-    
+
     def before_visit_statement(self, statement: IRStatement) -> None:
         """Called before visiting a statement. Override in subclasses for custom behavior."""
         pass
-    
+
     def after_visit_statement(self, statement: IRStatement) -> None:
         """Called after visiting a statement and all its children. Override in subclasses for custom behavior."""
         pass
-    
+
     def visit_block(self, block: IRBlock) -> None:
         """Visit an IRBlock. Override in subclasses for custom behavior."""
         pass
-    
+
     def visit_assign(self, assign: IRAssign) -> None:
         """Visit an IRAssign. Override in subclasses for custom behavior."""
         pass
-    
+
     def visit_conditional(self, conditional: IRConditional) -> None:
         """Visit an IRConditional. Override in subclasses for custom behavior."""
         pass
-    
+
     def visit_primitive_loop(self, loop: IRPrimitiveLoop) -> None:
         """Visit an IRPrimitiveLoop. Override in subclasses for custom behavior."""
         pass
-    
+
     def visit_switch(self, switch: IRSwitch) -> None:
         """Visit an IRSwitch. Override in subclasses for custom behavior."""
         pass
-    
+
     def visit_return(self, ret: IRReturn) -> None:
         """Visit an IRReturn. Override in subclasses for custom behavior."""
         pass
-    
+
     def visit_break(self, brk: IRBreak) -> None:
         """Visit an IRBreak. Override in subclasses for custom behavior."""
         pass
-    
+
     def visit_expression(self, expr: IRExpression) -> None:
         """Visit an IRExpression. Override in subclasses for custom behavior."""
         pass
-    
+
 
 class IRPrimitiveJumpLifter(TraversingIROptimizer):
     """
@@ -974,7 +973,7 @@ class IRPrimitiveJumpLifter(TraversingIROptimizer):
         Focus on the condition block of the primitive loop.
         """
         if not loop.condition.statements:
-            return # Nothing to do
+            return  # Nothing to do
 
         last_cond_stmt = loop.condition.statements[-1]
         if not isinstance(last_cond_stmt, IRPrimitveJump):
@@ -989,13 +988,20 @@ class IRPrimitiveJumpLifter(TraversingIROptimizer):
         # For a loop, the PrimitiveJump in the condition block usually signifies "if true, EXIT loop".
         # So, the IRBoolExpr we create here represents the EXIT condition.
         jump_to_bool_expr_map: Dict[str, IRBoolExpr.CompareType] = {
-            "JTrue": IRBoolExpr.CompareType.ISTRUE, "JFalse": IRBoolExpr.CompareType.ISFALSE,
-            "JNull": IRBoolExpr.CompareType.NULL, "JNotNull": IRBoolExpr.CompareType.NOT_NULL,
-            "JSLt": IRBoolExpr.CompareType.LT, "JSGte": IRBoolExpr.CompareType.GTE,
-            "JSGt": IRBoolExpr.CompareType.GT, "JSLte": IRBoolExpr.CompareType.LTE,
-            "JULt": IRBoolExpr.CompareType.LT, "JUGte": IRBoolExpr.CompareType.GTE,
-            "JNotLt": IRBoolExpr.CompareType.GTE, "JNotGte": IRBoolExpr.CompareType.LT,
-            "JEq": IRBoolExpr.CompareType.EQ, "JNotEq": IRBoolExpr.CompareType.NEQ,
+            "JTrue": IRBoolExpr.CompareType.ISTRUE,
+            "JFalse": IRBoolExpr.CompareType.ISFALSE,
+            "JNull": IRBoolExpr.CompareType.NULL,
+            "JNotNull": IRBoolExpr.CompareType.NOT_NULL,
+            "JSLt": IRBoolExpr.CompareType.LT,
+            "JSGte": IRBoolExpr.CompareType.GTE,
+            "JSGt": IRBoolExpr.CompareType.GT,
+            "JSLte": IRBoolExpr.CompareType.LTE,
+            "JULt": IRBoolExpr.CompareType.LT,
+            "JUGte": IRBoolExpr.CompareType.GTE,
+            "JNotLt": IRBoolExpr.CompareType.GTE,
+            "JNotGte": IRBoolExpr.CompareType.LT,
+            "JEq": IRBoolExpr.CompareType.EQ,
+            "JNotEq": IRBoolExpr.CompareType.NEQ,
         }
 
         if original_jump_op.op not in jump_to_bool_expr_map:
@@ -1003,7 +1009,7 @@ class IRPrimitiveJumpLifter(TraversingIROptimizer):
             return
 
         condition_type = jump_to_bool_expr_map[original_jump_op.op]
-        
+
         # Create the IRBoolExpr using operands from the original jump Opcode
         # These operands will be IRLocals.
         op_df = original_jump_op.df
@@ -1013,36 +1019,41 @@ class IRPrimitiveJumpLifter(TraversingIROptimizer):
 
         # Helper to get operand as IRLocal
         def get_local_operand(key_name: str) -> Optional[IRLocal]:
-            if key_name not in op_df: return None
+            if key_name not in op_df:
+                return None
             try:
                 reg_idx = op_df[key_name].value
-                return self.func.locals[reg_idx] # self.func comes from TraversingIROptimizer
+                assert isinstance(reg_idx, int), "this should literally never happen!"
+                return self.func.locals[reg_idx]  # self.func comes from TraversingIROptimizer
             except (AttributeError, IndexError, KeyError):
                 dbg_print(f"IRPrimitiveJumpLifter: Could not resolve local for key {key_name} in {original_jump_op}")
                 return None
 
-
         if condition_type in [IRBoolExpr.CompareType.ISTRUE, IRBoolExpr.CompareType.ISFALSE]:
             cond_operand_expr = get_local_operand("cond")
-            if not cond_operand_expr: return # Failed to create
+            if not cond_operand_expr:
+                return  # Failed to create
         elif condition_type in [IRBoolExpr.CompareType.NULL, IRBoolExpr.CompareType.NOT_NULL]:
             cond_operand_expr = get_local_operand("reg")
-            if not cond_operand_expr: return
-        else: # Two-operand comparisons
+            if not cond_operand_expr:
+                return
+        else:  # Two-operand comparisons
             left_expr = get_local_operand("a")
             right_expr = get_local_operand("b")
             if not left_expr or not right_expr:
-                 dbg_print(f"IRPrimitiveJumpLifter: Missing operands for binary jump {original_jump_op.op}")
-                 return
+                dbg_print(f"IRPrimitiveJumpLifter: Missing operands for binary jump {original_jump_op.op}")
+                return
 
         if cond_operand_expr:
             bool_condition_expr = IRBoolExpr(loop.code, condition_type, left=cond_operand_expr)
         else:
             bool_condition_expr = IRBoolExpr(loop.code, condition_type, left=left_expr, right=right_expr)
-        
+
         # Replace the last statement (IRPrimitiveJump) with the new IRBoolExpr
         loop.condition.statements[-1] = bool_condition_expr
-        dbg_print(f"IRPrimitiveJumpLifter: Lifted Jump in loop {loop.base_offset if hasattr(loop, 'base_offset') else ''} to {bool_condition_expr}")
+        dbg_print(
+            f"IRPrimitiveJumpLifter: Lifted Jump in loop {loop.base_offset if hasattr(loop, 'base_offset') else ''} to {bool_condition_expr}"
+        )
 
 
 class IRConditionInliner(TraversingIROptimizer):
@@ -1070,31 +1081,37 @@ class IRConditionInliner(TraversingIROptimizer):
                 expr_to_inline: IRExpression = current_stmt.expr
 
                 if i + 1 < len(block.statements):
-                    next_stmt = block.statements[i+1]
-                    
+                    next_stmt = block.statements[i + 1]
+
                     if isinstance(next_stmt, IRConditional):
                         conditional_stmt: IRConditional = next_stmt
-                        if conditional_stmt.condition == assigned_local: 
-                            dbg_print(f"IRCondInliner: Inlining {expr_to_inline} into IRConditional condition (direct) for {assigned_local}")
+                        if conditional_stmt.condition == assigned_local:
+                            dbg_print(
+                                f"IRCondInliner: Inlining {expr_to_inline} into IRConditional condition (direct) for {assigned_local}"
+                            )
                             conditional_stmt.condition = expr_to_inline
-                            new_statements.append(next_stmt) 
-                            i += 2 
+                            new_statements.append(next_stmt)
+                            i += 2
                             inlined_something = True
                         elif isinstance(conditional_stmt.condition, IRBoolExpr):
                             modified_bool_expr = self._try_inline_into_boolexpr(
                                 conditional_stmt.condition, assigned_local, expr_to_inline
                             )
                             if modified_bool_expr:
-                                dbg_print(f"IRCondInliner: Inlining {expr_to_inline} into IRBoolExpr within IRConditional for {assigned_local}")
+                                dbg_print(
+                                    f"IRCondInliner: Inlining {expr_to_inline} into IRBoolExpr within IRConditional for {assigned_local}"
+                                )
                                 conditional_stmt.condition = modified_bool_expr
                                 new_statements.append(next_stmt)
                                 i += 2
                                 inlined_something = True
-                    
+
                     elif not inlined_something and isinstance(next_stmt, IRWhileLoop):
                         while_loop_stmt: IRWhileLoop = next_stmt
                         if while_loop_stmt.condition == assigned_local:
-                            dbg_print(f"IRCondInliner: Inlining {expr_to_inline} into IRWhileLoop condition (direct) for {assigned_local}")
+                            dbg_print(
+                                f"IRCondInliner: Inlining {expr_to_inline} into IRWhileLoop condition (direct) for {assigned_local}"
+                            )
                             while_loop_stmt.condition = expr_to_inline
                             new_statements.append(next_stmt)
                             i += 2
@@ -1104,54 +1121,66 @@ class IRConditionInliner(TraversingIROptimizer):
                                 while_loop_stmt.condition, assigned_local, expr_to_inline
                             )
                             if modified_bool_expr:
-                                dbg_print(f"IRCondInliner: Inlining {expr_to_inline} into IRBoolExpr within IRWhileLoop for {assigned_local}")
+                                dbg_print(
+                                    f"IRCondInliner: Inlining {expr_to_inline} into IRBoolExpr within IRWhileLoop for {assigned_local}"
+                                )
                                 while_loop_stmt.condition = modified_bool_expr
                                 new_statements.append(next_stmt)
                                 i += 2
                                 inlined_something = True
-                                
-                    elif not inlined_something and isinstance(next_stmt, IRAssign) and \
-                         isinstance(next_stmt.expr, IRExpression) : 
-                        assign_next_stmt : IRAssign = next_stmt
+
+                    elif (
+                        not inlined_something
+                        and isinstance(next_stmt, IRAssign)
+                        and isinstance(next_stmt.expr, IRExpression)
+                    ):
+                        assign_next_stmt: IRAssign = next_stmt
                         modified_rhs_expr = self._try_inline_into_generic_expr(
                             assign_next_stmt.expr, assigned_local, expr_to_inline
                         )
                         if modified_rhs_expr:
-                            dbg_print(f"IRCondInliner: Inlining {expr_to_inline} into IRAssign RHS for {assigned_local}")
+                            dbg_print(
+                                f"IRCondInliner: Inlining {expr_to_inline} into IRAssign RHS for {assigned_local}"
+                            )
                             assign_next_stmt.expr = modified_rhs_expr
                             new_statements.append(assign_next_stmt)
                             i += 2
                             inlined_something = True
-                    
+
                     elif not inlined_something and isinstance(next_stmt, IRReturn):
                         return_stmt: IRReturn = next_stmt
                         if return_stmt.value == assigned_local:
-                            dbg_print(f"IRCondInliner: Inlining {expr_to_inline} into IRReturn value (direct) for {assigned_local}")
+                            dbg_print(
+                                f"IRCondInliner: Inlining {expr_to_inline} into IRReturn value (direct) for {assigned_local}"
+                            )
                             return_stmt.value = expr_to_inline
                             new_statements.append(next_stmt)
                             i += 2
                             inlined_something = True
-                        elif isinstance(return_stmt.value, IRExpression): 
-                             modified_ret_val = self._try_inline_into_generic_expr(
-                                 return_stmt.value, assigned_local, expr_to_inline
-                             )
-                             if modified_ret_val:
-                                dbg_print(f"IRCondInliner: Inlining {expr_to_inline} into IRReturn expression for {assigned_local}")
+                        elif isinstance(return_stmt.value, IRExpression):
+                            modified_ret_val = self._try_inline_into_generic_expr(
+                                return_stmt.value, assigned_local, expr_to_inline
+                            )
+                            if modified_ret_val:
+                                dbg_print(
+                                    f"IRCondInliner: Inlining {expr_to_inline} into IRReturn expression for {assigned_local}"
+                                )
                                 return_stmt.value = modified_ret_val
                                 new_statements.append(next_stmt)
                                 i += 2
                                 inlined_something = True
-                    
+
                     elif not inlined_something and isinstance(next_stmt, IRExpression):
                         modified_next_expr = self._try_inline_into_generic_expr(
                             next_stmt, assigned_local, expr_to_inline
                         )
                         if modified_next_expr:
-                            dbg_print(f"IRCondInliner: Inlining {expr_to_inline} into IRExpression statement {next_stmt} (now {modified_next_expr}) for {assigned_local}")
+                            dbg_print(
+                                f"IRCondInliner: Inlining {expr_to_inline} into IRExpression statement {next_stmt} (now {modified_next_expr}) for {assigned_local}"
+                            )
                             new_statements.append(modified_next_expr)
-                            i += 2 
+                            i += 2
                             inlined_something = True
-                                
 
             if not inlined_something:
                 new_statements.append(current_stmt)
@@ -1159,9 +1188,9 @@ class IRConditionInliner(TraversingIROptimizer):
 
         block.statements = new_statements
 
-
-    def _try_inline_into_boolexpr(self, bool_expr: IRBoolExpr,
-                                  target_local: IRLocal, expr_to_inline: IRExpression) -> Optional[IRBoolExpr]:
+    def _try_inline_into_boolexpr(
+        self, bool_expr: IRBoolExpr, target_local: IRLocal, expr_to_inline: IRExpression
+    ) -> Optional[IRBoolExpr]:
         modified = False
         new_left = bool_expr.left
         new_right = bool_expr.right
@@ -1169,7 +1198,7 @@ class IRConditionInliner(TraversingIROptimizer):
         if bool_expr.left == target_local:
             new_left = expr_to_inline
             modified = True
-        elif isinstance(bool_expr.left, IRExpression): 
+        elif isinstance(bool_expr.left, IRExpression):
             inlined_nested_left = self._try_inline_into_generic_expr(bool_expr.left, target_local, expr_to_inline)
             if inlined_nested_left:
                 new_left = inlined_nested_left
@@ -1178,20 +1207,21 @@ class IRConditionInliner(TraversingIROptimizer):
         if bool_expr.right == target_local:
             new_right = expr_to_inline
             modified = True
-        elif isinstance(bool_expr.right, IRExpression): 
+        elif isinstance(bool_expr.right, IRExpression):
             inlined_nested_right = self._try_inline_into_generic_expr(bool_expr.right, target_local, expr_to_inline)
             if inlined_nested_right:
                 new_right = inlined_nested_right
                 modified = True
-        
+
         if modified:
             bool_expr.left = new_left
             bool_expr.right = new_right
             return bool_expr
         return None
 
-    def _try_inline_into_generic_expr(self, current_expr: IRExpression,
-                                     target_local: IRLocal, expr_to_inline: IRExpression) -> Optional[IRExpression]:
+    def _try_inline_into_generic_expr(
+        self, current_expr: IRExpression, target_local: IRLocal, expr_to_inline: IRExpression
+    ) -> Optional[IRExpression]:
         if current_expr == target_local:
             return expr_to_inline
 
@@ -1204,8 +1234,8 @@ class IRConditionInliner(TraversingIROptimizer):
             inlined_left_child = self._try_inline_into_generic_expr(arith_expr.left, target_local, expr_to_inline)
             if inlined_left_child:
                 modified_left = inlined_left_child
-                made_change = True 
-            
+                made_change = True
+
             inlined_right_child = self._try_inline_into_generic_expr(arith_expr.right, target_local, expr_to_inline)
             if inlined_right_child:
                 modified_right = inlined_right_child
@@ -1223,14 +1253,14 @@ class IRConditionInliner(TraversingIROptimizer):
         elif isinstance(current_expr, IRCall):
             call_expr: IRCall = current_expr
             made_change = False
-            new_args = list(call_expr.args) 
+            new_args = list(call_expr.args)
 
             for i, arg_expr in enumerate(call_expr.args):
                 inlined_arg = self._try_inline_into_generic_expr(arg_expr, target_local, expr_to_inline)
                 if inlined_arg:
                     new_args[i] = inlined_arg
                     made_change = True
-            
+
             if isinstance(call_expr.target, IRExpression):
                 inlined_target_expr = self._try_inline_into_generic_expr(call_expr.target, target_local, expr_to_inline)
                 if inlined_target_expr:
@@ -1242,9 +1272,8 @@ class IRConditionInliner(TraversingIROptimizer):
                 call_expr.args = new_args
                 return call_expr
             return None
-        
-        return None
 
+        return None
 
 
 class IRLoopConditionOptimizer(TraversingIROptimizer):
@@ -1265,17 +1294,19 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
         This is done by rebuilding the statements list.
         """
         new_statements: List[IRStatement] = []
-        processed_primitive_loop = False # Flag to ensure we only process once if visit_primitive_loop is called from here
+        processed_primitive_loop = (
+            False  # Flag to ensure we only process once if visit_primitive_loop is called from here
+        )
 
         for stmt in block.statements:
             if isinstance(stmt, IRPrimitiveLoop) and not processed_primitive_loop:
                 converted_loop = self._try_convert_to_while(stmt)
                 if converted_loop:
                     new_statements.append(converted_loop)
-                    # No need to call self.visit on converted_loop here, 
+                    # No need to call self.visit on converted_loop here,
                     # as visit_while_loop will be called by the main traversal logic if needed.
                 else:
-                    new_statements.append(stmt) # Keep original if not converted
+                    new_statements.append(stmt)  # Keep original if not converted
                     # self.visit(stmt) # Allow normal traversal for unconverted primitive loops
             else:
                 new_statements.append(stmt)
@@ -1285,7 +1316,6 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
         # After rebuilding, allow children to be visited by the main `TraversingIROptimizer.visit`
         # This is implicitly handled by the main visit method's loop over get_children().
 
-
     def _try_convert_to_while(self, loop: IRPrimitiveLoop) -> Optional[IRWhileLoop]:
         if not loop.condition.statements:
             dbg_print(f"IRLoopCondOpt: PrimitiveLoop at {loop} has empty condition block. Cannot convert.")
@@ -1294,36 +1324,38 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
         last_cond_stmt = loop.condition.statements[-1]
 
         if not isinstance(last_cond_stmt, IRBoolExpr):
-            dbg_print(f"IRLoopCondOpt: PrimitiveLoop at {loop} condition does not end with IRBoolExpr. Ends with {type(last_cond_stmt).__name__}. Cannot convert.")
+            dbg_print(
+                f"IRLoopCondOpt: PrimitiveLoop at {loop} condition does not end with IRBoolExpr. Ends with {type(last_cond_stmt).__name__}. Cannot convert."
+            )
             return None
 
         exit_condition_expr: IRBoolExpr = last_cond_stmt
-        
-        loop_continuation_expr = IRBoolExpr(loop.code, 
-                                            exit_condition_expr.op, 
-                                            exit_condition_expr.left, 
-                                            exit_condition_expr.right)
+
+        loop_continuation_expr = IRBoolExpr(
+            loop.code, exit_condition_expr.op, exit_condition_expr.left, exit_condition_expr.right
+        )
         loop_continuation_expr.invert()
-        
+
         setup_statements_for_body = loop.condition.statements[:-1]
 
         new_body_statements = setup_statements_for_body + loop.body.statements
         new_body_block = IRBlock(loop.code)
         new_body_block.statements = new_body_statements
-        
+
         new_while_loop = IRWhileLoop(loop.code, loop_continuation_expr, new_body_block)
-        
-        new_while_loop.comment = loop.comment 
-        
+
+        new_while_loop.comment = loop.comment
+
         if setup_statements_for_body:
             moved_comment = "(Condition setup moved into body)"
             if new_while_loop.comment:
                 new_while_loop.comment += " " + moved_comment
             else:
                 new_while_loop.comment = moved_comment
-        
+
         dbg_print(f"IRLoopCondOpt: Converted IRPrimitiveLoop to IRWhileLoop. While condition: {loop_continuation_expr}")
         return new_while_loop
+
 
 class IRFunction:
     """
@@ -1349,7 +1381,7 @@ class IRFunction:
             self.optimizers: List[IROptimizer] = [
                 IRPrimitiveJumpLifter(self),
                 IRConditionInliner(self),
-                IRLoopConditionOptimizer(self)
+                IRLoopConditionOptimizer(self),
             ]
             self._optimize()
 
@@ -1460,18 +1492,18 @@ class IRFunction:
 
         block = IRBlock(self.code)
 
-        for i, op in enumerate(node.ops):      
+        for i, op in enumerate(node.ops):
             if op.op == "Label":
                 assert i == 0, "Label should be the first operation in a CFNode."
                 jumpers = _find_jumps_to_label(node, node, set())
-                body: Set[CFNode] = set() # This will store CFNodes belonging to the loop's body
+                body: Set[CFNode] = set()  # This will store CFNodes belonging to the loop's body
                 for jumper in jumpers:
-                    body.add(jumper[0]) # The node that jumps back
-                    for n2 in jumper[1]: # Nodes on the path to the jumper
+                    body.add(jumper[0])  # The node that jumps back
+                    for n2 in jumper[1]:  # Nodes on the path to the jumper
                         body.add(n2)
                 body.discard(node)
 
-                isolated = IsolatedCFGraph(self.cfg, list(body) if body else [self.add_node([])])
+                isolated = IsolatedCFGraph(self.cfg, list(body) if body else [self.cfg.add_node([])])
                 condition = IsolatedCFGraph(self.cfg, [node], find_entry_intelligently=False)
 
                 if not condition.entry:
@@ -1479,12 +1511,14 @@ class IRFunction:
                 self._patch_loop_condition(condition.entry)
 
                 condition_ir_block = self._lift_block(condition.entry, visited.copy(), convert_jumps_to_primitive=True)
-                
+
                 body_ir_block: IRBlock
-                if isolated.entry and isolated.entry.ops: # Check if isolated graph has a meaningful entry
+                if isolated.entry and isolated.entry.ops:  # Check if isolated graph has a meaningful entry
                     body_ir_block = self._lift_block(isolated.entry, visited.copy(), flag_conditionals=True)
-                else: # Loop has no effective body ops or body is empty
-                    dbg_print(f"Warning: Empty or non-meaningful loop body found for loop starting at {node.base_offset}.")
+                else:  # Loop has no effective body ops or body is empty
+                    dbg_print(
+                        f"Warning: Empty or non-meaningful loop body found for loop starting at {node.base_offset}."
+                    )
                     body_ir_block = IRBlock(self.code)
 
                 visited.add(node)
@@ -1493,13 +1527,13 @@ class IRFunction:
 
                 loop_stmt = IRPrimitiveLoop(self.code, condition_ir_block, body_ir_block)
                 block.statements.append(loop_stmt)
-                
+
                 loop_exit_node: Optional[CFNode] = None
                 for successor_node, _edge_type in node.branches:
                     if successor_node not in body and successor_node != node:
                         loop_exit_node = successor_node
                         break
-                
+
                 if loop_exit_node:
                     dbg_print(f"Loop at {node.base_offset} determined to exit to CFNode {loop_exit_node.base_offset}")
                     next_sequential_block = self._lift_block(loop_exit_node, visited)
@@ -1513,9 +1547,9 @@ class IRFunction:
 
                 else:
                     dbg_print(f"Warning: Could not determine a single CFG exit node after loop at {node.base_offset}.")
-                
-                break # After handling the Label (loop), stop processing further ops in *this* CFG node.
-                      # The loop structure and its continuation have been handled.
+
+                break  # After handling the Label (loop), stop processing further ops in *this* CFG node.
+            # The loop structure and its continuation have been handled.
 
             elif op.op in arithmetic:
                 dst = self.locals[op.df["dst"].value]

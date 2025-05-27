@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
-<meta name="generator" content="pdoc3 0.11.6">
+<meta name="generator" content="pdoc3 0.11.5">
 <title>crashlink.core API documentation</title>
 <meta name="description" content="Core bytecode format definitions …">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
@@ -179,7 +179,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Abstract.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Abstract" href="#crashlink.core.Abstract">Abstract</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.Abstract" href="#crashlink.core.Abstract">Abstract</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -265,7 +265,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Binding.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Binding" href="#crashlink.core.Binding">Binding</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.Binding" href="#crashlink.core.Binding">Binding</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -1015,7 +1015,7 @@ you.</p>
 <div class="desc"><p>Gets the value of an initialized global constant <code>String</code>.</p></div>
 </dd>
 <dt id="crashlink.core.Bytecode.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self,<br>f: typing.BinaryIO | _io.BytesIO,<br>search_magic: bool = True,<br>init_globals: bool = True) ‑> <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO, search_magic: bool = True, init_globals: bool = True) ‑> <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -1540,7 +1540,7 @@ you.</p>
 <div class="desc"><p>Shorthand to get a Type by its index. Equivalent to code.types[tindex]</p></div>
 </dd>
 <dt id="crashlink.core.Bytecode.track_section"><code class="name flex">
-<span>def <span class="ident">track_section</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO, section_name: str) ‑> None</span>
+<span>def <span class="ident">track_section</span></span>(<span>self, f: BinaryIO | BytesIO, section_name: str) ‑> None</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -1637,7 +1637,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.BytesBlock.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO, nbytes: int) ‑> <a title="crashlink.core.BytesBlock" href="#crashlink.core.BytesBlock">BytesBlock</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO, nbytes: int) ‑> <a title="crashlink.core.BytesBlock" href="#crashlink.core.BytesBlock">BytesBlock</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -1729,7 +1729,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Constant.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Constant" href="#crashlink.core.Constant">Constant</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.Constant" href="#crashlink.core.Constant">Constant</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -1880,7 +1880,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.DebugInfo.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO, nops: int) ‑> <a title="crashlink.core.DebugInfo" href="#crashlink.core.DebugInfo">DebugInfo</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO, nops: int) ‑> <a title="crashlink.core.DebugInfo" href="#crashlink.core.DebugInfo">DebugInfo</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2061,7 +2061,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Enum.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Enum" href="#crashlink.core.Enum">Enum</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.Enum" href="#crashlink.core.Enum">Enum</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2143,7 +2143,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.EnumConstruct.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.EnumConstruct" href="#crashlink.core.EnumConstruct">EnumConstruct</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.EnumConstruct" href="#crashlink.core.EnumConstruct">EnumConstruct</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2230,7 +2230,7 @@ you.</p>
 </dd>
 <dt id="crashlink.core.Field"><code class="flex name class">
 <span>class <span class="ident">Field</span></span>
-<span>(</span><span>name: <a title="crashlink.core.strRef" href="#crashlink.core.strRef">strRef</a> | None = None,<br>type: <a title="crashlink.core.tIndex" href="#crashlink.core.tIndex">tIndex</a> | None = None)</span>
+<span>(</span><span>name: Optional[<a title="crashlink.core.strRef" href="#crashlink.core.strRef">strRef</a>] = None,<br>type: Optional[<a title="crashlink.core.tIndex" href="#crashlink.core.tIndex">tIndex</a>] = None)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2269,7 +2269,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Field.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2347,7 +2347,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Fun.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Fun" href="#crashlink.core.Fun">Fun</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.Fun" href="#crashlink.core.Fun">Fun</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2520,7 +2520,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Function.append_op"><code class="name flex">
-<span>def <span class="ident">append_op</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>,<br>op: <a title="crashlink.core.Opcode" href="#crashlink.core.Opcode">Opcode</a>,<br>debugRef: <a title="crashlink.core.fileRef" href="#crashlink.core.fileRef">fileRef</a> | None = None) ‑> int</span>
+<span>def <span class="ident">append_op</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'",<br>op: <a title="crashlink.core.Opcode" href="#crashlink.core.Opcode">Opcode</a>,<br>debugRef: Optional[<a title="crashlink.core.fileRef" href="#crashlink.core.fileRef">fileRef</a>] = None) ‑> int</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2537,7 +2537,7 @@ you.</p>
 <div class="desc"><p>Append an Opcode to the end of this function.</p></div>
 </dd>
 <dt id="crashlink.core.Function.called_by"><code class="name flex">
-<span>def <span class="ident">called_by</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> List[<a title="crashlink.core.fIndex" href="#crashlink.core.fIndex">fIndex</a>]</span>
+<span>def <span class="ident">called_by</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> List[<a title="crashlink.core.fIndex" href="#crashlink.core.fIndex">fIndex</a>]</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2557,7 +2557,7 @@ you.</p>
 <div class="desc"><p>Resolves all functions that call this function.</p></div>
 </dd>
 <dt id="crashlink.core.Function.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO, has_debug: bool, version: int) ‑> <a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO, has_debug: bool, version: int) ‑> <a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2589,7 +2589,7 @@ you.</p>
 <div class="desc"></div>
 </dd>
 <dt id="crashlink.core.Function.insert_op"><code class="name flex">
-<span>def <span class="ident">insert_op</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>,<br>idx: int,<br>op: <a title="crashlink.core.Opcode" href="#crashlink.core.Opcode">Opcode</a>,<br>debugRef: <a title="crashlink.core.fileRef" href="#crashlink.core.fileRef">fileRef</a> | None = None) ‑> None</span>
+<span>def <span class="ident">insert_op</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'",<br>idx: int,<br>op: <a title="crashlink.core.Opcode" href="#crashlink.core.Opcode">Opcode</a>,<br>debugRef: Optional[<a title="crashlink.core.fileRef" href="#crashlink.core.fileRef">fileRef</a>] = None) ‑> None</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2609,7 +2609,7 @@ you.</p>
 <div class="desc"><p>Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.</p></div>
 </dd>
 <dt id="crashlink.core.Function.push_op"><code class="name flex">
-<span>def <span class="ident">push_op</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>,<br>op: <a title="crashlink.core.Opcode" href="#crashlink.core.Opcode">Opcode</a>,<br>debugRef: <a title="crashlink.core.fileRef" href="#crashlink.core.fileRef">fileRef</a> | None = None) ‑> int</span>
+<span>def <span class="ident">push_op</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'",<br>op: <a title="crashlink.core.Opcode" href="#crashlink.core.Opcode">Opcode</a>,<br>debugRef: Optional[<a title="crashlink.core.fileRef" href="#crashlink.core.fileRef">fileRef</a>] = None) ‑> int</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2626,7 +2626,7 @@ you.</p>
 <div class="desc"><p>Push an Opcode into this function at the start.</p></div>
 </dd>
 <dt id="crashlink.core.Function.resolve_file"><code class="name flex">
-<span>def <span class="ident">resolve_file</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
+<span>def <span class="ident">resolve_file</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> str</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2644,7 +2644,7 @@ you.</p>
 <div class="desc"><p>Resolves (in the Bytecode's debugfiles blob) the name of the file this function originates from. Note that this assumes the first opcode's file is the only file this Function was derived from - Functions that derive from multiple files (such as compiler-generated closures or entrypoints) will be resolved to a single file, sometimes incorrectly.</p></div>
 </dd>
 <dt id="crashlink.core.Function.resolve_fun"><code class="name flex">
-<span>def <span class="ident">resolve_fun</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> <a title="crashlink.core.Fun" href="#crashlink.core.Fun">Fun</a></span>
+<span>def <span class="ident">resolve_fun</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> <a title="crashlink.core.Fun" href="#crashlink.core.Fun">Fun</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2783,7 +2783,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.InlineBool.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.InlineBool" href="#crashlink.core.InlineBool">InlineBool</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.InlineBool" href="#crashlink.core.InlineBool">InlineBool</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2893,7 +2893,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Native.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Native" href="#crashlink.core.Native">Native</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.Native" href="#crashlink.core.Native">Native</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2964,7 +2964,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Null.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Null" href="#crashlink.core.Null">Null</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.Null" href="#crashlink.core.Null">Null</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -3120,7 +3120,7 @@ you.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Obj.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -3145,7 +3145,7 @@ you.</p>
 <div class="desc"></div>
 </dd>
 <dt id="crashlink.core.Obj.resolve_fields"><code class="name flex">
-<span>def <span class="ident">resolve_fields</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> List[<a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a>]</span>
+<span>def <span class="ident">resolve_fields</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> List[<a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a>]</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -3217,7 +3217,7 @@ Where a is field 0 and b is field 1</p></div>
 <div class="desc"></div>
 </dd>
 <dt id="crashlink.core.Obj.str_resolve"><code class="name flex">
-<span>def <span class="ident">str_resolve</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
+<span>def <span class="ident">str_resolve</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> str</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -3233,7 +3233,7 @@ Where a is field 0 and b is field 1</p></div>
 </dd>
 <dt id="crashlink.core.Opcode"><code class="flex name class">
 <span>class <span class="ident">Opcode</span></span>
-<span>(</span><span>op: str | None = None, df: Dict[Any, Any] | None = None)</span>
+<span>(</span><span>op: Optional[str] = None, df: Optional[Dict[Any, Any]] = None)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -3321,7 +3321,7 @@ Where a is field 0 and b is field 1</p></div>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Opcode.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Opcode" href="#crashlink.core.Opcode">Opcode</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.Opcode" href="#crashlink.core.Opcode">Opcode</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -3401,7 +3401,7 @@ Where a is field 0 and b is field 1</p></div>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Packed.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Packed" href="#crashlink.core.Packed">Packed</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.Packed" href="#crashlink.core.Packed">Packed</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -3465,7 +3465,7 @@ Where a is field 0 and b is field 1</p></div>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Proto.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Proto" href="#crashlink.core.Proto">Proto</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.Proto" href="#crashlink.core.Proto">Proto</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -3529,7 +3529,7 @@ Where a is field 0 and b is field 1</p></div>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.RawData.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.RawData" href="#crashlink.core.RawData">RawData</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.RawData" href="#crashlink.core.RawData">RawData</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -3590,7 +3590,7 @@ Where a is field 0 and b is field 1</p></div>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Ref.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Ref" href="#crashlink.core.Ref">Ref</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.Ref" href="#crashlink.core.Ref">Ref</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -3687,7 +3687,7 @@ Where a is field 0 and b is field 1</p></div>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Regs.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Regs" href="#crashlink.core.Regs">Regs</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.Regs" href="#crashlink.core.Regs">Regs</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -3761,7 +3761,7 @@ Where a is field 0 and b is field 1</p></div>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.ResolvableVarInt.resolve"><code class="name flex">
-<span>def <span class="ident">resolve</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> Any</span>
+<span>def <span class="ident">resolve</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> Any</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -3863,7 +3863,7 @@ def resolve(self, code: &#34;Bytecode&#34;) -&gt; Any:
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Serialisable.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO, *args: Any, **kwargs: Any) ‑> <a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO, *args: Any, **kwargs: Any) ‑> <a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -3924,7 +3924,7 @@ def serialise(self) -&gt; bytes:
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.SerialisableF64.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.SerialisableF64" href="#crashlink.core.SerialisableF64">SerialisableF64</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.SerialisableF64" href="#crashlink.core.SerialisableF64">SerialisableF64</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -4002,7 +4002,7 @@ def serialise(self) -&gt; bytes:
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.SerialisableInt.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self,<br>f: typing.BinaryIO | _io.BytesIO,<br>length: int = 4,<br>byteorder: Literal['little', 'big'] = 'little',<br>signed: bool = False) ‑> <a title="crashlink.core.SerialisableInt" href="#crashlink.core.SerialisableInt">SerialisableInt</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self,<br>f: BinaryIO | BytesIO,<br>length: int = 4,<br>byteorder: "Literal['little', 'big']" = 'little',<br>signed: bool = False) ‑> <a title="crashlink.core.SerialisableInt" href="#crashlink.core.SerialisableInt">SerialisableInt</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -4127,7 +4127,7 @@ def serialise(self) -&gt; bytes:
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.StringsBlock.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO, nstrings: int) ‑> <a title="crashlink.core.StringsBlock" href="#crashlink.core.StringsBlock">StringsBlock</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO, nstrings: int) ‑> <a title="crashlink.core.StringsBlock" href="#crashlink.core.StringsBlock">StringsBlock</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -4421,7 +4421,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Type.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Type" href="#crashlink.core.Type">Type</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.Type" href="#crashlink.core.Type">Type</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -4460,7 +4460,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <div class="desc"></div>
 </dd>
 <dt id="crashlink.core.Type.str_resolve"><code class="name flex">
-<span>def <span class="ident">str_resolve</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
+<span>def <span class="ident">str_resolve</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> str</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -4672,7 +4672,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.VarInt.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self: ~T, f: typing.BinaryIO | _io.BytesIO) ‑> ~T</span>
+<span>def <span class="ident">deserialise</span></span>(<span>self: T, f: BinaryIO | BytesIO) ‑> ~T</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -4790,7 +4790,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.VarInts.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.VarInts" href="#crashlink.core.VarInts">VarInts</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.VarInts" href="#crashlink.core.VarInts">VarInts</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -4865,7 +4865,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Virtual.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: typing.BinaryIO | _io.BytesIO) ‑> <a title="crashlink.core.Virtual" href="#crashlink.core.Virtual">Virtual</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO) ‑> <a title="crashlink.core.Virtual" href="#crashlink.core.Virtual">Virtual</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -4881,7 +4881,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <div class="desc"></div>
 </dd>
 <dt id="crashlink.core.Virtual.resolve_fields"><code class="name flex">
-<span>def <span class="ident">resolve_fields</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> List[<a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a>]</span>
+<span>def <span class="ident">resolve_fields</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> List[<a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a>]</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -5060,7 +5060,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.fieldRef.resolve_obj"><code class="name flex">
-<span>def <span class="ident">resolve_obj</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>,<br>obj: <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a>|<a title="crashlink.core.Virtual" href="#crashlink.core.Virtual">Virtual</a>) ‑> <a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a></span>
+<span>def <span class="ident">resolve_obj</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'",<br>obj: "'<a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a>|<a title="crashlink.core.Virtual" href="#crashlink.core.Virtual">Virtual</a>'") ‑> <a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -5137,7 +5137,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.fileRef.resolve"><code class="name flex">
-<span>def <span class="ident">resolve</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
+<span>def <span class="ident">resolve</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> str</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -5155,7 +5155,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <div class="desc"><p>Resolve to the filename of the reference.</p></div>
 </dd>
 <dt id="crashlink.core.fileRef.resolve_line"><code class="name flex">
-<span>def <span class="ident">resolve_line</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> int</span>
+<span>def <span class="ident">resolve_line</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> int</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -5171,7 +5171,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <div class="desc"><p>Resolve to the line number in the file of the reference.</p></div>
 </dd>
 <dt id="crashlink.core.fileRef.resolve_pretty"><code class="name flex">
-<span>def <span class="ident">resolve_pretty</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
+<span>def <span class="ident">resolve_pretty</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> str</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -5253,7 +5253,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.gIndex.resolve_str"><code class="name flex">
-<span>def <span class="ident">resolve_str</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
+<span>def <span class="ident">resolve_str</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> str</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -5737,7 +5737,7 @@ attributes &ndash; see the documentation for details.</p></div>
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
 </footer>
 </body>
 </html>
