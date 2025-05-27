@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
-<meta name="generator" content="pdoc3 0.11.6">
+<meta name="generator" content="pdoc3 0.11.5">
 <title>crashlink.decomp API documentation</title>
 <meta name="description" content="Decompilation, IR and control flow graph generation">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
@@ -51,7 +51,7 @@ el.replaceWith(d);
 <dl>
 <dt id="crashlink.decomp.CFDeadCodeEliminator"><code class="flex name class">
 <span>class <span class="ident">CFDeadCodeEliminator</span></span>
-<span>(</span><span>graph: <a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a>)</span>
+<span>(</span><span>graph: "'<a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a>'")</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -111,7 +111,7 @@ el.replaceWith(d);
 </dd>
 <dt id="crashlink.decomp.CFGraph"><code class="flex name class">
 <span>class <span class="ident">CFGraph</span></span>
-<span>(</span><span>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a>)</span>
+<span>(</span><span>func: Function)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -342,7 +342,7 @@ el.replaceWith(d);
 <div class="desc"></div>
 </dd>
 <dt id="crashlink.decomp.CFGraph.add_node"><code class="name flex">
-<span>def <span class="ident">add_node</span></span>(<span>self,<br>ops: List[<a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>],<br>base_offset: int = 0) ‑> <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a></span>
+<span>def <span class="ident">add_node</span></span>(<span>self, ops: List[Opcode], base_offset: int = 0) ‑> <a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -485,7 +485,7 @@ el.replaceWith(d);
 <div class="desc"><p>Build the control flow graph.</p></div>
 </dd>
 <dt id="crashlink.decomp.CFGraph.graph"><code class="name flex">
-<span>def <span class="ident">graph</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>) ‑> str</span>
+<span>def <span class="ident">graph</span></span>(<span>self, code: Bytecode) ‑> str</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -594,7 +594,7 @@ el.replaceWith(d);
 </dd>
 <dt id="crashlink.decomp.CFJumpThreader"><code class="flex name class">
 <span>class <span class="ident">CFJumpThreader</span></span>
-<span>(</span><span>graph: <a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a>)</span>
+<span>(</span><span>graph: "'<a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a>'")</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -674,7 +674,7 @@ el.replaceWith(d);
 </dd>
 <dt id="crashlink.decomp.CFNode"><code class="flex name class">
 <span>class <span class="ident">CFNode</span></span>
-<span>(</span><span>ops: List[<a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>])</span>
+<span>(</span><span>ops: List[Opcode])</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -698,7 +698,7 @@ el.replaceWith(d);
 </dd>
 <dt id="crashlink.decomp.CFOptimizer"><code class="flex name class">
 <span>class <span class="ident">CFOptimizer</span></span>
-<span>(</span><span>graph: <a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a>)</span>
+<span>(</span><span>graph: "'<a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a>'")</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -747,7 +747,7 @@ def optimize(self) -&gt; None:
 </dd>
 <dt id="crashlink.decomp.IRArithmetic"><code class="flex name class">
 <span>class <span class="ident">IRArithmetic</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>left: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>right: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>op: <a title="crashlink.decomp.IRArithmetic.ArithmeticType" href="#crashlink.decomp.IRArithmetic.ArithmeticType">IRArithmetic.ArithmeticType</a>)</span>
+<span>(</span><span>code: Bytecode,<br>left: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>right: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>op: "'<a title="crashlink.decomp.IRArithmetic.ArithmeticType" href="#crashlink.decomp.IRArithmetic.ArithmeticType">IRArithmetic.ArithmeticType</a>'")</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -863,7 +863,7 @@ attributes &ndash; see the documentation for details.</p></div>
 </dd>
 <dt id="crashlink.decomp.IRAssign"><code class="flex name class">
 <span>class <span class="ident">IRAssign</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>target: <a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>,<br>expr: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>)</span>
+<span>(</span><span>code: Bytecode,<br>target: <a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>,<br>expr: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -878,6 +878,9 @@ attributes &ndash; see the documentation for details.</p></div>
         self.target = target
         self.expr = expr
 
+    def get_children(self) -&gt; List[IRStatement]:
+        return [self.expr]
+
     def __repr__(self) -&gt; str:
         return f&#34;&lt;IRAssign: {self.target} = {self.expr} ({disasm.type_name(self.code, self.expr.get_type())})&gt;&#34;</code></pre>
 </details>
@@ -887,10 +890,26 @@ attributes &ndash; see the documentation for details.</p></div>
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRAssign.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    return [self.expr]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 </dd>
 <dt id="crashlink.decomp.IRBlock"><code class="flex name class">
 <span>class <span class="ident">IRBlock</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
+<span>(</span><span>code: Bytecode)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -907,13 +926,21 @@ attributes &ndash; see the documentation for details.</p></div>
         self.statements: List[IRStatement] = []
 
     def __repr__(self) -&gt; str:
+        colors = [36, 31, 32, 33, 34, 35]
+
+        depth = id(self) % len(colors)
+        color = colors[depth]
+
         if not self.statements:
-            return &#34;&lt;IRBlock&gt;&#34;
+            return f&#34;\033[{color}m[\033[0m\033[{color}m]\033[0m&#34;
 
         # uniform indentation
         statements = pformat(self.statements, indent=0).replace(&#34;\n&#34;, &#34;\n\t&#34;)
 
-        return f&#34;&lt;IRBlock:\n{statements}&gt;&#34;
+        return f&#34;\033[{color}m[\033[0m\n\t{statements}\n\033[{color}m]\033[0m&#34;
+
+    def get_children(self) -&gt; List[IRStatement]:
+        return self.statements
 
     def __str__(self) -&gt; str:
         return self.__repr__()</code></pre>
@@ -924,10 +951,26 @@ attributes &ndash; see the documentation for details.</p></div>
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRBlock.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    return self.statements</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 </dd>
 <dt id="crashlink.decomp.IRBoolExpr"><code class="flex name class">
 <span>class <span class="ident">IRBoolExpr</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>op: <a title="crashlink.decomp.IRBoolExpr.CompareType" href="#crashlink.decomp.IRBoolExpr.CompareType">IRBoolExpr.CompareType</a>,<br>left: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a> | None = None,<br>right: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a> | None = None)</span>
+<span>(</span><span>code: Bytecode,<br>op: "'<a title="crashlink.decomp.IRBoolExpr.CompareType" href="#crashlink.decomp.IRBoolExpr.CompareType">IRBoolExpr.CompareType</a>'",<br>left: Optional[<a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>] = None,<br>right: Optional[<a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>] = None)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -1129,7 +1172,7 @@ attributes &ndash; see the documentation for details.</p></div>
 </dd>
 <dt id="crashlink.decomp.IRBreak"><code class="flex name class">
 <span>class <span class="ident">IRBreak</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
+<span>(</span><span>code: Bytecode)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -1142,6 +1185,9 @@ attributes &ndash; see the documentation for details.</p></div>
     def __init__(self, code: Bytecode):
         super().__init__(code)
 
+    def get_children(self) -&gt; List[IRStatement]:
+        return []
+
     def __repr__(self) -&gt; str:
         return &#34;&lt;IRBreak&gt;&#34;</code></pre>
 </details>
@@ -1151,10 +1197,26 @@ attributes &ndash; see the documentation for details.</p></div>
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRBreak.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    return []</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 </dd>
 <dt id="crashlink.decomp.IRCall"><code class="flex name class">
 <span>class <span class="ident">IRCall</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>call_type: <a title="crashlink.decomp.IRCall.CallType" href="#crashlink.decomp.IRCall.CallType">IRCall.CallType</a>,<br>target: <a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a>|<a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>|None,<br>args: List[<a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>])</span>
+<span>(</span><span>code: Bytecode,<br>call_type: "'<a title="crashlink.decomp.IRCall.CallType" href="#crashlink.decomp.IRCall.CallType">IRCall.CallType</a>'",<br>target: "'<a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a>|<a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>|None'",<br>args: List[<a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>])</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -1275,7 +1337,7 @@ attributes &ndash; see the documentation for details.</p></div>
 </dd>
 <dt id="crashlink.decomp.IRConditional"><code class="flex name class">
 <span>class <span class="ident">IRConditional</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>condition: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>true_block: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>,<br>false_block: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>)</span>
+<span>(</span><span>code: Bytecode,<br>condition: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>true_block: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>,<br>false_block: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -1305,6 +1367,9 @@ attributes &ndash; see the documentation for details.</p></div>
             old_cond = self.condition
             self.condition = IRBoolExpr(self.code, IRBoolExpr.CompareType.NOT, old_cond)
 
+    def get_children(self) -&gt; List[IRStatement]:
+        return [self.condition, self.true_block, self.false_block]
+
     def __repr__(self) -&gt; str:
         return f&#34;&lt;IRConditional: if {self.condition} then\n\t{self.true_block}\nelse\n\t{self.false_block}&gt;&#34;</code></pre>
 </details>
@@ -1316,6 +1381,19 @@ attributes &ndash; see the documentation for details.</p></div>
 </ul>
 <h3>Methods</h3>
 <dl>
+<dt id="crashlink.decomp.IRConditional.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    return [self.condition, self.true_block, self.false_block]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
 <dt id="crashlink.decomp.IRConditional.invert"><code class="name flex">
 <span>def <span class="ident">invert</span></span>(<span>self) ‑> None</span>
 </code></dt>
@@ -1338,7 +1416,7 @@ attributes &ndash; see the documentation for details.</p></div>
 </dd>
 <dt id="crashlink.decomp.IRConst"><code class="flex name class">
 <span>class <span class="ident">IRConst</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>const_type: <a title="crashlink.decomp.IRConst.ConstType" href="#crashlink.decomp.IRConst.ConstType">IRConst.ConstType</a>,<br>idx: <a title="crashlink.core.ResolvableVarInt" href="core.html#crashlink.core.ResolvableVarInt">ResolvableVarInt</a> | None = None,<br>value: bool | int | None = None)</span>
+<span>(</span><span>code: Bytecode,<br>const_type: "'<a title="crashlink.decomp.IRConst.ConstType" href="#crashlink.decomp.IRConst.ConstType">IRConst.ConstType</a>'",<br>idx: Optional[ResolvableVarInt] = None,<br>value: Optional[bool | int] = None)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -1482,7 +1560,7 @@ attributes &ndash; see the documentation for details.</p></div>
 </dd>
 <dt id="crashlink.decomp.IRExpression"><code class="flex name class">
 <span>class <span class="ident">IRExpression</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
+<span>(</span><span>code: Bytecode)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -1498,7 +1576,10 @@ attributes &ndash; see the documentation for details.</p></div>
     @abstractmethod
     def get_type(self) -&gt; Type:
         &#34;&#34;&#34;Get the type of value this expression produces&#34;&#34;&#34;
-        pass</code></pre>
+        pass
+
+    def get_children(self) -&gt; List[IRStatement]:
+        return []</code></pre>
 </details>
 <div class="desc"><p>Abstract base class for expressions that produce a value</p></div>
 <h3>Ancestors</h3>
@@ -1517,6 +1598,19 @@ attributes &ndash; see the documentation for details.</p></div>
 </ul>
 <h3>Methods</h3>
 <dl>
+<dt id="crashlink.decomp.IRExpression.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    return []</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
 <dt id="crashlink.decomp.IRExpression.get_type"><code class="name flex">
 <span>def <span class="ident">get_type</span></span>(<span>self) ‑> <a title="crashlink.core.Type" href="core.html#crashlink.core.Type">Type</a></span>
 </code></dt>
@@ -1536,7 +1630,7 @@ def get_type(self) -&gt; Type:
 </dd>
 <dt id="crashlink.decomp.IRFunction"><code class="flex name class">
 <span>class <span class="ident">IRFunction</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>func: <a title="crashlink.core.Function" href="core.html#crashlink.core.Function">Function</a>,<br>do_optimize: bool = True,<br>no_lift: bool = False)</span>
+<span>(</span><span>code: Bytecode, func: Function, do_optimize: bool = True, no_lift: bool = False)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -1564,7 +1658,11 @@ def get_type(self) -&gt; Type:
         self.block: IRBlock
         self._lift(no_lift=no_lift)
         if do_optimize:
-            self.optimizers: List[IROptimizer] = [IRLoopConditionOptimizer(self)]
+            self.optimizers: List[IROptimizer] = [
+                IRPrimitiveJumpLifter(self),
+                IRConditionInliner(self),
+                IRLoopConditionOptimizer(self),
+            ]
             self._optimize()
 
     def _lift(self, no_lift: bool = False) -&gt; None:
@@ -1583,6 +1681,10 @@ def get_type(self) -&gt; Type:
     def _optimize(self) -&gt; None:
         &#34;&#34;&#34;Optimize the IR&#34;&#34;&#34;
         # TODO: store layers
+        dbg_print(&#34;----- Disasm -----&#34;)
+        dbg_print(disasm.func(self.code, self.func))
+        dbg_print(f&#34;----- LLIL -----&#34;)
+        dbg_print(self.block)
         for o in self.optimizers:
             dbg_print(f&#34;----- {o.__class__.__name__} -----&#34;)
             o.optimize()
@@ -1674,32 +1776,60 @@ def get_type(self) -&gt; Type:
             if op.op == &#34;Label&#34;:
                 assert i == 0, &#34;Label should be the first operation in a CFNode.&#34;
                 jumpers = _find_jumps_to_label(node, node, set())
-                body: Set[CFNode] = set()
+                body: Set[CFNode] = set()  # This will store CFNodes belonging to the loop&#39;s body
                 for jumper in jumpers:
-                    body.add(jumper[0])
-                    for n2 in jumper[1]:
+                    body.add(jumper[0])  # The node that jumps back
+                    for n2 in jumper[1]:  # Nodes on the path to the jumper
                         body.add(n2)
                 body.discard(node)
-                isolated = IsolatedCFGraph(self.cfg, list(body))
+
+                isolated = IsolatedCFGraph(self.cfg, list(body) if body else [self.cfg.add_node([])])
                 condition = IsolatedCFGraph(self.cfg, [node], find_entry_intelligently=False)
+
                 if not condition.entry:
-                    raise DecompError(&#34;Empty condition block found.&#34;)
+                    raise DecompError(&#34;Empty condition block found for loop.&#34;)
                 self._patch_loop_condition(condition.entry)
-                if not condition.entry and isolated.entry:
-                    dbg_print(&#34;Warning: Empty condition or loop block found.&#34;)
-                    block.comment += &#34;WARNING: Empty condition or loop block found.&#34;
-                if not isolated.entry:
-                    dbg_print(&#34;Warning: Empty loop block found.&#34;)
-                    block.comment += &#34;WARNING: Empty loop block found.&#34;
-                    continue
-                block.statements.append(
-                    IRPrimitiveLoop(
-                        self.code,
-                        self._lift_block(condition.entry, visited, convert_jumps_to_primitive=True),
-                        self._lift_block(isolated.entry, visited, flag_conditionals=True),
+
+                condition_ir_block = self._lift_block(condition.entry, visited.copy(), convert_jumps_to_primitive=True)
+
+                body_ir_block: IRBlock
+                if isolated.entry and isolated.entry.ops:  # Check if isolated graph has a meaningful entry
+                    body_ir_block = self._lift_block(isolated.entry, visited.copy(), flag_conditionals=True)
+                else:  # Loop has no effective body ops or body is empty
+                    dbg_print(
+                        f&#34;Warning: Empty or non-meaningful loop body found for loop starting at {node.base_offset}.&#34;
                     )
-                )
-                break
+                    body_ir_block = IRBlock(self.code)
+
+                visited.add(node)
+                for body_node in body:
+                    visited.add(body_node)
+
+                loop_stmt = IRPrimitiveLoop(self.code, condition_ir_block, body_ir_block)
+                block.statements.append(loop_stmt)
+
+                loop_exit_node: Optional[CFNode] = None
+                for successor_node, _edge_type in node.branches:
+                    if successor_node not in body and successor_node != node:
+                        loop_exit_node = successor_node
+                        break
+
+                if loop_exit_node:
+                    dbg_print(f&#34;Loop at {node.base_offset} determined to exit to CFNode {loop_exit_node.base_offset}&#34;)
+                    next_sequential_block = self._lift_block(loop_exit_node, visited)
+                    if next_sequential_block.statements:
+                        block.statements.append(next_sequential_block)
+                    elif next_sequential_block.comment:
+                        if block.statements:
+                            block.statements[-1].comment += &#34; &#34; + next_sequential_block.comment
+                        else:
+                            block.comment += &#34; &#34; + next_sequential_block.comment
+
+                else:
+                    dbg_print(f&#34;Warning: Could not determine a single CFG exit node after loop at {node.base_offset}.&#34;)
+
+                break  # After handling the Label (loop), stop processing further ops in *this* CFG node.
+            # The loop structure and its continuation have been handled.
 
             elif op.op in arithmetic:
                 dst = self.locals[op.df[&#34;dst&#34;].value]
@@ -1957,7 +2087,7 @@ def get_type(self) -&gt; Type:
 </dd>
 <dt id="crashlink.decomp.IRLocal"><code class="flex name class">
 <span>class <span class="ident">IRLocal</span></span>
-<span>(</span><span>name: str,<br>type: <a title="crashlink.core.tIndex" href="core.html#crashlink.core.tIndex">tIndex</a>,<br>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
+<span>(</span><span>name: str, type: tIndex, code: Bytecode)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -1994,7 +2124,7 @@ def get_type(self) -&gt; Type:
 </dd>
 <dt id="crashlink.decomp.IRPrimitiveLoop"><code class="flex name class">
 <span>class <span class="ident">IRPrimitiveLoop</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>condition: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>,<br>body: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>)</span>
+<span>(</span><span>code: Bytecode,<br>condition: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>,<br>body: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2009,6 +2139,9 @@ def get_type(self) -&gt; Type:
         self.condition = condition
         self.body = body
 
+    def get_children(self) -&gt; List[IRStatement]:
+        return [self.condition, self.body]
+
     def __repr__(self) -&gt; str:
         return f&#34;&lt;IRPrimitiveLoop: cond -&gt; {self.condition}\n body -&gt; {self.body}&gt;&#34;</code></pre>
 </details>
@@ -2018,10 +2151,26 @@ def get_type(self) -&gt; Type:
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRPrimitiveLoop.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    return [self.condition, self.body]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 </dd>
 <dt id="crashlink.decomp.IRPrimitveJump"><code class="flex name class">
 <span>class <span class="ident">IRPrimitveJump</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>op: <a title="crashlink.core.Opcode" href="core.html#crashlink.core.Opcode">Opcode</a>)</span>
+<span>(</span><span>code: Bytecode, op: Opcode)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2060,7 +2209,7 @@ def get_type(self) -&gt; Type:
 </dd>
 <dt id="crashlink.decomp.IRReturn"><code class="flex name class">
 <span>class <span class="ident">IRReturn</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>value: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a> | None = None)</span>
+<span>(</span><span>code: Bytecode,<br>value: Optional[<a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>] = None)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2074,6 +2223,9 @@ def get_type(self) -&gt; Type:
         super().__init__(code)
         self.value = value
 
+    def get_children(self) -&gt; List[IRStatement]:
+        return []
+
     def __repr__(self) -&gt; str:
         return f&#34;&lt;IRReturn: {self.value}&gt;&#34;</code></pre>
 </details>
@@ -2083,10 +2235,26 @@ def get_type(self) -&gt; Type:
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRReturn.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    return []</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 </dd>
 <dt id="crashlink.decomp.IRStatement"><code class="flex name class">
 <span>class <span class="ident">IRStatement</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>)</span>
+<span>(</span><span>code: Bytecode)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2100,6 +2268,10 @@ def get_type(self) -&gt; Type:
 
     @abstractmethod
     def __repr__(self) -&gt; str:
+        pass
+
+    @abstractmethod
+    def get_children(self) -&gt; List[IRStatement]:
         pass
 
     def __str__(self) -&gt; str:
@@ -2122,11 +2294,29 @@ inheritance.</p></div>
 <li><a title="crashlink.decomp.IRReturn" href="#crashlink.decomp.IRReturn">IRReturn</a></li>
 <li><a title="crashlink.decomp.IRSwitch" href="#crashlink.decomp.IRSwitch">IRSwitch</a></li>
 <li><a title="crashlink.decomp.IRTrace" href="#crashlink.decomp.IRTrace">IRTrace</a></li>
+<li>crashlink.decomp.IRWhileLoop</li>
 </ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRStatement.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@abstractmethod
+def get_children(self) -&gt; List[IRStatement]:
+    pass</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 </dd>
 <dt id="crashlink.decomp.IRSwitch"><code class="flex name class">
 <span>class <span class="ident">IRSwitch</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>value: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>cases: Dict[<a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a>, <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>],<br>default: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>)</span>
+<span>(</span><span>code: Bytecode,<br>value: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>cases: Dict[<a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a>, <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>],<br>default: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2148,6 +2338,9 @@ inheritance.</p></div>
         self.cases = cases
         self.default = default
 
+    def get_children(self) -&gt; List[IRStatement]:
+        return [self.value, self.default] + [block for block in self.cases.values()]
+
     def __repr__(self) -&gt; str:
         cases = &#34;&#34;
         for case, block in self.cases.items():
@@ -2161,10 +2354,26 @@ inheritance.</p></div>
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRSwitch.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    return [self.value, self.default] + [block for block in self.cases.values()]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 </dd>
 <dt id="crashlink.decomp.IRTrace"><code class="flex name class">
 <span>class <span class="ident">IRTrace</span></span>
-<span>(</span><span>code: <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a>,<br>filename: <a title="crashlink.core.gIndex" href="core.html#crashlink.core.gIndex">gIndex</a>,<br>line: int,<br>class_name: <a title="crashlink.core.gIndex" href="core.html#crashlink.core.gIndex">gIndex</a>,<br>method_name: <a title="crashlink.core.gIndex" href="core.html#crashlink.core.gIndex">gIndex</a>)</span>
+<span>(</span><span>code: Bytecode,<br>filename: gIndex,<br>line: int,<br>class_name: gIndex,<br>method_name: gIndex)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2188,6 +2397,9 @@ inheritance.</p></div>
         self.class_name = class_name
         self.method_name = method_name
 
+    def get_children(self) -&gt; List[IRStatement]:
+        return []
+
     def __repr__(self) -&gt; str:
         return f&#34;&lt;IRTrace: {self.filename.resolve_str(self.code)} {self.line} {self.class_name.resolve_str(self.code)} {self.method_name.resolve_str(self.code)}&gt;&#34;</code></pre>
 </details>
@@ -2197,6 +2409,22 @@ inheritance.</p></div>
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRTrace.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    return []</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 </dd>
 <dt id="crashlink.decomp.IsolatedCFGraph"><code class="flex name class">
 <span>class <span class="ident">IsolatedCFGraph</span></span>
@@ -2319,9 +2547,15 @@ inheritance.</p></div>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRAssign" href="#crashlink.decomp.IRAssign">IRAssign</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRAssign.get_children" href="#crashlink.decomp.IRAssign.get_children">get_children</a></code></li>
+</ul>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRBlock.get_children" href="#crashlink.decomp.IRBlock.get_children">get_children</a></code></li>
+</ul>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRBoolExpr" href="#crashlink.decomp.IRBoolExpr">IRBoolExpr</a></code></h4>
@@ -2332,6 +2566,9 @@ inheritance.</p></div>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRBreak" href="#crashlink.decomp.IRBreak">IRBreak</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRBreak.get_children" href="#crashlink.decomp.IRBreak.get_children">get_children</a></code></li>
+</ul>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRCall" href="#crashlink.decomp.IRCall">IRCall</a></code></h4>
@@ -2342,6 +2579,7 @@ inheritance.</p></div>
 <li>
 <h4><code><a title="crashlink.decomp.IRConditional" href="#crashlink.decomp.IRConditional">IRConditional</a></code></h4>
 <ul class="">
+<li><code><a title="crashlink.decomp.IRConditional.get_children" href="#crashlink.decomp.IRConditional.get_children">get_children</a></code></li>
 <li><code><a title="crashlink.decomp.IRConditional.invert" href="#crashlink.decomp.IRConditional.invert">invert</a></code></li>
 </ul>
 </li>
@@ -2354,6 +2592,7 @@ inheritance.</p></div>
 <li>
 <h4><code><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></code></h4>
 <ul class="">
+<li><code><a title="crashlink.decomp.IRExpression.get_children" href="#crashlink.decomp.IRExpression.get_children">get_children</a></code></li>
 <li><code><a title="crashlink.decomp.IRExpression.get_type" href="#crashlink.decomp.IRExpression.get_type">get_type</a></code></li>
 </ul>
 </li>
@@ -2368,21 +2607,36 @@ inheritance.</p></div>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRPrimitiveLoop" href="#crashlink.decomp.IRPrimitiveLoop">IRPrimitiveLoop</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRPrimitiveLoop.get_children" href="#crashlink.decomp.IRPrimitiveLoop.get_children">get_children</a></code></li>
+</ul>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRPrimitveJump" href="#crashlink.decomp.IRPrimitveJump">IRPrimitveJump</a></code></h4>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRReturn" href="#crashlink.decomp.IRReturn">IRReturn</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRReturn.get_children" href="#crashlink.decomp.IRReturn.get_children">get_children</a></code></li>
+</ul>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRStatement.get_children" href="#crashlink.decomp.IRStatement.get_children">get_children</a></code></li>
+</ul>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRSwitch" href="#crashlink.decomp.IRSwitch">IRSwitch</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRSwitch.get_children" href="#crashlink.decomp.IRSwitch.get_children">get_children</a></code></li>
+</ul>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRTrace" href="#crashlink.decomp.IRTrace">IRTrace</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRTrace.get_children" href="#crashlink.decomp.IRTrace.get_children">get_children</a></code></li>
+</ul>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IsolatedCFGraph" href="#crashlink.decomp.IsolatedCFGraph">IsolatedCFGraph</a></code></h4>
@@ -2393,7 +2647,7 @@ inheritance.</p></div>
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
 </footer>
 </body>
 </html>
