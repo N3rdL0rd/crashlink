@@ -1,3 +1,9 @@
+"""
+Pseudocode generation routines to create a Haxe representation of the decompiled IR.
+"""
+
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from typing import Optional, List
 

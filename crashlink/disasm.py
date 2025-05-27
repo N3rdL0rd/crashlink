@@ -2,6 +2,8 @@
 Human-readable disassembly of opcodes and utilities to work at a relatively low level with HashLink bytecode.
 """
 
+from __future__ import annotations
+
 from ast import literal_eval
 from typing import List, Optional, Dict
 
