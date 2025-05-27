@@ -14,6 +14,7 @@ from .core import (
     Opcode,
     ResolvableVarInt,
     Type,
+    TypeDef,
     Void,
     gIndex,
     tIndex,
@@ -317,6 +318,10 @@ class IRStatement(ABC):
     @abstractmethod
     def __repr__(self) -> str:
         pass
+    
+    @abstractmethod
+    def get_children(self) -> List[IRStatement]:
+        pass
 
     def __str__(self) -> str:
         return self.__repr__()
@@ -339,6 +344,9 @@ class IRBlock(IRStatement):
         statements = pformat(self.statements, indent=0).replace("\n", "\n\t")
 
         return f"<IRBlock:\n{statements}>"
+    
+    def get_children(self) -> List[IRStatement]:
+        return self.statements
 
     def __str__(self) -> str:
         return self.__repr__()
@@ -354,6 +362,9 @@ class IRExpression(IRStatement, ABC):
     def get_type(self) -> Type:
         """Get the type of value this expression produces"""
         pass
+    
+    def get_children(self) -> List[IRStatement]:
+        return []
 
 
 class IRLocal(IRExpression):
@@ -412,6 +423,9 @@ class IRAssign(IRStatement):
         super().__init__(code)
         self.target = target
         self.expr = expr
+    
+    def get_children(self) -> List[IRStatement]:
+        return [self.expr]
 
     def __repr__(self) -> str:
         return f"<IRAssign: {self.target} = {self.expr} ({disasm.type_name(self.code, self.expr.get_type())})>"
@@ -623,6 +637,9 @@ class IRConditional(IRStatement):
         else:
             old_cond = self.condition
             self.condition = IRBoolExpr(self.code, IRBoolExpr.CompareType.NOT, old_cond)
+    
+    def get_children(self) -> List[IRStatement]:
+        return [self.condition, self.true_block, self.false_block]
 
     def __repr__(self) -> str:
         return f"<IRConditional: if {self.condition} then\n\t{self.true_block}\nelse\n\t{self.false_block}>"
@@ -635,6 +652,9 @@ class IRPrimitiveLoop(IRStatement):
         super().__init__(code)
         self.condition = condition
         self.body = body
+        
+    def get_children(self) -> List[IRStatement]:
+        return [self.condition, self.body]
 
     def __repr__(self) -> str:
         return f"<IRPrimitiveLoop: cond -> {self.condition}\n body -> {self.body}>"
@@ -645,6 +665,9 @@ class IRBreak(IRStatement):
 
     def __init__(self, code: Bytecode):
         super().__init__(code)
+        
+    def get_children(self) -> List[IRStatement]:
+        return []
 
     def __repr__(self) -> str:
         return "<IRBreak>"
@@ -656,6 +679,9 @@ class IRReturn(IRStatement):
     def __init__(self, code: Bytecode, value: Optional[IRExpression] = None):
         super().__init__(code)
         self.value = value
+    
+    def get_children(self) -> List[IRStatement]:
+        return []
 
     def __repr__(self) -> str:
         return f"<IRReturn: {self.value}>"
@@ -677,6 +703,9 @@ class IRTrace(IRStatement):
         self.line = line
         self.class_name = class_name
         self.method_name = method_name
+    
+    def get_children(self) -> List[IRStatement]:
+        return []
 
     def __repr__(self) -> str:
         return f"<IRTrace: {self.filename.resolve_str(self.code)} {self.line} {self.class_name.resolve_str(self.code)} {self.method_name.resolve_str(self.code)}>"
@@ -696,6 +725,9 @@ class IRSwitch(IRStatement):
         self.value = value
         self.cases = cases
         self.default = default
+    
+    def get_children(self) -> List[IRStatement]:
+        return [self.value, self.default] + [block for block in self.cases.values()]
 
     def __repr__(self) -> str:
         cases = ""
@@ -758,6 +790,46 @@ class IsolatedCFGraph(CFGraph):
 
             if len(entry_candidates) == 1:
                 self.entry = entry_candidates[0]
+                
+class IRWhileLoop(IRStatement):
+    """
+    Represents a while loop: while (condition) { body }
+    """
+    
+    condition: IRBlock
+    body: IRBlock
+    
+    def __init__(self, code: Bytecode, condition: IRExpression, body: IRBlock):
+        super().__init__(code)
+        
+        condition_actual_type = condition.get_type()
+        # Check if the kind of the condition's type is Bool
+        if condition_actual_type.kind.value != Type.Kind.BOOL.value:
+            # If not bool, then check if it's Dyn. Otherwise, it's an error.
+            # (Using disasm.type_name is also a good way to get a string representation for the error message)
+            cond_type_name_str = disasm.type_name(code, condition_actual_type)
+            if cond_type_name_str != "Dyn": # Allow Dyn as it can implicitly convert
+                 raise DecompError(
+                    f"IRWhileLoop condition must be a Bool or Dyn-typed expression, got {cond_type_name_str}"
+                )
+        
+        self.condition = condition
+        self.body = body
+        self.comment = ""
+
+    def get_children(self) -> List[IRStatement]:
+        children = []
+        if isinstance(self.condition, IRStatement):
+            children.append(self.condition)
+        children.append(self.body)
+        return children
+
+    def __repr__(self) -> str:
+        body_repr = pformat(self.body, indent=0).replace("\n", "\n\t")
+        return f"<IRWhileLoop: while ({self.condition}) {{\n\t{body_repr}\n}}>"
+
+    def __str__(self) -> str:
+        return self.__repr__()
 
 
 def _find_jumps_to_label(
@@ -794,16 +866,515 @@ class IROptimizer(ABC):
     @abstractmethod
     def optimize(self) -> None:
         pass
-
-
-class IRLoopConditionOptimizer(IROptimizer):
+    
+class TraversingIROptimizer(IROptimizer):
     """
-    Convert abstract jumps in loop condition blocks to bool expressions.
+    Base class for intermediate representation optimization routines that recursively travel through the decompilation.
     """
-
+    
     def optimize(self) -> None:
+        """Start the optimization by traversing the root IR block."""
+        if hasattr(self.func, 'block'):
+            self.visit(self.func.block)
+    
+    def visit(self, statement: IRStatement) -> None:
+        """
+        Recursively visit an IR statement and its children.
+        
+        The traversal performs a pre-order visit (parent first, then children):
+        1. Call before_visit_statement for the current statement
+        2. Handle specific statement type with visit_X methods
+        3. Visit all children recursively
+        4. Call after_visit_statement for the current statement
+        """
+        self.before_visit_statement(statement)
+        
+        if isinstance(statement, IRBlock):
+            self.visit_block(statement)
+        elif isinstance(statement, IRAssign):
+            self.visit_assign(statement)
+        elif isinstance(statement, IRConditional):
+            self.visit_conditional(statement)
+        elif isinstance(statement, IRPrimitiveLoop):
+            self.visit_primitive_loop(statement)
+        elif isinstance(statement, IRSwitch):
+            self.visit_switch(statement)
+        elif isinstance(statement, IRReturn):
+            self.visit_return(statement)
+        elif isinstance(statement, IRBreak):
+            self.visit_break(statement)
+        elif isinstance(statement, IRExpression):
+            self.visit_expression(statement)
+        
+        for child in statement.get_children():
+            self.visit(child)
+        
+        self.after_visit_statement(statement)
+    
+    def before_visit_statement(self, statement: IRStatement) -> None:
+        """Called before visiting a statement. Override in subclasses for custom behavior."""
         pass
+    
+    def after_visit_statement(self, statement: IRStatement) -> None:
+        """Called after visiting a statement and all its children. Override in subclasses for custom behavior."""
+        pass
+    
+    def visit_block(self, block: IRBlock) -> None:
+        """Visit an IRBlock. Override in subclasses for custom behavior."""
+        pass
+    
+    def visit_assign(self, assign: IRAssign) -> None:
+        """Visit an IRAssign. Override in subclasses for custom behavior."""
+        pass
+    
+    def visit_conditional(self, conditional: IRConditional) -> None:
+        """Visit an IRConditional. Override in subclasses for custom behavior."""
+        pass
+    
+    def visit_primitive_loop(self, loop: IRPrimitiveLoop) -> None:
+        """Visit an IRPrimitiveLoop. Override in subclasses for custom behavior."""
+        pass
+    
+    def visit_switch(self, switch: IRSwitch) -> None:
+        """Visit an IRSwitch. Override in subclasses for custom behavior."""
+        pass
+    
+    def visit_return(self, ret: IRReturn) -> None:
+        """Visit an IRReturn. Override in subclasses for custom behavior."""
+        pass
+    
+    def visit_break(self, brk: IRBreak) -> None:
+        """Visit an IRBreak. Override in subclasses for custom behavior."""
+        pass
+    
+    def visit_expression(self, expr: IRExpression) -> None:
+        """Visit an IRExpression. Override in subclasses for custom behavior."""
+        pass
+    
 
+class IRPrimitiveJumpLifter(TraversingIROptimizer):
+    """
+    Lifts an IRPrimitiveJump at the end of an IRPrimitiveLoop's condition block
+    into an IRBoolExpr. This IRBoolExpr then becomes the new last statement
+    of the condition block.
+
+    This pass makes it easier for subsequent optimizers like IRConditionInliner
+    to operate on the boolean logic.
+    """
+
+    def visit_primitive_loop(self, loop: IRPrimitiveLoop) -> None:
+        """
+        Focus on the condition block of the primitive loop.
+        """
+        if not loop.condition.statements:
+            return # Nothing to do
+
+        last_cond_stmt = loop.condition.statements[-1]
+        if not isinstance(last_cond_stmt, IRPrimitveJump):
+            # dbg_print(f"IRPrimitiveJumpLifter: Loop cond for {loop} does not end with IRPrimitiveJump. Skipping.")
+            return
+
+        primitive_jump: IRPrimitveJump = last_cond_stmt
+        original_jump_op: Opcode = primitive_jump.op
+
+        # Map bytecode jump opcodes to IRBoolExpr.CompareType
+        # This jump condition means "IF THIS EXPRESSION IS TRUE, THEN JUMP (conditionally exit/continue loop based on CFG)"
+        # For a loop, the PrimitiveJump in the condition block usually signifies "if true, EXIT loop".
+        # So, the IRBoolExpr we create here represents the EXIT condition.
+        jump_to_bool_expr_map: Dict[str, IRBoolExpr.CompareType] = {
+            "JTrue": IRBoolExpr.CompareType.ISTRUE, "JFalse": IRBoolExpr.CompareType.ISFALSE,
+            "JNull": IRBoolExpr.CompareType.NULL, "JNotNull": IRBoolExpr.CompareType.NOT_NULL,
+            "JSLt": IRBoolExpr.CompareType.LT, "JSGte": IRBoolExpr.CompareType.GTE,
+            "JSGt": IRBoolExpr.CompareType.GT, "JSLte": IRBoolExpr.CompareType.LTE,
+            "JULt": IRBoolExpr.CompareType.LT, "JUGte": IRBoolExpr.CompareType.GTE,
+            "JNotLt": IRBoolExpr.CompareType.GTE, "JNotGte": IRBoolExpr.CompareType.LT,
+            "JEq": IRBoolExpr.CompareType.EQ, "JNotEq": IRBoolExpr.CompareType.NEQ,
+        }
+
+        if original_jump_op.op not in jump_to_bool_expr_map:
+            dbg_print(f"IRPrimitiveJumpLifter: Jump op {original_jump_op.op} not supported for BoolExpr conversion.")
+            return
+
+        condition_type = jump_to_bool_expr_map[original_jump_op.op]
+        
+        # Create the IRBoolExpr using operands from the original jump Opcode
+        # These operands will be IRLocals.
+        op_df = original_jump_op.df
+        left_expr: Optional[IRExpression] = None
+        right_expr: Optional[IRExpression] = None
+        cond_operand_expr: Optional[IRExpression] = None
+
+        # Helper to get operand as IRLocal
+        def get_local_operand(key_name: str) -> Optional[IRLocal]:
+            if key_name not in op_df: return None
+            try:
+                reg_idx = op_df[key_name].value
+                return self.func.locals[reg_idx] # self.func comes from TraversingIROptimizer
+            except (AttributeError, IndexError, KeyError):
+                dbg_print(f"IRPrimitiveJumpLifter: Could not resolve local for key {key_name} in {original_jump_op}")
+                return None
+
+
+        if condition_type in [IRBoolExpr.CompareType.ISTRUE, IRBoolExpr.CompareType.ISFALSE]:
+            cond_operand_expr = get_local_operand("cond")
+            if not cond_operand_expr: return # Failed to create
+        elif condition_type in [IRBoolExpr.CompareType.NULL, IRBoolExpr.CompareType.NOT_NULL]:
+            cond_operand_expr = get_local_operand("reg")
+            if not cond_operand_expr: return
+        else: # Two-operand comparisons
+            left_expr = get_local_operand("a")
+            right_expr = get_local_operand("b")
+            if not left_expr or not right_expr:
+                 dbg_print(f"IRPrimitiveJumpLifter: Missing operands for binary jump {original_jump_op.op}")
+                 return
+
+        if cond_operand_expr:
+            bool_condition_expr = IRBoolExpr(loop.code, condition_type, left=cond_operand_expr)
+        else:
+            bool_condition_expr = IRBoolExpr(loop.code, condition_type, left=left_expr, right=right_expr)
+        
+        # Replace the last statement (IRPrimitiveJump) with the new IRBoolExpr
+        loop.condition.statements[-1] = bool_condition_expr
+        dbg_print(f"IRPrimitiveJumpLifter: Lifted Jump in loop {loop.base_offset if hasattr(loop, 'base_offset') else ''} to {bool_condition_expr}")
+
+
+class IRConditionInliner(TraversingIROptimizer):
+    """
+    Optimizes IR by inlining expressions (especially IRConst or IRBoolExpr)
+    that are assigned to a temporary local and then immediately used in a
+    conditional statement (IRConditional, IRWhileLoop) or another expression.
+
+    This helps simplify conditions and expressions before other optimization passes.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        """
+        Iterates through statements to find inlining opportunities.
+        """
+        new_statements: List[IRStatement] = []
+
+        i = 0
+        while i < len(block.statements):
+            current_stmt = block.statements[i]
+            inlined_something = False
+
+            if isinstance(current_stmt, IRAssign) and isinstance(current_stmt.expr, IRExpression):
+                # This is a candidate for inlining its RHS (current_stmt.expr)
+                # into a subsequent statement if current_stmt.target is used.
+                assigned_local: IRLocal = current_stmt.target
+                expr_to_inline: IRExpression = current_stmt.expr
+
+                # Look at the next statement
+                if i + 1 < len(block.statements):
+                    next_stmt = block.statements[i+1]
+                    
+                    # --- Case 1: Inline into IRConditional's condition ---
+                    if isinstance(next_stmt, IRConditional):
+                        conditional_stmt: IRConditional = next_stmt
+                        if conditional_stmt.condition == assigned_local: # Direct use of the local
+                            dbg_print(f"IRCondInliner: Inlining {expr_to_inline} into IRConditional for {assigned_local}")
+                            conditional_stmt.condition = expr_to_inline
+                            # The original IRAssign (current_stmt) might become dead.
+                            # For now, we'll keep it and let a dead code eliminator handle it.
+                            # Or, we can choose *not* to add current_stmt to new_statements.
+                            new_statements.append(next_stmt) # Add the modified next_stmt
+                            i += 2 # Consumed two statements
+                            inlined_something = True
+                        elif isinstance(conditional_stmt.condition, IRBoolExpr):
+                            # Check if assigned_local is part of the IRBoolExpr
+                            modified_bool_expr = self._try_inline_into_boolexpr(
+                                conditional_stmt.condition, assigned_local, expr_to_inline
+                            )
+                            if modified_bool_expr:
+                                dbg_print(f"IRCondInliner: Inlining {expr_to_inline} into IRBoolExpr within IRConditional for {assigned_local}")
+                                conditional_stmt.condition = modified_bool_expr
+                                new_statements.append(next_stmt)
+                                i += 2
+                                inlined_something = True
+                    
+                    # --- Case 2: Inline into IRWhileLoop's condition ---
+                    elif not inlined_something and isinstance(next_stmt, IRWhileLoop):
+                        while_loop_stmt: IRWhileLoop = next_stmt
+                        if while_loop_stmt.condition == assigned_local:
+                            dbg_print(f"IRCondInliner: Inlining {expr_to_inline} into IRWhileLoop for {assigned_local}")
+                            while_loop_stmt.condition = expr_to_inline
+                            new_statements.append(next_stmt)
+                            i += 2
+                            inlined_something = True
+                        elif isinstance(while_loop_stmt.condition, IRBoolExpr):
+                            modified_bool_expr = self._try_inline_into_boolexpr(
+                                while_loop_stmt.condition, assigned_local, expr_to_inline
+                            )
+                            if modified_bool_expr:
+                                dbg_print(f"IRCondInliner: Inlining {expr_to_inline} into IRBoolExpr within IRWhileLoop for {assigned_local}")
+                                while_loop_stmt.condition = modified_bool_expr
+                                new_statements.append(next_stmt)
+                                i += 2
+                                inlined_something = True
+                                
+                    # --- Case 3: Inline into another IRAssign's expression (e.g. regA = regB; regC = regA + D) ---
+                    elif not inlined_something and isinstance(next_stmt, IRAssign) and \
+                         isinstance(next_stmt.expr, IRExpression) : # Redundant check, but good for clarity
+                        assign_next_stmt : IRAssign = next_stmt
+                        modified_rhs_expr = self._try_inline_into_generic_expr(
+                            assign_next_stmt.expr, assigned_local, expr_to_inline
+                        )
+                        if modified_rhs_expr:
+                            dbg_print(f"IRCondInliner: Inlining {expr_to_inline} into IRAssign RHS for {assigned_local}")
+                            assign_next_stmt.expr = modified_rhs_expr
+                            new_statements.append(assign_next_stmt)
+                            i += 2
+                            inlined_something = True
+                    
+                    # --- Case 4: Inline into IRReturn value ---
+                    elif not inlined_something and isinstance(next_stmt, IRReturn):
+                        return_stmt: IRReturn = next_stmt
+                        if return_stmt.value == assigned_local:
+                            dbg_print(f"IRCondInliner: Inlining {expr_to_inline} into IRReturn for {assigned_local}")
+                            return_stmt.value = expr_to_inline
+                            new_statements.append(next_stmt)
+                            i += 2
+                            inlined_something = True
+                        elif isinstance(return_stmt.value, IRExpression): # Should always be if not None
+                             modified_ret_val = self._try_inline_into_generic_expr(
+                                 return_stmt.value, assigned_local, expr_to_inline
+                             )
+                             if modified_ret_val:
+                                dbg_print(f"IRCondInliner: Inlining {expr_to_inline} into IRReturn expression for {assigned_local}")
+                                return_stmt.value = modified_ret_val
+                                new_statements.append(next_stmt)
+                                i += 2
+                                inlined_something = True
+                                
+
+            if not inlined_something:
+                new_statements.append(current_stmt)
+                i += 1
+            # If inlined, `i` was already advanced by 2, and the modified `next_stmt` was added.
+            # The `current_stmt` (the original assignment) is skipped, effectively removing it
+            # if its value was successfully inlined. This is a simple form of dead code elimination.
+
+        block.statements = new_statements
+
+
+    def _try_inline_into_boolexpr(self, bool_expr: IRBoolExpr,
+                                  target_local: IRLocal, expr_to_inline: IRExpression) -> Optional[IRBoolExpr]:
+        """
+        Helper to replace occurrences of target_local with expr_to_inline
+        within an IRBoolExpr. Returns a new or modified IRBoolExpr if successful.
+        """
+        modified = False
+        new_left = bool_expr.left
+        new_right = bool_expr.right
+
+        if bool_expr.left == target_local:
+            new_left = expr_to_inline
+            modified = True
+        elif isinstance(bool_expr.left, IRExpression): # Could be nested
+            inlined_nested_left = self._try_inline_into_generic_expr(bool_expr.left, target_local, expr_to_inline)
+            if inlined_nested_left:
+                new_left = inlined_nested_left
+                modified = True
+
+
+        if bool_expr.right == target_local:
+            new_right = expr_to_inline
+            modified = True
+        elif isinstance(bool_expr.right, IRExpression): # Could be nested
+            inlined_nested_right = self._try_inline_into_generic_expr(bool_expr.right, target_local, expr_to_inline)
+            if inlined_nested_right:
+                new_right = inlined_nested_right
+                modified = True
+        
+        if modified:
+            bool_expr.left = new_left
+            bool_expr.right = new_right
+            return bool_expr
+        return None
+
+    def _try_inline_into_generic_expr(self, current_expr: IRExpression,
+                                     target_local: IRLocal, expr_to_inline: IRExpression) -> Optional[IRExpression]:
+        """
+        Recursively tries to inline target_local with expr_to_inline within various IRExpression types.
+        Returns the modified (or new) expression if successful, else None.
+        This function assumes that if it returns an expression, it's safe to replace the original.
+        """
+        if current_expr == target_local:
+            return expr_to_inline
+
+        if isinstance(current_expr, IRArithmetic):
+            arith_expr: IRArithmetic = current_expr
+            modified_left = arith_expr.left
+            modified_right = arith_expr.right
+            made_change = False
+
+            inlined_left = self._try_inline_into_generic_expr(arith_expr.left, target_local, expr_to_inline)
+            if inlined_left:
+                modified_left = inlined_left
+                made_change = True
+            
+            inlined_right = self._try_inline_into_generic_expr(arith_expr.right, target_local, expr_to_inline)
+            if inlined_right:
+                modified_right = inlined_right
+                made_change = True
+
+            if made_change:
+                arith_expr.left = modified_left
+                arith_expr.right = modified_right
+                return arith_expr
+            return None
+
+        elif isinstance(current_expr, IRBoolExpr):
+            return self._try_inline_into_boolexpr(current_expr, target_local, expr_to_inline)
+
+        elif isinstance(current_expr, IRCall):
+            call_expr: IRCall = current_expr
+            made_change = False
+            new_args = list(call_expr.args)
+
+            for i, arg_expr in enumerate(call_expr.args):
+                inlined_arg = self._try_inline_into_generic_expr(arg_expr, target_local, expr_to_inline)
+                if inlined_arg:
+                    new_args[i] = inlined_arg
+                    made_change = True
+            
+            if isinstance(call_expr.target, IRExpression):
+                inlined_target = self._try_inline_into_generic_expr(call_expr.target, target_local, expr_to_inline)
+                if inlined_target and isinstance(inlined_target, (IRConst, IRLocal, type(None))): # IRCall target constraint
+                    call_expr.target = inlined_target
+                    made_change = True
+
+
+            if made_change:
+                call_expr.args = new_args
+                return call_expr
+            return None
+        
+        return None
+
+
+class IRLoopConditionOptimizer(TraversingIROptimizer):
+    """
+    Optimizes IRPrimitiveLoop structures into IRWhileLoop where possible.
+    It looks for a pattern in the IRPrimitiveLoop's condition block:
+    1. Optional setup statements.
+    2. A final IRPrimitiveJump (e.g., JTrue, JFalse, JSLt) that determines loop exit.
+
+    The jump condition is inverted to become the 'while' continuation condition.
+    Setup statements from the original condition block are prepended to the new while loop's body.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        """
+        Override visit_block to modify the list of statements if a loop is converted.
+        """
+        new_statements: List[IRStatement] = []
+        made_change = False
+        for stmt in block.statements:
+            if isinstance(stmt, IRPrimitiveLoop):
+                converted_loop = self._try_convert_to_while(stmt)
+                if converted_loop:
+                    new_statements.append(converted_loop)
+                    made_change = True
+                else:
+                    new_statements.append(stmt)
+            else:
+                new_statements.append(stmt)
+
+        if made_change:
+            block.statements = new_statements
+
+    def _ir_expr_from_primitive_jump_operands(self, code: Bytecode, op: Opcode, ir_op_type: IRBoolExpr.CompareType) -> IRBoolExpr:
+        """
+        Helper to create an IRBoolExpr from a primitive jump's opcode details.
+        """
+        left, right = None, None
+        condition_operand_reg = None
+
+        if ir_op_type in [
+            IRBoolExpr.CompareType.ISTRUE,
+            IRBoolExpr.CompareType.ISFALSE,
+        ]:
+            condition_operand_reg = self.func.locals[op.df["cond"].value] # 'cond' is the register to check
+        elif ir_op_type in [
+            IRBoolExpr.CompareType.NULL,
+            IRBoolExpr.CompareType.NOT_NULL,
+        ]:
+            condition_operand_reg = self.func.locals[op.df["reg"].value] # 'reg' is the register to check
+        else: # Two-operand comparisons
+            left = self.func.locals[op.df["a"].value]
+            right = self.func.locals[op.df["b"].value]
+
+        if condition_operand_reg: # For ISTRUE, ISFALSE, NULL, NOT_NULL
+             return IRBoolExpr(code, ir_op_type, left=condition_operand_reg)
+        else: # For EQ, LT, etc.
+            return IRBoolExpr(code, ir_op_type, left=left, right=right)
+
+
+    def _try_convert_to_while(self, loop: IRPrimitiveLoop) -> Optional[IRWhileLoop]:
+        if not loop.condition.statements:
+            dbg_print(f"IRLoopCondOpt: PrimitiveLoop at {loop} has empty condition block. Cannot convert.")
+            return None
+
+        last_cond_stmt = loop.condition.statements[-1]
+        if not isinstance(last_cond_stmt, IRPrimitveJump):
+            dbg_print(f"IRLoopCondOpt: PrimitiveLoop at {loop} condition does not end with IRPrimitiveJump. Ends with {last_cond_stmt}. Cannot convert.")
+            return None
+
+        primitive_jump: IRPrimitveJump = last_cond_stmt
+        original_jump_op: Opcode = primitive_jump.op
+
+        jump_to_bool_expr_map: Dict[str, IRBoolExpr.CompareType] = {
+            "JTrue": IRBoolExpr.CompareType.ISTRUE,
+            "JFalse": IRBoolExpr.CompareType.ISFALSE,
+            "JNull": IRBoolExpr.CompareType.NULL,
+            "JNotNull": IRBoolExpr.CompareType.NOT_NULL,
+            "JSLt": IRBoolExpr.CompareType.LT,
+            "JSGte": IRBoolExpr.CompareType.GTE,
+            "JSGt": IRBoolExpr.CompareType.GT,
+            "JSLte": IRBoolExpr.CompareType.LTE,
+            "JULt": IRBoolExpr.CompareType.LT,
+            "JUGte": IRBoolExpr.CompareType.GTE,
+            # "JNotLt" and "JNotGte" are not in the original list but might appear.
+            # JNotLt (a >= b) -> GTE
+            # JNotGte (a < b) -> LT
+            "JNotLt": IRBoolExpr.CompareType.GTE,
+            "JNotGte": IRBoolExpr.CompareType.LT,
+            "JEq": IRBoolExpr.CompareType.EQ,
+            "JNotEq": IRBoolExpr.CompareType.NEQ,
+        }
+
+        if original_jump_op.op not in jump_to_bool_expr_map:
+            dbg_print(f"IRLoopCondOpt: PrimitiveLoop JUMP op {original_jump_op.op} not supported for while conversion.")
+            return None
+
+        # This is the condition under which the loop *exits*.
+        exit_condition_type = jump_to_bool_expr_map[original_jump_op.op]
+        exit_expr = self._ir_expr_from_primitive_jump_operands(loop.code, original_jump_op, exit_condition_type)
+
+        # For a 'while' loop, we need the condition under which the loop *continues*.
+        # So, we invert the exit condition.
+        # Example: if JTrue R1 (exit if R1 is true), while condition is (NOT (R1 is true)) -> (R1 is false)
+        # Or, if JSLt R1 R2 (exit if R1 < R2), while condition is (NOT (R1 < R2)) -> (R1 >= R2)
+        loop_continuation_expr = exit_expr
+        loop_continuation_expr.invert() # IRBoolExpr.invert() handles the logic
+
+        # Statements in the original condition block before the jump become part of the new body,
+        # executed at the start of each iteration.
+        setup_statements_for_body = loop.condition.statements[:-1]
+
+        new_body_statements = setup_statements_for_body + loop.body.statements
+        new_body_block = IRBlock(loop.code)
+        new_body_block.statements = new_body_statements
+        
+        # propagate comments
+        new_while_loop = IRWhileLoop(loop.code, loop_continuation_expr, new_body_block)
+        new_while_loop.comment = loop.comment
+        if setup_statements_for_body:
+            new_while_loop.comment += " (Condition setup moved into body)"
+        
+        dbg_print(f"IRLoopCondOpt: Converted IRPrimitiveLoop to IRWhileLoop.")
+        return new_while_loop
 
 class IRFunction:
     """
@@ -826,7 +1397,11 @@ class IRFunction:
         self.block: IRBlock
         self._lift(no_lift=no_lift)
         if do_optimize:
-            self.optimizers: List[IROptimizer] = [IRLoopConditionOptimizer(self)]
+            self.optimizers: List[IROptimizer] = [
+                IRPrimitiveJumpLifter(self),
+                IRConditionInliner(self),
+                IRLoopConditionOptimizer(self)
+            ]
             self._optimize()
 
     def _lift(self, no_lift: bool = False) -> None:
@@ -845,6 +1420,10 @@ class IRFunction:
     def _optimize(self) -> None:
         """Optimize the IR"""
         # TODO: store layers
+        dbg_print("----- Disasm -----")
+        dbg_print(disasm.func(self.code, self.func))
+        dbg_print(f"----- LLIL -----")
+        dbg_print(self.block)
         for o in self.optimizers:
             dbg_print(f"----- {o.__class__.__name__} -----")
             o.optimize()
