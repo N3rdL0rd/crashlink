@@ -2,6 +2,8 @@
 Decompilation, IR and control flow graph generation
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from enum import Enum as _Enum  # Enum is already defined in crashlink.core
 from pprint import pformat

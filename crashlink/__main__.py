@@ -2,6 +2,8 @@
 Entrypoint for the crashlink CLI.
 """
 
+from __future__ import annotations
+
 import argparse
 import importlib
 import inspect

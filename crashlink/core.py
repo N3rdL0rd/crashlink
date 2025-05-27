@@ -7,6 +7,8 @@ besides Bytecode, Opcode, and Function. The decompiler will take care of a lot o
 you.
 """
 
+from __future__ import annotations
+
 import ctypes
 import struct
 from abc import ABC, abstractmethod
