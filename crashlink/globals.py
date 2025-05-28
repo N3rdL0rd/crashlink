@@ -20,12 +20,12 @@ def _is_debug() -> bool:
     )
 
 
-VERSION: str = "v0.0.2a"
+VERSION: str = "v0.0.4"
 """
 The version of crashlink.
 """
 
-LONG_VERSION: str = "crashlink - Pure Python HashLink bytecode multitool - " + VERSION
+LONG_VERSION: str = "crashlink - Pure-Python HashLink bytecode Swiss Army knife - " + VERSION
 """
 String displayed in the help message for the CLI.
 """

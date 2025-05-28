@@ -1,6 +1,6 @@
 [project]
 name = "crashlink"
-version = "0.0.3"
+version = "0.0.4"
 authors = [
   { name="N3rdL0rd", email="n3rdl0rd@proton.me" },
 ]
