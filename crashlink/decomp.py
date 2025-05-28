@@ -1440,11 +1440,11 @@ class IRFunction:
         dbg_print("----- Disasm -----")
         dbg_print(disasm.func(self.code, self.func))
         dbg_print(f"----- LLIL -----")
-        dbg_print(self.block)
+        dbg_print(self.block.pprint())
         for o in self.optimizers:
             dbg_print(f"----- {o.__class__.__name__} -----")
             o.optimize()
-            dbg_print(self.block)
+            dbg_print(self.block.pprint())
 
     def _name_locals(self) -> None:
         """Name locals based on debug info"""
@@ -1821,7 +1821,7 @@ class IRFunction:
         return block
 
     def print(self) -> None:
-        print(self.block)
+        print(self.block.pprint())
 
 
 __all__ = [
