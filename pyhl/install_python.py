@@ -169,7 +169,10 @@ def main_win() -> None:
     shutil.rmtree("python", ignore_errors=True)
 
     print("Installing hashlink binaries...")
-    download_file("https://nightly.link/HaxeFoundation/hashlink/workflows/build/master/windows-cmake-64.zip", "hl.zip")
+    download_file(
+        "https://nightly.link/HaxeFoundation/hashlink/workflows/build/master/windows-cmake-64.zip",
+        "hl.zip",
+    )
     with zipfile.ZipFile("hl.zip", "r") as zip_ref:
         zip_ref.extractall("hashlink-bin")
     with zipfile.ZipFile(glob.glob("hashlink-bin/*.zip")[0], "r") as zip_ref:

@@ -1046,11 +1046,17 @@ class IRPrimitiveJumpLifter(TraversingIROptimizer):
                 dbg_print(f"IRPrimitiveJumpLifter: Could not resolve local for key {key_name} in {original_jump_op}")
                 return None
 
-        if condition_type in [IRBoolExpr.CompareType.ISTRUE, IRBoolExpr.CompareType.ISFALSE]:
+        if condition_type in [
+            IRBoolExpr.CompareType.ISTRUE,
+            IRBoolExpr.CompareType.ISFALSE,
+        ]:
             cond_operand_expr = get_local_operand("cond")
             if not cond_operand_expr:
                 return  # Failed to create
-        elif condition_type in [IRBoolExpr.CompareType.NULL, IRBoolExpr.CompareType.NOT_NULL]:
+        elif condition_type in [
+            IRBoolExpr.CompareType.NULL,
+            IRBoolExpr.CompareType.NOT_NULL,
+        ]:
             cond_operand_expr = get_local_operand("reg")
             if not cond_operand_expr:
                 return
@@ -1068,9 +1074,7 @@ class IRPrimitiveJumpLifter(TraversingIROptimizer):
 
         # Replace the last statement (IRPrimitiveJump) with the new IRBoolExpr
         loop.condition.statements[-1] = bool_condition_expr
-        dbg_print(
-            f"IRPrimitiveJumpLifter: Lifted Jump in loop {loop.base_offset if hasattr(loop, 'base_offset') else ''} to {bool_condition_expr}"
-        )
+        dbg_print(f"IRPrimitiveJumpLifter: Lifted jump to {bool_condition_expr}")
 
 
 class IRConditionInliner(TraversingIROptimizer):
@@ -1112,7 +1116,9 @@ class IRConditionInliner(TraversingIROptimizer):
                             inlined_something = True
                         elif isinstance(conditional_stmt.condition, IRBoolExpr):
                             modified_bool_expr = self._try_inline_into_boolexpr(
-                                conditional_stmt.condition, assigned_local, expr_to_inline
+                                conditional_stmt.condition,
+                                assigned_local,
+                                expr_to_inline,
                             )
                             if modified_bool_expr:
                                 dbg_print(
@@ -1135,7 +1141,9 @@ class IRConditionInliner(TraversingIROptimizer):
                             inlined_something = True
                         elif isinstance(while_loop_stmt.condition, IRBoolExpr):
                             modified_bool_expr = self._try_inline_into_boolexpr(
-                                while_loop_stmt.condition, assigned_local, expr_to_inline
+                                while_loop_stmt.condition,
+                                assigned_local,
+                                expr_to_inline,
                             )
                             if modified_bool_expr:
                                 dbg_print(
@@ -1237,7 +1245,10 @@ class IRConditionInliner(TraversingIROptimizer):
         return None
 
     def _try_inline_into_generic_expr(
-        self, current_expr: IRExpression, target_local: IRLocal, expr_to_inline: IRExpression
+        self,
+        current_expr: IRExpression,
+        target_local: IRLocal,
+        expr_to_inline: IRExpression,
     ) -> Optional[IRExpression]:
         if current_expr == target_local:
             return expr_to_inline
@@ -1349,7 +1360,10 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
         exit_condition_expr: IRBoolExpr = last_cond_stmt
 
         loop_continuation_expr = IRBoolExpr(
-            loop.code, exit_condition_expr.op, exit_condition_expr.left, exit_condition_expr.right
+            loop.code,
+            exit_condition_expr.op,
+            exit_condition_expr.left,
+            exit_condition_expr.right,
         )
         loop_continuation_expr.invert()
 
@@ -1391,6 +1405,7 @@ class IRSelfAssignOptimizer(TraversingIROptimizer):
 
         block.statements = new_statements
 
+
 class IRBlockFlattener(TraversingIROptimizer):
     """
     Flattens nested IRBlock structures. For example, an IRBlock child of another IRBlock
@@ -1405,7 +1420,7 @@ class IRBlockFlattener(TraversingIROptimizer):
     def visit_block(self, block: IRBlock) -> None:
         original_statements = list(block.statements)
         new_statements: List[IRStatement] = []
-        
+
         made_structural_change = False
 
         for stmt in original_statements:
@@ -1416,10 +1431,12 @@ class IRBlockFlattener(TraversingIROptimizer):
                 made_structural_change = True
             else:
                 new_statements.append(stmt)
-        
+
         if made_structural_change or new_statements != original_statements:
             block.statements = new_statements
-            dbg_print(f"IRBlockFlattener: Processed block. Original item count: {len(original_statements)}, New item count: {len(new_statements)}")
+            dbg_print(
+                f"IRBlockFlattener: Processed block. Original item count: {len(original_statements)}, New item count: {len(new_statements)}"
+            )
 
 
 class IRFunction:

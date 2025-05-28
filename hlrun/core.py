@@ -8,7 +8,13 @@ from typing import Any, Iterable, List
 from .globals import dbg_print, is_runtime
 
 if is_runtime():
-    from _pyhl import hl_obj_getfield, hl_obj_setfield, hl_obj_classname, hl_closure_call, hl_obj_field_type
+    from _pyhl import (
+        hl_obj_getfield,
+        hl_obj_setfield,
+        hl_obj_classname,
+        hl_closure_call,
+        hl_obj_field_type,
+    )
 
     RUNTIME = True
 else:
