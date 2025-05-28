@@ -383,6 +383,15 @@ class IRLocal(IRExpression):
     def get_type(self) -> Type:
         return self.type.resolve(self.code)
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, IRLocal):
+            return False
+        return (
+            self.name == other.name
+            and self.type.resolve(self.code) is other.type.resolve(other.code)
+            and self.code is other.code
+        )
+
     def __repr__(self) -> str:
         return f"<IRLocal: {self.name} {disasm.type_name(self.code, self.type.resolve(self.code))}>"
 
@@ -1357,6 +1366,24 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
         return new_while_loop
 
 
+class IRSelfAssignOptimizer(TraversingIROptimizer):
+    """
+    Optimizes away redundant assignments like `x = x`.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements = []
+
+        for stmt in block.statements:
+            if isinstance(stmt, IRAssign):
+                if isinstance(stmt.target, IRLocal) and stmt.target == stmt.expr:
+                    dbg_print(f"IRSelfAssignOptimizer: Removing redundant assignment: {stmt}")
+                    continue
+            new_statements.append(stmt)
+
+        block.statements = new_statements
+
+
 class IRFunction:
     """
     Intermediate representation of a function.
@@ -1382,6 +1409,7 @@ class IRFunction:
                 IRPrimitiveJumpLifter(self),
                 IRConditionInliner(self),
                 IRLoopConditionOptimizer(self),
+                IRSelfAssignOptimizer(self),
             ]
             self._optimize()
 
