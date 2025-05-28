@@ -761,7 +761,7 @@ class IRSwitch(IRStatement):
         return f"<IRSwitch: {self.value}{cases}>"
 
 
-class IRPrimitveJump(IRExpression):
+class IRPrimitiveJump(IRExpression):
     """An unlifted jump to be handled by further optimization stages."""
 
     def __init__(self, code: Bytecode, op: Opcode):
@@ -993,11 +993,11 @@ class IRPrimitiveJumpLifter(TraversingIROptimizer):
             return  # Nothing to do
 
         last_cond_stmt = loop.condition.statements[-1]
-        if not isinstance(last_cond_stmt, IRPrimitveJump):
+        if not isinstance(last_cond_stmt, IRPrimitiveJump):
             # dbg_print(f"IRPrimitiveJumpLifter: Loop cond for {loop} does not end with IRPrimitiveJump. Skipping.")
             return
 
-        primitive_jump: IRPrimitveJump = last_cond_stmt
+        primitive_jump: IRPrimitiveJump = last_cond_stmt
         original_jump_op: Opcode = primitive_jump.op
 
         # Map bytecode jump opcodes to IRBoolExpr.CompareType
@@ -1743,7 +1743,7 @@ class IRFunction:
                 else:
                     # convert jumps to IRPrimitiveJump so that later lifting stages can handle them
                     # TODO: instead of just wrapping an opcode, we can resolve this to a local and generate a Bool-type IRExpression
-                    block.statements.append(IRPrimitveJump(self.code, op))
+                    block.statements.append(IRPrimitiveJump(self.code, op))
 
             elif op.op in ["Call0", "Call1", "Call2", "Call3", "Call4"]:
                 n = int(op.op[-1])
@@ -1891,7 +1891,7 @@ __all__ = [
     "IRFunction",
     "IRLocal",
     "IRPrimitiveLoop",
-    "IRPrimitveJump",
+    "IRPrimitiveJump",
     "IRReturn",
     "IRStatement",
     "IRSwitch",

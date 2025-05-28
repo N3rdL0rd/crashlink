@@ -1626,7 +1626,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <li><a title="crashlink.decomp.IRCall" href="#crashlink.decomp.IRCall">IRCall</a></li>
 <li><a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a></li>
 <li><a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a></li>
-<li><a title="crashlink.decomp.IRPrimitveJump" href="#crashlink.decomp.IRPrimitveJump">IRPrimitveJump</a></li>
+<li><a title="crashlink.decomp.IRPrimitiveJump" href="#crashlink.decomp.IRPrimitiveJump">IRPrimitiveJump</a></li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -1973,7 +1973,7 @@ def get_type(self) -&gt; Type:
                 else:
                     # convert jumps to IRPrimitiveJump so that later lifting stages can handle them
                     # TODO: instead of just wrapping an opcode, we can resolve this to a local and generate a Bool-type IRExpression
-                    block.statements.append(IRPrimitveJump(self.code, op))
+                    block.statements.append(IRPrimitiveJump(self.code, op))
 
             elif op.op in [&#34;Call0&#34;, &#34;Call1&#34;, &#34;Call2&#34;, &#34;Call3&#34;, &#34;Call4&#34;]:
                 n = int(op.op[-1])
@@ -2165,6 +2165,45 @@ def get_type(self) -&gt; Type:
 </li>
 </ul>
 </dd>
+<dt id="crashlink.decomp.IRPrimitiveJump"><code class="flex name class">
+<span>class <span class="ident">IRPrimitiveJump</span></span>
+<span>(</span><span>code: Bytecode, op: Opcode)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRPrimitiveJump(IRExpression):
+    &#34;&#34;&#34;An unlifted jump to be handled by further optimization stages.&#34;&#34;&#34;
+
+    def __init__(self, code: Bytecode, op: Opcode):
+        super().__init__(code)
+        self.op = op
+        assert op.op in conditionals
+
+    def get_type(self) -&gt; Type:
+        return _get_type_in_code(self.code, &#34;Bool&#34;)
+
+    def __repr__(self) -&gt; str:
+        return f&#34;&lt;IRPrimitiveJump: {self.op}&gt;&#34;</code></pre>
+</details>
+<div class="desc"><p>An unlifted jump to be handled by further optimization stages.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
+<li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.IRExpression.get_type" href="#crashlink.decomp.IRExpression.get_type">get_type</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
 <dt id="crashlink.decomp.IRPrimitiveLoop"><code class="flex name class">
 <span>class <span class="ident">IRPrimitiveLoop</span></span>
 <span>(</span><span>code: Bytecode,<br>condition: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>,<br>body: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>)</span>
@@ -2210,45 +2249,6 @@ def get_type(self) -&gt; Type:
 <div class="desc"></div>
 </dd>
 </dl>
-</dd>
-<dt id="crashlink.decomp.IRPrimitveJump"><code class="flex name class">
-<span>class <span class="ident">IRPrimitveJump</span></span>
-<span>(</span><span>code: Bytecode, op: Opcode)</span>
-</code></dt>
-<dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class IRPrimitveJump(IRExpression):
-    &#34;&#34;&#34;An unlifted jump to be handled by further optimization stages.&#34;&#34;&#34;
-
-    def __init__(self, code: Bytecode, op: Opcode):
-        super().__init__(code)
-        self.op = op
-        assert op.op in conditionals
-
-    def get_type(self) -&gt; Type:
-        return _get_type_in_code(self.code, &#34;Bool&#34;)
-
-    def __repr__(self) -&gt; str:
-        return f&#34;&lt;IRPrimitiveJump: {self.op}&gt;&#34;</code></pre>
-</details>
-<div class="desc"><p>An unlifted jump to be handled by further optimization stages.</p></div>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
-<li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
-<li>abc.ABC</li>
-</ul>
-<h3>Inherited members</h3>
-<ul class="hlist">
-<li><code><b><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></b></code>:
-<ul class="hlist">
-<li><code><a title="crashlink.decomp.IRExpression.get_type" href="#crashlink.decomp.IRExpression.get_type">get_type</a></code></li>
-</ul>
-</li>
-</ul>
 </dd>
 <dt id="crashlink.decomp.IRReturn"><code class="flex name class">
 <span>class <span class="ident">IRReturn</span></span>
@@ -2650,13 +2650,13 @@ def get_children(self) -&gt; List[IRStatement]:
 <h4><code><a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a></code></h4>
 </li>
 <li>
+<h4><code><a title="crashlink.decomp.IRPrimitiveJump" href="#crashlink.decomp.IRPrimitiveJump">IRPrimitiveJump</a></code></h4>
+</li>
+<li>
 <h4><code><a title="crashlink.decomp.IRPrimitiveLoop" href="#crashlink.decomp.IRPrimitiveLoop">IRPrimitiveLoop</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.decomp.IRPrimitiveLoop.get_children" href="#crashlink.decomp.IRPrimitiveLoop.get_children">get_children</a></code></li>
 </ul>
-</li>
-<li>
-<h4><code><a title="crashlink.decomp.IRPrimitveJump" href="#crashlink.decomp.IRPrimitveJump">IRPrimitveJump</a></code></h4>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRReturn" href="#crashlink.decomp.IRReturn">IRReturn</a></code></h4>
