@@ -14,7 +14,8 @@ import sys
 import tempfile
 import traceback
 import webbrowser
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple, Set
+from functools import wraps
 
 from . import decomp, disasm, globals
 from .asm import AsmFile
@@ -26,8 +27,20 @@ from .pseudo import pseudo
 from hlrun.patch import Patch
 
 
-class Commands:
-    """Container class for all CLI commands"""
+def alias(*aliases: str) -> Callable[[Callable[[Commands, List[str]], None]], Callable[[Commands, List[str]], None]]:
+    """Decorator to add aliases to command methods"""
+
+    def decorator(func: Callable[[Commands, List[str]], None]) -> Callable[[Commands, List[str]], None]:
+        func._aliases = aliases  # type: ignore
+        return func
+
+    return decorator
+
+
+class BaseCommands:
+    """
+    Base class for all command containers.
+    """
 
     def __init__(self, code: Bytecode):
         self.code = code
@@ -38,6 +51,10 @@ class Commands:
         if len(s) == 1:
             return cmd, " ".join(s)
         return s[1], s[0]
+
+    def exit(self, args: List[str]) -> None:
+        """Exit the program"""
+        sys.exit()
 
     def help(self, args: List[str]) -> None:
         """Prints this help message or information on a specific command. `help (command)`"""
@@ -51,18 +68,75 @@ class Commands:
                 else:
                     print(f"Unknown command: {command}")
             return
+
         print("Available commands:")
-        for cmd, func in commands.items():
+
+        # Group commands by their primary name (avoid showing aliases as separate entries)
+        primary_commands = self._get_primary_commands()
+        command_aliases = self._get_command_aliases()
+
+        for cmd, func in primary_commands.items():
             usage, desc = self._format_help(func.__doc__ or "", cmd)
-            print(f"\t{usage} - {desc}")
+            aliases = command_aliases.get(cmd, [])
+            if aliases:
+                alias_str = f" (aliases: {', '.join(aliases)})"
+                print(f"\t{usage}{alias_str} - {desc}")
+            else:
+                print(f"\t{usage} - {desc}")
         print("Type 'help <command>' for information on a specific command.")
+
+    def _get_commands(self) -> Dict[str, Callable[[List[str]], None]]:
+        """Get all command methods using reflection, including aliases"""
+        commands: Dict[str, Callable[[List[str]], None]] = {}
+
+        for name, func in inspect.getmembers(self, predicate=inspect.ismethod):
+            if name.startswith("_"):
+                continue
+
+            # Add the primary command
+            commands[name] = func
+
+            # Add any aliases
+            if hasattr(func, "_aliases"):
+                for alias_name in func._aliases:
+                    commands[alias_name] = func
+
+        return commands
+
+    def _get_primary_commands(self) -> Dict[str, Callable[[List[str]], None]]:
+        """Get only the primary command methods (no aliases)"""
+        return {
+            name: func
+            for name, func in inspect.getmembers(self, predicate=inspect.ismethod)
+            if not name.startswith("_")
+        }
+
+    def _get_command_aliases(self) -> Dict[str, List[str]]:
+        """Get a mapping of primary command names to their aliases"""
+        alias_map = {}
+
+        for name, func in inspect.getmembers(self, predicate=inspect.ismethod):
+            if name.startswith("_"):
+                continue
+
+            if hasattr(func, "_aliases"):
+                alias_map[name] = list(func._aliases)
+
+        return alias_map
+
+
+class Commands(BaseCommands):
+    """Container class for all CLI commands"""
+
+    def __init__(self, code: Bytecode):
+        self.code = code
 
     def exit(self, args: List[str]) -> None:
         """Exit the program"""
         sys.exit()
 
     def wiki(self, args: List[str]) -> None:
-        """Open the HLBC wiki in your default browser"""
+        """Open the ModDocCE wiki page on Hashlink bytecode in your default browser"""
         webbrowser.open("https://n3rdl0rd.github.io/ModDocCE/files/hlboot")
 
     def op(self, args: List[str]) -> None:
@@ -106,8 +180,9 @@ class Commands:
             print("\nUse 'op <exact_opcode>' to see documentation for a specific opcode.")
             print()
 
+    @alias("fns")
     def funcs(self, args: List[str]) -> None:
-        """List all functions in the bytecode - pass 'std' to not exclude stdlib"""
+        """List all functions in the bytecode - pass 'std' to not exclude stdlib `funcs [std]`"""
         std = args and args[0] == "std"
         for func in self.code.functions:
             if disasm.is_std(self.code, func) and not std:
@@ -127,6 +202,7 @@ class Commands:
         else:
             print("    Entrypoint:", disasm.func_header(self.code, entry))
 
+    @alias("f")
     def fn(self, args: List[str]) -> None:
         """Disassembles a function to pseudocode by findex. `fn <idx>`"""
         if len(args) == 0:
@@ -209,6 +285,7 @@ class Commands:
                 return
         print("Function not found.")
 
+    @alias("decompile", "dec", "pseudo")
     def decomp(self, args: List[str]) -> None:
         """Prints the pseudocode decompilation of a function. `decomp <idx>`"""
         if len(args) == 0:
@@ -240,6 +317,7 @@ class Commands:
                 return
         print("Function not found.")
 
+    @alias("edit")
     def patch(self, args: List[str]) -> None:
         """Patches a function's raw opcodes. `patch <idx>`"""
         if len(args) == 0:
@@ -322,6 +400,7 @@ class Commands:
             f.write(ser)
         print("Done!")
 
+    @alias("strs")
     def strings(self, args: List[str]) -> None:
         """List all strings in the bytecode."""
         for i, string in enumerate(self.code.strings.value):
@@ -342,6 +421,7 @@ class Commands:
                 f.write(string.encode("utf-8", errors="surrogateescape") + b"\n")
         print("Strings saved.")
 
+    @alias("search")
     def ss(self, args: List[str]) -> None:
         """
         Search for a string in the bytecode by substring. `ss <query>`
@@ -354,6 +434,7 @@ class Commands:
             if query.lower() in string.lower():
                 print(f"String {i}: {string}")
 
+    @alias("s")
     def string(self, args: List[str]) -> None:
         """
         Print a string by index. `string <index>`
@@ -371,6 +452,7 @@ class Commands:
         except IndexError:
             print("String not found.")
 
+    @alias("i")
     def int(self, args: List[str]) -> None:
         """
         Print an int by index. `int <index>`
@@ -405,6 +487,7 @@ class Commands:
             print("String not found.")
         print("String set.")
 
+    @alias("pkl")
     def pickle(self, args: List[str]) -> None:
         """Pickle the bytecode to a given path. `pickle <path>`"""
         if len(args) == 0:
@@ -446,6 +529,7 @@ class Commands:
                 print(f"Failed to write to {os.path.join(path, file)}")
         print(f"Files generated in {os.path.abspath(path)}")
 
+    @alias("run")
     def interp(self, args: List[str]) -> None:
         """Run the bytecode in crashlink's integrated interpreter."""
         if len(args) == 0:
@@ -583,23 +667,31 @@ class Commands:
                 print(f"Failed to write to {os.path.join(path, file)}")
         print(f"Files generated in {os.path.abspath(path)}")
 
-    def _get_commands(self) -> Dict[str, Callable[[List[str]], None]]:
-        """Get all command methods using reflection"""
-        return {
-            name: func
-            for name, func in inspect.getmembers(self, predicate=inspect.ismethod)
-            if not name.startswith("_")
-        }
+    def info(self, args: List[str]) -> None:
+        """Prints information about the bytecode."""
+        print(f"Bytecode version: {self.code.version}")
+        print(f"Has debug info: {self.code.has_debug_info}")
+        print(f"nints: {len(self.code.ints)}")
+        print(f"nstrings: {len(self.code.strings.value)}")
+        print(f"nfunctions: {len(self.code.functions)}")
+        print(f"nnatives: {len(self.code.natives)}")
+        print(f"nfloats: {len(self.code.floats)}")
+        print(f"ntypes: {len(self.code.types)}")
+
+    @alias("check")
+    def verify(self, args: List[str]) -> None:
+        """Runs a set of basic sanity checks to make sure the bytecode is correct-ish. `check`"""
+        if not self.code.is_ok():
+            print("Bytecode verification failed!")
+            return
+        print("Bytecode verification succeeded!")
 
 
-def handle_cmd(code: Bytecode, is_hlbc: bool, cmd: str) -> None:
+def handle_cmd(code: Bytecode, cmd: str) -> None:
     """Handles a command."""
     cmd_list: List[str] = cmd.split(" ")
     if not cmd_list[0]:
         return
-
-    if is_hlbc:
-        raise NotImplementedError("HLBC compatibility mode is not yet implemented.")
 
     commands = Commands(code)
     available_commands = commands._get_commands()
@@ -619,14 +711,13 @@ def main() -> None:
         "file",
         help="The file to open - can be HashLink bytecode, a Haxe source file or a crashlink assembly file.",
     )
-    parser.add_argument("-a", "--assemble", help="Assemble the passed file", action="store_true")
+    parser.add_argument("-a", "--assemble", help="Assemble the passed crashlink assembly file", action="store_true")
     parser.add_argument(
         "-o",
         "--output",
         help="The output filename for the assembled or patched bytecode.",
     )
     parser.add_argument("-c", "--command", help="The command to run on startup")
-    parser.add_argument("-H", "--hlbc", help="Run in HLBC compatibility mode", action="store_true")
     parser.add_argument(
         "-p",
         "--patch",
@@ -740,11 +831,11 @@ def main() -> None:
         return
 
     if args.command:
-        handle_cmd(code, args.hlbc, args.command)
+        handle_cmd(code, args.command)
     else:
         while True:
             try:
-                handle_cmd(code, args.hlbc, input("crashlink> "))
+                handle_cmd(code, input("crashlink> "))
             except KeyboardInterrupt:
                 print()
                 continue
