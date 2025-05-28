@@ -57,3 +57,6 @@ crashtest = "crashtest.__main__:main"
 [tool.setuptools.packages.find]
 include = ["crashlink", "crashlink.*", "crashtest", "crashtest.*", "hlrun", "hlrun.*"]
 exclude = ["tests", "tests.*", "local", "local.*", "env", "env.*"]
+
+[tool.setuptools.package-data]
+"crashtest" = ["*.html", "templates/*.html", "static/**/*"]
