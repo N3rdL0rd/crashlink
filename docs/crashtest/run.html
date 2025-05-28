@@ -249,7 +249,10 @@ Returns a tuple of (status_message, color_hex).</p>
                 name=f&#34;{case.replace(&#39;.hx&#39;, &#39;&#39;)} (Decompiled)&#34;,
                 content=escape(&#34;Failed to produce pseudocode.&#34;),
             ),
-            ir=TestFile(name=f&#34;{case.replace(&#39;.hx&#39;, &#39;&#39;)} (IR)&#34;, content=escape(&#34;Failed to produce IR.&#34;)),
+            ir=TestFile(
+                name=f&#34;{case.replace(&#39;.hx&#39;, &#39;&#39;)} (IR)&#34;,
+                content=escape(&#34;Failed to produce IR.&#34;),
+            ),
             failed=True,
             test_name=file_to_name(case),
             test_id=id,

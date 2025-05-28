@@ -73,7 +73,10 @@ def run_case(case: str, id: int) -> TestCase:
                 name=f"{case.replace('.hx', '')} (Decompiled)",
                 content=escape("Failed to produce pseudocode."),
             ),
-            ir=TestFile(name=f"{case.replace('.hx', '')} (IR)", content=escape("Failed to produce IR.")),
+            ir=TestFile(
+                name=f"{case.replace('.hx', '')} (IR)",
+                content=escape("Failed to produce IR."),
+            ),
             failed=True,
             test_name=file_to_name(case),
             test_id=id,

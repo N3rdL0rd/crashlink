@@ -1691,6 +1691,7 @@ def get_type(self) -&gt; Type:
         self._lift(no_lift=no_lift)
         if do_optimize:
             self.optimizers: List[IROptimizer] = [
+                IRBlockFlattener(self),
                 IRPrimitiveJumpLifter(self),
                 IRConditionInliner(self),
                 IRLoopConditionOptimizer(self),
