@@ -73,10 +73,7 @@ def run_case(case: str, id: int) -> TestCase:
                 name=f"{case.replace('.hx', '')} (Decompiled)",
                 content=escape("Failed to produce pseudocode."),
             ),
-            ir=TestFile(
-                name=f"{case.replace('.hx', '')} (IR)", 
-                content=escape("Failed to produce IR.")
-            ),
+            ir=TestFile(name=f"{case.replace('.hx', '')} (IR)", content=escape("Failed to produce IR.")),
             failed=True,
             test_name=file_to_name(case),
             test_id=id,
@@ -90,7 +87,7 @@ def run_case(case: str, id: int) -> TestCase:
     pseudo_content = "Failed to produce pseudocode."
     ir_error = None
     pseudo_error = None
-    
+
     # First try to load the bytecode
     try:
         code = Bytecode.from_path(
@@ -116,10 +113,7 @@ def run_case(case: str, id: int) -> TestCase:
                 name=f"{case.replace('.hx', '')} (Decompiled)",
                 content=escape(pseudo_content),
             ),
-            ir=TestFile(
-                name=f"{case.replace('.hx', '')} (IR)", 
-                content=escape(ir_content)
-            ),
+            ir=TestFile(name=f"{case.replace('.hx', '')} (IR)", content=escape(ir_content)),
             failed=True,
             test_name=file_to_name(case),
             test_id=id,
@@ -144,7 +138,7 @@ def run_case(case: str, id: int) -> TestCase:
 
     # Determine if the test failed based on errors
     failed = bool(ir_error and pseudo_error)
-    
+
     # Create the error message with all available information
     error = None
     if ir_error or pseudo_error:
@@ -164,10 +158,7 @@ def run_case(case: str, id: int) -> TestCase:
             name=f"{case.replace('.hx', '')} (Decompiled)",
             content=escape(pseudo_content),
         ),
-        ir=TestFile(
-            name=f"{case.replace('.hx', '')} (IR)", 
-            content=escape(ir_content)
-        ),
+        ir=TestFile(name=f"{case.replace('.hx', '')} (IR)", content=escape(ir_content)),
         failed=failed,
         test_name=file_to_name(case),
         test_id=id,
