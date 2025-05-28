@@ -156,9 +156,12 @@ crashlink is written in pure typed Python with a minimum version of 3.10 (for th
 
 from __future__ import annotations
 
-from . import decomp, disasm, interp
 from .asm import *
 from .core import *
 from .errors import *
 from .globals import *
 from .opcodes import *
+from . import decomp as decomp
+from . import disasm as disasm
+from . import pseudo as pseudo
+from . import interp as interp
