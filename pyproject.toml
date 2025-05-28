@@ -36,7 +36,8 @@ dev = [
   "requests",
   "ruff",
   "pygments",
-  "types-Pygments"
+  "types-Pygments",
+  "markupsafe"
 ]
 extras = [
   "tqdm",

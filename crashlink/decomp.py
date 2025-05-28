@@ -338,7 +338,7 @@ class IRBlock(IRStatement):
         super().__init__(code)
         self.statements: List[IRStatement] = []
 
-    def __repr__(self) -> str:
+    def pprint(self) -> str:
         colors = [36, 31, 32, 33, 34, 35]
 
         depth = id(self) % len(colors)
@@ -351,6 +351,14 @@ class IRBlock(IRStatement):
         statements = pformat(self.statements, indent=0).replace("\n", "\n\t")
 
         return f"\033[{color}m[\033[0m\n\t{statements}\n\033[{color}m]\033[0m"
+
+    def __repr__(self) -> str:
+        if not self.statements:
+            return "[]"
+
+        statements = pformat(self.statements, indent=0).replace("\n", "\n\t")
+
+        return "[\n\t" + statements + "\n]"
 
     def get_children(self) -> List[IRStatement]:
         return self.statements

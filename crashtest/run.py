@@ -6,9 +6,12 @@ import datetime
 import os
 import re
 import subprocess
+import traceback
 from typing import List, Tuple
+from markupsafe import escape
 
 from crashlink import Bytecode, decomp, globals
+from crashlink.pseudo import pseudo
 
 from .models import GitInfo, Run, TestCase, TestContext, TestFile, save_run
 
@@ -51,8 +54,44 @@ def file_to_name(file: str) -> str:
 
 def run_case(case: str, id: int) -> TestCase:
     """
-    Runs a single test case.
+    Runs a single test case, handling IR and pseudocode generation separately.
     """
+    # Attempt to read the original content
+    try:
+        original_content = open(
+            os.path.join(os.path.dirname(__file__), "..", "tests", "haxe", case),
+            "r",
+        ).read()
+    except Exception as e:
+        tb_last = traceback.format_exc().splitlines()[-1]
+        return TestCase(
+            original=TestFile(
+                name=case,
+                content=escape("Failed to read original file."),
+            ),
+            decompiled=TestFile(
+                name=f"{case.replace('.hx', '')} (Decompiled)",
+                content=escape("Failed to produce pseudocode."),
+            ),
+            ir=TestFile(
+                name=f"{case.replace('.hx', '')} (IR)", 
+                content=escape("Failed to produce IR.")
+            ),
+            failed=True,
+            test_name=file_to_name(case),
+            test_id=id,
+            error=escape(f"Failed to read original file: {str(e)}\n{tb_last}"),
+        )
+
+    # Load bytecode and create IRFunction
+    code = None
+    irf = None
+    ir_content = "Failed to produce IR."
+    pseudo_content = "Failed to produce pseudocode."
+    ir_error = None
+    pseudo_error = None
+    
+    # First try to load the bytecode
     try:
         code = Bytecode.from_path(
             os.path.join(
@@ -64,43 +103,76 @@ def run_case(case: str, id: int) -> TestCase:
             )
         )
         irf = decomp.IRFunction(code, code.get_test_main())
-        # TODO: pseudo output
+    except Exception as e:
+        tb_last = traceback.format_exc().splitlines()[-1]
+        ir_error = f"Failed to load bytecode: {str(e)}\n{tb_last}"
+        pseudo_error = f"Failed to load bytecode: {str(e)}\n{tb_last}"
         return TestCase(
             original=TestFile(
                 name=case,
-                content=open(
-                    os.path.join(os.path.dirname(__file__), "..", "tests", "haxe", case),
-                    "r",
-                ).read(),
+                content=escape(original_content),
             ),
             decompiled=TestFile(
                 name=f"{case.replace('.hx', '')} (Decompiled)",
-                content="Failed to produce pseudocode.",
+                content=escape(pseudo_content),
             ),
-            ir=TestFile(name=f"{case.replace('.hx', '')} (IR)", content=str(irf.block)),
-            failed=False,
+            ir=TestFile(
+                name=f"{case.replace('.hx', '')} (IR)", 
+                content=escape(ir_content)
+            ),
+            failed=True,
             test_name=file_to_name(case),
             test_id=id,
+            error=escape(ir_error),
         )
+
+    # Try to generate IR
+    try:
+        if irf:
+            ir_content = str(irf.block)
     except Exception as e:
-        return TestCase(
-            original=TestFile(
-                name=case,
-                content=open(
-                    os.path.join(os.path.dirname(__file__), "..", "tests", "haxe", case),
-                    "r",
-                ).read(),
-            ),
-            decompiled=TestFile(
-                name=f"{case.replace('.hx', '')} (Decompiled)",
-                content="Failed to produce pseudocode.",
-            ),
-            ir=TestFile(name=f"{case.replace('.hx', '')} (IR)", content="Failed to produce IR."),
-            failed=True,
-            test_name=case.replace(".hx", "").replace("_", " ").title(),
-            test_id=file_to_name(case),
-            error=str(e),
-        )
+        tb_last = traceback.format_exc().splitlines()[-1]
+        ir_error = f"Failed to generate IR: {str(e)}\n{tb_last}"
+
+    # Try to generate pseudocode
+    try:
+        if irf:
+            pseudo_content = pseudo(irf)
+    except Exception as e:
+        tb_last = traceback.format_exc().splitlines()[-1]
+        pseudo_error = f"Failed to generate pseudocode: {str(e)}\n{tb_last}"
+
+    # Determine if the test failed based on errors
+    failed = bool(ir_error and pseudo_error)
+    
+    # Create the error message with all available information
+    error = None
+    if ir_error or pseudo_error:
+        error_parts = []
+        if ir_error:
+            error_parts.append(ir_error)
+        if pseudo_error:
+            error_parts.append(pseudo_error)
+        error = escape("\n".join(error_parts))
+
+    return TestCase(
+        original=TestFile(
+            name=case,
+            content=escape(original_content),
+        ),
+        decompiled=TestFile(
+            name=f"{case.replace('.hx', '')} (Decompiled)",
+            content=escape(pseudo_content),
+        ),
+        ir=TestFile(
+            name=f"{case.replace('.hx', '')} (IR)", 
+            content=escape(ir_content)
+        ),
+        failed=failed,
+        test_name=file_to_name(case),
+        test_id=id,
+        error=error,
+    )
 
 
 def gen_id() -> str:
