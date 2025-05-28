@@ -24,7 +24,7 @@ from .decomp import (
     IRWhileLoop,
     IRPrimitiveLoop,
     IRReturn,
-    IRPrimitveJump,
+    IRPrimitiveJump,
     _get_type_in_code,
 )
 
@@ -103,7 +103,7 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
 
         args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in expr.args)
         return f"{callee_str}({args_str})"
-    elif isinstance(expr, IRPrimitveJump):  # Should be gone, but as a fallback
+    elif isinstance(expr, IRPrimitiveJump):  # Should be gone, but as a fallback
         return f"/* GOTO_LIKE({expr.op.op}) */"
 
     # Fallback for unknown expressions
