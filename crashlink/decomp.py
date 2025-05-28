@@ -1391,6 +1391,36 @@ class IRSelfAssignOptimizer(TraversingIROptimizer):
 
         block.statements = new_statements
 
+class IRBlockFlattener(TraversingIROptimizer):
+    """
+    Flattens nested IRBlock structures. For example, an IRBlock child of another IRBlock
+    will have its statements merged into the parent IRBlock. This simplifies the IR by
+    removing unnecessary layers of blocks.
+
+    This optimizer works by ensuring that any IRBlock child of a currently visited IRBlock
+    is itself visited (and thus potentially flattened internally) before its statements
+    are pulled up into the parent.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        original_statements = list(block.statements)
+        new_statements: List[IRStatement] = []
+        
+        made_structural_change = False
+
+        for stmt in original_statements:
+            if isinstance(stmt, IRBlock):
+                self.visit(stmt)
+
+                new_statements.extend(stmt.statements)
+                made_structural_change = True
+            else:
+                new_statements.append(stmt)
+        
+        if made_structural_change or new_statements != original_statements:
+            block.statements = new_statements
+            dbg_print(f"IRBlockFlattener: Processed block. Original item count: {len(original_statements)}, New item count: {len(new_statements)}")
+
 
 class IRFunction:
     """
@@ -1414,6 +1444,7 @@ class IRFunction:
         self._lift(no_lift=no_lift)
         if do_optimize:
             self.optimizers: List[IROptimizer] = [
+                IRBlockFlattener(self),
                 IRPrimitiveJumpLifter(self),
                 IRConditionInliner(self),
                 IRLoopConditionOptimizer(self),
