@@ -10,6 +10,7 @@ from typing import Optional, List
 from .core import Bytecode, Type, Function, Fun
 from . import disasm
 from .decomp import (
+    IRBreak,
     IRFunction,
     IRBlock,
     IRStatement,
@@ -225,6 +226,9 @@ def _generate_statements(
                     output_lines.append(f"{indent}return {val_str};")
             else:
                 output_lines.append(f"{indent}return;")
+        
+        elif isinstance(stmt, IRBreak):
+            output_lines.append(f"{indent}break;")
 
         elif isinstance(stmt, IRExpression):  # e.g. a standalone IRCall not assigned
             expr_str = _expression_to_haxe(stmt, code, ir_function)

@@ -1316,33 +1316,75 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
     are prepended to the new IRWhileLoop's body.
     """
 
-    def visit_block(self, block: IRBlock) -> None:
+    def _try_convert_to_while_true_break(self, loop: IRPrimitiveLoop) -> Optional[IRWhileLoop]:
         """
-        Override visit_block to modify the list of statements if a loop is converted.
-        This is done by rebuilding the statements list.
+        Attempts to convert an IRPrimitiveLoop into a while(true) { body; if (exit_cond) break; } structure.
+        This is suitable for loops originating from Haxe's `while(true) { ... if(cond) break; }`.
         """
-        new_statements: List[IRStatement] = []
-        processed_primitive_loop = (
-            False  # Flag to ensure we only process once if visit_primitive_loop is called from here
-        )
+        if not loop.condition.statements:
+            dbg_print(f"IRLoopCondOpt(while-true): PrimitiveLoop at {loop} has empty condition. Cannot convert.")
+            return None
 
+        # Heuristic: The original IRPrimitiveLoop's body should be empty,
+        # meaning the loop's logic is all in the condition block + its final jump.
+        if loop.body.statements:
+            dbg_print(f"IRLoopCondOpt(while-true): PrimitiveLoop.body is not empty. Not a candidate. Body: {loop.body.statements}")
+            return None
+
+        last_cond_stmt = loop.condition.statements[-1]
+        if not isinstance(last_cond_stmt, IRBoolExpr):
+            dbg_print(
+                f"IRLoopCondOpt(while-true): PrimitiveLoop condition does not end with IRBoolExpr. Ends with {type(last_cond_stmt).__name__}. Cannot convert."
+            )
+            return None
+
+        exit_condition_expr: IRBoolExpr = last_cond_stmt
+        actual_body_statements = list(loop.condition.statements[:-1])
+
+        if not actual_body_statements:
+            dbg_print(f"IRLoopCondOpt(while-true): No actual body statements found before exit condition. Not a typical while(true)+break pattern.")
+            return None
+
+
+        dbg_print(f"IRLoopCondOpt(while-true): Candidate for while(true) + if-break found for {loop}")
+        
+        true_loop_condition = IRBoolExpr(loop.code, IRBoolExpr.CompareType.TRUE)
+
+        break_block = IRBlock(loop.code)
+        break_block.statements.append(IRBreak(loop.code))
+        
+        empty_else_block = IRBlock(loop.code) 
+
+        if_break_stmt = IRConditional(loop.code, exit_condition_expr, break_block, empty_else_block)
+        
+        new_loop_body_stmts = actual_body_statements + [if_break_stmt]
+        new_body_block = IRBlock(loop.code)
+        new_body_block.statements = new_loop_body_stmts
+        
+        new_while_loop = IRWhileLoop(loop.code, true_loop_condition, new_body_block)
+        
+        new_while_loop.comment = loop.comment
+            
+        dbg_print(f"IRLoopCondOpt(while-true): Converted IRPrimitiveLoop to IRWhileLoop(true) with if-break. Exit condition: {exit_condition_expr}")
+        return new_while_loop
+
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements: List[IRStatement] = []
         for stmt in block.statements:
-            if isinstance(stmt, IRPrimitiveLoop) and not processed_primitive_loop:
-                converted_loop = self._try_convert_to_while(stmt)
+            if isinstance(stmt, IRPrimitiveLoop):
+                converted_loop = self._try_convert_to_while_true_break(stmt)
                 if converted_loop:
                     new_statements.append(converted_loop)
-                    # No need to call self.visit on converted_loop here,
-                    # as visit_while_loop will be called by the main traversal logic if needed.
                 else:
-                    new_statements.append(stmt)  # Keep original if not converted
-                    # self.visit(stmt) # Allow normal traversal for unconverted primitive loops
+                    fallback_converted_loop = self._try_convert_to_while(stmt)
+                    if fallback_converted_loop:
+                        new_statements.append(fallback_converted_loop)
+                    else:
+                        new_statements.append(stmt)
             else:
                 new_statements.append(stmt)
-                # self.visit(stmt) # Allow normal traversal for other statement types
-
         block.statements = new_statements
-        # After rebuilding, allow children to be visited by the main `TraversingIROptimizer.visit`
-        # This is implicitly handled by the main visit method's loop over get_children().
 
     def _try_convert_to_while(self, loop: IRPrimitiveLoop) -> Optional[IRWhileLoop]:
         if not loop.condition.statements:
