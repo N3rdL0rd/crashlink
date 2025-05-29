@@ -1706,6 +1706,46 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                     i += 1
 
             block.statements = new_statements
+            
+class IRVoidAssignOptimizer(TraversingIROptimizer):
+    """
+    Removes assignments to IRLocals of type Void, keeping the expression
+    for its side effects and annotating the discard.
+    E.g., `var_void_local:Void = some_call();` becomes `some_call(); // explicit discard...`
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements: List[IRStatement] = []
+        made_change_this_pass = False
+
+        for stmt in block.statements:
+            if isinstance(stmt, IRAssign):
+                target = stmt.target
+                if isinstance(target, IRLocal):
+                    target_type_resolved = target.type.resolve(self.func.code)
+                    if target_type_resolved.kind.value == Type.Kind.VOID.value:
+                        dbg_print(f"IRVoidAssignOptimizer: Removing void assignment: {stmt} (target: {target.name})")
+                        
+                        expr_being_kept = stmt.expr
+                        discard_info_comment = "explicit discard"
+                        
+                        current_comment_parts = []
+                        if expr_being_kept.comment:
+                            current_comment_parts.append(expr_being_kept.comment)
+                        if stmt.comment:
+                            if not expr_being_kept.comment or stmt.comment != expr_being_kept.comment:
+                                current_comment_parts.append(stmt.comment)
+                        current_comment_parts.append(discard_info_comment)
+                        
+                        expr_being_kept.comment = " ; ".join([p for p in current_comment_parts if p])
+
+                        new_statements.append(expr_being_kept)
+                        made_change_this_pass = True
+                        continue
+            new_statements.append(stmt)
+
+        if made_change_this_pass:
+            block.statements = new_statements
 
 
 class IRFunction:
@@ -1736,6 +1776,7 @@ class IRFunction:
                 IRLoopConditionOptimizer(self),
                 IRSelfAssignOptimizer(self),
                 IRTempAssignmentInliner(self),
+                IRVoidAssignOptimizer(self),
                 IRBlockFlattener(self),
             ]
             self._optimize()
