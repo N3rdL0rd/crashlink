@@ -226,7 +226,7 @@ def _generate_statements(
                     output_lines.append(f"{indent}return {val_str};")
             else:
                 output_lines.append(f"{indent}return;")
-        
+
         elif isinstance(stmt, IRBreak):
             output_lines.append(f"{indent}break;")
 

@@ -690,6 +690,7 @@ el.replaceWith(d);
         self.ops = ops
         self.branches: List[Tuple[CFNode, str]] = []
         self.base_offset: int = 0
+        self.original_node: Optional[CFNode] = None
 
     def __repr__(self) -&gt; str:
         return &#34;&lt;CFNode: %s&gt;&#34; % self.ops</code></pre>
@@ -1696,13 +1697,15 @@ def get_type(self) -&gt; Type:
                 IRConditionInliner(self),
                 IRLoopConditionOptimizer(self),
                 IRSelfAssignOptimizer(self),
+                IRTempAssignmentInliner(self),
+                IRBlockFlattener(self),
             ]
             self._optimize()
 
     def _lift(self, no_lift: bool = False) -&gt; None:
         &#34;&#34;&#34;Lift function to IR&#34;&#34;&#34;
         for i, reg in enumerate(self.func.regs):
-            self.locals.append(IRLocal(f&#34;reg{i}&#34;, reg, code=self.code))
+            self.locals.append(IRLocal(f&#34;var{i}&#34;, reg, code=self.code))
         self._name_locals()
         if not no_lift:
             if self.cfg.entry:
@@ -1751,7 +1754,7 @@ def get_type(self) -&gt; Type:
                 reg_assigns[i].add(assign[0].resolve(self.code))
         for i, _reg in enumerate(self.func.regs):
             if _reg.resolve(self.code).definition and isinstance(_reg.resolve(self.code).definition, Void):
-                reg_assigns[i].add(&#34;void&#34;)
+                reg_assigns[i].add(&#34;voidReg&#34;)
         for i, local in enumerate(self.locals):
             if reg_assigns[i] and len(reg_assigns[i]) == 1:
                 local.name = reg_assigns[i].pop()
@@ -1787,6 +1790,7 @@ def get_type(self) -&gt; Type:
 
     def _patch_loop_condition(self, node: CFNode) -&gt; None:
         &#34;&#34;&#34;Patches a loop condition block to remove the Label and anything else that could get it detected as a nested loop or other statement unintentionally.&#34;&#34;&#34;
+        assert node.ops[0].op == &#34;Label&#34;, &#34;This isn&#39;t a label! This should never happen!&#34;
         node.ops = node.ops[1:]  # remove Label
         assert node.ops[-1].op in conditionals
 
@@ -1796,6 +1800,7 @@ def get_type(self) -&gt; Type:
         visited: Optional[Set[CFNode]] = None,
         convert_jumps_to_primitive: bool = False,
         flag_conditionals: bool = False,
+        current_loop_scope_nodes: Optional[Set[CFNode]] = None,
     ) -&gt; IRBlock:
         if visited is None:
             visited = set()
@@ -1810,15 +1815,25 @@ def get_type(self) -&gt; Type:
             if op.op == &#34;Label&#34;:
                 assert i == 0, &#34;Label should be the first operation in a CFNode.&#34;
                 jumpers = _find_jumps_to_label(node, node, set())
-                body: Set[CFNode] = set()  # This will store CFNodes belonging to the loop&#39;s body
-                for jumper in jumpers:
-                    body.add(jumper[0])  # The node that jumps back
-                    for n2 in jumper[1]:  # Nodes on the path to the jumper
-                        body.add(n2)
-                body.discard(node)
 
-                isolated = IsolatedCFGraph(self.cfg, list(body) if body else [self.cfg.add_node([])])
+                loop_nodes_for_this_loop: Set[CFNode] = {node}
+                for jumper_node, path_to_jumper in jumpers:
+                    loop_nodes_for_this_loop.add(jumper_node)
+                    loop_nodes_for_this_loop.update(path_to_jumper)
+
+                body_nodes_for_isolated_graph: Set[CFNode] = loop_nodes_for_this_loop.copy()
+                body_nodes_for_isolated_graph.discard(node)
+
+                isolated = IsolatedCFGraph(
+                    self.cfg,
+                    list(body_nodes_for_isolated_graph) if body_nodes_for_isolated_graph else [self.cfg.add_node([])],
+                )
                 condition = IsolatedCFGraph(self.cfg, [node], find_entry_intelligently=False)
+                if DEBUG:
+                    dbg_print(&#34;--- isolated ---&#34;)
+                    dbg_print(isolated.graph(self.code))
+                    dbg_print(&#34;--- condition ---&#34;)
+                    dbg_print(condition.graph(self.code))
 
                 if not condition.entry:
                     raise DecompError(&#34;Empty condition block found for loop.&#34;)
@@ -1827,16 +1842,21 @@ def get_type(self) -&gt; Type:
                 condition_ir_block = self._lift_block(condition.entry, visited.copy(), convert_jumps_to_primitive=True)
 
                 body_ir_block: IRBlock
-                if isolated.entry and isolated.entry.ops:  # Check if isolated graph has a meaningful entry
-                    body_ir_block = self._lift_block(isolated.entry, visited.copy(), flag_conditionals=True)
-                else:  # Loop has no effective body ops or body is empty
+                if isolated.entry and isolated.entry.ops:
+                    body_ir_block = self._lift_block(
+                        isolated.entry,
+                        visited.copy(),
+                        flag_conditionals=True,
+                        current_loop_scope_nodes=loop_nodes_for_this_loop,
+                    )
+                else:
                     dbg_print(
                         f&#34;Warning: Empty or non-meaningful loop body found for loop starting at {node.base_offset}.&#34;
                     )
                     body_ir_block = IRBlock(self.code)
 
                 visited.add(node)
-                for body_node in body:
+                for body_node in body_nodes_for_isolated_graph:
                     visited.add(body_node)
 
                 loop_stmt = IRPrimitiveLoop(self.code, condition_ir_block, body_ir_block)
@@ -1844,13 +1864,24 @@ def get_type(self) -&gt; Type:
 
                 loop_exit_node: Optional[CFNode] = None
                 for successor_node, _edge_type in node.branches:
-                    if successor_node not in body and successor_node != node:
+                    if successor_node not in loop_nodes_for_this_loop:
                         loop_exit_node = successor_node
                         break
 
+                if not loop_exit_node:
+                    for body_member_node in loop_nodes_for_this_loop:
+                        if body_member_node == node:
+                            continue
+                        for successor_node, _edge_type in body_member_node.branches:
+                            if successor_node not in loop_nodes_for_this_loop:
+                                loop_exit_node = successor_node
+                                break
+                        if loop_exit_node:
+                            break
+
                 if loop_exit_node:
                     dbg_print(f&#34;Loop at {node.base_offset} determined to exit to CFNode {loop_exit_node.base_offset}&#34;)
-                    next_sequential_block = self._lift_block(loop_exit_node, visited)
+                    next_sequential_block = self._lift_block(loop_exit_node, visited, current_loop_scope_nodes=None)
                     if next_sequential_block.statements:
                         block.statements.append(next_sequential_block)
                     elif next_sequential_block.comment:
@@ -1862,8 +1893,7 @@ def get_type(self) -&gt; Type:
                 else:
                     dbg_print(f&#34;Warning: Could not determine a single CFG exit node after loop at {node.base_offset}.&#34;)
 
-                break  # After handling the Label (loop), stop processing further ops in *this* CFG node.
-            # The loop structure and its continuation have been handled.
+                break
 
             elif op.op in arithmetic:
                 dst = self.locals[op.df[&#34;dst&#34;].value]
@@ -1905,7 +1935,11 @@ def get_type(self) -&gt; Type:
                         elif edge_type == &#34;false&#34;:
                             false_branch = branch_node
                     if true_branch is None or false_branch is None:
-                        raise DecompError(&#34;Conditional jump missing true/false branch. Check CFG generation maybe?&#34;)
+                        dbg_print(&#34;true:&#34;, true_branch, &#34;false:&#34;, false_branch)
+                        dbg_print(node)
+                        raise DecompError(
+                            &#34;Conditional jump missing true/false branch. This is almost certainly an issue with the decompiler and not the bytecode itself.&#34;
+                        )
 
                     # HACK: blocks that have multiple branches coming into them shouldn&#39;t exist for generated if statements.
                     # therefore, we can assume that if a conditional branch leads to a node that has multiple incoming branches,
@@ -1946,12 +1980,24 @@ def get_type(self) -&gt; Type:
                     ]:
                         left = self.locals[op.df[&#34;a&#34;].value]
                         right = self.locals[op.df[&#34;b&#34;].value]
+                    else:
+                        left = self.locals[op.df.get(&#34;cond&#34;, op.df.get(&#34;reg&#34;)).value]
 
                     condition_expr = IRBoolExpr(self.code, cond, left, right)
-                    true_block = self._lift_block(true_branch, visited) if should_lift_t else IRBlock(self.code)
-                    false_block = self._lift_block(false_branch, visited) if should_lift_f else IRBlock(self.code)
+                    true_block = (
+                        self._lift_block(true_branch, visited.copy(), current_loop_scope_nodes=current_loop_scope_nodes)
+                        if should_lift_t
+                        else IRBlock(self.code)
+                    )
+                    false_block = (
+                        self._lift_block(
+                            false_branch, visited.copy(), current_loop_scope_nodes=current_loop_scope_nodes
+                        )
+                        if should_lift_f
+                        else IRBlock(self.code)
+                    )
                     _cond = IRConditional(self.code, condition_expr, true_block, false_block)
-                    _cond.invert()  # invert the condition so the one full block isn&#39;t the else block
+                    _cond.invert()
                     block.statements.append(_cond)
 
                     # now, find the next block and lift it.
@@ -1968,7 +2014,7 @@ def get_type(self) -&gt; Type:
                             dbg_print(&#34;WARNING: No convergence point found for conditional branches&#34;)
                     if not next_node:
                         raise DecompError(&#34;No next node found for conditional branches&#34;)
-                    next_block = self._lift_block(next_node, visited)
+                    next_block = self._lift_block(next_node, visited, current_loop_scope_nodes=current_loop_scope_nodes)
                     block.statements.append(next_block)
                 else:
                     # convert jumps to IRPrimitiveJump so that later lifting stages can handle them
@@ -2084,8 +2130,13 @@ def get_type(self) -&gt; Type:
                         target_node = nod
                         break
 
-                if target_node:
-                    next_block = self._lift_block(target_node, visited)
+                if current_loop_scope_nodes and target_node and (target_node not in current_loop_scope_nodes):
+                    block.statements.append(IRBreak(self.code))
+                    return block
+                elif target_node:
+                    next_block = self._lift_block(
+                        target_node, visited, current_loop_scope_nodes=current_loop_scope_nodes
+                    )
                     block.statements.append(next_block)
 
             else:
@@ -2093,7 +2144,7 @@ def get_type(self) -&gt; Type:
 
         if len(node.branches) == 1:
             next_node, _ = node.branches[0]
-            next_block = self._lift_block(next_node, visited)
+            next_block = self._lift_block(next_node, visited, current_loop_scope_nodes=current_loop_scope_nodes)
             block.statements.append(next_block)
 
         return block
@@ -2471,7 +2522,7 @@ def get_children(self) -&gt; List[IRStatement]:
 </dd>
 <dt id="crashlink.decomp.IsolatedCFGraph"><code class="flex name class">
 <span>class <span class="ident">IsolatedCFGraph</span></span>
-<span>(</span><span>parent: <a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a>,<br>nodes: List[<a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>],<br>find_entry_intelligently: bool = True)</span>
+<span>(</span><span>parent: <a title="crashlink.decomp.CFGraph" href="#crashlink.decomp.CFGraph">CFGraph</a>,<br>nodes_to_isolate: List[<a title="crashlink.decomp.CFNode" href="#crashlink.decomp.CFNode">CFNode</a>],<br>find_entry_intelligently: bool = True)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2484,38 +2535,50 @@ def get_children(self) -&gt; List[IRStatement]:
     def __init__(
         self,
         parent: CFGraph,
-        nodes: List[CFNode],
+        nodes_to_isolate: List[CFNode],
         find_entry_intelligently: bool = True,
     ):
         &#34;&#34;&#34;Initialize from parent graph and list of nodes to isolate.&#34;&#34;&#34;
-        if not nodes:
-            raise ValueError(&#34;Got empty list of nodes to isolate!&#34;)
+        if not nodes_to_isolate:
+            super().__init__(parent.func)
+            self.entry = None
+            return
 
         super().__init__(parent.func)
 
         node_map: Dict[CFNode, CFNode] = {}
 
-        for node in nodes:
-            new_node = self.add_node(node.ops, node.base_offset)
-            node_map[node] = new_node
+        for original_cfg_node in nodes_to_isolate:
+            copied_node = self.add_node(original_cfg_node.ops, original_cfg_node.base_offset)
+            copied_node.original_node = original_cfg_node
+            node_map[original_cfg_node] = copied_node
 
-            if node == nodes[0]:
-                self.entry = new_node
+        if nodes_to_isolate:
+            self.entry = node_map.get(nodes_to_isolate[0])
 
-        for old_node in nodes:
-            new_node = node_map[old_node]
-            for target, edge_type in old_node.branches:
-                if target in node_map:
-                    self.add_branch(new_node, node_map[target], edge_type)
+        for original_cfg_node in nodes_to_isolate:
+            copied_node_for_branching = node_map[original_cfg_node]
+            for target_in_original_cfg, edge_type in original_cfg_node.branches:
+                if target_in_original_cfg in node_map:
+                    self.add_branch(copied_node_for_branching, node_map[target_in_original_cfg], edge_type)
 
         if find_entry_intelligently and self.nodes:
             entry_candidates = []
-            for node in self.nodes:
-                if not self.predecessors(node):
-                    entry_candidates.append(node)
+            isolated_preds: Dict[CFNode, List[CFNode]] = {}
+            for n_src_copy in self.nodes:
+                for n_dst_copy, _ in n_src_copy.branches:
+                    isolated_preds.setdefault(n_dst_copy, []).append(n_src_copy)
+
+            for node_copy_in_isolated_graph in self.nodes:
+                if not isolated_preds.get(node_copy_in_isolated_graph):
+                    entry_candidates.append(node_copy_in_isolated_graph)
 
             if len(entry_candidates) == 1:
-                self.entry = entry_candidates[0]</code></pre>
+                self.entry = entry_candidates[0]
+            elif not self.entry and entry_candidates:
+                self.entry = entry_candidates[0]
+            elif not self.entry and self.nodes:
+                self.entry = self.nodes[0]</code></pre>
 </details>
 <div class="desc"><p>A control flow graph that contains only a subset of nodes from another graph.</p>
 <p>Initialize from parent graph and list of nodes to isolate.</p></div>
