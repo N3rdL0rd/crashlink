@@ -2061,7 +2061,9 @@ class IRFunction:
                         left = self.locals[op.df["a"].value]
                         right = self.locals[op.df["b"].value]
                     else:
-                        left = self.locals[op.df.get("cond", op.df.get("reg")).value]
+                        l = op.df.get("cond", op.df.get("reg"))
+                        assert l is not None
+                        left = self.locals[l.value]
 
                     condition_expr = IRBoolExpr(self.code, cond, left, right)
                     true_block = (
