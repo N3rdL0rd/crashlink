@@ -22,7 +22,7 @@ from .core import (
     tIndex,
 )
 from .errors import DecompError
-from .globals import dbg_print
+from .globals import DEBUG, dbg_print
 from .opcodes import arithmetic, conditionals
 
 
@@ -42,6 +42,7 @@ class CFNode:
         self.ops = ops
         self.branches: List[Tuple[CFNode, str]] = []
         self.base_offset: int = 0
+        self.original_node: Optional[CFNode] = None
 
     def __repr__(self) -> str:
         return "<CFNode: %s>" % self.ops
@@ -782,38 +783,50 @@ class IsolatedCFGraph(CFGraph):
     def __init__(
         self,
         parent: CFGraph,
-        nodes: List[CFNode],
+        nodes_to_isolate: List[CFNode],
         find_entry_intelligently: bool = True,
     ):
         """Initialize from parent graph and list of nodes to isolate."""
-        if not nodes:
-            raise ValueError("Got empty list of nodes to isolate!")
+        if not nodes_to_isolate:
+            super().__init__(parent.func)
+            self.entry = None
+            return
 
         super().__init__(parent.func)
 
         node_map: Dict[CFNode, CFNode] = {}
 
-        for node in nodes:
-            new_node = self.add_node(node.ops, node.base_offset)
-            node_map[node] = new_node
+        for original_cfg_node in nodes_to_isolate:
+            copied_node = self.add_node(original_cfg_node.ops, original_cfg_node.base_offset)
+            copied_node.original_node = original_cfg_node
+            node_map[original_cfg_node] = copied_node
 
-            if node == nodes[0]:
-                self.entry = new_node
+        if nodes_to_isolate:
+            self.entry = node_map.get(nodes_to_isolate[0])
 
-        for old_node in nodes:
-            new_node = node_map[old_node]
-            for target, edge_type in old_node.branches:
-                if target in node_map:
-                    self.add_branch(new_node, node_map[target], edge_type)
-
+        for original_cfg_node in nodes_to_isolate:
+            copied_node_for_branching = node_map[original_cfg_node]
+            for target_in_original_cfg, edge_type in original_cfg_node.branches:
+                if target_in_original_cfg in node_map:
+                    self.add_branch(copied_node_for_branching, node_map[target_in_original_cfg], edge_type)
+        
         if find_entry_intelligently and self.nodes:
             entry_candidates = []
-            for node in self.nodes:
-                if not self.predecessors(node):
-                    entry_candidates.append(node)
-
+            isolated_preds: Dict[CFNode, List[CFNode]] = {}
+            for n_src_copy in self.nodes:
+                for n_dst_copy, _ in n_src_copy.branches:
+                    isolated_preds.setdefault(n_dst_copy, []).append(n_src_copy)
+            
+            for node_copy_in_isolated_graph in self.nodes:
+                if not isolated_preds.get(node_copy_in_isolated_graph):
+                    entry_candidates.append(node_copy_in_isolated_graph)
+            
             if len(entry_candidates) == 1:
                 self.entry = entry_candidates[0]
+            elif not self.entry and entry_candidates:
+                self.entry = entry_candidates[0]
+            elif not self.entry and self.nodes:
+                self.entry = self.nodes[0]
 
 
 class IRWhileLoop(IRStatement):
@@ -1599,6 +1612,7 @@ class IRFunction:
 
     def _patch_loop_condition(self, node: CFNode) -> None:
         """Patches a loop condition block to remove the Label and anything else that could get it detected as a nested loop or other statement unintentionally."""
+        assert node.ops[0].op == "Label", "This isn't a label! This should never happen!"
         node.ops = node.ops[1:]  # remove Label
         assert node.ops[-1].op in conditionals
 
@@ -1608,6 +1622,7 @@ class IRFunction:
         visited: Optional[Set[CFNode]] = None,
         convert_jumps_to_primitive: bool = False,
         flag_conditionals: bool = False,
+        current_loop_scope_nodes: Optional[Set[CFNode]] = None,
     ) -> IRBlock:
         if visited is None:
             visited = set()
@@ -1622,16 +1637,23 @@ class IRFunction:
             if op.op == "Label":
                 assert i == 0, "Label should be the first operation in a CFNode."
                 jumpers = _find_jumps_to_label(node, node, set())
-                body: Set[CFNode] = set()  # This will store CFNodes belonging to the loop's body
-                for jumper in jumpers:
-                    body.add(jumper[0])  # The node that jumps back
-                    for n2 in jumper[1]:  # Nodes on the path to the jumper
-                        body.add(n2)
-                body.discard(node)
+                
+                loop_nodes_for_this_loop: Set[CFNode] = {node}
+                for jumper_node, path_to_jumper in jumpers:
+                    loop_nodes_for_this_loop.add(jumper_node)
+                    loop_nodes_for_this_loop.update(path_to_jumper)
 
-                isolated = IsolatedCFGraph(self.cfg, list(body) if body else [self.cfg.add_node([])])
+                body_nodes_for_isolated_graph: Set[CFNode] = loop_nodes_for_this_loop.copy()
+                body_nodes_for_isolated_graph.discard(node)
+
+                isolated = IsolatedCFGraph(self.cfg, list(body_nodes_for_isolated_graph) if body_nodes_for_isolated_graph else [self.cfg.add_node([])])
                 condition = IsolatedCFGraph(self.cfg, [node], find_entry_intelligently=False)
-
+                if DEBUG:
+                    dbg_print("--- isolated ---")
+                    dbg_print(isolated.graph(self.code))
+                    dbg_print("--- condition ---")
+                    dbg_print(condition.graph(self.code))
+                
                 if not condition.entry:
                     raise DecompError("Empty condition block found for loop.")
                 self._patch_loop_condition(condition.entry)
@@ -1639,16 +1661,21 @@ class IRFunction:
                 condition_ir_block = self._lift_block(condition.entry, visited.copy(), convert_jumps_to_primitive=True)
 
                 body_ir_block: IRBlock
-                if isolated.entry and isolated.entry.ops:  # Check if isolated graph has a meaningful entry
-                    body_ir_block = self._lift_block(isolated.entry, visited.copy(), flag_conditionals=True)
-                else:  # Loop has no effective body ops or body is empty
+                if isolated.entry and isolated.entry.ops:
+                    body_ir_block = self._lift_block(
+                        isolated.entry, 
+                        visited.copy(), 
+                        flag_conditionals=True, 
+                        current_loop_scope_nodes=loop_nodes_for_this_loop
+                    )
+                else:
                     dbg_print(
                         f"Warning: Empty or non-meaningful loop body found for loop starting at {node.base_offset}."
                     )
                     body_ir_block = IRBlock(self.code)
 
                 visited.add(node)
-                for body_node in body:
+                for body_node in body_nodes_for_isolated_graph:
                     visited.add(body_node)
 
                 loop_stmt = IRPrimitiveLoop(self.code, condition_ir_block, body_ir_block)
@@ -1656,13 +1683,24 @@ class IRFunction:
 
                 loop_exit_node: Optional[CFNode] = None
                 for successor_node, _edge_type in node.branches:
-                    if successor_node not in body and successor_node != node:
+                    if successor_node not in loop_nodes_for_this_loop:
                         loop_exit_node = successor_node
                         break
+                
+                if not loop_exit_node:
+                    for body_member_node in loop_nodes_for_this_loop:
+                        if body_member_node == node: 
+                            continue
+                        for successor_node, _edge_type in body_member_node.branches:
+                            if successor_node not in loop_nodes_for_this_loop:
+                                loop_exit_node = successor_node
+                                break
+                        if loop_exit_node:
+                            break
 
                 if loop_exit_node:
                     dbg_print(f"Loop at {node.base_offset} determined to exit to CFNode {loop_exit_node.base_offset}")
-                    next_sequential_block = self._lift_block(loop_exit_node, visited)
+                    next_sequential_block = self._lift_block(loop_exit_node, visited, current_loop_scope_nodes=None)
                     if next_sequential_block.statements:
                         block.statements.append(next_sequential_block)
                     elif next_sequential_block.comment:
@@ -1674,8 +1712,7 @@ class IRFunction:
                 else:
                     dbg_print(f"Warning: Could not determine a single CFG exit node after loop at {node.base_offset}.")
 
-                break  # After handling the Label (loop), stop processing further ops in *this* CFG node.
-            # The loop structure and its continuation have been handled.
+                break
 
             elif op.op in arithmetic:
                 dst = self.locals[op.df["dst"].value]
@@ -1717,7 +1754,9 @@ class IRFunction:
                         elif edge_type == "false":
                             false_branch = branch_node
                     if true_branch is None or false_branch is None:
-                        raise DecompError("Conditional jump missing true/false branch. Check CFG generation maybe?")
+                        dbg_print("true:", true_branch, "false:", false_branch)
+                        dbg_print(node)
+                        raise DecompError("Conditional jump missing true/false branch. This is almost certainly an issue with the decompiler and not the bytecode itself.")
 
                     # HACK: blocks that have multiple branches coming into them shouldn't exist for generated if statements.
                     # therefore, we can assume that if a conditional branch leads to a node that has multiple incoming branches,
@@ -1758,12 +1797,14 @@ class IRFunction:
                     ]:
                         left = self.locals[op.df["a"].value]
                         right = self.locals[op.df["b"].value]
+                    else:
+                        left = self.locals[op.df.get("cond", op.df.get("reg")).value]
 
                     condition_expr = IRBoolExpr(self.code, cond, left, right)
-                    true_block = self._lift_block(true_branch, visited) if should_lift_t else IRBlock(self.code)
-                    false_block = self._lift_block(false_branch, visited) if should_lift_f else IRBlock(self.code)
+                    true_block = self._lift_block(true_branch, visited.copy(), current_loop_scope_nodes=current_loop_scope_nodes) if should_lift_t else IRBlock(self.code)
+                    false_block = self._lift_block(false_branch, visited.copy(), current_loop_scope_nodes=current_loop_scope_nodes) if should_lift_f else IRBlock(self.code)
                     _cond = IRConditional(self.code, condition_expr, true_block, false_block)
-                    _cond.invert()  # invert the condition so the one full block isn't the else block
+                    _cond.invert()
                     block.statements.append(_cond)
 
                     # now, find the next block and lift it.
@@ -1780,7 +1821,7 @@ class IRFunction:
                             dbg_print("WARNING: No convergence point found for conditional branches")
                     if not next_node:
                         raise DecompError("No next node found for conditional branches")
-                    next_block = self._lift_block(next_node, visited)
+                    next_block = self._lift_block(next_node, visited, current_loop_scope_nodes=current_loop_scope_nodes)
                     block.statements.append(next_block)
                 else:
                     # convert jumps to IRPrimitiveJump so that later lifting stages can handle them
@@ -1896,8 +1937,11 @@ class IRFunction:
                         target_node = nod
                         break
 
-                if target_node:
-                    next_block = self._lift_block(target_node, visited)
+                if current_loop_scope_nodes and target_node and (target_node not in current_loop_scope_nodes):
+                    block.statements.append(IRBreak(self.code))
+                    return block
+                elif target_node:
+                    next_block = self._lift_block(target_node, visited, current_loop_scope_nodes=current_loop_scope_nodes)
                     block.statements.append(next_block)
 
             else:
@@ -1905,7 +1949,7 @@ class IRFunction:
 
         if len(node.branches) == 1:
             next_node, _ = node.branches[0]
-            next_block = self._lift_block(next_node, visited)
+            next_block = self._lift_block(next_node, visited, current_loop_scope_nodes=current_loop_scope_nodes)
             block.statements.append(next_block)
 
         return block
