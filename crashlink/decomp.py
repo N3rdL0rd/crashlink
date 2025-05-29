@@ -809,18 +809,18 @@ class IsolatedCFGraph(CFGraph):
             for target_in_original_cfg, edge_type in original_cfg_node.branches:
                 if target_in_original_cfg in node_map:
                     self.add_branch(copied_node_for_branching, node_map[target_in_original_cfg], edge_type)
-        
+
         if find_entry_intelligently and self.nodes:
             entry_candidates = []
             isolated_preds: Dict[CFNode, List[CFNode]] = {}
             for n_src_copy in self.nodes:
                 for n_dst_copy, _ in n_src_copy.branches:
                     isolated_preds.setdefault(n_dst_copy, []).append(n_src_copy)
-            
+
             for node_copy_in_isolated_graph in self.nodes:
                 if not isolated_preds.get(node_copy_in_isolated_graph):
                     entry_candidates.append(node_copy_in_isolated_graph)
-            
+
             if len(entry_candidates) == 1:
                 self.entry = entry_candidates[0]
             elif not self.entry and entry_candidates:
@@ -1341,7 +1341,9 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
         # Heuristic: The original IRPrimitiveLoop's body should be empty,
         # meaning the loop's logic is all in the condition block + its final jump.
         if loop.body.statements:
-            dbg_print(f"IRLoopCondOpt(while-true): PrimitiveLoop.body is not empty. Not a candidate. Body: {loop.body.statements}")
+            dbg_print(
+                f"IRLoopCondOpt(while-true): PrimitiveLoop.body is not empty. Not a candidate. Body: {loop.body.statements}"
+            )
             return None
 
         last_cond_stmt = loop.condition.statements[-1]
@@ -1355,32 +1357,34 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
         actual_body_statements = list(loop.condition.statements[:-1])
 
         if not actual_body_statements:
-            dbg_print(f"IRLoopCondOpt(while-true): No actual body statements found before exit condition. Not a typical while(true)+break pattern.")
+            dbg_print(
+                f"IRLoopCondOpt(while-true): No actual body statements found before exit condition. Not a typical while(true)+break pattern."
+            )
             return None
 
-
         dbg_print(f"IRLoopCondOpt(while-true): Candidate for while(true) + if-break found for {loop}")
-        
+
         true_loop_condition = IRBoolExpr(loop.code, IRBoolExpr.CompareType.TRUE)
 
         break_block = IRBlock(loop.code)
         break_block.statements.append(IRBreak(loop.code))
-        
-        empty_else_block = IRBlock(loop.code) 
+
+        empty_else_block = IRBlock(loop.code)
 
         if_break_stmt = IRConditional(loop.code, exit_condition_expr, break_block, empty_else_block)
-        
+
         new_loop_body_stmts = actual_body_statements + [if_break_stmt]
         new_body_block = IRBlock(loop.code)
         new_body_block.statements = new_loop_body_stmts
-        
-        new_while_loop = IRWhileLoop(loop.code, true_loop_condition, new_body_block)
-        
-        new_while_loop.comment = loop.comment
-            
-        dbg_print(f"IRLoopCondOpt(while-true): Converted IRPrimitiveLoop to IRWhileLoop(true) with if-break. Exit condition: {exit_condition_expr}")
-        return new_while_loop
 
+        new_while_loop = IRWhileLoop(loop.code, true_loop_condition, new_body_block)
+
+        new_while_loop.comment = loop.comment
+
+        dbg_print(
+            f"IRLoopCondOpt(while-true): Converted IRPrimitiveLoop to IRWhileLoop(true) with if-break. Exit condition: {exit_condition_expr}"
+        )
+        return new_while_loop
 
     def visit_block(self, block: IRBlock) -> None:
         new_statements: List[IRStatement] = []
@@ -1493,6 +1497,7 @@ class IRBlockFlattener(TraversingIROptimizer):
                 f"IRBlockFlattener: Processed block. Original item count: {len(original_statements)}, New item count: {len(new_statements)}"
             )
 
+
 class IRTempAssignmentInliner(TraversingIROptimizer):
     """
     Optimizes IR by inlining temporary assignments of the form:
@@ -1504,15 +1509,16 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
     and 'temp' is different from 'final_target'.
     """
 
-    def _is_local_read_in_expr(self, local_to_check: IRLocal, expr: Optional[IRExpression]) -> bool:
+    def _is_local_read_in_expr(self, local_to_check: IRLocal, expr: Optional[IRStatement]) -> bool:
         """Checks if local_to_check is read within the given expression."""
         if not expr:
             return False
         if expr == local_to_check:
             return True
         if isinstance(expr, IRArithmetic):
-            return self._is_local_read_in_expr(local_to_check, expr.left) or \
-                   self._is_local_read_in_expr(local_to_check, expr.right)
+            return self._is_local_read_in_expr(local_to_check, expr.left) or self._is_local_read_in_expr(
+                local_to_check, expr.right
+            )
         elif isinstance(expr, IRBoolExpr):
             read = False
             if expr.left and self._is_local_read_in_expr(local_to_check, expr.left):
@@ -1545,59 +1551,79 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 was_read = True
             if stmt.target == local_to_check:
                 was_written_to_target = True
-        elif isinstance(stmt, IRExpression): # e.g. IRCall as a statement
+        elif isinstance(stmt, IRExpression):  # e.g. IRCall as a statement
             if self._is_local_read_in_expr(local_to_check, stmt):
                 was_read = True
         elif isinstance(stmt, IRConditional):
-            if self._is_local_read_in_expr(local_to_check, stmt.condition): was_read = True
+            if self._is_local_read_in_expr(local_to_check, stmt.condition):
+                was_read = True
             # Recursively check branches. If read in any, it's read. If written in any, it's written.
             # This doesn't guarantee it's killed on ALL paths, just that a write occurs.
             true_read, true_written = self._is_local_read_or_written_in_statement(local_to_check, stmt.true_block)
-            if true_read: was_read = True
-            if true_written: was_written_to_target = True # If written in a branch, consider it potentially written
-            
-            if stmt.false_block:
-                false_read, false_written = self._is_local_read_or_written_in_statement(local_to_check, stmt.false_block)
-                if false_read: was_read = True
-                if false_written: was_written_to_target = True
-        elif isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop)): # IRWhileLoop condition is IRExpression
-            if isinstance(stmt, IRWhileLoop) and self._is_local_read_in_expr(local_to_check, stmt.condition): was_read = True
-            
-            body_read, body_written = self._is_local_read_or_written_in_statement(local_to_check, stmt.body if isinstance(stmt, IRWhileLoop) else stmt.body) # stmt.condition for PrimitiveLoop is IRBlock
-            if isinstance(stmt, IRPrimitiveLoop):
-                 cond_read, cond_written = self._is_local_read_or_written_in_statement(local_to_check, stmt.condition)
-                 if cond_read: was_read = True
-                 if cond_written: was_written_to_target = True
+            if true_read:
+                was_read = True
+            if true_written:
+                was_written_to_target = True  # If written in a branch, consider it potentially written
 
-            if body_read: was_read = True
-            if body_written: was_written_to_target = True
+            if stmt.false_block:
+                false_read, false_written = self._is_local_read_or_written_in_statement(
+                    local_to_check, stmt.false_block
+                )
+                if false_read:
+                    was_read = True
+                if false_written:
+                    was_written_to_target = True
+        elif isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop)):  # IRWhileLoop condition is IRExpression
+            if isinstance(stmt, IRWhileLoop) and self._is_local_read_in_expr(local_to_check, stmt.condition):
+                was_read = True
+
+            body_read, body_written = self._is_local_read_or_written_in_statement(
+                local_to_check, stmt.body if isinstance(stmt, IRWhileLoop) else stmt.body
+            )  # stmt.condition for PrimitiveLoop is IRBlock
+            if isinstance(stmt, IRPrimitiveLoop):
+                cond_read, cond_written = self._is_local_read_or_written_in_statement(local_to_check, stmt.condition)
+                if cond_read:
+                    was_read = True
+                if cond_written:
+                    was_written_to_target = True
+
+            if body_read:
+                was_read = True
+            if body_written:
+                was_written_to_target = True
         elif isinstance(stmt, IRReturn):
-            if stmt.value and self._is_local_read_in_expr(local_to_check, stmt.value): was_read = True
+            if stmt.value and self._is_local_read_in_expr(local_to_check, stmt.value):
+                was_read = True
         elif isinstance(stmt, IRSwitch):
-            if self._is_local_read_in_expr(local_to_check, stmt.value): was_read = True
+            if self._is_local_read_in_expr(local_to_check, stmt.value):
+                was_read = True
             for case_block in stmt.cases.values():
                 case_read, case_written = self._is_local_read_or_written_in_statement(local_to_check, case_block)
-                if case_read: was_read = True
-                if case_written: was_written_to_target = True
+                if case_read:
+                    was_read = True
+                if case_written:
+                    was_written_to_target = True
             def_read, def_written = self._is_local_read_or_written_in_statement(local_to_check, stmt.default)
-            if def_read: was_read = True
-            if def_written: was_written_to_target = True
-        elif isinstance(stmt, IRBlock): # For blocks processed recursively
+            if def_read:
+                was_read = True
+            if def_written:
+                was_written_to_target = True
+        elif isinstance(stmt, IRBlock):  # For blocks processed recursively
             for sub_stmt in stmt.statements:
                 sub_read, sub_written = self._is_local_read_or_written_in_statement(local_to_check, sub_stmt)
-                if sub_read: was_read = True
-                if sub_written: # If local_to_check is written to in a sub_stmt
+                if sub_read:
+                    was_read = True
+                if sub_written:  # If local_to_check is written to in a sub_stmt
                     was_written_to_target = True
                     # If it's written, any prior reads in this block still count, but for liveness *after* this block, it's redefined.
                     # If it's read *then* written in the same sub_stmt, was_read is true.
                     # If it's written then read, was_read (for the original value) is false from that point.
-                    if not sub_read : # if it was written before being read in this sub_stmt
+                    if not sub_read:  # if it was written before being read in this sub_stmt
                         # This means the original value of local_to_check is killed here.
                         # If we are checking liveness, return immediately that it was killed.
-                        return False, True # Was not read (original value), but was killed.
+                        return False, True  # Was not read (original value), but was killed.
             # If loop completes, means it was not killed first in any sub_stmt.
             return was_read, was_written_to_target
-
 
         return was_read, was_written_to_target
 
@@ -1606,16 +1632,16 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         for i in range(start_idx, len(statements)):
             stmt = statements[i]
             was_read, was_written_target = self._is_local_read_or_written_in_statement(local_to_check, stmt)
-            
+
             if was_read:
-                return True # It's read, so it's live.
-            if was_written_target: # It's overwritten (target of an assign) without being read first in this stmt
-                return False # Overwritten, so original temp is no longer live past this point.
-        return False # Reaches end of statements without being read (and before being overwritten).
+                return True  # It's read, so it's live.
+            if was_written_target:  # It's overwritten (target of an assign) without being read first in this stmt
+                return False  # Overwritten, so original temp is no longer live past this point.
+        return False  # Reaches end of statements without being read (and before being overwritten).
 
     def visit_block(self, block: IRBlock) -> None:
         made_change_this_pass = True
-        while made_change_this_pass: # Loop until no more changes in this block for this pass
+        while made_change_this_pass:  # Loop until no more changes in this block for this pass
             made_change_this_pass = False
             new_statements: List[IRStatement] = []
             i = 0
@@ -1632,7 +1658,9 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                         # Pattern: temp_local = expr_to_inline; (current_stmt)
                         #          final_target = temp_local;   (next_stmt)
                         if isinstance(next_stmt, IRAssign) and next_stmt.expr == temp_local:
-                            final_target = next_stmt.target # This can be IRLocal or other types (e.g. for field assign)
+                            final_target = (
+                                next_stmt.target
+                            )  # This can be IRLocal or other types (e.g. for field assign)
 
                             # Only apply if temp_local is distinct from final_target.
                             # If temp_local == final_target, it's `t = E; t = t;`.
@@ -1642,30 +1670,41 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                                 if not self._is_local_live_after(temp_local, i + 2, block.statements):
                                     # Safe to inline
                                     new_assign_stmt = IRAssign(block.code, final_target, expr_to_inline)
-                                    
+
                                     # Combine comments
                                     comments = []
-                                    if current_stmt.comment: comments.append(current_stmt.comment)
-                                    if next_stmt.comment: comments.append(next_stmt.comment)
-                                    
-                                    final_target_name_str = getattr(final_target, 'name', str(final_target)) # Handle non-IRLocal targets
+                                    if current_stmt.comment:
+                                        comments.append(current_stmt.comment)
+                                    if next_stmt.comment:
+                                        comments.append(next_stmt.comment)
 
-                                    combined_comment = f"Inlined {temp_local.name} into {final_target_name_str}; " + "; ".join(comments)
+                                    final_target_name_str = getattr(
+                                        final_target, "name", str(final_target)
+                                    )  # Handle non-IRLocal targets
+
+                                    combined_comment = (
+                                        f"Inlined {temp_local.name} into {final_target_name_str}; "
+                                        + "; ".join(comments)
+                                    )
                                     new_assign_stmt.comment = combined_comment.strip().rstrip(";")
 
-                                    dbg_print(f"IRTempAssignmentInliner: Inlined. Replacing '{current_stmt}' and '{next_stmt}' with '{new_assign_stmt}'")
+                                    dbg_print(
+                                        f"IRTempAssignmentInliner: Inlined. Replacing '{current_stmt}' and '{next_stmt}' with '{new_assign_stmt}'"
+                                    )
                                     new_statements.append(new_assign_stmt)
                                     i += 2  # Skip both original statements
                                     action_taken_this_step = True
                                     made_change_this_pass = True
                                 else:
-                                    final_target_name_str = getattr(final_target, 'name', str(final_target))
-                                    dbg_print(f"IRTempAssignmentInliner: Cannot inline {temp_local.name} into {final_target_name_str}, as {temp_local.name} is live later.")
-                
+                                    final_target_name_str = getattr(final_target, "name", str(final_target))
+                                    dbg_print(
+                                        f"IRTempAssignmentInliner: Cannot inline {temp_local.name} into {final_target_name_str}, as {temp_local.name} is live later."
+                                    )
+
                 if not action_taken_this_step:
                     new_statements.append(current_stmt)
                     i += 1
-            
+
             block.statements = new_statements
 
 
@@ -1814,7 +1853,7 @@ class IRFunction:
             if op.op == "Label":
                 assert i == 0, "Label should be the first operation in a CFNode."
                 jumpers = _find_jumps_to_label(node, node, set())
-                
+
                 loop_nodes_for_this_loop: Set[CFNode] = {node}
                 for jumper_node, path_to_jumper in jumpers:
                     loop_nodes_for_this_loop.add(jumper_node)
@@ -1823,14 +1862,17 @@ class IRFunction:
                 body_nodes_for_isolated_graph: Set[CFNode] = loop_nodes_for_this_loop.copy()
                 body_nodes_for_isolated_graph.discard(node)
 
-                isolated = IsolatedCFGraph(self.cfg, list(body_nodes_for_isolated_graph) if body_nodes_for_isolated_graph else [self.cfg.add_node([])])
+                isolated = IsolatedCFGraph(
+                    self.cfg,
+                    list(body_nodes_for_isolated_graph) if body_nodes_for_isolated_graph else [self.cfg.add_node([])],
+                )
                 condition = IsolatedCFGraph(self.cfg, [node], find_entry_intelligently=False)
                 if DEBUG:
                     dbg_print("--- isolated ---")
                     dbg_print(isolated.graph(self.code))
                     dbg_print("--- condition ---")
                     dbg_print(condition.graph(self.code))
-                
+
                 if not condition.entry:
                     raise DecompError("Empty condition block found for loop.")
                 self._patch_loop_condition(condition.entry)
@@ -1840,10 +1882,10 @@ class IRFunction:
                 body_ir_block: IRBlock
                 if isolated.entry and isolated.entry.ops:
                     body_ir_block = self._lift_block(
-                        isolated.entry, 
-                        visited.copy(), 
-                        flag_conditionals=True, 
-                        current_loop_scope_nodes=loop_nodes_for_this_loop
+                        isolated.entry,
+                        visited.copy(),
+                        flag_conditionals=True,
+                        current_loop_scope_nodes=loop_nodes_for_this_loop,
                     )
                 else:
                     dbg_print(
@@ -1863,10 +1905,10 @@ class IRFunction:
                     if successor_node not in loop_nodes_for_this_loop:
                         loop_exit_node = successor_node
                         break
-                
+
                 if not loop_exit_node:
                     for body_member_node in loop_nodes_for_this_loop:
-                        if body_member_node == node: 
+                        if body_member_node == node:
                             continue
                         for successor_node, _edge_type in body_member_node.branches:
                             if successor_node not in loop_nodes_for_this_loop:
@@ -1933,7 +1975,9 @@ class IRFunction:
                     if true_branch is None or false_branch is None:
                         dbg_print("true:", true_branch, "false:", false_branch)
                         dbg_print(node)
-                        raise DecompError("Conditional jump missing true/false branch. This is almost certainly an issue with the decompiler and not the bytecode itself.")
+                        raise DecompError(
+                            "Conditional jump missing true/false branch. This is almost certainly an issue with the decompiler and not the bytecode itself."
+                        )
 
                     # HACK: blocks that have multiple branches coming into them shouldn't exist for generated if statements.
                     # therefore, we can assume that if a conditional branch leads to a node that has multiple incoming branches,
@@ -1978,8 +2022,18 @@ class IRFunction:
                         left = self.locals[op.df.get("cond", op.df.get("reg")).value]
 
                     condition_expr = IRBoolExpr(self.code, cond, left, right)
-                    true_block = self._lift_block(true_branch, visited.copy(), current_loop_scope_nodes=current_loop_scope_nodes) if should_lift_t else IRBlock(self.code)
-                    false_block = self._lift_block(false_branch, visited.copy(), current_loop_scope_nodes=current_loop_scope_nodes) if should_lift_f else IRBlock(self.code)
+                    true_block = (
+                        self._lift_block(true_branch, visited.copy(), current_loop_scope_nodes=current_loop_scope_nodes)
+                        if should_lift_t
+                        else IRBlock(self.code)
+                    )
+                    false_block = (
+                        self._lift_block(
+                            false_branch, visited.copy(), current_loop_scope_nodes=current_loop_scope_nodes
+                        )
+                        if should_lift_f
+                        else IRBlock(self.code)
+                    )
                     _cond = IRConditional(self.code, condition_expr, true_block, false_block)
                     _cond.invert()
                     block.statements.append(_cond)
@@ -2118,7 +2172,9 @@ class IRFunction:
                     block.statements.append(IRBreak(self.code))
                     return block
                 elif target_node:
-                    next_block = self._lift_block(target_node, visited, current_loop_scope_nodes=current_loop_scope_nodes)
+                    next_block = self._lift_block(
+                        target_node, visited, current_loop_scope_nodes=current_loop_scope_nodes
+                    )
                     block.statements.append(next_block)
 
             else:
