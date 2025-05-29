@@ -1493,6 +1493,181 @@ class IRBlockFlattener(TraversingIROptimizer):
                 f"IRBlockFlattener: Processed block. Original item count: {len(original_statements)}, New item count: {len(new_statements)}"
             )
 
+class IRTempAssignmentInliner(TraversingIROptimizer):
+    """
+    Optimizes IR by inlining temporary assignments of the form:
+        temp = some_expression
+        final_target = temp
+    into:
+        final_target = some_expression
+    This is done if 'temp' (an IRLocal) is not used after 'final_target = temp'
+    and 'temp' is different from 'final_target'.
+    """
+
+    def _is_local_read_in_expr(self, local_to_check: IRLocal, expr: Optional[IRExpression]) -> bool:
+        """Checks if local_to_check is read within the given expression."""
+        if not expr:
+            return False
+        if expr == local_to_check:
+            return True
+        if isinstance(expr, IRArithmetic):
+            return self._is_local_read_in_expr(local_to_check, expr.left) or \
+                   self._is_local_read_in_expr(local_to_check, expr.right)
+        elif isinstance(expr, IRBoolExpr):
+            read = False
+            if expr.left and self._is_local_read_in_expr(local_to_check, expr.left):
+                read = True
+            if expr.right and self._is_local_read_in_expr(local_to_check, expr.right):
+                read = True
+            return read
+        elif isinstance(expr, IRCall):
+            read = False
+            # Check call target only if it's an expression that can be a local (e.g. closure call)
+            if isinstance(expr.target, IRExpression) and self._is_local_read_in_expr(local_to_check, expr.target):
+                read = True
+            for arg in expr.args:
+                if self._is_local_read_in_expr(local_to_check, arg):
+                    read = True
+            return read
+        return False
+
+    def _is_local_read_or_written_in_statement(self, local_to_check: IRLocal, stmt: IRStatement) -> Tuple[bool, bool]:
+        """
+        Checks if local_to_check is read or if local_to_check is written to in a statement.
+        Returns (was_read, was_written_to_local_to_check).
+        'was_written_to_local_to_check' means local_to_check was a target of an assignment.
+        """
+        was_read = False
+        was_written_to_target = False
+
+        if isinstance(stmt, IRAssign):
+            if self._is_local_read_in_expr(local_to_check, stmt.expr):
+                was_read = True
+            if stmt.target == local_to_check:
+                was_written_to_target = True
+        elif isinstance(stmt, IRExpression): # e.g. IRCall as a statement
+            if self._is_local_read_in_expr(local_to_check, stmt):
+                was_read = True
+        elif isinstance(stmt, IRConditional):
+            if self._is_local_read_in_expr(local_to_check, stmt.condition): was_read = True
+            # Recursively check branches. If read in any, it's read. If written in any, it's written.
+            # This doesn't guarantee it's killed on ALL paths, just that a write occurs.
+            true_read, true_written = self._is_local_read_or_written_in_statement(local_to_check, stmt.true_block)
+            if true_read: was_read = True
+            if true_written: was_written_to_target = True # If written in a branch, consider it potentially written
+            
+            if stmt.false_block:
+                false_read, false_written = self._is_local_read_or_written_in_statement(local_to_check, stmt.false_block)
+                if false_read: was_read = True
+                if false_written: was_written_to_target = True
+        elif isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop)): # IRWhileLoop condition is IRExpression
+            if isinstance(stmt, IRWhileLoop) and self._is_local_read_in_expr(local_to_check, stmt.condition): was_read = True
+            
+            body_read, body_written = self._is_local_read_or_written_in_statement(local_to_check, stmt.body if isinstance(stmt, IRWhileLoop) else stmt.body) # stmt.condition for PrimitiveLoop is IRBlock
+            if isinstance(stmt, IRPrimitiveLoop):
+                 cond_read, cond_written = self._is_local_read_or_written_in_statement(local_to_check, stmt.condition)
+                 if cond_read: was_read = True
+                 if cond_written: was_written_to_target = True
+
+            if body_read: was_read = True
+            if body_written: was_written_to_target = True
+        elif isinstance(stmt, IRReturn):
+            if stmt.value and self._is_local_read_in_expr(local_to_check, stmt.value): was_read = True
+        elif isinstance(stmt, IRSwitch):
+            if self._is_local_read_in_expr(local_to_check, stmt.value): was_read = True
+            for case_block in stmt.cases.values():
+                case_read, case_written = self._is_local_read_or_written_in_statement(local_to_check, case_block)
+                if case_read: was_read = True
+                if case_written: was_written_to_target = True
+            def_read, def_written = self._is_local_read_or_written_in_statement(local_to_check, stmt.default)
+            if def_read: was_read = True
+            if def_written: was_written_to_target = True
+        elif isinstance(stmt, IRBlock): # For blocks processed recursively
+            for sub_stmt in stmt.statements:
+                sub_read, sub_written = self._is_local_read_or_written_in_statement(local_to_check, sub_stmt)
+                if sub_read: was_read = True
+                if sub_written: # If local_to_check is written to in a sub_stmt
+                    was_written_to_target = True
+                    # If it's written, any prior reads in this block still count, but for liveness *after* this block, it's redefined.
+                    # If it's read *then* written in the same sub_stmt, was_read is true.
+                    # If it's written then read, was_read (for the original value) is false from that point.
+                    if not sub_read : # if it was written before being read in this sub_stmt
+                        # This means the original value of local_to_check is killed here.
+                        # If we are checking liveness, return immediately that it was killed.
+                        return False, True # Was not read (original value), but was killed.
+            # If loop completes, means it was not killed first in any sub_stmt.
+            return was_read, was_written_to_target
+
+
+        return was_read, was_written_to_target
+
+    def _is_local_live_after(self, local_to_check: IRLocal, start_idx: int, statements: List[IRStatement]) -> bool:
+        """Checks if local_to_check is read from statements[start_idx:] before being overwritten."""
+        for i in range(start_idx, len(statements)):
+            stmt = statements[i]
+            was_read, was_written_target = self._is_local_read_or_written_in_statement(local_to_check, stmt)
+            
+            if was_read:
+                return True # It's read, so it's live.
+            if was_written_target: # It's overwritten (target of an assign) without being read first in this stmt
+                return False # Overwritten, so original temp is no longer live past this point.
+        return False # Reaches end of statements without being read (and before being overwritten).
+
+    def visit_block(self, block: IRBlock) -> None:
+        made_change_this_pass = True
+        while made_change_this_pass: # Loop until no more changes in this block for this pass
+            made_change_this_pass = False
+            new_statements: List[IRStatement] = []
+            i = 0
+            while i < len(block.statements):
+                current_stmt = block.statements[i]
+                action_taken_this_step = False
+
+                if isinstance(current_stmt, IRAssign) and isinstance(current_stmt.target, IRLocal):
+                    temp_local: IRLocal = current_stmt.target
+                    expr_to_inline: IRExpression = current_stmt.expr
+
+                    if i + 1 < len(block.statements):
+                        next_stmt = block.statements[i + 1]
+                        # Pattern: temp_local = expr_to_inline; (current_stmt)
+                        #          final_target = temp_local;   (next_stmt)
+                        if isinstance(next_stmt, IRAssign) and next_stmt.expr == temp_local:
+                            final_target = next_stmt.target # This can be IRLocal or other types (e.g. for field assign)
+
+                            # Only apply if temp_local is distinct from final_target.
+                            # If temp_local == final_target, it's `t = E; t = t;`.
+                            # `IRSelfAssignOptimizer` will handle `t = t;`.
+                            if temp_local != final_target:
+                                # Check if temp_local is used anywhere after next_stmt (index i + 2)
+                                if not self._is_local_live_after(temp_local, i + 2, block.statements):
+                                    # Safe to inline
+                                    new_assign_stmt = IRAssign(block.code, final_target, expr_to_inline)
+                                    
+                                    # Combine comments
+                                    comments = []
+                                    if current_stmt.comment: comments.append(current_stmt.comment)
+                                    if next_stmt.comment: comments.append(next_stmt.comment)
+                                    
+                                    final_target_name_str = getattr(final_target, 'name', str(final_target)) # Handle non-IRLocal targets
+
+                                    combined_comment = f"Inlined {temp_local.name} into {final_target_name_str}; " + "; ".join(comments)
+                                    new_assign_stmt.comment = combined_comment.strip().rstrip(";")
+
+                                    dbg_print(f"IRTempAssignmentInliner: Inlined. Replacing '{current_stmt}' and '{next_stmt}' with '{new_assign_stmt}'")
+                                    new_statements.append(new_assign_stmt)
+                                    i += 2  # Skip both original statements
+                                    action_taken_this_step = True
+                                    made_change_this_pass = True
+                                else:
+                                    final_target_name_str = getattr(final_target, 'name', str(final_target))
+                                    dbg_print(f"IRTempAssignmentInliner: Cannot inline {temp_local.name} into {final_target_name_str}, as {temp_local.name} is live later.")
+                
+                if not action_taken_this_step:
+                    new_statements.append(current_stmt)
+                    i += 1
+            
+            block.statements = new_statements
+
 
 class IRFunction:
     """
@@ -1521,13 +1696,15 @@ class IRFunction:
                 IRConditionInliner(self),
                 IRLoopConditionOptimizer(self),
                 IRSelfAssignOptimizer(self),
+                IRTempAssignmentInliner(self),
+                IRBlockFlattener(self),
             ]
             self._optimize()
 
     def _lift(self, no_lift: bool = False) -> None:
         """Lift function to IR"""
         for i, reg in enumerate(self.func.regs):
-            self.locals.append(IRLocal(f"reg{i}", reg, code=self.code))
+            self.locals.append(IRLocal(f"var{i}", reg, code=self.code))
         self._name_locals()
         if not no_lift:
             if self.cfg.entry:
@@ -1576,7 +1753,7 @@ class IRFunction:
                 reg_assigns[i].add(assign[0].resolve(self.code))
         for i, _reg in enumerate(self.func.regs):
             if _reg.resolve(self.code).definition and isinstance(_reg.resolve(self.code).definition, Void):
-                reg_assigns[i].add("void")
+                reg_assigns[i].add("voidReg")
         for i, local in enumerate(self.locals):
             if reg_assigns[i] and len(reg_assigns[i]) == 1:
                 local.name = reg_assigns[i].pop()
