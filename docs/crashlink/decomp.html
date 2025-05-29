@@ -1698,6 +1698,7 @@ def get_type(self) -&gt; Type:
                 IRLoopConditionOptimizer(self),
                 IRSelfAssignOptimizer(self),
                 IRTempAssignmentInliner(self),
+                IRVoidAssignOptimizer(self),
                 IRBlockFlattener(self),
             ]
             self._optimize()

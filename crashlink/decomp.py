@@ -1706,7 +1706,8 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                     i += 1
 
             block.statements = new_statements
-            
+
+
 class IRVoidAssignOptimizer(TraversingIROptimizer):
     """
     Removes assignments to IRLocals of type Void, keeping the expression
@@ -1725,10 +1726,10 @@ class IRVoidAssignOptimizer(TraversingIROptimizer):
                     target_type_resolved = target.type.resolve(self.func.code)
                     if target_type_resolved.kind.value == Type.Kind.VOID.value:
                         dbg_print(f"IRVoidAssignOptimizer: Removing void assignment: {stmt} (target: {target.name})")
-                        
+
                         expr_being_kept = stmt.expr
                         discard_info_comment = "explicit discard"
-                        
+
                         current_comment_parts = []
                         if expr_being_kept.comment:
                             current_comment_parts.append(expr_being_kept.comment)
@@ -1736,7 +1737,7 @@ class IRVoidAssignOptimizer(TraversingIROptimizer):
                             if not expr_being_kept.comment or stmt.comment != expr_being_kept.comment:
                                 current_comment_parts.append(stmt.comment)
                         current_comment_parts.append(discard_info_comment)
-                        
+
                         expr_being_kept.comment = " ; ".join([p for p in current_comment_parts if p])
 
                         new_statements.append(expr_being_kept)
