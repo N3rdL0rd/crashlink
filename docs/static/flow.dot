@@ -8,8 +8,11 @@ digraph G {
     "Control flow recovery" -> "Control flow optimizer" -> "IR lifter"
     "Core parser" -> "Type and debug information"
     "Type and debug information" -> "IR lifter"
-    "IR lifter" -> "IR optimizer"
-    "Type and debug information" -> "IR optimizer"
-    "IR optimizer" -> "Output pseudocode"
+    "IR lifter" -> "IR optimizers" [label="LLIL"]
+    "Type and debug information" -> "IR optimizers"
+    "IR optimizers" -> "Output pseudocode" [label="HLIL (optimized)"]
     "Output pseudocode" -> "Haxe compiler" -> "Input bytecode"
+    "Disassembly" -> "Control flow recovery"
+    "Disassembly" -> "IR lifter"
+    "Type and debug information" -> "Output pseudocode"
 }
