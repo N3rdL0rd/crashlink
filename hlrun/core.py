@@ -2,6 +2,8 @@
 Core classes, handling, and casting for primitives.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Iterable, List

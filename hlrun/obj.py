@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from .core import HlObj
 from typing import Optional, List, Dict, Type, TypeVar, Callable, Any
 from functools import wraps
