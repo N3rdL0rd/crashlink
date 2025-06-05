@@ -32,3 +32,5 @@ local/
 *crashlink_patch.py*
 histogram.svg
 test-docs/
+deadcells/
+.venv/
