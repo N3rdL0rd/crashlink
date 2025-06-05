@@ -24,7 +24,19 @@ from .globals import dbg_print, tell
 from .opcodes import opcodes, simple_calls
 
 try:
-    from tqdm import tqdm
+    import platform
+    
+    if platform.python_implementation() == "PyPy":
+        dbg_print("Using PyPy, tqdm will only use ASCII chars")
+        def tqdm(*args: Any, **kwargs: Any) -> Any:
+            """
+            A wrapper around tqdm that uses ASCII characters for PyPy compatibility.
+            """
+            from tqdm import tqdm as _tqdm
+            return _tqdm(*args, **kwargs, ascii=True) # type: ignore[call-overload]
+    else:
+        from tqdm import tqdm
+
 
     USE_TQDM = True
 except ImportError:

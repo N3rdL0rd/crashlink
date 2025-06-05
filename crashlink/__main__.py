@@ -19,7 +19,7 @@ from functools import wraps
 
 from . import decomp, disasm, globals
 from .asm import AsmFile
-from .core import Bytecode, Native, Virtual, full_func_name, tIndex
+from .core import Bytecode, Native, Virtual, full_func_name, tIndex, strRef, gIndex
 from .globals import VERSION
 from .interp.vm import VM  # type: ignore
 from .opcodes import opcode_docs, opcodes
@@ -685,6 +685,93 @@ class Commands(BaseCommands):
             print("Bytecode verification failed!")
             return
         print("Bytecode verification succeeded!")
+
+    @alias("sref")
+    def strref(self, args: List[str]) -> None:
+        """
+        Find cross-references to a string by index.
+        Shows all opcodes that directly reference the string,
+        and opcodes that reference global variables initialized with this string.
+        `strref <index>`
+        """
+        if len(args) == 0:
+            print("Usage: strref <index>")
+            return
+        try:
+            string_idx_to_find = int(args[0])
+        except ValueError:
+            print("Invalid index.")
+            return
+
+        try:
+            target_string = self.code.strings.value[string_idx_to_find]
+        except IndexError:
+            print(f"String at index {string_idx_to_find} not found in strings table.")
+            return
+
+        print(f"Finding references to string {string_idx_to_find}: \"{target_string}\"")
+        print("-" * 30)
+
+        direct_references_found = 0
+        print("Direct string references:")
+        for func in self.code.functions:
+            if func.ops:
+                for op_index, opcode in enumerate(func.ops):
+                    for param_name, param_value in opcode.df.items():
+                        if isinstance(param_value, strRef):
+                            if param_value.value == string_idx_to_find:
+                                direct_references_found += 1
+                                func_name = full_func_name(self.code, func)
+                                print(f"  Function {func.findex.value} ({func_name}):")
+                                print(f"    Opcode {op_index}: {opcode.op} - parameter '{param_name}' references string {string_idx_to_find}")
+                                print()
+        
+        if direct_references_found == 0:
+            print("  No direct references found to this string.")
+        print("-" * 30)
+
+        global_refs_to_this_string_found = 0
+        globals_containing_string_details = [] 
+
+        for g_idx in range(len(self.code.global_types)): 
+            try:
+                global_string_value = self.code.const_str(g_idx)
+                if global_string_value == target_string:
+                    globals_containing_string_details.append((g_idx, global_string_value))
+            except (ValueError, TypeError):
+                # Not a constant string global, or g_idx out of bounds / not initialized as const string.
+                continue
+        
+        print("References via global variables:")
+        if not globals_containing_string_details:
+            print(f"  No global variables found initialized with the string \"{target_string}\".")
+        else:
+            for g_idx, global_str_val in globals_containing_string_details:
+                printable_global_str_val = global_str_val.replace('"', '\\"')
+                print(f"  Global g@{g_idx} is initialized to \"{printable_global_str_val}\". Searching for references to g@{g_idx}:")
+                found_refs_for_this_global = 0
+                for func in self.code.functions:
+                    if func.ops:
+                        for op_index, opcode in enumerate(func.ops):
+                            for param_name, param_value in opcode.df.items():
+                                if isinstance(param_value, gIndex):
+                                    if param_value.value == g_idx:
+                                        global_refs_to_this_string_found += 1
+                                        found_refs_for_this_global +=1
+                                        func_name = full_func_name(self.code, func)
+                                        print(f"    Function {func.findex.value} ({func_name}):")
+                                        print(f"      Opcode {op_index}: {opcode.op} - parameter '{param_name}' references global g@{g_idx}")
+                                        print()
+                if found_refs_for_this_global == 0:
+                     print(f"    No opcode references found for global g@{g_idx}.")
+                print()
+
+        print("-" * 30)
+        total_references = direct_references_found + global_refs_to_this_string_found
+        if total_references == 0:
+            print(f"No references found for string \"{target_string}\" (index {string_idx_to_find}).")
+        else:
+            print(f"Total references found: {total_references} (Direct: {direct_references_found}, Via Globals: {global_refs_to_this_string_found})")
 
 
 def handle_cmd(code: Bytecode, cmd: str) -> None:
