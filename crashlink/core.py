@@ -766,7 +766,7 @@ class Obj(TypeDef):
         class B extends A {
             var b: Int;
         }
-        Where a is field 0 and b is field 1
+        Where a is field 0 and b is field 1.
         """
         if self.super.value < 0:  # no superclass
             return self.fields
@@ -1725,7 +1725,7 @@ class Bytecode(Serialisable):
             res: Dict[str, Any] = {}
             obj = const._global.resolve(self).definition
             if not isinstance(obj, Obj):
-                dbg_print("WARNING: Skipping non-Obj constant.")
+                dbg_print("WARNING: Skipping non-Obj constant.") # should literally never happen
                 continue
             obj_fields = obj.resolve_fields(self)
             for i, field in enumerate(const.fields):
@@ -1743,6 +1743,8 @@ class Bytecode(Serialisable):
                     res[name] = self.strings.value[field.value]
                 else:
                     res[name] = field.value
+            if const._global.value == 15283:
+                print(const._global.value, res)
             final[const._global.value] = res
         assert len(final) == len(self.constants), (
             "Not all constants were resolved! This is often due to bad DebugInfo blocks causing buffer overrun, try passing -N to troubleshoot."

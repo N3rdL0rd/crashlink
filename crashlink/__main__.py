@@ -19,12 +19,22 @@ from functools import wraps
 
 from . import decomp, disasm, globals
 from .asm import AsmFile
-from .core import Bytecode, Native, Virtual, full_func_name, tIndex, strRef, gIndex
+from .core import Bytecode, Native, Virtual, full_func_name, tIndex, strRef, gIndex, Enum
 from .globals import VERSION
 from .interp.vm import VM  # type: ignore
 from .opcodes import opcode_docs, opcodes
 from .pseudo import pseudo
 from hlrun.patch import Patch
+
+
+def primary(name: str) -> Callable[[Callable[[Commands, List[str]], None]], Callable[[Commands, List[str]], None]]:
+    """Decorator to set the primary name for a command method, for names that are invalid Python identifiers."""
+
+    def decorator(func: Callable[[Commands, List[str]], None]) -> Callable[[Commands, List[str]], None]:
+        func._primary_alias = name  # type: ignore
+        return func
+
+    return decorator
 
 
 def alias(*aliases: str) -> Callable[[Callable[[Commands, List[str]], None]], Callable[[Commands, List[str]], None]]:
@@ -75,52 +85,65 @@ class BaseCommands:
         primary_commands = self._get_primary_commands()
         command_aliases = self._get_command_aliases()
 
-        for cmd, func in primary_commands.items():
+        for cmd, func in sorted(primary_commands.items()):
             usage, desc = self._format_help(func.__doc__ or "", cmd)
             aliases = command_aliases.get(cmd, [])
             if aliases:
-                alias_str = f" (aliases: {', '.join(aliases)})"
+                alias_str = f" (aliases: {', '.join(sorted(aliases))})"
                 print(f"\t{usage}{alias_str} - {desc}")
             else:
                 print(f"\t{usage} - {desc}")
         print("Type 'help <command>' for information on a specific command.")
 
     def _get_commands(self) -> Dict[str, Callable[[List[str]], None]]:
-        """Get all command methods using reflection, including aliases"""
+        """Get all command methods using reflection, including primary aliases and other aliases."""
         commands: Dict[str, Callable[[List[str]], None]] = {}
 
         for name, func in inspect.getmembers(self, predicate=inspect.ismethod):
-            if name.startswith("_"):
-                continue
+            primary_alias = getattr(func, '_primary_alias', None)
 
-            # Add the primary command
-            commands[name] = func
+            # Determine the primary command name to register, if any
+            primary_cmd_name = None
+            if primary_alias:
+                primary_cmd_name = primary_alias
+            elif not name.startswith("_"):
+                primary_cmd_name = name
 
-            # Add any aliases
-            if hasattr(func, "_aliases"):
-                for alias_name in func._aliases:
-                    commands[alias_name] = func
-
+            # If we identified a primary name, this is a command function.
+            # Register its primary name and all of its aliases.
+            if primary_cmd_name:
+                commands[primary_cmd_name] = func
+                if hasattr(func, "_aliases"):
+                    for alias_name in func._aliases:
+                        commands[alias_name] = func
+        
         return commands
 
     def _get_primary_commands(self) -> Dict[str, Callable[[List[str]], None]]:
-        """Get only the primary command methods (no aliases)"""
-        return {
-            name: func
-            for name, func in inspect.getmembers(self, predicate=inspect.ismethod)
-            if not name.startswith("_")
-        }
+        """Get only the primary command methods (no aliases), respecting primary aliases."""
+        primary_commands: Dict[str, Callable[[List[str]], None]] = {}
+        
+        for name, func in inspect.getmembers(self, predicate=inspect.ismethod):
+            primary_alias = getattr(func, '_primary_alias', None)
+
+            if primary_alias:
+                # Has @primary decorator, use that as the name
+                primary_commands[primary_alias] = func
+            elif not name.startswith("_"):
+                # Regular public method
+                primary_commands[name] = func
+            # else: internal method without @primary, skip
+            
+        return primary_commands
 
     def _get_command_aliases(self) -> Dict[str, List[str]]:
-        """Get a mapping of primary command names to their aliases"""
+        """Get a mapping of primary command names to their aliases, respecting primary aliases."""
         alias_map = {}
 
         for name, func in inspect.getmembers(self, predicate=inspect.ismethod):
-            if name.startswith("_"):
-                continue
-
             if hasattr(func, "_aliases"):
-                alias_map[name] = list(func._aliases)
+                primary_name = getattr(func, '_primary_alias', name)
+                alias_map[primary_name] = list(func._aliases)
 
         return alias_map
 
@@ -459,6 +482,7 @@ class Commands(BaseCommands):
         """
         if len(args) == 0:
             print("Usage: int <index>")
+            return
         try:
             index = int(args[0])
         except ValueError:
@@ -468,6 +492,57 @@ class Commands(BaseCommands):
             print(self.code.ints[index].value)
         except IndexError:
             print("Int not found.")
+
+    @primary("global")
+    @alias("g")
+    def global_command(self, args: List[str]) -> None:
+        """Gets a specific global by its gIndex, then shows all its initialized values. `global <gIndex>`"""
+        if not args:
+            print("Usage: global <gIndex>")
+            return
+
+        try:
+            gidx = int(args[0])
+        except ValueError:
+            print("Invalid gIndex: must be an integer.")
+            return
+
+        if not (0 <= gidx < len(self.code.global_types)):
+            print(f"Global {gidx} not found (index out of range).")
+            return
+
+        # Attempt to get the type string for more context
+        global_type_str = "Unknown Type"
+        try:
+            # self.code.global_types[gidx] is a tIndex
+            # .resolve(self.code) gets the actual Type object
+            global_type_obj = self.code.global_types[gidx].resolve(self.code)
+            global_type_str = str(global_type_obj)
+        except Exception as e:
+            # This might happen if resolve fails or gidx is somehow problematic
+            # or if str(global_type_obj) fails.
+            if globals.DEBUG:  # Assuming 'globals' is the imported module
+                print(f"Error resolving global type for gIndex {gidx}: {e}")
+            # Keep "Unknown Type" or default if resolution fails
+
+        initialized_global_data = self.code.initialized_globals.get(gidx)
+
+        if initialized_global_data is not None:
+            print(f"Global {gidx} (Type: {global_type_str}):")
+            if isinstance(initialized_global_data, dict):
+                if initialized_global_data:
+                    for field_name, value in initialized_global_data.items():
+                        print(f"  {field_name}: {value!r}")  # Use !r for better string representation
+                else:
+                    # This means it's an object but has no initialized fields, or it's an empty {}
+                    print("  (Initialized as an empty object or has no constant-initialized fields)")
+            else:
+                # This case implies the global was initialized to a non-dict value.
+                # Based on Bytecode.init_globals, this is unlikely for the objects it processes.
+                print(f"  Initialized Value: {initialized_global_data!r}")
+        else:
+            # The global gIndex is valid, but it's not in initialized_globals
+            print(f"Global {gidx} (Type: {global_type_str}) exists, but has no initialized constant values recorded.")
 
     def setstring(self, args: List[str]) -> None:
         """
@@ -486,6 +561,31 @@ class Commands(BaseCommands):
         except IndexError:
             print("String not found.")
         print("String set.")
+        
+    def enum(self, args: List[str]) -> None:
+        """Prints information about an enum by tIndex. `enum <index>`"""
+        if len(args) == 0:
+            print("Usage: enum <index>")
+            return
+        try:
+            index = int(args[0])
+        except ValueError:
+            print("Invalid index.")
+            return
+        try:
+            enum_type = tIndex(index).resolve(self.code)
+        except IndexError:
+            print("Type not found.")
+            return
+        if not isinstance(enum_type.definition, Enum):
+            print("Type is not an Enum.")
+            return
+        defn = enum_type.definition
+        print(f"Enum t@{index} - {defn.name.resolve(self.code)}")
+        print("nconstructs:", defn.nconstructs.value)
+        print("Constructs:")
+        for i, construct in enumerate(defn.constructs):
+            print(f"  {i}: {construct.name.resolve(self.code)}")
 
     @alias("pkl")
     def pickle(self, args: List[str]) -> None:
