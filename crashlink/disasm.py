@@ -30,6 +30,7 @@ from .core import (
     full_func_name,
     partial_func_name,
     tIndex,
+    Enum
 )
 from .opcodes import opcodes
 
@@ -48,6 +49,8 @@ def type_name(code: Bytecode, typ: Type) -> str:
         for field in defn.fields:
             fields.append(field.name.resolve(code))
         return f"Virtual[{', '.join(fields)}]"
+    elif typedef == Enum and isinstance(defn, Enum):
+        return defn.name.resolve(code)
     return typedef.__name__
 
 
@@ -368,7 +371,7 @@ def func(code: Bytecode, func: Function | Native) -> str:
     res += func_header(code, func) + "\n"
     res += "Reg types:\n"
     for i, reg in enumerate(func.regs):
-        res += f"  {i}. {type_name(code, reg.resolve(code))}\n"
+        res += f"  {i}. {type_name(code, reg.resolve(code))} (t@{reg.value})\n"
     if func.has_debug and func.assigns and func.version and func.version >= 3:
         res += "\nAssigns:\n"
         for assign in func.assigns:
