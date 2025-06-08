@@ -19,7 +19,7 @@ from functools import wraps
 
 from . import decomp, disasm, globals
 from .asm import AsmFile
-from .core import Bytecode, Native, Virtual, full_func_name, tIndex, strRef, gIndex, Enum
+from .core import Bytecode, Native, Virtual, full_func_name, tIndex, strRef, gIndex, Enum, Type, Fun, Obj, Ref, Null, Packed, Abstract
 from .globals import VERSION
 from .interp.vm import VM  # type: ignore
 from .opcodes import opcode_docs, opcodes
@@ -434,15 +434,106 @@ class Commands(BaseCommands):
         for i, type in enumerate(self.code.types):
             print(f"Type {i}: {type}")
 
-    def savestrings(self, args: List[str]) -> None:
-        """Save all strings in the bytecode to a given path. `savestrings <path>`"""
-        if len(args) == 0:
-            print("Usage: savestrings <path>")
+    @primary("type")
+    @alias("t")
+    def type_command(self, args: List[str]) -> None:
+        """Prints information about a type by tIndex. `type <tIndex>`"""
+        if not args:
+            print("Usage: type <tIndex>")
             return
-        with open(args[0], "wb") as f:
-            for string in self.code.strings.value:
-                f.write(string.encode("utf-8", errors="surrogateescape") + b"\n")
-        print("Strings saved.")
+        try:
+            index = int(args[0])
+        except ValueError:
+            print("Invalid tIndex: must be an integer.")
+            return
+
+        try:
+            resolved_type = self.code.types[index]
+        except IndexError:
+            print(f"Type t@{index} not found (index out of range).")
+            return
+
+        print(f"Type t@{index}:")
+        kind_val = resolved_type.kind.value
+        kind_name = "Unknown"
+        try:
+            kind_name = Type.Kind(kind_val).name
+        except ValueError:
+            # This can happen if kind_val is not a valid member of the Type.Kind enum
+            pass
+
+        print(f"  Kind: {kind_val} ({kind_name})")
+        
+        definition = resolved_type.definition
+        print(f"  Definition Class: {definition.__class__.__name__}")
+
+        # Specific details based on definition type
+        if isinstance(definition, Fun):
+            fun_def: Fun = definition
+            arg_type_names = []
+            for arg_tidx in fun_def.args:
+                try:
+                    arg_type_names.append(disasm.type_name(self.code, arg_tidx.resolve(self.code)))
+                except Exception:
+                    arg_type_names.append(f"t@{arg_tidx.value}(Error resolving)")
+            
+            ret_type_name = f"t@{fun_def.ret.value}(Error resolving)"
+            try:
+                ret_type_name = disasm.type_name(self.code, fun_def.ret.resolve(self.code))
+            except Exception:
+                pass
+
+            print(f"  Function Signature: ({', '.join(arg_type_names)}) -> {ret_type_name}")
+            print(f"    Argument Count: {fun_def.nargs.value}")
+
+        elif isinstance(definition, Obj):
+            obj_def: Obj = definition
+            try:
+                print(f"  Object Name: {obj_def.name.resolve(self.code)}")
+            except Exception:
+                print(f"  Object Name: s@{obj_def.name.value}(Error resolving string)")
+            print(f"    Number of Fields: {obj_def.nfields.value}")
+            print(f"    Number of Prototypes: {obj_def.nprotos.value}")
+            if obj_def.super and obj_def.super.value is not None:
+                 try:
+                    super_type_name = disasm.type_name(self.code, obj_def.super.resolve(self.code))
+                    print(f"    Super Type: {super_type_name} (t@{obj_def.super.value})")
+                 except Exception:
+                    print(f"    Super Type: t@{obj_def.super.value}(Error resolving)")
+
+        elif isinstance(definition, Ref):
+            ref_def: Ref = definition
+            inner_type_name = f"t@{ref_def.type.value}(Error resolving)"
+            try:
+                inner_type_name = disasm.type_name(self.code, ref_def.type.resolve(self.code))
+            except Exception:
+                pass
+            print(f"  References Type: {inner_type_name} (t@{ref_def.type.value})")
+
+        elif isinstance(definition, Null):
+            null_def: Null = definition
+            inner_type_name = f"t@{null_def.type.value}(Error resolving)"
+            try:
+                inner_type_name = disasm.type_name(self.code, null_def.type.resolve(self.code))
+            except Exception:
+                pass
+            print(f"  Null of Type: {inner_type_name} (t@{null_def.type.value})")
+
+        elif isinstance(definition, Packed):
+            packed_def: Packed = definition
+            inner_type_name = f"t@{packed_def.inner.value}(Error resolving)"
+            try:
+                inner_type_name = disasm.type_name(self.code, packed_def.inner.resolve(self.code))
+            except Exception:
+                pass
+            print(f"  Packed Inner Type: {inner_type_name} (t@{packed_def.inner.value})")
+        
+        elif isinstance(definition, Abstract):
+            abs_def: Abstract = definition
+            try:
+                print(f"  Abstract Name: {abs_def.name.resolve(self.code)}")
+            except Exception:
+                print(f"  Abstract Name: s@{abs_def.name.value}(Error resolving string)")
 
     @alias("search")
     def ss(self, args: List[str]) -> None:
