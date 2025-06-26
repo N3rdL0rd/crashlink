@@ -808,7 +808,11 @@ class IsolatedCFGraph(CFGraph):
             copied_node_for_branching = node_map[original_cfg_node]
             for target_in_original_cfg, edge_type in original_cfg_node.branches:
                 if target_in_original_cfg in node_map:
-                    self.add_branch(copied_node_for_branching, node_map[target_in_original_cfg], edge_type)
+                    self.add_branch(
+                        copied_node_for_branching,
+                        node_map[target_in_original_cfg],
+                        edge_type,
+                    )
 
         if find_entry_intelligently and self.nodes:
             entry_candidates = []
@@ -1578,7 +1582,8 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 was_read = True
 
             body_read, body_written = self._is_local_read_or_written_in_statement(
-                local_to_check, stmt.body if isinstance(stmt, IRWhileLoop) else stmt.body
+                local_to_check,
+                stmt.body if isinstance(stmt, IRWhileLoop) else stmt.body,
             )  # stmt.condition for PrimitiveLoop is IRBlock
             if isinstance(stmt, IRPrimitiveLoop):
                 cond_read, cond_written = self._is_local_read_or_written_in_statement(local_to_check, stmt.condition)
@@ -1621,7 +1626,10 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                     if not sub_read:  # if it was written before being read in this sub_stmt
                         # This means the original value of local_to_check is killed here.
                         # If we are checking liveness, return immediately that it was killed.
-                        return False, True  # Was not read (original value), but was killed.
+                        return (
+                            False,
+                            True,
+                        )  # Was not read (original value), but was killed.
             # If loop completes, means it was not killed first in any sub_stmt.
             return was_read, was_written_to_target
 
@@ -2067,13 +2075,19 @@ class IRFunction:
 
                     condition_expr = IRBoolExpr(self.code, cond, left, right)
                     true_block = (
-                        self._lift_block(true_branch, visited.copy(), current_loop_scope_nodes=current_loop_scope_nodes)
+                        self._lift_block(
+                            true_branch,
+                            visited.copy(),
+                            current_loop_scope_nodes=current_loop_scope_nodes,
+                        )
                         if should_lift_t
                         else IRBlock(self.code)
                     )
                     false_block = (
                         self._lift_block(
-                            false_branch, visited.copy(), current_loop_scope_nodes=current_loop_scope_nodes
+                            false_branch,
+                            visited.copy(),
+                            current_loop_scope_nodes=current_loop_scope_nodes,
                         )
                         if should_lift_f
                         else IRBlock(self.code)
@@ -2096,7 +2110,11 @@ class IRFunction:
                             dbg_print("WARNING: No convergence point found for conditional branches")
                     if not next_node:
                         raise DecompError("No next node found for conditional branches")
-                    next_block = self._lift_block(next_node, visited, current_loop_scope_nodes=current_loop_scope_nodes)
+                    next_block = self._lift_block(
+                        next_node,
+                        visited,
+                        current_loop_scope_nodes=current_loop_scope_nodes,
+                    )
                     block.statements.append(next_block)
                 else:
                     # convert jumps to IRPrimitiveJump so that later lifting stages can handle them
@@ -2217,7 +2235,9 @@ class IRFunction:
                     return block
                 elif target_node:
                     next_block = self._lift_block(
-                        target_node, visited, current_loop_scope_nodes=current_loop_scope_nodes
+                        target_node,
+                        visited,
+                        current_loop_scope_nodes=current_loop_scope_nodes,
                     )
                     block.statements.append(next_block)
 

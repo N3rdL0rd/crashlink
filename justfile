@@ -21,6 +21,7 @@ build-tests:
     cd tests/haxe && \
     for f in *.hx; do \
         haxe -hl "${f%.*}.hl" -main "$f"; \
+        haxe -hl "${f%.*}.c" -main "$f"; \
     done
 
 # Format the codebase

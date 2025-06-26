@@ -19,28 +19,53 @@ from functools import wraps
 
 from . import decomp, disasm, globals
 from .asm import AsmFile
-from .core import Bytecode, Native, Virtual, full_func_name, tIndex, strRef, gIndex, Enum, Type, Fun, Obj, Ref, Null, Packed, Abstract
+from .core import (
+    Bytecode,
+    Native,
+    Virtual,
+    full_func_name,
+    tIndex,
+    strRef,
+    gIndex,
+    Enum,
+    Type,
+    Fun,
+    Obj,
+    Ref,
+    Null,
+    Packed,
+    Abstract,
+)
 from .globals import VERSION
 from .interp.vm import VM  # type: ignore
 from .opcodes import opcode_docs, opcodes
 from .pseudo import pseudo
+from .hlc import code_to_c, fn_to_c
 from hlrun.patch import Patch
 
 
-def primary(name: str) -> Callable[[Callable[[Commands, List[str]], None]], Callable[[Commands, List[str]], None]]:
+def primary(
+    name: str,
+) -> Callable[[Callable[[Commands, List[str]], None]], Callable[[Commands, List[str]], None]]:
     """Decorator to set the primary name for a command method, for names that are invalid Python identifiers."""
 
-    def decorator(func: Callable[[Commands, List[str]], None]) -> Callable[[Commands, List[str]], None]:
+    def decorator(
+        func: Callable[[Commands, List[str]], None],
+    ) -> Callable[[Commands, List[str]], None]:
         func._primary_alias = name  # type: ignore
         return func
 
     return decorator
 
 
-def alias(*aliases: str) -> Callable[[Callable[[Commands, List[str]], None]], Callable[[Commands, List[str]], None]]:
+def alias(
+    *aliases: str,
+) -> Callable[[Callable[[Commands, List[str]], None]], Callable[[Commands, List[str]], None]]:
     """Decorator to add aliases to command methods"""
 
-    def decorator(func: Callable[[Commands, List[str]], None]) -> Callable[[Commands, List[str]], None]:
+    def decorator(
+        func: Callable[[Commands, List[str]], None],
+    ) -> Callable[[Commands, List[str]], None]:
         func._aliases = aliases  # type: ignore
         return func
 
@@ -100,7 +125,7 @@ class BaseCommands:
         commands: Dict[str, Callable[[List[str]], None]] = {}
 
         for name, func in inspect.getmembers(self, predicate=inspect.ismethod):
-            primary_alias = getattr(func, '_primary_alias', None)
+            primary_alias = getattr(func, "_primary_alias", None)
 
             # Determine the primary command name to register, if any
             primary_cmd_name = None
@@ -116,15 +141,15 @@ class BaseCommands:
                 if hasattr(func, "_aliases"):
                     for alias_name in func._aliases:
                         commands[alias_name] = func
-        
+
         return commands
 
     def _get_primary_commands(self) -> Dict[str, Callable[[List[str]], None]]:
         """Get only the primary command methods (no aliases), respecting primary aliases."""
         primary_commands: Dict[str, Callable[[List[str]], None]] = {}
-        
+
         for name, func in inspect.getmembers(self, predicate=inspect.ismethod):
-            primary_alias = getattr(func, '_primary_alias', None)
+            primary_alias = getattr(func, "_primary_alias", None)
 
             if primary_alias:
                 # Has @primary decorator, use that as the name
@@ -133,7 +158,7 @@ class BaseCommands:
                 # Regular public method
                 primary_commands[name] = func
             # else: internal method without @primary, skip
-            
+
         return primary_commands
 
     def _get_command_aliases(self) -> Dict[str, List[str]]:
@@ -142,7 +167,7 @@ class BaseCommands:
 
         for name, func in inspect.getmembers(self, predicate=inspect.ismethod):
             if hasattr(func, "_aliases"):
-                primary_name = getattr(func, '_primary_alias', name)
+                primary_name = getattr(func, "_primary_alias", name)
                 alias_map[primary_name] = list(func._aliases)
 
         return alias_map
@@ -422,6 +447,30 @@ class Commands(BaseCommands):
         with open(args[0], "wb") as f:
             f.write(ser)
         print("Done!")
+        
+    def nativelibs(self, args: List[str]) -> None:
+        """Prints all unique native dynlibs used by the bytecode. `nativelibs`"""
+        native_libs: Set[str] = set()
+        for native in self.code.natives:
+            if native.lib.value:
+                native_libs.add(native.lib.resolve(self.code))
+        if not native_libs:
+            print("No native libraries found.")
+            return
+        print("Native libraries used by the bytecode:")
+        for lib in sorted(native_libs):
+            print(f"- {lib}")
+
+    def hlc(self, args: List[str]) -> None:
+        """Transpiles the loaded bytecode to crashlink cHL/C code. `hlc <output path>`"""
+        if len(args) == 0:
+            print("Usage: hlc <output path>")
+            return
+        output_path = args[0]
+        print("Transpiling to cHL/C...")
+        with open(output_path, "w") as f:
+            f.write(code_to_c(self.code))
+        print(f"cHL/C code written to {output_path}")
 
     @alias("strs")
     def strings(self, args: List[str]) -> None:
@@ -463,7 +512,7 @@ class Commands(BaseCommands):
             pass
 
         print(f"  Kind: {kind_val} ({kind_name})")
-        
+
         definition = resolved_type.definition
         print(f"  Definition Class: {definition.__class__.__name__}")
 
@@ -476,7 +525,7 @@ class Commands(BaseCommands):
                     arg_type_names.append(disasm.type_name(self.code, arg_tidx.resolve(self.code)))
                 except Exception:
                     arg_type_names.append(f"t@{arg_tidx.value}(Error resolving)")
-            
+
             ret_type_name = f"t@{fun_def.ret.value}(Error resolving)"
             try:
                 ret_type_name = disasm.type_name(self.code, fun_def.ret.resolve(self.code))
@@ -495,10 +544,10 @@ class Commands(BaseCommands):
             print(f"    Number of Fields: {obj_def.nfields.value}")
             print(f"    Number of Prototypes: {obj_def.nprotos.value}")
             if obj_def.super and obj_def.super.value is not None:
-                 try:
+                try:
                     super_type_name = disasm.type_name(self.code, obj_def.super.resolve(self.code))
                     print(f"    Super Type: {super_type_name} (t@{obj_def.super.value})")
-                 except Exception:
+                except Exception:
                     print(f"    Super Type: t@{obj_def.super.value}(Error resolving)")
 
         elif isinstance(definition, Ref):
@@ -527,7 +576,7 @@ class Commands(BaseCommands):
             except Exception:
                 pass
             print(f"  Packed Inner Type: {inner_type_name} (t@{packed_def.inner.value})")
-        
+
         elif isinstance(definition, Abstract):
             abs_def: Abstract = definition
             try:
@@ -652,7 +701,7 @@ class Commands(BaseCommands):
         except IndexError:
             print("String not found.")
         print("String set.")
-        
+
     def enum(self, args: List[str]) -> None:
         """Prints information about an enum by tIndex. `enum <index>`"""
         if len(args) == 0:
@@ -900,7 +949,7 @@ class Commands(BaseCommands):
             print(f"String at index {string_idx_to_find} not found in strings table.")
             return
 
-        print(f"Finding references to string {string_idx_to_find}: \"{target_string}\"")
+        print(f'Finding references to string {string_idx_to_find}: "{target_string}"')
         print("-" * 30)
 
         direct_references_found = 0
@@ -914,17 +963,19 @@ class Commands(BaseCommands):
                                 direct_references_found += 1
                                 func_name = full_func_name(self.code, func)
                                 print(f"  Function {func.findex.value} ({func_name}):")
-                                print(f"    Opcode {op_index}: {opcode.op} - parameter '{param_name}' references string {string_idx_to_find}")
+                                print(
+                                    f"    Opcode {op_index}: {opcode.op} - parameter '{param_name}' references string {string_idx_to_find}"
+                                )
                                 print()
-        
+
         if direct_references_found == 0:
             print("  No direct references found to this string.")
         print("-" * 30)
 
         global_refs_to_this_string_found = 0
-        globals_containing_string_details = [] 
+        globals_containing_string_details = []
 
-        for g_idx in range(len(self.code.global_types)): 
+        for g_idx in range(len(self.code.global_types)):
             try:
                 global_string_value = self.code.const_str(g_idx)
                 if global_string_value == target_string:
@@ -932,14 +983,16 @@ class Commands(BaseCommands):
             except (ValueError, TypeError):
                 # Not a constant string global, or g_idx out of bounds / not initialized as const string.
                 continue
-        
+
         print("References via global variables:")
         if not globals_containing_string_details:
-            print(f"  No global variables found initialized with the string \"{target_string}\".")
+            print(f'  No global variables found initialized with the string "{target_string}".')
         else:
             for g_idx, global_str_val in globals_containing_string_details:
                 printable_global_str_val = global_str_val.replace('"', '\\"')
-                print(f"  Global g@{g_idx} is initialized to \"{printable_global_str_val}\". Searching for references to g@{g_idx}:")
+                print(
+                    f'  Global g@{g_idx} is initialized to "{printable_global_str_val}". Searching for references to g@{g_idx}:'
+                )
                 found_refs_for_this_global = 0
                 for func in self.code.functions:
                     if func.ops:
@@ -948,21 +1001,25 @@ class Commands(BaseCommands):
                                 if isinstance(param_value, gIndex):
                                     if param_value.value == g_idx:
                                         global_refs_to_this_string_found += 1
-                                        found_refs_for_this_global +=1
+                                        found_refs_for_this_global += 1
                                         func_name = full_func_name(self.code, func)
                                         print(f"    Function {func.findex.value} ({func_name}):")
-                                        print(f"      Opcode {op_index}: {opcode.op} - parameter '{param_name}' references global g@{g_idx}")
+                                        print(
+                                            f"      Opcode {op_index}: {opcode.op} - parameter '{param_name}' references global g@{g_idx}"
+                                        )
                                         print()
                 if found_refs_for_this_global == 0:
-                     print(f"    No opcode references found for global g@{g_idx}.")
+                    print(f"    No opcode references found for global g@{g_idx}.")
                 print()
 
         print("-" * 30)
         total_references = direct_references_found + global_refs_to_this_string_found
         if total_references == 0:
-            print(f"No references found for string \"{target_string}\" (index {string_idx_to_find}).")
+            print(f'No references found for string "{target_string}" (index {string_idx_to_find}).')
         else:
-            print(f"Total references found: {total_references} (Direct: {direct_references_found}, Via Globals: {global_refs_to_this_string_found})")
+            print(
+                f"Total references found: {total_references} (Direct: {direct_references_found}, Via Globals: {global_refs_to_this_string_found})"
+            )
 
 
 def handle_cmd(code: Bytecode, cmd: str) -> None:
@@ -989,7 +1046,12 @@ def main() -> None:
         "file",
         help="The file to open - can be HashLink bytecode, a Haxe source file or a crashlink assembly file.",
     )
-    parser.add_argument("-a", "--assemble", help="Assemble the passed crashlink assembly file", action="store_true")
+    parser.add_argument(
+        "-a",
+        "--assemble",
+        help="Assemble the passed crashlink assembly file",
+        action="store_true",
+    )
     parser.add_argument(
         "-o",
         "--output",

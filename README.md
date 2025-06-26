@@ -39,6 +39,12 @@ You also need to have Graphviz installed to generate control flow graphs. On mos
 - Arch: `sudo pacman -S graphviz`
 - Fedora: `sudo dnf install graphviz`
 
+In order to work with some of the HL/C utilities, you also need to have Hashlink's core packages installed:
+
+```bash
+haxelib git hashlink https://github.com/HaxeFoundation/hashlink.git master other/haxelib/
+```
+
 ## Usage
 
 Either:
