@@ -30,7 +30,7 @@ from .core import (
     full_func_name,
     partial_func_name,
     tIndex,
-    Enum
+    Enum,
 )
 from .opcodes import opcodes
 

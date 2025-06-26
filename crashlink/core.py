@@ -25,18 +25,19 @@ from .opcodes import opcodes, simple_calls
 
 try:
     import platform
-    
+
     if platform.python_implementation() == "PyPy":
         dbg_print("Using PyPy, tqdm will only use ASCII chars")
+
         def tqdm(*args: Any, **kwargs: Any) -> Any:
             """
             A wrapper around tqdm that uses ASCII characters for PyPy compatibility.
             """
             from tqdm import tqdm as _tqdm
-            return _tqdm(*args, **kwargs, ascii=True) # type: ignore[call-overload]
+
+            return _tqdm(*args, **kwargs, ascii=True)  # type: ignore[call-overload]
     else:
         from tqdm import tqdm
-
 
     USE_TQDM = True
 except ImportError:
@@ -788,7 +789,7 @@ class Obj(TypeDef):
         return fields
 
     def __str__(self) -> str:
-        return f"<Obj: f@{self.name}>"
+        return f"<Obj: s@{self.name}>"
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -1362,6 +1363,15 @@ class Function(Serialisable):
             raise ValueError("Cannot get file from non-debug bytecode!")
         return self.debuginfo.value[0].resolve(code)
 
+    def resolve_nargs(self, code: "Bytecode") -> int:
+        """
+        Resolves the number of arguments this function takes.
+        """
+        fun_type = self.type.resolve(code).definition
+        if isinstance(fun_type, Fun):
+            return fun_type.nargs.value
+        return 0
+
     def deserialise(self, f: BinaryIO | BytesIO, has_debug: bool, version: int) -> "Function":
         self.has_debug = has_debug
         self.version = version
@@ -1725,7 +1735,7 @@ class Bytecode(Serialisable):
             res: Dict[str, Any] = {}
             obj = const._global.resolve(self).definition
             if not isinstance(obj, Obj):
-                dbg_print("WARNING: Skipping non-Obj constant.") # should literally never happen
+                dbg_print("WARNING: Skipping non-Obj constant.")  # should literally never happen
                 continue
             obj_fields = obj.resolve_fields(self)
             for i, field in enumerate(const.fields):

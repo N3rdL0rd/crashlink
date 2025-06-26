@@ -34,3 +34,8 @@ histogram.svg
 test-docs/
 deadcells/
 .venv/
+tests/haxe/*.c
+tests/haxe/_std
+tests/haxe/haxe
+tests/haxe/hlc
+test.c
