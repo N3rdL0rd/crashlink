@@ -639,6 +639,13 @@ class Fun(TypeDef):
             ]
         )
 
+    def pretty(self, code: "Bytecode") -> str:
+        """
+        Returns a pretty-printed string representation of the function signature.
+        """
+        args_str = ", ".join([arg.resolve(code).str_resolve(code) for arg in self.args])
+        return f"({args_str}) -> {self.ret.resolve(code).str_resolve(code)}"
+
 
 class Field(Serialisable):
     """
@@ -1106,6 +1113,16 @@ class Native(Serialisable):
         self.type.deserialise(f)
         self.findex.deserialise(f)
         return self
+    
+    def called_by(self, code: "Bytecode") -> List[fIndex]:
+        """
+        Resolves all functions that call this native.
+        """
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
 
     def serialise(self) -> bytes:
         return b"".join(
