@@ -77,17 +77,27 @@ class Serialisable(ABC):
     def __eq__(self, other: object) -> Any:
         if not isinstance(other, Serialisable):
             return NotImplemented
-        return self.value == other.value
+        try:
+            return self.value == other.value
+        except AttributeError:
+             # Fallback if a subclass doesn't define .value but also doesn't override __eq__
+            return NotImplemented
 
     def __ne__(self, other: object) -> Any:
         if not isinstance(other, Serialisable):
             return NotImplemented
-        return self.value != other.value
+        try:
+            return self.value != other.value
+        except AttributeError:
+            return NotImplemented
 
     def __lt__(self, other: object) -> Any:
         if not isinstance(other, Serialisable):
             return NotImplemented
-        return self.value < other.value
+        try:
+            return self.value < other.value
+        except AttributeError:
+            return NotImplemented
 
 
 class RawData(Serialisable):
@@ -128,13 +138,13 @@ class SerialisableInt(Serialisable):
         self.length = length
         self.byteorder = byteorder
         self.signed = signed
-        bytes = f.read(length)
-        if all(b == 0 for b in bytes):
+        bytes_read = f.read(length)
+        if all(b == 0 for b in bytes_read):
             self.value = 0
             return self
-        while bytes[-1] == 0:
-            bytes = bytes[:-1]
-        self.value = int.from_bytes(bytes, byteorder, signed=signed)
+        while len(bytes_read) > 1 and bytes_read[-1] == 0:
+            bytes_read = bytes_read[:-1]
+        self.value = int.from_bytes(bytes_read, byteorder, signed=signed)
         return self
 
     def serialise(self) -> bytes:
@@ -190,7 +200,10 @@ class VarInt(Serialisable):
             return self
 
         # Four byte format (11xxxxxx)
-        remaining = _struct_medium.unpack(b"\x00" + f.read(3))[0]
+        remaining_bytes = f.read(3)
+        if len(remaining_bytes) < 3:
+            raise MalformedBytecode("Incomplete VarInt at end of stream")
+        remaining = _struct_medium.unpack(b"\x00" + remaining_bytes)[0]
 
         # Combine all bytes and handle sign
         self.value = ((b & 0x1F) << 24) | remaining
@@ -383,6 +396,7 @@ class VarInts(Serialisable):
         return self
 
     def serialise(self) -> bytes:
+        self.n.value = len(self.value)
         return b"".join([self.n.serialise(), b"".join([value.serialise() for value in self.value])])
 
 
@@ -402,6 +416,7 @@ class Regs(Serialisable):
         return self
 
     def serialise(self) -> bytes:
+        self.n.value = len(self.value)
         return b"".join([self.n.serialise(), b"".join([value.serialise() for value in self.value])])
 
 
@@ -465,10 +480,11 @@ class StringsBlock(Serialisable):
         """
         Finds and returns the index of a string value in this block, or adds it to this block and returns its index.
         """
-        if val in self.value:
+        try:
             return self.value.index(val)
-        self.value.append(val)
-        return len(self.value) - 1
+        except ValueError:
+            self.value.append(val)
+            return len(self.value) - 1
 
 
 class BytesBlock(Serialisable):
@@ -511,7 +527,7 @@ class BytesBlock(Serialisable):
         return size_serialised + raw_data + positions_serialised
 
 
-class TypeDef(Serialisable):
+class TypeDef(Serialisable, ABC):
     """
     Abstract class for all type definition fields.
     """
@@ -530,6 +546,12 @@ class _NoDataType(TypeDef):
 
     def serialise(self) -> bytes:
         return b""
+    
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, _NoDataType):
+            return NotImplemented
+        # Two _NoDataType objects are equal if they are of the same specific class.
+        return type(self) is type(other)
 
 
 class Void(_NoDataType):
@@ -646,6 +668,11 @@ class Fun(TypeDef):
         args_str = ", ".join([arg.resolve(code).str_resolve(code) for arg in self.args])
         return f"({args_str}) -> {self.ret.resolve(code).str_resolve(code)}"
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Fun):
+            return NotImplemented
+        return self.nargs == other.nargs and self.args == other.args and self.ret == other.ret
+
 
 class Field(Serialisable):
     """
@@ -669,6 +696,11 @@ class Field(Serialisable):
 
     def serialise(self) -> bytes:
         return b"".join([self.name.serialise(), self.type.serialise()])
+    
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Field):
+            return NotImplemented
+        return self.name == other.name and self.type == other.type
 
 
 class Proto(Serialisable):
@@ -690,6 +722,11 @@ class Proto(Serialisable):
     def serialise(self) -> bytes:
         return b"".join([self.name.serialise(), self.findex.serialise(), self.pindex.serialise()])
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Proto):
+            return NotImplemented
+        return self.name == other.name and self.findex == other.findex and self.pindex == other.pindex
+
 
 class Binding(Serialisable):
     """
@@ -707,6 +744,11 @@ class Binding(Serialisable):
 
     def serialise(self) -> bytes:
         return b"".join([self.field.serialise(), self.findex.serialise()])
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Binding):
+            return NotImplemented
+        return self.field == other.field and self.findex == other.findex
 
 
 class Obj(TypeDef):
@@ -751,6 +793,9 @@ class Obj(TypeDef):
         return self
 
     def serialise(self) -> bytes:
+        self.nfields.value = len(self.fields)
+        self.nprotos.value = len(self.protos)
+        self.nbindings.value = len(self.bindings)
         return b"".join(
             [
                 self.name.serialise(),
@@ -803,6 +848,16 @@ class Obj(TypeDef):
 
     def str_resolve(self, code: "Bytecode") -> str:
         return f"<Obj: {self.name.resolve(code)}>"
+    
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Obj):
+            return NotImplemented
+        return (self.name == other.name and 
+                self.super == other.super and
+                self._global == other._global and
+                self.fields == other.fields and
+                self.protos == other.protos and
+                self.bindings == other.bindings)
 
 
 class Array(_NoDataType):
@@ -836,6 +891,11 @@ class Ref(TypeDef):
     def serialise(self) -> bytes:
         return self.type.serialise()
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Ref):
+            return NotImplemented
+        return self.type == other.type
+
 
 class Virtual(TypeDef):
     """
@@ -864,6 +924,11 @@ class Virtual(TypeDef):
     def resolve_fields(self, code: "Bytecode") -> List[Field]:
         return self.fields
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Virtual):
+            return NotImplemented
+        return self.fields == other.fields
+
 
 class DynObj(_NoDataType):
     """
@@ -887,6 +952,11 @@ class Abstract(TypeDef):
 
     def serialise(self) -> bytes:
         return self.name.serialise()
+    
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Abstract):
+            return NotImplemented
+        return self.name == other.name
 
 
 class EnumConstruct(Serialisable):
@@ -907,6 +977,7 @@ class EnumConstruct(Serialisable):
         return self
 
     def serialise(self) -> bytes:
+        self.nparams.value = len(self.params)
         return b"".join(
             [
                 self.name.serialise(),
@@ -914,6 +985,11 @@ class EnumConstruct(Serialisable):
                 b"".join([param.serialise() for param in self.params]),
             ]
         )
+    
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, EnumConstruct):
+            return NotImplemented
+        return self.name == other.name and self.params == other.params
 
 
 class Enum(TypeDef):
@@ -936,6 +1012,7 @@ class Enum(TypeDef):
         return self
 
     def serialise(self) -> bytes:
+        self.nconstructs.value = len(self.constructs)
         return b"".join(
             [
                 self.name.serialise(),
@@ -944,6 +1021,11 @@ class Enum(TypeDef):
                 b"".join([construct.serialise() for construct in self.constructs]),
             ]
         )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Enum):
+            return NotImplemented
+        return self.name == other.name and self.constructs == other.constructs
 
 
 class Null(TypeDef):
@@ -960,6 +1042,11 @@ class Null(TypeDef):
 
     def serialise(self) -> bytes:
         return self.type.serialise()
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Null):
+            return NotImplemented
+        return self.type == other.type
 
 
 class Method(Fun):
@@ -992,6 +1079,11 @@ class Packed(TypeDef):
 
     def serialise(self) -> bytes:
         return self.inner.serialise()
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Packed):
+            return NotImplemented
+        return self.inner == other.inner
 
 
 class Type(Serialisable):
@@ -1066,7 +1158,14 @@ class Type(Serialisable):
         try:
             self.TYPEDEFS[self.kind.value]
             _def = self.TYPEDEFS[self.kind.value]()
-            self.definition = _def.deserialise(f)
+            if isinstance(_def, TypeDef):
+                deserialized = _def.deserialise(f)
+                if isinstance(deserialized, TypeDef):
+                    self.definition = deserialized
+                else:
+                    raise MalformedBytecode(f"Invalid type definition found @{tell(f)}")
+            else:
+                 raise MalformedBytecode(f"Invalid type definition found @{tell(f)}")
         except IndexError:
             raise MalformedBytecode(f"Invalid type kind found @{tell(f)}")
         return self
@@ -1089,6 +1188,18 @@ class Type(Serialisable):
         if isinstance(self.definition, Obj):
             return self.definition.str_resolve(code)
         return f"<Type: {self.kind.value} ({self.definition.__class__.__name__})>"
+    
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Type):
+            return NotImplemented
+        if self is other:
+            return True
+        # Definitions can be None
+        if self.definition is None and other.definition is None:
+            return self.kind == other.kind
+        if self.definition is None or other.definition is None:
+            return False
+        return self.kind == other.kind and self.definition == other.definition
 
 
 class Native(Serialisable):
@@ -1250,28 +1361,36 @@ class DebugInfo(Serialisable):
         currline: int = 0
         i = 0
         while i < nops:
-            c = ctypes.c_uint8(ord(f.read(1))).value
-            if c & 1 != 0:
-                c >>= 1
-                currfile = (c << 8) | ctypes.c_uint8(ord(f.read(1))).value
-            elif c & 2 != 0:
-                delta = c >> 6
-                count = (c >> 2) & 15
-                while count > 0:
-                    count -= 1
+            try:
+                c_byte = f.read(1)
+                if not c_byte: break
+                c = ctypes.c_uint8(ord(c_byte)).value
+                if c & 1 != 0:
+                    c >>= 1
+                    b2_byte = f.read(1)
+                    if not b2_byte: break
+                    currfile = (c << 8) | ctypes.c_uint8(ord(b2_byte)).value
+                elif c & 2 != 0:
+                    delta = c >> 6
+                    count = (c >> 2) & 15
+                    for _ in range(count):
+                        tmp.append(fileRef(currfile, currline))
+                        i += 1
+                    currline += delta
+                elif c & 4 != 0:
+                    currline += c >> 3
                     tmp.append(fileRef(currfile, currline))
                     i += 1
-                currline += delta
-            elif c & 4 != 0:
-                currline += c >> 3
-                tmp.append(fileRef(currfile, currline))
-                i += 1
-            else:
-                b2 = ctypes.c_uint8(ord(f.read(1))).value
-                b3 = ctypes.c_uint8(ord(f.read(1))).value
-                currline = (c >> 3) | (b2 << 5) | (b3 << 13)
-                tmp.append(fileRef(currfile, currline))
-                i += 1
+                else:
+                    b2_byte, b3_byte = f.read(1), f.read(1)
+                    if not b2_byte or not b3_byte: break
+                    b2 = ctypes.c_uint8(ord(b2_byte)).value
+                    b3 = ctypes.c_uint8(ord(b3_byte)).value
+                    currline = (c >> 3) | (b2 << 5) | (b3 << 13)
+                    tmp.append(fileRef(currfile, currline))
+                    i += 1
+            except (IOError, IndexError):
+                break
         self.value = tmp
         return self
 
@@ -1376,8 +1495,8 @@ class Function(Serialisable):
         """
         Resolves (in the Bytecode's debugfiles blob) the name of the file this function originates from. Note that this assumes the first opcode's file is the only file this Function was derived from - Functions that derive from multiple files (such as compiler-generated closures or entrypoints) will be resolved to a single file, sometimes incorrectly.
         """
-        if not self.has_debug or not self.debuginfo:
-            raise ValueError("Cannot get file from non-debug bytecode!")
+        if not self.has_debug or not self.debuginfo or not self.debuginfo.value:
+            raise ValueError("Cannot get file from non-debug or empty-debuginfo bytecode!")
         return self.debuginfo.value[0].resolve(code)
 
     def resolve_nargs(self, code: "Bytecode") -> int:
@@ -1400,7 +1519,7 @@ class Function(Serialisable):
             self.regs.append(tIndex().deserialise(f))
         for _ in range(self.nops.value):
             self.ops.append(Opcode().deserialise(f))
-            if self.ops[-1].op in simple_calls:
+            if self.ops[-1].op in simple_calls and 'fun' in self.ops[-1].df:
                 self.calls.append(self.ops[-1].df["fun"])
         if self.has_debug:
             self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
@@ -1432,7 +1551,7 @@ class Function(Serialisable):
         """
         Append an Opcode to the end of this function.
         """
-        self.insert_op(code, -1, op, debugRef=debugRef)
+        self.insert_op(code, len(self.ops), op, debugRef=debugRef)
         return len(self.ops) - 1
 
     def serialise(self) -> bytes:
@@ -1480,6 +1599,7 @@ class Constant(Serialisable):
         return self
 
     def serialise(self) -> bytes:
+        self.nfields.value = len(self.fields)
         return b"".join(
             [
                 self._global.serialise(),
@@ -1586,25 +1706,22 @@ class Bytecode(Serialisable):
         void = Type()
         void.kind.value = 0  # Void (_NoDataType)
         void.definition = Void()
+        instance.types.append(void)
 
         if not no_extra_types:
             i32 = Type()
             i32.kind.value = 3
             i32.definition = I32()
+            instance.types.append(i32)
 
             f64 = Type()
             f64.kind.value = 6
             f64.definition = F64()
+            instance.types.append(f64)
 
             bool_t = Type()
             bool_t.kind.value = 7
             bool_t.definition = Bool()
-
-        instance.types.append(void)
-
-        if not no_extra_types:
-            instance.types.append(i32)
-            instance.types.append(f64)
             instance.types.append(bool_t)
 
         instance.set_meta()
@@ -1748,34 +1865,33 @@ class Bytecode(Serialisable):
         Internal method to initialize global instances of objects.
         """
         final: Dict[int, Any] = {}
-        for const in self.constants:
-            res: Dict[str, Any] = {}
-            obj = const._global.resolve(self).definition
-            if not isinstance(obj, Obj):
-                dbg_print("WARNING: Skipping non-Obj constant.")  # should literally never happen
-                continue
-            obj_fields = obj.resolve_fields(self)
-            for i, field in enumerate(const.fields):
-                # Field has:
-                # - name: strRef
-                # - type: tIndex
-                # we need to use the type to know how to resolve the const ref to the actual value
-                typ = obj_fields[i].type.resolve(self).definition
-                name = obj_fields[i].name.resolve(self)
-                if isinstance(typ, I32) or isinstance(typ, U8) or isinstance(typ, U16) or isinstance(typ, I64):
-                    res[name] = self.ints[field.value].value
-                elif isinstance(typ, F32) or isinstance(typ, F64):
-                    res[name] = self.floats[field.value].value
-                elif isinstance(typ, Bytes):
-                    res[name] = self.strings.value[field.value]
-                else:
-                    res[name] = field.value
-            if const._global.value == 15283:
-                print(const._global.value, res)
-            final[const._global.value] = res
-        assert len(final) == len(self.constants), (
-            "Not all constants were resolved! This is often due to bad DebugInfo blocks causing buffer overrun, try passing -N to troubleshoot."
-        )
+        if self.constants:
+            for const in self.constants:
+                res: Dict[str, Any] = {}
+                obj = const._global.resolve(self).definition
+                if not isinstance(obj, Obj):
+                    dbg_print("WARNING: Skipping non-Obj constant.")  # should literally never happen
+                    continue
+                obj_fields = obj.resolve_fields(self)
+                for i, field in enumerate(const.fields):
+                    # Field has:
+                    # - name: strRef
+                    # - type: tIndex
+                    # we need to use the type to know how to resolve the const ref to the actual value
+                    typ = obj_fields[i].type.resolve(self).definition
+                    name = obj_fields[i].name.resolve(self)
+                    if isinstance(typ, (I32, U8, U16, I64)):
+                        res[name] = self.ints[field.value].value
+                    elif isinstance(typ, (F32, F64)):
+                        res[name] = self.floats[field.value].value
+                    elif isinstance(typ, Bytes):
+                        res[name] = self.strings.value[field.value]
+                    else:
+                        res[name] = field.value
+                final[const._global.value] = res
+            assert len(final) == len(self.constants), (
+                "Not all constants were resolved! This is often due to bad DebugInfo blocks causing buffer overrun, try passing -N to troubleshoot."
+            )
         self.initialized_globals = final
 
     def fn(self, findex: int, native: bool = True) -> Function | Native:
@@ -1880,7 +1996,8 @@ class Bytecode(Serialisable):
             res += b"".join([func.serialise() for func in tqdm(self.functions)])
         else:
             res += b"".join([func.serialise() for func in self.functions])
-        res += b"".join([constant.serialise() for constant in self.constants])
+        if self.constants:
+            res += b"".join([constant.serialise() for constant in self.constants])
         dbg_print(f"Final size: {hex(len(res))}")
         dbg_print(f"{(datetime.now() - start_time).total_seconds()}s elapsed.")
         return res
@@ -1899,9 +2016,12 @@ class Bytecode(Serialisable):
         self.nglobals.value = len(self.global_types)
         self.nnatives.value = len(self.natives)
         self.nfunctions.value = len(self.functions)
-        if self.version.value >= 4 and self.nconstants:
+        if self.version.value >= 4:
+            if self.nconstants is None: self.nconstants = VarInt()
             self.nconstants.value = len(self.constants)
-        if self.has_debug_info and self.ndebugfiles and self.debugfiles:
+        if self.has_debug_info:
+            if self.ndebugfiles is None: self.ndebugfiles = VarInt()
+            if self.debugfiles is None: self.debugfiles = StringsBlock()
             self.ndebugfiles.value = len(self.debugfiles.value)
 
     def repair(self) -> None:
@@ -2064,9 +2184,7 @@ def get_field_for(code: Bytecode, idx: int) -> Optional[Field]:
     Gets the field for a standalone function index.
     """
     for type in code.types:
-        if type.kind.value == Type.TYPEDEFS.index(Obj):
-            if not isinstance(type.definition, Obj):
-                raise TypeError(f"Expected Obj, got {type.definition}")
+        if isinstance(type.definition, Obj):
             definition: Obj = type.definition
             fields = definition.resolve_fields(code)
             for binding in definition.bindings:  # binding binds a field to a function
@@ -2080,9 +2198,7 @@ def get_proto_for(code: Bytecode, idx: int) -> Optional[Proto]:
     Gets the proto for a standalone function index.
     """
     for type in code.types:
-        if type.kind.value == Type.TYPEDEFS.index(Obj):
-            if not isinstance(type.definition, Obj):
-                raise TypeError(f"Expected Obj, got {type.definition}")
+        if isinstance(type.definition, Obj):
             definition: Obj = type.definition
             for proto in definition.protos:
                 if proto.findex.value == idx:
@@ -2098,9 +2214,7 @@ def full_func_name(code: Bytecode, func: Function | Native) -> str:
     if proto:
         name = proto.name.resolve(code)
         for type in code.types:
-            if type.kind.value == Type.TYPEDEFS.index(Obj):
-                if not isinstance(type.definition, Obj):
-                    continue
+            if isinstance(type.definition, Obj):
                 obj_def: Obj = type.definition
                 for fun in obj_def.protos:
                     if fun.findex.value == func.findex.value:
@@ -2111,9 +2225,7 @@ def full_func_name(code: Bytecode, func: Function | Native) -> str:
         if field:
             name = field.name.resolve(code)
             for type in code.types:
-                if type.kind.value == Type.TYPEDEFS.index(Obj):
-                    if not isinstance(type.definition, Obj):
-                        continue
+                if isinstance(type.definition, Obj):
                     _obj_def: Obj = type.definition
                     fields = _obj_def.resolve_fields(code)
                     for binding in _obj_def.bindings:
