@@ -17,13 +17,13 @@ class MalformedBytecode(CrashlinkError):
     """
 
 
-class NoMagic(CrashlinkError):
+class NoMagic(CrashlinkError, EOFError):
     """
     Raised when no magic b"HLB" can be found in a file.
     """
 
 
-class InvalidOpCode(CrashlinkError):
+class InvalidOpCode(CrashlinkError, ValueError):
     """
     Raised when an invalid opcode is encountered.
     """
