@@ -40,7 +40,7 @@ from .globals import VERSION
 from .interp.vm import VM  # type: ignore
 from .opcodes import opcode_docs, opcodes
 from .pseudo import pseudo
-from .hlc import code_to_c, fn_to_c
+from .hlc import code_to_c
 from hlrun.patch import Patch
 
 
