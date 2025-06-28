@@ -2247,6 +2247,20 @@ def partial_func_name(code: Bytecode, func: Function | Native) -> str:
             return field.name.resolve(code)
     return "<none>"
 
+def hl_hash(b: str) -> int:
+    """
+    Calculates a hash for a given string.
+    """
+    h = 0
+    for char in b:
+        h = h * 223 + ord(char)
+        
+        h &= 0xFFFFFFFF
+        
+        if h & 0x80000000:
+            h -= 0x100000000
+
+    return h % 0x1FFFFF7B
 
 __all__ = [
     "full_func_name",
