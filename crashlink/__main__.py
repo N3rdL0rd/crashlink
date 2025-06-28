@@ -701,6 +701,42 @@ class Commands(BaseCommands):
         except IndexError:
             print("String not found.")
         print("String set.")
+        
+    def xref(self, args: List[str]) -> None:
+        """Prints all function cross-references to a given fIndex. `xref <idx>`"""
+        if len(args) == 0:
+            print("Usage: xref <index>")
+            return
+        try:
+            index = int(args[0])
+        except ValueError:
+            print("Invalid index.")
+            return
+
+        target_func = None
+        for func in self.code.functions:
+            if func.findex.value == index:
+                target_func = func
+                break
+        for native in self.code.natives:
+            if native.findex.value == index:
+                target_func = native
+                break
+
+        if not target_func:
+            print("Function not found.")
+            return
+
+        xrefs = target_func.called_by(self.code)
+
+        if not xrefs:
+            print(f"No cross-references found for function f@{index}.")
+            return
+
+        print(f"Cross-references to f@{index} ({full_func_name(self.code, target_func)}):")
+        for i, caller_findex in enumerate(xrefs):
+            caller = caller_findex.resolve(self.code)
+            print(f"  {i}. {disasm.func_header(self.code, caller)}")
 
     def enum(self, args: List[str]) -> None:
         """Prints information about an enum by tIndex. `enum <index>`"""
