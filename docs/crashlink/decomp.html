@@ -1982,17 +1982,25 @@ def get_type(self) -&gt; Type:
                         left = self.locals[op.df[&#34;a&#34;].value]
                         right = self.locals[op.df[&#34;b&#34;].value]
                     else:
-                        left = self.locals[op.df.get(&#34;cond&#34;, op.df.get(&#34;reg&#34;)).value]
+                        l = op.df.get(&#34;cond&#34;, op.df.get(&#34;reg&#34;))
+                        assert l is not None
+                        left = self.locals[l.value]
 
                     condition_expr = IRBoolExpr(self.code, cond, left, right)
                     true_block = (
-                        self._lift_block(true_branch, visited.copy(), current_loop_scope_nodes=current_loop_scope_nodes)
+                        self._lift_block(
+                            true_branch,
+                            visited.copy(),
+                            current_loop_scope_nodes=current_loop_scope_nodes,
+                        )
                         if should_lift_t
                         else IRBlock(self.code)
                     )
                     false_block = (
                         self._lift_block(
-                            false_branch, visited.copy(), current_loop_scope_nodes=current_loop_scope_nodes
+                            false_branch,
+                            visited.copy(),
+                            current_loop_scope_nodes=current_loop_scope_nodes,
                         )
                         if should_lift_f
                         else IRBlock(self.code)
@@ -2015,7 +2023,11 @@ def get_type(self) -&gt; Type:
                             dbg_print(&#34;WARNING: No convergence point found for conditional branches&#34;)
                     if not next_node:
                         raise DecompError(&#34;No next node found for conditional branches&#34;)
-                    next_block = self._lift_block(next_node, visited, current_loop_scope_nodes=current_loop_scope_nodes)
+                    next_block = self._lift_block(
+                        next_node,
+                        visited,
+                        current_loop_scope_nodes=current_loop_scope_nodes,
+                    )
                     block.statements.append(next_block)
                 else:
                     # convert jumps to IRPrimitiveJump so that later lifting stages can handle them
@@ -2136,7 +2148,9 @@ def get_type(self) -&gt; Type:
                     return block
                 elif target_node:
                     next_block = self._lift_block(
-                        target_node, visited, current_loop_scope_nodes=current_loop_scope_nodes
+                        target_node,
+                        visited,
+                        current_loop_scope_nodes=current_loop_scope_nodes,
                     )
                     block.statements.append(next_block)
 
@@ -2561,7 +2575,11 @@ def get_children(self) -&gt; List[IRStatement]:
             copied_node_for_branching = node_map[original_cfg_node]
             for target_in_original_cfg, edge_type in original_cfg_node.branches:
                 if target_in_original_cfg in node_map:
-                    self.add_branch(copied_node_for_branching, node_map[target_in_original_cfg], edge_type)
+                    self.add_branch(
+                        copied_node_for_branching,
+                        node_map[target_in_original_cfg],
+                        edge_type,
+                    )
 
         if find_entry_intelligently and self.nodes:
             entry_candidates = []

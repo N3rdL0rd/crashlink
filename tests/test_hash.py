@@ -7,7 +7,7 @@ from crashlink.hlc import hl_hash_utf8
 CSV_PATH = os.path.join(os.path.dirname(__file__), "hashes.csv")
 
 
-@pytest.skip("Failing")
+@pytest.mark.skip("Failing")
 @pytest.mark.skipif(not os.path.exists(CSV_PATH), reason=f"Test dataset not found: {CSV_PATH}")
 def test_hash():
     """

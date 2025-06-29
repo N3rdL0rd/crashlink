@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.5">
+<title>crashlink.hlc API documentation</title>
+<meta name="description" content="">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>crashlink.hlc</code></h1>
+</header>
+<section id="section-intro">
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="crashlink.hlc.code_to_c"><code class="name flex">
+<span>def <span class="ident">code_to_c</span></span>(<span>code: Bytecode) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def code_to_c(code: Bytecode) -&gt; str:
+    &#34;&#34;&#34;
+    Translates a loaded Bytecode object into a single C source file.
+    &#34;&#34;&#34;
+    res = []
+
+    def line(*args: Any) -&gt; None:
+        res.append(&#34; &#34;.join(str(arg) for arg in args))
+
+    sec: Callable[[str], None] = lambda section: res.append(f&#34;\n\n/*---------- {section} ----------*/\n&#34;)
+
+    line(&#34;// Generated by crashlink&#34;)
+    line(&#34;#include &lt;hlc.h&gt;&#34;)
+
+    sec(&#34;Natives &amp; Abstracts Forward Declarations&#34;)
+    res += generate_natives(code)
+
+    sec(&#34;Structs&#34;)
+    res += generate_structs(code)
+
+    sec(&#34;Types&#34;)
+    res += generate_types(code)
+
+    sec(&#34;Globals &amp; Strings&#34;)
+    res += generate_globals(code)
+
+    sec(&#34;Entrypoint&#34;)
+    res += generate_entry(code)
+
+    # TODO: Add generation for:
+    # - Hash initialization (maybe we can live without it? i think it&#39;s just pre-caching for performance)
+    # - Haxe functions
+
+    return &#34;\n&#34;.join(res)</code></pre>
+</details>
+<div class="desc"><p>Translates a loaded Bytecode object into a single C source file.</p></div>
+</dd>
+<dt id="crashlink.hlc.ctype"><code class="name flex">
+<span>def <span class="ident">ctype</span></span>(<span>code: Bytecode, typ: Type, i: int) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def ctype(code: Bytecode, typ: Type, i: int) -&gt; str:
+    &#34;&#34;&#34;Converts a Type object into a C type string representation, including pointers.&#34;&#34;&#34;
+    base_name, ptr_level = _ctype_no_ptr(code, typ, i)
+    return base_name + (&#34;*&#34; * ptr_level) if ptr_level &gt; 0 else base_name</code></pre>
+</details>
+<div class="desc"><p>Converts a Type object into a C type string representation, including pointers.</p></div>
+</dd>
+<dt id="crashlink.hlc.ctype_no_ptr"><code class="name flex">
+<span>def <span class="ident">ctype_no_ptr</span></span>(<span>code: Bytecode, typ: Type, i: int) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def ctype_no_ptr(code: Bytecode, typ: Type, i: int) -&gt; str:
+    &#34;&#34;&#34;Converts a Type object into a C type string representation, excluding pointers.&#34;&#34;&#34;
+    base_name, _ = _ctype_no_ptr(code, typ, i)
+    return base_name</code></pre>
+</details>
+<div class="desc"><p>Converts a Type object into a C type string representation, excluding pointers.</p></div>
+</dd>
+<dt id="crashlink.hlc.generate_entry"><code class="name flex">
+<span>def <span class="ident">generate_entry</span></span>(<span>code: Bytecode) ‑> List[str]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def generate_entry(code: Bytecode) -&gt; List[str]:
+    &#34;&#34;&#34;Generates the C entry point for the HLC module.&#34;&#34;&#34;
+    res = []
+    indent = Indenter()
+
+    def line(*args: Any) -&gt; None:
+        res.append(indent.current_indent + &#34; &#34;.join(str(arg) for arg in args))
+
+    line(&#34;void hl_entry_point() {&#34;)
+    with indent:
+        line(&#34;hl_module_context ctx;&#34;)
+        line(&#34;hl_alloc_init(&amp;ctx.alloc);&#34;)
+        line(&#34;// ctx.functions_ptrs = hl_functions_ptrs;&#34;)  # TODO
+        line(&#34;// ctx.functions_types = hl_functions_types;&#34;)
+        line(&#34;hl_init_types(&amp;ctx);&#34;)
+        line(&#34;hl_init_hashes();&#34;)
+        line(&#34;hl_init_roots();&#34;)
+        line(&#34;// fun$init();&#34;)
+    line(&#34;}&#34;)
+    return res</code></pre>
+</details>
+<div class="desc"><p>Generates the C entry point for the HLC module.</p></div>
+</dd>
+<dt id="crashlink.hlc.generate_globals"><code class="name flex">
+<span>def <span class="ident">generate_globals</span></span>(<span>code: Bytecode) ‑> List[str]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def generate_globals(code: Bytecode) -&gt; List[str]:
+    &#34;&#34;&#34;Generates C code for all global variables and their initialization.&#34;&#34;&#34;
+    res, indent = [], Indenter()
+
+    def line(*args: Any) -&gt; None:
+        res.append(indent.current_indent + &#34; &#34;.join(str(arg) for arg in args))
+
+    if not code.global_types:
+        return res
+
+    all_types = code.gather_types()
+    line(&#34;// Global variables&#34;)
+    for i, g_type_ptr in enumerate(code.global_types):
+        g_type = g_type_ptr.resolve(code)
+        c_type_str = ctype(code, g_type, all_types.index(g_type))
+        line(f&#34;{c_type_str} g${i} = 0;&#34;)
+
+    for const in code.constants:
+        obj = const._global.resolve(code).definition
+        objIdx = const._global.partial_resolve(code).value
+        assert isinstance(obj, Obj), (
+            f&#34;Expected global constant to be an Obj, got {type(obj).__name__}. This should never happen.&#34;
+        )
+        fields = obj.resolve_fields(code)
+        const_fields: List[str] = []
+        for i, field in enumerate(const.fields):
+            typ = fields[i].type.resolve(code).definition
+            name = fields[i].name.resolve(code)
+            if isinstance(typ, (Obj, Struct)):
+                raise MalformedBytecode(&#34;Global constants cannot contain other initialized Objs or Structs.&#34;)
+            elif isinstance(typ, (I32, U8, U16, I64)):
+                const_fields.append(str(code.ints[field.value].value))
+            elif isinstance(typ, (F32, F64)):
+                const_fields.append(str(code.floats[field.value].value))
+            elif isinstance(typ, Bytes):
+                val = code.strings.value[field.value]
+                c_escaped_str = val.replace(&#34;\\&#34;, &#34;\\\\&#34;).replace(&#39;&#34;&#39;, &#39;\\&#34;&#39;).replace(&#34;\n&#34;, &#34;\\n&#34;).replace(&#34;\r&#34;, &#34;\\r&#34;)
+                const_fields.append(f&#39;(vbyte*)USTR(&#34;{c_escaped_str}&#34;)&#39;)
+        line(f&#34;static struct _obj${objIdx} const_g${const._global.value} = {{&amp;t${objIdx}, {&#39;, &#39;.join(const_fields)}}};&#34;)
+
+    line(&#34;\nvoid hl_init_roots() {&#34;)
+    with indent:
+        for const in code.constants:
+            line(f&#34;g${const._global.value} = &amp;const_g${const._global.value};&#34;)
+        for i, g_type_ptr in enumerate(code.global_types):
+            g_type = g_type_ptr.resolve(code)
+            if is_gc_ptr(g_type):
+                line(f&#34;hl_add_root((void**)&amp;g${i});&#34;)
+    line(&#34;}&#34;)
+    return res</code></pre>
+</details>
+<div class="desc"><p>Generates C code for all global variables and their initialization.</p></div>
+</dd>
+<dt id="crashlink.hlc.generate_natives"><code class="name flex">
+<span>def <span class="ident">generate_natives</span></span>(<span>code: Bytecode) ‑> List[str]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def generate_natives(code: Bytecode) -&gt; List[str]:
+    &#34;&#34;&#34;Generates forward declarations for abstract types and native function prototypes.&#34;&#34;&#34;
+    res = []
+    indent = Indenter()
+
+    def line(*args: Any) -&gt; None:
+        res.append(indent.current_indent + &#34; &#34;.join(str(arg) for arg in args))
+
+    line(&#34;// Abstract type forward declarations&#34;)
+    all_types = code.gather_types()
+    abstract_names = set()
+    for typ in all_types:
+        if isinstance(typ.definition, Abstract):
+            name = typ.definition.name.resolve(code)
+            if name not in {&#34;hl_tls&#34;, &#34;hl_mutex&#34;, &#34;hl_thread&#34;}:
+                abstract_names.add(sanitize_ident(name))
+
+    for name in sorted(list(abstract_names)):
+        line(f&#34;typedef struct _{name} {name};&#34;)
+
+    res.append(&#34;&#34;)
+
+    line(&#34;// Native function prototypes&#34;)
+    sorted_natives = sorted(code.natives, key=lambda n: (n.lib.resolve(code), n.name.resolve(code)))
+
+    for native in sorted_natives:
+        func_type = native.type.resolve(code)
+        if not isinstance(func_type.definition, Fun):
+            continue
+        fun_def = func_type.definition
+
+        lib_name = native.lib.resolve(code).lstrip(&#34;?&#34;)
+        c_func_name = f&#34;{&#39;hl&#39; if lib_name == &#39;std&#39; else lib_name}_{native.name.resolve(code)}&#34;
+        ret_type_str = ctype(code, fun_def.ret.resolve(code), fun_def.ret.value)
+        arg_types = [ctype(code, arg.resolve(code), arg.value) for arg in fun_def.args]
+        args_str = &#34;, &#34;.join(arg_types) if arg_types else &#34;void&#34;
+
+        if c_func_name not in {&#34;hl_tls_set&#34;}:  # filter out built-ins we don&#39;t want to redefine
+            line(f&#34;HL_API {ret_type_str} {c_func_name}({args_str});&#34;)
+    return res</code></pre>
+</details>
+<div class="desc"><p>Generates forward declarations for abstract types and native function prototypes.</p></div>
+</dd>
+<dt id="crashlink.hlc.generate_structs"><code class="name flex">
+<span>def <span class="ident">generate_structs</span></span>(<span>code: Bytecode) ‑> List[str]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def generate_structs(code: Bytecode) -&gt; List[str]:
+    &#34;&#34;&#34;Generates C struct forward declarations and definitions for Haxe classes.&#34;&#34;&#34;
+    res = []
+    indent = Indenter()
+
+    def line(*args: Any) -&gt; None:
+        res.append(indent.current_indent + &#34; &#34;.join(str(arg) for arg in args))
+
+    types = code.gather_types()
+    struct_map = {i: t for i, t in enumerate(types) if isinstance(t.definition, (Struct, Obj))}
+    if not struct_map:
+        return res
+
+    line(&#34;// Class/Struct forward definitions&#34;)
+    for i in sorted(struct_map.keys()):
+        dfn = struct_map[i].definition
+        assert isinstance(dfn, (Obj, Struct)), f&#34;Expected definition to be Obj or Struct, got {type(dfn).__name__}.&#34;
+        line(f&#34;typedef struct _obj${i} *obj${i}; /* {dfn.name.resolve(code)} */&#34;)
+    res.append(&#34;&#34;)
+
+    line(&#34;// Class/Struct definitions&#34;)
+    for i, typ in sorted(struct_map.items()):
+        df = typ.definition
+        assert isinstance(df, (Obj, Struct)), f&#34;Expected definition to be Obj or Struct, got {type(df).__name__}.&#34;
+        line(f&#34;struct _obj${i} {{ /* {df.name.resolve(code)} */&#34;)
+        with indent:
+            line(&#34;hl_type *$type;&#34;)
+            for f in df.resolve_fields(code):
+                field_type = ctype(code, f.type.resolve(code), f.type.value)
+                # A STRUCT FIELD IS A C IDENTIFIER, SO IT MUST BE SANITIZED.
+                field_name = sanitize_ident(f.name.resolve(code))
+                line(f&#34;{field_type} {field_name};&#34;)
+        line(&#34;};&#34;)
+    return res</code></pre>
+</details>
+<div class="desc"><p>Generates C struct forward declarations and definitions for Haxe classes.</p></div>
+</dd>
+<dt id="crashlink.hlc.generate_types"><code class="name flex">
+<span>def <span class="ident">generate_types</span></span>(<span>code: Bytecode) ‑> List[str]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def generate_types(code: Bytecode) -&gt; List[str]:
+    &#34;&#34;&#34;Generates the C data and initializers for all hl_type instances.&#34;&#34;&#34;
+    res = []
+    indent = Indenter()
+
+    def line(*args: Any) -&gt; None:
+        res.append(indent.current_indent + &#34; &#34;.join(str(arg) for arg in args))
+
+    types = code.gather_types()
+
+    line(&#34;// Type shells&#34;)
+    for i, typ in enumerate(types):
+        line(f&#34;hl_type t${i} = {{ {KIND_SHELLS[typ.kind.value]} }};&#34;)
+
+    line(&#34;\n// Type data&#34;)
+    for i, typ in enumerate(types):
+        df = typ.definition
+        if isinstance(df, (Obj, Struct)):
+            if df.fields:
+                vals = &#34;, &#34;.join(
+                    f&#39;{{(const uchar*)USTR(&#34;{f.name.resolve(code)}&#34;), &amp;t${f.type.value}, {hl_hash_utf8(f.name.resolve(code))}}}&#39;
+                    for f in df.fields
+                )
+                line(f&#34;static hl_obj_field fieldst${i}[] = {{{vals}}};&#34;)
+            if df.protos:
+                vals = &#34;, &#34;.join(
+                    f&#39;{{(const uchar*)USTR(&#34;{p.name.resolve(code)}&#34;), {p.findex.value}, {p.pindex.value}, {hl_hash_utf8(p.name.resolve(code))}}}&#39;
+                    for p in df.protos
+                )
+                line(f&#34;static hl_obj_proto protot${i}[] = {{{vals}}};&#34;)
+            if df.bindings:
+                bindings = &#34;, &#34;.join(f&#34;{b.field.value}, {b.findex.value}&#34; for b in df.bindings)
+                line(f&#34;static int bindingst${i}[] = {{{bindings}}};&#34;)
+            line(f&#34;static hl_type_obj objt${i} = {{&#34;)
+            with indent:
+                line(f&#34;{df.nfields}, {df.nprotos}, {df.nbindings},&#34;)
+                line(f&#39;(const uchar*)USTR(&#34;{df.name.resolve(code)}&#34;),&#39;)
+                line(f&#34;&amp;t${df.super.value},&#34; if df.super.value &gt;= 0 else &#34;NULL,&#34;)
+                line(f&#34;fieldst${i},&#34; if df.fields else &#34;NULL,&#34;)
+                line(f&#34;protot${i},&#34; if df.protos else &#34;NULL,&#34;)
+                line(f&#34;bindingst${i},&#34; if df.bindings else &#34;NULL,&#34;)
+            line(&#34;};&#34;)
+        elif isinstance(df, Fun):
+            if df.args:
+                line(f&#34;static hl_type *fargst${i}[] = {{{&#39;, &#39;.join(f&#39;&amp;t${arg.value}&#39; for arg in df.args)}}};&#34;)
+                line(f&#34;static hl_type_fun tfunt${i} = {{fargst${i}, &amp;t${df.ret.value}, {df.nargs}}};&#34;)
+            else:
+                line(f&#34;static hl_type_fun tfunt${i} = {{NULL, &amp;t${df.ret.value}, 0}};&#34;)
+        elif isinstance(df, Virtual):
+            if df.fields:
+                vals = &#34;, &#34;.join(
+                    f&#39;{{(const uchar*)USTR(&#34;{f.name.resolve(code)}&#34;), &amp;t${f.type.value}, {hl_hash_utf8(f.name.resolve(code))}}}&#39;
+                    for f in df.fields
+                )
+                line(f&#34;static hl_obj_field vfieldst${i}[] = {{{vals}}};&#34;)
+                line(f&#34;static hl_type_virtual virtt${i} = {{vfieldst${i}, {df.nfields}}};&#34;)
+            else:
+                line(f&#34;static hl_type_virtual virtt${i} = {{NULL, 0}};&#34;)
+        elif isinstance(df, Enum):
+            # TODO enum
+            pass
+
+    line(&#34;\n// Type initializer&#34;)
+    line(&#34;void hl_init_types( hl_module_context *ctx ) {&#34;)
+    with indent:
+        for j, typ in enumerate(types):
+            df = typ.definition
+            if isinstance(df, (Obj, Struct)):
+                line(f&#34;objt${j}.m = ctx;&#34;)
+                if df._global and df._global.value:
+                    line(
+                        f&#34;objt${j}.global_value = (void**)&amp;g${df._global.value - 1};&#34;
+                    )  # FIXME: don&#39;t know if -1 is correct?
+                line(f&#34;t${j}.obj = &amp;objt${j};&#34;)
+            elif isinstance(df, Fun):
+                line(f&#34;t${j}.fun = &amp;tfunt${j};&#34;)
+            elif isinstance(df, Virtual):
+                line(f&#34;t${j}.virt = &amp;virtt${j};&#34;)
+                line(f&#34;hl_init_virtual(&amp;t${j},ctx);&#34;)
+            elif isinstance(df, Enum):
+                # TODO enum
+                pass
+            elif isinstance(df, (Null, Ref)):
+                line(f&#34;t${j}.tparam = &amp;t${df.type.value};&#34;)
+    line(&#34;}\n&#34;)
+    return res</code></pre>
+</details>
+<div class="desc"><p>Generates the C data and initializers for all hl_type instances.</p></div>
+</dd>
+<dt id="crashlink.hlc.hash_string"><code class="name flex">
+<span>def <span class="ident">hash_string</span></span>(<span>s: str) ‑> int</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def hash_string(s: str) -&gt; int:
+    &#34;&#34;&#34;Hash a string by encoding it as UTF-8 bytes&#34;&#34;&#34;
+    return hl_hash(s.encode(&#34;utf-8&#34;))</code></pre>
+</details>
+<div class="desc"><p>Hash a string by encoding it as UTF-8 bytes</p></div>
+</dd>
+<dt id="crashlink.hlc.hl_hash"><code class="name flex">
+<span>def <span class="ident">hl_hash</span></span>(<span>name: bytes) ‑> int</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def hl_hash(name: bytes) -&gt; int:
+    &#34;&#34;&#34;General hash function - processes until null terminator&#34;&#34;&#34;
+    h = 0
+    for byte_val in name:
+        if byte_val == 0:
+            break
+        h = (223 * h + byte_val) &amp; 0xFFFFFFFF
+    h = h % 0x1FFFFF7B
+    return h if h &lt; 0x7FFFFFFF else h - 0x100000000</code></pre>
+</details>
+<div class="desc"><p>General hash function - processes until null terminator</p></div>
+</dd>
+<dt id="crashlink.hlc.hl_hash_utf8"><code class="name flex">
+<span>def <span class="ident">hl_hash_utf8</span></span>(<span>name: str) ‑> int</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def hl_hash_utf8(name: str) -&gt; int:
+    &#34;&#34;&#34;Hash UTF-8 string until null terminator&#34;&#34;&#34;
+    h = 0
+    for char in name:
+        char_val = ord(char)
+        if char_val == 0:
+            break
+        h = (223 * h + char_val) &amp; 0xFFFFFFFF
+    h = h % 0x1FFFFF7B
+    return h if h &lt; 0x7FFFFFFF else h - 0x100000000</code></pre>
+</details>
+<div class="desc"><p>Hash UTF-8 string until null terminator</p></div>
+</dd>
+<dt id="crashlink.hlc.is_gc_ptr"><code class="name flex">
+<span>def <span class="ident">is_gc_ptr</span></span>(<span>typ: Type) ‑> bool</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_gc_ptr(typ: Type) -&gt; bool:
+    &#34;&#34;&#34;Checks if a type is a pointer that the GC needs to track.&#34;&#34;&#34;
+    NON_GC_POINTER_KINDS = {
+        Type.Kind.VOID.value,
+        Type.Kind.U8.value,
+        Type.Kind.U16.value,
+        Type.Kind.I32.value,
+        Type.Kind.I64.value,
+        Type.Kind.F32.value,
+        Type.Kind.F64.value,
+        Type.Kind.BOOL.value,
+        Type.Kind.TYPETYPE.value,
+        Type.Kind.REF.value,
+        Type.Kind.METHOD.value,
+        Type.Kind.PACKED.value,
+    }
+    return typ.kind.value not in NON_GC_POINTER_KINDS</code></pre>
+</details>
+<div class="desc"><p>Checks if a type is a pointer that the GC needs to track.</p></div>
+</dd>
+<dt id="crashlink.hlc.sanitize_ident"><code class="name flex">
+<span>def <span class="ident">sanitize_ident</span></span>(<span>name: str) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def sanitize_ident(name: str) -&gt; str:
+    &#34;&#34;&#34;
+    Sanitizes a Haxe identifier to ensure it&#39;s a valid C identifier.
+    If the name is a C keyword or starts with &#39;__&#39;, it&#39;s prefixed with &#39;_hx_&#39;.
+    &#34;&#34;&#34;
+    if name in KEYWORDS or name.startswith(&#34;__&#34;):
+        return &#34;_hx_&#34; + name
+    return name</code></pre>
+</details>
+<div class="desc"><p>Sanitizes a Haxe identifier to ensure it's a valid C identifier.
+If the name is a C keyword or starts with '__', it's prefixed with '<em>hx</em>'.</p></div>
+</dd>
+</dl>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="crashlink.hlc.Indenter"><code class="flex name class">
+<span>class <span class="ident">Indenter</span></span>
+<span>(</span><span>indent_char: str = '
+')</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Indenter:
+    &#34;&#34;&#34;A context manager for dynamically handling indentation levels.&#34;&#34;&#34;
+
+    indent_char: str
+    level: int
+    current_indent: str
+
+    def __init__(self, indent_char: str = &#34;    &#34;) -&gt; None:
+        self.indent_char = indent_char
+        self.level = 0
+        self.current_indent = &#34;&#34;
+
+    def __enter__(self) -&gt; &#34;Indenter&#34;:
+        self.level += 1
+        self.current_indent = self.indent_char * self.level
+        return self
+
+    def __exit__(self, exc_type: Optional[Any], exc_val: Optional[Any], exc_tb: Optional[Any]) -&gt; Literal[False]:
+        self.level -= 1
+        self.current_indent = self.indent_char * self.level
+        return False</code></pre>
+</details>
+<div class="desc"><p>A context manager for dynamically handling indentation levels.</p></div>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashlink.hlc.Indenter.current_indent"><code class="name">var <span class="ident">current_indent</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.hlc.Indenter.indent_char"><code class="name">var <span class="ident">indent_char</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.hlc.Indenter.level"><code class="name">var <span class="ident">level</span> : int</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashlink" href="index.html">crashlink</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="two-column">
+<li><code><a title="crashlink.hlc.code_to_c" href="#crashlink.hlc.code_to_c">code_to_c</a></code></li>
+<li><code><a title="crashlink.hlc.ctype" href="#crashlink.hlc.ctype">ctype</a></code></li>
+<li><code><a title="crashlink.hlc.ctype_no_ptr" href="#crashlink.hlc.ctype_no_ptr">ctype_no_ptr</a></code></li>
+<li><code><a title="crashlink.hlc.generate_entry" href="#crashlink.hlc.generate_entry">generate_entry</a></code></li>
+<li><code><a title="crashlink.hlc.generate_globals" href="#crashlink.hlc.generate_globals">generate_globals</a></code></li>
+<li><code><a title="crashlink.hlc.generate_natives" href="#crashlink.hlc.generate_natives">generate_natives</a></code></li>
+<li><code><a title="crashlink.hlc.generate_structs" href="#crashlink.hlc.generate_structs">generate_structs</a></code></li>
+<li><code><a title="crashlink.hlc.generate_types" href="#crashlink.hlc.generate_types">generate_types</a></code></li>
+<li><code><a title="crashlink.hlc.hash_string" href="#crashlink.hlc.hash_string">hash_string</a></code></li>
+<li><code><a title="crashlink.hlc.hl_hash" href="#crashlink.hlc.hl_hash">hl_hash</a></code></li>
+<li><code><a title="crashlink.hlc.hl_hash_utf8" href="#crashlink.hlc.hl_hash_utf8">hl_hash_utf8</a></code></li>
+<li><code><a title="crashlink.hlc.is_gc_ptr" href="#crashlink.hlc.is_gc_ptr">is_gc_ptr</a></code></li>
+<li><code><a title="crashlink.hlc.sanitize_ident" href="#crashlink.hlc.sanitize_ident">sanitize_ident</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="crashlink.hlc.Indenter" href="#crashlink.hlc.Indenter">Indenter</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.hlc.Indenter.current_indent" href="#crashlink.hlc.Indenter.current_indent">current_indent</a></code></li>
+<li><code><a title="crashlink.hlc.Indenter.indent_char" href="#crashlink.hlc.Indenter.indent_char">indent_char</a></code></li>
+<li><code><a title="crashlink.hlc.Indenter.level" href="#crashlink.hlc.Indenter.level">level</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+</footer>
+</body>
+</html>

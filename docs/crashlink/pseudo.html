@@ -66,7 +66,7 @@ el.replaceWith(d);
     base_indent = 0
 
     # Function Signature
-    func_name_str = disasm.partial_func_name(code, func_core) or f&#34;f{func_core.findex.value}&#34;
+    func_name_str = code.partial_func_name(func_core) or f&#34;f{func_core.findex.value}&#34;
     static_kw = &#34;static &#34; if disasm.is_static(code, func_core) else &#34;&#34;
 
     params_str_list = []
@@ -107,7 +107,7 @@ el.replaceWith(d);
     output_lines.append(f&#34;{_indent_str(base_indent)}}}&#34;)
 
     # Attempt to wrap in a class for context if class name can be derived
-    full_name = disasm.full_func_name(code, func_core)
+    full_name = code.full_func_name(func_core)
     class_name_suggestion = &#34;DecompiledClass&#34;
     if &#34;.&#34; in full_name:
         class_name_part = full_name.split(&#34;.&#34;)[0]

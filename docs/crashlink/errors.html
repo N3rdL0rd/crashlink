@@ -131,7 +131,7 @@ el.replaceWith(d);
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class InvalidOpCode(CrashlinkError):
+<pre><code class="python">class InvalidOpCode(CrashlinkError, ValueError):
     &#34;&#34;&#34;
     Raised when an invalid opcode is encountered.
     &#34;&#34;&#34;</code></pre>
@@ -140,6 +140,7 @@ el.replaceWith(d);
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.errors.CrashlinkError" href="#crashlink.errors.CrashlinkError">CrashlinkError</a></li>
+<li>builtins.ValueError</li>
 <li>builtins.Exception</li>
 <li>builtins.BaseException</li>
 </ul>
@@ -175,7 +176,7 @@ el.replaceWith(d);
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class NoMagic(CrashlinkError):
+<pre><code class="python">class NoMagic(CrashlinkError, EOFError):
     &#34;&#34;&#34;
     Raised when no magic b&#34;HLB&#34; can be found in a file.
     &#34;&#34;&#34;</code></pre>
@@ -184,6 +185,7 @@ el.replaceWith(d);
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.errors.CrashlinkError" href="#crashlink.errors.CrashlinkError">CrashlinkError</a></li>
+<li>builtins.EOFError</li>
 <li>builtins.Exception</li>
 <li>builtins.BaseException</li>
 </ul>

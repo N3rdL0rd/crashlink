@@ -291,7 +291,7 @@ def generate_structs(code: Bytecode) -> List[str]:
     res = []
     indent = Indenter()
 
-    def line(*args: Any) ->None:
+    def line(*args: Any) -> None:
         res.append(indent.current_indent + " ".join(str(arg) for arg in args))
 
     types = code.gather_types()
@@ -327,7 +327,7 @@ def generate_types(code: Bytecode) -> List[str]:
     res = []
     indent = Indenter()
 
-    def line(*args: Any) ->None:
+    def line(*args: Any) -> None:
         res.append(indent.current_indent + " ".join(str(arg) for arg in args))
 
     types = code.gather_types()
@@ -433,7 +433,7 @@ def generate_globals(code: Bytecode) -> List[str]:
     """Generates C code for all global variables and their initialization."""
     res, indent = [], Indenter()
 
-    def line(*args: Any) ->None:
+    def line(*args: Any) -> None:
         res.append(indent.current_indent + " ".join(str(arg) for arg in args))
 
     if not code.global_types:
@@ -509,7 +509,7 @@ def code_to_c(code: Bytecode) -> str:
     """
     res = []
 
-    def line(*args: Any) ->None:
+    def line(*args: Any) -> None:
         res.append(" ".join(str(arg) for arg in args))
 
     sec: Callable[[str], None] = lambda section: res.append(f"\n\n/*---------- {section} ----------*/\n")
