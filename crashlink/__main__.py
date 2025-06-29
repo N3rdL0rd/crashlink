@@ -17,7 +17,7 @@ import webbrowser
 from typing import Callable, Dict, List, Tuple, Set
 from functools import wraps
 
-from crashlink.hlc import code_to_c  # type: ignore[attr-defined]
+from crashlink.hlc import code_to_c
 
 from . import decomp, disasm, globals
 from .asm import AsmFile
