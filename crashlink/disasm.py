@@ -27,8 +27,6 @@ from .core import (
     Virtual,
     Void,
     fileRef,
-    full_func_name,
-    partial_func_name,
     tIndex,
     Enum,
 )
@@ -75,7 +73,7 @@ def func_header(code: Bytecode, func: Function | Native) -> str:
     if isinstance(func, Native):
         return native_header(code, func)
     assert isinstance(func, Function)
-    name = full_func_name(code, func)
+    name = code.full_func_name(func)
     fun_type = func.type.resolve(code).definition
     if isinstance(fun_type, Fun):
         fun: Fun = fun_type
@@ -90,7 +88,7 @@ def func_header_html(code: Bytecode, func: Function | Native) -> str:
     if isinstance(func, Native):
         return native_header(code, func)
     assert isinstance(func, Function)
-    name = partial_func_name(code, func)
+    name = code.partial_func_name(func)
     fun_type = func.type.resolve(code).definition
     if isinstance(fun_type, Fun):
         fun: Fun = fun_type
@@ -286,7 +284,7 @@ def pseudo_from_op(
         case "Call1":
             return f"reg{op.df['dst']} = f@{op.df['fun']}(reg{op.df['arg0']})"
         case "Call2":
-            fun = full_func_name(code, code.fn(op.df["fun"].value))
+            fun = code.full_func_name(code.fn(op.df["fun"].value))
             return (
                 f"reg{op.df['dst']} = f@{op.df['fun']}({', '.join([f'reg{op.df[arg]}' for arg in ['arg0', 'arg1']])})"
             )
@@ -523,6 +521,4 @@ __all__ = [
     "func",
     "to_asm",
     "from_asm",
-    "partial_func_name",
-    "full_func_name",
 ]

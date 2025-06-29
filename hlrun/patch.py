@@ -249,7 +249,7 @@ if USE_CRASHLINK:
                 else:
                     mtch: Optional[Function] = None
                     for fn in code.functions:
-                        if full_func_name(code, fn) == identifier:
+                        if code.full_func_name(fn) == identifier:
                             mtch = fn
                     if not mtch:
                         raise NameError(f"No such function '{identifier}'")
@@ -264,7 +264,7 @@ if USE_CRASHLINK:
                 else:
                     mtch = None
                     for fn in code.functions:
-                        if full_func_name(code, fn) == identifier:
+                        if code.full_func_name(fn) == identifier:
                             mtch = fn
                     if not mtch:
                         raise NameError(f"No such function '{identifier}'")

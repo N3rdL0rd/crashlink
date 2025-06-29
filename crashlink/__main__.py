@@ -17,13 +17,15 @@ import webbrowser
 from typing import Callable, Dict, List, Tuple, Set
 from functools import wraps
 
+from crashlink.hlc import code_to_c  # type: ignore[attr-defined]
+
 from . import decomp, disasm, globals
 from .asm import AsmFile
 from .core import (
     Bytecode,
+    Function,
     Native,
     Virtual,
-    full_func_name,
     tIndex,
     strRef,
     gIndex,
@@ -40,7 +42,6 @@ from .globals import VERSION
 from .interp.vm import VM  # type: ignore
 from .opcodes import opcode_docs, opcodes
 from .pseudo import pseudo
-from .hlc import code_to_c
 from hlrun.patch import Patch
 
 
@@ -447,7 +448,7 @@ class Commands(BaseCommands):
         with open(args[0], "wb") as f:
             f.write(ser)
         print("Done!")
-        
+
     def nativelibs(self, args: List[str]) -> None:
         """Prints all unique native dynlibs used by the bytecode. `nativelibs`"""
         native_libs: Set[str] = set()
@@ -701,7 +702,7 @@ class Commands(BaseCommands):
         except IndexError:
             print("String not found.")
         print("String set.")
-        
+
     def xref(self, args: List[str]) -> None:
         """Prints all function cross-references to a given fIndex. `xref <idx>`"""
         if len(args) == 0:
@@ -713,7 +714,7 @@ class Commands(BaseCommands):
             print("Invalid index.")
             return
 
-        target_func = None
+        target_func: Function | Native | None = None
         for func in self.code.functions:
             if func.findex.value == index:
                 target_func = func
@@ -733,7 +734,7 @@ class Commands(BaseCommands):
             print(f"No cross-references found for function f@{index}.")
             return
 
-        print(f"Cross-references to f@{index} ({full_func_name(self.code, target_func)}):")
+        print(f"Cross-references to f@{index} ({self.code.full_func_name(target_func)}):")
         for i, caller_findex in enumerate(xrefs):
             caller = caller_findex.resolve(self.code)
             print(f"  {i}. {disasm.func_header(self.code, caller)}")
@@ -917,7 +918,7 @@ class Commands(BaseCommands):
             return
         name = " ".join(args[0:])
         for func in self.code.functions:
-            if full_func_name(self.code, func) == name:
+            if self.code.full_func_name(func) == name:
                 print(disasm.func_header(self.code, func))
                 return
         print("Function not found.")
@@ -997,7 +998,7 @@ class Commands(BaseCommands):
                         if isinstance(param_value, strRef):
                             if param_value.value == string_idx_to_find:
                                 direct_references_found += 1
-                                func_name = full_func_name(self.code, func)
+                                func_name = self.code.full_func_name(func)
                                 print(f"  Function {func.findex.value} ({func_name}):")
                                 print(
                                     f"    Opcode {op_index}: {opcode.op} - parameter '{param_name}' references string {string_idx_to_find}"
@@ -1038,7 +1039,7 @@ class Commands(BaseCommands):
                                     if param_value.value == g_idx:
                                         global_refs_to_this_string_found += 1
                                         found_refs_for_this_global += 1
-                                        func_name = full_func_name(self.code, func)
+                                        func_name = self.code.full_func_name(func)
                                         print(f"    Function {func.findex.value} ({func_name}):")
                                         print(
                                             f"      Opcode {op_index}: {opcode.op} - parameter '{param_name}' references global g@{g_idx}"

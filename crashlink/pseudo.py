@@ -41,7 +41,7 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
     elif isinstance(expr, IRConst):
         if isinstance(expr.value, Function):  # crashlink.core.Function
             # For function constants, use their partial name or findex
-            return disasm.partial_func_name(code, expr.value) or f"f@{expr.value.findex.value}"
+            return code.partial_func_name(expr.value) or f"f@{expr.value.findex.value}"
         elif isinstance(expr.value, str):
             # Basic string quoting, may need more sophisticated escaping for real Haxe
             return '"' + expr.value.replace('"', '\\"') + '"'
@@ -258,7 +258,7 @@ def pseudo(ir_func: IRFunction) -> str:
     base_indent = 0
 
     # Function Signature
-    func_name_str = disasm.partial_func_name(code, func_core) or f"f{func_core.findex.value}"
+    func_name_str = code.partial_func_name(func_core) or f"f{func_core.findex.value}"
     static_kw = "static " if disasm.is_static(code, func_core) else ""
 
     params_str_list = []
@@ -299,7 +299,7 @@ def pseudo(ir_func: IRFunction) -> str:
     output_lines.append(f"{_indent_str(base_indent)}}}")
 
     # Attempt to wrap in a class for context if class name can be derived
-    full_name = disasm.full_func_name(code, func_core)
+    full_name = code.full_func_name(func_core)
     class_name_suggestion = "DecompiledClass"
     if "." in full_name:
         class_name_part = full_name.split(".")[0]

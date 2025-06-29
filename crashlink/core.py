@@ -80,7 +80,7 @@ class Serialisable(ABC):
         try:
             return self.value == other.value
         except AttributeError:
-             # Fallback if a subclass doesn't define .value but also doesn't override __eq__
+            # Fallback if a subclass doesn't define .value but also doesn't override __eq__
             return NotImplemented
 
     def __ne__(self, other: object) -> Any:
@@ -546,7 +546,7 @@ class _NoDataType(TypeDef):
 
     def serialise(self) -> bytes:
         return b""
-    
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, _NoDataType):
             return NotImplemented
@@ -661,7 +661,7 @@ class Fun(TypeDef):
             ]
         )
 
-    def pretty(self, code: "Bytecode") -> str:
+    def str_resolve(self, code: "Bytecode") -> str:
         """
         Returns a pretty-printed string representation of the function signature.
         """
@@ -696,11 +696,13 @@ class Field(Serialisable):
 
     def serialise(self) -> bytes:
         return b"".join([self.name.serialise(), self.type.serialise()])
-    
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Field):
             return NotImplemented
-        return self.name == other.name and self.type == other.type
+        res = self.name == other.name and self.type == other.type
+        assert isinstance(res, bool), "Field equality check must return a boolean"
+        return res
 
 
 class Proto(Serialisable):
@@ -725,7 +727,9 @@ class Proto(Serialisable):
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Proto):
             return NotImplemented
-        return self.name == other.name and self.findex == other.findex and self.pindex == other.pindex
+        res = self.name == other.name and self.findex == other.findex and self.pindex == other.pindex
+        assert isinstance(res, bool), "Proto equality check must return a boolean"
+        return res
 
 
 class Binding(Serialisable):
@@ -748,7 +752,9 @@ class Binding(Serialisable):
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Binding):
             return NotImplemented
-        return self.field == other.field and self.findex == other.findex
+        res = self.field == other.field and self.findex == other.findex
+        assert isinstance(res, bool), "Binding equality check must return a boolean"
+        return res
 
 
 class Obj(TypeDef):
@@ -848,16 +854,18 @@ class Obj(TypeDef):
 
     def str_resolve(self, code: "Bytecode") -> str:
         return f"<Obj: {self.name.resolve(code)}>"
-    
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Obj):
             return NotImplemented
-        return (self.name == other.name and 
-                self.super == other.super and
-                self._global == other._global and
-                self.fields == other.fields and
-                self.protos == other.protos and
-                self.bindings == other.bindings)
+        return (
+            self.name == other.name
+            and self.super == other.super
+            and self._global == other._global
+            and self.fields == other.fields
+            and self.protos == other.protos
+            and self.bindings == other.bindings
+        )
 
 
 class Array(_NoDataType):
@@ -894,7 +902,9 @@ class Ref(TypeDef):
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Ref):
             return NotImplemented
-        return self.type == other.type
+        res = self.type == other.type
+        assert isinstance(res, bool), "Ref equality check must return a boolean"
+        return res
 
 
 class Virtual(TypeDef):
@@ -952,11 +962,13 @@ class Abstract(TypeDef):
 
     def serialise(self) -> bytes:
         return self.name.serialise()
-    
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Abstract):
             return NotImplemented
-        return self.name == other.name
+        res = self.name == other.name
+        assert isinstance(res, bool), "Abstract equality check must return a boolean"
+        return res
 
 
 class EnumConstruct(Serialisable):
@@ -985,7 +997,7 @@ class EnumConstruct(Serialisable):
                 b"".join([param.serialise() for param in self.params]),
             ]
         )
-    
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, EnumConstruct):
             return NotImplemented
@@ -1046,7 +1058,9 @@ class Null(TypeDef):
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Null):
             return NotImplemented
-        return self.type == other.type
+        res = self.type == other.type
+        assert isinstance(res, bool), "Null equality check must return a boolean"
+        return res
 
 
 class Method(Fun):
@@ -1083,7 +1097,9 @@ class Packed(TypeDef):
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Packed):
             return NotImplemented
-        return self.inner == other.inner
+        res = self.inner == other.inner
+        assert isinstance(res, bool), "Packed equality check must return a boolean"
+        return res
 
 
 class Type(Serialisable):
@@ -1165,7 +1181,7 @@ class Type(Serialisable):
                 else:
                     raise MalformedBytecode(f"Invalid type definition found @{tell(f)}")
             else:
-                 raise MalformedBytecode(f"Invalid type definition found @{tell(f)}")
+                raise MalformedBytecode(f"Invalid type definition found @{tell(f)}")
         except IndexError:
             raise MalformedBytecode(f"Invalid type kind found @{tell(f)}")
         return self
@@ -1187,8 +1203,10 @@ class Type(Serialisable):
     def str_resolve(self, code: "Bytecode") -> str:
         if isinstance(self.definition, Obj):
             return self.definition.str_resolve(code)
+        if isinstance(self.definition, Fun):
+            return self.definition.str_resolve(code)
         return f"<Type: {self.kind.value} ({self.definition.__class__.__name__})>"
-    
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Type):
             return NotImplemented
@@ -1196,10 +1214,13 @@ class Type(Serialisable):
             return True
         # Definitions can be None
         if self.definition is None and other.definition is None:
-            return self.kind == other.kind
+            res = self.kind == other.kind
+            return res if isinstance(res, bool) else False
         if self.definition is None or other.definition is None:
             return False
-        return self.kind == other.kind and self.definition == other.definition
+        res = self.kind == other.kind and self.definition == other.definition
+        assert isinstance(res, bool), "Type equality check must return a boolean"
+        return res
 
 
 class Native(Serialisable):
@@ -1224,7 +1245,7 @@ class Native(Serialisable):
         self.type.deserialise(f)
         self.findex.deserialise(f)
         return self
-    
+
     def called_by(self, code: "Bytecode") -> List[fIndex]:
         """
         Resolves all functions that call this native.
@@ -1363,12 +1384,14 @@ class DebugInfo(Serialisable):
         while i < nops:
             try:
                 c_byte = f.read(1)
-                if not c_byte: break
+                if not c_byte:
+                    break
                 c = ctypes.c_uint8(ord(c_byte)).value
                 if c & 1 != 0:
                     c >>= 1
                     b2_byte = f.read(1)
-                    if not b2_byte: break
+                    if not b2_byte:
+                        break
                     currfile = (c << 8) | ctypes.c_uint8(ord(b2_byte)).value
                 elif c & 2 != 0:
                     delta = c >> 6
@@ -1383,7 +1406,8 @@ class DebugInfo(Serialisable):
                     i += 1
                 else:
                     b2_byte, b3_byte = f.read(1), f.read(1)
-                    if not b2_byte or not b3_byte: break
+                    if not b2_byte or not b3_byte:
+                        break
                     b2 = ctypes.c_uint8(ord(b2_byte)).value
                     b3 = ctypes.c_uint8(ord(b3_byte)).value
                     currline = (c >> 3) | (b2 << 5) | (b3 << 13)
@@ -1519,7 +1543,7 @@ class Function(Serialisable):
             self.regs.append(tIndex().deserialise(f))
         for _ in range(self.nops.value):
             self.ops.append(Opcode().deserialise(f))
-            if self.ops[-1].op in simple_calls and 'fun' in self.ops[-1].df:
+            if self.ops[-1].op in simple_calls and "fun" in self.ops[-1].df:
                 self.calls.append(self.ops[-1].df["fun"])
         if self.has_debug:
             self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
@@ -2017,11 +2041,14 @@ class Bytecode(Serialisable):
         self.nnatives.value = len(self.natives)
         self.nfunctions.value = len(self.functions)
         if self.version.value >= 4:
-            if self.nconstants is None: self.nconstants = VarInt()
+            if self.nconstants is None:
+                self.nconstants = VarInt()
             self.nconstants.value = len(self.constants)
         if self.has_debug_info:
-            if self.ndebugfiles is None: self.ndebugfiles = VarInt()
-            if self.debugfiles is None: self.debugfiles = StringsBlock()
+            if self.ndebugfiles is None:
+                self.ndebugfiles = VarInt()
+            if self.debugfiles is None:
+                self.debugfiles = StringsBlock()
             self.ndebugfiles.value = len(self.debugfiles.value)
 
     def repair(self) -> None:
@@ -2032,7 +2059,7 @@ class Bytecode(Serialisable):
 
     def get_test_main(self) -> Function:
         for f in self.functions:
-            if full_func_name(self, f).endswith("main"):
+            if self.full_func_name(f).endswith("main"):
                 return f
         raise ValueError("No main function found!")
 
@@ -2178,94 +2205,170 @@ class Bytecode(Serialisable):
         self.types.append(typ)
         return tIndex(len(self.types) - 1)
 
+    def gather_types(self) -> List[Type]:
+        """
+        Traverses the entire bytecode to find all unique types referenced, returning
+        them as a new list. This is a reimplementation of the `gather_types`
+        function from the official hlc compiler.
 
-def get_field_for(code: Bytecode, idx: int) -> Optional[Field]:
-    """
-    Gets the field for a standalone function index.
-    """
-    for type in code.types:
-        if isinstance(type.definition, Obj):
-            definition: Obj = type.definition
-            fields = definition.resolve_fields(code)
-            for binding in definition.bindings:  # binding binds a field to a function
-                if binding.findex.value == idx:
-                    return fields[binding.field.value]
-    return None
+        The traversal starts from "root" references (globals, natives, functions)
+        and recursively explores all types contained within them.
+        """
+        unique_types: List[Type] = []
+        # We use the serialized form of a type as a key to check for structural uniqueness.
+        seen_types: Dict[bytes, int] = {}
 
+        def _get_type(typ: Optional[Type]) -> None:
+            if typ is None:
+                return
 
-def get_proto_for(code: Bytecode, idx: int) -> Optional[Proto]:
-    """
-    Gets the proto for a standalone function index.
-    """
-    for type in code.types:
-        if isinstance(type.definition, Obj):
-            definition: Obj = type.definition
-            for proto in definition.protos:
-                if proto.findex.value == idx:
-                    return proto
-    return None
+            # OCaml: `match t with HObj { psuper = Some p } -> get_type (HObj p)`
+            # Ensure superclasses are processed first to maintain a logical order.
+            if isinstance(typ.definition, (Obj, Struct)) and typ.definition.super:
+                # Need to be careful not to resolve if super is None/invalid
+                if typ.definition.super.value is not None and typ.definition.super.value >= 0:
+                    _get_type(typ.definition.super.resolve(self))
 
+            type_key = typ.serialise()
+            if type_key in seen_types:
+                return  # Already processed this type structure
 
-def full_func_name(code: Bytecode, func: Function | Native) -> str:
-    """
-    Generates a human-readable name for a function or native.
-    """
-    proto = get_proto_for(code, func.findex.value)
-    if proto:
-        name = proto.name.resolve(code)
-        for type in code.types:
+            # Add the new unique type to our lists
+            seen_types[type_key] = len(unique_types)
+            unique_types.append(typ)
+
+            # Deconstruct the type and recurse on inner types
+            # This mirrors the `match t with ...` block in the OCaml code.
+            defn = typ.definition
+            if isinstance(defn, (Fun, Method)):
+                for arg_type_ref in defn.args:
+                    _get_type(arg_type_ref.resolve(self))
+                _get_type(defn.ret.resolve(self))
+            elif isinstance(defn, (Obj, Struct)):
+                # Super was handled above. Now do fields.
+                for field in defn.fields:
+                    _get_type(field.type.resolve(self))
+                # The OCaml version doesn't seem to traverse protos/bindings,
+                # as their function types will be gathered when iterating functions.
+            elif isinstance(defn, Enum):
+                for construct in defn.constructs:
+                    for param_type_ref in construct.params:
+                        _get_type(param_type_ref.resolve(self))
+            elif isinstance(defn, Virtual):
+                for field in defn.fields:
+                    _get_type(field.type.resolve(self))
+            elif isinstance(defn, (Null, Ref, Packed)):
+                # These types all wrap a single inner type.
+                # getattr is used to handle the different attribute names ('type' vs 'inner').
+                inner_type_ref = getattr(defn, "type", getattr(defn, "inner", None))
+                if inner_type_ref:
+                    _get_type(inner_type_ref.resolve(self))
+            # Primitive types (Void, I32, etc.) and types like Array, Dyn, etc.
+            # have no inner types to recurse on.
+
+        # The OCaml code seeds the process with primitives to ensure they get low indices.
+        # We'll do the same by creating temporary instances of them.
+        primitives_to_seed = [Void, U8, U16, I32, I64, F32, F64, Bool, TypeType, Dyn]
+        primitive_kind_map = {p: i for i, p in enumerate(Type.TYPEDEFS)}
+
+        for prim_class in primitives_to_seed:
+            kind_val = primitive_kind_map.get(prim_class)
+            if kind_val is not None:
+                # Create a temporary Type object just for the traversal
+                temp_type = Type()
+                temp_type.kind.value = kind_val
+                temp_type.definition = prim_class()
+                _get_type(temp_type)
+
+        # OCaml: `Array.iter (fun g -> get_type g) code.globals;`
+        for g_type_ref in self.global_types:
+            _get_type(g_type_ref.resolve(self))
+
+        # OCaml: `Array.iter (fun (_,_,t,_) -> get_type t) code.natives;`
+        for native in self.natives:
+            _get_type(native.type.resolve(self))
+
+        # OCaml: `Array.iter (fun f -> ...`
+        for func in self.functions:
+            # `get_type f.ftype;`
+            _get_type(func.type.resolve(self))
+            # `Array.iter (fun r -> get_type r) f.regs;`
+            for reg_type_ref in func.regs:
+                _get_type(reg_type_ref.resolve(self))
+            # `Array.iter (function OType (_,t) -> get_type t ...`
+            for op in func.ops:
+                if op.op == "Type":
+                    _get_type(op.df["ty"].resolve(self))
+
+        return unique_types
+
+    def get_field_for(self, idx: int) -> Optional[Field]:
+        """
+        Gets the field for a standalone function index.
+        """
+        for type in self.types:
             if isinstance(type.definition, Obj):
-                obj_def: Obj = type.definition
-                for fun in obj_def.protos:
-                    if fun.findex.value == func.findex.value:
-                        return f"{obj_def.name.resolve(code)}.{name}"
-    else:
-        name = "<none>"
-        field = get_field_for(code, func.findex.value)
-        if field:
-            name = field.name.resolve(code)
-            for type in code.types:
+                definition: Obj = type.definition
+                fields = definition.resolve_fields(self)
+                for binding in definition.bindings:  # binding binds a field to a function
+                    if binding.findex.value == idx:
+                        return fields[binding.field.value]
+        return None
+
+    def get_proto_for(self, idx: int) -> Optional[Proto]:
+        """
+        Gets the proto for a standalone function index.
+        """
+        for type in self.types:
+            if isinstance(type.definition, Obj):
+                definition: Obj = type.definition
+                for proto in definition.protos:
+                    if proto.findex.value == idx:
+                        return proto
+        return None
+
+    def full_func_name(self, func: Function | Native) -> str:
+        """
+        Generates a human-readable name for a function or native.
+        """
+        proto = self.get_proto_for(func.findex.value)
+        if proto:
+            name = proto.name.resolve(self)
+            for type in self.types:
                 if isinstance(type.definition, Obj):
-                    _obj_def: Obj = type.definition
-                    fields = _obj_def.resolve_fields(code)
-                    for binding in _obj_def.bindings:
-                        if binding.findex.value == func.findex.value:
-                            return f"{_obj_def.name.resolve(code)}.{name}"
-    return name
+                    obj_def: Obj = type.definition
+                    for fun in obj_def.protos:
+                        if fun.findex.value == func.findex.value:
+                            return f"{obj_def.name.resolve(self)}.{name}"
+        else:
+            name = "<none>"
+            field = self.get_field_for(func.findex.value)
+            if field:
+                name = field.name.resolve(self)
+                for type in self.types:
+                    if isinstance(type.definition, Obj):
+                        _obj_def: Obj = type.definition
+                        fields = _obj_def.resolve_fields(self)
+                        for binding in _obj_def.bindings:
+                            if binding.findex.value == func.findex.value:
+                                return f"{_obj_def.name.resolve(self)}.{name}"
+        return name
 
+    def partial_func_name(self, func: Function | Native) -> str:
+        """
+        Generates a human-readable name for a function or native. Does not qualify the name with the object it belongs to.
+        """
+        proto = self.get_proto_for(func.findex.value)
+        if proto:
+            return proto.name.resolve(self)
+        else:
+            field = self.get_field_for(func.findex.value)
+            if field:
+                return field.name.resolve(self)
+        return "<none>"
 
-def partial_func_name(code: Bytecode, func: Function | Native) -> str:
-    """
-    Generates a human-readable name for a function or native. Does not qualify the name with the object it belongs to.
-    """
-    proto = get_proto_for(code, func.findex.value)
-    if proto:
-        return proto.name.resolve(code)
-    else:
-        field = get_field_for(code, func.findex.value)
-        if field:
-            return field.name.resolve(code)
-    return "<none>"
-
-def hl_hash(b: str) -> int:
-    """
-    Calculates a hash for a given string.
-    """
-    h = 0
-    for char in b:
-        h = h * 223 + ord(char)
-        
-        h &= 0xFFFFFFFF
-        
-        if h & 0x80000000:
-            h -= 0x100000000
-
-    return h % 0x1FFFFF7B
 
 __all__ = [
-    "full_func_name",
-    "get_field_for",
-    "get_proto_for",
     "Abstract",
     "Array",
     "Binding",
