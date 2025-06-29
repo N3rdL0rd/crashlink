@@ -290,6 +290,9 @@ class gIndex(ResolvableVarInt):
     def resolve(self, code: "Bytecode") -> "Type":
         return code.global_types[self.value].resolve(code)
 
+    def partial_resolve(self, code: "Bytecode") -> tIndex:
+        return code.global_types[self.value]
+
     def resolve_str(self, code: "Bytecode") -> str:
         return code.const_str(self.value)
 
