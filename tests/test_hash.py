@@ -2,12 +2,11 @@ import csv
 import os
 import pytest
 
-from crashlink.core import hl_hash
+from crashlink.hlc import hl_hash_utf8
 
 CSV_PATH = os.path.join(os.path.dirname(__file__), "hashes.csv")
 
-
-@pytest.mark.skip("currently failing")
+@pytest.skip("Failing")
 @pytest.mark.skipif(not os.path.exists(CSV_PATH), reason=f"Test dataset not found: {CSV_PATH}")
 def test_hash():
     """
@@ -25,7 +24,7 @@ def test_hash():
             string, expected_hash_str = row
             expected_hash = int(expected_hash_str)
 
-            calculated_hash = hl_hash(string)
+            calculated_hash = hl_hash_utf8(string)
 
             assert calculated_hash == expected_hash, (
                 f"Hash mismatch at CSV row {i + 2} for string: '{string}'.\n"

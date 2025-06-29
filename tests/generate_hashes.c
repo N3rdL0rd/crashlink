@@ -22,7 +22,7 @@ int main() {
             str[j] = 'a' + (rand() % 26);
         }
         str[len] = '\0';
-        unsigned int hash = hl_hash((vbyte*)str);
+        unsigned int hash = hl_hash((const uchar*)USTR("__type__"));
         fprintf(fp, "\"%s\",%u\n", str, hash);
     }
 
