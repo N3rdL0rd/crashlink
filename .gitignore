@@ -41,3 +41,4 @@ tests/haxe/hlc
 test.c
 tests/libhl.dll
 tests/generate_hashes.exe
+test_out/
