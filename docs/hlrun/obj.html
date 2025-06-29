@@ -47,7 +47,7 @@ el.replaceWith(d);
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="hlrun.obj.method"><code class="name flex">
-<span>def <span class="ident">method</span></span>(<span>func: Callable[..., ~R]) ‑> Callable[..., ~R]</span>
+<span>def <span class="ident">method</span></span>(<span>func: Callable[..., R]) ‑> Callable[..., ~R]</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -348,7 +348,7 @@ used instead to inline the character code at compile time. Note that
 this only works on String literals of length 1.</p></div>
 </dd>
 <dt id="hlrun.obj.HlString.findChar"><code class="name flex">
-<span>def <span class="ident">findChar</span></span>(<span>self,<br>start: int,<br>len: int,<br>src: <a title="hlrun.core.HlObj" href="core.html#hlrun.core.HlObj">HlObj</a>,<br>srcLen: int) ‑> int</span>
+<span>def <span class="ident">findChar</span></span>(<span>self, start: int, len: int, src: HlObj, srcLen: int) ‑> int</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -387,7 +387,7 @@ def fromCharCode(self, code: int) -&gt; HlString:
 unspecified.</p></div>
 </dd>
 <dt id="hlrun.obj.HlString.indexOf"><code class="name flex">
-<span>def <span class="ident">indexOf</span></span>(<span>self,<br>str: <a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a>,<br>startIndex: int | None) ‑> int</span>
+<span>def <span class="ident">indexOf</span></span>(<span>self,<br>str: "'<a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a>'",<br>startIndex: Optional[int]) ‑> int</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -429,7 +429,7 @@ String relative to position 0 is returned.</p>
 <p>If <code>str</code> cannot be found, -1 is returned.</p></div>
 </dd>
 <dt id="hlrun.obj.HlString.lastIndexOf"><code class="name flex">
-<span>def <span class="ident">lastIndexOf</span></span>(<span>self,<br>str: <a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a>,<br>startIndex: int | None) ‑> int</span>
+<span>def <span class="ident">lastIndexOf</span></span>(<span>self,<br>str: "'<a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a>'",<br>startIndex: Optional[int]) ‑> int</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -463,7 +463,7 @@ is relative to the beginning of <code>this</code> String.</p>
 <p>If <code>str</code> cannot be found, -1 is returned.</p></div>
 </dd>
 <dt id="hlrun.obj.HlString.split"><code class="name flex">
-<span>def <span class="ident">split</span></span>(<span>self,<br>delimiter: <a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a>) ‑> List[<a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a>]</span>
+<span>def <span class="ident">split</span></span>(<span>self,<br>delimiter: "'<a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a>'") ‑> List[<a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a>]</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -509,7 +509,7 @@ result <code>Array</code> contains a leading (or trailing) empty String <code>""
 Two subsequent delimiters also result in an empty String <code>""</code> element.</p></div>
 </dd>
 <dt id="hlrun.obj.HlString.substr"><code class="name flex">
-<span>def <span class="ident">substr</span></span>(<span>self, pos: int, len: int | None) ‑> <a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a></span>
+<span>def <span class="ident">substr</span></span>(<span>self, pos: int, len: Optional[int]) ‑> <a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -546,7 +546,7 @@ from that position to the end of <code>this</code> String are returned.</p>
 <p>If <code>len</code> is negative, the result is unspecified.</p></div>
 </dd>
 <dt id="hlrun.obj.HlString.substring"><code class="name flex">
-<span>def <span class="ident">substring</span></span>(<span>self, startIndex: int, endIndex: int | None) ‑> <a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a></span>
+<span>def <span class="ident">substring</span></span>(<span>self, startIndex: int, endIndex: Optional[int]) ‑> <a title="hlrun.obj.HlString" href="#hlrun.obj.HlString">HlString</a></span>
 </code></dt>
 <dd>
 <details class="source">

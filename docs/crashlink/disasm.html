@@ -110,47 +110,6 @@ el.replaceWith(d);
 </details>
 <div class="desc"><p>Reads and parses a list of opcodes from a human-readable(-ish) assembly format. See <code><a title="crashlink.disasm.to_asm" href="#crashlink.disasm.to_asm">to_asm()</a></code>.</p></div>
 </dd>
-<dt id="crashlink.disasm.full_func_name"><code class="name flex">
-<span>def <span class="ident">full_func_name</span></span>(<span>code: Bytecode, func: Function | Native) ‑> str</span>
-</code></dt>
-<dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def full_func_name(code: Bytecode, func: Function | Native) -&gt; str:
-    &#34;&#34;&#34;
-    Generates a human-readable name for a function or native.
-    &#34;&#34;&#34;
-    proto = get_proto_for(code, func.findex.value)
-    if proto:
-        name = proto.name.resolve(code)
-        for type in code.types:
-            if type.kind.value == Type.TYPEDEFS.index(Obj):
-                if not isinstance(type.definition, Obj):
-                    continue
-                obj_def: Obj = type.definition
-                for fun in obj_def.protos:
-                    if fun.findex.value == func.findex.value:
-                        return f&#34;{obj_def.name.resolve(code)}.{name}&#34;
-    else:
-        name = &#34;&lt;none&gt;&#34;
-        field = get_field_for(code, func.findex.value)
-        if field:
-            name = field.name.resolve(code)
-            for type in code.types:
-                if type.kind.value == Type.TYPEDEFS.index(Obj):
-                    if not isinstance(type.definition, Obj):
-                        continue
-                    _obj_def: Obj = type.definition
-                    fields = _obj_def.resolve_fields(code)
-                    for binding in _obj_def.bindings:
-                        if binding.findex.value == func.findex.value:
-                            return f&#34;{_obj_def.name.resolve(code)}.{name}&#34;
-    return name</code></pre>
-</details>
-<div class="desc"><p>Generates a human-readable name for a function or native.</p></div>
-</dd>
 <dt id="crashlink.disasm.func"><code class="name flex">
 <span>def <span class="ident">func</span></span>(<span>code: Bytecode, func: Function | Native) ‑> str</span>
 </code></dt>
@@ -169,7 +128,7 @@ el.replaceWith(d);
     res += func_header(code, func) + &#34;\n&#34;
     res += &#34;Reg types:\n&#34;
     for i, reg in enumerate(func.regs):
-        res += f&#34;  {i}. {type_name(code, reg.resolve(code))}\n&#34;
+        res += f&#34;  {i}. {type_name(code, reg.resolve(code))} (t@{reg.value})\n&#34;
     if func.has_debug and func.assigns and func.version and func.version &gt;= 3:
         res += &#34;\nAssigns:\n&#34;
         for assign in func.assigns:
@@ -212,7 +171,7 @@ el.replaceWith(d);
     if isinstance(func, Native):
         return native_header(code, func)
     assert isinstance(func, Function)
-    name = full_func_name(code, func)
+    name = code.full_func_name(func)
     fun_type = func.type.resolve(code).definition
     if isinstance(fun_type, Fun):
         fun: Fun = fun_type
@@ -288,29 +247,6 @@ el.replaceWith(d);
     return f&#34;f@{native.findex.value} {native.lib.resolve(code)}.{native.name.resolve(code)} [native] (no fun found!)&#34;</code></pre>
 </details>
 <div class="desc"><p>Generates a human-readable header for a native function.</p></div>
-</dd>
-<dt id="crashlink.disasm.partial_func_name"><code class="name flex">
-<span>def <span class="ident">partial_func_name</span></span>(<span>code: Bytecode, func: Function | Native) ‑> str</span>
-</code></dt>
-<dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def partial_func_name(code: Bytecode, func: Function | Native) -&gt; str:
-    &#34;&#34;&#34;
-    Generates a human-readable name for a function or native. Does not qualify the name with the object it belongs to.
-    &#34;&#34;&#34;
-    proto = get_proto_for(code, func.findex.value)
-    if proto:
-        return proto.name.resolve(code)
-    else:
-        field = get_field_for(code, func.findex.value)
-        if field:
-            return field.name.resolve(code)
-    return &#34;&lt;none&gt;&#34;</code></pre>
-</details>
-<div class="desc"><p>Generates a human-readable name for a function or native. Does not qualify the name with the object it belongs to.</p></div>
 </dd>
 <dt id="crashlink.disasm.pseudo_from_op"><code class="name flex">
 <span>def <span class="ident">pseudo_from_op</span></span>(<span>op: Opcode,<br>idx: int,<br>regs: List[Reg] | List[tIndex],<br>code: Bytecode,<br>terse: bool = False,<br>func: Optional[Function] = None) ‑> str</span>
@@ -467,7 +403,7 @@ el.replaceWith(d);
         case &#34;Call1&#34;:
             return f&#34;reg{op.df[&#39;dst&#39;]} = f@{op.df[&#39;fun&#39;]}(reg{op.df[&#39;arg0&#39;]})&#34;
         case &#34;Call2&#34;:
-            fun = full_func_name(code, code.fn(op.df[&#34;fun&#34;].value))
+            fun = code.full_func_name(code.fn(op.df[&#34;fun&#34;].value))
             return (
                 f&#34;reg{op.df[&#39;dst&#39;]} = f@{op.df[&#39;fun&#39;]}({&#39;, &#39;.join([f&#39;reg{op.df[arg]}&#39; for arg in [&#39;arg0&#39;, &#39;arg1&#39;]])})&#34;
             )
@@ -609,6 +545,8 @@ Ret. 1
         for field in defn.fields:
             fields.append(field.name.resolve(code))
         return f&#34;Virtual[{&#39;, &#39;.join(fields)}]&#34;
+    elif typedef == Enum and isinstance(defn, Enum):
+        return defn.name.resolve(code)
     return typedef.__name__</code></pre>
 </details>
 <div class="desc"><p>Generates a human-readable name for a type.</p></div>
@@ -655,13 +593,11 @@ Ret. 1
 <ul class="two-column">
 <li><code><a title="crashlink.disasm.fmt_op" href="#crashlink.disasm.fmt_op">fmt_op</a></code></li>
 <li><code><a title="crashlink.disasm.from_asm" href="#crashlink.disasm.from_asm">from_asm</a></code></li>
-<li><code><a title="crashlink.disasm.full_func_name" href="#crashlink.disasm.full_func_name">full_func_name</a></code></li>
 <li><code><a title="crashlink.disasm.func" href="#crashlink.disasm.func">func</a></code></li>
 <li><code><a title="crashlink.disasm.func_header" href="#crashlink.disasm.func_header">func_header</a></code></li>
 <li><code><a title="crashlink.disasm.is_static" href="#crashlink.disasm.is_static">is_static</a></code></li>
 <li><code><a title="crashlink.disasm.is_std" href="#crashlink.disasm.is_std">is_std</a></code></li>
 <li><code><a title="crashlink.disasm.native_header" href="#crashlink.disasm.native_header">native_header</a></code></li>
-<li><code><a title="crashlink.disasm.partial_func_name" href="#crashlink.disasm.partial_func_name">partial_func_name</a></code></li>
 <li><code><a title="crashlink.disasm.pseudo_from_op" href="#crashlink.disasm.pseudo_from_op">pseudo_from_op</a></code></li>
 <li><code><a title="crashlink.disasm.to_asm" href="#crashlink.disasm.to_asm">to_asm</a></code></li>
 <li><code><a title="crashlink.disasm.type_name" href="#crashlink.disasm.type_name">type_name</a></code></li>

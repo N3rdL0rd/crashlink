@@ -281,7 +281,7 @@ el.replaceWith(d);
             else:
                 mtch: Optional[Function] = None
                 for fn in code.functions:
-                    if full_func_name(code, fn) == identifier:
+                    if code.full_func_name(fn) == identifier:
                         mtch = fn
                 if not mtch:
                     raise NameError(f&#34;No such function &#39;{identifier}&#39;&#34;)
@@ -296,7 +296,7 @@ el.replaceWith(d);
             else:
                 mtch = None
                 for fn in code.functions:
-                    if full_func_name(code, fn) == identifier:
+                    if code.full_func_name(fn) == identifier:
                         mtch = fn
                 if not mtch:
                     raise NameError(f&#34;No such function &#39;{identifier}&#39;&#34;)
@@ -355,7 +355,7 @@ el.replaceWith(d);
         else:
             mtch: Optional[Function] = None
             for fn in code.functions:
-                if full_func_name(code, fn) == identifier:
+                if code.full_func_name(fn) == identifier:
                     mtch = fn
             if not mtch:
                 raise NameError(f&#34;No such function &#39;{identifier}&#39;&#34;)
@@ -370,7 +370,7 @@ el.replaceWith(d);
         else:
             mtch = None
             for fn in code.functions:
-                if full_func_name(code, fn) == identifier:
+                if code.full_func_name(fn) == identifier:
                     mtch = fn
             if not mtch:
                 raise NameError(f&#34;No such function &#39;{identifier}&#39;&#34;)
