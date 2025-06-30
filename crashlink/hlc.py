@@ -496,10 +496,220 @@ def generate_entry(code: Bytecode) -> List[str]:
         line("// ctx.functions_ptrs = hl_functions_ptrs;")  # TODO
         line("// ctx.functions_types = hl_functions_types;")
         line("hl_init_types(&ctx);")
-        line("hl_init_hashes();")
+        line("// hl_init_hashes();")
         line("hl_init_roots();")
-        line("// fun$init();")
+        line(f"f${code.entrypoint.value}();")
     line("}")
+    return res
+
+unknown_ops = set()
+
+def generate_functions(code: Bytecode) -> List[str]:
+    global unknown_ops
+    
+    res = []
+    indent = Indenter()
+
+    def line(*args: Any) -> None:
+        res.append(indent.current_indent + " ".join(str(arg) for arg in args))
+
+    def opline(idx: int, *args: Any) -> None:
+        res.append(indent.current_indent + f"Op_{idx}: " + " ".join(str(arg) for arg in args))
+        
+    def regstr(r: Reg) -> str:
+        return f"r{r.value}"
+
+    def rcast(reg: Reg, target_type: Type, function: Function) -> str:
+        """Generates a C-style cast for a register if its type differs from the target."""
+        reg_type = function.regs[reg.value].resolve(code)
+        # This is a simplified check. A more robust one would use hl_safe_cast.
+        if reg_type == target_type:
+            return regstr(reg)
+        # A full implementation would need the all_types map, but for now we use the raw index
+        all_types = code.gather_types()
+        type_map = {t: i for i, t in enumerate(all_types)}
+        return f"({ctype(code, target_type, type_map[target_type])}){regstr(reg)}"
+
+    def cast_fun(code: Bytecode, func_ptr_expr: str, ret_type: tIndex, args_types: List[tIndex]) -> str:
+        """Generates a C cast for a function pointer."""
+        ret_t_str = ctype(code, ret_type.resolve(code), ret_type.value)
+        args_t_str = ", ".join(ctype(code, t.resolve(code), t.value) for t in args_types) or "void"
+        return f"(({ret_t_str} (*)({args_t_str})){func_ptr_expr})"
+    
+    for function in code.functions:
+        fun = function.type.resolve(code).definition
+        assert isinstance(fun, Fun), (
+            f"Expected function type to be Fun, got {type(fun).__name__}. This should never happen."
+        )
+        ret_t = ctype(code, fun.ret.resolve(code), fun.ret.value)
+        args_t = [ctype(code, arg.resolve(code), arg.value) for arg in fun.args]
+        args_with_names = [f"{t} r{i}" for i, t in enumerate(args_t)]
+        args_str = ", ".join(args_with_names) if args_with_names else "void"
+        line(f"{ret_t} f${function.findex.value}({args_str}) {{")
+        closure_id = 0
+        with indent:
+            for i, reg in enumerate(function.regs[len(args_with_names) :]):
+                reg_idx = i + len(args_with_names)
+                if reg.resolve(code).kind.value == Type.Kind.VOID.value:
+                    line(f"// void r{reg_idx}")
+                    continue  # void is for explicit discard
+                reg_type = ctype(code, reg.resolve(code), reg.value)
+                line(f"{reg_type} r{reg_idx};")
+
+            for i, op in enumerate(function.ops):
+                # oh god, here we go
+                df = op.df
+                rhs = ""
+                has_dst = "dst" in df
+
+                match op.op:
+                    case "Mov":
+                        rhs = f"r{df['src']}"
+                    case "Int":
+                        rhs = f"{code.ints[df['ptr'].value].value}"
+                    case "Float":
+                        rhs = f"{code.floats[df['ptr'].value].value}"
+                    case "Bool":
+                        rhs = "true" if df["value"] else "false"
+                    case "Bytes":
+                        # TODO not sure this is right - might be bytes pool past v5?
+                        rhs = f'(vbyte*)USTR("{code.strings.value[df["ptr"].value]}")'
+                    case "String":
+                        rhs = f'(vbyte*)USTR("{code.strings.value[df["ptr"].value]}")'
+                    case "Null":
+                        rhs = "NULL"
+                    case "Add":
+                        rhs = f"r{df['a']} + r{df['b']}"
+                    case "Sub":
+                        rhs = f"r{df['a']} - r{df['b']}"
+                    case "Mul":
+                        rhs = f"r{df['a']} * r{df['b']}"
+                    case "SDiv":
+                        rtype = function.regs[df["dst"].value].resolve(code).kind.value
+                        if rtype in {Type.Kind.U8.value, Type.Kind.U16.value, Type.Kind.I32.value}:
+                            rhs = f"(r{df['b']} == 0 || r{df['b']} == -1) ? r{df['a']} * r{df['b']} : r{df['a']} / r{df['b']}"
+                        else:
+                            rhs = f"r{df['a']} / r{df['b']}"
+                    case "UDiv":
+                        rhs = f"(r{df['b']} == 0) ? 0 : ((unsigned)r{df['a']}) / ((unsigned)r{df['b']})"
+                    case "SMod":
+                        rtype = function.regs[df["dst"].value].resolve(code).kind.value
+                        if rtype in {Type.Kind.U8.value, Type.Kind.U16.value, Type.Kind.I32.value}:
+                            rhs = f"(r{df['b']} == 0 || r{df['b']} == -1) ? 0 : r{df['a']} % r{df['b']}"
+                        elif rtype == Type.Kind.F32.value:
+                            rhs = f"fmodf(r{df['a']}, r{df['b']})"
+                        elif rtype == Type.Kind.F64.value:
+                            rhs = f"fmod(r{df['a']}, r{df['b']})"
+                        else:
+                            raise MalformedBytecode(f"Unsupported SMod type: {rtype} at op {i} in function {function.name.resolve(code)}")
+                    case "UMod":
+                        rhs = f"(r{df['b']} == 0) ? 0 : ((unsigned)r{df['a']}) % ((unsigned)r{df['b']})"
+                    case "Shl":
+                        rhs = f"r{df['a']} << r{df['b']}"
+                    case "SShr":
+                        rhs = f"r{df['a']} >> r{df['b']}"
+                    case "UShr":
+                        rtype = function.regs[df["dst"].value].resolve(code).kind.value
+                        if rtype == Type.Kind.I64.value:
+                            rhs = f"((uint64)r{df['a']}) >> r{df['b']}"
+                        else:
+                            rhs = f"((unsigned)r{df['a']}) >> r{df['b']}"
+                    case "And":
+                        rhs = f"r{df['a']} & r{df['b']}"
+                    case "Or":
+                        rhs = f"r{df['a']} | r{df['b']}"
+                    case "Xor":
+                        rhs = f"r{df['a']} ^ r{df['b']}"
+                    case "Neg":
+                        rhs = f"-r{df['src']}"
+                    case "Not":
+                        rhs = f"!r{df['src']}"
+                    case "Incr":
+                        rhs = f"++r{df['dst']}"
+                        has_dst = False
+                    case "Decr":
+                        rhs = f"--r{df['dst']}"
+                        has_dst = False
+                    case "Call0" | "Call1" | "Call2" | "Call3" | "Call4":
+                        nargs = int(op.op[4:])
+                        args = [f"r{df[f'arg{i}']}" for i in range(nargs)]
+                        if nargs == 0:
+                            rhs = f"f${df['fun']}()"
+                        else:
+                            rhs = f"f${df['fun']}({', '.join(args)})"
+                    case "CallN":
+                        args = [f"r{arg}" for arg in df["args"].value]
+                        rhs = f"f${df['fun']}({', '.join(args)})"
+                    case "CallMethod" | "CallThis":
+                        if op.op == "CallThis":
+                            obj_reg = 0
+                            arg_regs = df["args"].value
+                        else:
+                            obj_reg = df["args"].value[0].value
+                            arg_regs = df["args"].value[1:]
+                        obj_t = function.regs[obj_reg].resolve(code).definition
+                        if isinstance(obj_t, (Obj, Struct)):
+                            obj = f"r{obj_reg}"
+                            fid = df["field"].value
+                            func_ptr = f"{obj}->$type->vobj_proto[{fid}]"
+                            dst_reg = df["dst"].value
+                            ret_type = function.regs[dst_reg]
+                            obj_type = function.regs[obj_reg]
+                            arg_types = [obj_type] + [function.regs[r.value] for r in arg_regs]
+                            casted_fun = cast_fun(code, func_ptr, ret_type, arg_types)
+                            call_args_str = ", ".join([obj] + [f"r{r.value}" for r in arg_regs])
+                            rhs = f"{casted_fun}({call_args_str})"
+                        elif isinstance(obj_t, Virtual):
+                            raise NotImplementedError(
+                                f"CallMethod/CallThis on Virtual type not implemented at op {i} in function {function.name.resolve(code)}"
+                            )
+                        else:
+                            raise MalformedBytecode(f"CallMethod/CallThis on non-Obj/Struct type: {obj_t} at op {i} in function {function.name.resolve(code)}")
+                    case "CallClosure":
+                        closure_reg = df['fun']
+                        closure_reg_str = regstr(closure_reg)
+                        closure_type = function.regs[closure_reg.value].resolve(code)
+                        if closure_type.kind.value == Type.Kind.DYN.value:
+                            unknown_ops.add("CallClosure_Dynamic")
+                            opline(i, f"/* CallClosure on dynamic value r{closure_reg.value} not implemented */")
+                            continue
+                        if closure_type.kind.value != Type.Kind.FUN.value:
+                             raise MalformedBytecode(f"CallClosure on an unexpected type: {closure_type}")
+                        closure_type_def = closure_type.definition
+                        assert isinstance(closure_type_def, Fun)
+                        ret_type_idx = closure_type_def.ret
+                        closure_arg_type_idxs = closure_type_def.args
+                        call_arg_regs = df['args'].value
+                        if len(call_arg_regs) != len(closure_arg_type_idxs):
+                            raise MalformedBytecode(f"CallClosure argument count mismatch at op {i} in f{function.findex.value}. Expected {len(closure_arg_type_idxs)}, got {len(call_arg_regs)}")
+                        casted_args_str_list = [rcast(reg, target_type_idx.resolve(code), function) for reg, target_type_idx in zip(call_arg_regs, closure_arg_type_idxs)]
+                        static_fun_ptr = cast_fun(code, f"{closure_reg_str}->fun", ret_type_idx, closure_arg_type_idxs)
+                        static_call = f"{static_fun_ptr}({', '.join(casted_args_str_list)})"
+                        dyn_type_idx = code.find_prim_type(Type.Kind.DYN)
+                        instance_arg_types = [dyn_type_idx] + closure_arg_type_idxs
+                        instance_fun_ptr = cast_fun(code, f"{closure_reg_str}->fun", ret_type_idx, instance_arg_types)
+                        instance_call = f"{instance_fun_ptr}({', '.join([f'(vdynamic*){closure_reg_str}->value'] + casted_args_str_list)})"
+                        rhs = f"({closure_reg_str}->hasValue ? {instance_call} : {static_call})"
+                    case "StaticClosure":
+                        rhs = f"&cl${df['fun']}"
+                        res.insert(1,
+                                   f"static vclosure cl${closure_id} = {{ .... }}") # TODO FIXME whatever
+                        closure_id += 1
+                    case _:
+                        print("Unknown operation:", op.op)
+                        unknown_ops.add(op.op)
+                        continue
+
+                if has_dst:
+                    dst_type = function.regs[df["dst"].value].resolve(code)
+                    if dst_type.kind.value == Type.Kind.VOID.value:
+                        opline(i, f"{rhs}; // void dst")
+                    else:
+                        opline(i, f"r{df['dst']} = {rhs};")
+                else:
+                    opline(i, f"{rhs};")
+        line("}")
+
     return res
 
 
@@ -529,8 +739,14 @@ def code_to_c(code: Bytecode) -> str:
     sec("Globals & Strings")
     res += generate_globals(code)
 
+    sec("Functions! Whoa!")
+    res += generate_functions(code)
+
     sec("Entrypoint")
     res += generate_entry(code)
+    
+    if unknown_ops:
+        print(f"Warning: {len(unknown_ops)} unknown operations encountered during function generation.")
 
     # TODO: Add generation for:
     # - Hash initialization (maybe we can live without it? i think it's just pre-caching for performance)
