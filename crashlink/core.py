@@ -762,29 +762,52 @@ class Binding(Serialisable):
 
 class Obj(TypeDef):
     """
-    Represents a class definition. Contains:
-
-    - name: strRef
-    - super: tIndex
-    - _global: gIndex
-    - nfields: VarInt
-    - nprotos: VarInt
-    - nbindings: VarInt
-    - fields: List[Field]
-    - protos: List[Proto]
-    - bindings: List[Binding]
+    Represents a class definition.
     """
 
     def __init__(self) -> None:
         self.name = strRef()
+        """The name of this object type."""
         self.super = tIndex()
+        """The superclass of this object type, or -1 if it has no superclass."""
         self._global = gIndex()
+        """The global object index of this type."""
         self.nfields = VarInt()
+        """Number of fields"""
         self.nprotos = VarInt()
+        """Number of prototypes"""
         self.nbindings = VarInt()
+        """Number of bindings"""
         self.fields: List[Field] = []
+        """List of fields in this object type."""
         self.protos: List[Proto] = []
+        """List of prototypes for this object type."""
         self.bindings: List[Binding] = []
+        """List of bindings for this object type."""
+        self._virtuals: List[int] = []
+        self._virtual_map: Dict[str, int] = {} 
+        self.virtuals_initialized: bool = False
+        
+    def get_containing_type(self, code: Bytecode) -> Type:
+        """Finds the Type object that contains this Obj definition."""
+        for t in code.types:
+            if t.definition is self:
+                return t
+        raise RuntimeError("Could not find containing Type for Obj instance.")
+        
+    @property
+    def virtuals(self) -> List[int]:
+        """Returns the list of virtual function indices for this object type."""
+        if not self.virtuals_initialized:
+            raise ValueError("Virtuals not initialized. Call `code.init_virtuals()` after deserialization.")
+        return self._virtuals
+
+    @property
+    def virtual_map(self) -> Dict[str, int]:
+        """Returns the map of method names to their virtual ID for this object type."""
+        if not self.virtuals_initialized:
+            raise ValueError("Virtuals not initialized. Call `code.init_virtuals()` after deserialization.")
+        return self._virtual_map
 
     def deserialise(self, f: BinaryIO | BytesIO) -> "Obj":
         self.name.deserialise(f)
@@ -1224,6 +1247,9 @@ class Type(Serialisable):
         res = self.kind == other.kind and self.definition == other.definition
         assert isinstance(res, bool), "Type equality check must return a boolean"
         return res
+
+    def __hash__(self) -> int:
+        return hash(self.serialise())
 
 
 class Native(Serialisable):
@@ -1678,6 +1704,94 @@ class Bytecode(Serialisable):
         self.initialized_globals: Dict[int, Any] = {}
 
         self.section_offsets: Dict[str, int] = {}
+        self.cached_all: List[Type] | None = None
+        
+        self.virtuals_built = False
+        
+    def _build_virtual_tables(self) -> None:
+        """
+        Reconstructs the virtual method table (v-table) for all Obj types.
+        This is an internal method called at the end of deserialization.
+        """
+        if self.virtuals_built:
+            return
+
+        processed_class_ids = set()
+
+        def get_all_parent_methods(obj_def: Obj) -> Dict[str, int]:
+            # This helper is likely okay, but let's make it safer
+            parent_methods = {}
+            if obj_def.super and obj_def.super.value is not None:
+                try:
+                    super_type = obj_def.super.resolve(self)
+                    # *** Add a check to prevent cycles in this helper too ***
+                    if id(super_type) == id(obj_def.get_containing_type(self)): # Prevent self-inheritance loops
+                        return {}
+                    if isinstance(super_type.definition, Obj):
+                        super_def = super_type.definition
+                        parent_methods.update(get_all_parent_methods(super_def))
+                        for proto in super_def.protos:
+                            parent_methods[proto.name.resolve(self)] = proto.findex.value
+                except (IndexError, AttributeError):
+                    dbg_print(f"Warning: Could not resolve superclass for {obj_def.name.resolve(self)}")
+            return parent_methods
+
+        def process_class(class_type: Type) -> None:
+            class_id = id(class_type)
+            if class_id in processed_class_ids:
+                return
+
+            obj_def = class_type.definition
+            if not isinstance(obj_def, Obj):
+                processed_class_ids.add(class_id)
+                return
+
+            virtuals = []
+            virtual_map = {}
+
+            if obj_def.super is None or obj_def.super.value == -1:
+                pass # virtuals and virtual_map are already empty
+            else:
+                try:
+                    super_type = obj_def.super.resolve(self)
+                except IndexError:
+                     raise MalformedBytecode(f"Class '{obj_def.name.resolve(self)}' has an invalid superclass index: {obj_def.super.value}")
+
+                process_class(super_type)
+                
+                if isinstance(super_type.definition, Obj):
+                    super_def = super_type.definition
+                    virtuals.extend(super_def._virtuals)
+                    virtual_map.update(super_def._virtual_map)
+                else:
+                    dbg_print(f"Warning: Superclass of '{obj_def.name.resolve(self)}' is not an Obj.")
+
+            all_parent_method_names = set(get_all_parent_methods(obj_def).keys())
+            
+            for proto in obj_def.protos:
+                method_name = proto.name.resolve(self)
+                findex = proto.findex.value
+
+                is_override = method_name in virtual_map
+                is_new_virtual = not is_override and method_name in all_parent_method_names
+                
+                if is_override:
+                    vid = virtual_map[method_name]
+                    virtuals[vid] = findex
+                elif is_new_virtual:
+                    vid = len(virtuals)
+                    virtuals.append(findex)
+                    virtual_map[method_name] = vid
+
+            obj_def._virtuals = virtuals
+            obj_def._virtual_map = virtual_map
+            obj_def.virtuals_initialized = True
+            processed_class_ids.add(class_id)
+
+        for t in self.types:
+            process_class(t)
+            
+        self.virtuals_built = True
 
     def _find_magic(self, f: BinaryIO | BytesIO, magic: bytes = b"HLB") -> None:
         buffer_size = 1024
@@ -1884,6 +1998,8 @@ class Bytecode(Serialisable):
         if init_globals:
             dbg_print("Initializing globals...")
             self.init_globals()
+            dbg_print("Building virtual tables...")
+            self._build_virtual_tables()
         dbg_print(f"{(datetime.now() - start_time).total_seconds()}s elapsed.")
         return self
 
@@ -2217,9 +2333,13 @@ class Bytecode(Serialisable):
         The traversal starts from "root" references (globals, natives, functions)
         and recursively explores all types contained within them.
         """
+        if self.cached_all is not None:
+            return self.cached_all
         unique_types: List[Type] = []
         # We use the serialized form of a type as a key to check for structural uniqueness.
         seen_types: Dict[bytes, int] = {}
+        
+        dbg_print("Gathering all types...")
 
         def _get_type(typ: Optional[Type]) -> None:
             if typ is None:
@@ -2274,7 +2394,7 @@ class Bytecode(Serialisable):
         primitives_to_seed = [Void, U8, U16, I32, I64, F32, F64, Bool, TypeType, Dyn]
         primitive_kind_map = {p: i for i, p in enumerate(Type.TYPEDEFS)}
 
-        for prim_class in primitives_to_seed:
+        for prim_class in tqdm(primitives_to_seed, desc="Seeding primitives...") if USE_TQDM else primitives_to_seed:
             kind_val = primitive_kind_map.get(prim_class)
             if kind_val is not None:
                 # Create a temporary Type object just for the traversal
@@ -2284,15 +2404,15 @@ class Bytecode(Serialisable):
                 _get_type(temp_type)
 
         # OCaml: `Array.iter (fun g -> get_type g) code.globals;`
-        for g_type_ref in self.global_types:
+        for g_type_ref in tqdm(self.global_types, desc="Global roots") if USE_TQDM else self.global_types:
             _get_type(g_type_ref.resolve(self))
 
         # OCaml: `Array.iter (fun (_,_,t,_) -> get_type t) code.natives;`
-        for native in self.natives:
+        for native in tqdm(self.natives, desc="Natives") if USE_TQDM else self.natives:
             _get_type(native.type.resolve(self))
 
         # OCaml: `Array.iter (fun f -> ...`
-        for func in self.functions:
+        for func in tqdm(self.functions, desc="Functions") if USE_TQDM else self.functions:
             # `get_type f.ftype;`
             _get_type(func.type.resolve(self))
             # `Array.iter (fun r -> get_type r) f.regs;`
@@ -2302,7 +2422,9 @@ class Bytecode(Serialisable):
             for op in func.ops:
                 if op.op == "Type":
                     _get_type(op.df["ty"].resolve(self))
-
+                    
+        self.cached_all = unique_types
+        dbg_print(f"Gathered {len(unique_types)} unique types.")
         return unique_types
 
     def get_field_for(self, idx: int) -> Optional[Field]:
