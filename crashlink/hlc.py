@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import enum
-from typing import Any, Callable, List, Literal, Optional, Dict, Tuple, reveal_type
+from typing import Any, Callable, List, Literal, Optional, Dict, Tuple
 
 from crashlink.errors import MalformedBytecode
 from tqdm import tqdm
