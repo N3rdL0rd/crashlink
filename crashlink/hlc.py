@@ -761,8 +761,23 @@ def generate_functions(code: Bytecode) -> List[str]:
         args_str = ", ".join(args) if args else "void"
         line(f"{ret_t} f${function.findex.value}({args_str}) {{")
         closure_id = 0
+
+        max_trap_depth = 0
+        current_trap_depth = 0
+        for op in function.ops:
+            if op.op == "Trap":
+                current_trap_depth += 1
+                if current_trap_depth > max_trap_depth:
+                    max_trap_depth = current_trap_depth
+            elif op.op == "EndTrap":
+                current_trap_depth -= 1
+        
+        if max_trap_depth > 0:
+            line("") # cosmetic newline
+            for i in range(max_trap_depth):
+                line(f"hl_trap_ctx trap${i};")
+
         trap_depth = 0
-        max_trap_depth_seen = 0
         fn_start = len(res)
         with indent:
             for i, reg in enumerate(function.regs[len(args) :]):
@@ -957,27 +972,27 @@ def generate_functions(code: Bytecode) -> List[str]:
                             rhs = f"return r{dst_reg}"
                     case "JTrue":
                         has_dst, no_semi = False, True
-                        rhs = f"if (r{df['cond']}) goto Op_{df['offset'].value + i};"
+                        rhs = f"if (r{df['cond']}) goto Op_{df['offset'].value + i + 1};"
                     case "JFalse":
                         has_dst, no_semi = False, True
-                        rhs = f"if (!r{df['cond']}) goto Op_{df['offset'].value + i};"
+                        rhs = f"if (!r{df['cond']}) goto Op_{df['offset'].value + i + 1};"
                     case "JNull":
                         has_dst, no_semi = False, True
-                        rhs = f"if (!r{df['reg']}) goto Op_{df['offset'].value + i};"
+                        rhs = f"if (!r{df['reg']}) goto Op_{df['offset'].value + i + 1};"
                     case "JNotNull":
                         has_dst, no_semi = False, True
-                        rhs = f"if (r{df['reg']}) goto Op_{df['offset'].value + i};"
+                        rhs = f"if (r{df['reg']}) goto Op_{df['offset'].value + i + 1};"
                     case "JSLt" | "JSGte" | "JSGt" | "JSLte" | "JEq" | "JNotEq":
                         has_dst, no_semi, rhs = compare_op(op.op, df, function, code, i)
                     case "JULt":
                         has_dst, no_semi = False, True
-                        rhs = f"if( ((unsigned)r{df['a']}) < ((unsigned)r{df['b']}) ) goto Op_{df['offset'].value + i};"
+                        rhs = f"if( ((unsigned)r{df['a']}) < ((unsigned)r{df['b']}) ) goto Op_{df['offset'].value + i + 1};"
                     case "JUGte":
                         has_dst, no_semi = False, True
-                        rhs = f"if( ((unsigned)r{df['a']}) >= ((unsigned)r{df['b']}) ) goto Op_{df['offset'].value + i};"
+                        rhs = f"if( ((unsigned)r{df['a']}) >= ((unsigned)r{df['b']}) ) goto Op_{df['offset'].value + i + 1};"
                     case "JAlways":
                         has_dst, no_semi = False, True
-                        rhs = f"goto Op_{df['offset'].value + i};"
+                        rhs = f"goto Op_{df['offset'].value + i + 1};"
                     case "Label" | "Nop":
                         has_dst = False
                         rhs = "dummycall_label();"
@@ -1358,19 +1373,13 @@ def generate_functions(code: Bytecode) -> List[str]:
                         has_dst = False
                         rhs = f"if( r{df['reg']} == NULL ) hl_null_access()"
                     case "Trap":
-                        exc_reg = df["exc"].value
-                        offset = df["offset"].value
-                        target_label = f"Op_{i + 1 + offset}"
-                        if trap_depth >= max_trap_depth_seen:
-                            res.insert(fn_start, f"    hl_trap_ctx trap${trap_depth};")
-                            max_trap_depth_seen += 1
-
-                        rhs = f"hl_trap(&trap${trap_depth}, r{exc_reg}, {target_label})"
+                        opline(i, f"hl_trap(trap${trap_depth}, {regstr(df['exc'])}, Op_{i + 1 + df['offset'].value});")
                         trap_depth += 1
-                        has_dst = False
+                        continue
                     case "EndTrap":
-                        rhs = f"hl_endtrap(&trap${(trap_depth := trap_depth - 1)})"
-                        has_dst = False
+                        trap_depth -= 1
+                        opline(i, f"hl_endtrap(&trap${trap_depth});")
+                        continue
                     case "Assert":
                         has_dst = False
                         rhs = "hl_assert()"
@@ -1476,8 +1485,11 @@ def code_to_c(code: Bytecode) -> str:
     sec("Dummy label call")
     line("void dummycall_label() { /* dummy */ }")
 
-    sec("Functions! Whoa!")
+    sec("Functions")
     res += generate_functions(code)
+    
+    sec("Reflection")
+    # res += generate_reflection(code)
 
     sec("Entrypoint")
     res += generate_entry(code)
