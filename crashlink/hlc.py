@@ -878,10 +878,9 @@ def generate_functions(code: Bytecode) -> List[str]:
                             call_args_str = ", ".join([obj] + [f"r{r.value}" for r in arg_regs])
                             rhs = f"{casted_fun}({call_args_str})"
                         elif isinstance(obj_t, Virtual):
-                            # raise NotImplementedError(
-                            #     f"CallMethod/CallThis on Virtual type not implemented at op {i} in function {function.findex}"
-                            # )
-                            line("// unimplemented CallMethod/CallThis on Virtual type")
+                            raise NotImplementedError(
+                                f"CallMethod/CallThis on Virtual type not implemented at op {i} in function {function.findex}"
+                            )
                         else:
                             raise MalformedBytecode(f"CallMethod/CallThis on non-Obj/Struct type: {obj_t} at op {i} in function {function.findex}")
                     case "CallClosure":
@@ -987,11 +986,9 @@ def generate_functions(code: Bytecode) -> List[str]:
                             rhs = f"hl_alloc_dynbool(r{df['src']})"
                         else:
                             has_dst, no_semi = False, True
-                            typ = function.regs[df["src"].value]
-                            typ_r = typ.resolve(code)
-                            typ_def = typ_r.definition
-                            rhs = f"r{df['dst']} = hl_alloc_dynamic(&t${typ.value}); "
-                            match typ_r.kind.value:
+                            typ = function.regs[df["src"].value].resolve(code)
+                            rhs = f"r{df['dst']} = hl_alloc_dynamic(&t${function.regs[df["src"].value]}); "
+                            match typ.kind.value:
                                 case Type.Kind.U8.value | Type.Kind.U16.value | Type.Kind.I32.value | Type.Kind.BOOL.value:
                                     rhs += f"r{df['dst']}->v.i = r{df['src']};"
                                 case Type.Kind.I64.value:
@@ -1002,16 +999,16 @@ def generate_functions(code: Bytecode) -> List[str]:
                                     rhs += f"r{df['dst']}->v.d = r{df['src']};"
                                 case _:
                                     rhs += f"r{df['dst']}->v.ptr = r{df['src']};"
-                            if is_ptr(typ_r.kind.value):
+                            if is_ptr(typ.kind.value):
                                 rhs = f"if( r{df['src']} == NULL ) r{df['dst']} = NULL; else {{{rhs}}}"
                     case "ToSFloat":
                         has_dst = False
-                        typ = function.regs[df["dst"].value]
-                        rhs = f"r{df['dst']} = ({ctype(code, typ.resolve(code), typ.value)})r{df['src']}"
+                        typ = function.regs[df["dst"].value].resolve(code)
+                        rhs = f"r{df['dst']} = ({ctype(code, typ, function.regs[df["dst"].value].value)})r{df['src']}"
                     case "ToUFloat":
                         has_dst = False
-                        typ = function.regs[df["dst"].value]
-                        rhs = f"r{df['dst']} = ({ctype(code, typ.resolve(code), typ.value)})(unsigned)r{df['src']}"
+                        typ = function.regs[df["dst"].value].resolve(code)
+                        rhs = f"r{df['dst']} = ({ctype(code, typ, function.regs[df["dst"].value].value)})(unsigned)r{df['src']}"
                     case "ToInt":
                         rhs = f"(int)r{df['src']}"
                     case "New":
@@ -1031,21 +1028,21 @@ def generate_functions(code: Bytecode) -> List[str]:
                             obj_reg = df["obj"].value
                         else:
                             obj_reg = 0
-                        obj_t = function.regs[obj_reg].resolve(code)
-                        assert isinstance(obj_t, Type), (
-                            f"Expected obj type to be Type, got {type(obj_t).__name__}. This should never happen."
+                        obj_tres = function.regs[obj_reg].resolve(code)
+                        assert isinstance(obj_tres, Type), (
+                            f"Expected obj type to be Type, got {type(obj_tres).__name__}. This should never happen."
                         )
                         field_idx: int = df["field"].value
-                        match obj_t.kind.value:
+                        match obj_tres.kind.value:
                             case Type.Kind.OBJ.value | Type.Kind.STRUCT.value:
-                                dfn = obj_t.definition
+                                dfn = obj_tres.definition
                                 assert isinstance(dfn, (Obj, Struct)), (
                                     f"Expected obj type definition to be Obj or Struct, got {type(dfn).__name__}. This should never happen."
                                 )
                                 field_name = dfn.resolve_fields(code)[field_idx].name.resolve(code)
                                 rhs = f"r{obj_reg}->{sanitize_ident(field_name)}"
                             case Type.Kind.VIRTUAL.value:
-                                dfn = obj_t.definition
+                                dfn = obj_tres.definition
                                 assert isinstance(dfn, Virtual), "This check should pass."
                                 field_info = dfn.fields[field_idx]
                                 field_name = field_info.name.resolve(code)
@@ -1072,15 +1069,16 @@ def generate_functions(code: Bytecode) -> List[str]:
                             obj_reg_idx = 0
                             val_reg_idx = df["src"].value
                         
-                        obj_reg = f"r{obj_reg_idx}"
-                        val_reg = f"r{val_reg_idx}"
-                        obj_t = function.regs[obj_reg_idx].resolve(code)
-                        field_idx: int = df["field"].value
+                        obj_regs = f"r{obj_reg_idx}"
+                        val_regs = f"r{val_reg_idx}"
+                        obj_tres = function.regs[obj_reg_idx].resolve(code)
+                        field_idx = df["field"].value
                         has_dst = False
                         
-                        match obj_t.kind.value:
+                        assert obj_tres is not None
+                        match obj_tres.kind.value:
                             case Type.Kind.OBJ.value | Type.Kind.STRUCT.value:
-                                dfn = obj_t.definition
+                                dfn = obj_tres.definition
                                 assert isinstance(dfn, (Obj, Struct)), "This check should pass."
                                 
                                 field = dfn.resolve_fields(code)[field_idx]
@@ -1088,10 +1086,10 @@ def generate_functions(code: Bytecode) -> List[str]:
                                 field_type_idx = field.type
                                 val_cast = rcast(code, Reg(val_reg_idx), field_type_idx, function)
                                 
-                                rhs = f"{obj_reg}->{field_name} = {val_cast}"
+                                rhs = f"{obj_regs}->{field_name} = {val_cast}"
 
                             case Type.Kind.VIRTUAL.value:
-                                dfn = obj_t.definition
+                                dfn = obj_tres.definition
                                 assert isinstance(dfn, Virtual), "This check should pass."
                                 
                                 field_info = dfn.fields[field_idx]
@@ -1108,21 +1106,21 @@ def generate_functions(code: Bytecode) -> List[str]:
                                 if value_type.kind.value not in {Type.Kind.F32.value, Type.Kind.F64.value, Type.Kind.I64.value}:
                                     type_arg = f", &t${function.regs[val_reg_idx].value}"
 
-                                dyn_set_call = f"hl_dyn_set{prefix}({obj_reg}->value, {field_hash}/*{field_name}*/{type_arg}, {val_reg})"
-                                val_cast = f"({field_ctype}){val_reg}"
-                                direct_set = f"*({field_ctype}*)(hl_vfields({obj_reg})[{field_idx}]) = {val_cast}"
-                                rhs = f"if (hl_vfields({obj_reg})[{field_idx}]) {direct_set}; else {dyn_set_call}"
+                                dyn_set_call = f"hl_dyn_set{prefix}({obj_regs}->value, {field_hash}/*{field_name}*/{type_arg}, {val_regs})"
+                                val_cast = f"({field_ctype}){val_regs}"
+                                direct_set = f"*({field_ctype}*)(hl_vfields({obj_regs})[{field_idx}]) = {val_cast}"
+                                rhs = f"if (hl_vfields({obj_regs})[{field_idx}]) {direct_set}; else {dyn_set_call}"
                             case _:
-                                unknown_ops.add(f"SetField on {obj_t.kind}")
+                                unknown_ops.add(f"SetField on {obj_tres.kind}")
                                 continue
                     case "Throw" | "Rethrow":
                         # Opcodes: Throw: {"exc": Reg}, Rethrow: {"exc": Reg}
                         rhs = f"hl_{op.op.lower()}((vdynamic*)r{df['exc'].value})"
                         has_dst = False
-                    case "GetUI8": # This is an alias for GetI8 in practice
+                    case "GetUI8" | "GetI8":
                         # Opcode: GetI8: {"dst": Reg, "bytes": Reg, "index": Reg}
                         rhs = f"*(unsigned char*)(r{df['bytes'].value} + r{df['index'].value})"
-                    case "GetUI16": # This is an alias for GetI16
+                    case "GetUI16" | "GetI16":
                         # Opcode: GetI16: {"dst": Reg, "bytes": Reg, "index": Reg}
                         rhs = f"*(unsigned short*)(r{df['bytes'].value} + r{df['index'].value})"
                     case "GetMem":
@@ -1140,11 +1138,11 @@ def generate_functions(code: Bytecode) -> List[str]:
                             rhs = f"(({dst_ctype}*)r{df['array'].value})[r{df['index'].value}]"
                         else: # Standard `varray` with a header
                             rhs = f"(({dst_ctype}*)(r{df['array'].value} + 1))[r{df['index'].value}]"
-                    case "SetUI8": # Alias for SetI8
+                    case "SetUI8" | "SetI8":
                         # Opcode: SetI8: {"bytes": Reg, "index": Reg, "src": Reg}
                         rhs = f"*(unsigned char*)(r{df['bytes'].value} + r{df['index'].value}) = (unsigned char)r{df['src'].value}"
                         has_dst = False
-                    case "SetUI16": # Alias for SetI16
+                    case "SetUI16" | "SetI16":
                         # Opcode: SetI16: {"bytes": Reg, "index": Reg, "src": Reg}
                         rhs = f"*(unsigned short*)(r{df['bytes'].value} + r{df['index'].value}) = (unsigned short)r{df['src'].value}"
                         has_dst = False
@@ -1175,8 +1173,7 @@ def generate_functions(code: Bytecode) -> List[str]:
 
                         if isinstance(src_type.definition, Null):
                             assert isinstance(src_type.definition.type, tIndex)
-                            field = dyn_value_field(src_type.definition.type.resolve(code))
-                            rhs = f"r{src_reg} ? r{src_reg}->v.{field} : 0"
+                            rhs = f"r{src_reg} ? r{src_reg}->v.{dyn_value_field(src_type.definition.type.resolve(code))} : 0"
                         else:
                             prefix = dyn_prefix(dst_type)
                             type_arg = ""
@@ -1381,8 +1378,56 @@ def generate_functions(code: Bytecode) -> List[str]:
                         rhs = f"&r{df['src']}"
                     case "Unref":
                         rhs = f"*r{df['src']}"
+                    case "Setref":
+                        has_dst = False
+                        rhs = r"*r{df['dst']} = r{df['value']}"
+                    case "RefData":
+                        dst_reg = df['dst'].value
+                        src_reg = df['src'].value
+                        src_type = function.regs[src_reg.value].resolve(code)
+
+                        if isinstance(src_type.definition, Array):
+                            dst_type_idx = function.regs[dst_reg.value]
+                            dst_ctype = ctype(code, dst_type_idx.resolve(code), dst_type_idx.value)
+                            rhs = f"({dst_ctype})hl_aptr({regstr(src_reg)}, void*)"
+                        else:
+                            raise MalformedBytecode(f"RefData at op {i} in function {function.findex} expects an Array type in source register, but got {src_type.definition.__class__.__name__}")
+                    case "RefOffset":
+                        # Opcode: {"dst": "Reg", "reg": "Reg", "offset": "Reg"}
+                        rhs = f"r{df['reg'].value} + r{df['offset'].value}"
+                    case "Prefetch":
+                        has_dst = False
+
+                        obj_reg = df['value']
+                        field_id = df['field'].value
+                        mode = df['mode'].value
+
+                        if not (0 <= mode <= 3):
+                            raise MalformedBytecode(f"Invalid prefetch mode {mode} at op {i} in function {function.findex}")
+                        
+                        prefetch_expr = ""
+                        if field_id == 0:
+                            prefetch_expr = regstr(obj_reg)
+                        else:
+                            obj_type = function.regs[obj_reg.value].resolve(code)
+                            obj_def = obj_type.definition
+
+                            if isinstance(obj_def, (Obj, Struct)):
+                                field_index = field_id - 1
+                                try:
+                                    resolved_fields = obj_def.resolve_fields(code)
+                                    field = resolved_fields[field_index]
+                                    field_c_name = sanitize_ident(field.name.resolve(code))
+                                    prefetch_expr = f"&{regstr(obj_reg)}->{field_c_name}"
+                                except IndexError:
+                                    raise MalformedBytecode(f"Prefetch field index {field_id} is out of bounds for object {obj_def.name.resolve(code)} at op {i}")
+                            else:
+                                raise MalformedBytecode(f"Prefetch with non-zero field_id used on a non-object type ({obj_type.definition.__class__.__name__}) at op {i}")
+
+                        rhs = f"__hl_prefetch_m{mode}({prefetch_expr})"
+                    case "Asm":
+                        raise MalformedBytecode("Asm is not supported by either the official HL/C compiler or crashlink. This is done intentionally for feature parity.")
                     case _:
-                        #print("Unknown operation:", op.op)
                         unknown_ops.add(op.op if op.op else "unknown?????")
                         continue
 
@@ -1440,9 +1485,5 @@ def code_to_c(code: Bytecode) -> str:
     if unknown_ops:
         print(f"Warning: {len(unknown_ops)} unknown operations encountered during function generation.")
         print(unknown_ops)
-
-    # TODO: Add generation for:
-    # - Hash initialization (maybe we can live without it? i think it's just pre-caching for performance)
-    # - Haxe functions
 
     return "\n".join(res)
