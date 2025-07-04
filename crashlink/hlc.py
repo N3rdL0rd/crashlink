@@ -4,10 +4,11 @@ import enum
 from typing import Any, Callable, List, Literal, Optional, Dict, Tuple
 
 from crashlink.errors import MalformedBytecode
-from tqdm import tqdm
 
 from .core import *
 from .core import USE_TQDM
+if USE_TQDM:
+    from tqdm import tqdm
 
 
 KEYWORDS = {
@@ -83,9 +84,6 @@ def sanitize_ident(name: str) -> str:
     if name in KEYWORDS or name.startswith("__"):
         return "_hx_" + name
     return name
-
-
-# --- Hashing ---
 
 
 def hl_hash_utf8(name: str) -> int:
@@ -193,6 +191,24 @@ def ctype_no_ptr(code: Bytecode, typ: Type, i: int) -> str:
     base_name, _ = _ctype_no_ptr(code, typ, i)
     return base_name
 
+def cast_fun(code: Bytecode, func_ptr_expr: str, ret_type: tIndex, args_types: List[tIndex]) -> str:
+    """Generates a C cast for a function pointer."""
+    ret_t_str = ctype(code, ret_type.resolve(code), ret_type.value)
+    args_t_str = ", ".join(ctype(code, t.resolve(code), t.value) for t in args_types) or "void"
+    return f"(({ret_t_str} (*)({args_t_str})){func_ptr_expr})"
+
+def is_ptr(kind: int) -> bool:
+    """Checks if a type kind represents a pointer."""
+    return kind not in {
+        Type.Kind.VOID.value,
+        Type.Kind.U8.value,
+        Type.Kind.U16.value,
+        Type.Kind.I32.value,
+        Type.Kind.I64.value,
+        Type.Kind.F32.value,
+        Type.Kind.F64.value,
+        Type.Kind.BOOL.value,
+    }
 
 class Indenter:
     """A context manager for dynamically handling indentation levels."""
@@ -342,11 +358,11 @@ def generate_types(code: Bytecode) -> List[str]:
     types = code.types
 
     line("// Type shells")
-    for i, typ in tqdm(enumerate(types)):
+    for i, typ in tqdm(enumerate(types), desc="Generating type shells") if USE_TQDM else enumerate(types):
         line(f"hl_type t${i} = {{ {KIND_SHELLS[typ.kind.value]} }};")
 
     line("\n// Type data")
-    for i, typ in tqdm(enumerate(types)):
+    for i, typ in tqdm(enumerate(types), desc="Generating types") if USE_TQDM else enumerate(types):
         df = typ.definition
         if isinstance(df, (Obj, Struct)):
             if df.fields:
@@ -390,8 +406,48 @@ def generate_types(code: Bytecode) -> List[str]:
             else:
                 line(f"static hl_type_virtual virtt${i} = {{NULL, 0}};")
         elif isinstance(df, Enum):
-            # TODO enum
-            pass
+            for cid, constr in enumerate(df.constructs):
+                if constr.params:
+                    param_types_str = ", ".join(f"&t${p.value}" for p in constr.params)
+                    line(f"static hl_type *econstruct_params_{i}_{cid}[] = {{{param_types_str}}};")
+                    offsets_str = ", ".join("0" for _ in constr.params)
+                    line(f"static int econstruct_offsets_{i}_{cid}[] = {{{offsets_str}}};")
+
+            if df.constructs:
+                construct_data_list = []
+                for cid, constr in enumerate(df.constructs):
+                    constr_name_str = constr.name.resolve(code)
+                    nparams = len(constr.params)
+                    has_params = nparams > 0
+
+                    # OCaml uses `sizeof(venum)` if no params, but that's equivalent to 0 for `size`.
+                    # The `size` field in `hl_enum_construct` is used differently by the runtime.
+                    # We will follow the OCaml's output which seems to be sizeof(the_constructor_struct)
+                    # For now, let's use 0 for simplicity as the runtime might not need it for boot.
+                    # A more correct implementation would require generating the constructor struct first.
+                    # Let's use 0, as this field is mainly for the JIT.
+                    size_str = "0"
+
+                    has_ptr = any(is_gc_ptr(p.resolve(code)) for p in constr.params)
+                    
+                    construct_entry = (
+                        f"{{(const uchar*)USTR(\"{constr_name_str}\"), {nparams}, "
+                        f"{'econstruct_params_' + str(i) + '_' + str(cid) if has_params else 'NULL'}, "
+                        f"{size_str}, {'true' if has_ptr else 'false'}, "
+                        f"{'econstruct_offsets_' + str(i) + '_' + str(cid) if has_params else 'NULL'}}}"
+                    )
+                    construct_data_list.append(construct_entry)
+                
+                line(f"static hl_enum_construct econstructs{i}[] = {{{', '.join(construct_data_list)}}};")
+
+            line(f"static hl_type_enum enumt${i} = {{")
+            with indent:
+                enum_name = df.name.resolve(code)
+                line(f'(const uchar*)USTR("{enum_name}"),')
+                line(f"{df.nconstructs},")
+                line(f"econstructs{i}" if df.constructs else "NULL")
+            line("};")
+
     return res
 
 
@@ -431,7 +487,7 @@ def generate_globals(code: Bytecode) -> List[str]:
         c_type_str = ctype(code, g_type, all_types.index(g_type))
         line(f"{c_type_str} g${i} = 0;")
 
-    for const in tqdm(code.constants):
+    for const in tqdm(code.constants, desc="Generating global constants") if USE_TQDM else code.constants:
         obj = const._global.resolve(code).definition
         objIdx = const._global.partial_resolve(code).value
         assert isinstance(obj, Obj), (
@@ -464,7 +520,7 @@ def generate_globals(code: Bytecode) -> List[str]:
                 if df._global and df._global.value:
                     line(
                         f"objt${j}.global_value = (void**)&g${df._global.value - 1};"
-                    )  # FIXME: don't know if -1 is correct?
+                    )  # I think the 1-index is correct, but I'm still a bit iffy about this. YOLO!
                 line(f"t${j}.obj = &objt${j};")
             elif isinstance(df, Fun):
                 line(f"t${j}.fun = &tfunt${j};")
@@ -472,15 +528,17 @@ def generate_globals(code: Bytecode) -> List[str]:
                 line(f"t${j}.virt = &virtt${j};")
                 line(f"hl_init_virtual(&t${j},ctx);")
             elif isinstance(df, Enum):
-                # TODO enum
-                pass
+                line(f"t${j}.tenum = &enumt${j};")
+                if df._global and df._global.value:
+                     line(f"enumt${j}.global_value = (void**)&g${df._global.value - 1};")
+                line(f"hl_init_enum(&t${j},ctx);")
             elif isinstance(df, (Null, Ref)):
                 line(f"t${j}.tparam = &t${df.type.value};")
     line("}\n")
 
     line("\nvoid hl_init_roots() {")
     with indent:
-        for const in tqdm(code.constants):
+        for const in tqdm(code.constants, desc="Initializing global constants") if USE_TQDM else code.constants:
             line(f"g${const._global.value} = &const_g${const._global.value};")
         for i, g_type_ptr in enumerate(code.global_types):
             g_type = g_type_ptr.resolve(code)
@@ -502,10 +560,10 @@ def generate_entry(code: Bytecode) -> List[str]:
     with indent:
         line("hl_module_context ctx;")
         line("hl_alloc_init(&ctx.alloc);")
-        line("// ctx.functions_ptrs = hl_functions_ptrs;")  # TODO
-        line("// ctx.functions_types = hl_functions_types;")
+        line("ctx.functions_ptrs = hl_functions_ptrs;")
+        line("ctx.functions_types = hl_functions_types;")
         line("hl_init_types(&ctx);")
-        line("// hl_init_hashes();")
+        line("hl_init_hashes();")
         line("hl_init_roots();")
         line(f"f${code.entrypoint.value}();")
     line("}")
@@ -539,18 +597,270 @@ SWAP_OP_MAP = {
     "JSLte": "JSGte", "JSGte": "JSLte",
     "JEq": "JEq", "JNotEq": "JNotEq",
 }
+    
+def generate_reflection(code: Bytecode) -> List[str]:
+    """Generates the C reflection helpers: hlc_static_call and the function wrappers."""
+    res = []
+    indent = Indenter()
 
-def is_ptr(kind: int) -> bool:
-    return kind not in {
-        Type.Kind.VOID.value,
-        Type.Kind.U8.value,
-        Type.Kind.U16.value,
-        Type.Kind.I32.value,
-        Type.Kind.I64.value,
-        Type.Kind.F32.value,
-        Type.Kind.F64.value,
-        Type.Kind.BOOL.value,
-    }
+    def line(*args: Any) -> None:
+        res.append(indent.current_indent + " ".join(str(arg) for arg in args))
+
+    def get_type_kind(typ: Type) -> Type.Kind:
+        """Simplifies a type into a broader category for reflection."""
+        kind_val = typ.kind.value
+        if kind_val in {Type.Kind.BOOL.value, Type.Kind.U8.value, Type.Kind.U16.value, Type.Kind.I32.value}:
+            return Type.Kind.I32
+        if kind_val in {Type.Kind.F32.value, Type.Kind.F64.value, Type.Kind.I64.value, Type.Kind.VOID.value}:
+            return Type.Kind(kind_val)
+        return Type.Kind.DYN
+
+    def get_type_kind_id(kind: Type.Kind) -> int:
+        """Maps a kinded type to a small integer for building a unique signature hash."""
+        kind_map = {
+            Type.Kind.VOID.value: 0,
+            Type.Kind.I32.value: 1,
+            Type.Kind.F32.value: 2,
+            Type.Kind.F64.value: 3,
+            Type.Kind.I64.value: 4,
+            Type.Kind.DYN.value: 5,
+        }
+        return kind_map.get(kind.value, 5)
+
+    fun_by_args: Dict[int, Dict[Tuple[Tuple[Type.Kind, ...], Type.Kind], None]] = {}
+
+    def add_fun(args: List[Type], ret: Type) -> None:
+        nargs = len(args)
+        kinded_args = tuple(get_type_kind(arg) for arg in args)
+        kinded_ret = get_type_kind(ret)
+
+        if nargs not in fun_by_args:
+            fun_by_args[nargs] = {}
+        fun_by_args[nargs][(kinded_args, kinded_ret)] = None
+
+    for func in tqdm(code.functions, desc="Collecting function signatures") if USE_TQDM else code.functions:
+        for op in func.ops:
+            if op.op in {"SafeCast", "DynGet"}:
+                dst_type = func.regs[op.df["dst"].value].resolve(code)
+                if isinstance(dst_type.definition, Fun):
+                    fun_def = dst_type.definition
+                    arg_types = [t.resolve(code) for t in fun_def.args]
+                    ret_type = fun_def.ret.resolve(code)
+                    add_fun(arg_types, ret_type)
+
+    for f in code.functions:
+        f_def = f.type.resolve(code).definition
+        if isinstance(f_def, Fun):
+            add_fun([t.resolve(code) for t in f_def.args], f_def.ret.resolve(code))
+    for n in code.natives:
+        n_def = n.type.resolve(code).definition
+        if isinstance(n_def, Fun):
+            add_fun([t.resolve(code) for t in n_def.args], n_def.ret.resolve(code))
+
+    line("static int TKIND[] = {0,1,1,1,4,2,3,1,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5};")
+    line("")
+    line("void *hlc_static_call( void *fun, hl_type *t, void **args, vdynamic *out ) {")
+    with indent:
+        line("int chk = TKIND[t->fun->ret->kind];")
+        line("vdynamic *d;")
+        line("switch( t->fun->nargs ) {")
+        
+        sorted_arg_counts = sorted(fun_by_args.keys())
+        for nargs in tqdm(sorted_arg_counts, desc="Generating signatures") if USE_TQDM else sorted_arg_counts:
+            line(f"case {nargs}:")
+            with indent:
+                if nargs > 9:
+                     line("hl_fatal(\"Too many arguments, TODO:use more bits\");")
+                else:
+                    for i in range(nargs):
+                        line(f"chk |= TKIND[t->fun->args[{i}]->kind] << {(i + 1) * 3};")
+                    line("switch( chk ) {")
+                    
+                    signatures = fun_by_args[nargs]
+                    for (arg_kinds, ret_kind), _ in signatures.items():
+                        all_kinds = [ret_kind] + list(arg_kinds)
+                        chk_val = sum(get_type_kind_id(kind) << (i * 3) for i, kind in enumerate(all_kinds))
+                        line(f"case {chk_val}:")
+                        with indent:
+                            found_sig = False
+                            for f in code.functions + code.natives:
+                                f_def = f.type.resolve(code).definition
+                                if isinstance(f_def, Fun) and len(f_def.args) == nargs:
+                                    current_arg_tindices = f_def.args
+                                    current_ret_tindex = f_def.ret
+                                    current_arg_types = [t.resolve(code) for t in current_arg_tindices]
+                                    current_ret_type = current_ret_tindex.resolve(code)
+
+                                    if tuple(get_type_kind(t) for t in current_arg_types) == arg_kinds and get_type_kind(current_ret_type) == ret_kind:
+                                        arg_list_str = []
+                                        for i, arg_tindex in enumerate(current_arg_tindices):
+                                            arg_type = arg_tindex.resolve(code)
+                                            if is_ptr(arg_type.kind.value):
+                                                arg_list_str.append(f"({ctype(code, arg_type, arg_tindex.value)})args[{i}]")
+                                            else:
+                                                arg_list_str.append(f"*({ctype(code, arg_type, arg_tindex.value)}*)args[{i}]")
+
+                                        call_str = f"{cast_fun(code, 'fun', current_ret_tindex, current_arg_tindices)}({', '.join(arg_list_str)})"
+                                        
+                                        if is_ptr(current_ret_type.kind.value):
+                                            line(f"return {call_str};")
+                                        elif current_ret_type.kind.value == Type.Kind.VOID.value:
+                                            line(f"{call_str};")
+                                            line("return NULL;")
+                                        else:
+                                            line(f"out->v.{dyn_value_field(current_ret_type)} = {call_str};")
+                                            line(f"return &out->v.{dyn_value_field(current_ret_type)};")
+                                        found_sig = True
+                                        break
+                            if not found_sig:
+                                line("/* Signature not found for this case, should not happen */")
+                        
+                    line("}")
+                    line("break;")
+        line("}")
+        line("hl_fatal(\"Unsupported dynamic call\");")
+        line("return NULL;")
+    line("}")
+    line("")
+    
+    # --- 3. Generate wrapper functions ---
+    def get_wrap_char(typ: Type) -> str:
+        kind = typ.kind.value
+        if kind == Type.Kind.VOID.value: return "v"
+        if kind in {Type.Kind.U8.value, Type.Kind.U16.value, Type.Kind.I32.value, Type.Kind.BOOL.value}: return "i"
+        if kind == Type.Kind.F32.value: return "f"
+        if kind == Type.Kind.F64.value: return "d"
+        if kind == Type.Kind.I64.value: return "i64"
+        return "p"
+
+    def make_wrap_name(args: List[Type], ret: Type) -> str:
+        return "".join(get_wrap_char(t) for t in args) + "_" + get_wrap_char(ret)
+
+    for nargs in sorted_arg_counts:
+        processed_wrappers = set()
+        for f in code.functions + code.natives:
+            f_def = f.type.resolve(code).definition
+            if isinstance(f_def, Fun) and len(f_def.args) == nargs:
+                # --- FIX IS HERE ---
+                # We need the original tIndex objects to generate correct C types
+                arg_tindices = f_def.args
+                ret_tindex = f_def.ret
+                arg_types = [t.resolve(code) for t in arg_tindices]
+                ret_type = ret_tindex.resolve(code)
+                # --- END OF FIX ---
+                
+                wrap_name = make_wrap_name(arg_types, ret_type)
+                if wrap_name in processed_wrappers:
+                    continue
+                processed_wrappers.add(wrap_name)
+
+                c_args = [f"p{i}" for i in range(nargs)]
+                # --- FIX IS HERE ---
+                # Pass the correct index to ctype
+                c_args_typed = [f"{ctype(code, t, t_idx.value)} {name}" for t, t_idx, name in zip(arg_types, arg_tindices, c_args)]
+                # --- END OF FIX ---
+                c_args_str = ", ".join(c_args_typed)
+                
+                line(f"static {ctype(code, ret_type, ret_tindex.value)} wrap_{wrap_name}(void *value{', ' + c_args_str if c_args_str else ''}) {{")
+                with indent:
+                    if arg_types:
+                        packed_args = [f"&p{i}" if not is_ptr(t.kind.value) else f"p{i}" for i, t in enumerate(arg_types)]
+                        line(f"void *args[] = {{{', '.join(packed_args)}}};")
+                    
+                    vargs = "args" if arg_types else "NULL"
+                    if ret_type.kind.value == Type.Kind.VOID.value:
+                        line(f"hl_wrapper_call(value, {vargs}, NULL);")
+                    elif is_ptr(ret_type.kind.value):
+                        line(f"return hl_wrapper_call(value, {vargs}, NULL);")
+                    else:
+                        line("vdynamic ret;")
+                        line(f"hl_wrapper_call(value, {vargs}, &ret);")
+                        line(f"return ret.v.{get_wrap_char(ret_type)};")
+                line("}")
+
+    line("")
+    
+    # --- 4. Generate hlc_get_wrapper ---
+    line("void *hlc_get_wrapper( hl_type *t ) {")
+    with indent:
+        line("int chk = TKIND[t->fun->ret->kind];")
+        line("switch( t->fun->nargs ) {")
+
+        for nargs in sorted_arg_counts:
+            line(f"case {nargs}:")
+            with indent:
+                if nargs > 9:
+                    line("hl_fatal(\"Too many arguments, TODO:use more bits\");")
+                else:
+                    for i in range(nargs):
+                        line(f"chk |= TKIND[t->fun->args[{i}]->kind] << {(i + 1) * 3};")
+                    line("switch( chk ) {")
+                    
+                    signatures = fun_by_args[nargs]
+                    for (arg_kinds, ret_kind), _ in signatures.items():
+                        all_kinds = [ret_kind] + list(arg_kinds)
+                        chk_val = sum(get_type_kind_id(kind) << (i * 3) for i, kind in enumerate(all_kinds))
+                        line(f"case {chk_val}:")
+                        with indent:
+                            found_sig = False
+                            for f in code.functions + code.natives:
+                                f_def = f.type.resolve(code).definition
+                                if isinstance(f_def, Fun) and len(f_def.args) == nargs:
+                                    current_arg_types = [t.resolve(code) for t in f_def.args]
+                                    current_ret_type = f_def.ret.resolve(code)
+                                    if tuple(get_type_kind(t) for t in current_arg_types) == arg_kinds and get_type_kind(current_ret_type) == ret_kind:
+                                        wrap_name = make_wrap_name(current_arg_types, current_ret_type)
+                                        line(f"return wrap_{wrap_name};")
+                                        found_sig = True
+                                        break
+                            if not found_sig:
+                                line("/* Wrapper not found for this case */")
+                    line("}")
+                    line("break;")
+        line("}")
+        line("return NULL;")
+    line("}")
+    return res
+
+def generate_function_tables(code: Bytecode) -> List[str]:
+    """Generates the hl_functions_ptrs and hl_functions_types C arrays."""
+    res = []
+    indent = Indenter()
+
+    def line(*args: Any) -> None:
+        res.append(indent.current_indent + " ".join(str(arg) for arg in args))
+    
+    if not code.functions and not code.natives:
+        max_findex = -1
+    else:
+        all_findexes = [f.findex.value for f in code.functions] + [n.findex.value for n in code.natives]
+        max_findex = max(all_findexes)
+    
+    total_functions = max_findex + 1
+    
+    line("void *hl_functions_ptrs[] = {")
+    with indent:
+        ptrs = []
+        for i in range(total_functions):
+            ptrs.append(f"(void*)f${i}")
+        line(",\n".join(ptrs))
+    line("};")
+    line("")
+
+    line("hl_type *hl_functions_types[] = {")
+    with indent:
+        types = []
+        for i in range(total_functions):
+            try:
+                func_or_native = code.fn(i)
+                type_index = func_or_native.type.value
+                types.append(f"&t${type_index}")
+            except ValueError:
+                types.append("&hlt_void")
+        line(",\n".join(types))
+    line("};")
+
+    return res
 
 def generate_functions(code: Bytecode) -> List[str]:
     global unknown_ops
@@ -739,7 +1049,7 @@ def generate_functions(code: Bytecode) -> List[str]:
         return f"{c_enum_name}_{c_constr_name}"
 
         
-    for function in tqdm(code.functions):
+    for function in tqdm(code.functions, desc="Generating function prototypes") if USE_TQDM else code.functions:
         fun = function.type.resolve(code).definition
         assert isinstance(fun, Fun), (
             f"Expected function type to be Fun, got {type(fun).__name__}. This should never happen."
@@ -750,7 +1060,7 @@ def generate_functions(code: Bytecode) -> List[str]:
         args_str = ", ".join(args) if args else "void"
         line(f"{ret_t} f${function.findex.value}({args_str}); /* t${function.type.value} */")
     
-    for function in tqdm(code.functions):
+    for function in tqdm(code.functions, desc="Generating functions") if USE_TQDM else code.functions:
         fun = function.type.resolve(code).definition
         assert isinstance(fun, Fun), (
             f"Expected function type to be Fun, got {type(fun).__name__}. This should never happen."
@@ -1196,7 +1506,7 @@ def generate_functions(code: Bytecode) -> List[str]:
                                 type_arg = f", &t${dst_type_idx.value}"
                             
                             src_type_idx = function.regs[src_reg].value
-                            rhs = f"({dst_ctype})hl_dyn_cast{prefix}((vdynamic*)r{src_reg}, &t${src_type_idx}{type_arg})"
+                            rhs = f"({dst_ctype})hl_dyn_cast{prefix}(&r{src_reg}, &t${src_type_idx}{type_arg})"
                     case "UnsafeCast":
                         # Opcode: {"dst": Reg, "src": Reg}
                         # OCaml: sexpr "%s = (%s)%s" (reg r) (ctype (rtype r)) (reg v)
@@ -1454,6 +1764,26 @@ def generate_functions(code: Bytecode) -> List[str]:
 
     return res
 
+def generate_hashes(code: Bytecode) -> List[str]:
+    res_h = []
+    indent_h = Indenter()
+    def line_h(*args: Any) -> None: res_h.append(indent_h.current_indent + " ".join(str(arg) for arg in args))
+    hashed_strings = set()
+    for func in code.functions:
+        for op in func.ops:
+            if op.op in {"DynGet", "DynSet"}:
+                hashed_strings.add(op.df['field'].resolve(code))
+            elif op.op in {"SetField", "Field"} and isinstance(func.regs[op.df['obj'].value].resolve(code).definition, Virtual):
+                vdef = func.regs[op.df['obj'].value].resolve(code).definition
+                assert isinstance(vdef, Virtual)
+                hashed_strings.add(vdef.fields[op.df['field'].value].name.resolve(code))
+    line_h("void hl_init_hashes() {")
+    with indent_h:
+        for s in sorted(list(hashed_strings)):
+            c_escaped_str = s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+            line_h(f'hl_hash((vbyte*)USTR("{c_escaped_str}"));')
+    line_h("}")
+    return res_h
 
 def code_to_c(code: Bytecode) -> str:
     """
@@ -1467,11 +1797,12 @@ def code_to_c(code: Bytecode) -> str:
     sec: Callable[[str], None] = lambda section: res.append(f"\n\n/*---------- {section} ----------*/\n")
 
     line("// Generated by crashlink")
-    line("// Compile with `-Wno-incompatible-pointer-types`!")
+    line("// Compile with `$(CC) <this_file.c> path/to/hashlink/bin/include/hlc_main.c -Wno-incompatible-pointer-types -o Arithmetic -Ipath/to/hashlink/bin/include -Lpath/to/hashlink/bin -lhl -ldbghelp` ;)")
     line("#include <hlc.h>")
 
     sec("Natives & Abstracts Forward Declarations")
     res += generate_natives(code)
+    res.append("void hl_entry_point();")
 
     sec("Structs")
     res += generate_structs(code)
@@ -1489,7 +1820,13 @@ def code_to_c(code: Bytecode) -> str:
     res += generate_functions(code)
     
     sec("Reflection")
-    # res += generate_reflection(code)
+    res += generate_reflection(code)
+    
+    sec("Function Tables")
+    res += generate_function_tables(code)
+    
+    sec("Hashes")
+    res += generate_hashes(code)
 
     sec("Entrypoint")
     res += generate_entry(code)
