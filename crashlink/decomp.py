@@ -1717,6 +1717,78 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             block.statements = new_statements
 
 
+class IRCommonBlockMerger(TraversingIROptimizer):
+    """
+    Finds IRConditional statements where both the true and false blocks end
+    with the same sequence of statements. It "hoists" this common suffix out
+    of the conditional and places it after the if/else block.
+
+    For example:
+        if (cond) {
+            do_a();
+            common_code();
+        } else {
+            do_b();
+            common_code();
+        }
+
+    Becomes:
+        if (cond) {
+            do_a();
+        } else {
+            do_b();
+        }
+        common_code();
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        made_change = False
+        new_statements: List[IRStatement] = []
+
+        for stmt in block.statements:
+            if isinstance(stmt, IRConditional):
+                # We can only merge if there is an 'else' block
+                if not stmt.false_block or not stmt.false_block.statements:
+                    new_statements.append(stmt)
+                    continue
+
+                true_stmts = stmt.true_block.statements
+                false_stmts = stmt.false_block.statements
+
+                common_suffix: List[IRStatement] = []
+                # Compare statements from the end of each block
+                t_idx, f_idx = len(true_stmts) - 1, len(false_stmts) - 1
+                while t_idx >= 0 and f_idx >= 0:
+                    # Using repr for structural comparison. This is a practical heuristic.
+                    # A more advanced system might use a deep structural equality check.
+                    if repr(true_stmts[t_idx]) == repr(false_stmts[f_idx]):
+                        # Prepend to keep the order correct
+                        common_suffix.insert(0, true_stmts[t_idx])
+                        t_idx -= 1
+                        f_idx -= 1
+                    else:
+                        break
+
+                if common_suffix:
+                    dbg_print(f"IRCommonBlockMerger: Found {len(common_suffix)} common statements to merge.")
+                    made_change = True
+
+                    # Truncate the original blocks
+                    stmt.true_block.statements = true_stmts[: t_idx + 1]
+                    stmt.false_block.statements = false_stmts[: f_idx + 1]
+
+                    # Add the modified conditional, then the common code after it.
+                    new_statements.append(stmt)
+                    new_statements.extend(common_suffix)
+                else:
+                    new_statements.append(stmt)
+            else:
+                new_statements.append(stmt)
+
+        if made_change:
+            block.statements = new_statements
+
+
 class IRVoidAssignOptimizer(TraversingIROptimizer):
     """
     Removes assignments to IRLocals of type Void, keeping the expression
@@ -1785,6 +1857,7 @@ class IRFunction:
                 IRConditionInliner(self),
                 IRLoopConditionOptimizer(self),
                 IRSelfAssignOptimizer(self),
+                IRCommonBlockMerger(self),
                 IRTempAssignmentInliner(self),
                 IRVoidAssignOptimizer(self),
                 IRBlockFlattener(self),
@@ -2096,6 +2169,18 @@ class IRFunction:
                     _cond = IRConditional(self.code, condition_expr, true_block, false_block)
                     _cond.invert()
                     block.statements.append(_cond)
+
+                    convergence = self._find_convergence(true_branch, false_branch, visited)
+                    if convergence and convergence.ops and convergence.ops[-1].op == "Ret":
+                        true_exits_to_convergence = (
+                            len(true_branch.branches) == 1 and true_branch.branches[0][0] == convergence
+                        )
+                        false_exits_to_convergence = (
+                            len(false_branch.branches) == 1 and false_branch.branches[0][0] == convergence
+                        )
+
+                        if true_exits_to_convergence and false_exits_to_convergence:
+                            return block
 
                     # now, find the next block and lift it.
                     next_node = None
