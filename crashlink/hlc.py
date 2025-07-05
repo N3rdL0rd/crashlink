@@ -1345,13 +1345,13 @@ def generate_functions(code: Bytecode) -> List[str]:
                     case "VirtualClosure":
                         obj_t = function.regs[df["obj"].value].resolve(code)
                         assert isinstance(obj_t, Type)
-                        obj = obj_t.definition
-                        assert isinstance(obj, (Obj, Struct)), (
-                            f"VirtualClosure on non-Obj/Struct type: {obj} at op {i} in function {function.findex}"
+                        objdef = obj_t.definition
+                        assert isinstance(objdef, (Obj, Struct)), (
+                            f"VirtualClosure on non-Obj/Struct type: {objdef} at op {i} in function {function.findex}"
                         )
                         fid = df["field"].value
                         func_ptr = f"r{df['obj']}->$type->vobj_proto[{fid}]"
-                        fun_t = obj.virtuals[fid]
+                        fun_t = objdef.virtuals[fid]
                         rhs = f"hl_alloc_closure_ptr(&t${fun_t}, {func_ptr}, r{df['obj']})"
                     case "GetGlobal":
                         dst_reg = df["dst"].value
