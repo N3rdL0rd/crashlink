@@ -289,6 +289,96 @@ you.</p>
         self.initialized_globals: Dict[int, Any] = {}
 
         self.section_offsets: Dict[str, int] = {}
+        self.cached_all: List[Type] | None = None
+
+        self.virtuals_built = False
+
+    def _build_virtual_tables(self) -&gt; None:
+        &#34;&#34;&#34;
+        Reconstructs the virtual method table (v-table) for all Obj types.
+        This is an internal method called at the end of deserialization.
+        &#34;&#34;&#34;
+        if self.virtuals_built:
+            return
+
+        processed_class_ids = set()
+
+        def get_all_parent_methods(obj_def: Obj) -&gt; Dict[str, int]:
+            # This helper is likely okay, but let&#39;s make it safer
+            parent_methods = {}
+            if obj_def.super and obj_def.super.value is not None:
+                try:
+                    super_type = obj_def.super.resolve(self)
+                    # *** Add a check to prevent cycles in this helper too ***
+                    if id(super_type) == id(obj_def.get_containing_type(self)):  # Prevent self-inheritance loops
+                        return {}
+                    if isinstance(super_type.definition, Obj):
+                        super_def = super_type.definition
+                        parent_methods.update(get_all_parent_methods(super_def))
+                        for proto in super_def.protos:
+                            parent_methods[proto.name.resolve(self)] = proto.findex.value
+                except (IndexError, AttributeError):
+                    dbg_print(f&#34;Warning: Could not resolve superclass for {obj_def.name.resolve(self)}&#34;)
+            return parent_methods
+
+        def process_class(class_type: Type) -&gt; None:
+            class_id = id(class_type)
+            if class_id in processed_class_ids:
+                return
+
+            obj_def = class_type.definition
+            if not isinstance(obj_def, Obj):
+                processed_class_ids.add(class_id)
+                return
+
+            virtuals = []
+            virtual_map = {}
+
+            if obj_def.super is None or obj_def.super.value == -1:
+                pass  # virtuals and virtual_map are already empty
+            else:
+                try:
+                    super_type = obj_def.super.resolve(self)
+                except IndexError:
+                    raise MalformedBytecode(
+                        f&#34;Class &#39;{obj_def.name.resolve(self)}&#39; has an invalid superclass index: {obj_def.super.value}&#34;
+                    )
+
+                process_class(super_type)
+
+                if isinstance(super_type.definition, Obj):
+                    super_def = super_type.definition
+                    virtuals.extend(super_def._virtuals)
+                    virtual_map.update(super_def._virtual_map)
+                else:
+                    dbg_print(f&#34;Warning: Superclass of &#39;{obj_def.name.resolve(self)}&#39; is not an Obj.&#34;)
+
+            all_parent_method_names = set(get_all_parent_methods(obj_def).keys())
+
+            for proto in obj_def.protos:
+                method_name = proto.name.resolve(self)
+                findex = proto.findex.value
+
+                is_override = method_name in virtual_map
+                is_new_virtual = not is_override and method_name in all_parent_method_names
+
+                if is_override:
+                    vid = virtual_map[method_name]
+                    virtuals[vid] = findex
+                elif is_new_virtual:
+                    vid = len(virtuals)
+                    virtuals.append(findex)
+                    virtual_map[method_name] = vid
+
+            obj_def._virtuals = virtuals
+            obj_def._virtual_map = virtual_map
+            obj_def.virtuals_initialized = True
+            processed_class_ids.add(class_id)
+
+        for t in self.types:
+            process_class(t)
+
+        self.virtuals_built = True
 
     def _find_magic(self, f: BinaryIO | BytesIO, magic: bytes = b&#34;HLB&#34;) -&gt; None:
         buffer_size = 1024
@@ -495,6 +585,8 @@ you.</p>
         if init_globals:
             dbg_print(&#34;Initializing globals...&#34;)
             self.init_globals()
+            dbg_print(&#34;Building virtual tables...&#34;)
+            self._build_virtual_tables()
         dbg_print(f&#34;{(datetime.now() - start_time).total_seconds()}s elapsed.&#34;)
         return self
 
@@ -828,9 +920,13 @@ you.</p>
         The traversal starts from &#34;root&#34; references (globals, natives, functions)
         and recursively explores all types contained within them.
         &#34;&#34;&#34;
+        if self.cached_all is not None:
+            return self.cached_all
         unique_types: List[Type] = []
         # We use the serialized form of a type as a key to check for structural uniqueness.
         seen_types: Dict[bytes, int] = {}
+
+        dbg_print(&#34;Gathering all types...&#34;)
 
         def _get_type(typ: Optional[Type]) -&gt; None:
             if typ is None:
@@ -885,7 +981,7 @@ you.</p>
         primitives_to_seed = [Void, U8, U16, I32, I64, F32, F64, Bool, TypeType, Dyn]
         primitive_kind_map = {p: i for i, p in enumerate(Type.TYPEDEFS)}
 
-        for prim_class in primitives_to_seed:
+        for prim_class in tqdm(primitives_to_seed, desc=&#34;Seeding primitives...&#34;) if USE_TQDM else primitives_to_seed:
             kind_val = primitive_kind_map.get(prim_class)
             if kind_val is not None:
                 # Create a temporary Type object just for the traversal
@@ -895,15 +991,15 @@ you.</p>
                 _get_type(temp_type)
 
         # OCaml: `Array.iter (fun g -&gt; get_type g) code.globals;`
-        for g_type_ref in self.global_types:
+        for g_type_ref in tqdm(self.global_types, desc=&#34;Global roots&#34;) if USE_TQDM else self.global_types:
             _get_type(g_type_ref.resolve(self))
 
         # OCaml: `Array.iter (fun (_,_,t,_) -&gt; get_type t) code.natives;`
-        for native in self.natives:
+        for native in tqdm(self.natives, desc=&#34;Natives&#34;) if USE_TQDM else self.natives:
             _get_type(native.type.resolve(self))
 
         # OCaml: `Array.iter (fun f -&gt; ...`
-        for func in self.functions:
+        for func in tqdm(self.functions, desc=&#34;Functions&#34;) if USE_TQDM else self.functions:
             # `get_type f.ftype;`
             _get_type(func.type.resolve(self))
             # `Array.iter (fun r -&gt; get_type r) f.regs;`
@@ -914,6 +1010,8 @@ you.</p>
                 if op.op == &#34;Type&#34;:
                     _get_type(op.df[&#34;ty&#34;].resolve(self))
 
+        self.cached_all = unique_types
+        dbg_print(f&#34;Gathered {len(unique_types)} unique types.&#34;)
         return unique_types
 
     def get_field_for(self, idx: int) -&gt; Optional[Field]:
@@ -1239,6 +1337,8 @@ you.</p>
     if init_globals:
         dbg_print(&#34;Initializing globals...&#34;)
         self.init_globals()
+        dbg_print(&#34;Building virtual tables...&#34;)
+        self._build_virtual_tables()
     dbg_print(f&#34;{(datetime.now() - start_time).total_seconds()}s elapsed.&#34;)
     return self</code></pre>
 </details>
@@ -1374,9 +1474,13 @@ you.</p>
     The traversal starts from &#34;root&#34; references (globals, natives, functions)
     and recursively explores all types contained within them.
     &#34;&#34;&#34;
+    if self.cached_all is not None:
+        return self.cached_all
     unique_types: List[Type] = []
     # We use the serialized form of a type as a key to check for structural uniqueness.
     seen_types: Dict[bytes, int] = {}
+
+    dbg_print(&#34;Gathering all types...&#34;)
 
     def _get_type(typ: Optional[Type]) -&gt; None:
         if typ is None:
@@ -1431,7 +1535,7 @@ you.</p>
     primitives_to_seed = [Void, U8, U16, I32, I64, F32, F64, Bool, TypeType, Dyn]
     primitive_kind_map = {p: i for i, p in enumerate(Type.TYPEDEFS)}
 
-    for prim_class in primitives_to_seed:
+    for prim_class in tqdm(primitives_to_seed, desc=&#34;Seeding primitives...&#34;) if USE_TQDM else primitives_to_seed:
         kind_val = primitive_kind_map.get(prim_class)
         if kind_val is not None:
             # Create a temporary Type object just for the traversal
@@ -1441,15 +1545,15 @@ you.</p>
             _get_type(temp_type)
 
     # OCaml: `Array.iter (fun g -&gt; get_type g) code.globals;`
-    for g_type_ref in self.global_types:
+    for g_type_ref in tqdm(self.global_types, desc=&#34;Global roots&#34;) if USE_TQDM else self.global_types:
         _get_type(g_type_ref.resolve(self))
 
     # OCaml: `Array.iter (fun (_,_,t,_) -&gt; get_type t) code.natives;`
-    for native in self.natives:
+    for native in tqdm(self.natives, desc=&#34;Natives&#34;) if USE_TQDM else self.natives:
         _get_type(native.type.resolve(self))
 
     # OCaml: `Array.iter (fun f -&gt; ...`
-    for func in self.functions:
+    for func in tqdm(self.functions, desc=&#34;Functions&#34;) if USE_TQDM else self.functions:
         # `get_type f.ftype;`
         _get_type(func.type.resolve(self))
         # `Array.iter (fun r -&gt; get_type r) f.regs;`
@@ -1460,6 +1564,8 @@ you.</p>
             if op.op == &#34;Type&#34;:
                 _get_type(op.df[&#34;ty&#34;].resolve(self))
 
+    self.cached_all = unique_types
+    dbg_print(f&#34;Gathered {len(unique_types)} unique types.&#34;)
     return unique_types</code></pre>
 </details>
 <div class="desc"><p>Traverses the entire bytecode to find all unique types referenced, returning
@@ -3461,29 +3567,52 @@ and recursively explores all types contained within them.</p></div>
 </summary>
 <pre><code class="python">class Obj(TypeDef):
     &#34;&#34;&#34;
-    Represents a class definition. Contains:
-
-    - name: strRef
-    - super: tIndex
-    - _global: gIndex
-    - nfields: VarInt
-    - nprotos: VarInt
-    - nbindings: VarInt
-    - fields: List[Field]
-    - protos: List[Proto]
-    - bindings: List[Binding]
+    Represents a class definition.
     &#34;&#34;&#34;
 
     def __init__(self) -&gt; None:
         self.name = strRef()
+        &#34;&#34;&#34;The name of this object type.&#34;&#34;&#34;
         self.super = tIndex()
+        &#34;&#34;&#34;The superclass of this object type, or -1 if it has no superclass.&#34;&#34;&#34;
         self._global = gIndex()
+        &#34;&#34;&#34;The global object index of this type.&#34;&#34;&#34;
         self.nfields = VarInt()
+        &#34;&#34;&#34;Number of fields&#34;&#34;&#34;
         self.nprotos = VarInt()
+        &#34;&#34;&#34;Number of prototypes&#34;&#34;&#34;
         self.nbindings = VarInt()
+        &#34;&#34;&#34;Number of bindings&#34;&#34;&#34;
         self.fields: List[Field] = []
+        &#34;&#34;&#34;List of fields in this object type.&#34;&#34;&#34;
         self.protos: List[Proto] = []
+        &#34;&#34;&#34;List of prototypes for this object type.&#34;&#34;&#34;
         self.bindings: List[Binding] = []
+        &#34;&#34;&#34;List of bindings for this object type.&#34;&#34;&#34;
+        self._virtuals: List[int] = []
+        self._virtual_map: Dict[str, int] = {}
+        self.virtuals_initialized: bool = False
+
+    def get_containing_type(self, code: Bytecode) -&gt; Type:
+        &#34;&#34;&#34;Finds the Type object that contains this Obj definition.&#34;&#34;&#34;
+        for t in code.types:
+            if t.definition is self:
+                return t
+        raise RuntimeError(&#34;Could not find containing Type for Obj instance.&#34;)
+
+    @property
+    def virtuals(self) -&gt; List[int]:
+        &#34;&#34;&#34;Returns the list of virtual function indices for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialization.&#34;)
+        return self._virtuals
+
+    @property
+    def virtual_map(self) -&gt; Dict[str, int]:
+        &#34;&#34;&#34;Returns the map of method names to their virtual ID for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialization.&#34;)
+        return self._virtual_map
 
     def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Obj&#34;:
         self.name.deserialise(f)
@@ -3569,18 +3698,7 @@ and recursively explores all types contained within them.</p></div>
             and self.bindings == other.bindings
         )</code></pre>
 </details>
-<div class="desc"><p>Represents a class definition. Contains:</p>
-<ul>
-<li>name: strRef</li>
-<li>super: tIndex</li>
-<li>_global: gIndex</li>
-<li>nfields: VarInt</li>
-<li>nprotos: VarInt</li>
-<li>nbindings: VarInt</li>
-<li>fields: List[Field]</li>
-<li>protos: List[Proto]</li>
-<li>bindings: List[Binding]</li>
-</ul></div>
+<div class="desc"><p>Represents a class definition.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
@@ -3591,6 +3709,71 @@ and recursively explores all types contained within them.</p></div>
 <ul class="hlist">
 <li><a title="crashlink.core.Struct" href="#crashlink.core.Struct">Struct</a></li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Obj.bindings"><code class="name">var <span class="ident">bindings</span></code></dt>
+<dd>
+<div class="desc"><p>List of bindings for this object type.</p></div>
+</dd>
+<dt id="crashlink.core.Obj.fields"><code class="name">var <span class="ident">fields</span></code></dt>
+<dd>
+<div class="desc"><p>List of fields in this object type.</p></div>
+</dd>
+<dt id="crashlink.core.Obj.name"><code class="name">var <span class="ident">name</span></code></dt>
+<dd>
+<div class="desc"><p>The name of this object type.</p></div>
+</dd>
+<dt id="crashlink.core.Obj.nbindings"><code class="name">var <span class="ident">nbindings</span></code></dt>
+<dd>
+<div class="desc"><p>Number of bindings</p></div>
+</dd>
+<dt id="crashlink.core.Obj.nfields"><code class="name">var <span class="ident">nfields</span></code></dt>
+<dd>
+<div class="desc"><p>Number of fields</p></div>
+</dd>
+<dt id="crashlink.core.Obj.nprotos"><code class="name">var <span class="ident">nprotos</span></code></dt>
+<dd>
+<div class="desc"><p>Number of prototypes</p></div>
+</dd>
+<dt id="crashlink.core.Obj.protos"><code class="name">var <span class="ident">protos</span></code></dt>
+<dd>
+<div class="desc"><p>List of prototypes for this object type.</p></div>
+</dd>
+<dt id="crashlink.core.Obj.super"><code class="name">var <span class="ident">super</span></code></dt>
+<dd>
+<div class="desc"><p>The superclass of this object type, or -1 if it has no superclass.</p></div>
+</dd>
+<dt id="crashlink.core.Obj.virtual_map"><code class="name">prop <span class="ident">virtual_map</span> : Dict[str, int]</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@property
+def virtual_map(self) -&gt; Dict[str, int]:
+    &#34;&#34;&#34;Returns the map of method names to their virtual ID for this object type.&#34;&#34;&#34;
+    if not self.virtuals_initialized:
+        raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialization.&#34;)
+    return self._virtual_map</code></pre>
+</details>
+<div class="desc"><p>Returns the map of method names to their virtual ID for this object type.</p></div>
+</dd>
+<dt id="crashlink.core.Obj.virtuals"><code class="name">prop <span class="ident">virtuals</span> : List[int]</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@property
+def virtuals(self) -&gt; List[int]:
+    &#34;&#34;&#34;Returns the list of virtual function indices for this object type.&#34;&#34;&#34;
+    if not self.virtuals_initialized:
+        raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialization.&#34;)
+    return self._virtuals</code></pre>
+</details>
+<div class="desc"><p>Returns the list of virtual function indices for this object type.</p></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Obj.deserialise"><code class="name flex">
@@ -3617,6 +3800,23 @@ and recursively explores all types contained within them.</p></div>
     return self</code></pre>
 </details>
 <div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Obj.get_containing_type"><code class="name flex">
+<span>def <span class="ident">get_containing_type</span></span>(<span>self,<br>code: <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>) ‑> <a title="crashlink.core.Type" href="#crashlink.core.Type">Type</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_containing_type(self, code: Bytecode) -&gt; Type:
+    &#34;&#34;&#34;Finds the Type object that contains this Obj definition.&#34;&#34;&#34;
+    for t in code.types:
+        if t.definition is self:
+            return t
+    raise RuntimeError(&#34;Could not find containing Type for Obj instance.&#34;)</code></pre>
+</details>
+<div class="desc"><p>Finds the Type object that contains this Obj definition.</p></div>
 </dd>
 <dt id="crashlink.core.Obj.resolve_fields"><code class="name flex">
 <span>def <span class="ident">resolve_fields</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> List[<a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a>]</span>
@@ -4751,7 +4951,18 @@ def serialise(self) -&gt; bytes:
 <ul class="hlist">
 <li><code><b><a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.core.Obj.bindings" href="#crashlink.core.Obj.bindings">bindings</a></code></li>
+<li><code><a title="crashlink.core.Obj.fields" href="#crashlink.core.Obj.fields">fields</a></code></li>
+<li><code><a title="crashlink.core.Obj.get_containing_type" href="#crashlink.core.Obj.get_containing_type">get_containing_type</a></code></li>
+<li><code><a title="crashlink.core.Obj.name" href="#crashlink.core.Obj.name">name</a></code></li>
+<li><code><a title="crashlink.core.Obj.nbindings" href="#crashlink.core.Obj.nbindings">nbindings</a></code></li>
+<li><code><a title="crashlink.core.Obj.nfields" href="#crashlink.core.Obj.nfields">nfields</a></code></li>
+<li><code><a title="crashlink.core.Obj.nprotos" href="#crashlink.core.Obj.nprotos">nprotos</a></code></li>
+<li><code><a title="crashlink.core.Obj.protos" href="#crashlink.core.Obj.protos">protos</a></code></li>
 <li><code><a title="crashlink.core.Obj.resolve_fields" href="#crashlink.core.Obj.resolve_fields">resolve_fields</a></code></li>
+<li><code><a title="crashlink.core.Obj.super" href="#crashlink.core.Obj.super">super</a></code></li>
+<li><code><a title="crashlink.core.Obj.virtual_map" href="#crashlink.core.Obj.virtual_map">virtual_map</a></code></li>
+<li><code><a title="crashlink.core.Obj.virtuals" href="#crashlink.core.Obj.virtuals">virtuals</a></code></li>
 </ul>
 </li>
 </ul>
@@ -4882,7 +5093,10 @@ def serialise(self) -&gt; bytes:
             return False
         res = self.kind == other.kind and self.definition == other.definition
         assert isinstance(res, bool), &#34;Type equality check must return a boolean&#34;
-        return res</code></pre>
+        return res
+
+    def __hash__(self) -&gt; int:
+        return hash(self.serialise())</code></pre>
 </details>
 <div class="desc"><p>Type definition:</p>
 <ul>
@@ -6129,11 +6343,22 @@ attributes &ndash; see the documentation for details.</p></div>
 </li>
 <li>
 <h4><code><a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a></code></h4>
-<ul class="">
+<ul class="two-column">
+<li><code><a title="crashlink.core.Obj.bindings" href="#crashlink.core.Obj.bindings">bindings</a></code></li>
 <li><code><a title="crashlink.core.Obj.deserialise" href="#crashlink.core.Obj.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Obj.fields" href="#crashlink.core.Obj.fields">fields</a></code></li>
+<li><code><a title="crashlink.core.Obj.get_containing_type" href="#crashlink.core.Obj.get_containing_type">get_containing_type</a></code></li>
+<li><code><a title="crashlink.core.Obj.name" href="#crashlink.core.Obj.name">name</a></code></li>
+<li><code><a title="crashlink.core.Obj.nbindings" href="#crashlink.core.Obj.nbindings">nbindings</a></code></li>
+<li><code><a title="crashlink.core.Obj.nfields" href="#crashlink.core.Obj.nfields">nfields</a></code></li>
+<li><code><a title="crashlink.core.Obj.nprotos" href="#crashlink.core.Obj.nprotos">nprotos</a></code></li>
+<li><code><a title="crashlink.core.Obj.protos" href="#crashlink.core.Obj.protos">protos</a></code></li>
 <li><code><a title="crashlink.core.Obj.resolve_fields" href="#crashlink.core.Obj.resolve_fields">resolve_fields</a></code></li>
 <li><code><a title="crashlink.core.Obj.serialise" href="#crashlink.core.Obj.serialise">serialise</a></code></li>
 <li><code><a title="crashlink.core.Obj.str_resolve" href="#crashlink.core.Obj.str_resolve">str_resolve</a></code></li>
+<li><code><a title="crashlink.core.Obj.super" href="#crashlink.core.Obj.super">super</a></code></li>
+<li><code><a title="crashlink.core.Obj.virtual_map" href="#crashlink.core.Obj.virtual_map">virtual_map</a></code></li>
+<li><code><a title="crashlink.core.Obj.virtuals" href="#crashlink.core.Obj.virtuals">virtuals</a></code></li>
 </ul>
 </li>
 <li>

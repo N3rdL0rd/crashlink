@@ -785,16 +785,16 @@ class Obj(TypeDef):
         self.bindings: List[Binding] = []
         """List of bindings for this object type."""
         self._virtuals: List[int] = []
-        self._virtual_map: Dict[str, int] = {} 
+        self._virtual_map: Dict[str, int] = {}
         self.virtuals_initialized: bool = False
-        
+
     def get_containing_type(self, code: Bytecode) -> Type:
         """Finds the Type object that contains this Obj definition."""
         for t in code.types:
             if t.definition is self:
                 return t
         raise RuntimeError("Could not find containing Type for Obj instance.")
-        
+
     @property
     def virtuals(self) -> List[int]:
         """Returns the list of virtual function indices for this object type."""
@@ -1705,9 +1705,9 @@ class Bytecode(Serialisable):
 
         self.section_offsets: Dict[str, int] = {}
         self.cached_all: List[Type] | None = None
-        
+
         self.virtuals_built = False
-        
+
     def _build_virtual_tables(self) -> None:
         """
         Reconstructs the virtual method table (v-table) for all Obj types.
@@ -1725,7 +1725,7 @@ class Bytecode(Serialisable):
                 try:
                     super_type = obj_def.super.resolve(self)
                     # *** Add a check to prevent cycles in this helper too ***
-                    if id(super_type) == id(obj_def.get_containing_type(self)): # Prevent self-inheritance loops
+                    if id(super_type) == id(obj_def.get_containing_type(self)):  # Prevent self-inheritance loops
                         return {}
                     if isinstance(super_type.definition, Obj):
                         super_def = super_type.definition
@@ -1750,15 +1750,17 @@ class Bytecode(Serialisable):
             virtual_map = {}
 
             if obj_def.super is None or obj_def.super.value == -1:
-                pass # virtuals and virtual_map are already empty
+                pass  # virtuals and virtual_map are already empty
             else:
                 try:
                     super_type = obj_def.super.resolve(self)
                 except IndexError:
-                     raise MalformedBytecode(f"Class '{obj_def.name.resolve(self)}' has an invalid superclass index: {obj_def.super.value}")
+                    raise MalformedBytecode(
+                        f"Class '{obj_def.name.resolve(self)}' has an invalid superclass index: {obj_def.super.value}"
+                    )
 
                 process_class(super_type)
-                
+
                 if isinstance(super_type.definition, Obj):
                     super_def = super_type.definition
                     virtuals.extend(super_def._virtuals)
@@ -1767,14 +1769,14 @@ class Bytecode(Serialisable):
                     dbg_print(f"Warning: Superclass of '{obj_def.name.resolve(self)}' is not an Obj.")
 
             all_parent_method_names = set(get_all_parent_methods(obj_def).keys())
-            
+
             for proto in obj_def.protos:
                 method_name = proto.name.resolve(self)
                 findex = proto.findex.value
 
                 is_override = method_name in virtual_map
                 is_new_virtual = not is_override and method_name in all_parent_method_names
-                
+
                 if is_override:
                     vid = virtual_map[method_name]
                     virtuals[vid] = findex
@@ -1790,7 +1792,7 @@ class Bytecode(Serialisable):
 
         for t in self.types:
             process_class(t)
-            
+
         self.virtuals_built = True
 
     def _find_magic(self, f: BinaryIO | BytesIO, magic: bytes = b"HLB") -> None:
@@ -2338,7 +2340,7 @@ class Bytecode(Serialisable):
         unique_types: List[Type] = []
         # We use the serialized form of a type as a key to check for structural uniqueness.
         seen_types: Dict[bytes, int] = {}
-        
+
         dbg_print("Gathering all types...")
 
         def _get_type(typ: Optional[Type]) -> None:
@@ -2422,7 +2424,7 @@ class Bytecode(Serialisable):
             for op in func.ops:
                 if op.op == "Type":
                     _get_type(op.df["ty"].resolve(self))
-                    
+
         self.cached_all = unique_types
         dbg_print(f"Gathered {len(unique_types)} unique types.")
         return unique_types
