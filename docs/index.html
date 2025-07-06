@@ -3,14 +3,163 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>crashlink docs</title>
+    <title>crashlink - A Pure-Python Hashlink Bytecode Swiss Army Knife</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&family=Turret+Road:wght@800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --background-color: #0a0a0a;
+            --container-color: #1a1a1a;
+            --text-color: #d0d0d0;
+            --accent-color: #00fddc;
+            --shadow-color: rgba(0, 253, 220, 0.4);
+            --header-font: 'Turret Road', cursive;
+            --body-font: 'Fira Code', monospace;
+        }
+
+        body {
+            font-family: var(--body-font);
+            line-height: 1.7;
+            margin: 0;
+            padding: 40px;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            background: var(--container-color);
+            max-width: 800px;
+            padding: 30px 40px;
+            border-radius: 12px;
+            border: 1px solid var(--accent-color);
+            box-shadow: 0 0 25px var(--shadow-color);
+        }
+
+        h1 {
+            font-family: var(--header-font);
+            font-size: 3em;
+            color: var(--accent-color);
+            text-align: center;
+            margin-bottom: 20px;
+            animation: glow 2s ease-in-out infinite alternate;
+            text-shadow: 0 0 5px #fff, 0 0 10px #fff, 0 0 15px var(--accent-color), 0 0 20px var(--accent-color);
+        }
+
+        h2 {
+            font-family: var(--header-font);
+            color: var(--accent-color);
+            border-bottom: 1px solid var(--shadow-color);
+            padding-bottom: 5px;
+            font-size: 1.8em;
+        }
+
+        ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        ul li::before {
+            content: '»';
+            color: var(--accent-color);
+            margin-right: 10px;
+        }
+
+        a {
+            color: var(--accent-color);
+            text-decoration: none;
+            transition: color 0.3s ease, text-shadow 0.3s ease;
+        }
+
+        a:hover {
+            color: #fff;
+            text-shadow: 0 0 8px var(--shadow-color);
+        }
+
+        .code-block {
+            background: #000;
+            border: 1px solid #333;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: var(--body-font);
+            color: #4CAF50; /* A classic terminal green */
+            white-space: pre;
+            overflow-x: auto;
+        }
+
+        footer {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 0.9em;
+            color: #888;
+        }
+
+        /* Animations */
+        @keyframes glow {
+            from {
+                text-shadow: 0 0 5px #fff, 0 0 10px #fff, 0 0 15px var(--accent-color), 0 0 20px var(--accent-color);
+            }
+            to {
+                text-shadow: 0 0 10px #fff, 0 0 20px var(--shadow-color), 0 0 30px var(--shadow-color), 0 0 40px var(--shadow-color);
+            }
+        }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+          width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+          background: var(--background-color);
+        }
+        ::-webkit-scrollbar-thumb {
+          background-color: var(--accent-color);
+          border-radius: 10px;
+          border: 2px solid var(--background-color);
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background-color: #fff;
+        }
+
+    </style>
 </head>
 <body>
-    <center><br><br><br>
-    <h1>crashlink docs!!!!1!</h1>
-    <h1><a href="./crashlink">crashlink api docs</a> - <a href="./crashtest">crashtest api docs</a><br>
-        <a href="./decompiler">haxe decompiler notes</a><br>
-        <a href="./crashtest_out">crashtest results</a> </h1>
-    </center>
+    <div class="container">
+        <h1>crashlink</h1>
+        <p>A Pure-Python Hashlink bytecode Swiss Army knife for disassembling, decompiling, modifying, and assembling bytecode.</p>
+
+        <h2>Features</h2>
+        <ul>
+            <li>Pure Python implementation with zero dependencies.</li>
+            <li>Full bytecode deserialisation, disassembly, and decompilation.</li>
+            <li>First-class support for patching and reserialising bytecode.</li>
+            <li>A bytecode assembler to create Hashlink bytecode from scratch.</li>
+            <li>A user-friendly scriptable interface for integration.</li>
+        </ul>
+        
+        <h2>Installation</h2>
+        <p>Run via uv from the command line:</p>
+        <div class="code-block">uvx crashlink ...</div>
+        <p>Or install with pip:</p>
+        <div class="code-block">pip install crashlink</div>
+        <p>Or <a href="./demo">try it online!</a></p>
+
+
+        <h2>Links</h2>
+        <ul>
+            <li><a href="./crashlink" target="_blank">API docs</a></li>
+            <li><a href="./hlrun" target="_blank">hlrun API docs</a></li>
+            <li><a href="./crashtest" target="_blank">crashtest API docs</a></li>
+            <li><a href="./crashtest_out" target="_blank">Decompiler test results</a></li>
+            <li><a href="./decompiler" target="_blank">Hashlink decompiler notes</a></li>
+        </ul>
+
+        <footer>
+            <p>Project by N3rdL0rd | Licensed under the MIT License.</p>
+        </footer>
+    </div>
 </body>
 </html>

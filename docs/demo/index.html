@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>crashlink in the browser! 🛠️🐍✨</title>
+    <style>
+        body {
+            font-family: "Fira Mono", Consolas, monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 2em;
+            max-width: 900px;
+            margin: auto;
+        }
+
+        h1 {
+            text-align: center;
+            font-weight: 700;
+            margin-bottom: 1em;
+            user-select: none;
+        }
+
+        #output {
+            white-space: pre-wrap;
+            background: #111;
+            border: 1px solid #444;
+            padding: 1em;
+            margin-top: 1em;
+            max-height: 700px;
+            height: 400px;
+            overflow-y: auto;
+            border-radius: 6px;
+            box-shadow: inset 0 0 8px #0008;
+            font-size: 0.9rem;
+            line-height: 1.3;
+        }
+
+        input[type="file"] {
+            cursor: pointer;
+            font-size: 1rem;
+            margin-right: 1em;
+            padding: 0.25em 0.5em;
+        }
+
+        #runBtn,
+        #cmdBtn {
+            font-family: "Fira Mono", Consolas, monospace;
+            font-size: 1rem;
+            padding: 0.4em 1em;
+            margin-top: 0.5em;
+            cursor: pointer;
+            background: #2a2a2a;
+            border: 1px solid #555;
+            color: #eee;
+            border-radius: 4px;
+            transition: background 0.2s ease;
+        }
+
+        #runBtn:hover,
+        #cmdBtn:hover {
+            background: #3a3a3a;
+        }
+
+        #cmdInput {
+            font-family: "Fira Mono", Consolas, monospace;
+            font-size: 1rem;
+            padding: 0.4em 0.5em;
+            width: 60%;
+            margin-top: 1em;
+            border-radius: 4px;
+            border: 1px solid #555;
+            background: #222;
+            color: #eee;
+            outline-offset: 2px;
+            outline-color: #666;
+        }
+
+        #cmdInput:focus {
+            outline-color: #8a8cff;
+            outline-offset: 0;
+            border-color: #8a8cff;
+            background: #1a1a40;
+        }
+
+        /* Responsive tweaks */
+        @media (max-width: 600px) {
+            #cmdInput {
+                width: 100%;
+            }
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.28.0/full/pyodide.js"></script>
+</head>
+
+<body>
+    <h1>crashlink in the browser! 🛠️🐍✨</h1>
+
+    <input type="file" id="fileInput" />
+    <button id="runBtn">Disassemble</button>
+
+    <br />
+
+    <input type="text" id="cmdInput" placeholder="Type command here..." autocomplete="off" />
+    <button id="cmdBtn">Run Command</button>
+
+    <div id="output">👀 Choose a .hl file and hit "Disassemble"</div>
+
+    <script type="module">
+        const output = document.getElementById("output");
+        const runBtn = document.getElementById("runBtn");
+        const cmdBtn = document.getElementById("cmdBtn");
+        const cmdInput = document.getElementById("cmdInput");
+        let pyodide;
+        let codeHandle = null;
+        let handleCmdFunc = null;
+
+        function log(line) {
+            output.textContent += line + "\n";
+            // Auto-scroll to bottom on new log
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function clearLog() {
+            output.textContent = '';
+        }
+
+        runBtn.addEventListener("click", async () => {
+            const fileInput = document.getElementById("fileInput");
+            const file = fileInput.files[0];
+            if (!file) {
+                alert("Select a .hl file first!");
+                return;
+            }
+
+            clearLog();
+            log(`🐍 Loading Pyodide...`);
+
+            if (!pyodide) {
+                pyodide = await loadPyodide({ stdout: log, stderr: log });
+                await pyodide.loadPackage("micropip");
+                const micropip = pyodide.pyimport("micropip");
+                log("📦 Installing crashlink...");
+                await micropip.install("crashlink");
+            }
+
+            const arrayBuffer = await file.arrayBuffer();
+            pyodide.FS.writeFile("/input.hl", new Uint8Array(arrayBuffer));
+
+            log(`✅ Initializing crashlink...`);
+            try {
+                await pyodide.runPythonAsync(`
+import sys
+import os
+from typing import List
+os.environ["CRASHLINK_DEBUG"] = "True"
+from crashlink import *
+from crashlink.__main__ import Commands
+
+code = Bytecode.from_path("/input.hl")
+
+def handle_cmd(cmd: str) -> None:
+    print("\\n\\n")
+    global code
+    cmd_list: List[str] = cmd.split(" ")
+    if not cmd_list[0]:
+        return
+    commands = Commands(code)
+    available_commands = commands._get_commands()
+    if cmd_list[0] in available_commands:
+        available_commands[cmd_list[0]](cmd_list[1:])
+    else:
+        print("Unknown command.")
+`);
+                codeHandle = pyodide.globals.get("code");
+                handleCmdFunc = pyodide.globals.get("handle_cmd");
+                log("🚀 Ready! Type commands and click 'Run Command' or press Enter.");
+            } catch (err) {
+                log("⚠️ Crashlink init error: " + err);
+            }
+        });
+
+        cmdBtn.addEventListener("click", () => {
+            runCommand();
+        });
+
+        // Allow pressing Enter in command input to send command
+        cmdInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                runCommand();
+            }
+        });
+
+        function runCommand() {
+            if (!handleCmdFunc) {
+                log("⚠️ Please load a file and initialize crashlink first.");
+                return;
+            }
+            const cmd = cmdInput.value.trim();
+            if (!cmd) return;
+
+            try {
+                handleCmdFunc(cmd);
+            } catch (err) {
+                log("⚠️ Command error: " + err);
+            }
+
+            cmdInput.value = "";
+            cmdInput.focus();
+        }
+    </script>
+</body>
+
+</html>
