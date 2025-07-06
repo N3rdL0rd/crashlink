@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 
-def main():
+def main() -> None:
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
     hashlink_dir = os.path.join(script_dir, "pyhl", "hashlink", "build", "bin") if platform.system() != "Windows" else os.path.join(script_dir, "..", "hashlink")
