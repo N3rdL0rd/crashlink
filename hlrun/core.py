@@ -130,11 +130,13 @@ class HlObj(HlValue):
     def __init__(self, ptr):  # type: ignore
         self.__dict__["__ptr_impossible_to_overlap_this_name"] = ptr  # HACK: yeah... sorry.
 
+
 def _create_matching_obj(ptr: Any) -> HlObj:
     from .obj import OBJ_MAP
 
     name = hl_obj_classname(ptr)
     return OBJ_MAP[name](ptr) if name in OBJ_MAP else HlObj(ptr)  # type: ignore[no-untyped-call]
+
 
 class Args:
     """

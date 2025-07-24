@@ -737,7 +737,7 @@ class Proto(Serialisable):
 
 class Binding(Serialisable):
     """
-    Represents a binding of a field to a class.
+    Represents a binding of a function to a field in an object.
     """
 
     def __init__(self) -> None:

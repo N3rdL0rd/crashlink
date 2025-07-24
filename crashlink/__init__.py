@@ -165,3 +165,4 @@ from . import decomp as decomp
 from . import disasm as disasm
 from . import pseudo as pseudo
 from . import interp as interp
+from . import hlc as hlc
