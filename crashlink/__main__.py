@@ -449,6 +449,7 @@ class Commands(BaseCommands):
             f.write(ser)
         print("Done!")
 
+    @alias("libs")
     def nativelibs(self, args: List[str]) -> None:
         """Prints all unique native dynlibs used by the bytecode. `nativelibs`"""
         native_libs: Set[str] = set()
@@ -1069,7 +1070,10 @@ def handle_cmd(code: Bytecode, cmd: str) -> None:
     available_commands = commands._get_commands()
 
     if cmd_list[0] in available_commands:
-        available_commands[cmd_list[0]](cmd_list[1:])
+        if len(cmd_list) > 1:
+            available_commands[cmd_list[0]](cmd_list[1:])
+        else:
+            available_commands[cmd_list[0]]([])
     else:
         print("Unknown command.")
 
