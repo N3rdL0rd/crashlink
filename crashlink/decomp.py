@@ -588,6 +588,7 @@ class IRConst(IRExpression):
         STRING = "string"
         NULL = "null"
         FUN = "fun"
+        OBJ = "obj"
 
     def __init__(
         self,
@@ -624,7 +625,7 @@ class IRConst(IRExpression):
         elif self.const_type == IRConst.ConstType.STRING:
             return _get_type_in_code(self.code, "String")
         elif self.const_type == IRConst.ConstType.NULL:
-            return _get_type_in_code(self.code, "Null")
+            return _get_type_in_code(self.code, "Null") # FIXME: null is of a type...
         elif self.const_type == IRConst.ConstType.FUN:
             if not (isinstance(self.value, Function) or isinstance(self.value, Native)):
                 raise DecompError(f"Expected function index to resolve to a function or native, got {self.value}")
@@ -632,6 +633,8 @@ class IRConst(IRExpression):
             if isinstance(res, Type):
                 return res
             raise DecompError(f"Expected function return to resolve to a type, got {res}")
+        elif self.const_type == IRConst.ConstType.OBJ:
+            return self.value
         else:
             raise DecompError(f"Unknown IRConst type: {self.const_type}")
 
@@ -1793,7 +1796,7 @@ class IRVoidAssignOptimizer(TraversingIROptimizer):
     """
     Removes assignments to IRLocals of type Void, keeping the expression
     for its side effects and annotating the discard.
-    E.g., `var_void_local:Void = some_call();` becomes `some_call(); // explicit discard...`
+    E.g., `var_void_local:Void = some_call();` becomes `some_call();`
     """
 
     def visit_block(self, block: IRBlock) -> None:
@@ -1809,18 +1812,6 @@ class IRVoidAssignOptimizer(TraversingIROptimizer):
                         dbg_print(f"IRVoidAssignOptimizer: Removing void assignment: {stmt} (target: {target.name})")
 
                         expr_being_kept = stmt.expr
-                        discard_info_comment = "explicit discard"
-
-                        current_comment_parts = []
-                        if expr_being_kept.comment:
-                            current_comment_parts.append(expr_being_kept.comment)
-                        if stmt.comment:
-                            if not expr_being_kept.comment or stmt.comment != expr_being_kept.comment:
-                                current_comment_parts.append(stmt.comment)
-                        current_comment_parts.append(discard_info_comment)
-
-                        expr_being_kept.comment = " ; ".join([p for p in current_comment_parts if p])
-
                         new_statements.append(expr_being_kept)
                         made_change_this_pass = True
                         continue
@@ -2307,6 +2298,19 @@ class IRFunction:
                         self.locals[op.df["src"].value],
                     )
                 )
+            
+            elif op.op == "GetGlobal":
+                block.statements.append(
+                    IRAssign(
+                        self.code,
+                        self.locals[op.df["dst"].value],
+                        IRConst(
+                            self.code,
+                            IRConst.ConstType.OBJ,
+                            idx=op.df["global"]
+                        )
+                    )
+                )
 
             elif op.op == "JAlways":
                 jump_idx = node.base_offset + len(node.ops) + op.df["offset"].value
@@ -2328,7 +2332,7 @@ class IRFunction:
                     block.statements.append(next_block)
 
             else:
-                dbg_print("Skipping opcode:", op)
+                dbg_print("Skipping node op:", op)
 
         if len(node.branches) == 1:
             next_node, _ = node.branches[0]
