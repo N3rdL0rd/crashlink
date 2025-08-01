@@ -12,13 +12,17 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from . import disasm
 from .core import (
     Bytecode,
+    DynObj,
     Function,
     Native,
+    Obj,
     Opcode,
     ResolvableVarInt,
     Type,
     TypeDef,
+    Virtual,
     Void,
+    fieldRef,
     gIndex,
     tIndex,
 )
@@ -443,18 +447,23 @@ class IRArithmetic(IRExpression):
 
 
 class IRAssign(IRStatement):
-    """Assignment of an expression result to a local variable"""
+    """Assignment of an expression result to a target (local variable, field, etc.)"""
 
-    def __init__(self, code: Bytecode, target: IRLocal, expr: IRExpression):
+    def __init__(self, code: Bytecode, target: IRExpression, expr: IRExpression):
         super().__init__(code)
+        if not isinstance(target, (IRLocal, IRField)):
+            raise DecompError(f"Invalid target for IRAssign: {type(target).__name__}. Must be IRLocal or IRField.")
         self.target = target
         self.expr = expr
 
     def get_children(self) -> List[IRStatement]:
-        return [self.expr]
+        return [self.target, self.expr]
 
     def __repr__(self) -> str:
-        return f"<IRAssign: {self.target} = {self.expr} ({disasm.type_name(self.code, self.expr.get_type())})>"
+        expr_type_str = ""
+        if isinstance(self.expr, IRExpression):
+            expr_type_str = f" ({disasm.type_name(self.code, self.expr.get_type())})"
+        return f"<IRAssign: {self.target} = {self.expr}{expr_type_str}>"
 
 
 class IRCall(IRExpression):
@@ -588,7 +597,7 @@ class IRConst(IRExpression):
         STRING = "string"
         NULL = "null"
         FUN = "fun"
-        OBJ = "obj"
+        GLOBAL_OBJ = "obj"
         GLOBAL_STRING = "global_string"
 
     def __init__(
@@ -633,7 +642,7 @@ class IRConst(IRExpression):
         elif self.const_type in [IRConst.ConstType.STRING, IRConst.ConstType.GLOBAL_STRING]:
             return _get_type_in_code(self.code, "String")
         elif self.const_type == IRConst.ConstType.NULL:
-            return _get_type_in_code(self.code, "Null") # FIXME: null is of a type...
+            return _get_type_in_code(self.code, "Null")  # FIXME: null is of a type...
         elif self.const_type == IRConst.ConstType.FUN:
             if not (isinstance(self.value, Function) or isinstance(self.value, Native)):
                 raise DecompError(f"Expected function index to resolve to a function or native, got {self.value}")
@@ -641,7 +650,8 @@ class IRConst(IRExpression):
             if isinstance(res, Type):
                 return res
             raise DecompError(f"Expected function return to resolve to a type, got {res}")
-        elif self.const_type == IRConst.ConstType.OBJ:
+        elif self.const_type == IRConst.ConstType.GLOBAL_OBJ:
+            assert isinstance(self.value, Type)
             return self.value
         else:
             raise DecompError(f"Unknown IRConst type: {self.const_type}")
@@ -727,27 +737,19 @@ class IRReturn(IRStatement):
 
 
 class IRTrace(IRStatement):
-    """Trace statement"""
+    """Represents a simplified trace call."""
 
-    def __init__(
-        self,
-        code: Bytecode,
-        filename: gIndex,
-        line: int,
-        class_name: gIndex,
-        method_name: gIndex,
-    ):
+    def __init__(self, code: Bytecode, msg: IRExpression, pos_info: Dict[str, Any]):
         super().__init__(code)
-        self.filename = filename
-        self.line = line
-        self.class_name = class_name
-        self.method_name = method_name
+        self.msg = msg
+        self.pos_info = pos_info  # e.g., {"fileName": "Test.hx", "lineNumber": 12}
 
     def get_children(self) -> List[IRStatement]:
-        return []
+        return [self.msg]
 
     def __repr__(self) -> str:
-        return f"<IRTrace: {self.filename.resolve_str(self.code)} {self.line} {self.class_name.resolve_str(self.code)} {self.method_name.resolve_str(self.code)}>"
+        pos_str = ", ".join(f"{k}: {v}" for k, v in self.pos_info.items())
+        return f"<IRTrace: msg={self.msg}, pos={{ {pos_str} }}>"
 
 
 class IRSwitch(IRStatement):
@@ -883,6 +885,61 @@ class IRWhileLoop(IRStatement):
 
     def __str__(self) -> str:
         return self.__repr__()
+
+
+class IRField(IRExpression):
+    """Represents an object field access expression, e.g., `obj.field`"""
+
+    def __init__(self, code: Bytecode, target: IRExpression, field_name: str, field_type: tIndex):
+        super().__init__(code)
+        self.target = target
+        self.field_name = field_name
+        self.field_type_idx = field_type
+
+    def get_type(self) -> Type:
+        return self.field_type_idx.resolve(self.code)
+
+    def get_children(self) -> List[IRStatement]:
+        return []
+
+    def __repr__(self) -> str:
+        return f"<IRField: {self.target}.{self.field_name}>"
+
+
+class IRNew(IRExpression):
+    """Represents object allocation, e.g., `new MyClass()` or `{}`"""
+
+    def __init__(self, code: Bytecode, alloc_type: tIndex):
+        super().__init__(code)
+        self.alloc_type_idx = alloc_type
+
+    def get_type(self) -> Type:
+        return self.alloc_type_idx.resolve(self.code)
+
+    def __repr__(self) -> str:
+        type_name = disasm.type_name(self.code, self.get_type())
+        if type_name == "DynObj":
+            return "<IRNew: {}>"
+        return f"<IRNew: new {type_name}>"
+
+
+class IRCast(IRExpression):
+    """Represents a type cast, e.g., `(MyType)value`"""
+
+    def __init__(self, code: Bytecode, target_type: tIndex, expr: IRExpression):
+        super().__init__(code)
+        self.target_type_idx = target_type
+        self.expr = expr
+
+    def get_type(self) -> Type:
+        return self.target_type_idx.resolve(self.code)
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.expr]
+
+    def __repr__(self) -> str:
+        type_name = disasm.type_name(self.code, self.get_type())
+        return f"<IRCast: ({type_name}){self.expr}>"
 
 
 def _find_jumps_to_label(
@@ -1129,7 +1186,7 @@ class IRConditionInliner(TraversingIROptimizer):
             inlined_something = False
 
             if isinstance(current_stmt, IRAssign) and isinstance(current_stmt.expr, IRExpression):
-                assigned_local: IRLocal = current_stmt.target
+                assigned_local: IRLocal | IRField = current_stmt.target
                 expr_to_inline: IRExpression = current_stmt.expr
 
                 if i + 1 < len(block.statements):
@@ -1245,26 +1302,26 @@ class IRConditionInliner(TraversingIROptimizer):
         block.statements = new_statements
 
     def _try_inline_into_boolexpr(
-        self, bool_expr: IRBoolExpr, target_local: IRLocal, expr_to_inline: IRExpression
+        self, bool_expr: IRBoolExpr, target: IRLocal | IRField, expr_to_inline: IRExpression
     ) -> Optional[IRBoolExpr]:
         modified = False
         new_left = bool_expr.left
         new_right = bool_expr.right
 
-        if bool_expr.left == target_local:
+        if bool_expr.left == target:
             new_left = expr_to_inline
             modified = True
         elif isinstance(bool_expr.left, IRExpression):
-            inlined_nested_left = self._try_inline_into_generic_expr(bool_expr.left, target_local, expr_to_inline)
+            inlined_nested_left = self._try_inline_into_generic_expr(bool_expr.left, target, expr_to_inline)
             if inlined_nested_left:
                 new_left = inlined_nested_left
                 modified = True
 
-        if bool_expr.right == target_local:
+        if bool_expr.right == target:
             new_right = expr_to_inline
             modified = True
         elif isinstance(bool_expr.right, IRExpression):
-            inlined_nested_right = self._try_inline_into_generic_expr(bool_expr.right, target_local, expr_to_inline)
+            inlined_nested_right = self._try_inline_into_generic_expr(bool_expr.right, target, expr_to_inline)
             if inlined_nested_right:
                 new_right = inlined_nested_right
                 modified = True
@@ -1278,10 +1335,10 @@ class IRConditionInliner(TraversingIROptimizer):
     def _try_inline_into_generic_expr(
         self,
         current_expr: IRExpression,
-        target_local: IRLocal,
+        target: IRLocal | IRField,
         expr_to_inline: IRExpression,
     ) -> Optional[IRExpression]:
-        if current_expr == target_local:
+        if current_expr == target:
             return expr_to_inline
 
         if isinstance(current_expr, IRArithmetic):
@@ -1290,12 +1347,12 @@ class IRConditionInliner(TraversingIROptimizer):
             modified_right = arith_expr.right
             made_change = False
 
-            inlined_left_child = self._try_inline_into_generic_expr(arith_expr.left, target_local, expr_to_inline)
+            inlined_left_child = self._try_inline_into_generic_expr(arith_expr.left, target, expr_to_inline)
             if inlined_left_child:
                 modified_left = inlined_left_child
                 made_change = True
 
-            inlined_right_child = self._try_inline_into_generic_expr(arith_expr.right, target_local, expr_to_inline)
+            inlined_right_child = self._try_inline_into_generic_expr(arith_expr.right, target, expr_to_inline)
             if inlined_right_child:
                 modified_right = inlined_right_child
                 made_change = True
@@ -1307,7 +1364,7 @@ class IRConditionInliner(TraversingIROptimizer):
             return None
 
         elif isinstance(current_expr, IRBoolExpr):
-            return self._try_inline_into_boolexpr(current_expr, target_local, expr_to_inline)
+            return self._try_inline_into_boolexpr(current_expr, target, expr_to_inline)
 
         elif isinstance(current_expr, IRCall):
             call_expr: IRCall = current_expr
@@ -1315,13 +1372,13 @@ class IRConditionInliner(TraversingIROptimizer):
             new_args = list(call_expr.args)
 
             for i, arg_expr in enumerate(call_expr.args):
-                inlined_arg = self._try_inline_into_generic_expr(arg_expr, target_local, expr_to_inline)
+                inlined_arg = self._try_inline_into_generic_expr(arg_expr, target, expr_to_inline)
                 if inlined_arg:
                     new_args[i] = inlined_arg
                     made_change = True
 
             if isinstance(call_expr.target, IRExpression):
-                inlined_target_expr = self._try_inline_into_generic_expr(call_expr.target, target_local, expr_to_inline)
+                inlined_target_expr = self._try_inline_into_generic_expr(call_expr.target, target, expr_to_inline)
                 if inlined_target_expr:
                     if isinstance(inlined_target_expr, (IRConst, IRLocal, type(None))):
                         call_expr.target = inlined_target_expr
@@ -1516,220 +1573,6 @@ class IRBlockFlattener(TraversingIROptimizer):
             )
 
 
-class IRTempAssignmentInliner(TraversingIROptimizer):
-    """
-    Optimizes IR by inlining temporary assignments of the form:
-        temp = some_expression
-        final_target = temp
-    into:
-        final_target = some_expression
-    This is done if 'temp' (an IRLocal) is not used after 'final_target = temp'
-    and 'temp' is different from 'final_target'.
-    """
-
-    def _is_local_read_in_expr(self, local_to_check: IRLocal, expr: Optional[IRStatement]) -> bool:
-        """Checks if local_to_check is read within the given expression."""
-        if not expr:
-            return False
-        if expr == local_to_check:
-            return True
-        if isinstance(expr, IRArithmetic):
-            return self._is_local_read_in_expr(local_to_check, expr.left) or self._is_local_read_in_expr(
-                local_to_check, expr.right
-            )
-        elif isinstance(expr, IRBoolExpr):
-            read = False
-            if expr.left and self._is_local_read_in_expr(local_to_check, expr.left):
-                read = True
-            if expr.right and self._is_local_read_in_expr(local_to_check, expr.right):
-                read = True
-            return read
-        elif isinstance(expr, IRCall):
-            read = False
-            # Check call target only if it's an expression that can be a local (e.g. closure call)
-            if isinstance(expr.target, IRExpression) and self._is_local_read_in_expr(local_to_check, expr.target):
-                read = True
-            for arg in expr.args:
-                if self._is_local_read_in_expr(local_to_check, arg):
-                    read = True
-            return read
-        return False
-
-    def _is_local_read_or_written_in_statement(self, local_to_check: IRLocal, stmt: IRStatement) -> Tuple[bool, bool]:
-        """
-        Checks if local_to_check is read or if local_to_check is written to in a statement.
-        Returns (was_read, was_written_to_local_to_check).
-        'was_written_to_local_to_check' means local_to_check was a target of an assignment.
-        """
-        was_read = False
-        was_written_to_target = False
-
-        if isinstance(stmt, IRAssign):
-            if self._is_local_read_in_expr(local_to_check, stmt.expr):
-                was_read = True
-            if stmt.target == local_to_check:
-                was_written_to_target = True
-        elif isinstance(stmt, IRExpression):  # e.g. IRCall as a statement
-            if self._is_local_read_in_expr(local_to_check, stmt):
-                was_read = True
-        elif isinstance(stmt, IRConditional):
-            if self._is_local_read_in_expr(local_to_check, stmt.condition):
-                was_read = True
-            # Recursively check branches. If read in any, it's read. If written in any, it's written.
-            # This doesn't guarantee it's killed on ALL paths, just that a write occurs.
-            true_read, true_written = self._is_local_read_or_written_in_statement(local_to_check, stmt.true_block)
-            if true_read:
-                was_read = True
-            if true_written:
-                was_written_to_target = True  # If written in a branch, consider it potentially written
-
-            if stmt.false_block:
-                false_read, false_written = self._is_local_read_or_written_in_statement(
-                    local_to_check, stmt.false_block
-                )
-                if false_read:
-                    was_read = True
-                if false_written:
-                    was_written_to_target = True
-        elif isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop)):  # IRWhileLoop condition is IRExpression
-            if isinstance(stmt, IRWhileLoop) and self._is_local_read_in_expr(local_to_check, stmt.condition):
-                was_read = True
-
-            body_read, body_written = self._is_local_read_or_written_in_statement(
-                local_to_check,
-                stmt.body if isinstance(stmt, IRWhileLoop) else stmt.body,
-            )  # stmt.condition for PrimitiveLoop is IRBlock
-            if isinstance(stmt, IRPrimitiveLoop):
-                cond_read, cond_written = self._is_local_read_or_written_in_statement(local_to_check, stmt.condition)
-                if cond_read:
-                    was_read = True
-                if cond_written:
-                    was_written_to_target = True
-
-            if body_read:
-                was_read = True
-            if body_written:
-                was_written_to_target = True
-        elif isinstance(stmt, IRReturn):
-            if stmt.value and self._is_local_read_in_expr(local_to_check, stmt.value):
-                was_read = True
-        elif isinstance(stmt, IRSwitch):
-            if self._is_local_read_in_expr(local_to_check, stmt.value):
-                was_read = True
-            for case_block in stmt.cases.values():
-                case_read, case_written = self._is_local_read_or_written_in_statement(local_to_check, case_block)
-                if case_read:
-                    was_read = True
-                if case_written:
-                    was_written_to_target = True
-            def_read, def_written = self._is_local_read_or_written_in_statement(local_to_check, stmt.default)
-            if def_read:
-                was_read = True
-            if def_written:
-                was_written_to_target = True
-        elif isinstance(stmt, IRBlock):  # For blocks processed recursively
-            for sub_stmt in stmt.statements:
-                sub_read, sub_written = self._is_local_read_or_written_in_statement(local_to_check, sub_stmt)
-                if sub_read:
-                    was_read = True
-                if sub_written:  # If local_to_check is written to in a sub_stmt
-                    was_written_to_target = True
-                    # If it's written, any prior reads in this block still count, but for liveness *after* this block, it's redefined.
-                    # If it's read *then* written in the same sub_stmt, was_read is true.
-                    # If it's written then read, was_read (for the original value) is false from that point.
-                    if not sub_read:  # if it was written before being read in this sub_stmt
-                        # This means the original value of local_to_check is killed here.
-                        # If we are checking liveness, return immediately that it was killed.
-                        return (
-                            False,
-                            True,
-                        )  # Was not read (original value), but was killed.
-            # If loop completes, means it was not killed first in any sub_stmt.
-            return was_read, was_written_to_target
-
-        return was_read, was_written_to_target
-
-    def _is_local_live_after(self, local_to_check: IRLocal, start_idx: int, statements: List[IRStatement]) -> bool:
-        """Checks if local_to_check is read from statements[start_idx:] before being overwritten."""
-        for i in range(start_idx, len(statements)):
-            stmt = statements[i]
-            was_read, was_written_target = self._is_local_read_or_written_in_statement(local_to_check, stmt)
-
-            if was_read:
-                return True  # It's read, so it's live.
-            if was_written_target:  # It's overwritten (target of an assign) without being read first in this stmt
-                return False  # Overwritten, so original temp is no longer live past this point.
-        return False  # Reaches end of statements without being read (and before being overwritten).
-
-    def visit_block(self, block: IRBlock) -> None:
-        made_change_this_pass = True
-        while made_change_this_pass:  # Loop until no more changes in this block for this pass
-            made_change_this_pass = False
-            new_statements: List[IRStatement] = []
-            i = 0
-            while i < len(block.statements):
-                current_stmt = block.statements[i]
-                action_taken_this_step = False
-
-                if isinstance(current_stmt, IRAssign) and isinstance(current_stmt.target, IRLocal):
-                    temp_local: IRLocal = current_stmt.target
-                    expr_to_inline: IRExpression = current_stmt.expr
-
-                    if i + 1 < len(block.statements):
-                        next_stmt = block.statements[i + 1]
-                        # Pattern: temp_local = expr_to_inline; (current_stmt)
-                        #          final_target = temp_local;   (next_stmt)
-                        if isinstance(next_stmt, IRAssign) and next_stmt.expr == temp_local:
-                            final_target = (
-                                next_stmt.target
-                            )  # This can be IRLocal or other types (e.g. for field assign)
-
-                            # Only apply if temp_local is distinct from final_target.
-                            # If temp_local == final_target, it's `t = E; t = t;`.
-                            # `IRSelfAssignOptimizer` will handle `t = t;`.
-                            if temp_local != final_target:
-                                # Check if temp_local is used anywhere after next_stmt (index i + 2)
-                                if not self._is_local_live_after(temp_local, i + 2, block.statements):
-                                    # Safe to inline
-                                    new_assign_stmt = IRAssign(block.code, final_target, expr_to_inline)
-
-                                    # Combine comments
-                                    comments = []
-                                    if current_stmt.comment:
-                                        comments.append(current_stmt.comment)
-                                    if next_stmt.comment:
-                                        comments.append(next_stmt.comment)
-
-                                    final_target_name_str = getattr(
-                                        final_target, "name", str(final_target)
-                                    )  # Handle non-IRLocal targets
-
-                                    combined_comment = (
-                                        f"Inlined {temp_local.name} into {final_target_name_str}; "
-                                        + "; ".join(comments)
-                                    )
-                                    new_assign_stmt.comment = combined_comment.strip().rstrip(";")
-
-                                    dbg_print(
-                                        f"IRTempAssignmentInliner: Inlined. Replacing '{current_stmt}' and '{next_stmt}' with '{new_assign_stmt}'"
-                                    )
-                                    new_statements.append(new_assign_stmt)
-                                    i += 2  # Skip both original statements
-                                    action_taken_this_step = True
-                                    made_change_this_pass = True
-                                else:
-                                    final_target_name_str = getattr(final_target, "name", str(final_target))
-                                    dbg_print(
-                                        f"IRTempAssignmentInliner: Cannot inline {temp_local.name} into {final_target_name_str}, as {temp_local.name} is live later."
-                                    )
-
-                if not action_taken_this_step:
-                    new_statements.append(current_stmt)
-                    i += 1
-
-            block.statements = new_statements
-
-
 class IRCommonBlockMerger(TraversingIROptimizer):
     """
     Finds IRConditional statements where both the true and false blocks end
@@ -1830,6 +1673,7 @@ class IRVoidAssignOptimizer(TraversingIROptimizer):
         if made_change_this_pass:
             block.statements = new_statements
 
+
 class IRGlobalStringOptimizer(TraversingIROptimizer):
     """
     Optimizes `GetGlobal` operations that resolve to constant strings.
@@ -1850,7 +1694,7 @@ class IRGlobalStringOptimizer(TraversingIROptimizer):
             assign_stmt = stmt
             expr = assign_stmt.expr
 
-            if not (isinstance(expr, IRConst) and expr.const_type == IRConst.ConstType.OBJ):
+            if not (isinstance(expr, IRConst) and expr.const_type == IRConst.ConstType.GLOBAL_OBJ):
                 continue
 
             if not (expr.original_index and isinstance(expr.original_index, gIndex)):
@@ -1862,16 +1706,235 @@ class IRGlobalStringOptimizer(TraversingIROptimizer):
 
                 dbg_print(f"IRGlobalStringOptimizer: Optimizing GetGlobal for string '{string_value}'")
 
-                new_string_const = IRConst(
-                    self.func.code,
-                    IRConst.ConstType.GLOBAL_STRING,
-                    value=string_value
-                )
+                new_string_const = IRConst(self.func.code, IRConst.ConstType.GLOBAL_STRING, value=string_value)
 
                 assign_stmt.expr = new_string_const
 
             except (ValueError, TypeError):
                 pass
+
+
+class IRTempAssignmentInliner(TraversingIROptimizer):
+    """
+    Optimizes IR by inlining temporary variable assignments.
+    It finds assignments `temp = expr` and replaces subsequent uses of `temp`
+    with `expr`, provided the expression is safe to duplicate and `temp` is not
+    redefined in between.
+    """
+
+    def is_safe_to_inline(self, expr: IRExpression) -> bool:
+        """
+        Determines if an expression can be safely copied without changing
+        the program's semantics.
+        """
+        if isinstance(expr, (IRConst, IRLocal)):
+            return True
+        if isinstance(expr, IRField):
+            # A field access is only safe if the object it's accessing is also safe.
+            return self.is_safe_to_inline(expr.target)
+        # Anything else (IRNew, IRCall, IRArithmetic) is considered unsafe.
+        return False
+
+    def _substitute_in_expr(self, expr: IRExpression, target: IRLocal, replacement: IRExpression) -> IRExpression:
+        """Recursively substitutes a local with an expression within another expression."""
+        if expr == target:
+            return replacement
+
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            if expr.left:
+                expr.left = self._substitute_in_expr(expr.left, target, replacement)
+            if expr.right:
+                expr.right = self._substitute_in_expr(expr.right, target, replacement)
+        elif isinstance(expr, IRCall):
+            if isinstance(expr.target, IRExpression):
+                expr.target = self._substitute_in_expr(expr.target, target, replacement)
+            expr.args = [self._substitute_in_expr(arg, target, replacement) for arg in expr.args]
+        elif isinstance(expr, IRField):
+            # *** FIX IS HERE: Correctly recurse on the target of the field access ***
+            expr.target = self._substitute_in_expr(expr.target, target, replacement)
+        elif isinstance(expr, IRCast):
+            expr.expr = self._substitute_in_expr(expr.expr, target, replacement)
+
+        return expr
+
+    def _substitute_in_statement(self, stmt: IRStatement, target: IRLocal, replacement: IRExpression) -> None:
+        """Recursively traverses a statement to perform substitutions."""
+        if isinstance(stmt, IRAssign):
+            if stmt.target != target and isinstance(stmt.target, IRExpression):
+                self._substitute_in_expr(stmt.target, target, replacement)
+            if isinstance(stmt.expr, IRExpression):
+                stmt.expr = self._substitute_in_expr(stmt.expr, target, replacement)
+        elif isinstance(stmt, IRExpression):  # Handles standalone calls and other expressions
+            self._substitute_in_expr(stmt, target, replacement)
+        elif isinstance(stmt, IRReturn):
+            if stmt.value:
+                stmt.value = self._substitute_in_expr(stmt.value, target, replacement)
+        # Recurse into control flow structures
+        for child in stmt.get_children():
+            if child is not stmt:  # Avoid infinite recursion
+                self._substitute_in_statement(child, target, replacement)
+
+    def _is_local_redefined(self, local_to_check: IRLocal, statements: List[IRStatement]) -> bool:
+        """Checks if a local is the target of an assignment in a list of statements."""
+        for stmt in statements:
+            if isinstance(stmt, IRAssign) and stmt.target == local_to_check:
+                return True
+            # Recurse into control flow structures
+            for child in stmt.get_children():
+                if self._is_local_redefined(
+                    local_to_check, [child] if not isinstance(child, IRBlock) else child.statements
+                ):
+                    return True
+        return False
+
+    def visit_block(self, block: IRBlock) -> None:
+        made_change_in_pass = True
+        while made_change_in_pass:
+            made_change_in_pass = False
+            statements_to_remove = []
+
+            for i, stmt in enumerate(block.statements):
+                if not (isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)):
+                    continue
+
+                temp_local = stmt.target
+                expr_to_inline = stmt.expr
+
+                if not isinstance(expr_to_inline, IRExpression) or not self.is_safe_to_inline(expr_to_inline):
+                    continue
+
+                if isinstance(expr_to_inline, IRExpression) and (
+                    temp_local in expr_to_inline.get_children() or temp_local == expr_to_inline
+                ):
+                    continue
+
+                remaining_statements = block.statements[i + 1 :]
+
+                if self._is_local_redefined(temp_local, remaining_statements):
+                    continue
+
+                dbg_print(f"Inlining safe expression from {stmt} into subsequent statements.")
+                for subsequent_stmt in remaining_statements:
+                    self._substitute_in_statement(subsequent_stmt, temp_local, expr_to_inline)
+
+                statements_to_remove.append(stmt)
+                made_change_in_pass = True
+                break
+
+            if statements_to_remove:
+                block.statements = [s for s in block.statements if s not in statements_to_remove]
+
+        # After inlining, recurse into child blocks
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
+
+class IRTraceOptimizer(TraversingIROptimizer):
+    """
+    Finds the common `haxe.Log.trace` pattern with an anonymous object for
+    position and collapses it into a single IRTrace statement.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        made_change = True
+        while made_change:
+            made_change = False
+            new_statements: List[IRStatement] = []
+            i = 0
+            while i < len(block.statements):
+                stmt = block.statements[i]
+                dbg_print(f"[TraceOpt] Analyzing statement {i}: {stmt}")
+
+                if not (isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)):
+                    new_statements.append(stmt)
+                    i += 1
+                    continue
+
+                assign_new = stmt
+                temp_local = assign_new.target
+                if not (
+                    isinstance(assign_new.expr, IRNew) and assign_new.expr.get_type().definition.__class__ == DynObj
+                ):
+                    new_statements.append(stmt)
+                    i += 1
+                    continue
+
+                dbg_print(
+                    f"[TraceOpt] Found potential start of trace pattern at index {i} with temp local '{temp_local.name}'"
+                )
+
+                pos_info: Dict[str, Any] = {}
+                j = i + 1
+
+                while j < len(block.statements):
+                    next_stmt = block.statements[j]
+                    if not (
+                        isinstance(next_stmt, IRAssign)
+                        and isinstance(next_stmt.target, IRField)
+                        and next_stmt.target.target == temp_local
+                        and isinstance(next_stmt.expr, IRConst)
+                    ):
+                        dbg_print(f"[TraceOpt] Sequence of field sets for '{temp_local.name}' ended at index {j}.")
+                        break
+
+                    field_assign = next_stmt
+                    field_name = field_assign.target.field_name
+                    field_value = field_assign.expr.value
+                    pos_info[field_name] = field_value
+                    dbg_print(f"[TraceOpt]  -> Collected field: {field_name} = {field_value!r}")
+                    j += 1
+
+                if j < len(block.statements):
+                    call_stmt = block.statements[j]
+                    dbg_print(f"[TraceOpt] Checking statement {j} as potential trace call: {call_stmt}")
+
+                    is_valid_trace_call = False
+                    if isinstance(call_stmt, IRCall) and len(call_stmt.args) == 2:
+                        last_arg = call_stmt.args[1]
+
+                        is_our_var = (isinstance(last_arg, IRLocal) and last_arg == temp_local) or (
+                            isinstance(last_arg, IRCast) and last_arg.expr == temp_local
+                        )
+                        dbg_print(f"[TraceOpt]  -> Is last arg '{last_arg}' our temp '{temp_local.name}'? {is_our_var}")
+
+                        is_trace_func = False
+                        if isinstance(call_stmt.target, IRField) and call_stmt.target.field_name == "trace":
+                            dbg_print("[TraceOpt]  -> Call target is a field named 'trace'.")
+                            target_obj = call_stmt.target.target
+                            if (
+                                isinstance(target_obj, IRConst)
+                                and isinstance(target_obj.value, Type)
+                                and isinstance(target_obj.value.definition, Obj)
+                            ):
+                                obj_name = target_obj.value.definition.name.resolve(self.func.code)
+                                if "haxe.$Log" in obj_name:
+                                    is_trace_func = True
+
+                        dbg_print(f"[TraceOpt]  -> Is function 'haxe.Log.trace'? {is_trace_func}")
+
+                        if is_our_var and is_trace_func:
+                            is_valid_trace_call = True
+
+                    else:
+                        dbg_print(f"[TraceOpt]  -> FAILED: Statement is not an IRCall with 2 arguments.")
+
+                    if is_valid_trace_call:
+                        msg_expr = call_stmt.args[0]
+                        trace_stmt = IRTrace(self.func.code, msg_expr, pos_info)
+                        new_statements.append(trace_stmt)
+
+                        i = j + 1
+                        made_change = True
+                        continue
+                    else:
+                        dbg_print(f"[TraceOpt] FAILED: Pattern did not match for trace call.")
+
+                new_statements.append(stmt)
+                i += 1
+
+            block.statements = new_statements
 
 
 class IRFunction:
@@ -1905,6 +1968,7 @@ class IRFunction:
                 IRCommonBlockMerger(self),
                 IRTempAssignmentInliner(self),
                 IRVoidAssignOptimizer(self),
+                IRTraceOptimizer(self),
                 IRBlockFlattener(self),
             ]
             self._optimize()
@@ -2036,11 +2100,10 @@ class IRFunction:
                     list(body_nodes_for_isolated_graph) if body_nodes_for_isolated_graph else [self.cfg.add_node([])],
                 )
                 condition = IsolatedCFGraph(self.cfg, [node], find_entry_intelligently=False)
-                if DEBUG:
-                    dbg_print("--- isolated ---")
-                    dbg_print(isolated.graph(self.code))
-                    dbg_print("--- condition ---")
-                    dbg_print(condition.graph(self.code))
+                dbg_print("--- isolated ---")
+                dbg_print(isolated.graph(self.code))
+                dbg_print("--- condition ---")
+                dbg_print(condition.graph(self.code))
 
                 if not condition.entry:
                     raise DecompError("Empty condition block found for loop.")
@@ -2352,17 +2415,13 @@ class IRFunction:
                         self.locals[op.df["src"].value],
                     )
                 )
-            
+
             elif op.op == "GetGlobal":
                 block.statements.append(
                     IRAssign(
                         self.code,
                         self.locals[op.df["dst"].value],
-                        IRConst(
-                            self.code,
-                            IRConst.ConstType.OBJ,
-                            idx=op.df["global"]
-                        )
+                        IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df["global"]),
                     )
                 )
 
@@ -2385,8 +2444,70 @@ class IRFunction:
                     )
                     block.statements.append(next_block)
 
+            elif op.op == "Field":
+                dst_local = self.locals[op.df["dst"].value]
+                obj_local = self.locals[op.df["obj"].value]
+
+                obj_type = obj_local.get_type()
+                if not isinstance(obj_type.definition, (Obj, Virtual)):
+                    raise DecompError(f"Field opcode used on a non-object type: {obj_type.definition}")
+
+                field_ref_op: fieldRef = op.df["field"]
+                field_core = field_ref_op.resolve_obj(self.code, obj_type.definition)
+                field_name = field_core.name.resolve(self.code)
+
+                field_expr = IRField(self.code, obj_local, field_name, field_core.type)
+                assign_stmt = IRAssign(self.code, dst_local, field_expr)
+                block.statements.append(assign_stmt)
+
+            elif op.op == "New":
+                dst_local = self.locals[op.df["dst"].value]
+                alloc_type_idx = self.func.regs[op.df["dst"].value]
+                new_expr = IRNew(self.code, alloc_type_idx)
+                block.statements.append(IRAssign(self.code, dst_local, new_expr))
+
+            elif op.op == "DynSet":
+                obj_local = self.locals[op.df["obj"].value]
+                src_local = self.locals[op.df["src"].value]
+
+                field_name = op.df["field"].resolve(self.code)
+
+                field_type_idx = self.func.regs[op.df["src"].value]
+
+                field_target = IRField(self.code, obj_local, field_name, field_type_idx)
+
+                assign_stmt = IRAssign(self.code, field_target, src_local)
+                block.statements.append(assign_stmt)
+
+            elif op.op == "ToVirtual":
+                dst_local = self.locals[op.df["dst"].value]
+                src_local = self.locals[op.df["src"].value]
+
+                target_type_idx = self.func.regs[op.df["dst"].value]
+
+                cast_expr = IRCast(self.code, target_type_idx, src_local)
+                assign_stmt = IRAssign(self.code, dst_local, cast_expr)
+                block.statements.append(assign_stmt)
+
+            elif op.op == "CallClosure":
+                dst_local = self.locals[op.df["dst"].value]
+                fun_local = self.locals[op.df["fun"].value]
+                arg_locals = [self.locals[arg.value] for arg in op.df["args"].value]
+
+                call_expr = IRCall(self.code, IRCall.CallType.CLOSURE, fun_local, arg_locals)
+                if dst_local.get_type().kind.value == Type.Kind.VOID.value:
+                    block.statements.append(call_expr)
+                else:
+                    assign_stmt = IRAssign(self.code, dst_local, call_expr)
+                    block.statements.append(assign_stmt)
+
+            elif op.op in [
+                "NullCheck",  # we ignore NullCheck because that's generated at compile-time
+            ]:
+                pass  # silently pass
+
             else:
-                dbg_print("Skipping node op:", op)
+                dbg_print("Skipping unimplemented node op:", op)
 
         if len(node.branches) == 1:
             next_node, _ = node.branches[0]

@@ -7,12 +7,15 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Optional, List
 
-from .core import Bytecode, Type, Function, Fun
+from .core import Bytecode, Obj, Type, Function, Fun
 from . import disasm
 from .decomp import (
     IRBreak,
+    IRCast,
+    IRField,
     IRFunction,
     IRBlock,
+    IRNew,
     IRStatement,
     IRExpression,
     IRAssign,
@@ -22,6 +25,7 @@ from .decomp import (
     IRBoolExpr,
     IRCall,
     IRConditional,
+    IRTrace,
     IRWhileLoop,
     IRPrimitiveLoop,
     IRReturn,
@@ -36,8 +40,10 @@ def _indent_str(level: int) -> str:
 
 def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function: IRFunction) -> str:
     assert expr is not None, "Found empty statement!"
+
     if isinstance(expr, IRLocal):
         return expr.name
+
     elif isinstance(expr, IRConst):
         if isinstance(expr.value, Function):  # crashlink.core.Function
             # For function constants, use their partial name or findex
@@ -49,7 +55,10 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
             return "true" if expr.value else "false"
         elif expr.value is None:  # For IRConst.ConstType.NULL
             return "null"
+        elif isinstance(expr.value, Type) and isinstance(expr.value.definition, Obj):
+            return disasm.destaticify(expr.value.definition.name.resolve(code))
         return str(expr.value)
+
     elif isinstance(expr, IRArithmetic):
         left = _expression_to_haxe(expr.left, code, ir_function)
         right = _expression_to_haxe(expr.right, code, ir_function)
@@ -57,6 +66,7 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         # e.g., if expr.op.value in ["*", "/"] and (isinstance(expr.left, IRArithmetic) or isinstance(expr.right, IRArithmetic)):
         # For pseudocode, direct representation is often fine.
         return f"{left} {expr.op.value} {right}"
+
     elif isinstance(expr, IRBoolExpr):
         op_map = {
             IRBoolExpr.CompareType.EQ: "==",
@@ -90,6 +100,10 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         else:
             raise NotImplementedError(f"Unhandled IRBoolExpr: {expr}")
 
+    elif isinstance(expr, IRField):
+        target_str = _expression_to_haxe(expr.target, code, ir_function)
+        return f"{target_str}.{expr.field_name}"
+
     elif isinstance(expr, IRCall):
         callee_str: str
         if expr.call_type == IRCall.CallType.THIS and expr.target is None:
@@ -104,6 +118,17 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
 
         args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in expr.args)
         return f"{callee_str}({args_str})"
+
+    elif isinstance(expr, IRNew):
+        type_name = disasm.type_name(code, expr.get_type())
+        if type_name == "DynObj":
+            return "{}"
+        else:
+            return f"new {disasm.type_to_haxe(type_name)}()"
+
+    elif isinstance(expr, IRCast):
+        return _expression_to_haxe(expr.expr, code, ir_function)
+
     elif isinstance(expr, IRPrimitiveJump):  # Should be gone, but as a fallback
         return f"/* GOTO_LIKE({expr.op.op}) */"
 
@@ -143,11 +168,28 @@ def _generate_statements(
             # Simple check for declaration: if target is an IRLocal and not yet declared
             if isinstance(stmt.target, IRLocal) and stmt.target.name not in declared_vars_in_scope:
                 type_name = disasm.type_to_haxe(disasm.type_name(code, stmt.target.get_type()))
-                type_decl = f":{type_name}" if type_name and type_name != "Dynamic" and type_name != "Void" else ""
+                type_decl = f": {type_name}" if type_name and type_name != "Dynamic" and type_name != "Void" else ""
                 output_lines.append(f"{indent}var {target_str}{type_decl} = {value_str};")
                 declared_vars_in_scope.add(stmt.target.name)
             else:
                 output_lines.append(f"{indent}{target_str} = {value_str};")
+
+        elif isinstance(stmt, IRAssign):
+            target_str = _expression_to_haxe(stmt.target, code, ir_function)
+            value_str = _expression_to_haxe(stmt.expr, code, ir_function)
+
+            if isinstance(stmt.target, IRLocal) and stmt.target.name not in declared_vars_in_scope:
+                type_name = disasm.type_to_haxe(disasm.type_name(code, stmt.target.get_type()))
+                type_decl = f": {type_name}" if type_name and type_name != "Dynamic" and type_name != "Void" else ""
+                output_lines.append(f"{indent}var {target_str}{type_decl} = {value_str};")
+                declared_vars_in_scope.add(stmt.target.name)
+            else:
+                output_lines.append(f"{indent}{target_str} = {value_str};")
+
+        elif isinstance(stmt, IRTrace):
+            msg_str = _expression_to_haxe(stmt.msg, code, ir_function)
+            pos_info_str = ", ".join(f"{k}: {v!r}" for k, v in stmt.pos_info.items())
+            output_lines.append(f"{indent}trace({msg_str}); // {{ {pos_info_str} }}")
 
         elif isinstance(stmt, IRConditional):
             cond_str = _expression_to_haxe(stmt.condition, code, ir_function)
@@ -277,7 +319,9 @@ def pseudo(ir_func: IRFunction) -> str:
                 if i < len(arg_assigns):
                     param_name = arg_assigns[i][0].resolve(code)
 
-            param_type_decl = f":{arg_haxe_type_name}" if arg_haxe_type_name and arg_haxe_type_name != "Dynamic" else ""
+            param_type_decl = (
+                f": {arg_haxe_type_name}" if arg_haxe_type_name and arg_haxe_type_name != "Dynamic" else ""
+            )
             params_str_list.append(f"{param_name}{param_type_decl}")
 
         ret_core_type = core_fun_type_def.ret.resolve(code)
@@ -285,7 +329,7 @@ def pseudo(ir_func: IRFunction) -> str:
 
     params_joined_str = ", ".join(params_str_list)
     func_header = (
-        f"{_indent_str(base_indent)}{static_kw}function {func_name_str}({params_joined_str}):{return_type_str} {{"
+        f"{_indent_str(base_indent)}{static_kw}function {func_name_str}({params_joined_str}): {return_type_str} {{"
     )
     output_lines.append(func_header)
 
@@ -304,10 +348,10 @@ def pseudo(ir_func: IRFunction) -> str:
     if "." in full_name:
         class_name_part = full_name.split(".")[0]
         if class_name_part and class_name_part != "<none>":
-            class_name_suggestion = class_name_part.replace("$", "_")  # Handle Haxe internal names
+            class_name_suggestion = class_name_part.replace(".", "_")  # Handle Haxe internal names
 
     final_output = [f"class {class_name_suggestion} {{"]
-    final_output.extend(["  " + line for line in output_lines])  # Indent function within class
+    final_output.extend(["    " + line for line in output_lines])  # Indent function within class
     final_output.append("}")
 
     return "\n".join(final_output)
