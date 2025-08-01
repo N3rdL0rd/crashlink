@@ -105,7 +105,9 @@ def code_from_bin(
             new = read_bytes(address + (i * char_size), char_size)
             out += new
             if not any(new):
-                dbg_print(f"Read bytes {out.decode('utf-8' if char_size == 1 else 'utf-16', errors="replace")} from 0x{address:x}")
+                dbg_print(
+                    f"Read bytes {out.decode('utf-8' if char_size == 1 else 'utf-16', errors='replace')} from 0x{address:x}"
+                )
                 return out
             i += 1
 
@@ -196,7 +198,11 @@ def code_from_bin(
                 prev_insn = instructions[i - 1]
                 if prev_insn.mnemonic.startswith("lea") and len(prev_insn.operands) == 2:
                     lea_dest_op, lea_src_op = prev_insn.operands
-                    if lea_dest_op.reg == src_op.reg and lea_src_op.type == X86_OP_MEM and lea_src_op.mem.base == X86_REG_RIP:
+                    if (
+                        lea_dest_op.reg == src_op.reg
+                        and lea_src_op.type == X86_OP_MEM
+                        and lea_src_op.mem.base == X86_REG_RIP
+                    ):
                         source_addr = prev_insn.address + prev_insn.size + lea_src_op.mem.disp
                         source_symbol_name = addr_to_symbol_name.get(source_addr)
 
@@ -330,7 +336,9 @@ def code_from_bin(
                                 packed_def.inner = target_tindex
                                 typ.definition = packed_def
                         else:
-                            print(f"Warning: Could not find tIndex for source symbol '{source_symbol_name}' referenced by {name}.")
+                            print(
+                                f"Warning: Could not find tIndex for source symbol '{source_symbol_name}' referenced by {name}."
+                            )
                     else:
                         print(f"Warning: No valid '.tparam' assignment found for ref-like type '{name}'.")
 
@@ -381,7 +389,9 @@ def code_from_bin(
                         nconstructs = read_int(enum_t_sym.value + address_size, 4)
                         ptr_constructs = read_int(enum_t_sym.value + address_size * 2, address_size)
 
-                        enum_name = read_chars(ptr_name, 2).decode("utf-16").strip() if ptr_name else f"unknown_enum_{name}"
+                        enum_name = (
+                            read_chars(ptr_name, 2).decode("utf-16").strip() if ptr_name else f"unknown_enum_{name}"
+                        )
 
                         enum_def = Enum()
                         enum_def.name = strRef(add_str(enum_name))
@@ -395,7 +405,11 @@ def code_from_bin(
                             c_nparams = read_int(construct_base_addr + address_size, 4)
                             c_params_ptr = read_int(construct_base_addr + address_size * 2, address_size)
 
-                            c_name = read_chars(c_name_ptr, 2).decode("utf-16").strip() if c_name_ptr else f"unknown_construct_{i}"
+                            c_name = (
+                                read_chars(c_name_ptr, 2).decode("utf-16").strip()
+                                if c_name_ptr
+                                else f"unknown_construct_{i}"
+                            )
 
                             construct = EnumConstruct()
                             construct.name = strRef(add_str(c_name))
@@ -408,7 +422,9 @@ def code_from_bin(
                                 if param_type_addr in offset_to_tindex:
                                     params.append(offset_to_tindex[param_type_addr])
                                 else:
-                                    print(f"Warning: Could not find type for param {j} of constructor '{c_name}' in enum '{enum_name}'")
+                                    print(
+                                        f"Warning: Could not find type for param {j} of constructor '{c_name}' in enum '{enum_name}'"
+                                    )
 
                             construct.params = params
                             constructs.append(construct)
@@ -422,10 +438,10 @@ def code_from_bin(
                 case _:
                     print(f"Unsupported (for now...) type kind: {Type.Kind(typ.kind.value)}")
             types.append(typ)
-    
+
     code.ntypes.value = len(types)
     code.types = types
-    
+
     # TODO: functions, stubs, strings, bytes, ints, and a whole buncha other stuff
 
     return code
