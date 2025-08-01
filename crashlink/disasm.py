@@ -33,6 +33,16 @@ from .core import (
 from .opcodes import opcodes
 
 
+def destaticify(s: str) -> str:
+    """
+    Transforms an static Obj's name into the normal class name.
+    """
+    parts = s.rsplit(".", 1)
+    if len(parts) == 2 and parts[1].startswith("$"):
+        parts[1] = parts[1][1:]
+    return ".".join(parts)
+
+
 def type_name(code: Bytecode, typ: Type) -> str:
     """
     Generates a human-readable name for a type.
@@ -61,9 +71,10 @@ def type_to_haxe(type: str) -> str:
         "F64": "Float",
         "Bytes": "hl.Bytes",
         "Dyn": "Dynamic",
+        "DynObj": "Dynamic",
         "Fun": "Function",
     }
-    return mapping.get(type, type)
+    return destaticify(mapping.get(type, type))
 
 
 def func_header(code: Bytecode, func: Function | Native) -> str:
