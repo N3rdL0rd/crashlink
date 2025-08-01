@@ -589,17 +589,25 @@ class IRConst(IRExpression):
         NULL = "null"
         FUN = "fun"
         OBJ = "obj"
+        GLOBAL_STRING = "global_string"
 
     def __init__(
         self,
         code: Bytecode,
         const_type: "IRConst.ConstType",
         idx: Optional[ResolvableVarInt] = None,
-        value: Optional[bool | int] = None,
+        value: Optional[bool | int | str] = None,
     ):
         super().__init__(code)
         self.const_type = const_type
         self.value: Any = value
+        self.original_index = idx
+
+        if const_type == IRConst.ConstType.GLOBAL_STRING:
+            if not isinstance(value, str):
+                raise DecompError("IRConst with type GLOBAL_STRING must have a string value")
+            self.value = value
+            return
 
         if const_type == IRConst.ConstType.INT and idx is None and value is not None:
             return
@@ -622,7 +630,7 @@ class IRConst(IRExpression):
             return _get_type_in_code(self.code, "Bool")
         elif self.const_type == IRConst.ConstType.BYTES:
             return _get_type_in_code(self.code, "Bytes")
-        elif self.const_type == IRConst.ConstType.STRING:
+        elif self.const_type in [IRConst.ConstType.STRING, IRConst.ConstType.GLOBAL_STRING]:
             return _get_type_in_code(self.code, "String")
         elif self.const_type == IRConst.ConstType.NULL:
             return _get_type_in_code(self.code, "Null") # FIXME: null is of a type...
@@ -641,6 +649,8 @@ class IRConst(IRExpression):
     def __repr__(self) -> str:
         if isinstance(self.value, Function):
             return f"<IRConst: {disasm.func_header(self.code, self.value)}>"
+        elif self.const_type == IRConst.ConstType.GLOBAL_STRING:
+            return f'<IRConst: "{self.value}">'
         return f"<IRConst: {self.value}>"
 
 
@@ -1820,6 +1830,49 @@ class IRVoidAssignOptimizer(TraversingIROptimizer):
         if made_change_this_pass:
             block.statements = new_statements
 
+class IRGlobalStringOptimizer(TraversingIROptimizer):
+    """
+    Optimizes `GetGlobal` operations that resolve to constant strings.
+    It replaces an assignment from a global `String` object with a direct
+    assignment of a new IRConst type that holds the string value.
+
+    This transforms:
+        reg = <IRConst type=OBJ, value=<Obj: ...>>
+    into:
+        reg = <IRConst type=GLOBAL_STRING, value="the actual string">
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        for stmt in block.statements:
+            if not isinstance(stmt, IRAssign):
+                continue
+
+            assign_stmt = stmt
+            expr = assign_stmt.expr
+
+            if not (isinstance(expr, IRConst) and expr.const_type == IRConst.ConstType.OBJ):
+                continue
+
+            if not (expr.original_index and isinstance(expr.original_index, gIndex)):
+                continue
+
+            global_idx = expr.original_index.value
+            try:
+                string_value = self.func.code.const_str(global_idx)
+
+                dbg_print(f"IRGlobalStringOptimizer: Optimizing GetGlobal for string '{string_value}'")
+
+                new_string_const = IRConst(
+                    self.func.code,
+                    IRConst.ConstType.GLOBAL_STRING,
+                    value=string_value
+                )
+
+                assign_stmt.expr = new_string_const
+
+            except (ValueError, TypeError):
+                pass
+
 
 class IRFunction:
     """
@@ -1845,6 +1898,7 @@ class IRFunction:
             self.optimizers: List[IROptimizer] = [
                 IRBlockFlattener(self),
                 IRPrimitiveJumpLifter(self),
+                IRGlobalStringOptimizer(self),
                 IRConditionInliner(self),
                 IRLoopConditionOptimizer(self),
                 IRSelfAssignOptimizer(self),
