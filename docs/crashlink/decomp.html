@@ -864,7 +864,7 @@ attributes &ndash; see the documentation for details.</p></div>
 </dd>
 <dt id="crashlink.decomp.IRAssign"><code class="flex name class">
 <span>class <span class="ident">IRAssign</span></span>
-<span>(</span><span>code: Bytecode,<br>target: <a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>,<br>expr: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>)</span>
+<span>(</span><span>code: Bytecode,<br>target: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>expr: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -872,20 +872,25 @@ attributes &ndash; see the documentation for details.</p></div>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class IRAssign(IRStatement):
-    &#34;&#34;&#34;Assignment of an expression result to a local variable&#34;&#34;&#34;
+    &#34;&#34;&#34;Assignment of an expression result to a target (local variable, field, etc.)&#34;&#34;&#34;
 
-    def __init__(self, code: Bytecode, target: IRLocal, expr: IRExpression):
+    def __init__(self, code: Bytecode, target: IRExpression, expr: IRExpression):
         super().__init__(code)
+        if not isinstance(target, (IRLocal, IRField)):
+            raise DecompError(f&#34;Invalid target for IRAssign: {type(target).__name__}. Must be IRLocal or IRField.&#34;)
         self.target = target
         self.expr = expr
 
     def get_children(self) -&gt; List[IRStatement]:
-        return [self.expr]
+        return [self.target, self.expr]
 
     def __repr__(self) -&gt; str:
-        return f&#34;&lt;IRAssign: {self.target} = {self.expr} ({disasm.type_name(self.code, self.expr.get_type())})&gt;&#34;</code></pre>
+        expr_type_str = &#34;&#34;
+        if isinstance(self.expr, IRExpression):
+            expr_type_str = f&#34; ({disasm.type_name(self.code, self.expr.get_type())})&#34;
+        return f&#34;&lt;IRAssign: {self.target} = {self.expr}{expr_type_str}&gt;&#34;</code></pre>
 </details>
-<div class="desc"><p>Assignment of an expression result to a local variable</p></div>
+<div class="desc"><p>Assignment of an expression result to a target (local variable, field, etc.)</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
@@ -902,7 +907,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
-    return [self.expr]</code></pre>
+    return [self.target, self.expr]</code></pre>
 </details>
 <div class="desc"></div>
 </dd>
@@ -1449,7 +1454,7 @@ attributes &ndash; see the documentation for details.</p></div>
 </dd>
 <dt id="crashlink.decomp.IRConst"><code class="flex name class">
 <span>class <span class="ident">IRConst</span></span>
-<span>(</span><span>code: Bytecode,<br>const_type: "'<a title="crashlink.decomp.IRConst.ConstType" href="#crashlink.decomp.IRConst.ConstType">IRConst.ConstType</a>'",<br>idx: Optional[ResolvableVarInt] = None,<br>value: Optional[bool | int] = None)</span>
+<span>(</span><span>code: Bytecode,<br>const_type: "'<a title="crashlink.decomp.IRConst.ConstType" href="#crashlink.decomp.IRConst.ConstType">IRConst.ConstType</a>'",<br>idx: Optional[ResolvableVarInt] = None,<br>value: Optional[bool | int | str] = None)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -1467,17 +1472,26 @@ attributes &ndash; see the documentation for details.</p></div>
         STRING = &#34;string&#34;
         NULL = &#34;null&#34;
         FUN = &#34;fun&#34;
+        GLOBAL_OBJ = &#34;obj&#34;
+        GLOBAL_STRING = &#34;global_string&#34;
 
     def __init__(
         self,
         code: Bytecode,
         const_type: &#34;IRConst.ConstType&#34;,
         idx: Optional[ResolvableVarInt] = None,
-        value: Optional[bool | int] = None,
+        value: Optional[bool | int | str] = None,
     ):
         super().__init__(code)
         self.const_type = const_type
         self.value: Any = value
+        self.original_index = idx
+
+        if const_type == IRConst.ConstType.GLOBAL_STRING:
+            if not isinstance(value, str):
+                raise DecompError(&#34;IRConst with type GLOBAL_STRING must have a string value&#34;)
+            self.value = value
+            return
 
         if const_type == IRConst.ConstType.INT and idx is None and value is not None:
             return
@@ -1500,10 +1514,10 @@ attributes &ndash; see the documentation for details.</p></div>
             return _get_type_in_code(self.code, &#34;Bool&#34;)
         elif self.const_type == IRConst.ConstType.BYTES:
             return _get_type_in_code(self.code, &#34;Bytes&#34;)
-        elif self.const_type == IRConst.ConstType.STRING:
+        elif self.const_type in [IRConst.ConstType.STRING, IRConst.ConstType.GLOBAL_STRING]:
             return _get_type_in_code(self.code, &#34;String&#34;)
         elif self.const_type == IRConst.ConstType.NULL:
-            return _get_type_in_code(self.code, &#34;Null&#34;)
+            return _get_type_in_code(self.code, &#34;Null&#34;)  # FIXME: null is of a type...
         elif self.const_type == IRConst.ConstType.FUN:
             if not (isinstance(self.value, Function) or isinstance(self.value, Native)):
                 raise DecompError(f&#34;Expected function index to resolve to a function or native, got {self.value}&#34;)
@@ -1511,12 +1525,17 @@ attributes &ndash; see the documentation for details.</p></div>
             if isinstance(res, Type):
                 return res
             raise DecompError(f&#34;Expected function return to resolve to a type, got {res}&#34;)
+        elif self.const_type == IRConst.ConstType.GLOBAL_OBJ:
+            assert isinstance(self.value, Type)
+            return self.value
         else:
             raise DecompError(f&#34;Unknown IRConst type: {self.const_type}&#34;)
 
     def __repr__(self) -&gt; str:
         if isinstance(self.value, Function):
             return f&#34;&lt;IRConst: {disasm.func_header(self.code, self.value)}&gt;&#34;
+        elif self.const_type == IRConst.ConstType.GLOBAL_STRING:
+            return f&#39;&lt;IRConst: &#34;{self.value}&#34;&gt;&#39;
         return f&#34;&lt;IRConst: {self.value}&gt;&#34;</code></pre>
 </details>
 <div class="desc"><p>Represents a constant value expression</p></div>
@@ -1625,8 +1644,11 @@ attributes &ndash; see the documentation for details.</p></div>
 <li><a title="crashlink.decomp.IRArithmetic" href="#crashlink.decomp.IRArithmetic">IRArithmetic</a></li>
 <li><a title="crashlink.decomp.IRBoolExpr" href="#crashlink.decomp.IRBoolExpr">IRBoolExpr</a></li>
 <li><a title="crashlink.decomp.IRCall" href="#crashlink.decomp.IRCall">IRCall</a></li>
+<li>crashlink.decomp.IRCast</li>
 <li><a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a></li>
+<li>crashlink.decomp.IRField</li>
 <li><a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a></li>
+<li>crashlink.decomp.IRNew</li>
 <li><a title="crashlink.decomp.IRPrimitiveJump" href="#crashlink.decomp.IRPrimitiveJump">IRPrimitiveJump</a></li>
 </ul>
 <h3>Methods</h3>
@@ -1694,12 +1716,14 @@ def get_type(self) -&gt; Type:
             self.optimizers: List[IROptimizer] = [
                 IRBlockFlattener(self),
                 IRPrimitiveJumpLifter(self),
+                IRGlobalStringOptimizer(self),
                 IRConditionInliner(self),
                 IRLoopConditionOptimizer(self),
                 IRSelfAssignOptimizer(self),
                 IRCommonBlockMerger(self),
                 IRTempAssignmentInliner(self),
                 IRVoidAssignOptimizer(self),
+                IRTraceOptimizer(self),
                 IRBlockFlattener(self),
             ]
             self._optimize()
@@ -1831,11 +1855,10 @@ def get_type(self) -&gt; Type:
                     list(body_nodes_for_isolated_graph) if body_nodes_for_isolated_graph else [self.cfg.add_node([])],
                 )
                 condition = IsolatedCFGraph(self.cfg, [node], find_entry_intelligently=False)
-                if DEBUG:
-                    dbg_print(&#34;--- isolated ---&#34;)
-                    dbg_print(isolated.graph(self.code))
-                    dbg_print(&#34;--- condition ---&#34;)
-                    dbg_print(condition.graph(self.code))
+                dbg_print(&#34;--- isolated ---&#34;)
+                dbg_print(isolated.graph(self.code))
+                dbg_print(&#34;--- condition ---&#34;)
+                dbg_print(condition.graph(self.code))
 
                 if not condition.entry:
                     raise DecompError(&#34;Empty condition block found for loop.&#34;)
@@ -2148,6 +2171,15 @@ def get_type(self) -&gt; Type:
                     )
                 )
 
+            elif op.op == &#34;GetGlobal&#34;:
+                block.statements.append(
+                    IRAssign(
+                        self.code,
+                        self.locals[op.df[&#34;dst&#34;].value],
+                        IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df[&#34;global&#34;]),
+                    )
+                )
+
             elif op.op == &#34;JAlways&#34;:
                 jump_idx = node.base_offset + len(node.ops) + op.df[&#34;offset&#34;].value
                 target_node = None
@@ -2167,8 +2199,70 @@ def get_type(self) -&gt; Type:
                     )
                     block.statements.append(next_block)
 
+            elif op.op == &#34;Field&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                obj_local = self.locals[op.df[&#34;obj&#34;].value]
+
+                obj_type = obj_local.get_type()
+                if not isinstance(obj_type.definition, (Obj, Virtual)):
+                    raise DecompError(f&#34;Field opcode used on a non-object type: {obj_type.definition}&#34;)
+
+                field_ref_op: fieldRef = op.df[&#34;field&#34;]
+                field_core = field_ref_op.resolve_obj(self.code, obj_type.definition)
+                field_name = field_core.name.resolve(self.code)
+
+                field_expr = IRField(self.code, obj_local, field_name, field_core.type)
+                assign_stmt = IRAssign(self.code, dst_local, field_expr)
+                block.statements.append(assign_stmt)
+
+            elif op.op == &#34;New&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                alloc_type_idx = self.func.regs[op.df[&#34;dst&#34;].value]
+                new_expr = IRNew(self.code, alloc_type_idx)
+                block.statements.append(IRAssign(self.code, dst_local, new_expr))
+
+            elif op.op == &#34;DynSet&#34;:
+                obj_local = self.locals[op.df[&#34;obj&#34;].value]
+                src_local = self.locals[op.df[&#34;src&#34;].value]
+
+                field_name = op.df[&#34;field&#34;].resolve(self.code)
+
+                field_type_idx = self.func.regs[op.df[&#34;src&#34;].value]
+
+                field_target = IRField(self.code, obj_local, field_name, field_type_idx)
+
+                assign_stmt = IRAssign(self.code, field_target, src_local)
+                block.statements.append(assign_stmt)
+
+            elif op.op == &#34;ToVirtual&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                src_local = self.locals[op.df[&#34;src&#34;].value]
+
+                target_type_idx = self.func.regs[op.df[&#34;dst&#34;].value]
+
+                cast_expr = IRCast(self.code, target_type_idx, src_local)
+                assign_stmt = IRAssign(self.code, dst_local, cast_expr)
+                block.statements.append(assign_stmt)
+
+            elif op.op == &#34;CallClosure&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                fun_local = self.locals[op.df[&#34;fun&#34;].value]
+                arg_locals = [self.locals[arg.value] for arg in op.df[&#34;args&#34;].value]
+
+                call_expr = IRCall(self.code, IRCall.CallType.CLOSURE, fun_local, arg_locals)
+                if dst_local.get_type().kind.value == Type.Kind.VOID.value:
+                    block.statements.append(call_expr)
+                else:
+                    assign_stmt = IRAssign(self.code, dst_local, call_expr)
+                    block.statements.append(assign_stmt)
+
+            elif op.op in [
+                &#34;NullCheck&#34;,  # we ignore NullCheck because that&#39;s generated at compile-time
+            ]:
+                pass  # silently pass
+
             else:
-                dbg_print(&#34;Skipping opcode:&#34;, op)
+                dbg_print(&#34;Skipping unimplemented node op:&#34;, op)
 
         if len(node.branches) == 1:
             next_node, _ = node.branches[0]
@@ -2495,7 +2589,7 @@ def get_children(self) -&gt; List[IRStatement]:
 </dd>
 <dt id="crashlink.decomp.IRTrace"><code class="flex name class">
 <span>class <span class="ident">IRTrace</span></span>
-<span>(</span><span>code: Bytecode,<br>filename: gIndex,<br>line: int,<br>class_name: gIndex,<br>method_name: gIndex)</span>
+<span>(</span><span>code: Bytecode,<br>msg: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>pos_info: Dict[str, Any])</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2503,29 +2597,21 @@ def get_children(self) -&gt; List[IRStatement]:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class IRTrace(IRStatement):
-    &#34;&#34;&#34;Trace statement&#34;&#34;&#34;
+    &#34;&#34;&#34;Represents a simplified trace call.&#34;&#34;&#34;
 
-    def __init__(
-        self,
-        code: Bytecode,
-        filename: gIndex,
-        line: int,
-        class_name: gIndex,
-        method_name: gIndex,
-    ):
+    def __init__(self, code: Bytecode, msg: IRExpression, pos_info: Dict[str, Any]):
         super().__init__(code)
-        self.filename = filename
-        self.line = line
-        self.class_name = class_name
-        self.method_name = method_name
+        self.msg = msg
+        self.pos_info = pos_info  # e.g., {&#34;fileName&#34;: &#34;Test.hx&#34;, &#34;lineNumber&#34;: 12}
 
     def get_children(self) -&gt; List[IRStatement]:
-        return []
+        return [self.msg]
 
     def __repr__(self) -&gt; str:
-        return f&#34;&lt;IRTrace: {self.filename.resolve_str(self.code)} {self.line} {self.class_name.resolve_str(self.code)} {self.method_name.resolve_str(self.code)}&gt;&#34;</code></pre>
+        pos_str = &#34;, &#34;.join(f&#34;{k}: {v}&#34; for k, v in self.pos_info.items())
+        return f&#34;&lt;IRTrace: msg={self.msg}, pos={{ {pos_str} }}&gt;&#34;</code></pre>
 </details>
-<div class="desc"><p>Trace statement</p></div>
+<div class="desc"><p>Represents a simplified trace call.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
@@ -2542,7 +2628,7 @@ def get_children(self) -&gt; List[IRStatement]:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
-    return []</code></pre>
+    return [self.msg]</code></pre>
 </details>
 <div class="desc"></div>
 </dd>

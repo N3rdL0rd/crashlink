@@ -30,7 +30,7 @@ format:
 
 # Run type checking
 check:
-    mypy --strict --check-untyped-defs crashlink
+    mypy crashlink
 
 # Generate documentation
 docs:

@@ -714,13 +714,13 @@ within a vdynamic struct.</p></div>
                     case &#34;VirtualClosure&#34;:
                         obj_t = function.regs[df[&#34;obj&#34;].value].resolve(code)
                         assert isinstance(obj_t, Type)
-                        obj = obj_t.definition
-                        assert isinstance(obj, (Obj, Struct)), (
-                            f&#34;VirtualClosure on non-Obj/Struct type: {obj} at op {i} in function {function.findex}&#34;
+                        objdef = obj_t.definition
+                        assert isinstance(objdef, (Obj, Struct)), (
+                            f&#34;VirtualClosure on non-Obj/Struct type: {objdef} at op {i} in function {function.findex}&#34;
                         )
                         fid = df[&#34;field&#34;].value
                         func_ptr = f&#34;r{df[&#39;obj&#39;]}-&gt;$type-&gt;vobj_proto[{fid}]&#34;
-                        fun_t = obj.virtuals[fid]
+                        fun_t = objdef.virtuals[fid]
                         rhs = f&#34;hl_alloc_closure_ptr(&amp;t${fun_t}, {func_ptr}, r{df[&#39;obj&#39;]})&#34;
                     case &#34;GetGlobal&#34;:
                         dst_reg = df[&#34;dst&#34;].value

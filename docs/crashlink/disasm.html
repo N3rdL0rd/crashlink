@@ -568,9 +568,10 @@ Ret. 1
         &#34;F64&#34;: &#34;Float&#34;,
         &#34;Bytes&#34;: &#34;hl.Bytes&#34;,
         &#34;Dyn&#34;: &#34;Dynamic&#34;,
+        &#34;DynObj&#34;: &#34;Dynamic&#34;,
         &#34;Fun&#34;: &#34;Function&#34;,
     }
-    return mapping.get(type, type)</code></pre>
+    return destaticify(mapping.get(type, type))</code></pre>
 </details>
 <div class="desc"><p>Maps internal HashLink type names to Haxe type names.</p></div>
 </dd>

@@ -7,7 +7,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from enum import Enum as _Enum  # Enum is already defined in crashlink.core
 from pprint import pformat
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
 
 from . import disasm
 from .core import (
@@ -1745,13 +1745,20 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 expr.left = self._substitute_in_expr(expr.left, target, replacement)
             if expr.right:
                 expr.right = self._substitute_in_expr(expr.right, target, replacement)
+
         elif isinstance(expr, IRCall):
-            if isinstance(expr.target, IRExpression):
-                expr.target = self._substitute_in_expr(expr.target, target, replacement)
+            # The type of expr.target is Union[IRConst, IRLocal, None]
+            if expr.target is not None:
+                new_target = self._substitute_in_expr(expr.target, target, replacement)
+                # We must CAST the result to tell mypy it's a valid type for this slot.
+                # We know expr.target is not None here, so the valid types are IRConst or IRLocal.
+                expr.target = cast(Union[IRConst, IRLocal], new_target)
+
             expr.args = [self._substitute_in_expr(arg, target, replacement) for arg in expr.args]
+
         elif isinstance(expr, IRField):
-            # *** FIX IS HERE: Correctly recurse on the target of the field access ***
             expr.target = self._substitute_in_expr(expr.target, target, replacement)
+
         elif isinstance(expr, IRCast):
             expr.expr = self._substitute_in_expr(expr.expr, target, replacement)
 
@@ -1861,10 +1868,6 @@ class IRTraceOptimizer(TraversingIROptimizer):
                     i += 1
                     continue
 
-                dbg_print(
-                    f"[TraceOpt] Found potential start of trace pattern at index {i} with temp local '{temp_local.name}'"
-                )
-
                 pos_info: Dict[str, Any] = {}
                 j = i + 1
 
@@ -1876,11 +1879,12 @@ class IRTraceOptimizer(TraversingIROptimizer):
                         and next_stmt.target.target == temp_local
                         and isinstance(next_stmt.expr, IRConst)
                     ):
-                        dbg_print(f"[TraceOpt] Sequence of field sets for '{temp_local.name}' ended at index {j}.")
                         break
 
                     field_assign = next_stmt
+                    assert isinstance(field_assign.target, IRField)
                     field_name = field_assign.target.field_name
+                    assert isinstance(field_assign.expr, IRConst)
                     field_value = field_assign.expr.value
                     pos_info[field_name] = field_value
                     dbg_print(f"[TraceOpt]  -> Collected field: {field_name} = {field_value!r}")
@@ -1897,7 +1901,6 @@ class IRTraceOptimizer(TraversingIROptimizer):
                         is_our_var = (isinstance(last_arg, IRLocal) and last_arg == temp_local) or (
                             isinstance(last_arg, IRCast) and last_arg.expr == temp_local
                         )
-                        dbg_print(f"[TraceOpt]  -> Is last arg '{last_arg}' our temp '{temp_local.name}'? {is_our_var}")
 
                         is_trace_func = False
                         if isinstance(call_stmt.target, IRField) and call_stmt.target.field_name == "trace":
@@ -1921,6 +1924,7 @@ class IRTraceOptimizer(TraversingIROptimizer):
                         dbg_print(f"[TraceOpt]  -> FAILED: Statement is not an IRCall with 2 arguments.")
 
                     if is_valid_trace_call:
+                        assert isinstance(call_stmt, IRCall)
                         msg_expr = call_stmt.args[0]
                         trace_stmt = IRTrace(self.func.code, msg_expr, pos_info)
                         new_statements.append(trace_stmt)
