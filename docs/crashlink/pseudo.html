@@ -85,7 +85,9 @@ el.replaceWith(d);
                 if i &lt; len(arg_assigns):
                     param_name = arg_assigns[i][0].resolve(code)
 
-            param_type_decl = f&#34;:{arg_haxe_type_name}&#34; if arg_haxe_type_name and arg_haxe_type_name != &#34;Dynamic&#34; else &#34;&#34;
+            param_type_decl = (
+                f&#34;: {arg_haxe_type_name}&#34; if arg_haxe_type_name and arg_haxe_type_name != &#34;Dynamic&#34; else &#34;&#34;
+            )
             params_str_list.append(f&#34;{param_name}{param_type_decl}&#34;)
 
         ret_core_type = core_fun_type_def.ret.resolve(code)
@@ -93,7 +95,7 @@ el.replaceWith(d);
 
     params_joined_str = &#34;, &#34;.join(params_str_list)
     func_header = (
-        f&#34;{_indent_str(base_indent)}{static_kw}function {func_name_str}({params_joined_str}):{return_type_str} {{&#34;
+        f&#34;{_indent_str(base_indent)}{static_kw}function {func_name_str}({params_joined_str}): {return_type_str} {{&#34;
     )
     output_lines.append(func_header)
 
@@ -112,10 +114,10 @@ el.replaceWith(d);
     if &#34;.&#34; in full_name:
         class_name_part = full_name.split(&#34;.&#34;)[0]
         if class_name_part and class_name_part != &#34;&lt;none&gt;&#34;:
-            class_name_suggestion = class_name_part.replace(&#34;$&#34;, &#34;_&#34;)  # Handle Haxe internal names
+            class_name_suggestion = class_name_part.replace(&#34;.&#34;, &#34;_&#34;)  # Handle Haxe internal names
 
     final_output = [f&#34;class {class_name_suggestion} {{&#34;]
-    final_output.extend([&#34;  &#34; + line for line in output_lines])  # Indent function within class
+    final_output.extend([&#34;    &#34; + line for line in output_lines])  # Indent function within class
     final_output.append(&#34;}&#34;)
 
     return &#34;\n&#34;.join(final_output)</code></pre>

@@ -1,57 +1,61 @@
-"""
-Dump information from HL/C compiled binaries, and get an approximate reconstruction of the original bytecode.
-"""
-
-from __future__ import annotations
-
-from typing import Dict, List, Optional, Tuple
-from .core import (
-    Binding,
-    Bytecode,
-    Field,
-    Fun,
-    Null,
-    Obj,
-    Packed,
-    Proto,
-    Ref,
-    Type,
-    VarInt,
-    Virtual,
-    fIndex,
-    fieldRef,
-    strRef,
-    tIndex,
-    Abstract,
-    Enum,
-    EnumConstruct,
-)
-from .globals import dbg_print
-
-try:
-    from capstone import Cs, CS_ARCH_X86, CS_MODE_64
-    from capstone.x86 import X86_OP_MEM, X86_REG_RIP, X86_OP_IMM, X86_OP_REG
-    import lief
-except ImportError:
-    raise NotImplementedError(
-        "Cannot run dehl without lief and capstone installed. Try `pip install crashlink[extras]` or `pip install lief capstone`."
-    )
-
-KIND_TO_FIELD_MAP = {
-    Type.Kind.FUN: "fun",
-    Type.Kind.OBJ: "obj",
-    Type.Kind.REF: "tparam",
-    Type.Kind.VIRTUAL: "virt",
-    Type.Kind.ABSTRACT: "abs_name",
-    Type.Kind.ENUM: "tenum",
-    Type.Kind.NULL: "tparam",
-    Type.Kind.METHOD: "fun",
-    Type.Kind.STRUCT: "obj",
-    Type.Kind.PACKED: "tparam",
-}
-
-
-def code_from_bin(
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.5">
+<title>crashlink.dehlc API documentation</title>
+<meta name="description" content="Dump information from HL/C compiled binaries, and get an approximate reconstruction of the original bytecode.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>crashlink.dehlc</code></h1>
+</header>
+<section id="section-intro">
+<p>Dump information from HL/C compiled binaries, and get an approximate reconstruction of the original bytecode.</p>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="crashlink.dehlc.code_from_bin"><code class="name flex">
+<span>def <span class="ident">code_from_bin</span></span>(<span>path: str | None = None,<br>data: bytes | None = None,<br>address_size: int = 8,<br>fieldt_length: int = 24,<br>protot_length: int = 24,<br>bindingt_length: int = 8,<br>enumconstruct_length: int = 40,<br>union_offset: int = 8) ‑> <a title="crashlink.core.Bytecode" href="core.html#crashlink.core.Bytecode">Bytecode</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def code_from_bin(
     path: str | None = None,
     data: bytes | None = None,
     address_size: int = 8,
@@ -60,63 +64,63 @@ def code_from_bin(
     bindingt_length: int = 8,
     enumconstruct_length: int = 40,
     union_offset: int = 8,
-) -> Bytecode:
-    """
+) -&gt; Bytecode:
+    &#34;&#34;&#34;
     Dumps extracted information from the HL/C binary located on the filesystem at `path` or from the bytes in `data` to a new Bytecode instance.
-    """
+    &#34;&#34;&#34;
 
-    print("Parsing binary...")
+    print(&#34;Parsing binary...&#34;)
     code = Bytecode.create_empty(no_extra_types=True)
     if path is not None:
         binary = lief.parse(path)
     elif data is not None:
         binary = lief.parse(data)
     else:
-        raise ValueError("One of `path` or `data` must be passed.")
+        raise ValueError(&#34;One of `path` or `data` must be passed.&#34;)
 
-    assert binary is not None, "Failed to parse binary!"
+    assert binary is not None, &#34;Failed to parse binary!&#34;
 
-    def get_symbol(name: str) -> lief.Symbol:
+    def get_symbol(name: str) -&gt; lief.Symbol:
         for symbol in binary.symbols:
             if str(symbol.name) == name:
-                dbg_print(f"Symbol {name} -> 0x{symbol.value:x}")
+                dbg_print(f&#34;Symbol {name} -&gt; 0x{symbol.value:x}&#34;)
                 return symbol
-        raise ValueError("No such symbol!")
+        raise ValueError(&#34;No such symbol!&#34;)
 
-    def read_int(address: int, size: int) -> int:
+    def read_int(address: int, size: int) -&gt; int:
         val = binary.get_int_from_virtual_address(address, size)
-        dbg_print(f"Reading int sized {size:x} from 0x{address:x} -> {val}")
+        dbg_print(f&#34;Reading int sized {size:x} from 0x{address:x} -&gt; {val}&#34;)
         if val is not None:
             return val
         return 0
 
-    def read_bytes(address: int, size: int) -> bytes:
+    def read_bytes(address: int, size: int) -&gt; bytes:
         val = binary.get_content_from_virtual_address(address, size)
         res = bytes(val)
         return res
 
-    def read_chars(address: int, char_size: int) -> bytes:
-        """
+    def read_chars(address: int, char_size: int) -&gt; bytes:
+        &#34;&#34;&#34;
         Reads a string with characters of length `char_size` until a null terminator. `char_size` is 1 for UTF-8, 2 for UTF-16.
-        """
+        &#34;&#34;&#34;
         i = 0
-        out = b""
+        out = b&#34;&#34;
         while True:
             new = read_bytes(address + (i * char_size), char_size)
             out += new
             if not any(new):
                 dbg_print(
-                    f"Read bytes {out.decode('utf-8' if char_size == 1 else 'utf-16', errors='replace')} from 0x{address:x}"
+                    f&#34;Read bytes {out.decode(&#39;utf-8&#39; if char_size == 1 else &#39;utf-16&#39;, errors=&#39;replace&#39;)} from 0x{address:x}&#34;
                 )
                 return out
             i += 1
 
     strs: List[str] = []
 
-    def add_str(val: str) -> int:
-        """
+    def add_str(val: str) -&gt; int:
+        &#34;&#34;&#34;
         Adds a string and returns its index. If it already exists, returns the existing index.
-        """
+        &#34;&#34;&#34;
         if not val in strs:
             strs.append(val)
             return len(strs) - 1
@@ -125,36 +129,36 @@ def code_from_bin(
     types: List[Type] = []
     offset_to_tindex: Dict[int, tIndex] = {}
     symbol_name_to_tindex: Dict[str, tIndex] = {}
-    print("Pass 1: Types")
-    print("Pass 1.1: Remapping types to tIndex space...")
+    print(&#34;Pass 1: Types&#34;)
+    print(&#34;Pass 1.1: Remapping types to tIndex space...&#34;)
     for i, symbol in enumerate(binary.symbols):
         name = str(symbol.name)
-        if name.startswith("t$"):
+        if name.startswith(&#34;t$&#34;):
             idx = tIndex(i)
             offset_to_tindex[symbol.value] = idx
             symbol_name_to_tindex[name] = idx
-    print(f"Found {len(offset_to_tindex)} types.")
+    print(f&#34;Found {len(offset_to_tindex)} types.&#34;)
 
-    print("Pass 1.2: Analyzing hl_init_types...")
+    print(&#34;Pass 1.2: Analyzing hl_init_types...&#34;)
     type_assignments: Dict[str, Tuple[str, str]] = {}
 
     addr_to_symbol_name: Dict[int, str] = {s.value: str(s.name) for s in binary.symbols if s.value != 0}
     sorted_symbols = sorted(
-        [(s.value, s) for s in binary.symbols if s.value != 0 and str(s.name).startswith("t$")],
+        [(s.value, s) for s in binary.symbols if s.value != 0 and str(s.name).startswith(&#34;t$&#34;)],
         key=lambda item: item[0],
         reverse=True,
     )
 
-    def find_containing_symbol(address: int) -> Optional[lief.Symbol]:
+    def find_containing_symbol(address: int) -&gt; Optional[lief.Symbol]:
         for sym_addr, symbol in sorted_symbols:
-            if address >= sym_addr and address < sym_addr + symbol.size:
+            if address &gt;= sym_addr and address &lt; sym_addr + symbol.size:
                 return symbol
         return None
 
     try:
-        init_func_addr = binary.get_function_address("hl_init_types")
-        assert isinstance(init_func_addr, int), "Something goofed while reading the `hl_init_types` symbol!"
-        func_symbol = get_symbol("hl_init_types")
+        init_func_addr = binary.get_function_address(&#34;hl_init_types&#34;)
+        assert isinstance(init_func_addr, int), &#34;Something goofed while reading the `hl_init_types` symbol!&#34;
+        func_symbol = get_symbol(&#34;hl_init_types&#34;)
 
         code_bytes = bytes(binary.get_content_from_virtual_address(init_func_addr, func_symbol.size))
         md = Cs(CS_ARCH_X86, CS_MODE_64)
@@ -162,7 +166,7 @@ def code_from_bin(
         instructions = list(md.disasm(code_bytes, init_func_addr))
 
         for i, curr_insn in enumerate(instructions):
-            if not (curr_insn.mnemonic.startswith("mov") and len(curr_insn.operands) == 2):
+            if not (curr_insn.mnemonic.startswith(&#34;mov&#34;) and len(curr_insn.operands) == 2):
                 continue
             dest_op, src_op = curr_insn.operands
             if dest_op.type != X86_OP_MEM:
@@ -194,9 +198,9 @@ def code_from_bin(
             source_symbol_name = None
             if src_op.type == X86_OP_IMM:
                 source_symbol_name = addr_to_symbol_name.get(src_op.imm)
-            elif src_op.type == X86_OP_REG and i > 0:
+            elif src_op.type == X86_OP_REG and i &gt; 0:
                 prev_insn = instructions[i - 1]
-                if prev_insn.mnemonic.startswith("lea") and len(prev_insn.operands) == 2:
+                if prev_insn.mnemonic.startswith(&#34;lea&#34;) and len(prev_insn.operands) == 2:
                     lea_dest_op, lea_src_op = prev_insn.operands
                     if (
                         lea_dest_op.reg == src_op.reg
@@ -210,14 +214,14 @@ def code_from_bin(
                 type_assignments[str(dest_symbol.name)] = (field_name, source_symbol_name)
 
     except Exception as e:
-        print(f"Warning: Could not analyze 'hl_init_types'. Some type info may be missing. Reason: {e}")
+        print(f&#34;Warning: Could not analyze &#39;hl_init_types&#39;. Some type info may be missing. Reason: {e}&#34;)
 
-    print(f"Found {len(type_assignments)} type assignments.")
+    print(f&#34;Found {len(type_assignments)} type assignments.&#34;)
 
-    print("Pass 1.3: Reading type data...")
+    print(&#34;Pass 1.3: Reading type data...&#34;)
     for i, symbol in enumerate(binary.symbols):
         name = str(symbol.name)
-        if name.startswith("t$"):
+        if name.startswith(&#34;t$&#34;):
             typ = Type()
             typ.kind.value = read_int(symbol.value, 1)
             match Type.Kind(typ.kind.value):
@@ -240,7 +244,7 @@ def code_from_bin(
 
                 case Type.Kind.FUN:
                     # first, we need to find the tfunt$... that corresponds to this
-                    tfunt = get_symbol("tfun" + name)
+                    tfunt = get_symbol(&#34;tfun&#34; + name)
                     # then we read the struct like normal...
                     offset_fargst = read_int(tfunt.value, address_size)
                     offset_ret = read_int(tfunt.value + address_size, address_size)
@@ -254,7 +258,7 @@ def code_from_bin(
                     typ.definition.args = args
 
                 case Type.Kind.OBJ:
-                    objt = get_symbol("obj" + name)
+                    objt = get_symbol(&#34;obj&#34; + name)
                     nfields = read_int(objt.value, 4)
                     nprotos = read_int(objt.value + 4, 4)
                     nbindings = read_int(objt.value + 8, 4)
@@ -266,7 +270,7 @@ def code_from_bin(
                     # ptr_global_value = read_int(objt.value + 16 + (address_size * 5), address_size)
                     # TODO: global
 
-                    obj_name = read_chars(ptr_name, 2).decode("utf-16")
+                    obj_name = read_chars(ptr_name, 2).decode(&#34;utf-16&#34;)
                     super = offset_to_tindex[ptr_super] if ptr_super in offset_to_tindex else None
                     fields: List[Field] = []
                     for i in range(nfields):
@@ -274,9 +278,9 @@ def code_from_bin(
                         f_name_ptr = read_int(field_base_addr, address_size)
                         f_type_ptr = read_int(field_base_addr + address_size, address_size)
                         if f_name_ptr:
-                            f_name = read_chars(f_name_ptr, 2).decode("utf-16")
+                            f_name = read_chars(f_name_ptr, 2).decode(&#34;utf-16&#34;)
                         else:
-                            f_name = "null"
+                            f_name = &#34;null&#34;
                         fields.append(Field(name=strRef(add_str(f_name)), type=offset_to_tindex[f_type_ptr]))
 
                     protos: List[Proto] = []
@@ -287,9 +291,9 @@ def code_from_bin(
                         p_pindex = read_int(proto_base_addr + 12, 4)
                         # p_hashed_name = read_int(proto_base_addr + 16, 4)
                         if p_name_ptr:
-                            p_name = read_chars(p_name_ptr, 2).decode("utf-16").strip()
+                            p_name = read_chars(p_name_ptr, 2).decode(&#34;utf-16&#34;).strip()
                         else:
-                            p_name = "null"
+                            p_name = &#34;null&#34;
                         prot = Proto()
                         prot.findex = fIndex(p_findex)
                         prot.pindex = VarInt(p_pindex)
@@ -319,7 +323,7 @@ def code_from_bin(
                 case Type.Kind.REF | Type.Kind.NULL | Type.Kind.PACKED:
                     field_name, source_symbol_name = type_assignments.get(name, (None, None))
 
-                    if field_name == "tparam" and source_symbol_name:
+                    if field_name == &#34;tparam&#34; and source_symbol_name:
                         target_tindex = symbol_name_to_tindex.get(source_symbol_name)
 
                         if target_tindex is not None:
@@ -337,15 +341,15 @@ def code_from_bin(
                                 typ.definition = packed_def
                         else:
                             print(
-                                f"Warning: Could not find tIndex for source symbol '{source_symbol_name}' referenced by {name}."
+                                f&#34;Warning: Could not find tIndex for source symbol &#39;{source_symbol_name}&#39; referenced by {name}.&#34;
                             )
                     else:
-                        print(f"Warning: No valid '.tparam' assignment found for ref-like type '{name}'.")
+                        print(f&#34;Warning: No valid &#39;.tparam&#39; assignment found for ref-like type &#39;{name}&#39;.&#34;)
 
                 case Type.Kind.VIRTUAL:
                     field_name, source_symbol_name = type_assignments.get(name, (None, None))
 
-                    if field_name == "virt" and source_symbol_name:
+                    if field_name == &#34;virt&#34; and source_symbol_name:
                         virt_t_sym = get_symbol(source_symbol_name)
 
                         ptr_fields = read_int(virt_t_sym.value, address_size)
@@ -357,13 +361,13 @@ def code_from_bin(
                             f_name_ptr = read_int(field_base_addr, address_size)
                             f_type_ptr = read_int(field_base_addr + address_size, address_size)
 
-                            f_name = read_chars(f_name_ptr, 2).decode("utf-16") if f_name_ptr else "null"
+                            f_name = read_chars(f_name_ptr, 2).decode(&#34;utf-16&#34;) if f_name_ptr else &#34;null&#34;
 
                             if f_type_ptr in offset_to_tindex:
                                 f_type = offset_to_tindex[f_type_ptr]
                                 fields.append(Field(name=strRef(add_str(f_name)), type=f_type))
                             else:
-                                print(f"Warning: Could not find type for field '{f_name}' in virtual '{name}'")
+                                print(f&#34;Warning: Could not find type for field &#39;{f_name}&#39; in virtual &#39;{name}&#39;&#34;)
 
                         virt_def = Virtual()
                         virt_def.nfields.value = nfields
@@ -371,7 +375,7 @@ def code_from_bin(
                         typ.definition = virt_def
 
                     else:
-                        print(f"Warning: No valid '.virt' assignment found for virtual type '{name}'.")
+                        print(f&#34;Warning: No valid &#39;.virt&#39; assignment found for virtual type &#39;{name}&#39;.&#34;)
                         typ.definition = Virtual()
 
                 case Type.Kind.ABSTRACT:
@@ -382,7 +386,7 @@ def code_from_bin(
                 case Type.Kind.ENUM:
                     field_name, source_symbol_name = type_assignments.get(name, (None, None))
 
-                    if field_name == "tenum" and source_symbol_name:
+                    if field_name == &#34;tenum&#34; and source_symbol_name:
                         enum_t_sym = get_symbol(source_symbol_name)
 
                         ptr_name = read_int(enum_t_sym.value, address_size)
@@ -390,7 +394,7 @@ def code_from_bin(
                         ptr_constructs = read_int(enum_t_sym.value + address_size * 2, address_size)
 
                         enum_name = (
-                            read_chars(ptr_name, 2).decode("utf-16").strip() if ptr_name else f"unknown_enum_{name}"
+                            read_chars(ptr_name, 2).decode(&#34;utf-16&#34;).strip() if ptr_name else f&#34;unknown_enum_{name}&#34;
                         )
 
                         enum_def = Enum()
@@ -406,9 +410,9 @@ def code_from_bin(
                             c_params_ptr = read_int(construct_base_addr + address_size * 2, address_size)
 
                             c_name = (
-                                read_chars(c_name_ptr, 2).decode("utf-16").strip()
+                                read_chars(c_name_ptr, 2).decode(&#34;utf-16&#34;).strip()
                                 if c_name_ptr
-                                else f"unknown_construct_{i}"
+                                else f&#34;unknown_construct_{i}&#34;
                             )
 
                             construct = EnumConstruct()
@@ -423,7 +427,7 @@ def code_from_bin(
                                     params.append(offset_to_tindex[param_type_addr])
                                 else:
                                     print(
-                                        f"Warning: Could not find type for param {j} of constructor '{c_name}' in enum '{enum_name}'"
+                                        f&#34;Warning: Could not find type for param {j} of constructor &#39;{c_name}&#39; in enum &#39;{enum_name}&#39;&#34;
                                     )
 
                             construct.params = params
@@ -432,11 +436,11 @@ def code_from_bin(
                         enum_def.constructs = constructs
                         typ.definition = enum_def
                     else:
-                        print(f"Warning: No valid '.tenum' assignment found for enum type '{name}'.")
+                        print(f&#34;Warning: No valid &#39;.tenum&#39; assignment found for enum type &#39;{name}&#39;.&#34;)
                         typ.definition = Enum()
 
                 case _:
-                    print(f"Unsupported (for now...) type kind: {Type.Kind(typ.kind.value)}")
+                    print(f&#34;Unsupported (for now...) type kind: {Type.Kind(typ.kind.value)}&#34;)
             types.append(typ)
 
     code.ntypes.value = len(types)
@@ -444,4 +448,35 @@ def code_from_bin(
 
     # TODO: functions, stubs, strings, bytes, ints, and a whole buncha other stuff
 
-    return code
+    return code</code></pre>
+</details>
+<div class="desc"><p>Dumps extracted information from the HL/C binary located on the filesystem at <code>path</code> or from the bytes in <code>data</code> to a new Bytecode instance.</p></div>
+</dd>
+</dl>
+</section>
+<section>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashlink" href="index.html">crashlink</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="crashlink.dehlc.code_from_bin" href="#crashlink.dehlc.code_from_bin">code_from_bin</a></code></li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+</footer>
+</body>
+</html>
