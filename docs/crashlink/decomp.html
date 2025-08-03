@@ -1650,6 +1650,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <li><a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a></li>
 <li>crashlink.decomp.IRNew</li>
 <li><a title="crashlink.decomp.IRPrimitiveJump" href="#crashlink.decomp.IRPrimitiveJump">IRPrimitiveJump</a></li>
+<li>crashlink.decomp.IRUnliftedOpcode</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -2256,13 +2257,29 @@ def get_type(self) -&gt; Type:
                     assign_stmt = IRAssign(self.code, dst_local, call_expr)
                     block.statements.append(assign_stmt)
 
+            elif op.op in [&#34;Incr&#34;, &#34;Decr&#34;]:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                one_const = IRConst(self.code, IRConst.ConstType.INT, value=1)
+                arith_op = IRArithmetic.ArithmeticType.ADD if op.op == &#34;Incr&#34; else IRArithmetic.ArithmeticType.SUB
+                arith_expr = IRArithmetic(self.code, dst_local, one_const, arith_op)
+                assign_stmt = IRAssign(self.code, dst_local, arith_expr)
+                block.statements.append(assign_stmt)
+
             elif op.op in [
                 &#34;NullCheck&#34;,  # we ignore NullCheck because that&#39;s generated at compile-time
             ]:
                 pass  # silently pass
 
             else:
-                dbg_print(&#34;Skipping unimplemented node op:&#34;, op)
+                if &#34;dst&#34; in op.df:
+                    dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                    dst_type_idx = self.func.regs[op.df[&#34;dst&#34;].value]
+                    untranslated_expr = IRUnliftedOpcode(self.code, op, dst_type_idx=dst_type_idx)
+                    assign_stmt = IRAssign(self.code, dst_local, untranslated_expr)
+                    block.statements.append(assign_stmt)
+                else:
+                    untranslated_stmt = IRUnliftedOpcode(self.code, op)
+                    block.statements.append(untranslated_stmt)
 
         if len(node.branches) == 1:
             next_node, _ = node.branches[0]
