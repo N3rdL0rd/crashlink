@@ -111,6 +111,7 @@
         "UDIV",
         "UMOD",
         "unconditionals",
+        "Unlifted",
         "USHR",
         "varint",
         "webbrowser",
