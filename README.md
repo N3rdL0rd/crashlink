@@ -135,18 +135,16 @@ You can use the following pre-defined commands with `just`:
   - [x] Local resolution and naming
 - [ ] IR lifter (layer 0)
   - [x] If statements
-  - [ ] Loops
+  - [x] Loops
   - [x] Switch opcode statements
-  - [ ] Function calls
-    - [ ] CallClosure
+  - [x] Function calls
+    - [x] CallClosure
   - [ ] Closures, lambdas
 - [ ] IR optimization layers
-  - [ ] SSA locals
-  - [ ] Trace optimization
+  - [ ] Resolve locals from assigns block
+  - [x] Trace optimization
   - [ ] Nested if/else/if/else -> switch
-- [ ] Pseudocode targets
-  - [ ] Haxe (main target)
-  - [ ] Any others? We'll see...
+- [ ] Haxe pseudocode
 - [ ] Partial recompilation (against stubs of other functions)
 - [ ] GUI? (customtkinter or dearpygui)
   - [ ] Graphical disassembler
