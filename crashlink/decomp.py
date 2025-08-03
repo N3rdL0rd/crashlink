@@ -940,7 +940,29 @@ class IRCast(IRExpression):
     def __repr__(self) -> str:
         type_name = disasm.type_name(self.code, self.get_type())
         return f"<IRCast: ({type_name}){self.expr}>"
+    
 
+class IRUnliftedOpcode(IRExpression):
+    """Represents an opcode that has not been lifted into a higher-level IR statement."""
+
+    def __init__(self, code: Bytecode, op: Opcode, dst_type_idx: Optional[tIndex] = None):
+        super().__init__(code)
+        self.op = op
+        self.dst_type_idx = dst_type_idx
+
+    def get_type(self) -> Type:
+        """
+        Returns the type of the destination register, or Void if not applicable.
+        """
+        if self.dst_type_idx:
+            return self.dst_type_idx.resolve(self.code)
+        return _get_type_in_code(self.code, "Void")
+
+    def get_children(self) -> List[IRStatement]:
+        return []
+
+    def __repr__(self) -> str:
+        return f"<IRUntranslatedOpcode: {self.op.op}>"
 
 def _find_jumps_to_label(
     start_node: CFNode, label_node: CFNode, visited: Set[CFNode]
@@ -2504,6 +2526,18 @@ class IRFunction:
                 else:
                     assign_stmt = IRAssign(self.code, dst_local, call_expr)
                     block.statements.append(assign_stmt)
+                    
+            elif op.op in ["Incr", "Decr"]:
+                dst_local = self.locals[op.df["dst"].value]
+                one_const = IRConst(self.code, IRConst.ConstType.INT, value=1)
+                arith_op = (
+                    IRArithmetic.ArithmeticType.ADD
+                    if op.op == "Incr"
+                    else IRArithmetic.ArithmeticType.SUB
+                )
+                arith_expr = IRArithmetic(self.code, dst_local, one_const, arith_op)
+                assign_stmt = IRAssign(self.code, dst_local, arith_expr)
+                block.statements.append(assign_stmt)
 
             elif op.op in [
                 "NullCheck",  # we ignore NullCheck because that's generated at compile-time
@@ -2511,7 +2545,15 @@ class IRFunction:
                 pass  # silently pass
 
             else:
-                dbg_print("Skipping unimplemented node op:", op)
+                if "dst" in op.df:
+                    dst_local = self.locals[op.df["dst"].value]
+                    dst_type_idx = self.func.regs[op.df["dst"].value]
+                    untranslated_expr = IRUnliftedOpcode(self.code, op, dst_type_idx=dst_type_idx)
+                    assign_stmt = IRAssign(self.code, dst_local, untranslated_expr)
+                    block.statements.append(assign_stmt)
+                else:
+                    untranslated_stmt = IRUnliftedOpcode(self.code, op)
+                    block.statements.append(untranslated_stmt)
 
         if len(node.branches) == 1:
             next_node, _ = node.branches[0]
