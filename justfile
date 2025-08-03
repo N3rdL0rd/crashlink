@@ -4,7 +4,7 @@ default:
 
 # Install locally with dev dependencies
 install:
-    uv pip install -e .[dev]
+    uv sync --extra dev
 
 # Build crashlink
 build:
