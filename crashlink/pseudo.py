@@ -119,7 +119,7 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
 
         args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in expr.args)
         return f"{callee_str}({args_str})"
-    
+
     elif isinstance(expr, IRUnliftedOpcode):
         return f"/* UNLIFTED OPCODE: {disasm.pseudo_from_op(expr.op, 0, ir_function.func.regs, code, terse=True)} */"
 
@@ -194,9 +194,11 @@ def _generate_statements(
             msg_str = _expression_to_haxe(stmt.msg, code, ir_function)
             pos_info_str = ", ".join(f"{k}: {v!r}" for k, v in stmt.pos_info.items())
             output_lines.append(f"{indent}trace({msg_str}); // {{ {pos_info_str} }}")
-            
+
         elif isinstance(stmt, IRUnliftedOpcode):
-            output_lines.append(f"{indent}// UNLIFTED OPCODE: {disasm.pseudo_from_op(stmt.op, 0, ir_function.func.regs, code, terse=True)}")
+            output_lines.append(
+                f"{indent}// UNLIFTED OPCODE: {disasm.pseudo_from_op(stmt.op, 0, ir_function.func.regs, code, terse=True)}"
+            )
 
         elif isinstance(stmt, IRConditional):
             cond_str = _expression_to_haxe(stmt.condition, code, ir_function)

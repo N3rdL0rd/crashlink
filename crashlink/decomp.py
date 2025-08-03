@@ -940,7 +940,7 @@ class IRCast(IRExpression):
     def __repr__(self) -> str:
         type_name = disasm.type_name(self.code, self.get_type())
         return f"<IRCast: ({type_name}){self.expr}>"
-    
+
 
 class IRUnliftedOpcode(IRExpression):
     """Represents an opcode that has not been lifted into a higher-level IR statement."""
@@ -963,6 +963,7 @@ class IRUnliftedOpcode(IRExpression):
 
     def __repr__(self) -> str:
         return f"<IRUntranslatedOpcode: {self.op.op}>"
+
 
 def _find_jumps_to_label(
     start_node: CFNode, label_node: CFNode, visited: Set[CFNode]
@@ -2526,15 +2527,11 @@ class IRFunction:
                 else:
                     assign_stmt = IRAssign(self.code, dst_local, call_expr)
                     block.statements.append(assign_stmt)
-                    
+
             elif op.op in ["Incr", "Decr"]:
                 dst_local = self.locals[op.df["dst"].value]
                 one_const = IRConst(self.code, IRConst.ConstType.INT, value=1)
-                arith_op = (
-                    IRArithmetic.ArithmeticType.ADD
-                    if op.op == "Incr"
-                    else IRArithmetic.ArithmeticType.SUB
-                )
+                arith_op = IRArithmetic.ArithmeticType.ADD if op.op == "Incr" else IRArithmetic.ArithmeticType.SUB
                 arith_expr = IRArithmetic(self.code, dst_local, one_const, arith_op)
                 assign_stmt = IRAssign(self.code, dst_local, arith_expr)
                 block.statements.append(assign_stmt)
