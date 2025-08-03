@@ -1,18 +1,94 @@
 digraph G {
-    node [shape=box style=filled]
-    "Input bytecode" -> "Core parser"
-    "Core parser" -> "Disassembly"
-    "Disassembly" -> "Core parser"
-    "Core parser" -> "Control flow recovery"
-    "Type and debug information"
-    "Control flow recovery" -> "Control flow optimizer" -> "IR lifter"
-    "Core parser" -> "Type and debug information"
-    "Type and debug information" -> "IR lifter"
-    "IR lifter" -> "IR optimizers" [label="LLIL"]
-    "Type and debug information" -> "IR optimizers"
-    "IR optimizers" -> "Output pseudocode" [label="HLIL (optimized)"]
-    "Output pseudocode" -> "Haxe compiler" -> "Input bytecode"
-    "Disassembly" -> "Control flow recovery"
-    "Disassembly" -> "IR lifter"
-    "Type and debug information" -> "Output pseudocode"
+
+    rankdir=TB;
+    
+
+    // Define styles
+    node [shape=box, style="filled,rounded"];
+    node [fontname="Arial"];
+    edge [fontname="Arial", fontsize=10];
+
+    // Node Definitions
+    // Data artifacts (light blue)
+    node [fillcolor=lightblue2];
+    input_bytecode [label="Input Bytecode File (.hl)"];
+    bytecode [label="Parsed Bytecode\n(In-Memory Data Structures)\n- Functions, Opcodes, Types..."];
+    llil [label="Low-Level IR (LLIL)"];
+    hlil [label="High-Level IR (HLIL)"];
+    output_pseudo [label="Haxe Pseudocode (Output)"];
+    output_asm [label="Human-Readable Assembly (Output)"];
+
+    // Processes (light pink)
+    node [shape=ellipse, fillcolor=lightpink];
+    parser [label="Parsing\n(crashlink.core)"];
+    disassembly [label="Disassembly\n(crashlink.disasm)"];
+    cfg_recovery [label="Control Flow Recovery"];
+    cfg_opt [label="CFG Optimizers"];
+    ir_lifter [label="IR Lifter"];
+    ir_optimizers [label="IR Optimizers"];
+    pseudo_gen [label="Pseudocode Generation\n(crashlink.pseudo)"];
+    haxe_compiler [label="Haxe Compiler"];
+
+    // Grouping into clusters
+    subgraph cluster_parsing {
+        label = "1. Parsing";
+        style=filled;
+        color=lightgrey;
+        input_bytecode -> parser -> bytecode;
+    }
+
+    subgraph cluster_analysis {
+        label = "Alternative Analysis Path";
+        style=filled;
+        color=lightgrey;
+        bytecode -> disassembly -> output_asm;
+    }
+
+    subgraph cluster_decompilation {
+        label = "2. Decompilation Pipeline (crashlink.decomp)";
+        style=filled;
+        color=lightgrey;
+        
+        bytecode -> cfg_recovery [lhead=cluster_decompilation, minlen=2];
+        cfg_recovery -> cfg_opt -> ir_lifter;
+        
+        ir_lifter -> llil [label=" Lifts to"];
+        llil -> ir_optimizers [label=" Optimizes"];
+        ir_optimizers -> hlil [label=" Produces"];
+        hlil -> pseudo_gen -> output_pseudo;
+        
+        // Dashed lines show data dependencies that are not part of the main pipeline flow
+        bytecode -> ir_lifter [style=dashed, constraint=false, label=" Uses Types &\nRegister Info"];
+        bytecode -> pseudo_gen [style=dashed, constraint=false, label=" Uses Function\nSignatures"];
+    }
+
+    // Round trip loop
+    output_pseudo -> haxe_compiler [style=dashed, label=" Can be recompiled by"];
+    haxe_compiler -> input_bytecode [style=dashed];
+    //output_asm -> assembler -> bytecode [style=dashed, label=" Roundtrip to"];
+
+    legend [
+        shape=plain
+        label=<
+            <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="5">
+                <TR><TD COLSPAN="2"><B>Legend</B></TD></TR>
+                <TR>
+                    <TD BGCOLOR="lightpink" BORDER="1" SHAPE="ellipse">    </TD>
+                    <TD ALIGN="LEFT">Process / Operation</TD>
+                </TR>
+                <TR>
+                    <TD BGCOLOR="lightblue2" BORDER="1">    </TD>
+                    <TD ALIGN="LEFT">Data / Artifact</TD>
+                </TR>
+                <TR>
+                    <TD>→</TD>
+                    <TD ALIGN="LEFT">Main Pipeline Flow</TD>
+                </TR>
+                <TR>
+                    <TD><FONT COLOR="dimgray">⇢</FONT></TD>
+                    <TD ALIGN="LEFT"><FONT COLOR="dimgray">Data Dependency / Lookup</FONT></TD>
+                </TR>
+            </TABLE>
+        >
+    ]
 }
