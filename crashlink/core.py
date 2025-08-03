@@ -844,7 +844,7 @@ class Obj(TypeDef):
 
     def resolve_fields(self, code: "Bytecode") -> List[Field]:
         """
-        Resolves all fields across the class heirarchy. For instance:
+        Resolves all fields across the class hierarchy. For instance:
         class A {
             var a: Int;
         }
