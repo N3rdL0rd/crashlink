@@ -1,165 +1,234 @@
-<?xml version="1.0" encoding="UTF-8" ?>
-<svg width="414pt" height="660pt" viewBox="0.00 0.00 413.54 659.60" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 655.6)">
-<title>G</title>
-<polygon fill="#ffffff" stroke="transparent" points="-4,4 -4,-655.6 409.5442,-655.6 409.5442,4 -4,4"/>
-<!-- Input bytecode -->
-<g id="node1" class="node">
-<title>Input bytecode</title>
-<polygon fill="#d3d3d3" stroke="#000000" points="339.1307,-651.6 239.9577,-651.6 239.9577,-615.6 339.1307,-615.6 339.1307,-651.6"/>
-<text text-anchor="middle" x="289.5442" y="-629.4" font-family="Times,serif" font-size="14.00" fill="#000000">Input bytecode</text>
+<?xml version="1.0" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="735pt" height="1200pt" viewBox="0.00 0.00 734.50 1200.49">
+<g id="graph0" class="graph" transform="translate(4,1196.489990234375) scale(1)" data-name="G">
+
+<polygon fill="white" stroke="none" points="-4,4 -4,-1196.49 730.5,-1196.49 730.5,4 -4,4"/>
+<g id="clust1" class="cluster" data-name="cluster_parsing">
+
+<polygon fill="lightgrey" stroke="lightgrey" points="284,-857.26 284,-1175.29 506,-1175.29 506,-857.26 284,-857.26"/>
+<text text-anchor="middle" x="395" y="-1158.69" font-family="Times,serif" font-size="14.00">1. Parsing</text>
 </g>
-<!-- Core parser -->
-<g id="node2" class="node">
-<title>Core parser</title>
-<polygon fill="#d3d3d3" stroke="#000000" points="213.9511,-578.6 133.1373,-578.6 133.1373,-542.6 213.9511,-542.6 213.9511,-578.6"/>
-<text text-anchor="middle" x="173.5442" y="-556.4" font-family="Times,serif" font-size="14.00" fill="#000000">Core parser</text>
+<g id="clust2" class="cluster" data-name="cluster_analysis">
+
+<polygon fill="lightgrey" stroke="lightgrey" points="8,-642.83 8,-838.26 270,-838.26 270,-642.83 8,-642.83"/>
+<text text-anchor="middle" x="139" y="-821.66" font-family="Times,serif" font-size="14.00">Alternative Analysis Path</text>
 </g>
-<!-- Input bytecode&#45;&gt;Core parser -->
-<g id="edge1" class="edge">
-<title>Input bytecode-&gt;Core parser</title>
-<path fill="none" stroke="#000000" d="M260.87,-615.5551C245.8122,-606.079 227.1756,-594.3508 210.9912,-584.1658"/>
-<polygon fill="#000000" stroke="#000000" points="212.6183,-581.0544 202.2905,-578.6904 208.8899,-586.9788 212.6183,-581.0544"/>
+<g id="clust3" class="cluster" data-name="cluster_decompilation">
+
+<polygon fill="lightgrey" stroke="lightgrey" points="278,-76 278,-719.63 552,-719.63 552,-76 278,-76"/>
+<text text-anchor="middle" x="415" y="-703.03" font-family="Times,serif" font-size="14.00">2. Decompilation Pipeline (crashlink.decomp)</text>
 </g>
-<!-- Disassembly -->
-<g id="node3" class="node">
-<title>Disassembly</title>
-<polygon fill="#d3d3d3" stroke="#000000" points="217.0868,-505.6 130.0016,-505.6 130.0016,-469.6 217.0868,-469.6 217.0868,-505.6"/>
-<text text-anchor="middle" x="173.5442" y="-483.4" font-family="Times,serif" font-size="14.00" fill="#000000">Disassembly</text>
+<!-- input_bytecode -->
+<g id="node1" class="node" pointer-events="visible" data-name="input_bytecode">
+
+<path fill="#b2dfee" stroke="black" d="M485.85,-1142.49C485.85,-1142.49 346.15,-1142.49 346.15,-1142.49 340.15,-1142.49 334.15,-1136.49 334.15,-1130.49 334.15,-1130.49 334.15,-1118.49 334.15,-1118.49 334.15,-1112.49 340.15,-1106.49 346.15,-1106.49 346.15,-1106.49 485.85,-1106.49 485.85,-1106.49 491.85,-1106.49 497.85,-1112.49 497.85,-1118.49 497.85,-1118.49 497.85,-1130.49 497.85,-1130.49 497.85,-1136.49 491.85,-1142.49 485.85,-1142.49"/>
+<text text-anchor="middle" x="416" y="-1120.29" font-family="Arial" font-size="14.00">Input Bytecode File (.hl)</text>
 </g>
-<!-- Core parser&#45;&gt;Disassembly -->
-<g id="edge2" class="edge">
-<title>Core parser-&gt;Disassembly</title>
-<path fill="none" stroke="#000000" d="M167.6285,-542.5551C166.83,-534.4828 166.6047,-524.7764 166.9525,-515.7817"/>
-<polygon fill="#000000" stroke="#000000" points="170.4522,-515.9007 167.624,-505.6904 163.4677,-515.4359 170.4522,-515.9007"/>
+<!-- parser -->
+<g id="node7" class="node" pointer-events="visible" data-name="parser">
+
+<ellipse fill="lightpink" stroke="black" cx="408" cy="-990.08" rx="78.95" ry="29.33"/>
+<text text-anchor="middle" x="408" y="-994.28" font-family="Arial" font-size="14.00">Parsing</text>
+<text text-anchor="middle" x="408" y="-977.48" font-family="Arial" font-size="14.00">(crashlink.core)</text>
 </g>
-<!-- Control flow recovery -->
-<g id="node4" class="node">
-<title>Control flow recovery</title>
-<polygon fill="#d3d3d3" stroke="#000000" points="145.946,-432.6 5.1424,-432.6 5.1424,-396.6 145.946,-396.6 145.946,-432.6"/>
-<text text-anchor="middle" x="75.5442" y="-410.4" font-family="Times,serif" font-size="14.00" fill="#000000">Control flow recovery</text>
+<!-- input_bytecode&#45;&gt;parser -->
+<g id="edge1" class="edge" data-name="input_bytecode-&gt;parser">
+
+<path fill="none" stroke="black" d="M414.95,-1106.18C413.81,-1087.24 411.94,-1056.23 410.42,-1031.17"/>
+<polygon fill="black" stroke="black" points="413.92,-1031.06 409.83,-1021.29 406.93,-1031.49 413.92,-1031.06"/>
 </g>
-<!-- Core parser&#45;&gt;Control flow recovery -->
-<g id="edge4" class="edge">
-<title>Core parser-&gt;Control flow recovery</title>
-<path fill="none" stroke="#000000" d="M153.3485,-542.5381C142.7356,-532.3729 130.0051,-519.0486 120.5442,-505.6 106.5328,-485.683 94.5375,-460.7572 86.4635,-442.031"/>
-<polygon fill="#000000" stroke="#000000" points="89.6016,-440.4639 82.5013,-432.6002 83.148,-443.1753 89.6016,-440.4639"/>
+<!-- bytecode -->
+<g id="node2" class="node" pointer-events="visible" data-name="bytecode">
+
+<path fill="#b2dfee" stroke="black" d="M486.13,-923.86C486.13,-923.86 303.87,-923.86 303.87,-923.86 297.87,-923.86 291.87,-917.86 291.87,-911.86 291.87,-911.86 291.87,-877.06 291.87,-877.06 291.87,-871.06 297.87,-865.06 303.87,-865.06 303.87,-865.06 486.13,-865.06 486.13,-865.06 492.13,-865.06 498.13,-871.06 498.13,-877.06 498.13,-877.06 498.13,-911.86 498.13,-911.86 498.13,-917.86 492.13,-923.86 486.13,-923.86"/>
+<text text-anchor="middle" x="395" y="-907.06" font-family="Arial" font-size="14.00">Parsed Bytecode</text>
+<text text-anchor="middle" x="395" y="-890.26" font-family="Arial" font-size="14.00">(In-Memory Data Structures)</text>
+<text text-anchor="middle" x="395" y="-873.46" font-family="Arial" font-size="14.00">- Functions, Opcodes, Types...</text>
 </g>
-<!-- Type and debug information -->
-<g id="node5" class="node">
-<title>Type and debug information</title>
-<polygon fill="#d3d3d3" stroke="#000000" points="377.3389,-359.6 201.7495,-359.6 201.7495,-323.6 377.3389,-323.6 377.3389,-359.6"/>
-<text text-anchor="middle" x="289.5442" y="-337.4" font-family="Times,serif" font-size="14.00" fill="#000000">Type and debug information</text>
+<!-- disassembly -->
+<g id="node8" class="node" pointer-events="visible" data-name="disassembly">
+
+<ellipse fill="lightpink" stroke="black" cx="155" cy="-776.05" rx="91.15" ry="29.33"/>
+<text text-anchor="middle" x="155" y="-780.25" font-family="Arial" font-size="14.00">Disassembly</text>
+<text text-anchor="middle" x="155" y="-763.45" font-family="Arial" font-size="14.00">(crashlink.disasm)</text>
 </g>
-<!-- Core parser&#45;&gt;Type and debug information -->
-<g id="edge7" class="edge">
-<title>Core parser-&gt;Type and debug information</title>
-<path fill="none" stroke="#000000" d="M194.7659,-542.3858C205.4133,-532.3787 217.8574,-519.2478 226.5442,-505.6 254.4474,-461.7612 273.1143,-403.6343 282.4798,-369.6549"/>
-<polygon fill="#000000" stroke="#000000" points="285.8788,-370.4926 285.0877,-359.9273 279.1175,-368.6799 285.8788,-370.4926"/>
+<!-- bytecode&#45;&gt;disassembly -->
+<g id="edge3" class="edge" data-name="bytecode-&gt;disassembly">
+
+<path fill="none" stroke="black" d="M335.67,-864.69C298.75,-846.78 251.43,-823.82 214.48,-805.9"/>
+<polygon fill="black" stroke="black" points="216.24,-802.86 205.71,-801.64 213.18,-809.16 216.24,-802.86"/>
 </g>
-<!-- Disassembly&#45;&gt;Core parser -->
-<g id="edge3" class="edge">
-<title>Disassembly-&gt;Core parser</title>
-<path fill="none" stroke="#000000" d="M179.4644,-505.6904C180.2607,-513.7687 180.4839,-523.4769 180.134,-532.4688"/>
-<polygon fill="#000000" stroke="#000000" points="176.6346,-532.3439 179.4599,-542.5551 183.619,-532.8107 176.6346,-532.3439"/>
+<!-- cfg_recovery -->
+<g id="node9" class="node" pointer-events="visible" data-name="cfg_recovery">
+
+<ellipse fill="lightpink" stroke="black" cx="395" cy="-668.83" rx="108.92" ry="18"/>
+<text text-anchor="middle" x="395" y="-664.63" font-family="Arial" font-size="14.00">Control Flow Recovery</text>
 </g>
-<!-- Disassembly&#45;&gt;Control flow recovery -->
-<g id="edge14" class="edge">
-<title>Disassembly-&gt;Control flow recovery</title>
-<path fill="none" stroke="#000000" d="M149.3195,-469.5551C136.8337,-460.2545 121.4356,-448.7844 107.9422,-438.7332"/>
-<polygon fill="#000000" stroke="#000000" points="109.9403,-435.8573 99.8299,-432.6904 105.7587,-441.471 109.9403,-435.8573"/>
+<!-- bytecode&#45;&gt;cfg_recovery -->
+<g id="edge5" class="edge" data-name="bytecode-&gt;cfg_recovery">
+
+<path fill="none" stroke="black" d="M395,-864.68C395,-821.75 395,-741.4 395,-698.52"/>
+<polygon fill="black" stroke="black" points="398.5,-698.75 395,-688.75 391.5,-698.75 398.5,-698.75"/>
 </g>
-<!-- IR lifter -->
-<g id="node7" class="node">
-<title>IR lifter</title>
-<polygon fill="#d3d3d3" stroke="#000000" points="208.7497,-286.6 148.3387,-286.6 148.3387,-250.6 208.7497,-250.6 208.7497,-286.6"/>
-<text text-anchor="middle" x="178.5442" y="-264.4" font-family="Times,serif" font-size="14.00" fill="#000000">IR lifter</text>
+<!-- ir_lifter -->
+<g id="node11" class="node" pointer-events="visible" data-name="ir_lifter">
+
+<ellipse fill="lightpink" stroke="black" cx="413" cy="-522.83" rx="44.69" ry="18"/>
+<text text-anchor="middle" x="413" y="-518.63" font-family="Arial" font-size="14.00">IR Lifter</text>
 </g>
-<!-- Disassembly&#45;&gt;IR lifter -->
-<g id="edge15" class="edge">
-<title>Disassembly-&gt;IR lifter</title>
-<path fill="none" stroke="#000000" d="M173.9619,-469.3049C174.8354,-431.0458 176.8601,-342.3623 177.901,-296.7742"/>
-<polygon fill="#000000" stroke="#000000" points="181.4019,-296.7664 178.1312,-286.689 174.4038,-296.6065 181.4019,-296.7664"/>
+<!-- bytecode&#45;&gt;ir_lifter -->
+<g id="edge13" class="edge" data-name="bytecode-&gt;ir_lifter">
+
+<path fill="none" stroke="black" stroke-dasharray="5,2" d="M422.69,-864.7C451.68,-832.41 495.37,-776.99 513,-719.63 523.03,-687 526.81,-674.05 513,-642.83 510.33,-636.79 505.26,-638.58 502,-632.83 489.72,-611.14 505.36,-598.21 491,-577.83 482.04,-565.12 473.9,-568.51 461,-559.83 454.61,-555.54 447.91,-550.72 441.61,-546.04"/>
+<polygon fill="black" stroke="black" points="444.05,-543.5 433.96,-540.28 439.84,-549.09 444.05,-543.5"/>
+<text text-anchor="middle" x="553.51" y="-671.83" font-family="Arial" font-size="10.00"> Uses Types &amp;</text>
+<text text-anchor="middle" x="553.51" y="-659.83" font-family="Arial" font-size="10.00">Register Info</text>
 </g>
-<!-- Control flow optimizer -->
-<g id="node6" class="node">
-<title>Control flow optimizer</title>
-<polygon fill="#d3d3d3" stroke="#000000" points="145.1326,-359.6 -.0442,-359.6 -.0442,-323.6 145.1326,-323.6 145.1326,-359.6"/>
-<text text-anchor="middle" x="72.5442" y="-337.4" font-family="Times,serif" font-size="14.00" fill="#000000">Control flow optimizer</text>
+<!-- pseudo_gen -->
+<g id="node13" class="node" pointer-events="visible" data-name="pseudo_gen">
+
+<ellipse fill="lightpink" stroke="black" cx="426" cy="-186.42" rx="118.17" ry="29.33"/>
+<text text-anchor="middle" x="426" y="-190.62" font-family="Arial" font-size="14.00">Pseudocode Generation</text>
+<text text-anchor="middle" x="426" y="-173.82" font-family="Arial" font-size="14.00">(crashlink.pseudo)</text>
 </g>
-<!-- Control flow recovery&#45;&gt;Control flow optimizer -->
-<g id="edge5" class="edge">
-<title>Control flow recovery-&gt;Control flow optimizer</title>
-<path fill="none" stroke="#000000" d="M74.8026,-396.5551C74.4709,-388.4828 74.072,-378.7764 73.7024,-369.7817"/>
-<polygon fill="#000000" stroke="#000000" points="77.1954,-369.5382 73.2876,-359.6904 70.2013,-369.8257 77.1954,-369.5382"/>
+<!-- bytecode&#45;&gt;pseudo_gen -->
+<g id="edge14" class="edge" data-name="bytecode-&gt;pseudo_gen">
+
+<path fill="none" stroke="black" stroke-dasharray="5,2" d="M450.23,-864.7C498.8,-835.69 565.48,-785.76 590,-719.63 614.81,-652.71 557.32,-360.3 495,-252.83 488.6,-241.79 479.76,-231.44 470.55,-222.39"/>
+<polygon fill="black" stroke="black" points="473.21,-220.09 463.52,-215.81 468.43,-225.2 473.21,-220.09"/>
+<text text-anchor="middle" x="615.35" y="-525.83" font-family="Arial" font-size="10.00"> Uses Function</text>
+<text text-anchor="middle" x="615.35" y="-513.83" font-family="Arial" font-size="10.00">Signatures</text>
 </g>
-<!-- Type and debug information&#45;&gt;IR lifter -->
-<g id="edge8" class="edge">
-<title>Type and debug information-&gt;IR lifter</title>
-<path fill="none" stroke="#000000" d="M262.106,-323.5551C247.8306,-314.1667 230.1938,-302.5678 214.8079,-292.4491"/>
-<polygon fill="#000000" stroke="#000000" points="216.3297,-289.2609 206.0515,-286.6904 212.4834,-295.1095 216.3297,-289.2609"/>
+<!-- llil -->
+<g id="node3" class="node" pointer-events="visible" data-name="llil">
+
+<path fill="#b2dfee" stroke="black" d="M471.17,-456.83C471.17,-456.83 356.83,-456.83 356.83,-456.83 350.83,-456.83 344.83,-450.83 344.83,-444.83 344.83,-444.83 344.83,-432.83 344.83,-432.83 344.83,-426.83 350.83,-420.83 356.83,-420.83 356.83,-420.83 471.17,-420.83 471.17,-420.83 477.17,-420.83 483.17,-426.83 483.17,-432.83 483.17,-432.83 483.17,-444.83 483.17,-444.83 483.17,-450.83 477.17,-456.83 471.17,-456.83"/>
+<text text-anchor="middle" x="414" y="-434.63" font-family="Arial" font-size="14.00">Low-Level IR (LLIL)</text>
 </g>
-<!-- IR optimizers -->
-<g id="node8" class="node">
-<title>IR optimizers</title>
-<polygon fill="#d3d3d3" stroke="#000000" points="240.6391,-197.8 148.4493,-197.8 148.4493,-161.8 240.6391,-161.8 240.6391,-197.8"/>
-<text text-anchor="middle" x="194.5442" y="-175.6" font-family="Times,serif" font-size="14.00" fill="#000000">IR optimizers</text>
+<!-- ir_optimizers -->
+<g id="node12" class="node" pointer-events="visible" data-name="ir_optimizers">
+
+<ellipse fill="lightpink" stroke="black" cx="414" cy="-354.83" rx="69.54" ry="18"/>
+<text text-anchor="middle" x="414" y="-350.63" font-family="Arial" font-size="14.00">IR Optimizers</text>
 </g>
-<!-- Type and debug information&#45;&gt;IR optimizers -->
-<g id="edge10" class="edge">
-<title>Type and debug information-&gt;IR optimizers</title>
-<path fill="none" stroke="#000000" d="M280.6756,-323.2035C268.411,-298.259 245.1061,-252.5981 221.5442,-215.8 219.53,-212.6542 217.3263,-209.4278 215.0742,-206.2605"/>
-<polygon fill="#000000" stroke="#000000" points="217.8333,-204.1043 209.0967,-198.1108 212.1888,-208.2444 217.8333,-204.1043"/>
+<!-- llil&#45;&gt;ir_optimizers -->
+<g id="edge9" class="edge" data-name="llil-&gt;ir_optimizers">
+
+<path fill="none" stroke="black" d="M414,-420.44C414,-410 414,-396.47 414,-384.49"/>
+<polygon fill="black" stroke="black" points="417.5,-384.71 414,-374.71 410.5,-384.71 417.5,-384.71"/>
+<text text-anchor="middle" x="437.62" y="-393.83" font-family="Arial" font-size="10.00"> Optimizes</text>
 </g>
-<!-- Output pseudocode -->
-<g id="node9" class="node">
-<title>Output pseudocode</title>
-<polygon fill="#d3d3d3" stroke="#000000" points="373.0213,-109 248.0671,-109 248.0671,-73 373.0213,-73 373.0213,-109"/>
-<text text-anchor="middle" x="310.5442" y="-86.8" font-family="Times,serif" font-size="14.00" fill="#000000">Output pseudocode</text>
+<!-- hlil -->
+<g id="node4" class="node" pointer-events="visible" data-name="hlil">
+
+<path fill="#b2dfee" stroke="black" d="M473.6,-288.83C473.6,-288.83 354.4,-288.83 354.4,-288.83 348.4,-288.83 342.4,-282.83 342.4,-276.83 342.4,-276.83 342.4,-264.83 342.4,-264.83 342.4,-258.83 348.4,-252.83 354.4,-252.83 354.4,-252.83 473.6,-252.83 473.6,-252.83 479.6,-252.83 485.6,-258.83 485.6,-264.83 485.6,-264.83 485.6,-276.83 485.6,-276.83 485.6,-282.83 479.6,-288.83 473.6,-288.83"/>
+<text text-anchor="middle" x="414" y="-266.63" font-family="Arial" font-size="14.00">High-Level IR (HLIL)</text>
 </g>
-<!-- Type and debug information&#45;&gt;Output pseudocode -->
-<g id="edge16" class="edge">
-<title>Type and debug information-&gt;Output pseudocode</title>
-<path fill="none" stroke="#000000" d="M291.0545,-323.5775C294.663,-280.5151 303.8091,-171.3717 308.1661,-119.3789"/>
-<polygon fill="#000000" stroke="#000000" points="311.672,-119.4533 309.0194,-109.196 304.6965,-118.8687 311.672,-119.4533"/>
+<!-- hlil&#45;&gt;pseudo_gen -->
+<g id="edge11" class="edge" data-name="hlil-&gt;pseudo_gen">
+
+<path fill="none" stroke="black" d="M416.54,-252.35C417.61,-245.06 418.89,-236.26 420.16,-227.53"/>
+<polygon fill="black" stroke="black" points="423.61,-228.12 421.59,-217.72 416.68,-227.11 423.61,-228.12"/>
 </g>
-<!-- Control flow optimizer&#45;&gt;IR lifter -->
-<g id="edge6" class="edge">
-<title>Control flow optimizer-&gt;IR lifter</title>
-<path fill="none" stroke="#000000" d="M98.7465,-323.5551C112.3788,-314.1667 129.2211,-302.5678 143.914,-292.4491"/>
-<polygon fill="#000000" stroke="#000000" points="146.0253,-295.2448 152.276,-286.6904 142.0549,-289.4797 146.0253,-295.2448"/>
+<!-- output_pseudo -->
+<g id="node5" class="node" pointer-events="visible" data-name="output_pseudo">
+
+<path fill="#b2dfee" stroke="black" d="M519.65,-120C519.65,-120 358.35,-120 358.35,-120 352.35,-120 346.35,-114 346.35,-108 346.35,-108 346.35,-96 346.35,-96 346.35,-90 352.35,-84 358.35,-84 358.35,-84 519.65,-84 519.65,-84 525.65,-84 531.65,-90 531.65,-96 531.65,-96 531.65,-108 531.65,-108 531.65,-114 525.65,-120 519.65,-120"/>
+<text text-anchor="middle" x="439" y="-97.8" font-family="Arial" font-size="14.00">Haxe Pseudocode (Output)</text>
 </g>
-<!-- IR lifter&#45;&gt;IR optimizers -->
-<g id="edge9" class="edge">
-<title>IR lifter-&gt;IR optimizers</title>
-<path fill="none" stroke="#000000" d="M181.8594,-250.2006C184.0622,-237.975 186.9967,-221.6887 189.4884,-207.8599"/>
-<polygon fill="#000000" stroke="#000000" points="192.9592,-208.3342 191.288,-197.872 186.0701,-207.0929 192.9592,-208.3342"/>
-<text text-anchor="middle" x="202.7034" y="-220" font-family="Times,serif" font-size="14.00" fill="#000000">LLIL</text>
+<!-- haxe_compiler -->
+<g id="node14" class="node" pointer-events="visible" data-name="haxe_compiler">
+
+<ellipse fill="lightpink" stroke="black" cx="555" cy="-18" rx="74.8" ry="18"/>
+<text text-anchor="middle" x="555" y="-13.8" font-family="Arial" font-size="14.00">Haxe Compiler</text>
 </g>
-<!-- IR optimizers&#45;&gt;Output pseudocode -->
-<g id="edge11" class="edge">
-<title>IR optimizers-&gt;Output pseudocode</title>
-<path fill="none" stroke="#000000" d="M190.0438,-161.441C188.4529,-150.4023 188.5748,-136.6665 195.859,-127 201.822,-119.0867 219.1416,-112.0906 238.5719,-106.4202"/>
-<polygon fill="#000000" stroke="#000000" points="239.5353,-109.7852 248.2395,-103.7448 237.6682,-103.0388 239.5353,-109.7852"/>
-<text text-anchor="middle" x="245.8868" y="-131.2" font-family="Times,serif" font-size="14.00" fill="#000000">HLIL (optimized)</text>
+<!-- output_pseudo&#45;&gt;haxe_compiler -->
+<g id="edge15" class="edge" data-name="output_pseudo-&gt;haxe_compiler">
+
+<path fill="none" stroke="black" stroke-dasharray="5,2" d="M463.6,-83.61C480.7,-71.52 503.69,-55.27 522.32,-42.1"/>
+<polygon fill="black" stroke="black" points="524.24,-45.03 530.39,-36.4 520.2,-39.31 524.24,-45.03"/>
+<text text-anchor="middle" x="553.03" y="-57" font-family="Arial" font-size="10.00"> Can be recompiled by</text>
 </g>
-<!-- Haxe compiler -->
-<g id="node10" class="node">
-<title>Haxe compiler</title>
-<polygon fill="#d3d3d3" stroke="#000000" points="404.8418,-36 306.2466,-36 306.2466,0 404.8418,0 404.8418,-36"/>
-<text text-anchor="middle" x="355.5442" y="-13.8" font-family="Times,serif" font-size="14.00" fill="#000000">Haxe compiler</text>
+<!-- output_asm -->
+<g id="node6" class="node" pointer-events="visible" data-name="output_asm">
+
+<path fill="#b2dfee" stroke="black" d="M249.54,-686.83C249.54,-686.83 28.46,-686.83 28.46,-686.83 22.46,-686.83 16.46,-680.83 16.46,-674.83 16.46,-674.83 16.46,-662.83 16.46,-662.83 16.46,-656.83 22.46,-650.83 28.46,-650.83 28.46,-650.83 249.54,-650.83 249.54,-650.83 255.54,-650.83 261.54,-656.83 261.54,-662.83 261.54,-662.83 261.54,-674.83 261.54,-674.83 261.54,-680.83 255.54,-686.83 249.54,-686.83"/>
+<text text-anchor="middle" x="139" y="-664.63" font-family="Arial" font-size="14.00">Human-Readable Assembly (Output)</text>
 </g>
-<!-- Output pseudocode&#45;&gt;Haxe compiler -->
-<g id="edge12" class="edge">
-<title>Output pseudocode-&gt;Haxe compiler</title>
-<path fill="none" stroke="#000000" d="M321.6678,-72.9551C326.9143,-64.4441 333.2806,-54.1165 339.0718,-44.7219"/>
-<polygon fill="#000000" stroke="#000000" points="342.1245,-46.4396 344.3926,-36.0904 336.1657,-42.7663 342.1245,-46.4396"/>
+<!-- parser&#45;&gt;bytecode -->
+<g id="edge2" class="edge" data-name="parser-&gt;bytecode">
+
+<path fill="none" stroke="black" d="M404.03,-960.48C402.93,-952.57 401.72,-943.84 400.55,-935.41"/>
+<polygon fill="black" stroke="black" points="404.04,-935.13 399.2,-925.71 397.11,-936.09 404.04,-935.13"/>
 </g>
-<!-- Haxe compiler&#45;&gt;Input bytecode -->
-<g id="edge13" class="edge">
-<title>Haxe compiler-&gt;Input bytecode</title>
-<path fill="none" stroke="#000000" d="M377.0389,-36.1353C390.5906,-49.678 405.5442,-69.494 405.5442,-91 405.5442,-560.6 405.5442,-560.6 405.5442,-560.6 405.5442,-590.5295 377.5409,-608.6711 349.0521,-619.3831"/>
-<polygon fill="#000000" stroke="#000000" points="347.7063,-616.1455 339.4118,-622.7374 350.0067,-622.7567 347.7063,-616.1455"/>
+<!-- disassembly&#45;&gt;output_asm -->
+<g id="edge4" class="edge" data-name="disassembly-&gt;output_asm">
+
+<path fill="none" stroke="black" d="M150.63,-746.3C148.35,-731.32 145.57,-713.06 143.31,-698.15"/>
+<polygon fill="black" stroke="black" points="146.81,-697.89 141.84,-688.53 139.89,-698.94 146.81,-697.89"/>
+</g>
+<!-- cfg_opt -->
+<g id="node10" class="node" pointer-events="visible" data-name="cfg_opt">
+
+<ellipse fill="lightpink" stroke="black" cx="402" cy="-595.83" rx="80.5" ry="18"/>
+<text text-anchor="middle" x="402" y="-591.63" font-family="Arial" font-size="14.00">CFG Optimizers</text>
+</g>
+<!-- cfg_recovery&#45;&gt;cfg_opt -->
+<g id="edge6" class="edge" data-name="cfg_recovery-&gt;cfg_opt">
+
+<path fill="none" stroke="black" d="M396.69,-650.64C397.45,-642.97 398.36,-633.72 399.22,-625.08"/>
+<polygon fill="black" stroke="black" points="402.67,-625.66 400.17,-615.37 395.71,-624.97 402.67,-625.66"/>
+</g>
+<!-- cfg_opt&#45;&gt;ir_lifter -->
+<g id="edge7" class="edge" data-name="cfg_opt-&gt;ir_lifter">
+
+<path fill="none" stroke="black" d="M404.28,-577.6C405.1,-571.65 406.05,-564.94 407,-558.83 407.32,-556.77 407.66,-554.65 408.01,-552.51"/>
+<polygon fill="black" stroke="black" points="411.44,-553.19 409.65,-542.75 404.54,-552.03 411.44,-553.19"/>
+</g>
+<!-- ir_lifter&#45;&gt;llil -->
+<g id="edge8" class="edge" data-name="ir_lifter-&gt;llil">
+
+<path fill="none" stroke="black" d="M413.21,-504.44C413.34,-494 413.5,-480.47 413.65,-468.49"/>
+<polygon fill="black" stroke="black" points="417.15,-468.75 413.77,-458.71 410.15,-468.67 417.15,-468.75"/>
+<text text-anchor="middle" x="429.12" y="-477.83" font-family="Arial" font-size="10.00"> Lifts to</text>
+</g>
+<!-- ir_optimizers&#45;&gt;hlil -->
+<g id="edge10" class="edge" data-name="ir_optimizers-&gt;hlil">
+
+<path fill="none" stroke="black" d="M414,-336.44C414,-326 414,-312.47 414,-300.49"/>
+<polygon fill="black" stroke="black" points="417.5,-300.71 414,-290.71 410.5,-300.71 417.5,-300.71"/>
+<text text-anchor="middle" x="436.51" y="-309.83" font-family="Arial" font-size="10.00"> Produces</text>
+</g>
+<!-- pseudo_gen&#45;&gt;output_pseudo -->
+<g id="edge12" class="edge" data-name="pseudo_gen-&gt;output_pseudo">
+
+<path fill="none" stroke="black" d="M430.47,-157.05C431.79,-148.7 433.23,-139.56 434.55,-131.21"/>
+<polygon fill="black" stroke="black" points="437.96,-132.03 436.07,-121.6 431.05,-130.94 437.96,-132.03"/>
+</g>
+<!-- haxe_compiler&#45;&gt;input_bytecode -->
+<g id="edge16" class="edge" data-name="haxe_compiler-&gt;input_bytecode">
+
+<path fill="none" stroke="black" stroke-dasharray="5,2" d="M602.85,-32.21C634.8,-44.28 671,-65.73 671,-101 671,-991.08 671,-991.08 671,-991.08 671,-1069.55 575.6,-1018.38 507,-1056.49 484.95,-1068.75 462.09,-1085.59 444.8,-1099.33"/>
+<polygon fill="black" stroke="black" points="443.06,-1096.23 437.48,-1105.24 447.46,-1101.68 443.06,-1096.23"/>
+</g>
+<!-- legend -->
+<g id="node15" class="node" pointer-events="visible" data-name="legend">
+
+<path fill="lightpink" stroke="none" d="M714.5,-1192.49C714.5,-1192.49 527.5,-1192.49 527.5,-1192.49 521.5,-1192.49 515.5,-1186.49 515.5,-1180.49 515.5,-1180.49 515.5,-1068.49 515.5,-1068.49 515.5,-1062.49 521.5,-1056.49 527.5,-1056.49 527.5,-1056.49 714.5,-1056.49 714.5,-1056.49 720.5,-1056.49 726.5,-1062.49 726.5,-1068.49 726.5,-1068.49 726.5,-1180.49 726.5,-1180.49 726.5,-1186.49 720.5,-1192.49 714.5,-1192.49"/>
+<text text-anchor="start" x="596.61" y="-1172.89" font-family="Arial" font-weight="bold" font-size="14.00">Legend</text>
+<polygon fill="lightpink" stroke="none" points="522,-1139.49 522,-1161.49 543,-1161.49 543,-1139.49 522,-1139.49"/>
+<polygon fill="none" stroke="black" points="522,-1139.49 522,-1161.49 543,-1161.49 543,-1139.49 522,-1139.49"/>
+<text text-anchor="start" x="524.72" y="-1145.89" font-family="Arial" font-size="14.00">    </text>
+<text text-anchor="start" x="550" y="-1146.29" font-family="Arial" font-size="14.00">Process / Operation</text>
+<polygon fill="#b2dfee" stroke="none" points="522,-1112.49 522,-1134.49 543,-1134.49 543,-1112.49 522,-1112.49"/>
+<polygon fill="none" stroke="black" points="522,-1112.49 522,-1134.49 543,-1134.49 543,-1112.49 522,-1112.49"/>
+<text text-anchor="start" x="524.72" y="-1118.89" font-family="Arial" font-size="14.00">    </text>
+<text text-anchor="start" x="550" y="-1119.29" font-family="Arial" font-size="14.00">Data / Artifact</text>
+<text text-anchor="start" x="526.67" y="-1092.89" font-family="Arial" font-size="14.00">→</text>
+<text text-anchor="start" x="550" y="-1092.89" font-family="Arial" font-size="14.00">Main Pipeline Flow</text>
+<text text-anchor="start" x="526.67" y="-1067.89" font-family="Arial" font-size="14.00" fill="dimgray">⇢</text>
+<text text-anchor="start" x="549.66" y="-1067.89" font-family="Arial" font-size="14.00" fill="dimgray">Data Dependency / Lookup</text>
+<polygon fill="none" stroke="black" points="515.5,-1056.49 515.5,-1192.49 726.5,-1192.49 726.5,-1056.49 515.5,-1056.49"/>
 </g>
 </g>
 </svg>
