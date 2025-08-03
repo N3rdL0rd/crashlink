@@ -168,6 +168,6 @@ and change it to:
 
 ---
 
-Thank you again for your interest in making `crashlink` better! This project desperately needs new contributors, so please, pretty please, consider contributing.
+Thank you again for your interest in making crashlink better! This project desperately needs new contributors, so please, pretty please, consider contributing.
 
 💖 N3rdL0rd
