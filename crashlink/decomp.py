@@ -2540,9 +2540,9 @@ class IRFunction:
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = self.locals[op.df["src"].value]
                 zero_const = IRConst(self.code, IRConst.ConstType.INT, value=0)
-                
+
                 arith_expr = IRArithmetic(self.code, zero_const, src_local, IRArithmetic.ArithmeticType.SUB)
-                
+
                 assign_stmt = IRAssign(self.code, dst_local, arith_expr)
                 block.statements.append(assign_stmt)
 
