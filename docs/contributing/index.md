@@ -162,9 +162,9 @@ This is the final step, turning the optimized IR into Haxe code. Contributions h
   * To change how a Statement (like `IRConditional`, a subclass of `IRStatement`) is printed, modify `_generate_statements`.
 
 For example, to change `if (cond)` to `if cond` (without parentheses), you would find this line in `_generate_statements`:
-`output_lines.append(f"{indent}if ({cond_str}) {{")`
+`output_lines.append(f"{indent}if ({cond_str}) {")`
 and change it to:
-`output_lines.append(f"{indent}if {cond_str} {{")`
+`output_lines.append(f"{indent}if {cond_str} {")`
 
 ---
 
