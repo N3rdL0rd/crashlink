@@ -466,4 +466,9 @@ opcode_docs = {
     "Asm": "Inline x86 assembly",
 }
 
+terminal = {"Ret", "Throw", "Rethrow"}
+"""
+All opcodes that are acceptable to terminate a control flow block.
+"""
+
 __all__ = ["conditionals", "arithmetic", "opcodes", "opcode_docs"]

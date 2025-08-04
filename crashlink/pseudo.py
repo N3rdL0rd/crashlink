@@ -122,7 +122,7 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         return f"{callee_str}({args_str})"
 
     elif isinstance(expr, IRUnliftedOpcode):
-        return f"/* UNLIFTED OPCODE: {disasm.pseudo_from_op(expr.op, 0, ir_function.func.regs, code, terse=True)} */"
+        return f"/* UNLIFTED OPCODE: {expr.op.op} {disasm.pseudo_from_op(expr.op, 0, ir_function.func.regs, code, terse=True)} */"
 
     elif isinstance(expr, IRNew):
         type_name = disasm.type_name(code, expr.get_type())

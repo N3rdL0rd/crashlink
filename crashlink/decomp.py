@@ -28,7 +28,7 @@ from .core import (
 )
 from .errors import DecompError
 from .globals import DEBUG, dbg_print
-from .opcodes import arithmetic, conditionals
+from .opcodes import arithmetic, conditionals, terminal
 
 
 def _get_type_in_code(code: Bytecode, name: str) -> Type:
@@ -2092,6 +2092,27 @@ class IRFunction:
         node.ops = node.ops[1:]  # remove Label
         assert node.ops[-1].op in conditionals
 
+    def _build_bool_expr_from_op(self, op: Opcode) -> IRBoolExpr:
+        """Helper to create an IRBoolExpr from a conditional jump opcode."""
+        cond_map = {
+            "JTrue": IRBoolExpr.CompareType.ISTRUE, "JFalse": IRBoolExpr.CompareType.ISFALSE,
+            "JNull": IRBoolExpr.CompareType.NULL, "JNotNull": IRBoolExpr.CompareType.NOT_NULL,
+            "JSLt": IRBoolExpr.CompareType.LT, "JSGte": IRBoolExpr.CompareType.GTE,
+            "JSGt": IRBoolExpr.CompareType.GT, "JSLte": IRBoolExpr.CompareType.LTE,
+            "JULt": IRBoolExpr.CompareType.LT, "JUGte": IRBoolExpr.CompareType.GTE,
+            "JEq": IRBoolExpr.CompareType.EQ, "JNotEq": IRBoolExpr.CompareType.NEQ,
+        }
+        assert op.op is not None, "WTF??"
+        cond = cond_map[op.op]
+        left, right = None, None
+        if 'a' in op.df and 'b' in op.df:
+            left = self.locals[op.df["a"].value]
+            right = self.locals[op.df["b"].value]
+        else:
+            reg_key = "cond" if "cond" in op.df else "reg"
+            left = self.locals[op.df[reg_key].value]
+        return IRBoolExpr(self.code, cond, left, right)
+
     def _lift_block(
         self,
         node: CFNode,
@@ -2220,127 +2241,66 @@ class IRFunction:
                 block.statements.append(IRAssign(self.code, dst, const))
 
             elif op.op in conditionals:
-                if flag_conditionals:
-                    dbg_print("!!! Conditional !!!")
-                if not convert_jumps_to_primitive:
-                    # conditionals create a diamond shape in the IR - the two branches will at some point converge again.
-                    true_branch = None
-                    false_branch = None
-                    for branch_node, edge_type in node.branches:
-                        if edge_type == "true":
-                            true_branch = branch_node
-                        elif edge_type == "false":
-                            false_branch = branch_node
-                    if true_branch is None or false_branch is None:
-                        dbg_print("true:", true_branch, "false:", false_branch)
-                        dbg_print(node)
-                        raise DecompError(
-                            "Conditional jump missing true/false branch. This is almost certainly an issue with the decompiler and not the bytecode itself."
-                        )
-
-                    # HACK: blocks that have multiple branches coming into them shouldn't exist for generated if statements.
-                    # therefore, we can assume that if a conditional branch leads to a node that has multiple incoming branches,
-                    # it's an empty block and that's what comes *after* the conditional branches altogether.
-                    should_lift_t = True
-                    should_lift_f = True
-                    if len(self.cfg.predecessors(true_branch)) > 1:
-                        should_lift_t = False
-                    if len(self.cfg.predecessors(false_branch)) > 1:
-                        should_lift_f = False
-
-                    if not should_lift_t and not should_lift_f:
-                        dbg_print("Warning: Skipping conditional due to weird incoming branches.")
-                        block.comment += "WARNING: Skipping conditional due to weird incoming branches."
-                        continue
-
-                    cond_map = {
-                        "JTrue": IRBoolExpr.CompareType.ISTRUE,
-                        "JFalse": IRBoolExpr.CompareType.ISFALSE,
-                        "JNull": IRBoolExpr.CompareType.NULL,
-                        "JNotNull": IRBoolExpr.CompareType.NOT_NULL,
-                        "JSLt": IRBoolExpr.CompareType.LT,
-                        "JSGte": IRBoolExpr.CompareType.GTE,
-                        "JSGt": IRBoolExpr.CompareType.GT,
-                        "JSLte": IRBoolExpr.CompareType.LTE,
-                        "JULt": IRBoolExpr.CompareType.LT,
-                        "JUGte": IRBoolExpr.CompareType.GTE,
-                        "JEq": IRBoolExpr.CompareType.EQ,
-                        "JNotEq": IRBoolExpr.CompareType.NEQ,
-                    }
-                    cond = cond_map[op.op]
-                    left, right = None, None
-                    if cond not in [
-                        IRBoolExpr.CompareType.ISTRUE,
-                        IRBoolExpr.CompareType.ISFALSE,
-                        IRBoolExpr.CompareType.NULL,
-                        IRBoolExpr.CompareType.NOT_NULL,
-                    ]:
-                        left = self.locals[op.df["a"].value]
-                        right = self.locals[op.df["b"].value]
-                    else:
-                        l = op.df.get("cond", op.df.get("reg"))
-                        assert l is not None
-                        left = self.locals[l.value]
-
-                    condition_expr = IRBoolExpr(self.code, cond, left, right)
-                    true_block = (
-                        self._lift_block(
-                            true_branch,
-                            visited.copy(),
-                            current_loop_scope_nodes=current_loop_scope_nodes,
-                        )
-                        if should_lift_t
-                        else IRBlock(self.code)
-                    )
-                    false_block = (
-                        self._lift_block(
-                            false_branch,
-                            visited.copy(),
-                            current_loop_scope_nodes=current_loop_scope_nodes,
-                        )
-                        if should_lift_f
-                        else IRBlock(self.code)
-                    )
-                    _cond = IRConditional(self.code, condition_expr, true_block, false_block)
-                    _cond.invert()
-                    block.statements.append(_cond)
-
-                    convergence = self._find_convergence(true_branch, false_branch, visited)
-                    if convergence and convergence.ops and convergence.ops[-1].op == "Ret":
-                        true_exits_to_convergence = (
-                            len(true_branch.branches) == 1 and true_branch.branches[0][0] == convergence
-                        )
-                        false_exits_to_convergence = (
-                            len(false_branch.branches) == 1 and false_branch.branches[0][0] == convergence
-                        )
-
-                        if true_exits_to_convergence and false_exits_to_convergence:
-                            return block
-
-                    # now, find the next block and lift it.
-                    next_node = None
-                    if not should_lift_f:
-                        next_node = false_branch
-                    elif not should_lift_t:
-                        next_node = true_branch
-                    else:
-                        convergence = self._find_convergence(true_branch, false_branch, visited)
-                        if convergence:
-                            next_node = convergence
-                        else:
-                            dbg_print("WARNING: No convergence point found for conditional branches")
-                    if not next_node:
-                        raise DecompError("No next node found for conditional branches")
-                    next_block = self._lift_block(
-                        next_node,
-                        visited,
-                        current_loop_scope_nodes=current_loop_scope_nodes,
-                    )
-                    block.statements.append(next_block)
-                else:
-                    # convert jumps to IRPrimitiveJump so that later lifting stages can handle them
-                    # TODO: instead of just wrapping an opcode, we can resolve this to a local and generate a Bool-type IRExpression
+                if convert_jumps_to_primitive:
                     block.statements.append(IRPrimitiveJump(self.code, op))
+                    continue
+
+                true_branch_node = None
+                false_branch_node = None
+                for branch, edge_type in node.branches:
+                    if edge_type == "true":
+                        true_branch_node = branch
+                    elif edge_type == "false":
+                        false_branch_node = branch
+
+                if not true_branch_node or not false_branch_node:
+                    raise DecompError("Conditional jump missing a true or false branch.")
+
+                cond_expr = self._build_bool_expr_from_op(op)
+                cond_expr.invert()
+                
+                if_block_node = false_branch_node
+                else_block_node = true_branch_node
+
+                if_ends_with_jalways = if_block_node.ops and if_block_node.ops[-1].op == 'JAlways'
+                else_ends_with_jalways = else_block_node.ops and else_block_node.ops[-1].op == 'JAlways'
+
+                if_block_ir = self._lift_block(if_block_node, visited, current_loop_scope_nodes=current_loop_scope_nodes)
+                else_block_ir = self._lift_block(else_block_node, visited, current_loop_scope_nodes=current_loop_scope_nodes)
+
+                conditional_stmt = IRConditional(self.code, cond_expr, if_block_ir, else_block_ir)
+                block.statements.append(conditional_stmt)
+
+                next_node = None
+                if if_ends_with_jalways and not else_ends_with_jalways:
+                    # The 'if' block jumps unconditionally to the code after the 'else' block.
+                    # The 'else' block falls through. The real next node is the successor of the 'else' block.
+                     if else_block_node.branches:
+                        next_node = else_block_node.branches[0][0]
+                elif else_ends_with_jalways and not if_ends_with_jalways:
+                    # The 'else' block jumps unconditionally. The 'if' block falls through.
+                    # The real next node is the successor of the 'if' block.
+                    if if_block_node.branches:
+                        next_node = if_block_node.branches[0][0]
+                else:
+                    # Standard case: neither branch has a special jump, or both do.
+                    if_terminates = if_block_node.ops and if_block_node.ops[-1].op in terminal
+                    else_terminates = else_block_node.ops and else_block_node.ops[-1].op in terminal
+
+                    if if_terminates and else_terminates:
+                        next_node = None
+                    elif if_terminates:
+                        next_node = else_block_node.branches[0][0] if else_block_node.branches else None
+                    elif else_terminates:
+                        next_node = if_block_node.branches[0][0] if if_block_node.branches else None
+                    else:
+                        next_node = self._find_convergence(if_block_node, else_block_node, visited)
+
+                if next_node:
+                    next_block_ir = self._lift_block(next_node, visited, current_loop_scope_nodes=current_loop_scope_nodes)
+                    block.statements.append(next_block_ir)
+
+                return block
 
             elif op.op in ["Call0", "Call1", "Call2", "Call3", "Call4"]:
                 n = int(op.op[-1])
@@ -2379,10 +2339,14 @@ class IRFunction:
                 )
 
             elif op.op == "Ret":
-                if isinstance(self.func.regs[op.df["ret"].value].resolve(self.code).definition, Void):
+                ret_reg_index = op.df["ret"].value
+                ret_reg_tIndex = self.func.regs[ret_reg_index]
+                ret_type = ret_reg_tIndex.resolve(self.code)
+
+                if isinstance(ret_type.definition, Void):
                     block.statements.append(IRReturn(self.code))
                 else:
-                    block.statements.append(IRReturn(self.code, self.locals[op.df["ret"].value]))
+                    block.statements.append(IRReturn(self.code, self.locals[ret_reg_index]))
 
             elif op.op == "Switch":
                 val = self.locals[op.df["reg"].value]
@@ -2453,23 +2417,14 @@ class IRFunction:
                 )
 
             elif op.op == "JAlways":
-                jump_idx = node.base_offset + len(node.ops) + op.df["offset"].value
-                target_node = None
-                for nod in self.cfg.nodes:
-                    if nod.base_offset == jump_idx:
-                        target_node = nod
-                        break
-
-                if current_loop_scope_nodes and target_node and (target_node not in current_loop_scope_nodes):
-                    block.statements.append(IRBreak(self.code))
-                    return block
-                elif target_node:
-                    next_block = self._lift_block(
-                        target_node,
-                        visited,
-                        current_loop_scope_nodes=current_loop_scope_nodes,
-                    )
-                    block.statements.append(next_block)
+                if node.branches:
+                    target_node = node.branches[0][0]
+                    if current_loop_scope_nodes and target_node not in current_loop_scope_nodes:
+                         block.statements.append(IRBreak(self.code))
+                         return block
+                    else:
+                        block.statements.append(self._lift_block(target_node, visited, current_loop_scope_nodes=current_loop_scope_nodes))
+                        return block
 
             elif op.op == "Field":
                 dst_local = self.locals[op.df["dst"].value]
@@ -2562,10 +2517,11 @@ class IRFunction:
                     untranslated_stmt = IRUnliftedOpcode(self.code, op)
                     block.statements.append(untranslated_stmt)
 
-        if len(node.branches) == 1:
+        if len(node.branches) == 1 and node.ops and node.ops[-1].op not in conditionals and node.ops[-1].op != 'JAlways':
             next_node, _ = node.branches[0]
-            next_block = self._lift_block(next_node, visited, current_loop_scope_nodes=current_loop_scope_nodes)
-            block.statements.append(next_block)
+            if next_node not in visited:
+                next_block = self._lift_block(next_node, visited, current_loop_scope_nodes=current_loop_scope_nodes)
+                block.statements.append(next_block)
 
         return block
 
