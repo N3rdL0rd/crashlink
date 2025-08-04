@@ -124,6 +124,17 @@ class CFGraph:
         self.nodes: List[CFNode] = []
         self.entry: Optional[CFNode] = None
         self.applied_optimizers: List[CFOptimizer] = []
+            
+        # Maps node -> List[predecessor_node]
+        self.predecessors: Dict[CFNode, List[CFNode]] = {}
+        # Maps node -> Set[dominator_nodes]
+        self.dominators: Dict[CFNode, Set[CFNode]] = {}
+        # Maps loop_header_node -> Set[nodes_in_loop]
+        self.loops: Dict[CFNode, Set[CFNode]] = {}
+        # Maps node -> Set[post_dominator_nodes]
+        self.post_dominators: Dict[CFNode, Set[CFNode]] = {}
+        # Maps node -> immediate_post_dominator_node
+        self.immediate_post_dominators: Dict[CFNode, CFNode|None] = {}
 
     def add_node(self, ops: List[Opcode], base_offset: int = 0) -> CFNode:
         node = CFNode(ops)
@@ -250,6 +261,188 @@ class CFGraph:
                 CFDeadCodeEliminator(self),
             ])
             # fmt: on
+        if self.entry:
+            self.analyze()
+            
+    def analyze(self) -> None:
+        """
+        Performs a full structural analysis of the CFG to identify
+        dominators, post-dominators, and loops.
+        """
+        if not self.entry:
+            return
+
+        self._compute_predecessors()
+        self._find_dominators()
+        self._find_loops()
+        self._find_post_dominators()
+        self._find_immediate_post_dominators()
+
+        if DEBUG:
+            dbg_print("--- CFG Analysis Complete ---")
+            for header, loop_nodes in self.loops.items():
+                dbg_print(f"Loop found with header {header.base_offset}, containing nodes: {[n.base_offset for n in loop_nodes]}")
+            for node, ipd in self.immediate_post_dominators.items():
+                if len(node.branches) > 1:
+                    dbg_print(f"Conditional node {node.base_offset} converges at {ipd.base_offset if ipd else 'None'}")
+            dbg_print("-----------------------------")
+
+
+    def _compute_predecessors(self) -> None:
+        """Calculates the predecessors for every node in the graph."""
+        self.predecessors = {node: [] for node in self.nodes}
+        for node in self.nodes:
+            for branch, _ in node.branches:
+                if branch in self.predecessors:
+                    self.predecessors[branch].append(node)
+
+    def _find_dominators(self) -> None:
+        """
+        Computes the dominator for each node using an iterative algorithm.
+        A node 'd' dominates 'n' if every path from entry to 'n' must pass through 'd'.
+        """
+        if not self.entry:
+            return
+
+        all_nodes = self.nodes
+        # Initialize: The only dominator of the start_node is itself.
+        # Every other node is initially "dominated" by all nodes.
+        doms = {node: set(all_nodes) for node in all_nodes}
+        doms[self.entry] = {self.entry}
+
+        changed = True
+        while changed:
+            changed = False
+            # Iterate in a fixed order for deterministic results
+            for node in sorted(all_nodes, key=lambda n: n.base_offset):
+                if node == self.entry:
+                    continue
+
+                # Dom(n) = {n} U intersect(Dom(p) for p in preds(n))
+                preds = self.predecessors.get(node, [])
+                if not preds:
+                    continue # Should not happen in a connected graph apart from entry
+
+                pred_doms_sets = [doms[p] for p in preds]
+                new_doms = {node}.union(set.intersection(*pred_doms_sets))
+
+                if new_doms != doms[node]:
+                    doms[node] = new_doms
+                    changed = True
+
+        self.dominators = doms
+
+    def _find_loops(self) -> None:
+        """
+        Finds loops by identifying back edges. A back edge is an edge (u, v)
+        where the destination 'v' (header) dominates the source 'u'.
+        """
+        if not self.dominators:
+            return
+
+        self.loops = {}
+        for u in self.nodes:
+            for v, _ in u.branches:
+                # If the destination `v` dominates the source `u`, it's a back edge.
+                if v in self.dominators.get(u, set()):
+                    header = v
+                    # Now find all nodes in the body of this natural loop.
+                    # The body consists of the header and all nodes that can reach 'u'
+                    # without passing through the header.
+                    loop_body = {header, u}
+                    stack = [u]
+                    processed_for_body = {u, header}
+
+                    while stack:
+                        current = stack.pop()
+                        for pred in self.predecessors.get(current, []):
+                            if pred not in processed_for_body:
+                                processed_for_body.add(pred)
+                                loop_body.add(pred)
+                                stack.append(pred)
+
+                    self.loops[header] = loop_body
+
+    def _find_post_dominators(self) -> None:
+        """
+        Computes post-dominators by running the dominator algorithm on the
+        reversed graph. Handles multiple exit points by creating a virtual exit.
+        A node 'p' post-dominates 'n' if all paths from 'n' to exit pass through 'p'.
+        """
+        all_nodes = self.nodes
+        exit_nodes = [n for n in all_nodes if not n.branches]
+
+        if not exit_nodes:
+            # Graph with an infinite loop and no exit
+            self.post_dominators = {}
+            return
+
+        # Reverse the graph edges
+        reversed_successors = {n: self.predecessors.get(n, []) for n in all_nodes}
+
+        # Use a virtual exit node to handle multiple exits gracefully
+        VIRTUAL_EXIT = CFNode([])
+        reversed_successors[VIRTUAL_EXIT] = exit_nodes
+        nodes_for_pd_analysis = all_nodes + [VIRTUAL_EXIT]
+
+        # Run the iterative dominator algorithm on the reversed graph
+        pd = {node: set(nodes_for_pd_analysis) for node in nodes_for_pd_analysis}
+        pd[VIRTUAL_EXIT] = {VIRTUAL_EXIT}
+
+        changed = True
+        while changed:
+            changed = False
+            for node in sorted(all_nodes, key=lambda n: n.base_offset): # Process in fixed order
+                preds_in_reversed_graph = reversed_successors.get(node, [])
+                if not preds_in_reversed_graph:
+                    continue
+
+                pred_pdom_sets = [pd[p] for p in preds_in_reversed_graph]
+                new_pd = {node}.union(set.intersection(*pred_pdom_sets))
+
+                if new_pd != pd[node]:
+                    pd[node] = new_pd
+                    changed = True
+
+        # Remove the virtual node from the results before storing
+        del pd[VIRTUAL_EXIT]
+        for node in pd:
+            pd[node].discard(VIRTUAL_EXIT)
+
+        self.post_dominators = pd
+
+    def _find_immediate_post_dominators(self) -> None:
+        """
+        Calculates the immediate post-dominator for each node.
+        The immediate post-dominator of 'n' is the "closest" post-dominator
+        on any path from 'n' to an exit. It's the parent in the post-dominator tree.
+        """
+        if not self.post_dominators:
+            return
+
+        self.immediate_post_dominators = {}
+        for n in self.nodes:
+            pdoms_of_n = self.post_dominators.get(n, set())
+            # The immediate post-dominator is the one in the set (excluding n itself)
+            # that is post-dominated by all others.
+            # A simpler way is to find the one whose own post-dominator set has size |pdoms(n)| - 1.
+            idom = None
+            min_extra_pdoms = float('inf')
+
+            for p in pdoms_of_n:
+                if p == n:
+                    continue
+                
+                pdoms_of_p = self.post_dominators.get(p, set())
+                # The immediate post-dominator of `n` is `p` if `pdoms(n) - {n}` is a superset of `pdoms(p)`.
+                # We find the `p` that has the largest set of post-dominators itself.
+                if pdoms_of_n.issuperset(pdoms_of_p):
+                    num_extra_pdoms = len(pdoms_of_n) - len(pdoms_of_p)
+                    if num_extra_pdoms < min_extra_pdoms:
+                        min_extra_pdoms = num_extra_pdoms
+                        idom = p
+            
+            self.immediate_post_dominators[n] = idom
 
     def optimize(self, optimizers: List[CFOptimizer]) -> None:
         for optimizer in optimizers:
@@ -265,9 +458,11 @@ class CFGraph:
                 return "style=filled, fillcolor=aquamarine"
         return "style=filled, fillcolor=lightblue"
 
+
     def graph(self, code: Bytecode) -> str:
-        """Generate DOT format graph visualization."""
+        """Generate DOT format graph visualization with loops highlighted."""
         dot = ["digraph G {"]
+        dot.append('  compound=true;')
         dot.append('  labelloc="t";')
         dot.append('  label="CFG for %s";' % disasm.func_header(code, self.func))
         dot.append('  fontname="Arial";')
@@ -290,6 +485,21 @@ class CFGraph:
             style = self.style_node(node)
             dot.append(f'  node_{id(node)} [label="{label}", {style}, xlabel="{node.base_offset}."];')
 
+        loop_counter = 0
+        sorted_loops = sorted(self.loops.items(), key=lambda item: item[0].base_offset)
+        for header, nodes_in_loop in sorted_loops:
+            loop_counter += 1
+            dot.append(f"  subgraph cluster_loop_{loop_counter} {{")
+            dot.append('    style="filled,rounded";')
+            dot.append('    color=grey90;') # The background color of the box
+            dot.append(f'   label="Loop (header: {header.base_offset})";')
+            dot.append('   fontcolor=grey50;')
+            dot.append('   fontsize=12;')
+            node_ids_in_loop = [f"node_{id(n)}" for n in nodes_in_loop]
+            dot.append(f"   {' '.join(node_ids_in_loop)};")
+            dot.append("  }")
+
+
         for node in self.nodes:
             for branch, edge_type in node.branches:
                 if edge_type == "true":
@@ -307,15 +517,6 @@ class CFGraph:
 
         dot.append("}")
         return "\n".join(dot)
-
-    def predecessors(self, node: CFNode) -> List[CFNode]:
-        """Get predecessors of a node"""
-        preds = []
-        for n in self.nodes:
-            for succ, _ in n.branches:
-                if succ == node:
-                    preds.append(n)
-        return preds
 
 
 class IRStatement(ABC):
@@ -2007,7 +2208,7 @@ class IRFunction:
         self._name_locals()
         if not no_lift:
             if self.cfg.entry:
-                self.block = self._lift_block(self.cfg.entry)
+                self.block = self._lift_block(self.cfg.entry, set())
             else:
                 raise DecompError("Function CFG has no entry node, cannot lift to IR")
         else:
@@ -2115,415 +2316,288 @@ class IRFunction:
 
     def _lift_block(
         self,
-        node: CFNode,
-        visited: Optional[Set[CFNode]] = None,
-        convert_jumps_to_primitive: bool = False,
-        flag_conditionals: bool = False,
-        current_loop_scope_nodes: Optional[Set[CFNode]] = None,
+        node: Optional[CFNode],
+        visited: Set[CFNode],
+        stop_at: Optional[CFNode] = None,
     ) -> IRBlock:
-        if visited is None:
-            visited = set()
-
-        if node in visited:
+        if node is None or node == stop_at or node in visited:
             return IRBlock(self.code)
         visited.add(node)
 
         block = IRBlock(self.code)
+        
+        # Check for a Loop Header
+        if node in self.cfg.loops:
+            loop_nodes = self.cfg.loops[node]
+            header = node
 
-        for i, op in enumerate(node.ops):
-            if op.op == "Label":
-                assert i == 0, "Label should be the first operation in a CFNode."
-                jumpers = _find_jumps_to_label(node, node, set())
+            # The loop's exit is the immediate post-dominator of the header.
+            # This is the single node where control flow reconverges after the loop.
+            loop_exit_node = self.cfg.immediate_post_dominators.get(header)
+            
+            # The body of the loop starts at the successor of the header that is *inside* the loop.
+            # (There might also be an edge leading out of the header immediately, which is rare)
+            body_entry_node = None
+            for succ, _ in header.branches:
+                if succ in loop_nodes:
+                    body_entry_node = succ
+                    break
+            
+            # Lift the body recursively. The body ends at the loop's overall exit.
+            # We pass a copy of `visited` because the body is a distinct subgraph.
+            body_ir = self._lift_block(body_entry_node, visited.copy(), stop_at=loop_exit_node)
+            
+            # For now, we represent this as a primitive loop. The body contains the full
+            # lifted logic, and the condition can be determined later or is implicit.
+            # A more advanced lifter would analyze the header's condition.
+            loop_stmt = IRPrimitiveLoop(self.code, IRBlock(self.code), body_ir)
+            block.statements.append(loop_stmt)
 
-                loop_nodes_for_this_loop: Set[CFNode] = {node}
-                for jumper_node, path_to_jumper in jumpers:
-                    loop_nodes_for_this_loop.add(jumper_node)
-                    loop_nodes_for_this_loop.update(path_to_jumper)
+            # Mark all nodes of this loop as visited so we don't process them again.
+            visited.update(loop_nodes)
 
-                body_nodes_for_isolated_graph: Set[CFNode] = loop_nodes_for_this_loop.copy()
-                body_nodes_for_isolated_graph.discard(node)
+            # After the loop, continue lifting from the loop's exit node.
+            next_block = self._lift_block(loop_exit_node, visited)
+            block.statements.extend(next_block.statements)
+            
+            return block
 
-                isolated = IsolatedCFGraph(
-                    self.cfg,
-                    list(body_nodes_for_isolated_graph) if body_nodes_for_isolated_graph else [self.cfg.add_node([])],
-                )
-                condition = IsolatedCFGraph(self.cfg, [node], find_entry_intelligently=False)
-                dbg_print("--- isolated ---")
-                dbg_print(isolated.graph(self.code))
-                dbg_print("--- condition ---")
-                dbg_print(condition.graph(self.code))
+        # Check for a Conditional Branch (if/else)
+        elif len(node.branches) == 2:
+            # The convergence point is the immediate post-dominator of the conditional node.
+            convergence_node = self.cfg.immediate_post_dominators.get(node)
 
-                if not condition.entry:
-                    raise DecompError("Empty condition block found for loop.")
-                self._patch_loop_condition(condition.entry)
+            # Get true/false branches
+            true_branch_node, false_branch_node = None, None
+            for branch, edge_type in node.branches:
+                if edge_type == "true": true_branch_node = branch
+                elif edge_type == "false": false_branch_node = branch
+            
+            if true_branch_node is None or false_branch_node is None:
+                 raise DecompError("Malformed conditional node with two branches but not true/false")
 
-                condition_ir_block = self._lift_block(condition.entry, visited.copy(), convert_jumps_to_primitive=True)
+            # Lift the true and false blocks recursively. Crucially, we tell them
+            # to STOP when they reach the convergence point.
+            true_block_ir = self._lift_block(true_branch_node, visited.copy(), stop_at=convergence_node)
+            false_block_ir = self._lift_block(false_branch_node, visited.copy(), stop_at=convergence_node)
+            
+            # The conditional opcode is the last one in the current node.
+            cond_op = node.ops[-1]
+            cond_expr = self._build_bool_expr_from_op(cond_op)
+            
+            # Build the IRConditional
+            conditional_stmt = IRConditional(self.code, cond_expr, true_block_ir, false_block_ir)
+            block.statements.append(conditional_stmt)
 
-                body_ir_block: IRBlock
-                if isolated.entry and isolated.entry.ops:
-                    body_ir_block = self._lift_block(
-                        isolated.entry,
-                        visited.copy(),
-                        flag_conditionals=True,
-                        current_loop_scope_nodes=loop_nodes_for_this_loop,
-                    )
-                else:
-                    dbg_print(
-                        f"Warning: Empty or non-meaningful loop body found for loop starting at {node.base_offset}."
-                    )
-                    body_ir_block = IRBlock(self.code)
+            # After the conditional, continue lifting from the convergence node.
+            # Mark all nodes on the paths to convergence as visited.
+            # A simple `visited.add` at the top handles this sufficiently for now.
+            next_block = self._lift_block(convergence_node, visited)
+            block.statements.extend(next_block.statements)
 
-                visited.add(node)
-                for body_node in body_nodes_for_isolated_graph:
-                    visited.add(body_node)
+            return block
 
-                loop_stmt = IRPrimitiveLoop(self.code, condition_ir_block, body_ir_block)
-                block.statements.append(loop_stmt)
+        # Check for a Switch Statementt
+        elif len(node.branches) > 2:
+            convergence_node = self.cfg.immediate_post_dominators.get(node)
+            switch_op = node.ops[-1]
+            val_reg = self.locals[switch_op.df["reg"].value]
+            cases = {}
+            default_block = IRBlock(self.code)
 
-                loop_exit_node: Optional[CFNode] = None
-                for successor_node, _edge_type in node.branches:
-                    if successor_node not in loop_nodes_for_this_loop:
-                        loop_exit_node = successor_node
-                        break
+            for target_node, edge_type in node.branches:
+                # Lift each case, stopping at the convergence point
+                case_block_ir = self._lift_block(target_node, visited.copy(), stop_at=convergence_node)
 
-                if not loop_exit_node:
-                    for body_member_node in loop_nodes_for_this_loop:
-                        if body_member_node == node:
-                            continue
-                        for successor_node, _edge_type in body_member_node.branches:
-                            if successor_node not in loop_nodes_for_this_loop:
-                                loop_exit_node = successor_node
-                                break
-                        if loop_exit_node:
-                            break
+                if edge_type.startswith("switch: case:"):
+                    case_val = int(edge_type.split(":")[-1].strip())
+                    case_const = IRConst(self.code, IRConst.ConstType.INT, value=case_val)
+                    cases[case_const] = case_block_ir
+                elif edge_type == "switch: default":
+                    default_block = case_block_ir
+            
+            switch_stmt = IRSwitch(self.code, val_reg, cases, default_block)
+            block.statements.append(switch_stmt)
 
-                if loop_exit_node:
-                    dbg_print(f"Loop at {node.base_offset} determined to exit to CFNode {loop_exit_node.base_offset}")
-                    next_sequential_block = self._lift_block(loop_exit_node, visited, current_loop_scope_nodes=None)
-                    if next_sequential_block.statements:
-                        block.statements.append(next_sequential_block)
-                    elif next_sequential_block.comment:
-                        if block.statements:
-                            block.statements[-1].comment += " " + next_sequential_block.comment
-                        else:
-                            block.comment += " " + next_sequential_block.comment
+            # Continue lifting from the convergence point
+            next_block = self._lift_block(convergence_node, visited)
+            block.statements.extend(next_block.statements)
 
-                else:
-                    dbg_print(f"Warning: Could not determine a single CFG exit node after loop at {node.base_offset}.")
+            return block
 
-                break
+        # Non-Branching Block
+        else:
+            for op in node.ops:
+                if op.op in arithmetic:
+                    dst = self.locals[op.df["dst"].value]
+                    lhs = self.locals[op.df["a"].value]
+                    rhs = self.locals[op.df["b"].value]
+                    block.statements.append(IRAssign(self.code, dst, IRArithmetic(self.code, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])))
 
-            elif op.op in arithmetic:
-                dst = self.locals[op.df["dst"].value]
-                lhs = self.locals[op.df["a"].value]
-                rhs = self.locals[op.df["b"].value]
-                block.statements.append(
-                    IRAssign(
-                        self.code,
-                        dst,
-                        IRArithmetic(
+                elif op.op in ["Int", "Float", "Bool", "Bytes", "String", "Null"]:
+                    dst = self.locals[op.df["dst"].value]
+                    const_type = IRConst.ConstType[op.op.upper()]
+                    value = op.df["value"].value if op.op == "Bool" else None
+                    if op.op not in ["Bool"]:
+                        const = IRConst(self.code, const_type, op.df["ptr"], value)
+                    else:
+                        const = IRConst(self.code, const_type, value=value)
+                    block.statements.append(IRAssign(self.code, dst, const))
+
+                elif op.op in ["Call0", "Call1", "Call2", "Call3", "Call4"]:
+                    n = int(op.op[-1])
+                    dst = self.locals[op.df["dst"].value]
+                    fun = IRConst(self.code, IRConst.ConstType.FUN, op.df["fun"])
+                    args = [self.locals[op.df[f"arg{i}"].value] for i in range(n)]
+                    block.statements.append(
+                        IRAssign(
                             self.code,
-                            lhs,
-                            rhs,
-                            IRArithmetic.ArithmeticType[op.op.upper()],
-                        ),
+                            dst,
+                            IRCall(self.code, IRCall.CallType.FUNC, fun, args),
+                        )
                     )
-                )
 
-            elif op.op in ["Int", "Float", "Bool", "Bytes", "String", "Null"]:
-                dst = self.locals[op.df["dst"].value]
-                const_type = IRConst.ConstType[op.op.upper()]
-                value = op.df["value"].value if op.op == "Bool" else None
-                if op.op not in ["Bool"]:
-                    const = IRConst(self.code, const_type, op.df["ptr"], value)
-                else:
-                    const = IRConst(self.code, const_type, value=value)
-                block.statements.append(IRAssign(self.code, dst, const))
-
-            elif op.op in conditionals:
-                if convert_jumps_to_primitive:
-                    block.statements.append(IRPrimitiveJump(self.code, op))
-                    continue
-
-                true_branch_node = None
-                false_branch_node = None
-                for branch, edge_type in node.branches:
-                    if edge_type == "true":
-                        true_branch_node = branch
-                    elif edge_type == "false":
-                        false_branch_node = branch
-
-                if not true_branch_node or not false_branch_node:
-                    raise DecompError("Conditional jump missing a true or false branch.")
-
-                cond_expr = self._build_bool_expr_from_op(op)
-                cond_expr.invert()
-                
-                if_block_node = false_branch_node
-                else_block_node = true_branch_node
-
-                if_ends_with_jalways = if_block_node.ops and if_block_node.ops[-1].op == 'JAlways'
-                else_ends_with_jalways = else_block_node.ops and else_block_node.ops[-1].op == 'JAlways'
-
-                if_block_ir = self._lift_block(if_block_node, visited, current_loop_scope_nodes=current_loop_scope_nodes)
-                else_block_ir = self._lift_block(else_block_node, visited, current_loop_scope_nodes=current_loop_scope_nodes)
-
-                conditional_stmt = IRConditional(self.code, cond_expr, if_block_ir, else_block_ir)
-                block.statements.append(conditional_stmt)
-
-                next_node = None
-                if if_ends_with_jalways and not else_ends_with_jalways:
-                    # The 'if' block jumps unconditionally to the code after the 'else' block.
-                    # The 'else' block falls through. The real next node is the successor of the 'else' block.
-                     if else_block_node.branches:
-                        next_node = else_block_node.branches[0][0]
-                elif else_ends_with_jalways and not if_ends_with_jalways:
-                    # The 'else' block jumps unconditionally. The 'if' block falls through.
-                    # The real next node is the successor of the 'if' block.
-                    if if_block_node.branches:
-                        next_node = if_block_node.branches[0][0]
-                else:
-                    # Standard case: neither branch has a special jump, or both do.
-                    if_terminates = if_block_node.ops and if_block_node.ops[-1].op in terminal
-                    else_terminates = else_block_node.ops and else_block_node.ops[-1].op in terminal
-
-                    if if_terminates and else_terminates:
-                        next_node = None
-                    elif if_terminates:
-                        next_node = else_block_node.branches[0][0] if else_block_node.branches else None
-                    elif else_terminates:
-                        next_node = if_block_node.branches[0][0] if if_block_node.branches else None
+                elif op.op == "Ret":
+                    ret_type = self.func.regs[op.df["ret"].value].resolve(self.code)
+                    if isinstance(ret_type.definition, Void):
+                        block.statements.append(IRReturn(self.code))
                     else:
-                        next_node = self._find_convergence(if_block_node, else_block_node, visited)
-
-                if next_node:
-                    next_block_ir = self._lift_block(next_node, visited, current_loop_scope_nodes=current_loop_scope_nodes)
-                    block.statements.append(next_block_ir)
-
-                return block
-
-            elif op.op in ["Call0", "Call1", "Call2", "Call3", "Call4"]:
-                n = int(op.op[-1])
-                dst = self.locals[op.df["dst"].value]
-                fun = IRConst(self.code, IRConst.ConstType.FUN, op.df["fun"])
-                args = [self.locals[op.df[f"arg{i}"].value] for i in range(n)]
-                block.statements.append(
-                    IRAssign(
-                        self.code,
-                        dst,
-                        IRCall(self.code, IRCall.CallType.FUNC, fun, args),
+                        block.statements.append(IRReturn(self.code, self.locals[op.df["ret"].value]))
+                    
+                elif op.op == "CallMethod":
+                    dst = self.locals[op.df["dst"].value]
+                    target = self.locals[op.df["target"].value]
+                    args = [self.locals[op.df[f"arg{i}"].value] for i in range(op.df["nargs"].value)]
+                    block.statements.append(
+                        IRAssign(
+                            self.code,
+                            dst,
+                            IRCall(self.code, IRCall.CallType.METHOD, target, args),
+                        )
                     )
-                )
 
-            elif op.op == "CallMethod":
-                dst = self.locals[op.df["dst"].value]
-                target = self.locals[op.df["target"].value]
-                args = [self.locals[op.df[f"arg{i}"].value] for i in range(op.df["nargs"].value)]
-                block.statements.append(
-                    IRAssign(
-                        self.code,
-                        dst,
-                        IRCall(self.code, IRCall.CallType.METHOD, target, args),
+                elif op.op == "CallThis":
+                    dst = self.locals[op.df["dst"].value]
+                    args = [self.locals[op.df[f"arg{i}"].value] for i in range(op.df["nargs"].value)]
+                    block.statements.append(
+                        IRAssign(
+                            self.code,
+                            dst,
+                            IRCall(self.code, IRCall.CallType.THIS, None, args),
+                        )
                     )
-                )
-
-            elif op.op == "CallThis":
-                dst = self.locals[op.df["dst"].value]
-                args = [self.locals[op.df[f"arg{i}"].value] for i in range(op.df["nargs"].value)]
-                block.statements.append(
-                    IRAssign(
-                        self.code,
-                        dst,
-                        IRCall(self.code, IRCall.CallType.THIS, None, args),
+                    
+                elif op.op == "Mov":
+                    block.statements.append(
+                        IRAssign(
+                            self.code,
+                            self.locals[op.df["dst"].value],
+                            self.locals[op.df["src"].value],
+                        )
                     )
-                )
 
-            elif op.op == "Ret":
-                ret_reg_index = op.df["ret"].value
-                ret_reg_tIndex = self.func.regs[ret_reg_index]
-                ret_type = ret_reg_tIndex.resolve(self.code)
-
-                if isinstance(ret_type.definition, Void):
-                    block.statements.append(IRReturn(self.code))
-                else:
-                    block.statements.append(IRReturn(self.code, self.locals[ret_reg_index]))
-
-            elif op.op == "Switch":
-                val = self.locals[op.df["reg"].value]
-                offsets = op.df["offsets"].value
-                cases = {}
-                case_nodes = []
-
-                for i, offset in enumerate(offsets):
-                    if offset.value != 0:
-                        jump_idx = node.base_offset + len(node.ops) + offset.value
-                        target_node = None
-                        for nod in self.cfg.nodes:
-                            if nod.base_offset == jump_idx:
-                                target_node = nod
-                                break
-
-                        if target_node:
-                            case_const = IRConst(self.code, IRConst.ConstType.INT, value=i)
-                            case_nodes.append(target_node)
-                            cases[case_const] = self._lift_block(target_node, visited)
-
-                default_node = None
-                for branch_node, edge_type in node.branches:
-                    if edge_type == "switch: default":
-                        default_node = branch_node
-                        break
-
-                if not default_node:
-                    raise DecompError("Switch missing default branch")
-
-                case_nodes.append(default_node)
-                default_block = self._lift_block(default_node, visited)
-
-                switch = IRSwitch(self.code, val, cases, default_block)
-                block.statements.append(switch)
-
-                convergence = None
-                for possible_node in self.cfg.nodes:
-                    is_convergence = True
-                    for case_node in case_nodes:
-                        if not any(succ == possible_node for succ, _ in case_node.branches):
-                            is_convergence = False
-                            break
-                    if is_convergence:
-                        convergence = possible_node
-                        break
-
-                if convergence:
-                    next_block = self._lift_block(convergence, visited)
-                    block.statements.append(next_block)
-
-            elif op.op == "Mov":
-                block.statements.append(
-                    IRAssign(
-                        self.code,
-                        self.locals[op.df["dst"].value],
-                        self.locals[op.df["src"].value],
+                elif op.op == "GetGlobal":
+                    block.statements.append(
+                        IRAssign(
+                            self.code,
+                            self.locals[op.df["dst"].value],
+                            IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df["global"]),
+                        )
                     )
-                )
 
-            elif op.op == "GetGlobal":
-                block.statements.append(
-                    IRAssign(
-                        self.code,
-                        self.locals[op.df["dst"].value],
-                        IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df["global"]),
-                    )
-                )
-
-            elif op.op == "JAlways":
-                if node.branches:
-                    target_node = node.branches[0][0]
-                    if current_loop_scope_nodes and target_node not in current_loop_scope_nodes:
-                         block.statements.append(IRBreak(self.code))
-                         return block
-                    else:
-                        block.statements.append(self._lift_block(target_node, visited, current_loop_scope_nodes=current_loop_scope_nodes))
-                        return block
-
-            elif op.op == "Field":
-                dst_local = self.locals[op.df["dst"].value]
-                obj_local = self.locals[op.df["obj"].value]
-
-                obj_type = obj_local.get_type()
-                if not isinstance(obj_type.definition, (Obj, Virtual)):
-                    raise DecompError(f"Field opcode used on a non-object type: {obj_type.definition}")
-
-                field_ref_op: fieldRef = op.df["field"]
-                field_core = field_ref_op.resolve_obj(self.code, obj_type.definition)
-                field_name = field_core.name.resolve(self.code)
-
-                field_expr = IRField(self.code, obj_local, field_name, field_core.type)
-                assign_stmt = IRAssign(self.code, dst_local, field_expr)
-                block.statements.append(assign_stmt)
-
-            elif op.op == "New":
-                dst_local = self.locals[op.df["dst"].value]
-                alloc_type_idx = self.func.regs[op.df["dst"].value]
-                new_expr = IRNew(self.code, alloc_type_idx)
-                block.statements.append(IRAssign(self.code, dst_local, new_expr))
-
-            elif op.op == "DynSet":
-                obj_local = self.locals[op.df["obj"].value]
-                src_local = self.locals[op.df["src"].value]
-
-                field_name = op.df["field"].resolve(self.code)
-
-                field_type_idx = self.func.regs[op.df["src"].value]
-
-                field_target = IRField(self.code, obj_local, field_name, field_type_idx)
-
-                assign_stmt = IRAssign(self.code, field_target, src_local)
-                block.statements.append(assign_stmt)
-
-            elif op.op == "ToVirtual":
-                dst_local = self.locals[op.df["dst"].value]
-                src_local = self.locals[op.df["src"].value]
-
-                target_type_idx = self.func.regs[op.df["dst"].value]
-
-                cast_expr = IRCast(self.code, target_type_idx, src_local)
-                assign_stmt = IRAssign(self.code, dst_local, cast_expr)
-                block.statements.append(assign_stmt)
-
-            elif op.op == "CallClosure":
-                dst_local = self.locals[op.df["dst"].value]
-                fun_local = self.locals[op.df["fun"].value]
-                arg_locals = [self.locals[arg.value] for arg in op.df["args"].value]
-
-                call_expr = IRCall(self.code, IRCall.CallType.CLOSURE, fun_local, arg_locals)
-                if dst_local.get_type().kind.value == Type.Kind.VOID.value:
-                    block.statements.append(call_expr)
-                else:
-                    assign_stmt = IRAssign(self.code, dst_local, call_expr)
-                    block.statements.append(assign_stmt)
-
-            elif op.op in ["Incr", "Decr"]:
-                dst_local = self.locals[op.df["dst"].value]
-                one_const = IRConst(self.code, IRConst.ConstType.INT, value=1)
-                arith_op = IRArithmetic.ArithmeticType.ADD if op.op == "Incr" else IRArithmetic.ArithmeticType.SUB
-                arith_expr = IRArithmetic(self.code, dst_local, one_const, arith_op)
-                assign_stmt = IRAssign(self.code, dst_local, arith_expr)
-                block.statements.append(assign_stmt)
-
-            elif op.op == "Neg":
-                dst_local = self.locals[op.df["dst"].value]
-                src_local = self.locals[op.df["src"].value]
-                zero_const = IRConst(self.code, IRConst.ConstType.INT, value=0)
-
-                arith_expr = IRArithmetic(self.code, zero_const, src_local, IRArithmetic.ArithmeticType.SUB)
-
-                assign_stmt = IRAssign(self.code, dst_local, arith_expr)
-                block.statements.append(assign_stmt)
-
-            elif op.op in [
-                "NullCheck",  # we ignore NullCheck because that's generated at compile-time
-            ]:
-                pass  # silently pass
-
-            else:
-                if "dst" in op.df:
+                elif op.op == "Field":
                     dst_local = self.locals[op.df["dst"].value]
-                    dst_type_idx = self.func.regs[op.df["dst"].value]
-                    untranslated_expr = IRUnliftedOpcode(self.code, op, dst_type_idx=dst_type_idx)
-                    assign_stmt = IRAssign(self.code, dst_local, untranslated_expr)
+                    obj_local = self.locals[op.df["obj"].value]
+
+                    obj_type = obj_local.get_type()
+                    if not isinstance(obj_type.definition, (Obj, Virtual)):
+                        raise DecompError(f"Field opcode used on a non-object type: {obj_type.definition}")
+
+                    field_ref_op: fieldRef = op.df["field"]
+                    field_core = field_ref_op.resolve_obj(self.code, obj_type.definition)
+                    field_name = field_core.name.resolve(self.code)
+
+                    field_expr = IRField(self.code, obj_local, field_name, field_core.type)
+                    assign_stmt = IRAssign(self.code, dst_local, field_expr)
                     block.statements.append(assign_stmt)
+
+                elif op.op == "New":
+                    dst_local = self.locals[op.df["dst"].value]
+                    alloc_type_idx = self.func.regs[op.df["dst"].value]
+                    new_expr = IRNew(self.code, alloc_type_idx)
+                    block.statements.append(IRAssign(self.code, dst_local, new_expr))
+
+                elif op.op == "DynSet":
+                    obj_local = self.locals[op.df["obj"].value]
+                    src_local = self.locals[op.df["src"].value]
+
+                    field_name = op.df["field"].resolve(self.code)
+
+                    field_type_idx = self.func.regs[op.df["src"].value]
+
+                    field_target = IRField(self.code, obj_local, field_name, field_type_idx)
+
+                    assign_stmt = IRAssign(self.code, field_target, src_local)
+                    block.statements.append(assign_stmt)
+
+                elif op.op == "ToVirtual":
+                    dst_local = self.locals[op.df["dst"].value]
+                    src_local = self.locals[op.df["src"].value]
+
+                    target_type_idx = self.func.regs[op.df["dst"].value]
+
+                    cast_expr = IRCast(self.code, target_type_idx, src_local)
+                    assign_stmt = IRAssign(self.code, dst_local, cast_expr)
+                    block.statements.append(assign_stmt)
+
+                elif op.op == "CallClosure":
+                    dst_local = self.locals[op.df["dst"].value]
+                    fun_local = self.locals[op.df["fun"].value]
+                    arg_locals = [self.locals[arg.value] for arg in op.df["args"].value]
+
+                    call_expr = IRCall(self.code, IRCall.CallType.CLOSURE, fun_local, arg_locals)
+                    if dst_local.get_type().kind.value == Type.Kind.VOID.value:
+                        block.statements.append(call_expr)
+                    else:
+                        assign_stmt = IRAssign(self.code, dst_local, call_expr)
+                        block.statements.append(assign_stmt)
+
+                elif op.op in ["Incr", "Decr"]:
+                    dst_local = self.locals[op.df["dst"].value]
+                    one_const = IRConst(self.code, IRConst.ConstType.INT, value=1)
+                    arith_op = IRArithmetic.ArithmeticType.ADD if op.op == "Incr" else IRArithmetic.ArithmeticType.SUB
+                    arith_expr = IRArithmetic(self.code, dst_local, one_const, arith_op)
+                    assign_stmt = IRAssign(self.code, dst_local, arith_expr)
+                    block.statements.append(assign_stmt)
+
+                elif op.op == "Neg":
+                    dst_local = self.locals[op.df["dst"].value]
+                    src_local = self.locals[op.df["src"].value]
+                    zero_const = IRConst(self.code, IRConst.ConstType.INT, value=0)
+
+                    arith_expr = IRArithmetic(self.code, zero_const, src_local, IRArithmetic.ArithmeticType.SUB)
+
+                    assign_stmt = IRAssign(self.code, dst_local, arith_expr)
+                    block.statements.append(assign_stmt)
+
+                elif op.op in ["JAlways", "NullCheck"]:
+                    # Handled elsewhere, just ignore
+                    pass 
+
                 else:
-                    untranslated_stmt = IRUnliftedOpcode(self.code, op)
-                    block.statements.append(untranslated_stmt)
+                    # Fallback for unhandled opcodes
+                    if "dst" in op.df:
+                        block.statements.append(IRAssign(self.code, self.locals[op.df['dst'].value], IRUnliftedOpcode(self.code, op)))
+                    else:
+                        block.statements.append(IRUnliftedOpcode(self.code, op))
 
-        if len(node.branches) == 1 and node.ops and node.ops[-1].op not in conditionals and node.ops[-1].op != 'JAlways':
-            next_node, _ = node.branches[0]
-            if next_node not in visited:
-                next_block = self._lift_block(next_node, visited, current_loop_scope_nodes=current_loop_scope_nodes)
-                block.statements.append(next_block)
-
-        return block
+            # After processing the opcodes in this block, continue to its single successor.
+            if node.branches:
+                successor_node, _ = node.branches[0]
+                next_block = self._lift_block(successor_node, visited, stop_at)
+                block.statements.extend(next_block.statements)
+            
+            return block
 
     def print(self) -> None:
         print(self.block.pprint())
