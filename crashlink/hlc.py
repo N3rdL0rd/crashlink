@@ -336,7 +336,7 @@ def generate_structs(code: Bytecode) -> List[str]:
     res.append("")
 
     line("// Class/Struct definitions")
-    for i, typ in tqdm(sorted(struct_map.items())) if USE_TQDM else sorted(struct_map.items()):
+    for i, typ in tqdm(sorted(struct_map.items())) if USE_TQDM else sorted(struct_map.items()): # pyright: ignore[reportPossiblyUnboundVariable]
         df = typ.definition
         assert isinstance(df, (Obj, Struct)), f"Expected definition to be Obj or Struct, got {type(df).__name__}."
         line(f"struct _obj${i} {{ /* {df.name.resolve(code)} */")
@@ -362,11 +362,11 @@ def generate_types(code: Bytecode) -> List[str]:
     types = code.types
 
     line("// Type shells")
-    for i, typ in tqdm(enumerate(types), desc="Generating type shells") if USE_TQDM else enumerate(types):
+    for i, typ in tqdm(enumerate(types), desc="Generating type shells") if USE_TQDM else enumerate(types): # pyright: ignore[reportPossiblyUnboundVariable]
         line(f"hl_type t${i} = {{ {KIND_SHELLS[typ.kind.value]} }};")
 
     line("\n// Type data")
-    for i, typ in tqdm(enumerate(types), desc="Generating types") if USE_TQDM else enumerate(types):
+    for i, typ in tqdm(enumerate(types), desc="Generating types") if USE_TQDM else enumerate(types): # pyright: ignore[reportPossiblyUnboundVariable]
         df = typ.definition
         if isinstance(df, (Obj, Struct)):
             if df.fields:
@@ -491,7 +491,7 @@ def generate_globals(code: Bytecode) -> List[str]:
         c_type_str = ctype(code, g_type, all_types.index(g_type))
         line(f"{c_type_str} g${i} = 0;")
 
-    for const in tqdm(code.constants, desc="Generating global constants") if USE_TQDM else code.constants:
+    for const in tqdm(code.constants, desc="Generating global constants") if USE_TQDM else code.constants: # pyright: ignore[reportPossiblyUnboundVariable]
         obj = const._global.resolve(code).definition
         objIdx = const._global.partial_resolve(code).value
         assert isinstance(obj, Obj), (
@@ -542,7 +542,7 @@ def generate_globals(code: Bytecode) -> List[str]:
 
     line("\nvoid hl_init_roots() {")
     with indent:
-        for const in tqdm(code.constants, desc="Initializing global constants") if USE_TQDM else code.constants:
+        for const in tqdm(code.constants, desc="Initializing global constants") if USE_TQDM else code.constants: # pyright: ignore[reportPossiblyUnboundVariable]
             line(f"g${const._global.value} = &const_g${const._global.value};")
         for i, g_type_ptr in enumerate(code.global_types):
             g_type = g_type_ptr.resolve(code)
@@ -658,7 +658,7 @@ def generate_reflection(code: Bytecode) -> List[str]:
             fun_by_args[nargs] = {}
         fun_by_args[nargs][(kinded_args, kinded_ret)] = None
 
-    for func in tqdm(code.functions, desc="Collecting function signatures") if USE_TQDM else code.functions:
+    for func in tqdm(code.functions, desc="Collecting function signatures") if USE_TQDM else code.functions: # pyright: ignore[reportPossiblyUnboundVariable]
         for op in func.ops:
             if op.op in {"SafeCast", "DynGet"}:
                 dst_type = func.regs[op.df["dst"].value].resolve(code)
@@ -687,7 +687,7 @@ def generate_reflection(code: Bytecode) -> List[str]:
         line("switch( t->fun->nargs ) {")
 
         sorted_arg_counts = sorted(fun_by_args.keys())
-        for nargs in tqdm(sorted_arg_counts, desc="Generating signatures") if USE_TQDM else sorted_arg_counts:
+        for nargs in tqdm(sorted_arg_counts, desc="Generating signatures") if USE_TQDM else sorted_arg_counts: # pyright: ignore[reportPossiblyUnboundVariable]
             line(f"case {nargs}:")
             with indent:
                 if nargs > 9:
@@ -1128,7 +1128,7 @@ def generate_functions(code: Bytecode) -> List[str]:
 
         return f"{c_enum_name}_{c_constr_name}"
 
-    for function in tqdm(code.functions, desc="Generating function prototypes") if USE_TQDM else code.functions:
+    for function in tqdm(code.functions, desc="Generating function prototypes") if USE_TQDM else code.functions: # pyright: ignore[reportPossiblyUnboundVariable]
         fun = function.type.resolve(code).definition
         assert isinstance(fun, Fun), (
             f"Expected function type to be Fun, got {type(fun).__name__}. This should never happen."
@@ -1139,7 +1139,7 @@ def generate_functions(code: Bytecode) -> List[str]:
         args_str = ", ".join(args) if args else "void"
         line(f"{ret_t} f${function.findex.value}({args_str}); /* t${function.type.value} */")
 
-    for function in tqdm(code.functions, desc="Generating functions") if USE_TQDM else code.functions:
+    for function in tqdm(code.functions, desc="Generating functions") if USE_TQDM else code.functions: # pyright: ignore[reportPossiblyUnboundVariable]
         fun = function.type.resolve(code).definition
         assert isinstance(fun, Fun), (
             f"Expected function type to be Fun, got {type(fun).__name__}. This should never happen."

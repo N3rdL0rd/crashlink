@@ -140,7 +140,7 @@ class BaseCommands:
             if primary_cmd_name:
                 commands[primary_cmd_name] = func
                 if hasattr(func, "_aliases"):
-                    for alias_name in func._aliases:
+                    for alias_name in func._aliases: # pyright: ignore[reportAttributeAccessIssue]
                         commands[alias_name] = func
 
         return commands
@@ -169,7 +169,7 @@ class BaseCommands:
         for name, func in inspect.getmembers(self, predicate=inspect.ismethod):
             if hasattr(func, "_aliases"):
                 primary_name = getattr(func, "_primary_alias", name)
-                alias_map[primary_name] = list(func._aliases)
+                alias_map[primary_name] = list(func._aliases) # pyright: ignore[reportAttributeAccessIssue]
 
         return alias_map
 
@@ -483,7 +483,21 @@ class Commands(BaseCommands):
     def types(self, args: List[str]) -> None:
         """List all types in the bytecode."""
         for i, type in enumerate(self.code.types):
-            print(f"Type {i}: {type}")
+            print(f"Type t@{i}: ", end="")
+            dfn = type.definition
+            if isinstance(dfn, Obj):
+                print(f"Obj {dfn.name.resolve(self.code)}")
+            elif isinstance(dfn, Fun):
+                print(f"Fun {dfn.str_resolve(self.code)}")
+            else:
+                print(type.kind)
+                
+    def objs(self, args: List[str]) -> None:
+        """List all Objs in the bytecode."""
+        for i, type in enumerate(self.code.types):
+            dfn = type.definition
+            if isinstance(dfn, Obj):
+                print(f"Type t@{i}: {dfn.name.resolve(self.code)}")
 
     @primary("type")
     @alias("t")
@@ -1058,6 +1072,51 @@ class Commands(BaseCommands):
             print(
                 f"Total references found: {total_references} (Direct: {direct_references_found}, Via Globals: {global_refs_to_this_string_found})"
             )
+            
+    @primary("class")
+    @alias("cls")
+    @alias("c")
+    def class_(self, args: List[str]) -> None:
+        """Decompiles an entire class by its type index. `class <tIndex>`"""
+        if len(args) == 0:
+            print("Usage: class <tIndex>")
+            return
+        try:
+            index = int(args[0])
+        except ValueError:
+            print("Invalid tIndex.")
+            return
+
+        try:
+            typ = self.code.types[index]
+            if not isinstance(typ.definition, Obj):
+                print(f"Type t@{index} is not a class (Obj).")
+                return
+
+            ir_class = decomp.IRClass(self.code, typ.definition)
+            res = ir_class.pseudo()
+
+            print("\n")
+
+            try:
+                from pygments import highlight
+                from pygments.lexers import HaxeLexer
+                from pygments.formatters import Terminal256Formatter
+
+                lexer = HaxeLexer()
+                formatter = Terminal256Formatter(style="dracula")
+                highlighted_output = highlight(res, lexer, formatter)
+                print(highlighted_output)
+            except ImportError:
+                print("[warning] pygments not found.")
+                print(res)
+        except IndexError:
+            print(f"Type t@{index} not found.")
+        except Exception as e:
+            print(f"An error occurred during class decompilation: {e}")
+            # A simple way is to check the main args, but ideally it's passed during init.
+            if "-t" in sys.argv or "--traceback" in sys.argv:
+                traceback.print_exc()
 
 
 def handle_cmd(code: Bytecode, cmd: str) -> None:
