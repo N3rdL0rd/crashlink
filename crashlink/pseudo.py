@@ -7,11 +7,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Optional, List
 
-from .core import Bytecode, Obj, Type, Function, Fun
+from .core import Bytecode, Obj, Type, Function, Fun, destaticify
 from . import disasm
 from .decomp import (
     IRBreak,
     IRCast,
+    IRClass,
     IRField,
     IRFunction,
     IRBlock,
@@ -57,7 +58,7 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         elif expr.value is None:  # For IRConst.ConstType.NULL
             return "null"
         elif isinstance(expr.value, Type) and isinstance(expr.value.definition, Obj):
-            return disasm.destaticify(expr.value.definition.name.resolve(code))
+            return destaticify(expr.value.definition.name.resolve(code))
         return str(expr.value)
 
     elif isinstance(expr, IRArithmetic):
@@ -297,70 +298,132 @@ def _generate_statements(
 
     return output_lines
 
-
-def pseudo(ir_func: IRFunction) -> str:
-    """
-    Generates Haxe pseudocode from a given IRFunction.
-    """
+def _generate_function_pseudo(ir_func: IRFunction) -> str:
+    """Generates the Haxe pseudocode for a single function, without the class wrapper."""
     code: Bytecode = ir_func.code
-    func_core: Function = ir_func.func  # crashlink.core.Function
+    func_core: Function = ir_func.func
 
     output_lines: List[str] = []
     base_indent = 0
 
-    # Function Signature
     func_name_str = code.partial_func_name(func_core) or f"f{func_core.findex.value}"
-    static_kw = "static " if disasm.is_static(code, func_core) else ""
+    static_kw = ""
+    
+    # A better way might be to just call disasm.is_static
+    if disasm.is_static(code, func_core):
+        static_kw = "static "
+
+
+    if not func_name_str or func_name_str == "<none>":
+        return f"// Could not determine name for f@{func_core.findex.value}"
 
     params_str_list = []
-    return_type_str = "Void"  # Default
+    return_type_str = "Void"
 
     core_fun_type_def = func_core.type.resolve(code).definition
-    if isinstance(core_fun_type_def, Fun):  # crashlink.core.Fun
+    if isinstance(core_fun_type_def, Fun):
         for i, arg_type_idx in enumerate(core_fun_type_def.args):
             arg_core_type = arg_type_idx.resolve(code)
             arg_haxe_type_name = disasm.type_to_haxe(disasm.type_name(code, arg_core_type))
 
-            param_name = f"arg{i}"  # Default name
-            # Try to get actual param name from debug assigns (op index < 0)
+            param_name = f"arg{i}"
             if func_core.has_debug and func_core.assigns:
                 arg_assigns = [a for a in func_core.assigns if a[1].value < 0]
                 if i < len(arg_assigns):
                     param_name = arg_assigns[i][0].resolve(code)
 
-            param_type_decl = (
-                f": {arg_haxe_type_name}" if arg_haxe_type_name and arg_haxe_type_name != "Dynamic" else ""
-            )
+            param_type_decl = f": {arg_haxe_type_name}" if arg_haxe_type_name and arg_haxe_type_name != "Dynamic" else ""
             params_str_list.append(f"{param_name}{param_type_decl}")
 
         ret_core_type = core_fun_type_def.ret.resolve(code)
         return_type_str = disasm.type_to_haxe(disasm.type_name(code, ret_core_type))
 
     params_joined_str = ", ".join(params_str_list)
-    func_header = (
-        f"{_indent_str(base_indent)}{static_kw}function {func_name_str}({params_joined_str}): {return_type_str} {{"
-    )
+    func_header = f"{static_kw}function {func_name_str}({params_joined_str}): {return_type_str} {{"
     output_lines.append(func_header)
 
-    # Function Body
-    # Initialize declared_vars with function parameters
-    initial_declared_vars = {p_name.split(":")[0] for p_name in params_str_list}
+    initial_declared_vars = {p.split(":")[0].strip() for p in params_str_list}
 
     body_lines = _generate_statements(ir_func.block.statements, code, ir_func, base_indent + 1, initial_declared_vars)
     output_lines.extend(body_lines)
 
-    output_lines.append(f"{_indent_str(base_indent)}}}")
+    output_lines.append("}")
 
-    # Attempt to wrap in a class for context if class name can be derived
-    full_name = code.full_func_name(func_core)
+    return "\n".join(output_lines)
+
+
+def pseudo(ir_func: IRFunction) -> str:
+    """
+    Generates Haxe pseudocode from a given IRFunction, wrapped in a class for context.
+    """
+    function_body_str = _generate_function_pseudo(ir_func)
+
+    full_name = ir_func.code.full_func_name(ir_func.func)
     class_name_suggestion = "DecompiledClass"
-    if "." in full_name:
+    if "." in full_name and full_name != "<none>.<none>":
         class_name_part = full_name.split(".")[0]
         if class_name_part and class_name_part != "<none>":
-            class_name_suggestion = class_name_part.replace(".", "_")  # Handle Haxe internal names
+            class_name_suggestion = class_name_part.replace(".", "_")
 
     final_output = [f"class {class_name_suggestion} {{"]
-    final_output.extend(["    " + line for line in output_lines])  # Indent function within class
+    final_output.extend(["    " + line for line in function_body_str.split("\n")])
     final_output.append("}")
 
     return "\n".join(final_output)
+
+
+def class_pseudo(ir_class: "IRClass") -> str:
+    """
+    Generates Haxe pseudocode for an entire IRClass.
+    """
+    code: Bytecode = ir_class.code
+    
+    primary_obj = ir_class.dynamic if ir_class.dynamic else ir_class.static
+    if not primary_obj:
+        return "// Error: IRClass contains no valid Obj definitions."
+
+    output_lines: List[str] = []
+    indent_str = _indent_str(1)
+
+    class_name = destaticify(primary_obj.name.resolve(code))
+    header = f"class {class_name}"
+    if ir_class.dynamic and ir_class.dynamic.super and ir_class.dynamic.super.value > 0:
+        super_type = ir_class.dynamic.super.resolve(code)
+        if isinstance(super_type.definition, Obj):
+            super_name = destaticify(super_type.definition.name.resolve(code))
+            header += f" extends {super_name}"
+    header += " {"
+    output_lines.append(header)
+
+    if ir_class.static_fields:
+        for field_name, field_type in ir_class.static_fields:
+            field_type_haxe = disasm.type_to_haxe(disasm.type_name(code, field_type))
+            output_lines.append(f"{indent_str}public static var {field_name}: {field_type_haxe};")
+        output_lines.append("")
+
+    if ir_class.fields:
+        for field_name, field_type in ir_class.fields:
+            field_type_haxe = disasm.type_to_haxe(disasm.type_name(code, field_type))
+            output_lines.append(f"{indent_str}public var {field_name}: {field_type_haxe};")
+        output_lines.append("")
+
+    for ir_func in ir_class.static_methods:
+        # A bit of a hack to give the generator context about where the function came from
+        setattr(ir_func, '_containing_class', ir_class)
+        func_str = _generate_function_pseudo(ir_func)
+        for line in func_str.split('\n'):
+            output_lines.append(f"{indent_str}{line}")
+        output_lines.append("")
+
+    for ir_func in ir_class.methods:
+        setattr(ir_func, '_containing_class', ir_class)
+        func_str = _generate_function_pseudo(ir_func)
+        for line in func_str.split('\n'):
+            output_lines.append(f"{indent_str}{line}")
+        output_lines.append("")
+
+    if output_lines and output_lines[-1] == "":
+        output_lines.pop()
+
+    output_lines.append("}")
+    return "\n".join(output_lines)

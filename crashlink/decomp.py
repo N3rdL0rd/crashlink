@@ -2379,7 +2379,7 @@ class IRFunction:
                 )
 
             elif op.op == "Ret":
-                if isinstance(op.df["ret"].resolve(self.code).definition, Void):
+                if isinstance(self.func.regs[op.df["ret"].value].resolve(self.code).definition, Void):
                     block.statements.append(IRReturn(self.code))
                 else:
                     block.statements.append(IRReturn(self.code, self.locals[op.df["ret"].value]))
@@ -2571,6 +2571,89 @@ class IRFunction:
 
     def print(self) -> None:
         print(self.block.pprint())
+
+
+class IRClass:
+    """
+    Intermediate representation of a class.
+    """
+    
+    def __init__(
+        self,
+        code: Bytecode,
+        obj: Obj
+    ) -> None:
+        self.code = code
+        self.dynamic: Optional[Obj] = None
+        self.static: Optional[Obj] = None
+        if obj.is_static:
+            self.static = obj
+            try:
+                self.dynamic = obj.dynamic
+            except (ValueError, AttributeError):
+                self.dynamic = None
+        else:
+            self.dynamic = obj
+            try:
+                self.static = obj.static
+            except (ValueError, AttributeError):
+                self.static = None
+        self.methods: List[IRFunction] = []
+        self.static_methods: List[IRFunction] = []
+        self.fields: List[Tuple[str, Type]] = []
+        self.static_fields: List[Tuple[str, Type]] = []
+        if self.dynamic is None and self.static is None:
+            raise ValueError("IRClass needs at least one valid Obj that has been preprocessed by `Bytecode.map_statics`!")
+        
+        if self.dynamic:
+            self.methods += self.gather_methods(self.dynamic)
+            self.fields += self.gather_fields(self.dynamic)
+        if self.static:
+            self.static_methods += self.gather_methods(self.static)
+            self.static_fields += self.gather_fields(self.static)
+        
+    def gather_methods(self, obj: Obj) -> List[IRFunction]:
+        """
+        Gathers all methods from an instance of Obj.
+        """
+        res: List[IRFunction] = []
+        for proto in obj.protos:
+            fn = proto.findex.resolve(self.code)
+            assert isinstance(fn, Function), "Native protos aren't supported! Not even sure if this is possible tbh"
+            res.append(IRFunction(self.code, fn))
+        for binding in obj.bindings:
+            fn = binding.findex.resolve(self.code)
+            assert isinstance(fn, Function), "Native bindings aren't supported! Not even sure if this is possible tbh"
+            # Avoid adding duplicates if a proto is also bound
+            if fn not in [r.func for r in res]:
+                res.append(IRFunction(self.code, fn))
+        return res
+    
+    def gather_fields(self, obj: Obj) -> List[Tuple[str, Type]]:
+        res: List[Tuple[str, Type]] = []
+        binding_names: List[str] = []
+        for binding in obj.bindings:
+            binding_names.append(binding.field.resolve_obj(self.code, obj).name.resolve(self.code))
+        for field in obj.fields:
+            if not field.name.resolve(self.code) in binding_names:
+                res.append((
+                    field.name.resolve(self.code),
+                    field.type.resolve(self.code)
+                ))
+        return res
+
+    def pseudo(self) -> str:
+        """
+        Generates Haxe pseudocode for the entire class.
+        """
+        from . import pseudo
+        return pseudo.class_pseudo(self)
+
+    def print(self) -> None:
+        """
+        Prints the Haxe pseudocode for the entire class to the console.
+        """
+        print(self.pseudo())
 
 
 __all__ = [

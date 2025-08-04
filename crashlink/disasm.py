@@ -29,18 +29,9 @@ from .core import (
     fileRef,
     tIndex,
     Enum,
+    destaticify
 )
 from .opcodes import opcodes
-
-
-def destaticify(s: str) -> str:
-    """
-    Transforms an static Obj's name into the normal class name.
-    """
-    parts = s.rsplit(".", 1)
-    if len(parts) == 2 and parts[1].startswith("$"):
-        parts[1] = parts[1][1:]
-    return ".".join(parts)
 
 
 def type_name(code: Bytecode, typ: Type) -> str:
@@ -509,7 +500,7 @@ def gen_docs(code: Bytecode) -> Dict[str, str]:
                     defn: Obj = obj.definition
                     res[defn.name.resolve(code) + ".html"] = gen_docs_for_obj(code, defn)
         else:
-            for obj in tqdm(code.types):
+            for obj in tqdm(code.types): # pyright: ignore[reportPossiblyUnboundVariable]
                 if obj.kind.value == kind:
                     if not isinstance(obj.definition, Obj):
                         raise TypeError(f"Expected Obj, got {obj.definition}")
