@@ -28,7 +28,7 @@ from .core import (
 )
 from .errors import DecompError
 from .globals import DEBUG, dbg_print
-from .opcodes import arithmetic, conditionals, terminal
+from .opcodes import arithmetic, conditionals, terminal, simple_calls
 
 
 def _get_type_in_code(code: Bytecode, name: str) -> Type:
@@ -1941,23 +1941,32 @@ class IRGlobalStringOptimizer(TraversingIROptimizer):
 class IRTempAssignmentInliner(TraversingIROptimizer):
     """
     Optimizes IR by inlining temporary variable assignments.
-    It finds assignments `temp = expr` and replaces subsequent uses of `temp`
-    with `expr`, provided the expression is safe to duplicate and `temp` is not
-    redefined in between.
+    This optimizer has two modes, controlled by the `aggressive` flag.
+
+    Crucially, this optimizer will NOT inline any assignment to a variable
+    that has an explicit name in the Haxe source code's debug information.
+    It only targets compiler-generated temporary variables.
+
+    - Conservative Mode (aggressive=False, default): Only inlines an assignment
+      `temp = expr` if `temp` is used in the immediately following statement.
+
+    - Aggressive Mode (aggressive=True): Inlines "safe" expressions (like constants)
+      into all subsequent uses of a temporary variable, as long as that variable
+      is not redefined.
     """
 
-    def is_safe_to_inline(self, expr: IRExpression) -> bool:
-        """
-        Determines if an expression can be safely copied without changing
-        the program's semantics.
-        """
-        if isinstance(expr, (IRConst, IRLocal)):
-            return True
-        if isinstance(expr, IRField):
-            # A field access is only safe if the object it's accessing is also safe.
-            return self.is_safe_to_inline(expr.target)
-        # Anything else (IRNew, IRCall, IRArithmetic) is considered unsafe.
-        return False
+    def __init__(self, function: "IRFunction", aggressive: bool = False):
+        super().__init__(function)
+        self.aggressive = aggressive
+        
+        # --- NEW: Pre-calculate the set of all user-named variables ---
+        self._user_variable_names: Set[str] = set()
+        if self.func.func.has_debug and self.func.func.assigns:
+            for name_ref, _ in self.func.func.assigns:
+                # We resolve the string reference to get the actual variable name
+                self._user_variable_names.add(name_ref.resolve(self.func.code))
+        dbg_print(f"IRTempAssignmentInliner: Protecting user variables: {self._user_variable_names}")
+
 
     def _substitute_in_expr(self, expr: IRExpression, target: IRLocal, replacement: IRExpression) -> IRExpression:
         """Recursively substitutes a local with an expression within another expression."""
@@ -1969,82 +1978,136 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 expr.left = self._substitute_in_expr(expr.left, target, replacement)
             if expr.right:
                 expr.right = self._substitute_in_expr(expr.right, target, replacement)
-
         elif isinstance(expr, IRCall):
-            # The type of expr.target is Union[IRConst, IRLocal, None]
             if expr.target is not None:
                 new_target = self._substitute_in_expr(expr.target, target, replacement)
-                # We must CAST the result to tell mypy it's a valid type for this slot.
-                # We know expr.target is not None here, so the valid types are IRConst or IRLocal.
                 expr.target = cast(Union[IRConst, IRLocal], new_target)
-
             expr.args = [self._substitute_in_expr(arg, target, replacement) for arg in expr.args]
-
         elif isinstance(expr, IRField):
             expr.target = self._substitute_in_expr(expr.target, target, replacement)
-
         elif isinstance(expr, IRCast):
             expr.expr = self._substitute_in_expr(expr.expr, target, replacement)
-
+        
         return expr
 
-    def _substitute_in_statement(self, stmt: IRStatement, target: IRLocal, replacement: IRExpression) -> None:
-        """Recursively traverses a statement to perform substitutions."""
+    def _substitute_in_statement(self, stmt: IRStatement, target: IRLocal, replacement: IRExpression) -> bool:
+        """
+        Recursively traverses a statement to perform substitutions.
+        Returns True if a substitution was made, False otherwise.
+        """
+        made_change = False
+        original_repr = repr(stmt) 
+
         if isinstance(stmt, IRAssign):
             if stmt.target != target and isinstance(stmt.target, IRExpression):
                 self._substitute_in_expr(stmt.target, target, replacement)
             if isinstance(stmt.expr, IRExpression):
                 stmt.expr = self._substitute_in_expr(stmt.expr, target, replacement)
-        elif isinstance(stmt, IRExpression):  # Handles standalone calls and other expressions
+        elif isinstance(stmt, IRExpression):
             self._substitute_in_expr(stmt, target, replacement)
         elif isinstance(stmt, IRReturn):
             if stmt.value:
                 stmt.value = self._substitute_in_expr(stmt.value, target, replacement)
-        # Recurse into control flow structures
+        
         for child in stmt.get_children():
-            if child is not stmt:  # Avoid infinite recursion
-                self._substitute_in_statement(child, target, replacement)
+            if child is not stmt:
+                if self._substitute_in_statement(child, target, replacement):
+                    made_change = True
+
+        if not made_change and repr(stmt) != original_repr:
+            made_change = True
+            
+        return made_change
 
     def _is_local_redefined(self, local_to_check: IRLocal, statements: List[IRStatement]) -> bool:
         """Checks if a local is the target of an assignment in a list of statements."""
         for stmt in statements:
             if isinstance(stmt, IRAssign) and stmt.target == local_to_check:
                 return True
-            # Recurse into control flow structures
             for child in stmt.get_children():
-                if self._is_local_redefined(
-                    local_to_check, [child] if not isinstance(child, IRBlock) else child.statements
-                ):
+                child_stmts = child.statements if isinstance(child, IRBlock) else [child]
+                if self._is_local_redefined(local_to_check, child_stmts):
                     return True
         return False
 
+    def is_safe_to_inline_aggressively(self, expr: IRExpression) -> bool:
+        """
+        Determines if an expression can be safely copied multiple times
+        without changing the program's semantics.
+        """
+        if isinstance(expr, (IRConst, IRLocal)):
+            return True
+        if isinstance(expr, IRField):
+            return self.is_safe_to_inline_aggressively(expr.target)
+        return False
+
     def visit_block(self, block: IRBlock) -> None:
+        if self.aggressive:
+            self._visit_block_aggressive(block)
+        else:
+            self._visit_block_conservative(block)
+
+    def _visit_block_conservative(self, block: IRBlock) -> None:
+        """Only inlines an assignment if it is used in the very next statement."""
+        if not block.statements:
+            return
+
+        new_statements: List[IRStatement] = []
+        i = 0
+        statements = block.statements
+        while i < len(statements):
+            current_stmt = statements[i]
+            inlined = False
+
+            if isinstance(current_stmt, IRAssign) and isinstance(current_stmt.target, IRLocal):
+                temp_local = current_stmt.target
+
+                # --- MODIFIED: Check if the variable is user-named before attempting to inline ---
+                if temp_local.name not in self._user_variable_names:
+                    expr_to_inline = current_stmt.expr
+                    if i + 1 < len(statements):
+                        next_stmt = statements[i + 1]
+                        if self._substitute_in_statement(next_stmt, temp_local, expr_to_inline):
+                            dbg_print(f"Conservatively inlining assignment for temporary '{temp_local.name}'.")
+                            new_statements.append(next_stmt)
+                            i += 2
+                            inlined = True
+
+            if not inlined:
+                new_statements.append(current_stmt)
+                i += 1
+        
+        block.statements = new_statements
+
+    def _visit_block_aggressive(self, block: IRBlock) -> None:
+        """Inlines safe expressions everywhere they are used, until no more changes can be made."""
         made_change_in_pass = True
         while made_change_in_pass:
             made_change_in_pass = False
-            statements_to_remove = []
+            statements_to_remove: List[IRStatement] = []
 
             for i, stmt in enumerate(block.statements):
                 if not (isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)):
                     continue
 
                 temp_local = stmt.target
+                
+                # --- MODIFIED: Protect user-named variables from aggressive inlining ---
+                if temp_local.name in self._user_variable_names:
+                    continue
+
                 expr_to_inline = stmt.expr
 
-                if not isinstance(expr_to_inline, IRExpression) or not self.is_safe_to_inline(expr_to_inline):
+                if not isinstance(expr_to_inline, IRExpression) or not self.is_safe_to_inline_aggressively(expr_to_inline):
+                    continue
+                if temp_local in expr_to_inline.get_children() or temp_local == expr_to_inline:
                     continue
 
-                if isinstance(expr_to_inline, IRExpression) and (
-                    temp_local in expr_to_inline.get_children() or temp_local == expr_to_inline
-                ):
-                    continue
-
-                remaining_statements = block.statements[i + 1 :]
-
+                remaining_statements = block.statements[i + 1:]
                 if self._is_local_redefined(temp_local, remaining_statements):
                     continue
 
-                dbg_print(f"Inlining safe expression from {stmt} into subsequent statements.")
+                dbg_print(f"Aggressively inlining safe expression from temporary '{temp_local.name}'.")
                 for subsequent_stmt in remaining_statements:
                     self._substitute_in_statement(subsequent_stmt, temp_local, expr_to_inline)
 
@@ -2055,7 +2118,6 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             if statements_to_remove:
                 block.statements = [s for s in block.statements if s not in statements_to_remove]
 
-        # After inlining, recurse into child blocks
         for stmt in block.statements:
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
@@ -2194,7 +2256,7 @@ class IRFunction:
                 IRLoopConditionOptimizer(self),
                 IRSelfAssignOptimizer(self),
                 IRCommonBlockMerger(self),
-                IRTempAssignmentInliner(self),
+                IRTempAssignmentInliner(self, aggressive=False),
                 IRVoidAssignOptimizer(self),
                 IRTraceOptimizer(self),
                 IRBlockFlattener(self),
@@ -2320,284 +2382,141 @@ class IRFunction:
         visited: Set[CFNode],
         stop_at: Optional[CFNode] = None,
     ) -> IRBlock:
+        """
+        Recursively lifts a CFNode and its successors into an IRBlock.
+
+        Args:
+            node: The current CFNode to process.
+            visited: A set of nodes already processed in the current traversal path to prevent infinite loops.
+            stop_at: A CFNode that signals the end of the current branch (the convergence point).
+                     When this node is reached, the recursive call terminates.
+
+        Returns:
+            An IRBlock containing the lifted IR statements.
+        """
+        # --- Base Cases for Recursion Termination ---
         if node is None or node == stop_at or node in visited:
             return IRBlock(self.code)
         visited.add(node)
 
         block = IRBlock(self.code)
-        
-        # Check for a Loop Header
-        if node in self.cfg.loops:
-            loop_nodes = self.cfg.loops[node]
-            header = node
+        last_op = node.ops[-1] if node.ops else None
 
-            # The loop's exit is the immediate post-dominator of the header.
-            # This is the single node where control flow reconverges after the loop.
-            loop_exit_node = self.cfg.immediate_post_dominators.get(header)
-            
-            # The body of the loop starts at the successor of the header that is *inside* the loop.
-            # (There might also be an edge leading out of the header immediately, which is rare)
-            body_entry_node = None
-            for succ, _ in header.branches:
-                if succ in loop_nodes:
-                    body_entry_node = succ
-                    break
-            
-            # Lift the body recursively. The body ends at the loop's overall exit.
-            # We pass a copy of `visited` because the body is a distinct subgraph.
-            body_ir = self._lift_block(body_entry_node, visited.copy(), stop_at=loop_exit_node)
-            
-            # For now, we represent this as a primitive loop. The body contains the full
-            # lifted logic, and the condition can be determined later or is implicit.
-            # A more advanced lifter would analyze the header's condition.
-            loop_stmt = IRPrimitiveLoop(self.code, IRBlock(self.code), body_ir)
-            block.statements.append(loop_stmt)
+        # --- 1. Process the Content of the Current Node ---
+        # Determine which opcodes are for content vs. control flow.
+        # If the last op is a branch/return, we don't lift it as a regular statement.
+        is_last_op_control_flow = last_op and last_op.op in (conditionals + ["Switch", "Ret", "JAlways", "Throw", "Rethrow"])
+        ops_to_process = node.ops[:-1] if is_last_op_control_flow else node.ops
 
-            # Mark all nodes of this loop as visited so we don't process them again.
-            visited.update(loop_nodes)
+        for op in ops_to_process:
+            if op.op in arithmetic:
+                dst = self.locals[op.df["dst"].value]
+                lhs = self.locals[op.df["a"].value]
+                rhs = self.locals[op.df["b"].value]
+                block.statements.append(IRAssign(self.code, dst, IRArithmetic(self.code, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])))
+            elif op.op in ["Int", "Float", "Bool", "Bytes", "String", "Null"]:
+                dst = self.locals[op.df["dst"].value]
+                const_type = IRConst.ConstType[op.op.upper()]
+                value = op.df["value"].value if op.op == "Bool" else None
+                if op.op not in ["Bool", "Null"]:
+                    const = IRConst(self.code, const_type, op.df["ptr"], value)
+                else:
+                    const = IRConst(self.code, const_type, value=value)
+                block.statements.append(IRAssign(self.code, dst, const))
+            elif op.op in simple_calls:
+                n = int(op.op[-1]) if op.op != "CallN" else len(op.df['args'].value)
+                dst = self.locals[op.df["dst"].value]
+                fun = IRConst(self.code, IRConst.ConstType.FUN, op.df["fun"])
+                args = [self.locals[op.df[f"arg{i}"].value] for i in range(n)] if op.op != "CallN" else [self.locals[arg.value] for arg in op.df['args'].value]
+                call_expr = IRCall(self.code, IRCall.CallType.FUNC, fun, args)
 
-            # After the loop, continue lifting from the loop's exit node.
-            next_block = self._lift_block(loop_exit_node, visited)
-            block.statements.extend(next_block.statements)
-            
-            return block
+                if dst.get_type().kind.value == Type.Kind.VOID.value:
+                     block.statements.append(call_expr)
+                else:
+                    block.statements.append(IRAssign(self.code, dst, call_expr))
+            elif op.op == "Mov":
+                block.statements.append(IRAssign(self.code, self.locals[op.df["dst"].value], self.locals[op.df["src"].value]))
+            elif op.op == "GetGlobal":
+                block.statements.append(IRAssign(self.code, self.locals[op.df["dst"].value], IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df["global"])))
+            elif op.op == "Field":
+                dst_local, obj_local = self.locals[op.df["dst"].value], self.locals[op.df["obj"].value]
+                obj_type = obj_local.get_type()
+                if not isinstance(obj_type.definition, (Obj, Virtual)):
+                    raise DecompError(f"Field opcode used on non-object type: {obj_type.definition}")
+                field_core = op.df["field"].resolve_obj(self.code, obj_type.definition)
+                field_expr = IRField(self.code, obj_local, field_core.name.resolve(self.code), field_core.type)
+                block.statements.append(IRAssign(self.code, dst_local, field_expr))
+            elif op.op == "New":
+                dst_local = self.locals[op.df["dst"].value]
+                alloc_type_idx = self.func.regs[op.df["dst"].value]
+                new_expr = IRNew(self.code, alloc_type_idx)
+                block.statements.append(IRAssign(self.code, dst_local, new_expr))
+            elif op.op == "ToSFloat":
+                dst_local = self.locals[op.df["dst"].value]
+                src_local = self.locals[op.df["src"].value]
+                
+                f64_idx = self.code.find_prim_type(Type.Kind.F64)
+                
+                cast_expr = IRCast(self.code, f64_idx, src_local)
+                block.statements.append(IRAssign(self.code, dst_local, cast_expr))
+            # --- Add other non-branching opcode handling here ---
+            else:
+                # Fallback for any other unhandled opcodes
+                if "dst" in op.df:
+                    block.statements.append(IRAssign(self.code, self.locals[op.df['dst'].value], IRUnliftedOpcode(self.code, op)))
+                else:
+                    # Statement that has side-effects but no destination
+                    block.statements.append(IRUnliftedOpcode(self.code, op))
 
-        # Check for a Conditional Branch (if/else)
-        elif len(node.branches) == 2:
-            # The convergence point is the immediate post-dominator of the conditional node.
+        # --- 2. Handle the Control Flow based on the Last Opcode ---
+        if last_op and last_op.op in conditionals:
             convergence_node = self.cfg.immediate_post_dominators.get(node)
-
-            # Get true/false branches
             true_branch_node, false_branch_node = None, None
-            for branch, edge_type in node.branches:
-                if edge_type == "true": true_branch_node = branch
-                elif edge_type == "false": false_branch_node = branch
-            
-            if true_branch_node is None or false_branch_node is None:
-                 raise DecompError("Malformed conditional node with two branches but not true/false")
+            for branch_node, edge_type in node.branches:
+                if edge_type == "true": true_branch_node = branch_node
+                elif edge_type == "false": false_branch_node = branch_node
 
-            # Lift the true and false blocks recursively. Crucially, we tell them
-            # to STOP when they reach the convergence point.
             true_block_ir = self._lift_block(true_branch_node, visited.copy(), stop_at=convergence_node)
             false_block_ir = self._lift_block(false_branch_node, visited.copy(), stop_at=convergence_node)
-            
-            # The conditional opcode is the last one in the current node.
-            cond_op = node.ops[-1]
-            cond_expr = self._build_bool_expr_from_op(cond_op)
-            
-            # Build the IRConditional
+
+            cond_expr = self._build_bool_expr_from_op(last_op)
             conditional_stmt = IRConditional(self.code, cond_expr, true_block_ir, false_block_ir)
             block.statements.append(conditional_stmt)
 
-            # After the conditional, continue lifting from the convergence node.
-            # Mark all nodes on the paths to convergence as visited.
-            # A simple `visited.add` at the top handles this sufficiently for now.
-            next_block = self._lift_block(convergence_node, visited)
-            block.statements.extend(next_block.statements)
+            # Continue lifting from the convergence point
+            next_block_ir = self._lift_block(convergence_node, visited)
+            block.statements.extend(next_block_ir.statements)
 
-            return block
-
-        # Check for a Switch Statementt
-        elif len(node.branches) > 2:
+        elif last_op and last_op.op == "Switch":
             convergence_node = self.cfg.immediate_post_dominators.get(node)
-            switch_op = node.ops[-1]
-            val_reg = self.locals[switch_op.df["reg"].value]
-            cases = {}
-            default_block = IRBlock(self.code)
+            val_reg = self.locals[last_op.df["reg"].value]
+            cases, default_block = {}, IRBlock(self.code)
 
             for target_node, edge_type in node.branches:
-                # Lift each case, stopping at the convergence point
                 case_block_ir = self._lift_block(target_node, visited.copy(), stop_at=convergence_node)
-
                 if edge_type.startswith("switch: case:"):
                     case_val = int(edge_type.split(":")[-1].strip())
-                    case_const = IRConst(self.code, IRConst.ConstType.INT, value=case_val)
-                    cases[case_const] = case_block_ir
+                    cases[IRConst(self.code, IRConst.ConstType.INT, value=case_val)] = case_block_ir
                 elif edge_type == "switch: default":
                     default_block = case_block_ir
             
-            switch_stmt = IRSwitch(self.code, val_reg, cases, default_block)
-            block.statements.append(switch_stmt)
+            block.statements.append(IRSwitch(self.code, val_reg, cases, default_block))
+            next_block_ir = self._lift_block(convergence_node, visited)
+            block.statements.extend(next_block_ir.statements)
+            
+        elif last_op and last_op.op == "Ret":
+            ret_type = self.func.regs[last_op.df["ret"].value].resolve(self.code)
+            ret_val = self.locals[last_op.df["ret"].value] if not isinstance(ret_type.definition, Void) else None
+            block.statements.append(IRReturn(self.code, ret_val))
 
-            # Continue lifting from the convergence point
-            next_block = self._lift_block(convergence_node, visited)
-            block.statements.extend(next_block.statements)
-
-            return block
-
-        # Non-Branching Block
-        else:
-            for op in node.ops:
-                if op.op in arithmetic:
-                    dst = self.locals[op.df["dst"].value]
-                    lhs = self.locals[op.df["a"].value]
-                    rhs = self.locals[op.df["b"].value]
-                    block.statements.append(IRAssign(self.code, dst, IRArithmetic(self.code, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])))
-
-                elif op.op in ["Int", "Float", "Bool", "Bytes", "String", "Null"]:
-                    dst = self.locals[op.df["dst"].value]
-                    const_type = IRConst.ConstType[op.op.upper()]
-                    value = op.df["value"].value if op.op == "Bool" else None
-                    if op.op not in ["Bool"]:
-                        const = IRConst(self.code, const_type, op.df["ptr"], value)
-                    else:
-                        const = IRConst(self.code, const_type, value=value)
-                    block.statements.append(IRAssign(self.code, dst, const))
-
-                elif op.op in ["Call0", "Call1", "Call2", "Call3", "Call4"]:
-                    n = int(op.op[-1])
-                    dst = self.locals[op.df["dst"].value]
-                    fun = IRConst(self.code, IRConst.ConstType.FUN, op.df["fun"])
-                    args = [self.locals[op.df[f"arg{i}"].value] for i in range(n)]
-                    block.statements.append(
-                        IRAssign(
-                            self.code,
-                            dst,
-                            IRCall(self.code, IRCall.CallType.FUNC, fun, args),
-                        )
-                    )
-
-                elif op.op == "Ret":
-                    ret_type = self.func.regs[op.df["ret"].value].resolve(self.code)
-                    if isinstance(ret_type.definition, Void):
-                        block.statements.append(IRReturn(self.code))
-                    else:
-                        block.statements.append(IRReturn(self.code, self.locals[op.df["ret"].value]))
-                    
-                elif op.op == "CallMethod":
-                    dst = self.locals[op.df["dst"].value]
-                    target = self.locals[op.df["target"].value]
-                    args = [self.locals[op.df[f"arg{i}"].value] for i in range(op.df["nargs"].value)]
-                    block.statements.append(
-                        IRAssign(
-                            self.code,
-                            dst,
-                            IRCall(self.code, IRCall.CallType.METHOD, target, args),
-                        )
-                    )
-
-                elif op.op == "CallThis":
-                    dst = self.locals[op.df["dst"].value]
-                    args = [self.locals[op.df[f"arg{i}"].value] for i in range(op.df["nargs"].value)]
-                    block.statements.append(
-                        IRAssign(
-                            self.code,
-                            dst,
-                            IRCall(self.code, IRCall.CallType.THIS, None, args),
-                        )
-                    )
-                    
-                elif op.op == "Mov":
-                    block.statements.append(
-                        IRAssign(
-                            self.code,
-                            self.locals[op.df["dst"].value],
-                            self.locals[op.df["src"].value],
-                        )
-                    )
-
-                elif op.op == "GetGlobal":
-                    block.statements.append(
-                        IRAssign(
-                            self.code,
-                            self.locals[op.df["dst"].value],
-                            IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df["global"]),
-                        )
-                    )
-
-                elif op.op == "Field":
-                    dst_local = self.locals[op.df["dst"].value]
-                    obj_local = self.locals[op.df["obj"].value]
-
-                    obj_type = obj_local.get_type()
-                    if not isinstance(obj_type.definition, (Obj, Virtual)):
-                        raise DecompError(f"Field opcode used on a non-object type: {obj_type.definition}")
-
-                    field_ref_op: fieldRef = op.df["field"]
-                    field_core = field_ref_op.resolve_obj(self.code, obj_type.definition)
-                    field_name = field_core.name.resolve(self.code)
-
-                    field_expr = IRField(self.code, obj_local, field_name, field_core.type)
-                    assign_stmt = IRAssign(self.code, dst_local, field_expr)
-                    block.statements.append(assign_stmt)
-
-                elif op.op == "New":
-                    dst_local = self.locals[op.df["dst"].value]
-                    alloc_type_idx = self.func.regs[op.df["dst"].value]
-                    new_expr = IRNew(self.code, alloc_type_idx)
-                    block.statements.append(IRAssign(self.code, dst_local, new_expr))
-
-                elif op.op == "DynSet":
-                    obj_local = self.locals[op.df["obj"].value]
-                    src_local = self.locals[op.df["src"].value]
-
-                    field_name = op.df["field"].resolve(self.code)
-
-                    field_type_idx = self.func.regs[op.df["src"].value]
-
-                    field_target = IRField(self.code, obj_local, field_name, field_type_idx)
-
-                    assign_stmt = IRAssign(self.code, field_target, src_local)
-                    block.statements.append(assign_stmt)
-
-                elif op.op == "ToVirtual":
-                    dst_local = self.locals[op.df["dst"].value]
-                    src_local = self.locals[op.df["src"].value]
-
-                    target_type_idx = self.func.regs[op.df["dst"].value]
-
-                    cast_expr = IRCast(self.code, target_type_idx, src_local)
-                    assign_stmt = IRAssign(self.code, dst_local, cast_expr)
-                    block.statements.append(assign_stmt)
-
-                elif op.op == "CallClosure":
-                    dst_local = self.locals[op.df["dst"].value]
-                    fun_local = self.locals[op.df["fun"].value]
-                    arg_locals = [self.locals[arg.value] for arg in op.df["args"].value]
-
-                    call_expr = IRCall(self.code, IRCall.CallType.CLOSURE, fun_local, arg_locals)
-                    if dst_local.get_type().kind.value == Type.Kind.VOID.value:
-                        block.statements.append(call_expr)
-                    else:
-                        assign_stmt = IRAssign(self.code, dst_local, call_expr)
-                        block.statements.append(assign_stmt)
-
-                elif op.op in ["Incr", "Decr"]:
-                    dst_local = self.locals[op.df["dst"].value]
-                    one_const = IRConst(self.code, IRConst.ConstType.INT, value=1)
-                    arith_op = IRArithmetic.ArithmeticType.ADD if op.op == "Incr" else IRArithmetic.ArithmeticType.SUB
-                    arith_expr = IRArithmetic(self.code, dst_local, one_const, arith_op)
-                    assign_stmt = IRAssign(self.code, dst_local, arith_expr)
-                    block.statements.append(assign_stmt)
-
-                elif op.op == "Neg":
-                    dst_local = self.locals[op.df["dst"].value]
-                    src_local = self.locals[op.df["src"].value]
-                    zero_const = IRConst(self.code, IRConst.ConstType.INT, value=0)
-
-                    arith_expr = IRArithmetic(self.code, zero_const, src_local, IRArithmetic.ArithmeticType.SUB)
-
-                    assign_stmt = IRAssign(self.code, dst_local, arith_expr)
-                    block.statements.append(assign_stmt)
-
-                elif op.op in ["JAlways", "NullCheck"]:
-                    # Handled elsewhere, just ignore
-                    pass 
-
-                else:
-                    # Fallback for unhandled opcodes
-                    if "dst" in op.df:
-                        block.statements.append(IRAssign(self.code, self.locals[op.df['dst'].value], IRUnliftedOpcode(self.code, op)))
-                    else:
-                        block.statements.append(IRUnliftedOpcode(self.code, op))
-
-            # After processing the opcodes in this block, continue to its single successor.
+        elif last_op and (last_op.op == "JAlways" or not is_last_op_control_flow):
+            # Handles both explicit unconditional jumps and implicit fall-through
             if node.branches:
                 successor_node, _ = node.branches[0]
-                next_block = self._lift_block(successor_node, visited, stop_at)
-                block.statements.extend(next_block.statements)
-            
-            return block
+                next_block_ir = self._lift_block(successor_node, visited, stop_at)
+                block.statements.extend(next_block_ir.statements)
+
+        return block
 
     def print(self) -> None:
         print(self.block.pprint())

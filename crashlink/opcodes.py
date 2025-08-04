@@ -471,4 +471,9 @@ terminal = {"Ret", "Throw", "Rethrow"}
 All opcodes that are acceptable to terminate a control flow block.
 """
 
+simple_calls = {"Call0", "Call1", "Call2", "Call3", "Call4", "CallN"}
+"""
+Set of all function call opcodes.
+"""
+
 __all__ = ["conditionals", "arithmetic", "opcodes", "opcode_docs"]
