@@ -140,7 +140,7 @@ class BaseCommands:
             if primary_cmd_name:
                 commands[primary_cmd_name] = func
                 if hasattr(func, "_aliases"):
-                    for alias_name in func._aliases: # pyright: ignore[reportAttributeAccessIssue]
+                    for alias_name in func._aliases:  # pyright: ignore[reportAttributeAccessIssue]
                         commands[alias_name] = func
 
         return commands
@@ -169,7 +169,7 @@ class BaseCommands:
         for name, func in inspect.getmembers(self, predicate=inspect.ismethod):
             if hasattr(func, "_aliases"):
                 primary_name = getattr(func, "_primary_alias", name)
-                alias_map[primary_name] = list(func._aliases) # pyright: ignore[reportAttributeAccessIssue]
+                alias_map[primary_name] = list(func._aliases)  # pyright: ignore[reportAttributeAccessIssue]
 
         return alias_map
 
@@ -491,14 +491,14 @@ class Commands(BaseCommands):
                 print(f"Fun {dfn.str_resolve(self.code)}")
             else:
                 print(type.kind)
-                
+
     def objs(self, args: List[str]) -> None:
         """List all Objs in the bytecode. `objs`"""
         for i, type in enumerate(self.code.types):
             dfn = type.definition
             if isinstance(dfn, Obj):
                 print(f"Type t@{i}: {dfn.name.resolve(self.code)}")
-                
+
     @alias("tn")
     def typenamed(self, args: List[str]) -> None:
         """Finds the type named n. `tn <n>`"""
@@ -508,9 +508,12 @@ class Commands(BaseCommands):
         for i, type in enumerate(self.code.types):
             if not hasattr(type.definition, "name"):
                 continue
-            if type.definition.name.resolve(self.code) == args[0]:
+            n = type.definition.name.resolve(self.code)  # type: ignore
+            if n is None:
+                continue
+            if n == args[0]:  # pyright: ignore[reportOptionalMemberAccess, reportAttributeAccessIssue]
                 print(f"Found it at t@{i}!")
-                    
+
     @alias("object")
     def obj(self, args: List[str]) -> None:
         """Prints a short overview of a class's fields, protos, and bindings. `obj <tIndex>`"""
@@ -539,7 +542,7 @@ class Commands(BaseCommands):
                     super_name = disasm.type_name(self.code, obj_def.super.resolve(self.code))
                     print(f"Inherits from: {super_name}")
                 except Exception:
-                     print(f"Inherits from: t@{obj_def.super.value} (Error resolving)")
+                    print(f"Inherits from: t@{obj_def.super.value} (Error resolving)")
 
             print("\nFields:")
             if obj_def.fields:
@@ -558,7 +561,6 @@ class Commands(BaseCommands):
                     print(f"  - {header.replace(' static ', ' ')}")
             else:
                 print("  (No protos)")
-
 
             print("\nBindings (Static Methods):")
             if obj_def.bindings:
@@ -830,31 +832,6 @@ class Commands(BaseCommands):
             caller = caller_findex.resolve(self.code)
             print(f"  {i}. {disasm.func_header(self.code, caller)}")
 
-    def enum(self, args: List[str]) -> None:
-        """Prints information about an enum by tIndex. `enum <index>`"""
-        if len(args) == 0:
-            print("Usage: enum <index>")
-            return
-        try:
-            index = int(args[0])
-        except ValueError:
-            print("Invalid index.")
-            return
-        try:
-            enum_type = tIndex(index).resolve(self.code)
-        except IndexError:
-            print("Type not found.")
-            return
-        if not isinstance(enum_type.definition, Enum):
-            print("Type is not an Enum.")
-            return
-        defn = enum_type.definition
-        print(f"Enum t@{index} - {defn.name.resolve(self.code)}")
-        print("nconstructs:", defn.nconstructs.value)
-        print("Constructs:")
-        for i, construct in enumerate(defn.constructs):
-            print(f"  {i}: {construct.name.resolve(self.code)}")
-
     @alias("pkl")
     def pickle(self, args: List[str]) -> None:
         """Pickle the bytecode to a given path. `pickle <path>`"""
@@ -1001,7 +978,7 @@ class Commands(BaseCommands):
         assert isinstance(virt.definition, Virtual), "Virtual type is not a Virtual."
         for field in virt.definition.fields:
             print(f"  {field.name.resolve(self.code)}: {disasm.type_name(self.code, field.type.resolve(self.code))}")
-            
+
     def enum(self, args: List[str]) -> None:
         """Prints information about an enum by tIndex. `enum <index>`"""
         if len(args) == 0:
@@ -1040,7 +1017,6 @@ class Commands(BaseCommands):
                     print(f"  {i}: {construct_name}({', '.join(param_types)})")
                 else:
                     print(f"  {i}: {construct_name}")
-
 
     def fnn(self, args: List[str]) -> None:
         """Prints a function by name. `fnn <name>`"""
@@ -1188,7 +1164,7 @@ class Commands(BaseCommands):
             print(
                 f"Total references found: {total_references} (Direct: {direct_references_found}, Via Globals: {global_refs_to_this_string_found})"
             )
-            
+
     @primary("class")
     @alias("cls")
     @alias("c")

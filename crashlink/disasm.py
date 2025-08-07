@@ -29,7 +29,7 @@ from .core import (
     fileRef,
     tIndex,
     Enum,
-    destaticify
+    destaticify,
 )
 from .opcodes import opcodes
 
@@ -500,7 +500,7 @@ def gen_docs(code: Bytecode) -> Dict[str, str]:
                     defn: Obj = obj.definition
                     res[defn.name.resolve(code) + ".html"] = gen_docs_for_obj(code, defn)
         else:
-            for obj in tqdm(code.types): # pyright: ignore[reportPossiblyUnboundVariable]
+            for obj in tqdm(code.types):  # pyright: ignore[reportPossiblyUnboundVariable]
                 if obj.kind.value == kind:
                     if not isinstance(obj.definition, Obj):
                         raise TypeError(f"Expected Obj, got {obj.definition}")

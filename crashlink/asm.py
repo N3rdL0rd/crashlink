@@ -162,7 +162,7 @@ class AsmFile:
                     fun.args = a  # type: ignore
                 typ = Type()
                 typ.kind.value = 10  # Fun
-                typ.definition = m_def # pyright: ignore[reportPossiblyUnboundVariable]
+                typ.definition = m_def  # pyright: ignore[reportPossiblyUnboundVariable]
                 code.types.append(typ)
 
     def _parse_ref(self, val: str) -> ResolvableVarInt:

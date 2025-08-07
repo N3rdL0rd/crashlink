@@ -497,7 +497,7 @@ within a vdynamic struct.</p></div>
 
         return f&#34;{c_enum_name}_{c_constr_name}&#34;
 
-    for function in tqdm(code.functions, desc=&#34;Generating function prototypes&#34;) if USE_TQDM else code.functions:
+    for function in tqdm(code.functions, desc=&#34;Generating function prototypes&#34;) if USE_TQDM else code.functions:  # pyright: ignore[reportPossiblyUnboundVariable]
         fun = function.type.resolve(code).definition
         assert isinstance(fun, Fun), (
             f&#34;Expected function type to be Fun, got {type(fun).__name__}. This should never happen.&#34;
@@ -508,7 +508,7 @@ within a vdynamic struct.</p></div>
         args_str = &#34;, &#34;.join(args) if args else &#34;void&#34;
         line(f&#34;{ret_t} f${function.findex.value}({args_str}); /* t${function.type.value} */&#34;)
 
-    for function in tqdm(code.functions, desc=&#34;Generating functions&#34;) if USE_TQDM else code.functions:
+    for function in tqdm(code.functions, desc=&#34;Generating functions&#34;) if USE_TQDM else code.functions:  # pyright: ignore[reportPossiblyUnboundVariable]
         fun = function.type.resolve(code).definition
         assert isinstance(fun, Fun), (
             f&#34;Expected function type to be Fun, got {type(fun).__name__}. This should never happen.&#34;
@@ -1277,7 +1277,7 @@ within a vdynamic struct.</p></div>
         c_type_str = ctype(code, g_type, all_types.index(g_type))
         line(f&#34;{c_type_str} g${i} = 0;&#34;)
 
-    for const in tqdm(code.constants, desc=&#34;Generating global constants&#34;) if USE_TQDM else code.constants:
+    for const in tqdm(code.constants, desc=&#34;Generating global constants&#34;) if USE_TQDM else code.constants:  # pyright: ignore[reportPossiblyUnboundVariable]
         obj = const._global.resolve(code).definition
         objIdx = const._global.partial_resolve(code).value
         assert isinstance(obj, Obj), (
@@ -1328,7 +1328,7 @@ within a vdynamic struct.</p></div>
 
     line(&#34;\nvoid hl_init_roots() {&#34;)
     with indent:
-        for const in tqdm(code.constants, desc=&#34;Initializing global constants&#34;) if USE_TQDM else code.constants:
+        for const in tqdm(code.constants, desc=&#34;Initializing global constants&#34;) if USE_TQDM else code.constants:  # pyright: ignore[reportPossiblyUnboundVariable]
             line(f&#34;g${const._global.value} = &amp;const_g${const._global.value};&#34;)
         for i, g_type_ptr in enumerate(code.global_types):
             g_type = g_type_ptr.resolve(code)
@@ -1481,7 +1481,7 @@ within a vdynamic struct.</p></div>
             fun_by_args[nargs] = {}
         fun_by_args[nargs][(kinded_args, kinded_ret)] = None
 
-    for func in tqdm(code.functions, desc=&#34;Collecting function signatures&#34;) if USE_TQDM else code.functions:
+    for func in tqdm(code.functions, desc=&#34;Collecting function signatures&#34;) if USE_TQDM else code.functions:  # pyright: ignore[reportPossiblyUnboundVariable]
         for op in func.ops:
             if op.op in {&#34;SafeCast&#34;, &#34;DynGet&#34;}:
                 dst_type = func.regs[op.df[&#34;dst&#34;].value].resolve(code)
@@ -1510,7 +1510,7 @@ within a vdynamic struct.</p></div>
         line(&#34;switch( t-&gt;fun-&gt;nargs ) {&#34;)
 
         sorted_arg_counts = sorted(fun_by_args.keys())
-        for nargs in tqdm(sorted_arg_counts, desc=&#34;Generating signatures&#34;) if USE_TQDM else sorted_arg_counts:
+        for nargs in tqdm(sorted_arg_counts, desc=&#34;Generating signatures&#34;) if USE_TQDM else sorted_arg_counts:  # pyright: ignore[reportPossiblyUnboundVariable]
             line(f&#34;case {nargs}:&#34;)
             with indent:
                 if nargs &gt; 9:
@@ -1718,7 +1718,7 @@ within a vdynamic struct.</p></div>
     res.append(&#34;&#34;)
 
     line(&#34;// Class/Struct definitions&#34;)
-    for i, typ in tqdm(sorted(struct_map.items())) if USE_TQDM else sorted(struct_map.items()):
+    for i, typ in tqdm(sorted(struct_map.items())) if USE_TQDM else sorted(struct_map.items()):  # pyright: ignore[reportPossiblyUnboundVariable]
         df = typ.definition
         assert isinstance(df, (Obj, Struct)), f&#34;Expected definition to be Obj or Struct, got {type(df).__name__}.&#34;
         line(f&#34;struct _obj${i} {{ /* {df.name.resolve(code)} */&#34;)
@@ -1753,11 +1753,11 @@ within a vdynamic struct.</p></div>
     types = code.types
 
     line(&#34;// Type shells&#34;)
-    for i, typ in tqdm(enumerate(types), desc=&#34;Generating type shells&#34;) if USE_TQDM else enumerate(types):
+    for i, typ in tqdm(enumerate(types), desc=&#34;Generating type shells&#34;) if USE_TQDM else enumerate(types):  # pyright: ignore[reportPossiblyUnboundVariable]
         line(f&#34;hl_type t${i} = {{ {KIND_SHELLS[typ.kind.value]} }};&#34;)
 
     line(&#34;\n// Type data&#34;)
-    for i, typ in tqdm(enumerate(types), desc=&#34;Generating types&#34;) if USE_TQDM else enumerate(types):
+    for i, typ in tqdm(enumerate(types), desc=&#34;Generating types&#34;) if USE_TQDM else enumerate(types):  # pyright: ignore[reportPossiblyUnboundVariable]
         df = typ.definition
         if isinstance(df, (Obj, Struct)):
             if df.fields:
