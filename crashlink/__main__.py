@@ -493,11 +493,87 @@ class Commands(BaseCommands):
                 print(type.kind)
                 
     def objs(self, args: List[str]) -> None:
-        """List all Objs in the bytecode."""
+        """List all Objs in the bytecode. `objs`"""
         for i, type in enumerate(self.code.types):
             dfn = type.definition
             if isinstance(dfn, Obj):
                 print(f"Type t@{i}: {dfn.name.resolve(self.code)}")
+                
+    @alias("tn")
+    def typenamed(self, args: List[str]) -> None:
+        """Finds the type named n. `tn <n>`"""
+        if len(args) < 1:
+            print("You need to pass a name!")
+            return
+        for i, type in enumerate(self.code.types):
+            if not hasattr(type.definition, "name"):
+                continue
+            if type.definition.name.resolve(self.code) == args[0]:
+                print(f"Found it at t@{i}!")
+                    
+    @alias("object")
+    def obj(self, args: List[str]) -> None:
+        """Prints a short overview of a class's fields, protos, and bindings. `obj <tIndex>`"""
+        if len(args) == 0:
+            print("Usage: obj <tIndex>")
+            return
+        try:
+            index = int(args[0])
+        except ValueError:
+            print("Invalid tIndex.")
+            return
+
+        try:
+            typ = self.code.types[index]
+            if not isinstance(typ.definition, Obj):
+                print(f"Type t@{index} is not a class (Obj).")
+                return
+
+            obj_def: Obj = typ.definition
+            class_name = obj_def.name.resolve(self.code)
+
+            print(f"--- Overview for class {class_name} (t@{index}) ---")
+
+            if obj_def.super and obj_def.super.value is not None:
+                try:
+                    super_name = disasm.type_name(self.code, obj_def.super.resolve(self.code))
+                    print(f"Inherits from: {super_name}")
+                except Exception:
+                     print(f"Inherits from: t@{obj_def.super.value} (Error resolving)")
+
+            print("\nFields:")
+            if obj_def.fields:
+                for field in obj_def.fields:
+                    field_name = field.name.resolve(self.code)
+                    field_type_name = disasm.type_name(self.code, field.type.resolve(self.code))
+                    print(f"  - {field_name}: {field_type_name}")
+            else:
+                print("  (No fields)")
+
+            print("\nProtos (Instance Methods):")
+            if obj_def.protos:
+                for proto in obj_def.protos:
+                    # func_header can sometimes include 'static' which is incorrect for protos, so we clean it
+                    header = disasm.func_header(self.code, proto.findex.resolve(self.code))
+                    print(f"  - {header.replace(' static ', ' ')}")
+            else:
+                print("  (No protos)")
+
+
+            print("\nBindings (Static Methods):")
+            if obj_def.bindings:
+                for binding in obj_def.bindings:
+                    header = disasm.func_header(self.code, binding.findex.resolve(self.code))
+                    print(f"  - {header}")
+            else:
+                print("  (No bindings)")
+
+        except IndexError:
+            print(f"Type t@{index} not found.")
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            if "-t" in sys.argv or "--traceback" in sys.argv:
+                traceback.print_exc()
 
     @primary("type")
     @alias("t")
@@ -924,7 +1000,47 @@ class Commands(BaseCommands):
         print("Fields:")
         assert isinstance(virt.definition, Virtual), "Virtual type is not a Virtual."
         for field in virt.definition.fields:
-            print(f"  {field.name.resolve(self.code)}: {field.type.resolve(self.code)}")
+            print(f"  {field.name.resolve(self.code)}: {disasm.type_name(self.code, field.type.resolve(self.code))}")
+            
+    def enum(self, args: List[str]) -> None:
+        """Prints information about an enum by tIndex. `enum <index>`"""
+        if len(args) == 0:
+            print("Usage: enum <index>")
+            return
+        try:
+            index = int(args[0])
+        except ValueError:
+            print("Invalid index.")
+            return
+
+        try:
+            enum_type = self.code.types[index]
+        except IndexError:
+            print(f"Type t@{index} not found.")
+            return
+
+        if not isinstance(enum_type.definition, Enum):
+            print(f"Type t@{index} is not an Enum.")
+            return
+
+        defn: Enum = enum_type.definition
+
+        print(f"--- Enum: {defn.name.resolve(self.code)} (t@{index}) ---")
+        print(f"Global index: g@{defn._global.value}")
+        print(f"Constructs ({defn.nconstructs.value}):")
+
+        if not defn.constructs:
+            print("  (No constructs defined)")
+        else:
+            for i, construct in enumerate(defn.constructs):
+                construct_name = construct.name.resolve(self.code)
+                if construct.params:
+                    # Resolve the type name for each parameter
+                    param_types = [disasm.type_name(self.code, p.resolve(self.code)) for p in construct.params]
+                    print(f"  {i}: {construct_name}({', '.join(param_types)})")
+                else:
+                    print(f"  {i}: {construct_name}")
+
 
     def fnn(self, args: List[str]) -> None:
         """Prints a function by name. `fnn <name>`"""
