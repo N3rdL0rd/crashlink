@@ -49,8 +49,8 @@ def destaticify(s: str) -> str:
     """
     Transforms a static Obj's name into the normal class name.
     """
-    path, _, class_name = s.rpartition('.')
-    if class_name.startswith('$'):
+    path, _, class_name = s.rpartition(".")
+    if class_name.startswith("$"):
         class_name = class_name[1:]
     return f"{path}.{class_name}" if path else class_name
 
@@ -59,7 +59,8 @@ def is_static_name(s: str) -> bool:
     """
     Checks if the last qualifier of a name (the class name) is prefixed with a '$'.
     """
-    return s.rpartition('.')[-1].startswith('$')
+    return s.rpartition(".")[-1].startswith("$")
+
 
 class Serialisable(ABC):
     """
@@ -803,7 +804,7 @@ class Obj(TypeDef):
         self._virtuals: List[int] = []
         self._virtual_map: Dict[str, int] = {}
         self.virtuals_initialized: bool = False
-        
+
         self._is_static: Optional[bool] = None
         self._static: "Optional[Obj]" = None
         self._dynamic: "Optional[Obj]" = None
@@ -828,14 +829,16 @@ class Obj(TypeDef):
         if not self.virtuals_initialized:
             raise ValueError("Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.")
         return self._virtual_map
-    
+
     @property
     def is_static(self) -> bool:
         """True if this Obj is static, else False. If True, you can get this Obj's dynamic counterpart with `Obj.dynamic`."""
         if self._is_static is not None:
             return self._is_static
-        raise ValueError("Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.")
-    
+        raise ValueError(
+            "Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation."
+        )
+
     @property
     def static(self) -> "Obj":
         """This Obj's static counterpart. Accessing will raise an exception if `Obj.is_static` is True."""
@@ -843,8 +846,10 @@ class Obj(TypeDef):
             return self._static
         if self._is_static is not None and self._is_static:
             raise ValueError("This Obj is static! Try `Obj.dynamic` for its counterpart instead.")
-        raise ValueError("Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.")
-    
+        raise ValueError(
+            "Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation."
+        )
+
     @property
     def dynamic(self) -> "Obj":
         """This Obj's dynamic counterpart. Accessing will raise an exception if `Obj.is_static` is False."""
@@ -852,7 +857,9 @@ class Obj(TypeDef):
             return self._dynamic
         if self._is_static is not None and not self._is_static:
             raise ValueError("This Obj is static! Try `Obj.dynamic` for its counterpart instead.")
-        raise ValueError("Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.")
+        raise ValueError(
+            "Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation."
+        )
 
     def deserialise(self, f: BinaryIO | BytesIO) -> "Obj":
         self.name.deserialise(f)
@@ -2085,7 +2092,7 @@ class Bytecode(Serialisable):
                 "Not all constants were resolved! This is often due to bad DebugInfo blocks causing buffer overrun, try passing -N to troubleshoot."
             )
         self.initialized_globals = final
-    
+
     def map_statics(self) -> None:
         """
         Maps Haxe compiler-generated static Obj types to their dynamic counterparts, and vice versa. This makes pairing sets of Obj datastructures into full decompiled class definitions much easier later on.
@@ -2094,14 +2101,14 @@ class Bytecode(Serialisable):
         objs: List[Obj] = []
         for typ in self.types:
             if isinstance(typ.definition, Obj):
-                assert isinstance(typ.definition, Obj) # for typechecking to shut up
+                assert isinstance(typ.definition, Obj)  # for typechecking to shut up
                 objs.append(typ.definition)
-        
+
         for obj in objs:
             names[destaticify(obj.name.resolve(self))] = []
         for obj in objs:
             names[destaticify(obj.name.resolve(self))].append(obj)
-        
+
         for _, v in names.items():
             assert len(v) <= 2, "There should only be two matching Objs for each name!"
             s = None
@@ -2123,7 +2130,6 @@ class Bytecode(Serialisable):
                 d._is_static = False
                 if s:
                     d._static = s
-
 
     def fn(self, findex: int, native: bool = True) -> Function | Native:
         """
@@ -2269,7 +2275,7 @@ class Bytecode(Serialisable):
             if self.full_func_name(f).endswith("main"):
                 return f
         raise ValueError("No main function found!")
-    
+
     def get_test_obj(self, test_name: str) -> Obj:
         for t in self.types:
             if isinstance(t.definition, Obj):

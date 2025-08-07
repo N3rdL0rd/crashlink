@@ -98,13 +98,13 @@ def run_case(case: str, id: int) -> TestCase:
 
         ir_parts = []
         if not ir_class.static_methods and not ir_class.methods:
-             ir_parts.append("/* No methods found in class */")
+            ir_parts.append("/* No methods found in class */")
         else:
             for static_method in ir_class.static_methods:
                 func_name = code.full_func_name(static_method.func)
                 ir_parts.append(f"// --- Static Method: {func_name} ---")
                 ir_parts.append(str(static_method.block))
-            
+
             for method in ir_class.methods:
                 func_name = code.full_func_name(method.func)
                 ir_parts.append(f"// --- Instance Method: {func_name} ---")

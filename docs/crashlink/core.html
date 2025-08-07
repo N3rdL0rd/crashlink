@@ -587,6 +587,8 @@ you.</p>
             self.init_globals()
             dbg_print(&#34;Building virtual tables...&#34;)
             self._build_virtual_tables()
+            dbg_print(&#34;Mapping statics...&#34;)
+            self.map_statics()
         dbg_print(f&#34;{(datetime.now() - start_time).total_seconds()}s elapsed.&#34;)
         return self
 
@@ -623,6 +625,44 @@ you.</p>
                 &#34;Not all constants were resolved! This is often due to bad DebugInfo blocks causing buffer overrun, try passing -N to troubleshoot.&#34;
             )
         self.initialized_globals = final
+
+    def map_statics(self) -&gt; None:
+        &#34;&#34;&#34;
+        Maps Haxe compiler-generated static Obj types to their dynamic counterparts, and vice versa. This makes pairing sets of Obj datastructures into full decompiled class definitions much easier later on.
+        &#34;&#34;&#34;
+        names: Dict[str, List[Obj]] = {}
+        objs: List[Obj] = []
+        for typ in self.types:
+            if isinstance(typ.definition, Obj):
+                assert isinstance(typ.definition, Obj)  # for typechecking to shut up
+                objs.append(typ.definition)
+
+        for obj in objs:
+            names[destaticify(obj.name.resolve(self))] = []
+        for obj in objs:
+            names[destaticify(obj.name.resolve(self))].append(obj)
+
+        for _, v in names.items():
+            assert len(v) &lt;= 2, &#34;There should only be two matching Objs for each name!&#34;
+            s = None
+            d = None
+            for obj in v:
+                if is_static_name(obj.name.resolve(self)):
+                    if s is not None:
+                        raise MalformedBytecode(&#34;Duplicate static classes!&#34;)
+                    s = obj
+                else:
+                    if d is not None:
+                        raise MalformedBytecode(&#34;Duplicate dynamic classes!&#34;)
+                    d = obj
+            if s:
+                s._is_static = True
+                if d:
+                    s._dynamic = d
+            if d:
+                d._is_static = False
+                if s:
+                    d._static = s
 
     def fn(self, findex: int, native: bool = True) -&gt; Function | Native:
         &#34;&#34;&#34;
@@ -768,6 +808,13 @@ you.</p>
             if self.full_func_name(f).endswith(&#34;main&#34;):
                 return f
         raise ValueError(&#34;No main function found!&#34;)
+
+    def get_test_obj(self, test_name: str) -&gt; Obj:
+        for t in self.types:
+            if isinstance(t.definition, Obj):
+                if t.definition.name.resolve(self) == test_name:
+                    return t.definition
+        raise ValueError(&#34;No test class found!&#34;)
 
     def is_ok(self) -&gt; bool:
         &#34;&#34;&#34;
@@ -1339,6 +1386,8 @@ you.</p>
         self.init_globals()
         dbg_print(&#34;Building virtual tables...&#34;)
         self._build_virtual_tables()
+        dbg_print(&#34;Mapping statics...&#34;)
+        self.map_statics()
     dbg_print(f&#34;{(datetime.now() - start_time).total_seconds()}s elapsed.&#34;)
     return self</code></pre>
 </details>
@@ -1635,6 +1684,23 @@ and recursively explores all types contained within them.</p></div>
 </details>
 <div class="desc"></div>
 </dd>
+<dt id="crashlink.core.Bytecode.get_test_obj"><code class="name flex">
+<span>def <span class="ident">get_test_obj</span></span>(<span>self, test_name: str) ‑> <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_test_obj(self, test_name: str) -&gt; Obj:
+    for t in self.types:
+        if isinstance(t.definition, Obj):
+            if t.definition.name.resolve(self) == test_name:
+                return t.definition
+    raise ValueError(&#34;No test class found!&#34;)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
 <dt id="crashlink.core.Bytecode.init_globals"><code class="name flex">
 <span>def <span class="ident">init_globals</span></span>(<span>self) ‑> None</span>
 </code></dt>
@@ -1751,6 +1817,54 @@ and recursively explores all types contained within them.</p></div>
     return True</code></pre>
 </details>
 <div class="desc"><p>Runs a set of basic sanity checks to make sure the bytecode is correct-ish.</p></div>
+</dd>
+<dt id="crashlink.core.Bytecode.map_statics"><code class="name flex">
+<span>def <span class="ident">map_statics</span></span>(<span>self) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def map_statics(self) -&gt; None:
+    &#34;&#34;&#34;
+    Maps Haxe compiler-generated static Obj types to their dynamic counterparts, and vice versa. This makes pairing sets of Obj datastructures into full decompiled class definitions much easier later on.
+    &#34;&#34;&#34;
+    names: Dict[str, List[Obj]] = {}
+    objs: List[Obj] = []
+    for typ in self.types:
+        if isinstance(typ.definition, Obj):
+            assert isinstance(typ.definition, Obj)  # for typechecking to shut up
+            objs.append(typ.definition)
+
+    for obj in objs:
+        names[destaticify(obj.name.resolve(self))] = []
+    for obj in objs:
+        names[destaticify(obj.name.resolve(self))].append(obj)
+
+    for _, v in names.items():
+        assert len(v) &lt;= 2, &#34;There should only be two matching Objs for each name!&#34;
+        s = None
+        d = None
+        for obj in v:
+            if is_static_name(obj.name.resolve(self)):
+                if s is not None:
+                    raise MalformedBytecode(&#34;Duplicate static classes!&#34;)
+                s = obj
+            else:
+                if d is not None:
+                    raise MalformedBytecode(&#34;Duplicate dynamic classes!&#34;)
+                d = obj
+        if s:
+            s._is_static = True
+            if d:
+                s._dynamic = d
+        if d:
+            d._is_static = False
+            if s:
+                d._static = s</code></pre>
+</details>
+<div class="desc"><p>Maps Haxe compiler-generated static Obj types to their dynamic counterparts, and vice versa. This makes pairing sets of Obj datastructures into full decompiled class definitions much easier later on.</p></div>
 </dd>
 <dt id="crashlink.core.Bytecode.next_free_findex"><code class="name flex">
 <span>def <span class="ident">next_free_findex</span></span>(<span>self) ‑> <a title="crashlink.core.fIndex" href="#crashlink.core.fIndex">fIndex</a></span>
@@ -3593,6 +3707,10 @@ and recursively explores all types contained within them.</p></div>
         self._virtual_map: Dict[str, int] = {}
         self.virtuals_initialized: bool = False
 
+        self._is_static: Optional[bool] = None
+        self._static: &#34;Optional[Obj]&#34; = None
+        self._dynamic: &#34;Optional[Obj]&#34; = None
+
     def get_containing_type(self, code: Bytecode) -&gt; Type:
         &#34;&#34;&#34;Finds the Type object that contains this Obj definition.&#34;&#34;&#34;
         for t in code.types:
@@ -3604,15 +3722,46 @@ and recursively explores all types contained within them.</p></div>
     def virtuals(self) -&gt; List[int]:
         &#34;&#34;&#34;Returns the list of virtual function indices for this object type.&#34;&#34;&#34;
         if not self.virtuals_initialized:
-            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialization.&#34;)
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
         return self._virtuals
 
     @property
     def virtual_map(self) -&gt; Dict[str, int]:
         &#34;&#34;&#34;Returns the map of method names to their virtual ID for this object type.&#34;&#34;&#34;
         if not self.virtuals_initialized:
-            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialization.&#34;)
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
         return self._virtual_map
+
+    @property
+    def is_static(self) -&gt; bool:
+        &#34;&#34;&#34;True if this Obj is static, else False. If True, you can get this Obj&#39;s dynamic counterpart with `Obj.dynamic`.&#34;&#34;&#34;
+        if self._is_static is not None:
+            return self._is_static
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def static(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s static counterpart. Accessing will raise an exception if `Obj.is_static` is True.&#34;&#34;&#34;
+        if self._static is not None:
+            return self._static
+        if self._is_static is not None and self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def dynamic(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s dynamic counterpart. Accessing will raise an exception if `Obj.is_static` is False.&#34;&#34;&#34;
+        if self._dynamic is not None:
+            return self._dynamic
+        if self._is_static is not None and not self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
 
     def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Obj&#34;:
         self.name.deserialise(f)
@@ -3649,7 +3798,7 @@ and recursively explores all types contained within them.</p></div>
 
     def resolve_fields(self, code: &#34;Bytecode&#34;) -&gt; List[Field]:
         &#34;&#34;&#34;
-        Resolves all fields across the class heirarchy. For instance:
+        Resolves all fields across the class hierarchy. For instance:
         class A {
             var a: Int;
         }
@@ -3715,9 +3864,45 @@ and recursively explores all types contained within them.</p></div>
 <dd>
 <div class="desc"><p>List of bindings for this object type.</p></div>
 </dd>
+<dt id="crashlink.core.Obj.dynamic"><code class="name">prop <span class="ident">dynamic</span> : '<a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a>'</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@property
+def dynamic(self) -&gt; &#34;Obj&#34;:
+    &#34;&#34;&#34;This Obj&#39;s dynamic counterpart. Accessing will raise an exception if `Obj.is_static` is False.&#34;&#34;&#34;
+    if self._dynamic is not None:
+        return self._dynamic
+    if self._is_static is not None and not self._is_static:
+        raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+    raise ValueError(
+        &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+    )</code></pre>
+</details>
+<div class="desc"><p>This Obj's dynamic counterpart. Accessing will raise an exception if <code><a title="crashlink.core.Obj.is_static" href="#crashlink.core.Obj.is_static">Obj.is_static</a></code> is False.</p></div>
+</dd>
 <dt id="crashlink.core.Obj.fields"><code class="name">var <span class="ident">fields</span></code></dt>
 <dd>
 <div class="desc"><p>List of fields in this object type.</p></div>
+</dd>
+<dt id="crashlink.core.Obj.is_static"><code class="name">prop <span class="ident">is_static</span> : bool</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@property
+def is_static(self) -&gt; bool:
+    &#34;&#34;&#34;True if this Obj is static, else False. If True, you can get this Obj&#39;s dynamic counterpart with `Obj.dynamic`.&#34;&#34;&#34;
+    if self._is_static is not None:
+        return self._is_static
+    raise ValueError(
+        &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+    )</code></pre>
+</details>
+<div class="desc"><p>True if this Obj is static, else False. If True, you can get this Obj's dynamic counterpart with <code><a title="crashlink.core.Obj.dynamic" href="#crashlink.core.Obj.dynamic">Obj.dynamic</a></code>.</p></div>
 </dd>
 <dt id="crashlink.core.Obj.name"><code class="name">var <span class="ident">name</span></code></dt>
 <dd>
@@ -3739,6 +3924,25 @@ and recursively explores all types contained within them.</p></div>
 <dd>
 <div class="desc"><p>List of prototypes for this object type.</p></div>
 </dd>
+<dt id="crashlink.core.Obj.static"><code class="name">prop <span class="ident">static</span> : '<a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a>'</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@property
+def static(self) -&gt; &#34;Obj&#34;:
+    &#34;&#34;&#34;This Obj&#39;s static counterpart. Accessing will raise an exception if `Obj.is_static` is True.&#34;&#34;&#34;
+    if self._static is not None:
+        return self._static
+    if self._is_static is not None and self._is_static:
+        raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+    raise ValueError(
+        &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+    )</code></pre>
+</details>
+<div class="desc"><p>This Obj's static counterpart. Accessing will raise an exception if <code><a title="crashlink.core.Obj.is_static" href="#crashlink.core.Obj.is_static">Obj.is_static</a></code> is True.</p></div>
+</dd>
 <dt id="crashlink.core.Obj.super"><code class="name">var <span class="ident">super</span></code></dt>
 <dd>
 <div class="desc"><p>The superclass of this object type, or -1 if it has no superclass.</p></div>
@@ -3753,7 +3957,7 @@ and recursively explores all types contained within them.</p></div>
 def virtual_map(self) -&gt; Dict[str, int]:
     &#34;&#34;&#34;Returns the map of method names to their virtual ID for this object type.&#34;&#34;&#34;
     if not self.virtuals_initialized:
-        raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialization.&#34;)
+        raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
     return self._virtual_map</code></pre>
 </details>
 <div class="desc"><p>Returns the map of method names to their virtual ID for this object type.</p></div>
@@ -3768,7 +3972,7 @@ def virtual_map(self) -&gt; Dict[str, int]:
 def virtuals(self) -&gt; List[int]:
     &#34;&#34;&#34;Returns the list of virtual function indices for this object type.&#34;&#34;&#34;
     if not self.virtuals_initialized:
-        raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialization.&#34;)
+        raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
     return self._virtuals</code></pre>
 </details>
 <div class="desc"><p>Returns the list of virtual function indices for this object type.</p></div>
@@ -3828,7 +4032,7 @@ def virtuals(self) -&gt; List[int]:
 </summary>
 <pre><code class="python">def resolve_fields(self, code: &#34;Bytecode&#34;) -&gt; List[Field]:
     &#34;&#34;&#34;
-    Resolves all fields across the class heirarchy. For instance:
+    Resolves all fields across the class hierarchy. For instance:
     class A {
         var a: Int;
     }
@@ -3856,7 +4060,7 @@ def virtuals(self) -&gt; List[int]:
             current_type = defn
     return fields</code></pre>
 </details>
-<div class="desc"><p>Resolves all fields across the class heirarchy. For instance:
+<div class="desc"><p>Resolves all fields across the class hierarchy. For instance:
 class A {
 var a: Int;
 }
@@ -4952,14 +5156,17 @@ def serialise(self) -&gt; bytes:
 <li><code><b><a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a></b></code>:
 <ul class="hlist">
 <li><code><a title="crashlink.core.Obj.bindings" href="#crashlink.core.Obj.bindings">bindings</a></code></li>
+<li><code><a title="crashlink.core.Obj.dynamic" href="#crashlink.core.Obj.dynamic">dynamic</a></code></li>
 <li><code><a title="crashlink.core.Obj.fields" href="#crashlink.core.Obj.fields">fields</a></code></li>
 <li><code><a title="crashlink.core.Obj.get_containing_type" href="#crashlink.core.Obj.get_containing_type">get_containing_type</a></code></li>
+<li><code><a title="crashlink.core.Obj.is_static" href="#crashlink.core.Obj.is_static">is_static</a></code></li>
 <li><code><a title="crashlink.core.Obj.name" href="#crashlink.core.Obj.name">name</a></code></li>
 <li><code><a title="crashlink.core.Obj.nbindings" href="#crashlink.core.Obj.nbindings">nbindings</a></code></li>
 <li><code><a title="crashlink.core.Obj.nfields" href="#crashlink.core.Obj.nfields">nfields</a></code></li>
 <li><code><a title="crashlink.core.Obj.nprotos" href="#crashlink.core.Obj.nprotos">nprotos</a></code></li>
 <li><code><a title="crashlink.core.Obj.protos" href="#crashlink.core.Obj.protos">protos</a></code></li>
 <li><code><a title="crashlink.core.Obj.resolve_fields" href="#crashlink.core.Obj.resolve_fields">resolve_fields</a></code></li>
+<li><code><a title="crashlink.core.Obj.static" href="#crashlink.core.Obj.static">static</a></code></li>
 <li><code><a title="crashlink.core.Obj.super" href="#crashlink.core.Obj.super">super</a></code></li>
 <li><code><a title="crashlink.core.Obj.virtual_map" href="#crashlink.core.Obj.virtual_map">virtual_map</a></code></li>
 <li><code><a title="crashlink.core.Obj.virtuals" href="#crashlink.core.Obj.virtuals">virtuals</a></code></li>
@@ -5048,9 +5255,9 @@ def serialise(self) -&gt; bytes:
             self.TYPEDEFS[self.kind.value]
             _def = self.TYPEDEFS[self.kind.value]()
             if isinstance(_def, TypeDef):
-                deserialized = _def.deserialise(f)
-                if isinstance(deserialized, TypeDef):
-                    self.definition = deserialized
+                deserialised = _def.deserialise(f)
+                if isinstance(deserialised, TypeDef):
+                    self.definition = deserialised
                 else:
                     raise MalformedBytecode(f&#34;Invalid type definition found @{tell(f)}&#34;)
             else:
@@ -5185,9 +5392,9 @@ attributes &ndash; see the documentation for details.</p></div>
         self.TYPEDEFS[self.kind.value]
         _def = self.TYPEDEFS[self.kind.value]()
         if isinstance(_def, TypeDef):
-            deserialized = _def.deserialise(f)
-            if isinstance(deserialized, TypeDef):
-                self.definition = deserialized
+            deserialised = _def.deserialise(f)
+            if isinstance(deserialised, TypeDef):
+                self.definition = deserialised
             else:
                 raise MalformedBytecode(f&#34;Invalid type definition found @{tell(f)}&#34;)
         else:
@@ -6219,8 +6426,10 @@ attributes &ndash; see the documentation for details.</p></div>
 <li><code><a title="crashlink.core.Bytecode.get_field_for" href="#crashlink.core.Bytecode.get_field_for">get_field_for</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.get_proto_for" href="#crashlink.core.Bytecode.get_proto_for">get_proto_for</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.get_test_main" href="#crashlink.core.Bytecode.get_test_main">get_test_main</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.get_test_obj" href="#crashlink.core.Bytecode.get_test_obj">get_test_obj</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.init_globals" href="#crashlink.core.Bytecode.init_globals">init_globals</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.is_ok" href="#crashlink.core.Bytecode.is_ok">is_ok</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.map_statics" href="#crashlink.core.Bytecode.map_statics">map_statics</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.next_free_findex" href="#crashlink.core.Bytecode.next_free_findex">next_free_findex</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.partial_func_name" href="#crashlink.core.Bytecode.partial_func_name">partial_func_name</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.repair" href="#crashlink.core.Bytecode.repair">repair</a></code></li>
@@ -6346,8 +6555,10 @@ attributes &ndash; see the documentation for details.</p></div>
 <ul class="two-column">
 <li><code><a title="crashlink.core.Obj.bindings" href="#crashlink.core.Obj.bindings">bindings</a></code></li>
 <li><code><a title="crashlink.core.Obj.deserialise" href="#crashlink.core.Obj.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Obj.dynamic" href="#crashlink.core.Obj.dynamic">dynamic</a></code></li>
 <li><code><a title="crashlink.core.Obj.fields" href="#crashlink.core.Obj.fields">fields</a></code></li>
 <li><code><a title="crashlink.core.Obj.get_containing_type" href="#crashlink.core.Obj.get_containing_type">get_containing_type</a></code></li>
+<li><code><a title="crashlink.core.Obj.is_static" href="#crashlink.core.Obj.is_static">is_static</a></code></li>
 <li><code><a title="crashlink.core.Obj.name" href="#crashlink.core.Obj.name">name</a></code></li>
 <li><code><a title="crashlink.core.Obj.nbindings" href="#crashlink.core.Obj.nbindings">nbindings</a></code></li>
 <li><code><a title="crashlink.core.Obj.nfields" href="#crashlink.core.Obj.nfields">nfields</a></code></li>
@@ -6355,6 +6566,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <li><code><a title="crashlink.core.Obj.protos" href="#crashlink.core.Obj.protos">protos</a></code></li>
 <li><code><a title="crashlink.core.Obj.resolve_fields" href="#crashlink.core.Obj.resolve_fields">resolve_fields</a></code></li>
 <li><code><a title="crashlink.core.Obj.serialise" href="#crashlink.core.Obj.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.Obj.static" href="#crashlink.core.Obj.static">static</a></code></li>
 <li><code><a title="crashlink.core.Obj.str_resolve" href="#crashlink.core.Obj.str_resolve">str_resolve</a></code></li>
 <li><code><a title="crashlink.core.Obj.super" href="#crashlink.core.Obj.super">super</a></code></li>
 <li><code><a title="crashlink.core.Obj.virtual_map" href="#crashlink.core.Obj.virtual_map">virtual_map</a></code></li>

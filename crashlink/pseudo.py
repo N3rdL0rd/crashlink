@@ -298,6 +298,7 @@ def _generate_statements(
 
     return output_lines
 
+
 def _generate_function_pseudo(ir_func: IRFunction) -> str:
     """Generates the Haxe pseudocode for a single function, without the class wrapper."""
     code: Bytecode = ir_func.code
@@ -308,11 +309,10 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
 
     func_name_str = code.partial_func_name(func_core) or f"f{func_core.findex.value}"
     static_kw = ""
-    
+
     # A better way might be to just call disasm.is_static
     if disasm.is_static(code, func_core):
         static_kw = "static "
-
 
     if not func_name_str or func_name_str == "<none>":
         return f"// Could not determine name for f@{func_core.findex.value}"
@@ -332,7 +332,9 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
                 if i < len(arg_assigns):
                     param_name = arg_assigns[i][0].resolve(code)
 
-            param_type_decl = f": {arg_haxe_type_name}" if arg_haxe_type_name and arg_haxe_type_name != "Dynamic" else ""
+            param_type_decl = (
+                f": {arg_haxe_type_name}" if arg_haxe_type_name and arg_haxe_type_name != "Dynamic" else ""
+            )
             params_str_list.append(f"{param_name}{param_type_decl}")
 
         ret_core_type = core_fun_type_def.ret.resolve(code)
@@ -377,7 +379,7 @@ def class_pseudo(ir_class: "IRClass") -> str:
     Generates Haxe pseudocode for an entire IRClass.
     """
     code: Bytecode = ir_class.code
-    
+
     primary_obj = ir_class.dynamic if ir_class.dynamic else ir_class.static
     if not primary_obj:
         return "// Error: IRClass contains no valid Obj definitions."
@@ -409,16 +411,16 @@ def class_pseudo(ir_class: "IRClass") -> str:
 
     for ir_func in ir_class.static_methods:
         # A bit of a hack to give the generator context about where the function came from
-        setattr(ir_func, '_containing_class', ir_class)
+        setattr(ir_func, "_containing_class", ir_class)
         func_str = _generate_function_pseudo(ir_func)
-        for line in func_str.split('\n'):
+        for line in func_str.split("\n"):
             output_lines.append(f"{indent_str}{line}")
         output_lines.append("")
 
     for ir_func in ir_class.methods:
-        setattr(ir_func, '_containing_class', ir_class)
+        setattr(ir_func, "_containing_class", ir_class)
         func_str = _generate_function_pseudo(ir_func)
-        for line in func_str.split('\n'):
+        for line in func_str.split("\n"):
             output_lines.append(f"{indent_str}{line}")
         output_lines.append("")
 

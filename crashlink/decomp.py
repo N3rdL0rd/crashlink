@@ -124,7 +124,7 @@ class CFGraph:
         self.nodes: List[CFNode] = []
         self.entry: Optional[CFNode] = None
         self.applied_optimizers: List[CFOptimizer] = []
-            
+
         # Maps node -> List[predecessor_node]
         self.predecessors: Dict[CFNode, List[CFNode]] = {}
         # Maps node -> Set[dominator_nodes]
@@ -134,7 +134,7 @@ class CFGraph:
         # Maps node -> Set[post_dominator_nodes]
         self.post_dominators: Dict[CFNode, Set[CFNode]] = {}
         # Maps node -> immediate_post_dominator_node
-        self.immediate_post_dominators: Dict[CFNode, CFNode|None] = {}
+        self.immediate_post_dominators: Dict[CFNode, CFNode | None] = {}
 
     def add_node(self, ops: List[Opcode], base_offset: int = 0) -> CFNode:
         node = CFNode(ops)
@@ -263,7 +263,7 @@ class CFGraph:
             # fmt: on
         if self.entry:
             self.analyze()
-            
+
     def analyze(self) -> None:
         """
         Performs a full structural analysis of the CFG to identify
@@ -281,12 +281,13 @@ class CFGraph:
         if DEBUG:
             dbg_print("--- CFG Analysis Complete ---")
             for header, loop_nodes in self.loops.items():
-                dbg_print(f"Loop found with header {header.base_offset}, containing nodes: {[n.base_offset for n in loop_nodes]}")
+                dbg_print(
+                    f"Loop found with header {header.base_offset}, containing nodes: {[n.base_offset for n in loop_nodes]}"
+                )
             for node, ipd in self.immediate_post_dominators.items():
                 if len(node.branches) > 1:
                     dbg_print(f"Conditional node {node.base_offset} converges at {ipd.base_offset if ipd else 'None'}")
             dbg_print("-----------------------------")
-
 
     def _compute_predecessors(self) -> None:
         """Calculates the predecessors for every node in the graph."""
@@ -321,7 +322,7 @@ class CFGraph:
                 # Dom(n) = {n} U intersect(Dom(p) for p in preds(n))
                 preds = self.predecessors.get(node, [])
                 if not preds:
-                    continue # Should not happen in a connected graph apart from entry
+                    continue  # Should not happen in a connected graph apart from entry
 
                 pred_doms_sets = [doms[p] for p in preds]
                 new_doms = {node}.union(set.intersection(*pred_doms_sets))
@@ -392,7 +393,7 @@ class CFGraph:
         changed = True
         while changed:
             changed = False
-            for node in sorted(all_nodes, key=lambda n: n.base_offset): # Process in fixed order
+            for node in sorted(all_nodes, key=lambda n: n.base_offset):  # Process in fixed order
                 preds_in_reversed_graph = reversed_successors.get(node, [])
                 if not preds_in_reversed_graph:
                     continue
@@ -427,12 +428,12 @@ class CFGraph:
             # that is post-dominated by all others.
             # A simpler way is to find the one whose own post-dominator set has size |pdoms(n)| - 1.
             idom = None
-            min_extra_pdoms = float('inf')
+            min_extra_pdoms = float("inf")
 
             for p in pdoms_of_n:
                 if p == n:
                     continue
-                
+
                 pdoms_of_p = self.post_dominators.get(p, set())
                 # The immediate post-dominator of `n` is `p` if `pdoms(n) - {n}` is a superset of `pdoms(p)`.
                 # We find the `p` that has the largest set of post-dominators itself.
@@ -441,7 +442,7 @@ class CFGraph:
                     if num_extra_pdoms < min_extra_pdoms:
                         min_extra_pdoms = num_extra_pdoms
                         idom = p
-            
+
             self.immediate_post_dominators[n] = idom
 
     def optimize(self, optimizers: List[CFOptimizer]) -> None:
@@ -458,11 +459,10 @@ class CFGraph:
                 return "style=filled, fillcolor=aquamarine"
         return "style=filled, fillcolor=lightblue"
 
-
     def graph(self, code: Bytecode) -> str:
         """Generate DOT format graph visualization with loops highlighted."""
         dot = ["digraph G {"]
-        dot.append('  compound=true;')
+        dot.append("  compound=true;")
         dot.append('  labelloc="t";')
         dot.append('  label="CFG for %s";' % disasm.func_header(code, self.func))
         dot.append('  fontname="Arial";')
@@ -491,14 +491,13 @@ class CFGraph:
             loop_counter += 1
             dot.append(f"  subgraph cluster_loop_{loop_counter} {{")
             dot.append('    style="filled,rounded";')
-            dot.append('    color=grey90;') # The background color of the box
+            dot.append("    color=grey90;")  # The background color of the box
             dot.append(f'   label="Loop (header: {header.base_offset})";')
-            dot.append('   fontcolor=grey50;')
-            dot.append('   fontsize=12;')
+            dot.append("   fontcolor=grey50;")
+            dot.append("   fontsize=12;")
             node_ids_in_loop = [f"node_{id(n)}" for n in nodes_in_loop]
             dot.append(f"   {' '.join(node_ids_in_loop)};")
             dot.append("  }")
-
 
         for node in self.nodes:
             for branch, edge_type in node.branches:
@@ -1958,7 +1957,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
     def __init__(self, function: "IRFunction", aggressive: bool = False):
         super().__init__(function)
         self.aggressive = aggressive
-        
+
         # --- NEW: Pre-calculate the set of all user-named variables ---
         self._user_variable_names: Set[str] = set()
         if self.func.func.has_debug and self.func.func.assigns:
@@ -1966,7 +1965,6 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 # We resolve the string reference to get the actual variable name
                 self._user_variable_names.add(name_ref.resolve(self.func.code))
         dbg_print(f"IRTempAssignmentInliner: Protecting user variables: {self._user_variable_names}")
-
 
     def _substitute_in_expr(self, expr: IRExpression, target: IRLocal, replacement: IRExpression) -> IRExpression:
         """Recursively substitutes a local with an expression within another expression."""
@@ -1987,7 +1985,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             expr.target = self._substitute_in_expr(expr.target, target, replacement)
         elif isinstance(expr, IRCast):
             expr.expr = self._substitute_in_expr(expr.expr, target, replacement)
-        
+
         return expr
 
     def _substitute_in_statement(self, stmt: IRStatement, target: IRLocal, replacement: IRExpression) -> bool:
@@ -1996,7 +1994,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         Returns True if a substitution was made, False otherwise.
         """
         made_change = False
-        original_repr = repr(stmt) 
+        original_repr = repr(stmt)
 
         if isinstance(stmt, IRAssign):
             if stmt.target != target and isinstance(stmt.target, IRExpression):
@@ -2008,7 +2006,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         elif isinstance(stmt, IRReturn):
             if stmt.value:
                 stmt.value = self._substitute_in_expr(stmt.value, target, replacement)
-        
+
         for child in stmt.get_children():
             if child is not stmt:
                 if self._substitute_in_statement(child, target, replacement):
@@ -2016,7 +2014,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
 
         if not made_change and repr(stmt) != original_repr:
             made_change = True
-            
+
         return made_change
 
     def _is_local_redefined(self, local_to_check: IRLocal, statements: List[IRStatement]) -> bool:
@@ -2076,7 +2074,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             if not inlined:
                 new_statements.append(current_stmt)
                 i += 1
-        
+
         block.statements = new_statements
 
     def _visit_block_aggressive(self, block: IRBlock) -> None:
@@ -2091,19 +2089,21 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                     continue
 
                 temp_local = stmt.target
-                
+
                 # --- MODIFIED: Protect user-named variables from aggressive inlining ---
                 if temp_local.name in self._user_variable_names:
                     continue
 
                 expr_to_inline = stmt.expr
 
-                if not isinstance(expr_to_inline, IRExpression) or not self.is_safe_to_inline_aggressively(expr_to_inline):
+                if not isinstance(expr_to_inline, IRExpression) or not self.is_safe_to_inline_aggressively(
+                    expr_to_inline
+                ):
                     continue
                 if temp_local in expr_to_inline.get_children() or temp_local == expr_to_inline:
                     continue
 
-                remaining_statements = block.statements[i + 1:]
+                remaining_statements = block.statements[i + 1 :]
                 if self._is_local_redefined(temp_local, remaining_statements):
                     continue
 
@@ -2358,17 +2358,23 @@ class IRFunction:
     def _build_bool_expr_from_op(self, op: Opcode) -> IRBoolExpr:
         """Helper to create an IRBoolExpr from a conditional jump opcode."""
         cond_map = {
-            "JTrue": IRBoolExpr.CompareType.ISTRUE, "JFalse": IRBoolExpr.CompareType.ISFALSE,
-            "JNull": IRBoolExpr.CompareType.NULL, "JNotNull": IRBoolExpr.CompareType.NOT_NULL,
-            "JSLt": IRBoolExpr.CompareType.LT, "JSGte": IRBoolExpr.CompareType.GTE,
-            "JSGt": IRBoolExpr.CompareType.GT, "JSLte": IRBoolExpr.CompareType.LTE,
-            "JULt": IRBoolExpr.CompareType.LT, "JUGte": IRBoolExpr.CompareType.GTE,
-            "JEq": IRBoolExpr.CompareType.EQ, "JNotEq": IRBoolExpr.CompareType.NEQ,
+            "JTrue": IRBoolExpr.CompareType.ISTRUE,
+            "JFalse": IRBoolExpr.CompareType.ISFALSE,
+            "JNull": IRBoolExpr.CompareType.NULL,
+            "JNotNull": IRBoolExpr.CompareType.NOT_NULL,
+            "JSLt": IRBoolExpr.CompareType.LT,
+            "JSGte": IRBoolExpr.CompareType.GTE,
+            "JSGt": IRBoolExpr.CompareType.GT,
+            "JSLte": IRBoolExpr.CompareType.LTE,
+            "JULt": IRBoolExpr.CompareType.LT,
+            "JUGte": IRBoolExpr.CompareType.GTE,
+            "JEq": IRBoolExpr.CompareType.EQ,
+            "JNotEq": IRBoolExpr.CompareType.NEQ,
         }
         assert op.op is not None, "WTF??"
         cond = cond_map[op.op]
         left, right = None, None
-        if 'a' in op.df and 'b' in op.df:
+        if "a" in op.df and "b" in op.df:
             left = self.locals[op.df["a"].value]
             right = self.locals[op.df["b"].value]
         else:
@@ -2405,7 +2411,9 @@ class IRFunction:
         # --- 1. Process the Content of the Current Node ---
         # Determine which opcodes are for content vs. control flow.
         # If the last op is a branch/return, we don't lift it as a regular statement.
-        is_last_op_control_flow = last_op and last_op.op in (conditionals + ["Switch", "Ret", "JAlways", "Throw", "Rethrow"])
+        is_last_op_control_flow = last_op and last_op.op in (
+            conditionals + ["Switch", "Ret", "JAlways", "Throw", "Rethrow"]
+        )
         ops_to_process = node.ops[:-1] if is_last_op_control_flow else node.ops
 
         for op in ops_to_process:
@@ -2413,7 +2421,11 @@ class IRFunction:
                 dst = self.locals[op.df["dst"].value]
                 lhs = self.locals[op.df["a"].value]
                 rhs = self.locals[op.df["b"].value]
-                block.statements.append(IRAssign(self.code, dst, IRArithmetic(self.code, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])))
+                block.statements.append(
+                    IRAssign(
+                        self.code, dst, IRArithmetic(self.code, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])
+                    )
+                )
             elif op.op in ["Int", "Float", "Bool", "Bytes", "String", "Null"]:
                 dst = self.locals[op.df["dst"].value]
                 const_type = IRConst.ConstType[op.op.upper()]
@@ -2424,20 +2436,32 @@ class IRFunction:
                     const = IRConst(self.code, const_type, value=value)
                 block.statements.append(IRAssign(self.code, dst, const))
             elif op.op in simple_calls:
-                n = int(op.op[-1]) if op.op != "CallN" else len(op.df['args'].value)
+                n = int(op.op[-1]) if op.op != "CallN" else len(op.df["args"].value)
                 dst = self.locals[op.df["dst"].value]
                 fun = IRConst(self.code, IRConst.ConstType.FUN, op.df["fun"])
-                args = [self.locals[op.df[f"arg{i}"].value] for i in range(n)] if op.op != "CallN" else [self.locals[arg.value] for arg in op.df['args'].value]
+                args = (
+                    [self.locals[op.df[f"arg{i}"].value] for i in range(n)]
+                    if op.op != "CallN"
+                    else [self.locals[arg.value] for arg in op.df["args"].value]
+                )
                 call_expr = IRCall(self.code, IRCall.CallType.FUNC, fun, args)
 
                 if dst.get_type().kind.value == Type.Kind.VOID.value:
-                     block.statements.append(call_expr)
+                    block.statements.append(call_expr)
                 else:
                     block.statements.append(IRAssign(self.code, dst, call_expr))
             elif op.op == "Mov":
-                block.statements.append(IRAssign(self.code, self.locals[op.df["dst"].value], self.locals[op.df["src"].value]))
+                block.statements.append(
+                    IRAssign(self.code, self.locals[op.df["dst"].value], self.locals[op.df["src"].value])
+                )
             elif op.op == "GetGlobal":
-                block.statements.append(IRAssign(self.code, self.locals[op.df["dst"].value], IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df["global"])))
+                block.statements.append(
+                    IRAssign(
+                        self.code,
+                        self.locals[op.df["dst"].value],
+                        IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df["global"]),
+                    )
+                )
             elif op.op == "Field":
                 dst_local, obj_local = self.locals[op.df["dst"].value], self.locals[op.df["obj"].value]
                 obj_type = obj_local.get_type()
@@ -2454,16 +2478,18 @@ class IRFunction:
             elif op.op == "ToSFloat":
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = self.locals[op.df["src"].value]
-                
+
                 f64_idx = self.code.find_prim_type(Type.Kind.F64)
-                
+
                 cast_expr = IRCast(self.code, f64_idx, src_local)
                 block.statements.append(IRAssign(self.code, dst_local, cast_expr))
             # --- Add other non-branching opcode handling here ---
             else:
                 # Fallback for any other unhandled opcodes
                 if "dst" in op.df:
-                    block.statements.append(IRAssign(self.code, self.locals[op.df['dst'].value], IRUnliftedOpcode(self.code, op)))
+                    block.statements.append(
+                        IRAssign(self.code, self.locals[op.df["dst"].value], IRUnliftedOpcode(self.code, op))
+                    )
                 else:
                     # Statement that has side-effects but no destination
                     block.statements.append(IRUnliftedOpcode(self.code, op))
@@ -2473,8 +2499,10 @@ class IRFunction:
             convergence_node = self.cfg.immediate_post_dominators.get(node)
             true_branch_node, false_branch_node = None, None
             for branch_node, edge_type in node.branches:
-                if edge_type == "true": true_branch_node = branch_node
-                elif edge_type == "false": false_branch_node = branch_node
+                if edge_type == "true":
+                    true_branch_node = branch_node
+                elif edge_type == "false":
+                    false_branch_node = branch_node
 
             true_block_ir = self._lift_block(true_branch_node, visited.copy(), stop_at=convergence_node)
             false_block_ir = self._lift_block(false_branch_node, visited.copy(), stop_at=convergence_node)
@@ -2499,11 +2527,11 @@ class IRFunction:
                     cases[IRConst(self.code, IRConst.ConstType.INT, value=case_val)] = case_block_ir
                 elif edge_type == "switch: default":
                     default_block = case_block_ir
-            
+
             block.statements.append(IRSwitch(self.code, val_reg, cases, default_block))
             next_block_ir = self._lift_block(convergence_node, visited)
             block.statements.extend(next_block_ir.statements)
-            
+
         elif last_op and last_op.op == "Ret":
             ret_type = self.func.regs[last_op.df["ret"].value].resolve(self.code)
             ret_val = self.locals[last_op.df["ret"].value] if not isinstance(ret_type.definition, Void) else None
@@ -2526,12 +2554,8 @@ class IRClass:
     """
     Intermediate representation of a class.
     """
-    
-    def __init__(
-        self,
-        code: Bytecode,
-        obj: Obj
-    ) -> None:
+
+    def __init__(self, code: Bytecode, obj: Obj) -> None:
         self.code = code
         self.dynamic: Optional[Obj] = None
         self.static: Optional[Obj] = None
@@ -2552,15 +2576,17 @@ class IRClass:
         self.fields: List[Tuple[str, Type]] = []
         self.static_fields: List[Tuple[str, Type]] = []
         if self.dynamic is None and self.static is None:
-            raise ValueError("IRClass needs at least one valid Obj that has been preprocessed by `Bytecode.map_statics`!")
-        
+            raise ValueError(
+                "IRClass needs at least one valid Obj that has been preprocessed by `Bytecode.map_statics`!"
+            )
+
         if self.dynamic:
             self.methods += self.gather_methods(self.dynamic)
             self.fields += self.gather_fields(self.dynamic)
         if self.static:
             self.static_methods += self.gather_methods(self.static)
             self.static_fields += self.gather_fields(self.static)
-        
+
     def gather_methods(self, obj: Obj) -> List[IRFunction]:
         """
         Gathers all methods from an instance of Obj.
@@ -2577,7 +2603,7 @@ class IRClass:
             if fn not in [r.func for r in res]:
                 res.append(IRFunction(self.code, fn))
         return res
-    
+
     def gather_fields(self, obj: Obj) -> List[Tuple[str, Type]]:
         res: List[Tuple[str, Type]] = []
         binding_names: List[str] = []
@@ -2585,10 +2611,7 @@ class IRClass:
             binding_names.append(binding.field.resolve_obj(self.code, obj).name.resolve(self.code))
         for field in obj.fields:
             if not field.name.resolve(self.code) in binding_names:
-                res.append((
-                    field.name.resolve(self.code),
-                    field.type.resolve(self.code)
-                ))
+                res.append((field.name.resolve(self.code), field.type.resolve(self.code)))
         return res
 
     def pseudo(self) -> str:
@@ -2596,6 +2619,7 @@ class IRClass:
         Generates Haxe pseudocode for the entire class.
         """
         from . import pseudo
+
         return pseudo.class_pseudo(self)
 
     def print(self) -> None:
