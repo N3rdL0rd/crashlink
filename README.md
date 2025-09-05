@@ -8,6 +8,8 @@ Pure-Python HashLink bytecode Swiss Army knife.
 > [!WARNING]
 > This project is under active development. Breaking changes may be made to APIs with zero notice.
 
+Join the [Hashlink Modding Community Discord](https://discord.gg/Es8ZpVkPey) for support!
+
 ## Features
 
 - Pure Python with zero dependencies, integrates nicely in a lot of places (IDAPython compatible!)
