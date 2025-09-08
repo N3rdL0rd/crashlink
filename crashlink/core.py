@@ -121,6 +121,7 @@ class RawData(Serialisable):
     """
     A block of raw data.
     """
+    __slots__ = ('value', 'length')
 
     def __init__(self, length: int):
         self.value: bytes = b""
@@ -138,6 +139,7 @@ class SerialisableInt(Serialisable):
     """
     Integer of the specified byte length.
     """
+    __slots__ = ('value', 'length', 'byteorder', 'signed')
 
     def __init__(self) -> None:
         self.value: int = -1
@@ -172,6 +174,7 @@ class SerialisableF64(Serialisable):
     """
     A standard 64-bit float.
     """
+    __slots__ = ('value',)
 
     def __init__(self) -> None:
         self.value = 0.0
@@ -192,80 +195,49 @@ class VarInt(Serialisable):
     """
     Variable-length integer - can be 1, 2, or 4 bytes.
     """
+    __slots__ = ('value',)
 
     def __init__(self, value: int = 0):
         self.value: int = value
 
     def deserialise(self: T, f: BinaryIO | BytesIO) -> T:
-        # Read first byte - keep int.from_bytes for single byte
-        b = int.from_bytes(f.read(1), "big")
-
-        # Single byte format (0xxxxxxx)
-        if not (b & 0x80):
+        b = f.read(1)[0]
+        if b < 0x80:
             self.value = b
             return self
-
-        # Two byte format (10xxxxxx)
-        if not (b & 0x40):
-            # Read 2 bytes as unsigned short
-            second = f.read(1)[0]  # Faster than int.from_bytes for single byte
-
-            # Combine bytes and handle sign
-            self.value = ((b & 0x1F) << 8) | second
-            if b & 0x20:
-                self.value = -self.value
+        if b < 0xC0:
+            second = f.read(1)[0]
+            val = ((b & 0x1F) << 8) | second
+            self.value = (val ^ -((b >> 5) & 1)) + ((b >> 5) & 1)
             return self
-
-        # Four byte format (11xxxxxx)
         remaining_bytes = f.read(3)
         if len(remaining_bytes) < 3:
-            raise MalformedBytecode("Incomplete VarInt at end of stream")
-        remaining = _struct_medium.unpack(b"\x00" + remaining_bytes)[0]
-
-        # Combine all bytes and handle sign
-        self.value = ((b & 0x1F) << 24) | remaining
-        if b & 0x20:
-            self.value = -self.value
+            raise ValueError("Incomplete VarInt at end of stream")
+        remaining = int.from_bytes(remaining_bytes, "big")
+        val = ((b & 0x1F) << 24) | remaining
+        self.value = (val ^ -((b >> 5) & 1)) + ((b >> 5) & 1)
         return self
 
     def serialise(self) -> bytes:
-        if self.value < 0:
-            value = -self.value
-            if value < 0x2000:  # 13 bits
-                return bytes([(value >> 8) | 0xA0, value & 0xFF])
-            if value >= 0x20000000:
-                raise MalformedBytecode("value can't be >= 0x20000000")
-            # Optimized 4-byte case
-            return bytes(
-                [
-                    (value >> 24) | 0xE0,
-                    (value >> 16) & 0xFF,
-                    (value >> 8) & 0xFF,
-                    value & 0xFF,
-                ]
-            )
-
-        if self.value < 0x80:  # 7 bits
-            return bytes([self.value])
-        if self.value < 0x2000:  # 13 bits
-            return bytes([(self.value >> 8) | 0x80, self.value & 0xFF])
-        if self.value >= 0x20000000:
-            raise MalformedBytecode("value can't be >= 0x20000000")
-        # Optimized 4-byte case
-        return bytes(
-            [
-                (self.value >> 24) | 0xC0,
-                (self.value >> 16) & 0xFF,
-                (self.value >> 8) & 0xFF,
-                self.value & 0xFF,
-            ]
-        )
+        value = self.value
+        sign_bit = 0
+        if value < 0:
+            sign_bit = 0x20
+            value = -value
+        if value < 0x80:
+            return bytes([value])
+        if value < 0x2000:
+            return bytes([(value >> 8) | 0x80 | sign_bit, value & 0xFF])
+        if value >= 0x20000000:
+            raise ValueError("Value out of range for VarInt")
+        return bytes([(value >> 24) | 0xC0 | sign_bit, (value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF])
 
 
 class ResolvableVarInt(VarInt, ABC):
     """
     Base class for resolvable VarInts. Call `resolve` to get a direct reference to the object it points to.
     """
+    __slots__ = ()
 
     @abstractmethod
     def resolve(self, code: "Bytecode") -> Any:
@@ -279,6 +251,7 @@ class fIndex(ResolvableVarInt):
     """
     Abstract class based on VarInt to represent a distinct function index instead of just an arbitrary number.
     """
+    __slots__ = ()
 
     def resolve(self, code: "Bytecode") -> "Function|Native":
         for function in code.functions:
@@ -294,6 +267,7 @@ class tIndex(ResolvableVarInt):
     """
     Reference to a type in the bytecode.
     """
+    __slots__ = ()
 
     def resolve(self, code: "Bytecode") -> "Type":
         return code.types[self.value]
@@ -303,6 +277,7 @@ class gIndex(ResolvableVarInt):
     """
     Reference to a global object in the bytecode.
     """
+    __slots__ = ()
 
     def resolve(self, code: "Bytecode") -> "Type":
         return code.global_types[self.value].resolve(code)
@@ -318,6 +293,7 @@ class strRef(ResolvableVarInt):
     """
     Reference to a string in the bytecode.
     """
+    __slots__ = ()
 
     def resolve(self, code: "Bytecode") -> str:
         return code.strings.value[self.value]
@@ -327,6 +303,7 @@ class intRef(ResolvableVarInt):
     """
     Reference to an integer in the bytecode.
     """
+    __slots__ = ()
 
     def resolve(self, code: "Bytecode") -> SerialisableInt:
         return code.ints[self.value]
@@ -336,6 +313,7 @@ class floatRef(ResolvableVarInt):
     """
     Reference to a float in the bytecode.
     """
+    __slots__ = ()
 
     def resolve(self, code: "Bytecode") -> SerialisableF64:
         return code.floats[self.value]
@@ -345,6 +323,7 @@ class bytesRef(ResolvableVarInt):
     """
     Reference to a byte string in the bytecode.
     """
+    __slots__ = ()
 
     def resolve(self, code: "Bytecode") -> bytes:
         if code.bytes:
@@ -357,7 +336,6 @@ class fieldRef(ResolvableVarInt):
     """
     Reference to a field in an object definition.
     """
-
     obj: Optional["Obj|Virtual"] = None
 
     def resolve(self, code: "Bytecode") -> "Field":
@@ -1562,6 +1540,7 @@ class Function(Serialisable):
     """
     Represents a function in the bytecode. Due to the interesting ways in which HashLink works, this does not have a name or a signature, but rather a return type and a list of registers and opcodes.
     """
+    __slots__ = ('type', 'findex', 'nregs', 'nops', 'regs', 'ops', 'has_debug', 'version', 'debuginfo', 'nassigns', 'assigns', 'calls')
 
     def __init__(self) -> None:
         self.type = tIndex()
@@ -1690,6 +1669,7 @@ class Constant(Serialisable):
     """
     Represents a bytecode constant.
     """
+    __slots__ = ('_global', 'nfields', 'fields')
 
     def __init__(self) -> None:
         self._global = gIndex()
