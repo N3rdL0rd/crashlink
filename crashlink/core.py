@@ -219,18 +219,37 @@ class VarInt(Serialisable):
         return self
 
     def serialise(self) -> bytes:
-        value = self.value
-        sign_bit = 0
-        if value < 0:
-            sign_bit = 0x20
-            value = -value
-        if value < 0x80:
-            return bytes([value])
-        if value < 0x2000:
-            return bytes([(value >> 8) | 0x80 | sign_bit, value & 0xFF])
-        if value >= 0x20000000:
-            raise ValueError("Value out of range for VarInt")
-        return bytes([(value >> 24) | 0xC0 | sign_bit, (value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF])
+        if self.value < 0:
+            value = -self.value
+            if value < 0x2000:  # 13 bits
+                return bytes([(value >> 8) | 0xA0, value & 0xFF])
+            if value >= 0x20000000:
+                raise MalformedBytecode("value can't be >= 0x20000000")
+            # Optimized 4-byte case
+            return bytes(
+                [
+                    (value >> 24) | 0xE0,
+                    (value >> 16) & 0xFF,
+                    (value >> 8) & 0xFF,
+                    value & 0xFF,
+                ]
+            )
+
+        if self.value < 0x80:  # 7 bits
+            return bytes([self.value])
+        if self.value < 0x2000:  # 13 bits
+            return bytes([(self.value >> 8) | 0x80, self.value & 0xFF])
+        if self.value >= 0x20000000:
+            raise MalformedBytecode("value can't be >= 0x20000000")
+        # Optimized 4-byte case
+        return bytes(
+            [
+                (self.value >> 24) | 0xC0,
+                (self.value >> 16) & 0xFF,
+                (self.value >> 8) & 0xFF,
+                self.value & 0xFF,
+            ]
+        )
 
 
 class ResolvableVarInt(VarInt, ABC):
