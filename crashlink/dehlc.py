@@ -75,6 +75,7 @@ def code_from_bin(
         raise ValueError("One of `path` or `data` must be passed.")
 
     assert binary is not None, "Failed to parse binary!"
+    assert isinstance(binary, (lief.PE.Binary, lief.ELF.Binary, lief.MachO.Binary))
 
     def get_symbol(name: str) -> lief.Symbol:
         for symbol in binary.symbols:
