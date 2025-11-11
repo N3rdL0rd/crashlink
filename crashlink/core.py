@@ -224,7 +224,7 @@ class VarInt(Serialisable):
             if value < 0x2000:  # 13 bits
                 return bytes([(value >> 8) | 0xA0, value & 0xFF])
             if value >= 0x20000000:
-                raise MalformedBytecode("value can't be >= 0x20000000")
+                raise MalformedBytecode("The value of a VarInt can't be >= 0x20000000!")
             # Optimized 4-byte case
             return bytes(
                 [
@@ -240,7 +240,7 @@ class VarInt(Serialisable):
         if self.value < 0x2000:  # 13 bits
             return bytes([(self.value >> 8) | 0x80, self.value & 0xFF])
         if self.value >= 0x20000000:
-            raise MalformedBytecode("value can't be >= 0x20000000")
+            raise MalformedBytecode("The value of a VarInt can't be >= 0x20000000!")
         # Optimized 4-byte case
         return bytes(
             [
