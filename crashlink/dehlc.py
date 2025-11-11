@@ -80,13 +80,13 @@ def code_from_bin(
     def get_symbol(name: str) -> lief.Symbol:
         for symbol in binary.symbols:
             if str(symbol.name) == name:
-                dbg_print(f"Symbol {name} -> 0x{symbol.value:x}")
+                # dbg_print(f"Symbol {name} -> 0x{symbol.value:x}")
                 return symbol
         raise ValueError("No such symbol!")
 
     def read_int(address: int, size: int) -> int:
         val = binary.get_int_from_virtual_address(address, size)
-        dbg_print(f"Reading int sized {size:x} from 0x{address:x} -> {val}")
+        # dbg_print(f"Reading int sized {size:x} from 0x{address:x} -> {val}")
         if val is not None:
             return val
         return 0
@@ -106,9 +106,9 @@ def code_from_bin(
             new = read_bytes(address + (i * char_size), char_size)
             out += new
             if not any(new):
-                dbg_print(
-                    f"Read bytes {out.decode('utf-8' if char_size == 1 else 'utf-16', errors='replace')} from 0x{address:x}"
-                )
+                #dbg_print(
+                #    f"Read bytes {out.decode('utf-8' if char_size == 1 else 'utf-16', errors='replace')} from 0x{address:x}"
+                #)
                 return out
             i += 1
 
@@ -442,6 +442,10 @@ def code_from_bin(
 
     code.ntypes.value = len(types)
     code.types = types
+    vd = Type()
+    vd.kind.value = Type.Kind.VOID.value
+    vd.definition = None
+    code.types.insert(0, vd)
 
     # TODO: functions, stubs, strings, bytes, ints, and a whole buncha other stuff
 
