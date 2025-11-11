@@ -1236,7 +1236,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=f"crashlink CLI ({VERSION})", prog="crashlink")
     parser.add_argument(
         "file",
-        help="The file to open - can be HashLink bytecode, a Haxe source file or a crashlink assembly file.",
+        help="The file to operate on.",
     )
     parser.add_argument(
         "-a",
@@ -1274,6 +1274,12 @@ def main() -> None:
         help="Disable debug output that may have been implicitly activted somewhere else",
         action="store_true",
     )
+    parser.add_argument(
+        "-C",
+        "--dehlc",
+        help="Extracts information about a compiled HL/C binary. Requires debug information (PDB for PE, DWARF for ELF)",
+        action="store_true",
+    )
     args = parser.parse_args()
 
     if args.debug:
@@ -1296,36 +1302,50 @@ def main() -> None:
             print(f"{args.file} -> {'.'.join(os.path.basename(args.file).split('.')[:-1]) + '.hl'}")
             return
 
-    is_haxe = True
-    with open(args.file, "rb") as f:
-        if f.read(3) == b"HLB":
-            is_haxe = False
-        else:
-            f.seek(0)
-            try:
-                f.read(128).decode("utf-8")
-            except UnicodeDecodeError:
-                is_haxe = False
-    if is_haxe:
-        stripped = args.file.split(".")[0]
-        os.system(f"haxe -hl {stripped}.hl -main {args.file}")
-        with open(f"{stripped}.hl", "rb") as f:
-            code = Bytecode().deserialise(f, init_globals=True if not args.no_constants else False)
-    elif not args.file.endswith(".pkl"):
-        with open(args.file, "rb") as f:
-            code = Bytecode().deserialise(f, init_globals=True if not args.no_constants else False)
-    elif args.file.endswith(".pkl"):
-        try:
-            import dill
 
+    if args.dehlc:
+        try:
+            from .dehlc import code_from_bin
+            print("crashlink De-HL/C is IN DEVELOPMENT. Use at your own risk. Only x86 is well-supported, ARM is a work in progress.")
+            print("This will produce an in-memory bytecode image. If you want to work with any extracted information externally, use `save` to serialise it to the disk first.")
+            print("Opening file...")
             with open(args.file, "rb") as f:
-                code = dill.load(f)
+                print("Reading file...")
+                code = code_from_bin(data=f.read())
         except ImportError:
-            print("Dill not found. Install dill to unpickle bytecode, or install crashlink with the [extras] option.")
+            print("You need to install crashlink with the [extras] group in order to use De-HL/C, since it requires `capstone` and `lief`. Sorry!")
             return
     else:
-        print("Unknown file format.")
-        return
+        is_haxe = True
+        with open(args.file, "rb") as f:
+            if f.read(3) == b"HLB":
+                is_haxe = False
+            else:
+                f.seek(0)
+                try:
+                    f.read(128).decode("utf-8")
+                except UnicodeDecodeError:
+                    is_haxe = False
+        if is_haxe:
+            stripped = args.file.split(".")[0]
+            os.system(f"haxe -hl {stripped}.hl -main {args.file}")
+            with open(f"{stripped}.hl", "rb") as f:
+                code = Bytecode().deserialise(f, init_globals=True if not args.no_constants else False)
+        elif not args.file.endswith(".pkl"):
+            with open(args.file, "rb") as f:
+                code = Bytecode().deserialise(f, init_globals=True if not args.no_constants else False)
+        elif args.file.endswith(".pkl"):
+            try:
+                import dill
+
+                with open(args.file, "rb") as f:
+                    code = dill.load(f)
+            except ImportError:
+                print("Dill not found. Install dill to unpickle bytecode, or install crashlink with the [extras] option.")
+                return
+        else:
+            print("Unknown file format.")
+            return
 
     if args.patch:
         print(f"Loading patch: {args.patch}")
