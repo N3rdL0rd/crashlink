@@ -1177,6 +1177,14 @@ class Packed(TypeDef):
         return res
 
 
+class GUID(_NoDataType):
+    """
+    GUID type, no data.
+    """
+
+    pass
+
+
 class Type(Serialisable):
     """
     Type definition:
@@ -1210,6 +1218,7 @@ class Type(Serialisable):
         Method,   # 20
         Struct,   # 21
         Packed,   # 22
+        GUID,     # 23, no data
     ]
     # fmt: on
 
@@ -1237,6 +1246,7 @@ class Type(Serialisable):
         METHOD = 20
         STRUCT = 21
         PACKED = 22
+        GUID = 23
 
     def __init__(self) -> None:
         self.kind = SerialisableInt()
@@ -2411,6 +2421,7 @@ class Bytecode(Serialisable):
             12,
             13,
             16,
+            23,
         ], f"This method can only find primitive types! Got: {kind}"
         for i, typ in enumerate(self.types):
             if typ.kind.value == kind.value:
@@ -2612,6 +2623,7 @@ __all__ = [
     "Field",
     "Fun",
     "Function",
+    "GUID",
     "I32",
     "I64",
     "InlineBool",

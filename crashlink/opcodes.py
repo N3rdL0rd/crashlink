@@ -1,5 +1,5 @@
 """
-Definitions of all 98 supported opcodes in the HashLink VM.
+Definitions of all 101 supported opcodes in the HashLink VM.
 """
 
 conditionals = [
@@ -166,9 +166,10 @@ opcodes = {
     "Nop": {},  # 98
     "Prefetch": {"value": "Reg", "field": "RefField", "mode": "InlineInt"},  # 99
     "Asm": {"mode": "InlineInt", "value": "InlineInt", "reg": "Reg"},  # 100
+    "Catch": {"global": "Reg"},  # 101
 }
 """
-Definitions of all 98 supported opcodes in the HashLink VM.
+Definitions of all 101 supported opcodes in the HashLink VM.
 
 Basic Operations:
 
@@ -464,6 +465,7 @@ opcode_docs = {
     "Nop": "No operation",
     "Prefetch": "CPU memory prefetch hint",
     "Asm": "Inline x86 assembly",
+    "Catch": "Catch exception handler (global register)",
 }
 
 terminal = ["Ret", "Throw", "Rethrow"]

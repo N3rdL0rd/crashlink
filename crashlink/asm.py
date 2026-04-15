@@ -12,6 +12,7 @@ from typing import Any, Dict, List
 from .core import (
     F32,
     F64,
+    GUID,
     I32,
     I64,
     U8,
@@ -118,6 +119,7 @@ class AsmFile:
             "Dyn": Dyn,
             "Array": Array,
             "Type": TypeType,
+            "GUID": GUID,
         }
         def_to_kind = {
             Void: 0,
@@ -132,6 +134,7 @@ class AsmFile:
             Dyn: 9,
             Array: 12,
             TypeType: 13,
+            GUID: 23,
         }
         for val in section.value:
             print(val.value)

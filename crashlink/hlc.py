@@ -160,6 +160,8 @@ def _ctype_no_ptr(code: Bytecode, typ: Type, i: int) -> Tuple[str, int]:
         return "vdynamic", 1
     if isinstance(defn, Method):
         return "void", 1
+    if isinstance(defn, GUID):
+        return "vguid", 1
     if isinstance(defn, Obj) or isinstance(defn, Struct):
         return f"obj${i}", 0
 
@@ -1862,6 +1864,10 @@ def generate_functions(code: Bytecode) -> List[str]:
                     case "Asm":
                         raise MalformedBytecode(
                             "Asm is not supported by either the official HL/C compiler or crashlink. This is done intentionally for feature parity."
+                        )
+                    case "Catch":
+                        raise MalformedBytecode(
+                            "Catch is not yet supported by crashlink HL/C code generation."
                         )
                     case _:
                         unknown_ops.add(op.op if op.op else "unknown?????")
