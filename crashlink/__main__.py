@@ -36,6 +36,7 @@ from .core import (
     Ref,
     Null,
     Packed,
+    GUID,
     Abstract,
 )
 from .globals import VERSION
@@ -670,6 +671,9 @@ class Commands(BaseCommands):
             except Exception:
                 pass
             print(f"  Packed Inner Type: {inner_type_name} (t@{packed_def.inner.value})")
+
+        elif isinstance(definition, GUID):
+            print(f"  GUID Type (no data)")
 
         elif isinstance(definition, Abstract):
             abs_def: Abstract = definition

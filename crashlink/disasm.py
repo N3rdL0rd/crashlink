@@ -312,6 +312,8 @@ def pseudo_from_op(
             return f"trap to reg{op.df['exc']} (end: {idx + (op.df['offset'].value)})"
         case "EndTrap":
             return f"end trap to reg{op.df['exc']}"
+        case "Catch":
+            return f"catch to reg{op.df['global']}"
 
         # Switch
         case "Switch":
