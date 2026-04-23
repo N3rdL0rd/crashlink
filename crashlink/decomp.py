@@ -683,7 +683,7 @@ class IRCall(IRExpression):
         self,
         code: Bytecode,
         call_type: "IRCall.CallType",
-        target: "IRConst|IRLocal|None",
+        target: "IRConst|IRLocal|IRField|None",
         args: List[IRExpression],
     ):
         super().__init__(code)
@@ -693,7 +693,7 @@ class IRCall(IRExpression):
         if self.call_type == IRCall.CallType.THIS and self.target is not None:
             raise DecompError("THIS calls must have a None target")
         if self.call_type != IRCall.CallType.CLOSURE and isinstance(self.target, IRLocal):
-            raise DecompError("Non-CLOSURE calls must have a constant target")
+            raise DecompError("Non-CLOSURE calls must not have a local target")
 
     def get_type(self) -> Type:
         # for now, assume closure calls return dynamic type
@@ -1657,7 +1657,7 @@ class IRConditionInliner(TraversingIROptimizer):
             if isinstance(call_expr.target, IRExpression):
                 inlined_target_expr = self._try_inline_into_generic_expr(call_expr.target, target, expr_to_inline)
                 if inlined_target_expr:
-                    if isinstance(inlined_target_expr, (IRConst, IRLocal, type(None))):
+                    if isinstance(inlined_target_expr, (IRConst, IRLocal, IRField, type(None))):
                         call_expr.target = inlined_target_expr
                         made_change = True
 
@@ -2044,7 +2044,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         elif isinstance(expr, IRCall):
             if expr.target is not None:
                 new_target, changed = self._substitute_in_expr(expr.target, target, replacement)
-                expr.target = cast(Union[IRConst, IRLocal], new_target)
+                expr.target = cast(Union[IRConst, IRLocal, IRField], new_target)
                 made_change = made_change or changed
             new_args = []
             for arg in expr.args:
@@ -2353,6 +2353,7 @@ class IRFunction:
                 IRSelfAssignOptimizer(self),
                 IRCommonBlockMerger(self),
                 IRTempAssignmentInliner(self, aggressive=False),
+                IRTempAssignmentInliner(self, aggressive=True),
                 IRVoidAssignOptimizer(self),
                 IRTraceOptimizer(self),
                 IRBlockFlattener(self),
@@ -2489,6 +2490,16 @@ class IRFunction:
                     block.statements.append(call_expr)
                 else:
                     block.statements.append(IRAssign(self.code, dst, call_expr))
+            elif op.op == "CallClosure":
+                dst = self.locals[op.df["dst"].value]
+                fun = self.locals[op.df["fun"].value]
+                args = [self.locals[arg.value] for arg in op.df["args"].value]
+                call_expr = IRCall(self.code, IRCall.CallType.CLOSURE, fun, args)
+
+                if dst.get_type().kind.value == Type.Kind.VOID.value:
+                    block.statements.append(call_expr)
+                else:
+                    block.statements.append(IRAssign(self.code, dst, call_expr))
             elif op.op == "Mov":
                 block.statements.append(
                     IRAssign(self.code, self.locals[op.df["dst"].value], self.locals[op.df["src"].value])
@@ -2522,6 +2533,11 @@ class IRFunction:
 
                 cast_expr = IRCast(self.code, f64_idx, src_local)
                 block.statements.append(IRAssign(self.code, dst_local, cast_expr))
+            elif op.op == "ToDyn" or op.op == "ToVirtual":
+                dst_local = self.locals[op.df["dst"].value]
+                src_local = self.locals[op.df["src"].value]
+                cast_expr = IRCast(self.code, self.func.regs[op.df["dst"].value], src_local)
+                block.statements.append(IRAssign(self.code, dst_local, cast_expr))
             elif op.op == "ToInt":
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = self.locals[op.df["src"].value]
@@ -2541,6 +2557,14 @@ class IRFunction:
                         ),
                     )
                 )
+            elif op.op == "DynSet":
+                obj_local = self.locals[op.df["obj"].value]
+                src_local = self.locals[op.df["src"].value]
+                field_name = op.df["field"].resolve(self.code)
+                field_expr = IRField(self.code, obj_local, field_name, self.func.regs[op.df["src"].value])
+                block.statements.append(IRAssign(self.code, field_expr, src_local))
+            elif op.op == "NullCheck":
+                continue
             else:
                 if "dst" in op.df:
                     block.statements.append(
