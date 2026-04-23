@@ -5,6 +5,7 @@ Decompilation, IR and control flow graph generation
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from enum import Enum as _Enum  # Enum is already defined in crashlink.core
 from pprint import pformat
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
@@ -347,9 +348,8 @@ class CFGraph:
                 # If the destination `v` dominates the source `u`, it's a back edge.
                 if v in self.dominators.get(u, set()):
                     header = v
-                    # Now find all nodes in the body of this natural loop.
-                    # The body consists of the header and all nodes that can reach 'u'
-                    # without passing through the header.
+                    # Build the natural loop for this back-edge. Only nodes dominated
+                    # by the header can belong to the loop body.
                     loop_body = {header, u}
                     stack = [u]
                     processed_for_body = {u, header}
@@ -357,12 +357,15 @@ class CFGraph:
                     while stack:
                         current = stack.pop()
                         for pred in self.predecessors.get(current, []):
-                            if pred not in processed_for_body:
+                            if pred not in processed_for_body and header in self.dominators.get(pred, set()):
                                 processed_for_body.add(pred)
                                 loop_body.add(pred)
                                 stack.append(pred)
 
-                    self.loops[header] = loop_body
+                    if header in self.loops:
+                        self.loops[header].update(loop_body)
+                    else:
+                        self.loops[header] = loop_body
 
     def _find_post_dominators(self) -> None:
         """
@@ -922,6 +925,19 @@ class IRBreak(IRStatement):
         return "<IRBreak>"
 
 
+class IRContinue(IRStatement):
+    """Continue statement"""
+
+    def __init__(self, code: Bytecode):
+        super().__init__(code)
+
+    def get_children(self) -> List[IRStatement]:
+        return []
+
+    def __repr__(self) -> str:
+        return "<IRContinue>"
+
+
 class IRReturn(IRStatement):
     """Return statement"""
 
@@ -1237,6 +1253,8 @@ class TraversingIROptimizer(IROptimizer):
             self.visit_return(statement)
         elif isinstance(statement, IRBreak):
             self.visit_break(statement)
+        elif isinstance(statement, IRContinue):
+            self.visit_continue(statement)
         elif isinstance(statement, IRExpression):
             self.visit_expression(statement)
 
@@ -1279,6 +1297,10 @@ class TraversingIROptimizer(IROptimizer):
 
     def visit_break(self, brk: IRBreak) -> None:
         """Visit an IRBreak. Override in subclasses for custom behavior."""
+        pass
+
+    def visit_continue(self, cont: IRContinue) -> None:
+        """Visit an IRContinue. Override in subclasses for custom behavior."""
         pass
 
     def visit_expression(self, expr: IRExpression) -> None:
@@ -1627,76 +1649,60 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
     are prepended to the new IRWhileLoop's body.
     """
 
-    def _try_convert_to_while_true_break(self, loop: IRPrimitiveLoop) -> Optional[IRWhileLoop]:
-        """
-        Attempts to convert an IRPrimitiveLoop into a while(true) { body; if (exit_cond) break; } structure.
-        This is suitable for loops originating from Haxe's `while(true) { ... if(cond) break; }`.
-        """
-        if not loop.condition.statements:
-            dbg_print(f"IRLoopCondOpt(while-true): PrimitiveLoop at {loop} has empty condition. Cannot convert.")
-            return None
+    def _clone_bool_expr(self, expr: IRBoolExpr) -> IRBoolExpr:
+        return IRBoolExpr(expr.code, expr.op, expr.left, expr.right)
 
-        # Heuristic: The original IRPrimitiveLoop's body should be empty,
-        # meaning the loop's logic is all in the condition block + its final jump.
-        if loop.body.statements:
-            dbg_print(
-                f"IRLoopCondOpt(while-true): PrimitiveLoop.body is not empty. Not a candidate. Body: {loop.body.statements}"
-            )
-            return None
+    def _inline_into_boolexpr(
+        self, bool_expr: IRBoolExpr, target: IRLocal | IRField, expr_to_inline: IRExpression
+    ) -> Optional[IRBoolExpr]:
+        modified = False
+        new_left = bool_expr.left
+        new_right = bool_expr.right
 
-        last_cond_stmt = loop.condition.statements[-1]
-        if not isinstance(last_cond_stmt, IRBoolExpr):
-            dbg_print(
-                f"IRLoopCondOpt(while-true): PrimitiveLoop condition does not end with IRBoolExpr. Ends with {type(last_cond_stmt).__name__}. Cannot convert."
-            )
-            return None
+        if bool_expr.left == target:
+            new_left = expr_to_inline
+            modified = True
+        if bool_expr.right == target:
+            new_right = expr_to_inline
+            modified = True
 
-        exit_condition_expr: IRBoolExpr = last_cond_stmt
-        actual_body_statements = list(loop.condition.statements[:-1])
+        if modified:
+            bool_expr.left = new_left
+            bool_expr.right = new_right
+            return bool_expr
+        return None
 
-        if not actual_body_statements:
-            dbg_print(
-                f"IRLoopCondOpt(while-true): No actual body statements found before exit condition. Not a typical while(true)+break pattern."
-            )
-            return None
+    def _statement_reads_target(self, statement: IRStatement, target: IRLocal | IRField) -> bool:
+        if statement == target:
+            return True
+        if isinstance(statement, IRAssign):
+            return self._statement_reads_target(statement.expr, target)
+        return any(self._statement_reads_target(child, target) for child in statement.get_children())
 
-        dbg_print(f"IRLoopCondOpt(while-true): Candidate for while(true) + if-break found for {loop}")
-
+    def _convert_to_while_true_break(
+        self,
+        loop: IRPrimitiveLoop,
+        setup_statements: List[IRStatement],
+        exit_condition_expr: IRBoolExpr,
+    ) -> IRWhileLoop:
         true_loop_condition = IRBoolExpr(loop.code, IRBoolExpr.CompareType.TRUE)
-
         break_block = IRBlock(loop.code)
         break_block.statements.append(IRBreak(loop.code))
+        if_break_stmt = IRConditional(loop.code, exit_condition_expr, break_block, IRBlock(loop.code))
 
-        empty_else_block = IRBlock(loop.code)
-
-        if_break_stmt = IRConditional(loop.code, exit_condition_expr, break_block, empty_else_block)
-
-        new_loop_body_stmts = actual_body_statements + [if_break_stmt]
         new_body_block = IRBlock(loop.code)
-        new_body_block.statements = new_loop_body_stmts
+        new_body_block.statements = setup_statements + [if_break_stmt] + list(loop.body.statements)
 
         new_while_loop = IRWhileLoop(loop.code, true_loop_condition, new_body_block)
-
         new_while_loop.comment = loop.comment
-
-        dbg_print(
-            f"IRLoopCondOpt(while-true): Converted IRPrimitiveLoop to IRWhileLoop(true) with if-break. Exit condition: {exit_condition_expr}"
-        )
         return new_while_loop
 
     def visit_block(self, block: IRBlock) -> None:
         new_statements: List[IRStatement] = []
         for stmt in block.statements:
             if isinstance(stmt, IRPrimitiveLoop):
-                converted_loop = self._try_convert_to_while_true_break(stmt)
-                if converted_loop:
-                    new_statements.append(converted_loop)
-                else:
-                    fallback_converted_loop = self._try_convert_to_while(stmt)
-                    if fallback_converted_loop:
-                        new_statements.append(fallback_converted_loop)
-                    else:
-                        new_statements.append(stmt)
+                converted_loop = self._try_convert_to_while(stmt)
+                new_statements.append(converted_loop if converted_loop else stmt)
             else:
                 new_statements.append(stmt)
         block.statements = new_statements
@@ -1714,32 +1720,38 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
             )
             return None
 
-        exit_condition_expr: IRBoolExpr = last_cond_stmt
+        setup_statements_for_body = loop.condition.statements[:-1]
+        working_exit_condition = self._clone_bool_expr(last_cond_stmt)
+        remaining_setup: List[IRStatement] = []
 
-        loop_continuation_expr = IRBoolExpr(
-            loop.code,
-            exit_condition_expr.op,
-            exit_condition_expr.left,
-            exit_condition_expr.right,
-        )
+        for i, stmt in enumerate(setup_statements_for_body):
+            if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRExpression):
+                later_statements = list(setup_statements_for_body[i + 1 :]) + list(loop.body.statements)
+                if any(self._statement_reads_target(later_stmt, stmt.target) for later_stmt in later_statements):
+                    remaining_setup.append(stmt)
+                    continue
+
+                inlined = self._inline_into_boolexpr(working_exit_condition, stmt.target, stmt.expr)
+                if inlined:
+                    continue
+            remaining_setup.append(stmt)
+
+        if remaining_setup:
+            dbg_print(
+                "IRLoopCondOpt: Condition setup must execute each iteration; converting to while(true)+break form."
+            )
+            return self._convert_to_while_true_break(loop, remaining_setup, working_exit_condition)
+
+        loop_continuation_expr = self._clone_bool_expr(working_exit_condition)
         loop_continuation_expr.invert()
 
-        setup_statements_for_body = loop.condition.statements[:-1]
-
-        new_body_statements = setup_statements_for_body + loop.body.statements
+        new_body_statements = list(loop.body.statements)
         new_body_block = IRBlock(loop.code)
         new_body_block.statements = new_body_statements
 
         new_while_loop = IRWhileLoop(loop.code, loop_continuation_expr, new_body_block)
 
         new_while_loop.comment = loop.comment
-
-        if setup_statements_for_body:
-            moved_comment = "(Condition setup moved into body)"
-            if new_while_loop.comment:
-                new_while_loop.comment += " " + moved_comment
-            else:
-                new_while_loop.comment = moved_comment
 
         dbg_print(f"IRLoopCondOpt: Converted IRPrimitiveLoop to IRWhileLoop. While condition: {loop_continuation_expr}")
         return new_while_loop
@@ -2349,74 +2361,17 @@ class IRFunction:
 
         return None  # No convergence found
 
-    def _patch_loop_condition(self, node: CFNode) -> None:
-        """Patches a loop condition block to remove the Label and anything else that could get it detected as a nested loop or other statement unintentionally."""
-        assert node.ops[0].op == "Label", "This isn't a label! This should never happen!"
-        node.ops = node.ops[1:]  # remove Label
-        assert node.ops[-1].op in conditionals
+    @dataclass
+    class _LoopContext:
+        header: CFNode
+        nodes: Set[CFNode]
+        exit_node: Optional[CFNode]
 
-    def _build_bool_expr_from_op(self, op: Opcode) -> IRBoolExpr:
-        """Helper to create an IRBoolExpr from a conditional jump opcode."""
-        cond_map = {
-            "JTrue": IRBoolExpr.CompareType.ISTRUE,
-            "JFalse": IRBoolExpr.CompareType.ISFALSE,
-            "JNull": IRBoolExpr.CompareType.NULL,
-            "JNotNull": IRBoolExpr.CompareType.NOT_NULL,
-            "JSLt": IRBoolExpr.CompareType.LT,
-            "JSGte": IRBoolExpr.CompareType.GTE,
-            "JSGt": IRBoolExpr.CompareType.GT,
-            "JSLte": IRBoolExpr.CompareType.LTE,
-            "JULt": IRBoolExpr.CompareType.LT,
-            "JUGte": IRBoolExpr.CompareType.GTE,
-            "JEq": IRBoolExpr.CompareType.EQ,
-            "JNotEq": IRBoolExpr.CompareType.NEQ,
-        }
-        assert op.op is not None, "WTF??"
-        cond = cond_map[op.op]
-        left, right = None, None
-        if "a" in op.df and "b" in op.df:
-            left = self.locals[op.df["a"].value]
-            right = self.locals[op.df["b"].value]
-        else:
-            reg_key = "cond" if "cond" in op.df else "reg"
-            left = self.locals[op.df[reg_key].value]
-        return IRBoolExpr(self.code, cond, left, right)
+    def _lift_ops_into_block(self, block: IRBlock, ops: List[Opcode]) -> None:
+        for op in ops:
+            if op.op == "Label":
+                continue
 
-    def _lift_block(
-        self,
-        node: Optional[CFNode],
-        visited: Set[CFNode],
-        stop_at: Optional[CFNode] = None,
-    ) -> IRBlock:
-        """
-        Recursively lifts a CFNode and its successors into an IRBlock.
-
-        Args:
-            node: The current CFNode to process.
-            visited: A set of nodes already processed in the current traversal path to prevent infinite loops.
-            stop_at: A CFNode that signals the end of the current branch (the convergence point).
-                     When this node is reached, the recursive call terminates.
-
-        Returns:
-            An IRBlock containing the lifted IR statements.
-        """
-        # --- Base Cases for Recursion Termination ---
-        if node is None or node == stop_at or node in visited:
-            return IRBlock(self.code)
-        visited.add(node)
-
-        block = IRBlock(self.code)
-        last_op = node.ops[-1] if node.ops else None
-
-        # --- 1. Process the Content of the Current Node ---
-        # Determine which opcodes are for content vs. control flow.
-        # If the last op is a branch/return, we don't lift it as a regular statement.
-        is_last_op_control_flow = last_op and last_op.op in (
-            conditionals + ["Switch", "Ret", "JAlways", "Throw", "Rethrow"]
-        )
-        ops_to_process = node.ops[:-1] if is_last_op_control_flow else node.ops
-
-        for op in ops_to_process:
             if op.op in arithmetic:
                 dst = self.locals[op.df["dst"].value]
                 lhs = self.locals[op.df["a"].value]
@@ -2483,20 +2438,175 @@ class IRFunction:
 
                 cast_expr = IRCast(self.code, f64_idx, src_local)
                 block.statements.append(IRAssign(self.code, dst_local, cast_expr))
-            # --- Add other non-branching opcode handling here ---
             else:
-                # Fallback for any other unhandled opcodes
                 if "dst" in op.df:
                     block.statements.append(
                         IRAssign(self.code, self.locals[op.df["dst"].value], IRUnliftedOpcode(self.code, op))
                     )
                 else:
-                    # Statement that has side-effects but no destination
                     block.statements.append(IRUnliftedOpcode(self.code, op))
+
+    def _shortest_distances(
+        self,
+        start: CFNode,
+        allowed_nodes: Optional[Set[CFNode]] = None,
+        stop_nodes: Optional[Set[CFNode]] = None,
+    ) -> Dict[CFNode, int]:
+        stop_nodes = stop_nodes or set()
+        queue: List[Tuple[CFNode, int]] = [(start, 0)]
+        distances: Dict[CFNode, int] = {}
+
+        while queue:
+            current, dist = queue.pop(0)
+            if current in distances:
+                continue
+            if allowed_nodes is not None and current not in allowed_nodes:
+                continue
+            if current in stop_nodes:
+                continue
+
+            distances[current] = dist
+            for next_node, _ in current.branches:
+                if next_node not in distances:
+                    queue.append((next_node, dist + 1))
+
+        return distances
+
+    def _find_convergence_node(
+        self,
+        left: Optional[CFNode],
+        right: Optional[CFNode],
+        allowed_nodes: Optional[Set[CFNode]] = None,
+        stop_nodes: Optional[Set[CFNode]] = None,
+    ) -> Optional[CFNode]:
+        if left is None or right is None:
+            return None
+
+        left_distances = self._shortest_distances(left, allowed_nodes, stop_nodes)
+        right_distances = self._shortest_distances(right, allowed_nodes, stop_nodes)
+        common_nodes = set(left_distances).intersection(right_distances)
+        if not common_nodes:
+            return None
+
+        return min(common_nodes, key=lambda node: (left_distances[node] + right_distances[node], node.base_offset))
+
+    def _loop_exit_nodes(self, loop_nodes: Set[CFNode]) -> List[CFNode]:
+        exit_nodes: Set[CFNode] = set()
+        for loop_node in loop_nodes:
+            for target, _ in loop_node.branches:
+                if target not in loop_nodes:
+                    exit_nodes.add(target)
+        return sorted(exit_nodes, key=lambda n: n.base_offset)
+
+    def _lift_loop(
+        self,
+        header: CFNode,
+        visited: Set[CFNode],
+        stop_at: Optional[CFNode],
+        parent_loop: Optional[_LoopContext],
+    ) -> IRBlock:
+        visited.add(header)
+        block = IRBlock(self.code)
+        loop_nodes = self.cfg.loops[header]
+        exit_nodes = self._loop_exit_nodes(loop_nodes)
+        exit_node = exit_nodes[0] if len(exit_nodes) == 1 else None
+        loop_ctx = self._LoopContext(header, loop_nodes, exit_node)
+
+        header_last_op = header.ops[-1] if header.ops else None
+        if header_last_op and header_last_op.op in conditionals:
+            cond_block = IRBlock(self.code)
+            self._lift_ops_into_block(cond_block, header.ops[:-1])
+            cond_block.statements.append(IRPrimitiveJump(self.code, header_last_op))
+
+            inside_successors = [target for target, _ in header.branches if target in loop_nodes and target != header]
+            body_start = inside_successors[0] if len(inside_successors) == 1 else None
+            body_block = (
+                self._lift_block(body_start, visited.copy(), stop_at=header, loop_ctx=loop_ctx)
+                if body_start is not None
+                else IRBlock(self.code)
+            )
+
+            block.statements.append(IRPrimitiveLoop(self.code, cond_block, body_block))
+        else:
+            body_block = self._lift_block(header, visited.copy(), stop_at=header, loop_ctx=loop_ctx)
+            block.statements.append(
+                IRWhileLoop(self.code, IRBoolExpr(self.code, IRBoolExpr.CompareType.TRUE), body_block)
+            )
+
+        next_block_ir = self._lift_block(exit_node, visited, stop_at, loop_ctx=parent_loop)
+        block.statements.extend(next_block_ir.statements)
+        return block
+
+    def _build_bool_expr_from_op(self, op: Opcode) -> IRBoolExpr:
+        """Helper to create an IRBoolExpr from a conditional jump opcode."""
+        cond_map = {
+            "JTrue": IRBoolExpr.CompareType.ISTRUE,
+            "JFalse": IRBoolExpr.CompareType.ISFALSE,
+            "JNull": IRBoolExpr.CompareType.NULL,
+            "JNotNull": IRBoolExpr.CompareType.NOT_NULL,
+            "JSLt": IRBoolExpr.CompareType.LT,
+            "JSGte": IRBoolExpr.CompareType.GTE,
+            "JSGt": IRBoolExpr.CompareType.GT,
+            "JSLte": IRBoolExpr.CompareType.LTE,
+            "JULt": IRBoolExpr.CompareType.LT,
+            "JUGte": IRBoolExpr.CompareType.GTE,
+            "JEq": IRBoolExpr.CompareType.EQ,
+            "JNotEq": IRBoolExpr.CompareType.NEQ,
+        }
+        assert op.op is not None, "WTF??"
+        cond = cond_map[op.op]
+        left, right = None, None
+        if "a" in op.df and "b" in op.df:
+            left = self.locals[op.df["a"].value]
+            right = self.locals[op.df["b"].value]
+        else:
+            reg_key = "cond" if "cond" in op.df else "reg"
+            left = self.locals[op.df[reg_key].value]
+        return IRBoolExpr(self.code, cond, left, right)
+
+    def _lift_block(
+        self,
+        node: Optional[CFNode],
+        visited: Set[CFNode],
+        stop_at: Optional[CFNode] = None,
+        loop_ctx: Optional[_LoopContext] = None,
+    ) -> IRBlock:
+        """
+        Recursively lifts a CFNode and its successors into an IRBlock.
+
+        Args:
+            node: The current CFNode to process.
+            visited: A set of nodes already processed in the current traversal path to prevent infinite loops.
+            stop_at: A CFNode that signals the end of the current branch (the convergence point).
+                     When this node is reached, the recursive call terminates.
+
+        Returns:
+            An IRBlock containing the lifted IR statements.
+        """
+        # --- Base Cases for Recursion Termination ---
+        if node is None or node == stop_at or node in visited:
+            return IRBlock(self.code)
+        if loop_ctx and node not in loop_ctx.nodes:
+            return IRBlock(self.code)
+        if node in self.cfg.loops and (loop_ctx is None or node != loop_ctx.header):
+            return self._lift_loop(node, visited, stop_at, loop_ctx)
+        visited.add(node)
+
+        block = IRBlock(self.code)
+        last_op = node.ops[-1] if node.ops else None
+
+        # --- 1. Process the Content of the Current Node ---
+        # Determine which opcodes are for content vs. control flow.
+        # If the last op is a branch/return, we don't lift it as a regular statement.
+        is_last_op_control_flow = last_op and last_op.op in (
+            conditionals + ["Switch", "Ret", "JAlways", "Throw", "Rethrow"]
+        )
+        ops_to_process = node.ops[:-1] if is_last_op_control_flow else node.ops
+
+        self._lift_ops_into_block(block, ops_to_process)
 
         # --- 2. Handle the Control Flow based on the Last Opcode ---
         if last_op and last_op.op in conditionals:
-            convergence_node = self.cfg.immediate_post_dominators.get(node)
             true_branch_node, false_branch_node = None, None
             for branch_node, edge_type in node.branches:
                 if edge_type == "true":
@@ -2504,24 +2614,59 @@ class IRFunction:
                 elif edge_type == "false":
                     false_branch_node = branch_node
 
-            true_block_ir = self._lift_block(true_branch_node, visited.copy(), stop_at=convergence_node)
-            false_block_ir = self._lift_block(false_branch_node, visited.copy(), stop_at=convergence_node)
-
             cond_expr = self._build_bool_expr_from_op(last_op)
+
+            def make_loop_branch(target: Optional[CFNode]) -> Optional[IRBlock]:
+                if target is None:
+                    return IRBlock(self.code)
+                if loop_ctx and target == loop_ctx.header:
+                    branch_block = IRBlock(self.code)
+                    branch_block.statements.append(IRContinue(self.code))
+                    return branch_block
+                if loop_ctx and target not in loop_ctx.nodes:
+                    branch_block = IRBlock(self.code)
+                    branch_block.statements.append(IRBreak(self.code))
+                    return branch_block
+                return None
+
+            true_block_ir = make_loop_branch(true_branch_node)
+            false_block_ir = make_loop_branch(false_branch_node)
+
+            stop_nodes = {loop_ctx.header} if loop_ctx else set()
+            allowed_nodes = loop_ctx.nodes if loop_ctx else None
+            convergence_node = self._find_convergence_node(
+                true_branch_node,
+                false_branch_node,
+                allowed_nodes=allowed_nodes,
+                stop_nodes=stop_nodes,
+            )
+
+            if true_block_ir is None:
+                true_block_ir = self._lift_block(true_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx)
+            if false_block_ir is None:
+                false_block_ir = self._lift_block(
+                    false_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                )
+
             conditional_stmt = IRConditional(self.code, cond_expr, true_block_ir, false_block_ir)
             block.statements.append(conditional_stmt)
 
             # Continue lifting from the convergence point
-            next_block_ir = self._lift_block(convergence_node, visited)
+            next_block_ir = self._lift_block(convergence_node, visited, loop_ctx=loop_ctx)
             block.statements.extend(next_block_ir.statements)
 
         elif last_op and last_op.op == "Switch":
-            convergence_node = self.cfg.immediate_post_dominators.get(node)
+            convergence_node = self._find_convergence_node(
+                node.branches[0][0] if node.branches else None,
+                node.branches[1][0] if len(node.branches) > 1 else None,
+                allowed_nodes=loop_ctx.nodes if loop_ctx else None,
+                stop_nodes={loop_ctx.header} if loop_ctx else None,
+            )
             val_reg = self.locals[last_op.df["reg"].value]
             cases, default_block = {}, IRBlock(self.code)
 
             for target_node, edge_type in node.branches:
-                case_block_ir = self._lift_block(target_node, visited.copy(), stop_at=convergence_node)
+                case_block_ir = self._lift_block(target_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx)
                 if edge_type.startswith("switch: case:"):
                     case_val = int(edge_type.split(":")[-1].strip())
                     cases[IRConst(self.code, IRConst.ConstType.INT, value=case_val)] = case_block_ir
@@ -2529,7 +2674,7 @@ class IRFunction:
                     default_block = case_block_ir
 
             block.statements.append(IRSwitch(self.code, val_reg, cases, default_block))
-            next_block_ir = self._lift_block(convergence_node, visited)
+            next_block_ir = self._lift_block(convergence_node, visited, loop_ctx=loop_ctx)
             block.statements.extend(next_block_ir.statements)
 
         elif last_op and last_op.op == "Ret":
@@ -2541,8 +2686,13 @@ class IRFunction:
             # Handles both explicit unconditional jumps and implicit fall-through
             if node.branches:
                 successor_node, _ = node.branches[0]
-                next_block_ir = self._lift_block(successor_node, visited, stop_at)
-                block.statements.extend(next_block_ir.statements)
+                if loop_ctx and successor_node == loop_ctx.header:
+                    return block
+                if loop_ctx and successor_node not in loop_ctx.nodes:
+                    block.statements.append(IRBreak(self.code))
+                else:
+                    next_block_ir = self._lift_block(successor_node, visited, stop_at, loop_ctx=loop_ctx)
+                    block.statements.extend(next_block_ir.statements)
 
         return block
 
@@ -2643,6 +2793,7 @@ __all__ = [
     "IRBreak",
     "IRCall",
     "IRConditional",
+    "IRContinue",
     "IRConst",
     "IRExpression",
     "IRFunction",
