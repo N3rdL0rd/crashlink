@@ -1055,6 +1055,30 @@ class Commands(BaseCommands):
                 print(f"Failed to write to {os.path.join(path, file)}")
         print(f"Files generated in {os.path.abspath(path)}")
 
+    @alias("mkdoc")
+    def mkdocs(self, args: List[str]) -> None:
+        """Generate a MkDocs + Material site for the bytecode's API. `mkdocs <path> [site name]`"""
+        if len(args) == 0:
+            print("Usage: mkdocs <path> [site name]")
+            return
+        path = args[0]
+        site_name = " ".join(args[1:]) if len(args) > 1 else "API Reference"
+        if not os.path.exists(path):
+            os.makedirs(path)
+        pages = disasm.gen_mkdocs(self.code, site_name=site_name)
+        for file, content in pages.items():
+            full_path = os.path.join(path, file)
+            try:
+                os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                with open(full_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+            except OSError:
+                print(f"Failed to write to {full_path}")
+        print(f"MkDocs project generated in {os.path.abspath(path)}")
+        print("To preview: pip install mkdocs-material && mkdocs serve")
+        print("To build:   mkdocs build")
+        print("(Run those commands from inside the output directory.)")
+
     def info(self, args: List[str]) -> None:
         """Prints information about the bytecode."""
         print(f"Bytecode version: {self.code.version}")
