@@ -28,11 +28,13 @@ from .decomp import (
     IRCall,
     IRConditional,
     IRTrace,
+    IRTryCatch,
     IRUnliftedOpcode,
     IRWhileLoop,
     IRPrimitiveLoop,
     IRReturn,
     IRPrimitiveJump,
+    IRSwitch,
     _get_type_in_code,
 )
 
@@ -133,13 +135,46 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
             return f"new {disasm.type_to_haxe(type_name)}()"
 
     elif isinstance(expr, IRCast):
-        return _expression_to_haxe(expr.expr, code, ir_function)
+        target_name = disasm.type_name(code, expr.get_type())
+        source_name = disasm.type_name(code, expr.expr.get_type())
+        inner = _expression_to_haxe(expr.expr, code, ir_function)
+        if target_name == "I32" and source_name in {"F32", "F64"}:
+            return f"Std.int({inner})"
+        return inner
 
     elif isinstance(expr, IRPrimitiveJump):  # Should be gone, but as a fallback
         return f"/* GOTO_LIKE({expr.op.op}) */"
 
     # Fallback for unknown expressions
     return f"/* <UnknownExpr: {type(expr).__name__}> */"
+
+
+def _inverted_bool_expr_to_haxe(expr: IRBoolExpr, code: Bytecode, ir_function: IRFunction) -> str:
+    op_map = {
+        IRBoolExpr.CompareType.EQ: "!=",
+        IRBoolExpr.CompareType.NEQ: "==",
+        IRBoolExpr.CompareType.LT: ">=",
+        IRBoolExpr.CompareType.LTE: ">",
+        IRBoolExpr.CompareType.GT: "<=",
+        IRBoolExpr.CompareType.GTE: "<",
+    }
+    if expr.op == IRBoolExpr.CompareType.NULL:
+        return f"{_expression_to_haxe(expr.left, code, ir_function)} != null"
+    if expr.op == IRBoolExpr.CompareType.NOT_NULL:
+        return f"{_expression_to_haxe(expr.left, code, ir_function)} == null"
+    if expr.op == IRBoolExpr.CompareType.ISTRUE:
+        return f"!{_expression_to_haxe(expr.left, code, ir_function)}"
+    if expr.op == IRBoolExpr.CompareType.ISFALSE:
+        return _expression_to_haxe(expr.left, code, ir_function)
+    if expr.op == IRBoolExpr.CompareType.TRUE:
+        return "false"
+    if expr.op == IRBoolExpr.CompareType.FALSE:
+        return "true"
+    if expr.left and expr.right and expr.op in op_map:
+        left = _expression_to_haxe(expr.left, code, ir_function)
+        right = _expression_to_haxe(expr.right, code, ir_function)
+        return f"{left} {op_map[expr.op]} {right}"
+    return f"!({_expression_to_haxe(expr, code, ir_function)})"
 
 
 def _generate_statements(
@@ -230,18 +265,47 @@ def _generate_statements(
                 output_lines.append(f"{indent}}}")
 
         elif isinstance(stmt, IRWhileLoop):
-            cond_str = _expression_to_haxe(stmt.condition, code, ir_function)
-            output_lines.append(f"{indent}while ({cond_str}) {{")
-            output_lines.extend(
-                _generate_statements(
-                    stmt.body.statements,
-                    code,
-                    ir_function,
-                    indent_level + 1,
-                    declared_vars_in_scope.copy(),
+            rendered_as_do_while = False
+            if (
+                isinstance(stmt.condition, IRBoolExpr)
+                and stmt.condition.op == IRBoolExpr.CompareType.TRUE
+                and stmt.body.statements
+            ):
+                last_stmt = stmt.body.statements[-1]
+                if (
+                    isinstance(last_stmt, IRConditional)
+                    and isinstance(last_stmt.condition, IRBoolExpr)
+                    and len(last_stmt.true_block.statements) == 1
+                    and isinstance(last_stmt.true_block.statements[0], IRBreak)
+                    and (not last_stmt.false_block or not last_stmt.false_block.statements)
+                ):
+                    output_lines.append(f"{indent}do {{")
+                    output_lines.extend(
+                        _generate_statements(
+                            stmt.body.statements[:-1],
+                            code,
+                            ir_function,
+                            indent_level + 1,
+                            declared_vars_in_scope.copy(),
+                        )
+                    )
+                    cond_str = _inverted_bool_expr_to_haxe(last_stmt.condition, code, ir_function)
+                    output_lines.append(f"{indent}}} while ({cond_str});")
+                    rendered_as_do_while = True
+
+            if not rendered_as_do_while:
+                cond_str = _expression_to_haxe(stmt.condition, code, ir_function)
+                output_lines.append(f"{indent}while ({cond_str}) {{")
+                output_lines.extend(
+                    _generate_statements(
+                        stmt.body.statements,
+                        code,
+                        ir_function,
+                        indent_level + 1,
+                        declared_vars_in_scope.copy(),
+                    )
                 )
-            )
-            output_lines.append(f"{indent}}}")
+                output_lines.append(f"{indent}}}")
 
         elif isinstance(stmt, IRPrimitiveLoop):  # Fallback if not optimized to IRWhileLoop
             output_lines.append(f"{indent}// Primitive Loop (condition first, then body)")
@@ -279,6 +343,60 @@ def _generate_statements(
                     output_lines.append(f"{indent}return {val_str};")
             else:
                 output_lines.append(f"{indent}return;")
+
+        elif isinstance(stmt, IRSwitch):
+            value_str = _expression_to_haxe(stmt.value, code, ir_function)
+            output_lines.append(f"{indent}switch ({value_str}) {{")
+            for case_value, case_block in stmt.cases.items():
+                case_str = _expression_to_haxe(case_value, code, ir_function)
+                output_lines.append(f"{indent}    case {case_str}:")
+                output_lines.extend(
+                    _generate_statements(
+                        case_block.statements,
+                        code,
+                        ir_function,
+                        indent_level + 2,
+                        declared_vars_in_scope.copy(),
+                    )
+                )
+            if stmt.default and stmt.default.statements:
+                output_lines.append(f"{indent}    default:")
+                output_lines.extend(
+                    _generate_statements(
+                        stmt.default.statements,
+                        code,
+                        ir_function,
+                        indent_level + 2,
+                        declared_vars_in_scope.copy(),
+                    )
+                )
+            output_lines.append(f"{indent}}}")
+
+        elif isinstance(stmt, IRTryCatch):
+            catch_name = "e"
+            if stmt.catch_local and stmt.catch_local.name and not stmt.catch_local.name.startswith("var"):
+                catch_name = stmt.catch_local.name
+            output_lines.append(f"{indent}try {{")
+            output_lines.extend(
+                _generate_statements(
+                    stmt.try_block.statements,
+                    code,
+                    ir_function,
+                    indent_level + 1,
+                    declared_vars_in_scope.copy(),
+                )
+            )
+            output_lines.append(f"{indent}}} catch ({catch_name}) {{")
+            output_lines.extend(
+                _generate_statements(
+                    stmt.catch_block.statements,
+                    code,
+                    ir_function,
+                    indent_level + 1,
+                    declared_vars_in_scope.copy(),
+                )
+            )
+            output_lines.append(f"{indent}}}")
 
         elif isinstance(stmt, IRBreak):
             output_lines.append(f"{indent}break;")

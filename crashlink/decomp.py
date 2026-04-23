@@ -828,6 +828,8 @@ class IRConst(IRExpression):
             if value is None:
                 raise DecompError("IRConst with type BOOL must have a value")
             self.value = value
+        elif const_type == IRConst.ConstType.NULL:
+            self.value = None
         else:
             if idx is None:
                 raise DecompError("IRConst must have an index")
@@ -966,6 +968,31 @@ class IRTrace(IRStatement):
     def __repr__(self) -> str:
         pos_str = ", ".join(f"{k}: {v}" for k, v in self.pos_info.items())
         return f"<IRTrace: msg={self.msg}, pos={{ {pos_str} }}>"
+
+
+class IRTryCatch(IRStatement):
+    """Structured try/catch statement."""
+
+    def __init__(
+        self,
+        code: Bytecode,
+        try_block: IRBlock,
+        catch_block: IRBlock,
+        catch_local: Optional[IRLocal] = None,
+    ):
+        super().__init__(code)
+        self.try_block = try_block
+        self.catch_block = catch_block
+        self.catch_local = catch_local
+
+    def get_children(self) -> List[IRStatement]:
+        children: List[IRStatement] = [self.try_block, self.catch_block]
+        if self.catch_local is not None:
+            children.insert(0, self.catch_local)
+        return children
+
+    def __repr__(self) -> str:
+        return f"<IRTryCatch: try\n\t{self.try_block}\ncatch ({self.catch_local})\n\t{self.catch_block}>"
 
 
 class IRSwitch(IRStatement):
@@ -1251,6 +1278,8 @@ class TraversingIROptimizer(IROptimizer):
             self.visit_switch(statement)
         elif isinstance(statement, IRReturn):
             self.visit_return(statement)
+        elif isinstance(statement, IRTryCatch):
+            self.visit_try_catch(statement)
         elif isinstance(statement, IRBreak):
             self.visit_break(statement)
         elif isinstance(statement, IRContinue):
@@ -1293,6 +1322,9 @@ class TraversingIROptimizer(IROptimizer):
 
     def visit_return(self, ret: IRReturn) -> None:
         """Visit an IRReturn. Override in subclasses for custom behavior."""
+
+    def visit_try_catch(self, try_catch: IRTryCatch) -> None:
+        """Visit an IRTryCatch. Override in subclasses for custom behavior."""
         pass
 
     def visit_break(self, brk: IRBreak) -> None:
@@ -1632,6 +1664,22 @@ class IRConditionInliner(TraversingIROptimizer):
             if made_change:
                 call_expr.args = new_args
                 return call_expr
+            return None
+
+        elif isinstance(current_expr, IRCast):
+            cast_expr: IRCast = current_expr
+            inlined_inner = self._try_inline_into_generic_expr(cast_expr.expr, target, expr_to_inline)
+            if inlined_inner:
+                cast_expr.expr = inlined_inner
+                return cast_expr
+            return None
+
+        elif isinstance(current_expr, IRField):
+            field_expr: IRField = current_expr
+            inlined_target = self._try_inline_into_generic_expr(field_expr.target, target, expr_to_inline)
+            if inlined_target:
+                field_expr.target = inlined_target
+                return field_expr
             return None
 
         return None
@@ -1978,27 +2026,48 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 self._user_variable_names.add(name_ref.resolve(self.func.code))
         dbg_print(f"IRTempAssignmentInliner: Protecting user variables: {self._user_variable_names}")
 
-    def _substitute_in_expr(self, expr: IRExpression, target: IRLocal, replacement: IRExpression) -> IRExpression:
+    def _substitute_in_expr(
+        self, expr: IRExpression, target: IRLocal, replacement: IRExpression
+    ) -> Tuple[IRExpression, bool]:
         """Recursively substitutes a local with an expression within another expression."""
         if expr == target:
-            return replacement
+            return replacement, True
 
+        made_change = False
         if isinstance(expr, (IRArithmetic, IRBoolExpr)):
             if expr.left:
-                expr.left = self._substitute_in_expr(expr.left, target, replacement)
+                expr.left, changed = self._substitute_in_expr(expr.left, target, replacement)
+                made_change = made_change or changed
             if expr.right:
-                expr.right = self._substitute_in_expr(expr.right, target, replacement)
+                expr.right, changed = self._substitute_in_expr(expr.right, target, replacement)
+                made_change = made_change or changed
         elif isinstance(expr, IRCall):
             if expr.target is not None:
-                new_target = self._substitute_in_expr(expr.target, target, replacement)
+                new_target, changed = self._substitute_in_expr(expr.target, target, replacement)
                 expr.target = cast(Union[IRConst, IRLocal], new_target)
-            expr.args = [self._substitute_in_expr(arg, target, replacement) for arg in expr.args]
+                made_change = made_change or changed
+            new_args = []
+            for arg in expr.args:
+                new_arg, changed = self._substitute_in_expr(arg, target, replacement)
+                new_args.append(new_arg)
+                made_change = made_change or changed
+            expr.args = new_args
         elif isinstance(expr, IRField):
-            expr.target = self._substitute_in_expr(expr.target, target, replacement)
+            expr.target, changed = self._substitute_in_expr(expr.target, target, replacement)
+            made_change = made_change or changed
         elif isinstance(expr, IRCast):
-            expr.expr = self._substitute_in_expr(expr.expr, target, replacement)
+            expr.expr, changed = self._substitute_in_expr(expr.expr, target, replacement)
+            made_change = made_change or changed
 
-        return expr
+        return expr, made_change
+
+    def _expr_contains_local(self, expr: IRExpression, local: IRLocal) -> bool:
+        if expr == local:
+            return True
+        for child in expr.get_children():
+            if isinstance(child, IRExpression) and self._expr_contains_local(child, local):
+                return True
+        return False
 
     def _substitute_in_statement(self, stmt: IRStatement, target: IRLocal, replacement: IRExpression) -> bool:
         """
@@ -2006,26 +2075,26 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         Returns True if a substitution was made, False otherwise.
         """
         made_change = False
-        original_repr = repr(stmt)
 
         if isinstance(stmt, IRAssign):
             if stmt.target != target and isinstance(stmt.target, IRExpression):
-                self._substitute_in_expr(stmt.target, target, replacement)
+                _, changed = self._substitute_in_expr(stmt.target, target, replacement)
+                made_change = made_change or changed
             if isinstance(stmt.expr, IRExpression):
-                stmt.expr = self._substitute_in_expr(stmt.expr, target, replacement)
+                stmt.expr, changed = self._substitute_in_expr(stmt.expr, target, replacement)
+                made_change = made_change or changed
         elif isinstance(stmt, IRExpression):
-            self._substitute_in_expr(stmt, target, replacement)
+            _, changed = self._substitute_in_expr(stmt, target, replacement)
+            made_change = made_change or changed
         elif isinstance(stmt, IRReturn):
             if stmt.value:
-                stmt.value = self._substitute_in_expr(stmt.value, target, replacement)
+                stmt.value, changed = self._substitute_in_expr(stmt.value, target, replacement)
+                made_change = made_change or changed
 
         for child in stmt.get_children():
             if child is not stmt:
                 if self._substitute_in_statement(child, target, replacement):
                     made_change = True
-
-        if not made_change and repr(stmt) != original_repr:
-            made_change = True
 
         return made_change
 
@@ -2049,6 +2118,13 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             return True
         if isinstance(expr, IRField):
             return self.is_safe_to_inline_aggressively(expr.target)
+        return False
+
+    def is_safe_to_inline_conservatively(self, expr: IRExpression) -> bool:
+        if isinstance(expr, (IRConst, IRLocal)):
+            return True
+        if isinstance(expr, IRCast):
+            return self.is_safe_to_inline_conservatively(expr.expr)
         return False
 
     def visit_block(self, block: IRBlock) -> None:
@@ -2075,6 +2151,14 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 # --- MODIFIED: Check if the variable is user-named before attempting to inline ---
                 if temp_local.name not in self._user_variable_names:
                     expr_to_inline = current_stmt.expr
+                    if not self.is_safe_to_inline_conservatively(expr_to_inline):
+                        new_statements.append(current_stmt)
+                        i += 1
+                        continue
+                    if isinstance(expr_to_inline, IRExpression) and self._expr_contains_local(expr_to_inline, temp_local):
+                        new_statements.append(current_stmt)
+                        i += 1
+                        continue
                     if i + 1 < len(statements):
                         next_stmt = statements[i + 1]
                         if self._substitute_in_statement(next_stmt, temp_local, expr_to_inline):
@@ -2438,6 +2522,25 @@ class IRFunction:
 
                 cast_expr = IRCast(self.code, f64_idx, src_local)
                 block.statements.append(IRAssign(self.code, dst_local, cast_expr))
+            elif op.op == "ToInt":
+                dst_local = self.locals[op.df["dst"].value]
+                src_local = self.locals[op.df["src"].value]
+                cast_expr = IRCast(self.code, self.func.regs[op.df["dst"].value], src_local)
+                block.statements.append(IRAssign(self.code, dst_local, cast_expr))
+            elif op.op == "Incr":
+                dst_local = self.locals[op.df["dst"].value]
+                block.statements.append(
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRArithmetic(
+                            self.code,
+                            dst_local,
+                            IRConst(self.code, IRConst.ConstType.INT, value=1),
+                            IRArithmetic.ArithmeticType.ADD,
+                        ),
+                    )
+                )
             else:
                 if "dst" in op.df:
                     block.statements.append(
@@ -2599,7 +2702,7 @@ class IRFunction:
         # Determine which opcodes are for content vs. control flow.
         # If the last op is a branch/return, we don't lift it as a regular statement.
         is_last_op_control_flow = last_op and last_op.op in (
-            conditionals + ["Switch", "Ret", "JAlways", "Throw", "Rethrow"]
+            conditionals + ["Switch", "Ret", "JAlways", "Throw", "Rethrow", "Trap", "EndTrap"]
         )
         ops_to_process = node.ops[:-1] if is_last_op_control_flow else node.ops
 
@@ -2677,10 +2780,43 @@ class IRFunction:
             next_block_ir = self._lift_block(convergence_node, visited, loop_ctx=loop_ctx)
             block.statements.extend(next_block_ir.statements)
 
+        elif last_op and last_op.op == "Trap":
+            try_branch_node, catch_branch_node = None, None
+            for branch_node, edge_type in node.branches:
+                if edge_type == "fall-through":
+                    try_branch_node = branch_node
+                elif edge_type == "trap":
+                    catch_branch_node = branch_node
+
+            stop_nodes = {loop_ctx.header} if loop_ctx else set()
+            allowed_nodes = loop_ctx.nodes if loop_ctx else None
+            convergence_node = self._find_convergence_node(
+                try_branch_node,
+                catch_branch_node,
+                allowed_nodes=allowed_nodes,
+                stop_nodes=stop_nodes,
+            )
+
+            try_block_ir = self._lift_block(try_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx)
+            catch_block_ir = self._lift_block(
+                catch_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+            )
+            catch_local = self.locals[last_op.df["exc"].value]
+            block.statements.append(IRTryCatch(self.code, try_block_ir, catch_block_ir, catch_local))
+
+            next_block_ir = self._lift_block(convergence_node, visited, loop_ctx=loop_ctx)
+            block.statements.extend(next_block_ir.statements)
+
         elif last_op and last_op.op == "Ret":
             ret_type = self.func.regs[last_op.df["ret"].value].resolve(self.code)
             ret_val = self.locals[last_op.df["ret"].value] if not isinstance(ret_type.definition, Void) else None
             block.statements.append(IRReturn(self.code, ret_val))
+
+        elif last_op and last_op.op == "EndTrap":
+            if node.branches:
+                successor_node, _ = node.branches[0]
+                next_block_ir = self._lift_block(successor_node, visited, stop_at, loop_ctx=loop_ctx)
+                block.statements.extend(next_block_ir.statements)
 
         elif last_op and (last_op.op == "JAlways" or not is_last_op_control_flow):
             # Handles both explicit unconditional jumps and implicit fall-through
@@ -2804,4 +2940,5 @@ __all__ = [
     "IRStatement",
     "IRSwitch",
     "IRTrace",
+    "IRTryCatch",
 ]
