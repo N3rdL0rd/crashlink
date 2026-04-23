@@ -11,6 +11,7 @@ from .core import Bytecode, Obj, Type, Function, Fun, destaticify
 from . import disasm
 from .decomp import (
     IRBreak,
+    IRContinue,
     IRCast,
     IRClass,
     IRField,
@@ -281,6 +282,9 @@ def _generate_statements(
 
         elif isinstance(stmt, IRBreak):
             output_lines.append(f"{indent}break;")
+
+        elif isinstance(stmt, IRContinue):
+            output_lines.append(f"{indent}continue;")
 
         elif isinstance(stmt, IRExpression):  # e.g. a standalone IRCall not assigned
             expr_str = _expression_to_haxe(stmt, code, ir_function)
