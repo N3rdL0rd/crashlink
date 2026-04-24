@@ -2857,6 +2857,29 @@ class IRFunction:
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = self.locals[op.df["src"].value]
                 block.statements.append(IRAssign(self.code, dst_local, IRRef(self.code, src_local)))
+            elif op.op == "StaticClosure":
+                dst_local = self.locals[op.df["dst"].value]
+                fun_const = IRConst(self.code, IRConst.ConstType.FUN, idx=op.df["fun"])
+                block.statements.append(IRAssign(self.code, dst_local, fun_const))
+            elif op.op == "VirtualClosure":
+                dst_local = self.locals[op.df["dst"].value]
+                obj_local = self.locals[op.df["obj"].value]
+                obj_type = obj_local.get_type()
+                if isinstance(obj_type.definition, (Obj, Virtual)):
+                    fid = op.df["field"].value
+                    if fid < len(obj_type.definition.virtuals):
+                        from .core import fIndex
+                        fun_idx = obj_type.definition.virtuals[fid]
+                        fun_const = IRConst(self.code, IRConst.ConstType.FUN, idx=fIndex(fun_idx))
+                        block.statements.append(IRAssign(self.code, dst_local, fun_const))
+                    else:
+                        block.statements.append(
+                            IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op))
+                        )
+                else:
+                    block.statements.append(
+                        IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op))
+                    )
             elif op.op == "NullCheck":
                 continue
             else:
