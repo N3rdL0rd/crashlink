@@ -7,7 +7,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Optional, List
 
-from .core import Bytecode, Obj, Type, Function, Fun, destaticify
+from .core import Bytecode, Obj, Type, Function, Fun, Native, destaticify
 from . import disasm
 from .decomp import (
     IRBreak,
@@ -30,6 +30,7 @@ from .decomp import (
     IRTrace,
     IRTryCatch,
     IRUnliftedOpcode,
+    IRArrayAccess,
     IRWhileLoop,
     IRPrimitiveLoop,
     IRReturn,
@@ -70,6 +71,8 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
             return "null"
         elif isinstance(expr.value, Type) and isinstance(expr.value.definition, Obj):
             return destaticify(expr.value.definition.name.resolve(code))
+        elif isinstance(expr.value, Native):
+            return f"<native:{expr.value.name}>"
         return str(expr.value)
 
     elif isinstance(expr, IRArithmetic):
@@ -129,6 +132,11 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
     elif isinstance(expr, IRField):
         target_str = _expression_to_haxe(expr.target, code, ir_function)
         return f"{target_str}.{expr.field_name}"
+
+    elif isinstance(expr, IRArrayAccess):
+        arr_str = _expression_to_haxe(expr.array, code, ir_function)
+        idx_str = _expression_to_haxe(expr.index, code, ir_function)
+        return f"{arr_str}[{idx_str}]"
 
     elif isinstance(expr, IRCall):
         callee_str: str
