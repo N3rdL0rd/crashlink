@@ -81,12 +81,19 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
             IRBoolExpr.CompareType.GT: ">",
             IRBoolExpr.CompareType.GTE: ">=",
         }
+        swap_map = {  # operand-swap equivalents: a op b == b swap_op a
+            IRBoolExpr.CompareType.EQ: IRBoolExpr.CompareType.EQ,
+            IRBoolExpr.CompareType.NEQ: IRBoolExpr.CompareType.NEQ,
+            IRBoolExpr.CompareType.LT: IRBoolExpr.CompareType.GT,
+            IRBoolExpr.CompareType.LTE: IRBoolExpr.CompareType.GTE,
+            IRBoolExpr.CompareType.GT: IRBoolExpr.CompareType.LT,
+            IRBoolExpr.CompareType.GTE: IRBoolExpr.CompareType.LTE,
+        }
         if expr.op == IRBoolExpr.CompareType.NULL:
             return f"{_expression_to_haxe(expr.left, code, ir_function)} == null"
         elif expr.op == IRBoolExpr.CompareType.NOT_NULL:
             return f"{_expression_to_haxe(expr.left, code, ir_function)} != null"
         elif expr.op == IRBoolExpr.CompareType.ISTRUE:
-            # For Haxe, (expr) or (expr == true)
             return _expression_to_haxe(expr.left, code, ir_function)
         elif expr.op == IRBoolExpr.CompareType.ISFALSE:
             return f"!{_expression_to_haxe(expr.left, code, ir_function)}"
@@ -97,10 +104,16 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         elif expr.op == IRBoolExpr.CompareType.FALSE:
             return "false"
         elif expr.left and expr.right and expr.op in op_map:
-            left = _expression_to_haxe(expr.left, code, ir_function)
-            right = _expression_to_haxe(expr.right, code, ir_function)
-            return f"{left} {op_map[expr.op]} {right}"
-        elif expr.left:  # Unary boolean expressions like NOT handled above
+            # Normalize: constants on the right side for natural-reading output.
+            actual_op = expr.op
+            left_expr, right_expr = expr.left, expr.right
+            if isinstance(left_expr, IRConst) and not isinstance(right_expr, IRConst) and actual_op in swap_map:
+                left_expr, right_expr = right_expr, left_expr
+                actual_op = swap_map[actual_op]
+            left = _expression_to_haxe(left_expr, code, ir_function)
+            right = _expression_to_haxe(right_expr, code, ir_function)
+            return f"{left} {op_map[actual_op]} {right}"
+        elif expr.left:
             raise NotImplementedError(f"Unhandled unary IRBoolExpr op: {expr.op} on {expr.left}")
         else:
             raise NotImplementedError(f"Unhandled IRBoolExpr: {expr}")
@@ -171,9 +184,22 @@ def _inverted_bool_expr_to_haxe(expr: IRBoolExpr, code: Bytecode, ir_function: I
     if expr.op == IRBoolExpr.CompareType.FALSE:
         return "true"
     if expr.left and expr.right and expr.op in op_map:
-        left = _expression_to_haxe(expr.left, code, ir_function)
-        right = _expression_to_haxe(expr.right, code, ir_function)
-        return f"{left} {op_map[expr.op]} {right}"
+        swap_map = {
+            IRBoolExpr.CompareType.EQ: IRBoolExpr.CompareType.EQ,
+            IRBoolExpr.CompareType.NEQ: IRBoolExpr.CompareType.NEQ,
+            IRBoolExpr.CompareType.LT: IRBoolExpr.CompareType.GT,
+            IRBoolExpr.CompareType.LTE: IRBoolExpr.CompareType.GTE,
+            IRBoolExpr.CompareType.GT: IRBoolExpr.CompareType.LT,
+            IRBoolExpr.CompareType.GTE: IRBoolExpr.CompareType.LTE,
+        }
+        actual_op = expr.op
+        left_expr, right_expr = expr.left, expr.right
+        if isinstance(left_expr, IRConst) and not isinstance(right_expr, IRConst) and actual_op in swap_map:
+            left_expr, right_expr = right_expr, left_expr
+            actual_op = swap_map[actual_op]
+        left = _expression_to_haxe(left_expr, code, ir_function)
+        right = _expression_to_haxe(right_expr, code, ir_function)
+        return f"{left} {op_map[actual_op]} {right}"
     return f"!({_expression_to_haxe(expr, code, ir_function)})"
 
 
@@ -204,27 +230,48 @@ def _generate_statements(
             )
         elif isinstance(stmt, IRAssign):
             target_str = _expression_to_haxe(stmt.target, code, ir_function)
-            value_str = _expression_to_haxe(stmt.expr, code, ir_function)
+            already_declared = isinstance(stmt.target, IRLocal) and stmt.target.name in declared_vars_in_scope
 
-            # Simple check for declaration: if target is an IRLocal and not yet declared
-            if isinstance(stmt.target, IRLocal) and stmt.target.name not in declared_vars_in_scope:
+            _compound_ops = {
+                IRArithmetic.ArithmeticType.ADD: "+=",
+                IRArithmetic.ArithmeticType.SUB: "-=",
+                IRArithmetic.ArithmeticType.MUL: "*=",
+                IRArithmetic.ArithmeticType.SDIV: "/=",
+                IRArithmetic.ArithmeticType.UDIV: "/=",
+                IRArithmetic.ArithmeticType.SMOD: "%=",
+            }
+            # Detect x++ / x-- patterns: target = target ± 1
+            if (
+                already_declared
+                and isinstance(stmt.target, IRLocal)
+                and isinstance(stmt.expr, IRArithmetic)
+                and isinstance(stmt.expr.left, IRLocal)
+                and stmt.expr.left == stmt.target
+                and isinstance(stmt.expr.right, IRConst)
+                and stmt.expr.right.value == 1
+                and stmt.expr.op in (IRArithmetic.ArithmeticType.ADD, IRArithmetic.ArithmeticType.SUB)
+            ):
+                op_sym = "++" if stmt.expr.op == IRArithmetic.ArithmeticType.ADD else "--"
+                output_lines.append(f"{indent}{target_str}{op_sym};")
+            # Detect x += y patterns: target = target op expr
+            elif (
+                already_declared
+                and isinstance(stmt.target, IRLocal)
+                and isinstance(stmt.expr, IRArithmetic)
+                and isinstance(stmt.expr.left, IRLocal)
+                and stmt.expr.left == stmt.target
+                and stmt.expr.op in _compound_ops
+            ):
+                rhs_str = _expression_to_haxe(stmt.expr.right, code, ir_function)
+                output_lines.append(f"{indent}{target_str} {_compound_ops[stmt.expr.op]} {rhs_str};")
+            elif isinstance(stmt.target, IRLocal) and not already_declared:
                 type_name = disasm.type_to_haxe(disasm.type_name(code, stmt.target.get_type()))
                 type_decl = f": {type_name}" if type_name and type_name != "Dynamic" and type_name != "Void" else ""
+                value_str = _expression_to_haxe(stmt.expr, code, ir_function)
                 output_lines.append(f"{indent}var {target_str}{type_decl} = {value_str};")
                 declared_vars_in_scope.add(stmt.target.name)
             else:
-                output_lines.append(f"{indent}{target_str} = {value_str};")
-
-        elif isinstance(stmt, IRAssign):
-            target_str = _expression_to_haxe(stmt.target, code, ir_function)
-            value_str = _expression_to_haxe(stmt.expr, code, ir_function)
-
-            if isinstance(stmt.target, IRLocal) and stmt.target.name not in declared_vars_in_scope:
-                type_name = disasm.type_to_haxe(disasm.type_name(code, stmt.target.get_type()))
-                type_decl = f": {type_name}" if type_name and type_name != "Dynamic" and type_name != "Void" else ""
-                output_lines.append(f"{indent}var {target_str}{type_decl} = {value_str};")
-                declared_vars_in_scope.add(stmt.target.name)
-            else:
+                value_str = _expression_to_haxe(stmt.expr, code, ir_function)
                 output_lines.append(f"{indent}{target_str} = {value_str};")
 
         elif isinstance(stmt, IRTrace):
@@ -238,31 +285,55 @@ def _generate_statements(
             )
 
         elif isinstance(stmt, IRConditional):
-            cond_str = _expression_to_haxe(stmt.condition, code, ir_function)
-            output_lines.append(f"{indent}if ({cond_str}) {{")
-            output_lines.extend(
-                _generate_statements(
-                    stmt.true_block.statements,
-                    code,
-                    ir_function,
-                    indent_level + 1,
-                    declared_vars_in_scope.copy(),
-                )
-            )
-            if stmt.false_block and stmt.false_block.statements:
-                output_lines.append(f"{indent}}} else {{")
+            true_stmts = stmt.true_block.statements if stmt.true_block else []
+            false_stmts = stmt.false_block.statements if stmt.false_block else []
+
+            # Simplify: if (cond) { continue; } else { break; }  →  if (!cond) { break; }
+            # Also handles: if (cond) { break; } else { continue; } → if (cond) { break; }
+            _is_single = lambda stmts, typ: len(stmts) == 1 and isinstance(stmts[0], typ)
+            if _is_single(true_stmts, IRContinue) and _is_single(false_stmts, IRBreak):
+                inv_cond = _inverted_bool_expr_to_haxe(stmt.condition, code, ir_function) if isinstance(stmt.condition, IRBoolExpr) else f"!({_expression_to_haxe(stmt.condition, code, ir_function)})"
+                output_lines.append(f"{indent}if ({inv_cond}) {{")
+                output_lines.append(f"{indent}    break;")
+                output_lines.append(f"{indent}}}")
+            elif _is_single(true_stmts, IRBreak) and _is_single(false_stmts, IRContinue):
+                cond_str = _expression_to_haxe(stmt.condition, code, ir_function)
+                output_lines.append(f"{indent}if ({cond_str}) {{")
+                output_lines.append(f"{indent}    break;")
+                output_lines.append(f"{indent}}}")
+            elif not true_stmts and false_stmts:
+                # Empty true block: flip condition and show false block as the body
+                if isinstance(stmt.condition, IRBoolExpr):
+                    inv_cond = _inverted_bool_expr_to_haxe(stmt.condition, code, ir_function)
+                else:
+                    inv_cond = f"!({_expression_to_haxe(stmt.condition, code, ir_function)})"
+                output_lines.append(f"{indent}if ({inv_cond}) {{")
                 output_lines.extend(
-                    _generate_statements(
-                        stmt.false_block.statements,
-                        code,
-                        ir_function,
-                        indent_level + 1,
-                        declared_vars_in_scope.copy(),
-                    )
+                    _generate_statements(false_stmts, code, ir_function, indent_level + 1, declared_vars_in_scope.copy())
                 )
                 output_lines.append(f"{indent}}}")
             else:
-                output_lines.append(f"{indent}}}")
+                cond_str = _expression_to_haxe(stmt.condition, code, ir_function)
+                output_lines.append(f"{indent}if ({cond_str}) {{")
+                output_lines.extend(
+                    _generate_statements(true_stmts, code, ir_function, indent_level + 1, declared_vars_in_scope.copy())
+                )
+                # If the true block ends with a control-flow statement, the else is unnecessary.
+                true_ends_with_cf = bool(true_stmts) and isinstance(true_stmts[-1], (IRBreak, IRContinue, IRReturn))
+                if false_stmts and not true_ends_with_cf:
+                    output_lines.append(f"{indent}}} else {{")
+                    output_lines.extend(
+                        _generate_statements(false_stmts, code, ir_function, indent_level + 1, declared_vars_in_scope.copy())
+                    )
+                    output_lines.append(f"{indent}}}")
+                elif false_stmts and true_ends_with_cf:
+                    output_lines.append(f"{indent}}}")
+                    # Render former else block as plain statements (no else keyword needed)
+                    output_lines.extend(
+                        _generate_statements(false_stmts, code, ir_function, indent_level, declared_vars_in_scope.copy())
+                    )
+                else:
+                    output_lines.append(f"{indent}}}")
 
         elif isinstance(stmt, IRWhileLoop):
             rendered_as_do_while = False
@@ -374,8 +445,13 @@ def _generate_statements(
 
         elif isinstance(stmt, IRTryCatch):
             catch_name = "e"
+            catch_type = "Dynamic"
             if stmt.catch_local and stmt.catch_local.name and not stmt.catch_local.name.startswith("var"):
                 catch_name = stmt.catch_local.name
+            if stmt.catch_local:
+                t = disasm.type_name(code, stmt.catch_local.get_type())
+                if t and t != "Dyn":
+                    catch_type = disasm.type_to_haxe(t)
             output_lines.append(f"{indent}try {{")
             output_lines.extend(
                 _generate_statements(
@@ -386,7 +462,7 @@ def _generate_statements(
                     declared_vars_in_scope.copy(),
                 )
             )
-            output_lines.append(f"{indent}}} catch ({catch_name}) {{")
+            output_lines.append(f"{indent}}} catch ({catch_name}:{catch_type}) {{")
             output_lines.extend(
                 _generate_statements(
                     stmt.catch_block.statements,
@@ -450,7 +526,7 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
 
             param_name = f"arg{i}"
             if func_core.has_debug and func_core.assigns:
-                arg_assigns = [a for a in func_core.assigns if a[1].value < 0]
+                arg_assigns = [a for a in func_core.assigns if a[1].value <= 0]
                 if i < len(arg_assigns):
                     param_name = arg_assigns[i][0].resolve(code)
 
@@ -469,6 +545,9 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
     initial_declared_vars = {p.split(":")[0].strip() for p in params_str_list}
 
     body_lines = _generate_statements(ir_func.block.statements, code, ir_func, base_indent + 1, initial_declared_vars)
+    # Suppress trailing bare `return;` for Void functions — it's implicit.
+    if return_type_str in ("Void", "void") and body_lines and body_lines[-1].strip() == "return;":
+        body_lines = body_lines[:-1]
     output_lines.extend(body_lines)
 
     output_lines.append("}")

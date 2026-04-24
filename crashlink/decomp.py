@@ -1725,6 +1725,9 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
             return True
         if isinstance(statement, IRAssign):
             return self._statement_reads_target(statement.expr, target)
+        if isinstance(statement, IRBoolExpr):
+            return (statement.left is not None and self._statement_reads_target(statement.left, target)) or \
+                   (statement.right is not None and self._statement_reads_target(statement.right, target))
         return any(self._statement_reads_target(child, target) for child in statement.get_children())
 
     def _convert_to_while_true_break(
@@ -1775,7 +1778,9 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
         for i, stmt in enumerate(setup_statements_for_body):
             if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRExpression):
                 later_statements = list(setup_statements_for_body[i + 1 :]) + list(loop.body.statements)
-                if any(self._statement_reads_target(later_stmt, stmt.target) for later_stmt in later_statements):
+                reads_later = any(self._statement_reads_target(later_stmt, stmt.target) for later_stmt in later_statements)
+                reads_in_condition = self._statement_reads_target(working_exit_condition, stmt.target)
+                if reads_later or reads_in_condition:
                     remaining_setup.append(stmt)
                     continue
 
@@ -2125,6 +2130,10 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             return True
         if isinstance(expr, IRCast):
             return self.is_safe_to_inline_conservatively(expr.expr)
+        # Allow flat arithmetic (both operands are leaves) to enable compound assignment detection.
+        # Nested arithmetic is excluded to prevent exponential chaining.
+        if isinstance(expr, IRArithmetic):
+            return isinstance(expr.left, (IRConst, IRLocal)) and isinstance(expr.right, (IRConst, IRLocal))
         return False
 
     def visit_block(self, block: IRBlock) -> None:
@@ -2408,7 +2417,7 @@ class IRFunction:
         # Op -1: other_arg_name (corresponds to reg 1)
         # Op -1: third_arg_name (corresponds to reg 2)
         if self.func.assigns and self.func.has_debug:
-            for i, assign in enumerate([assign for assign in self.func.assigns if assign[1].value < 0]):
+            for i, assign in enumerate([assign for assign in self.func.assigns if assign[1].value <= 0]):
                 reg_assigns[i].add(assign[0].resolve(self.code))
         for i, _reg in enumerate(self.func.regs):
             if _reg.resolve(self.code).definition and isinstance(_reg.resolve(self.code).definition, Void):
@@ -2677,6 +2686,8 @@ class IRFunction:
             "JSLte": IRBoolExpr.CompareType.LTE,
             "JULt": IRBoolExpr.CompareType.LT,
             "JUGte": IRBoolExpr.CompareType.GTE,
+            "JNotLt": IRBoolExpr.CompareType.GTE,
+            "JNotGte": IRBoolExpr.CompareType.LT,
             "JEq": IRBoolExpr.CompareType.EQ,
             "JNotEq": IRBoolExpr.CompareType.NEQ,
         }
@@ -2734,14 +2745,18 @@ class IRFunction:
 
         # --- 2. Handle the Control Flow based on the Last Opcode ---
         if last_op and last_op.op in conditionals:
-            true_branch_node, false_branch_node = None, None
+            # HL conditional jumps: JXxx jumps to the target when condition is TRUE.
+            # Compilers emit "JXxx(negated_if_condition) → else_block" so fall-through = then.
+            jump_target, fall_through = None, None
             for branch_node, edge_type in node.branches:
                 if edge_type == "true":
-                    true_branch_node = branch_node
+                    jump_target = branch_node    # jump target = else block in source
                 elif edge_type == "false":
-                    false_branch_node = branch_node
+                    fall_through = branch_node   # fall-through = then block in source
 
+            # Invert the jump condition to get the actual "if" condition.
             cond_expr = self._build_bool_expr_from_op(last_op)
+            cond_expr.invert()
 
             def make_loop_branch(target: Optional[CFNode]) -> Optional[IRBlock]:
                 if target is None:
@@ -2756,26 +2771,27 @@ class IRFunction:
                     return branch_block
                 return None
 
-            true_block_ir = make_loop_branch(true_branch_node)
-            false_block_ir = make_loop_branch(false_branch_node)
+            # then = fall-through, else = jump target
+            then_block_ir = make_loop_branch(fall_through)
+            else_block_ir = make_loop_branch(jump_target)
 
             stop_nodes = {loop_ctx.header} if loop_ctx else set()
             allowed_nodes = loop_ctx.nodes if loop_ctx else None
             convergence_node = self._find_convergence_node(
-                true_branch_node,
-                false_branch_node,
+                jump_target,
+                fall_through,
                 allowed_nodes=allowed_nodes,
                 stop_nodes=stop_nodes,
             )
 
-            if true_block_ir is None:
-                true_block_ir = self._lift_block(true_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx)
-            if false_block_ir is None:
-                false_block_ir = self._lift_block(
-                    false_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+            if then_block_ir is None:
+                then_block_ir = self._lift_block(fall_through, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx)
+            if else_block_ir is None:
+                else_block_ir = self._lift_block(
+                    jump_target, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
                 )
 
-            conditional_stmt = IRConditional(self.code, cond_expr, true_block_ir, false_block_ir)
+            conditional_stmt = IRConditional(self.code, cond_expr, then_block_ir, else_block_ir)
             block.statements.append(conditional_stmt)
 
             # Continue lifting from the convergence point
