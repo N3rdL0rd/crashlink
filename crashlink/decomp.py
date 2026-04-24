@@ -2316,6 +2316,31 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
 
         return made_change
 
+    def _substitute_shallow(self, stmt: IRStatement, target: IRLocal, replacement: IRExpression) -> bool:
+        """Substitute only at the top level of a statement, not recursing into child blocks."""
+        made_change = False
+        if isinstance(stmt, IRAssign):
+            if stmt.target != target and isinstance(stmt.target, IRExpression):
+                _, changed = self._substitute_in_expr(stmt.target, target, replacement)
+                made_change = made_change or changed
+            if isinstance(stmt.expr, IRExpression):
+                stmt.expr, changed = self._substitute_in_expr(stmt.expr, target, replacement)
+                made_change = made_change or changed
+        elif isinstance(stmt, IRExpression):
+            _, changed = self._substitute_in_expr(stmt, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(stmt, IRReturn):
+            if stmt.value:
+                stmt.value, changed = self._substitute_in_expr(stmt.value, target, replacement)
+                made_change = made_change or changed
+        elif isinstance(stmt, IRConditional):
+            stmt.condition, changed = self._substitute_in_expr(stmt.condition, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(stmt, IRWhileLoop):
+            stmt.condition, changed = self._substitute_in_expr(stmt.condition, target, replacement)
+            made_change = made_change or changed
+        return made_change
+
     def _is_local_redefined(self, local_to_check: IRLocal, statements: List[IRStatement]) -> bool:
         """Checks if a local is the target of an assignment in a list of statements."""
         for stmt in statements:
@@ -2401,6 +2426,22 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                         if self._substitute_in_statement(next_stmt, temp_local, expr_to_inline):
                             dbg_print(f"Conservatively inlining assignment for temporary '{temp_local.name}'.")
                             new_statements.append(next_stmt)
+                            copy_target = None
+                            if (
+                                isinstance(next_stmt, IRAssign)
+                                and isinstance(next_stmt.target, IRLocal)
+                                and self._is_user_local(next_stmt.target)
+                            ):
+                                copy_target = next_stmt.target
+                            for later_stmt in statements[i + 2 :]:
+                                if (
+                                    isinstance(later_stmt, IRAssign)
+                                    and isinstance(later_stmt.target, IRLocal)
+                                    and later_stmt.target == temp_local
+                                ):
+                                    break
+                                sub = copy_target if copy_target is not None else expr_to_inline
+                                self._substitute_shallow(later_stmt, temp_local, sub)
                             i += 2
                             inlined = True
 
