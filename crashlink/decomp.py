@@ -2945,6 +2945,19 @@ class IRFunction:
                 field_name = op.df["field"].resolve(self.code)
                 field_expr = IRField(self.code, obj_local, field_name, self.func.regs[op.df["src"].value])
                 block.statements.append(IRAssign(self.code, field_expr, src_local))
+            elif op.op == "SetField":
+                obj_local = self.locals[op.df["obj"].value]
+                src_local = self.locals[op.df["src"].value]
+                obj_type = obj_local.get_type()
+                if isinstance(obj_type.definition, (Obj, Virtual)):
+                    field_core = op.df["field"].resolve_obj(self.code, obj_type.definition)
+                    field_expr = IRField(self.code, obj_local, field_core.name.resolve(self.code), field_core.type)
+                    block.statements.append(IRAssign(self.code, field_expr, src_local))
+                else:
+                    block.statements.append(IRUnliftedOpcode(self.code, op))
+            elif op.op == "Type":
+                dst_local = self.locals[op.df["dst"].value]
+                block.statements.append(IRAssign(self.code, dst_local, IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df["ty"])))
             elif op.op == "Ref":
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = self.locals[op.df["src"].value]
