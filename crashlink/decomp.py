@@ -664,8 +664,8 @@ class IRAssign(IRStatement):
 
     def __init__(self, code: Bytecode, target: IRExpression, expr: IRExpression):
         super().__init__(code)
-        if not isinstance(target, (IRLocal, IRField)):
-            raise DecompError(f"Invalid target for IRAssign: {type(target).__name__}. Must be IRLocal or IRField.")
+        if not isinstance(target, (IRLocal, IRField, IRArrayAccess)):
+            raise DecompError(f"Invalid target for IRAssign: {type(target).__name__}. Must be IRLocal, IRField, or IRArrayAccess.")
         self.target = target
         self.expr = expr
 
@@ -1193,6 +1193,27 @@ class IRCast(IRExpression):
     def __repr__(self) -> str:
         type_name = disasm.type_name(self.code, self.get_type())
         return f"<IRCast: ({type_name}){self.expr}>"
+
+
+class IRArrayAccess(IRExpression):
+    """Represents an array/memory access expression, e.g., `arr[idx]`"""
+
+    def __init__(self, code: Bytecode, array: IRExpression, index: IRExpression, elem_type: Optional[tIndex] = None):
+        super().__init__(code)
+        self.array = array
+        self.index = index
+        self.elem_type_idx = elem_type
+
+    def get_type(self) -> Type:
+        if self.elem_type_idx:
+            return self.elem_type_idx.resolve(self.code)
+        return _get_type_in_code(self.code, "Void")
+
+    def get_children(self) -> List[IRStatement]:
+        return []
+
+    def __repr__(self) -> str:
+        return f"<IRArrayAccess: {self.array}[{self.index}]>"
 
 
 class IRUnliftedOpcode(IRExpression):
@@ -2126,6 +2147,11 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         elif isinstance(expr, IRCast):
             expr.expr, changed = self._substitute_in_expr(expr.expr, target, replacement)
             made_change = made_change or changed
+        elif isinstance(expr, IRArrayAccess):
+            expr.array, changed = self._substitute_in_expr(expr.array, target, replacement)
+            made_change = made_change or changed
+            expr.index, changed = self._substitute_in_expr(expr.index, target, replacement)
+            made_change = made_change or changed
 
         return expr, made_change
 
@@ -2148,6 +2174,11 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 return True
         elif isinstance(expr, IRCast):
             if self._expr_contains_local(expr.expr, local):
+                return True
+        elif isinstance(expr, IRArrayAccess):
+            if self._expr_contains_local(expr.array, local):
+                return True
+            if self._expr_contains_local(expr.index, local):
                 return True
         for child in expr.get_children():
             if isinstance(child, IRExpression) and self._expr_contains_local(child, local):
@@ -2205,6 +2236,8 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             return self.is_safe_to_inline_aggressively(expr.target)
         if isinstance(expr, IRCast):
             return self.is_safe_to_inline_aggressively(expr.expr)
+        if isinstance(expr, IRArrayAccess):
+            return self.is_safe_to_inline_aggressively(expr.array) and self.is_safe_to_inline_aggressively(expr.index)
         if isinstance(expr, IRArithmetic):
             return self.is_safe_to_inline_aggressively(expr.left) and self.is_safe_to_inline_aggressively(expr.right)
         return False
@@ -2388,6 +2421,9 @@ class IRDeadTempEliminator(IROptimizer):
                 self._collect_used_in_expr(arg, used)
         if isinstance(expr, IRField):
             self._collect_used_in_expr(expr.target, used)
+        if isinstance(expr, IRArrayAccess):
+            self._collect_used_in_expr(expr.array, used)
+            self._collect_used_in_expr(expr.index, used)
 
     def _remove_dead(
         self,
@@ -2755,6 +2791,34 @@ class IRFunction:
                             IRArithmetic.ArithmeticType.ADD,
                         ),
                     )
+                )
+            elif op.op == "Decr":
+                dst_local = self.locals[op.df["dst"].value]
+                block.statements.append(
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRArithmetic(
+                            self.code,
+                            dst_local,
+                            IRConst(self.code, IRConst.ConstType.INT, value=1),
+                            IRArithmetic.ArithmeticType.SUB,
+                        ),
+                    )
+                )
+            elif op.op == "GetMem":
+                dst_local = self.locals[op.df["dst"].value]
+                arr_local = self.locals[op.df["bytes"].value]
+                idx_local = self.locals[op.df["index"].value]
+                block.statements.append(
+                    IRAssign(self.code, dst_local, IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df["dst"].value]))
+                )
+            elif op.op == "SetMem":
+                arr_local = self.locals[op.df["bytes"].value]
+                idx_local = self.locals[op.df["index"].value]
+                src_local = self.locals[op.df["src"].value]
+                block.statements.append(
+                    IRAssign(self.code, IRArrayAccess(self.code, arr_local, idx_local), src_local)
                 )
             elif op.op == "DynSet":
                 obj_local = self.locals[op.df["obj"].value]
