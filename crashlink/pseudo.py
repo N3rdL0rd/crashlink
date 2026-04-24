@@ -43,6 +43,14 @@ def _indent_str(level: int) -> str:
     return "    " * level  # 4 spaces for indentation
 
 
+def _collect_assigned_names(stmts: List[IRStatement]) -> Set[str]:
+    names: Set[str] = set()
+    for s in stmts:
+        if isinstance(s, IRAssign) and isinstance(s.target, IRLocal):
+            names.add(s.target.name)
+    return names
+
+
 def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function: IRFunction) -> str:
     assert expr is not None, "Found empty statement!"
 
@@ -232,6 +240,13 @@ def _generate_statements(
             target_str = _expression_to_haxe(stmt.target, code, ir_function)
             already_declared = isinstance(stmt.target, IRLocal) and stmt.target.name in declared_vars_in_scope
 
+            _is_self_ref_arith = (
+                isinstance(stmt.target, IRLocal)
+                and isinstance(stmt.expr, IRArithmetic)
+                and isinstance(stmt.expr.left, IRLocal)
+                and stmt.expr.left == stmt.target
+            )
+
             _compound_ops = {
                 IRArithmetic.ArithmeticType.ADD: "+=",
                 IRArithmetic.ArithmeticType.SUB: "-=",
@@ -239,10 +254,11 @@ def _generate_statements(
                 IRArithmetic.ArithmeticType.SDIV: "/=",
                 IRArithmetic.ArithmeticType.UDIV: "/=",
                 IRArithmetic.ArithmeticType.SMOD: "%=",
+                IRArithmetic.ArithmeticType.UMOD: "%=",
             }
             # Detect x++ / x-- patterns: target = target ± 1
             if (
-                already_declared
+                (already_declared or _is_self_ref_arith)
                 and isinstance(stmt.target, IRLocal)
                 and isinstance(stmt.expr, IRArithmetic)
                 and isinstance(stmt.expr.left, IRLocal)
@@ -253,9 +269,10 @@ def _generate_statements(
             ):
                 op_sym = "++" if stmt.expr.op == IRArithmetic.ArithmeticType.ADD else "--"
                 output_lines.append(f"{indent}{target_str}{op_sym};")
+                declared_vars_in_scope.add(stmt.target.name)
             # Detect x += y patterns: target = target op expr
             elif (
-                already_declared
+                (already_declared or _is_self_ref_arith)
                 and isinstance(stmt.target, IRLocal)
                 and isinstance(stmt.expr, IRArithmetic)
                 and isinstance(stmt.expr.left, IRLocal)
@@ -264,6 +281,7 @@ def _generate_statements(
             ):
                 rhs_str = _expression_to_haxe(stmt.expr.right, code, ir_function)
                 output_lines.append(f"{indent}{target_str} {_compound_ops[stmt.expr.op]} {rhs_str};")
+                declared_vars_in_scope.add(stmt.target.name)
             elif isinstance(stmt.target, IRLocal) and not already_declared:
                 type_name = disasm.type_to_haxe(disasm.type_name(code, stmt.target.get_type()))
                 type_decl = f": {type_name}" if type_name and type_name != "Dynamic" and type_name != "Void" else ""
@@ -312,6 +330,7 @@ def _generate_statements(
                     _generate_statements(false_stmts, code, ir_function, indent_level + 1, declared_vars_in_scope.copy())
                 )
                 output_lines.append(f"{indent}}}")
+                declared_vars_in_scope.update(_collect_assigned_names(false_stmts))
             else:
                 cond_str = _expression_to_haxe(stmt.condition, code, ir_function)
                 output_lines.append(f"{indent}if ({cond_str}) {{")
@@ -334,6 +353,8 @@ def _generate_statements(
                     )
                 else:
                     output_lines.append(f"{indent}}}")
+                declared_vars_in_scope.update(_collect_assigned_names(true_stmts))
+                declared_vars_in_scope.update(_collect_assigned_names(false_stmts))
 
         elif isinstance(stmt, IRWhileLoop):
             rendered_as_do_while = False
@@ -430,6 +451,9 @@ def _generate_statements(
                         declared_vars_in_scope.copy(),
                     )
                 )
+                for s in case_block.statements:
+                    if isinstance(s, IRAssign) and isinstance(s.target, IRLocal):
+                        declared_vars_in_scope.add(s.target.name)
             if stmt.default and stmt.default.statements:
                 output_lines.append(f"{indent}    default:")
                 output_lines.extend(
@@ -441,6 +465,9 @@ def _generate_statements(
                         declared_vars_in_scope.copy(),
                     )
                 )
+                for s in stmt.default.statements:
+                    if isinstance(s, IRAssign) and isinstance(s.target, IRLocal):
+                        declared_vars_in_scope.add(s.target.name)
             output_lines.append(f"{indent}}}")
 
         elif isinstance(stmt, IRTryCatch):
@@ -566,7 +593,7 @@ def pseudo(ir_func: IRFunction) -> str:
     if "." in full_name and full_name != "<none>.<none>":
         class_name_part = full_name.split(".")[0]
         if class_name_part and class_name_part != "<none>":
-            class_name_suggestion = class_name_part.replace(".", "_")
+            class_name_suggestion = class_name_part.lstrip("$").replace(".", "_")
 
     final_output = [f"class {class_name_suggestion} {{"]
     final_output.extend(["    " + line for line in function_body_str.split("\n")])
