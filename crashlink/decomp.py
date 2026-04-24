@@ -1461,6 +1461,33 @@ class IRConditionInliner(TraversingIROptimizer):
     This helps simplify conditions and expressions before other optimization passes.
     """
 
+    def __init__(self, function: "IRFunction"):
+        super().__init__(function)
+        self._user_variable_names: Set[str] = set()
+        self._user_reg_indices: Set[int] = set()
+        if self.func.func.has_debug and self.func.func.assigns:
+            for name_ref, op_idx in self.func.func.assigns:
+                self._user_variable_names.add(name_ref.resolve(self.func.code))
+                val = op_idx.value - 1
+                if val >= 0 and val < len(self.func.ops):
+                    op = self.func.ops[val]
+                    try:
+                        self._user_reg_indices.add(op.df["dst"].value)
+                    except KeyError:
+                        pass
+
+    def _is_user_local(self, local: IRLocal) -> bool:
+        if local.name in self._user_variable_names:
+            return True
+        if local.name.startswith("var"):
+            try:
+                idx = int(local.name[3:])
+                if idx in self._user_reg_indices:
+                    return True
+            except ValueError:
+                pass
+        return False
+
     def visit_block(self, block: IRBlock) -> None:
         """
         Iterates through statements to find inlining opportunities.
@@ -1475,6 +1502,11 @@ class IRConditionInliner(TraversingIROptimizer):
             if isinstance(current_stmt, IRAssign) and isinstance(current_stmt.expr, IRExpression):
                 assigned_local: IRLocal | IRField = current_stmt.target
                 expr_to_inline: IRExpression = current_stmt.expr
+
+                if isinstance(assigned_local, IRLocal) and self._is_user_local(assigned_local):
+                    new_statements.append(current_stmt)
+                    i += 1
+                    continue
 
                 if i + 1 < len(block.statements):
                     next_stmt = block.statements[i + 1]
@@ -2035,11 +2067,32 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
 
         # --- NEW: Pre-calculate the set of all user-named variables ---
         self._user_variable_names: Set[str] = set()
+        self._user_reg_indices: Set[int] = set()
         if self.func.func.has_debug and self.func.func.assigns:
-            for name_ref, _ in self.func.func.assigns:
-                # We resolve the string reference to get the actual variable name
+            for name_ref, op_idx in self.func.func.assigns:
                 self._user_variable_names.add(name_ref.resolve(self.func.code))
+                val = op_idx.value - 1
+                if val >= 0 and val < len(self.func.ops):
+                    op = self.func.ops[val]
+                    try:
+                        reg = op.df["dst"].value
+                        self._user_reg_indices.add(reg)
+                    except KeyError:
+                        pass
         dbg_print(f"IRTempAssignmentInliner: Protecting user variables: {self._user_variable_names}")
+        dbg_print(f"IRTempAssignmentInliner: Protecting user reg indices: {self._user_reg_indices}")
+
+    def _is_user_local(self, local: IRLocal) -> bool:
+        if local.name in self._user_variable_names:
+            return True
+        if local.name.startswith("var"):
+            try:
+                idx = int(local.name[3:])
+                if idx in self._user_reg_indices:
+                    return True
+            except ValueError:
+                pass
+        return False
 
     def _substitute_in_expr(
         self, expr: IRExpression, target: IRLocal, replacement: IRExpression
@@ -2190,8 +2243,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             if isinstance(current_stmt, IRAssign) and isinstance(current_stmt.target, IRLocal):
                 temp_local = current_stmt.target
 
-                # --- MODIFIED: Check if the variable is user-named before attempting to inline ---
-                if temp_local.name not in self._user_variable_names:
+                if not self._is_user_local(temp_local):
                     expr_to_inline = current_stmt.expr
                     if not self.is_safe_to_inline_conservatively(expr_to_inline):
                         new_statements.append(current_stmt)
@@ -2228,8 +2280,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
 
                 temp_local = stmt.target
 
-                # --- MODIFIED: Protect user-named variables from aggressive inlining ---
-                if temp_local.name in self._user_variable_names:
+                if self._is_user_local(temp_local):
                     continue
 
                 expr_to_inline = stmt.expr
@@ -2274,8 +2325,9 @@ class IRDeadTempEliminator(IROptimizer):
         if not hasattr(self.func, "block"):
             return
         user_names = self._collect_user_names()
+        user_regs = self._collect_user_reg_indices()
         globally_used = self._collect_all_used_names(self.func.block)
-        self._remove_dead(self.func.block, user_names, globally_used)
+        self._remove_dead(self.func.block, user_names, user_regs, globally_used)
 
     def _collect_user_names(self) -> Set[str]:
         names: Set[str] = set()
@@ -2283,6 +2335,33 @@ class IRDeadTempEliminator(IROptimizer):
             for name_ref, _ in self.func.func.assigns:
                 names.add(name_ref.resolve(self.func.code))
         return names
+
+    def _collect_user_reg_indices(self) -> Set[int]:
+        indices: Set[int] = set()
+        if self.func.func.has_debug and self.func.func.assigns:
+            for _, op_idx in self.func.func.assigns:
+                val = op_idx.value - 1
+                if val >= 0 and val < len(self.func.ops):
+                    op = self.func.ops[val]
+                    try:
+                        indices.add(op.df["dst"].value)
+                    except KeyError:
+                        pass
+        return indices
+
+    def _is_user_local(
+        self, local: IRLocal, user_names: Set[str], user_regs: Set[int]
+    ) -> bool:
+        if local.name in user_names:
+            return True
+        if local.name.startswith("var"):
+            try:
+                idx = int(local.name[3:])
+                if idx in user_regs:
+                    return True
+            except ValueError:
+                pass
+        return False
 
     def _collect_all_used_names(self, block: IRBlock) -> Set[str]:
         used: Set[str] = set()
@@ -2311,14 +2390,18 @@ class IRDeadTempEliminator(IROptimizer):
             self._collect_used_in_expr(expr.target, used)
 
     def _remove_dead(
-        self, block: IRBlock, user_names: Set[str], globally_used: Set[str]
+        self,
+        block: IRBlock,
+        user_names: Set[str],
+        user_regs: Set[int],
+        globally_used: Set[str],
     ) -> None:
         new_stmts: List[IRStatement] = []
         for stmt in block.statements:
             if (
                 isinstance(stmt, IRAssign)
                 and isinstance(stmt.target, IRLocal)
-                and stmt.target.name not in user_names
+                and not self._is_user_local(stmt.target, user_names, user_regs)
                 and stmt.target.name not in globally_used
             ):
                 dbg_print(f"Removing dead temp assignment '{stmt.target.name}'.")
@@ -2328,7 +2411,7 @@ class IRDeadTempEliminator(IROptimizer):
         for stmt in block.statements:
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
-                    self._remove_dead(child, user_names, globally_used)
+                    self._remove_dead(child, user_names, user_regs, globally_used)
 
 
 class IRTraceOptimizer(TraversingIROptimizer):
@@ -2502,13 +2585,13 @@ class IRFunction:
 
     def _name_locals(self) -> None:
         """Name locals based on debug info"""
-        reg_assigns: List[Set[str]] = [set() for _ in self.func.regs]
+        reg_assigns: List[List[str]] = [[] for _ in self.func.regs]
         if self.func.has_debug and self.func.assigns:
             for assign in self.func.assigns:
                 # assign: Tuple[strRef (name), VarInt (op index)]
                 val = assign[1].value - 1
                 if val < 0:
-                    continue  # arg name
+                    continue
                 reg: Optional[int] = None
                 op = self.ops[val]
                 try:
@@ -2517,20 +2600,21 @@ class IRFunction:
                 except KeyError:
                     pass
                 if reg is not None:
-                    reg_assigns[reg].add(assign[0].resolve(self.code))
-        # loop through arg names: all with value < 0, eg:
-        # Op -1: argument_name (corresponds to reg 0)
-        # Op -1: other_arg_name (corresponds to reg 1)
-        # Op -1: third_arg_name (corresponds to reg 2)
+                    name = assign[0].resolve(self.code)
+                    if name not in reg_assigns[reg]:
+                        reg_assigns[reg].append(name)
         if self.func.assigns and self.func.has_debug:
             for i, assign in enumerate([assign for assign in self.func.assigns if assign[1].value <= 0]):
-                reg_assigns[i].add(assign[0].resolve(self.code))
+                name = assign[0].resolve(self.code)
+                if name not in reg_assigns[i]:
+                    reg_assigns[i].append(name)
         for i, _reg in enumerate(self.func.regs):
             if _reg.resolve(self.code).definition and isinstance(_reg.resolve(self.code).definition, Void):
-                reg_assigns[i].add("voidReg")
+                if "voidReg" not in reg_assigns[i]:
+                    reg_assigns[i].append("voidReg")
         for i, local in enumerate(self.locals):
-            if reg_assigns[i] and len(reg_assigns[i]) == 1:
-                local.name = reg_assigns[i].pop()
+            if reg_assigns[i]:
+                local.name = reg_assigns[i][0]
         dbg_print("Named locals:", self.locals)
 
     def _find_convergence(self, true_node: CFNode, false_node: CFNode, visited: Set[CFNode]) -> Optional[CFNode]:
@@ -2889,6 +2973,9 @@ class IRFunction:
                 allowed_nodes=allowed_nodes,
                 stop_nodes=stop_nodes,
             )
+
+            if convergence_node is None and node in self.cfg.immediate_post_dominators:
+                convergence_node = self.cfg.immediate_post_dominators[node]
 
             if then_block_ir is None:
                 then_block_ir = self._lift_block(fall_through, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx)
