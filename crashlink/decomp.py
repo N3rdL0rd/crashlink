@@ -2610,6 +2610,25 @@ class IRDeadTempEliminator(IROptimizer):
                     self._remove_dead(child, user_names, user_regs, globally_used)
 
 
+class IRDeadCodeEliminator(TraversingIROptimizer):
+    """Removes statements after terminators (return, break, continue) within the same block."""
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_stmts: List[IRStatement] = []
+        terminated = False
+        for stmt in block.statements:
+            if terminated:
+                continue
+            new_stmts.append(stmt)
+            if isinstance(stmt, (IRReturn, IRBreak, IRContinue)):
+                terminated = True
+        block.statements = new_stmts
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
+
 class IRTraceOptimizer(TraversingIROptimizer):
     """
     Finds the common `haxe.Log.trace` pattern with an anonymous object for
@@ -2745,6 +2764,7 @@ class IRFunction:
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRTempAssignmentInliner(self, aggressive=True),
                 IRDeadTempEliminator(self),
+                IRDeadCodeEliminator(self),
                 IRVoidAssignOptimizer(self),
                 IRTraceOptimizer(self),
                 IRBlockFlattener(self),
