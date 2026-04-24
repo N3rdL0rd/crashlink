@@ -31,6 +31,7 @@ from .decomp import (
     IRTryCatch,
     IRUnliftedOpcode,
     IRArrayAccess,
+    IRRef,
     IRWhileLoop,
     IRPrimitiveLoop,
     IRReturn,
@@ -137,6 +138,10 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         arr_str = _expression_to_haxe(expr.array, code, ir_function)
         idx_str = _expression_to_haxe(expr.index, code, ir_function)
         return f"{arr_str}[{idx_str}]"
+
+    elif isinstance(expr, IRRef):
+        inner = _expression_to_haxe(expr.target, code, ir_function)
+        return f"&{inner}"
 
     elif isinstance(expr, IRCall):
         callee_str: str

@@ -1216,6 +1216,23 @@ class IRArrayAccess(IRExpression):
         return f"<IRArrayAccess: {self.array}[{self.index}]>"
 
 
+class IRRef(IRExpression):
+    """Represents a reference/address-of expression, e.g., `&var`"""
+
+    def __init__(self, code: Bytecode, target: IRExpression):
+        super().__init__(code)
+        self.target = target
+
+    def get_type(self) -> Type:
+        return _get_type_in_code(self.code, "Void")
+
+    def get_children(self) -> List[IRStatement]:
+        return []
+
+    def __repr__(self) -> str:
+        return f"<IRRef: &{self.target}>"
+
+
 class IRUnliftedOpcode(IRExpression):
     """Represents an opcode that has not been lifted into a higher-level IR statement."""
 
@@ -2152,6 +2169,9 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             made_change = made_change or changed
             expr.index, changed = self._substitute_in_expr(expr.index, target, replacement)
             made_change = made_change or changed
+        elif isinstance(expr, IRRef):
+            expr.target, changed = self._substitute_in_expr(expr.target, target, replacement)
+            made_change = made_change or changed
 
         return expr, made_change
 
@@ -2179,6 +2199,9 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             if self._expr_contains_local(expr.array, local):
                 return True
             if self._expr_contains_local(expr.index, local):
+                return True
+        elif isinstance(expr, IRRef):
+            if self._expr_contains_local(expr.target, local):
                 return True
         for child in expr.get_children():
             if isinstance(child, IRExpression) and self._expr_contains_local(child, local):
@@ -2238,6 +2261,8 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             return self.is_safe_to_inline_aggressively(expr.expr)
         if isinstance(expr, IRArrayAccess):
             return self.is_safe_to_inline_aggressively(expr.array) and self.is_safe_to_inline_aggressively(expr.index)
+        if isinstance(expr, IRRef):
+            return False
         if isinstance(expr, IRArithmetic):
             return self.is_safe_to_inline_aggressively(expr.left) and self.is_safe_to_inline_aggressively(expr.right)
         return False
@@ -2424,6 +2449,8 @@ class IRDeadTempEliminator(IROptimizer):
         if isinstance(expr, IRArrayAccess):
             self._collect_used_in_expr(expr.array, used)
             self._collect_used_in_expr(expr.index, used)
+        if isinstance(expr, IRRef):
+            self._collect_used_in_expr(expr.target, used)
 
     def _remove_dead(
         self,
@@ -2826,6 +2853,10 @@ class IRFunction:
                 field_name = op.df["field"].resolve(self.code)
                 field_expr = IRField(self.code, obj_local, field_name, self.func.regs[op.df["src"].value])
                 block.statements.append(IRAssign(self.code, field_expr, src_local))
+            elif op.op == "Ref":
+                dst_local = self.locals[op.df["dst"].value]
+                src_local = self.locals[op.df["src"].value]
+                block.statements.append(IRAssign(self.code, dst_local, IRRef(self.code, src_local)))
             elif op.op == "NullCheck":
                 continue
             else:
