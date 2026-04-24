@@ -32,6 +32,9 @@ from .decomp import (
     IRUnliftedOpcode,
     IRArrayAccess,
     IRRef,
+    IREnumConstruct,
+    IREnumIndex,
+    IREnumField,
     IRWhileLoop,
     IRPrimitiveLoop,
     IRReturn,
@@ -142,6 +145,20 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
     elif isinstance(expr, IRRef):
         inner = _expression_to_haxe(expr.target, code, ir_function)
         return f"&{inner}"
+
+    elif isinstance(expr, IREnumConstruct):
+        if expr.args:
+            args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.args)
+            return f"{expr.construct_name}({args_str})"
+        return expr.construct_name
+
+    elif isinstance(expr, IREnumIndex):
+        inner = _expression_to_haxe(expr.value, code, ir_function)
+        return f"/* enum_index({inner}) */"
+
+    elif isinstance(expr, IREnumField):
+        inner = _expression_to_haxe(expr.value, code, ir_function)
+        return f"{inner}.{expr.field_name}"
 
     elif isinstance(expr, IRCall):
         callee_str: str

@@ -1233,6 +1233,62 @@ class IRRef(IRExpression):
         return f"<IRRef: &{self.target}>"
 
 
+class IREnumConstruct(IRExpression):
+    """Represents enum construction, e.g., `Rgb(255, 255, 0)`"""
+
+    def __init__(self, code: Bytecode, construct_name: str, args: List[IRExpression], enum_type: tIndex):
+        super().__init__(code)
+        self.construct_name = construct_name
+        self.args = args
+        self.enum_type_idx = enum_type
+
+    def get_type(self) -> Type:
+        return self.enum_type_idx.resolve(self.code)
+
+    def get_children(self) -> List[IRStatement]:
+        return []
+
+    def __repr__(self) -> str:
+        args_str = ", ".join(str(a) for a in self.args)
+        return f"<IREnumConstruct: {self.construct_name}({args_str})>"
+
+
+class IREnumIndex(IRExpression):
+    """Represents getting the index of an enum value"""
+
+    def __init__(self, code: Bytecode, value: IRExpression):
+        super().__init__(code)
+        self.value = value
+
+    def get_type(self) -> Type:
+        return _get_type_in_code(self.code, "I32")
+
+    def get_children(self) -> List[IRStatement]:
+        return []
+
+    def __repr__(self) -> str:
+        return f"<IREnumIndex: indexof({self.value})>"
+
+
+class IREnumField(IRExpression):
+    """Represents accessing a field of an enum construct, e.g., extracting `r` from `Rgb(r, g, b)`"""
+
+    def __init__(self, code: Bytecode, value: IRExpression, field_name: str, field_type: tIndex):
+        super().__init__(code)
+        self.value = value
+        self.field_name = field_name
+        self.field_type_idx = field_type
+
+    def get_type(self) -> Type:
+        return self.field_type_idx.resolve(self.code)
+
+    def get_children(self) -> List[IRStatement]:
+        return []
+
+    def __repr__(self) -> str:
+        return f"<IREnumField: {self.value}.{self.field_name}>"
+
+
 class IRUnliftedOpcode(IRExpression):
     """Represents an opcode that has not been lifted into a higher-level IR statement."""
 
@@ -2172,6 +2228,19 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         elif isinstance(expr, IRRef):
             expr.target, changed = self._substitute_in_expr(expr.target, target, replacement)
             made_change = made_change or changed
+        elif isinstance(expr, IREnumConstruct):
+            new_args = []
+            for arg in expr.args:
+                new_arg, changed = self._substitute_in_expr(arg, target, replacement)
+                new_args.append(new_arg)
+                made_change = made_change or changed
+            expr.args = new_args
+        elif isinstance(expr, IREnumIndex):
+            expr.value, changed = self._substitute_in_expr(expr.value, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(expr, IREnumField):
+            expr.value, changed = self._substitute_in_expr(expr.value, target, replacement)
+            made_change = made_change or changed
 
         return expr, made_change
 
@@ -2202,6 +2271,16 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 return True
         elif isinstance(expr, IRRef):
             if self._expr_contains_local(expr.target, local):
+                return True
+        elif isinstance(expr, IREnumConstruct):
+            for arg in expr.args:
+                if self._expr_contains_local(arg, local):
+                    return True
+        elif isinstance(expr, IREnumIndex):
+            if self._expr_contains_local(expr.value, local):
+                return True
+        elif isinstance(expr, IREnumField):
+            if self._expr_contains_local(expr.value, local):
                 return True
         for child in expr.get_children():
             if isinstance(child, IRExpression) and self._expr_contains_local(child, local):
@@ -2263,6 +2342,12 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             return self.is_safe_to_inline_aggressively(expr.array) and self.is_safe_to_inline_aggressively(expr.index)
         if isinstance(expr, IRRef):
             return False
+        if isinstance(expr, IREnumConstruct):
+            return all(self.is_safe_to_inline_aggressively(a) for a in expr.args)
+        if isinstance(expr, IREnumIndex):
+            return self.is_safe_to_inline_aggressively(expr.value)
+        if isinstance(expr, IREnumField):
+            return self.is_safe_to_inline_aggressively(expr.value)
         if isinstance(expr, IRArithmetic):
             return self.is_safe_to_inline_aggressively(expr.left) and self.is_safe_to_inline_aggressively(expr.right)
         return False
@@ -2451,6 +2536,13 @@ class IRDeadTempEliminator(IROptimizer):
             self._collect_used_in_expr(expr.index, used)
         if isinstance(expr, IRRef):
             self._collect_used_in_expr(expr.target, used)
+        if isinstance(expr, IREnumConstruct):
+            for arg in expr.args:
+                self._collect_used_in_expr(arg, used)
+        if isinstance(expr, IREnumIndex):
+            self._collect_used_in_expr(expr.value, used)
+        if isinstance(expr, IREnumField):
+            self._collect_used_in_expr(expr.value, used)
 
     def _remove_dead(
         self,
@@ -2882,6 +2974,38 @@ class IRFunction:
                     )
             elif op.op == "NullCheck":
                 continue
+            elif op.op == "EnumIndex":
+                dst_local = self.locals[op.df["dst"].value]
+                src_local = self.locals[op.df["value"].value]
+                block.statements.append(IRAssign(self.code, dst_local, IREnumIndex(self.code, src_local)))
+            elif op.op == "MakeEnum":
+                dst_local = self.locals[op.df["dst"].value]
+                enum_type = self.func.regs[op.df["dst"].value]
+                enum_def = enum_type.resolve(self.code).definition
+                cid = op.df["construct"].value
+                construct_name = enum_def.constructs[cid].name.resolve(self.code) if cid < len(enum_def.constructs) else f"construct_{cid}"
+                args = [self.locals[arg.value] for arg in op.df["args"].value]
+                block.statements.append(
+                    IRAssign(self.code, dst_local, IREnumConstruct(self.code, construct_name, args, enum_type))
+                )
+            elif op.op == "EnumField":
+                dst_local = self.locals[op.df["dst"].value]
+                src_local = self.locals[op.df["value"].value]
+                enum_type = self.func.regs[op.df["value"].value]
+                enum_def = enum_type.resolve(self.code).definition
+                cid = op.df["construct"].value
+                fid = op.df["field"].value
+                if cid < len(enum_def.constructs) and fid < len(enum_def.constructs[cid].params):
+                    field_name = f"param{fid}"
+                    construct = enum_def.constructs[cid]
+                    field_type = construct.params[fid]
+                    block.statements.append(
+                        IRAssign(self.code, dst_local, IREnumField(self.code, src_local, field_name, field_type))
+                    )
+                else:
+                    block.statements.append(
+                        IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op))
+                    )
             else:
                 if "dst" in op.df:
                     block.statements.append(
