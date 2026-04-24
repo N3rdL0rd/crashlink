@@ -77,6 +77,12 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
             return destaticify(expr.value.definition.name.resolve(code))
         elif isinstance(expr.value, Native):
             return f"<native:{expr.value.name}>"
+        elif expr.const_type == IRConst.ConstType.INT:
+            val = expr.value.value if hasattr(expr.value, "value") else expr.value
+            val = int(val)
+            if val >= 0x80000000:
+                val = val - 0x100000000
+            return str(val)
         return str(expr.value)
 
     elif isinstance(expr, IRArithmetic):
