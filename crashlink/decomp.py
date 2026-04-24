@@ -640,10 +640,20 @@ class IRArithmetic(IRExpression):
         self.left = left
         self.right = right
         self.op = op
+        self._cached_type: Optional[Type] = None
 
     def get_type(self) -> Type:
-        # For arithmetic, result type matches left operand type
-        return self.left.get_type()
+        if self._cached_type is not None:
+            return self._cached_type
+        node = self.left
+        while isinstance(node, IRArithmetic):
+            if node._cached_type is not None:
+                self._cached_type = node._cached_type
+                return node._cached_type
+            node = node.left
+        result = node.get_type()
+        self._cached_type = result
+        return result
 
     def __repr__(self) -> str:
         return f"<IRArithmetic: {self.left} {self.op.value} {self.right}>"
@@ -2069,6 +2079,23 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
     def _expr_contains_local(self, expr: IRExpression, local: IRLocal) -> bool:
         if expr == local:
             return True
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            if expr.left and self._expr_contains_local(expr.left, local):
+                return True
+            if expr.right and self._expr_contains_local(expr.right, local):
+                return True
+        elif isinstance(expr, IRCall):
+            if expr.target is not None and self._expr_contains_local(expr.target, local):
+                return True
+            for arg in expr.args:
+                if self._expr_contains_local(arg, local):
+                    return True
+        elif isinstance(expr, IRField):
+            if self._expr_contains_local(expr.target, local):
+                return True
+        elif isinstance(expr, IRCast):
+            if self._expr_contains_local(expr.expr, local):
+                return True
         for child in expr.get_children():
             if isinstance(child, IRExpression) and self._expr_contains_local(child, local):
                 return True
@@ -2123,6 +2150,10 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             return True
         if isinstance(expr, IRField):
             return self.is_safe_to_inline_aggressively(expr.target)
+        if isinstance(expr, IRCast):
+            return self.is_safe_to_inline_aggressively(expr.expr)
+        if isinstance(expr, IRArithmetic):
+            return self.is_safe_to_inline_aggressively(expr.left) and self.is_safe_to_inline_aggressively(expr.right)
         return False
 
     def is_safe_to_inline_conservatively(self, expr: IRExpression) -> bool:
@@ -2130,6 +2161,8 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             return True
         if isinstance(expr, IRCast):
             return self.is_safe_to_inline_conservatively(expr.expr)
+        if isinstance(expr, IRCall):
+            return True
         # Allow flat arithmetic (both operands are leaves) to enable compound assignment detection.
         # Nested arithmetic is excluded to prevent exponential chaining.
         if isinstance(expr, IRArithmetic):
@@ -2205,17 +2238,22 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                     expr_to_inline
                 ):
                     continue
-                if temp_local in expr_to_inline.get_children() or temp_local == expr_to_inline:
+                if self._expr_contains_local(expr_to_inline, temp_local):
                     continue
 
                 remaining_statements = block.statements[i + 1 :]
                 if self._is_local_redefined(temp_local, remaining_statements):
                     continue
 
-                dbg_print(f"Aggressively inlining safe expression from temporary '{temp_local.name}'.")
+                any_substituted = False
                 for subsequent_stmt in remaining_statements:
-                    self._substitute_in_statement(subsequent_stmt, temp_local, expr_to_inline)
+                    if self._substitute_in_statement(subsequent_stmt, temp_local, expr_to_inline):
+                        any_substituted = True
 
+                if not any_substituted:
+                    continue
+
+                dbg_print(f"Aggressively inlining safe expression from temporary '{temp_local.name}'.")
                 statements_to_remove.append(stmt)
                 made_change_in_pass = True
                 break
@@ -2227,6 +2265,70 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
+
+
+class IRDeadTempEliminator(IROptimizer):
+    """Removes assignments to compiler-generated temp variables that are never read."""
+
+    def optimize(self) -> None:
+        if not hasattr(self.func, "block"):
+            return
+        user_names = self._collect_user_names()
+        globally_used = self._collect_all_used_names(self.func.block)
+        self._remove_dead(self.func.block, user_names, globally_used)
+
+    def _collect_user_names(self) -> Set[str]:
+        names: Set[str] = set()
+        if self.func.func.has_debug and self.func.func.assigns:
+            for name_ref, _ in self.func.func.assigns:
+                names.add(name_ref.resolve(self.func.code))
+        return names
+
+    def _collect_all_used_names(self, block: IRBlock) -> Set[str]:
+        used: Set[str] = set()
+        for stmt in block.statements:
+            if isinstance(stmt, IRAssign):
+                self._collect_used_in_expr(stmt.expr, used)
+            if isinstance(stmt, IRReturn) and stmt.value:
+                self._collect_used_in_expr(stmt.value, used)
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    used.update(self._collect_all_used_names(child))
+        return used
+
+    def _collect_used_in_expr(self, expr: IRExpression, used: Set[str]) -> None:
+        if isinstance(expr, IRLocal):
+            used.add(expr.name)
+        if isinstance(expr, IRArithmetic):
+            self._collect_used_in_expr(expr.left, used)
+            self._collect_used_in_expr(expr.right, used)
+        if isinstance(expr, IRCast):
+            self._collect_used_in_expr(expr.expr, used)
+        if isinstance(expr, IRCall):
+            for arg in expr.args:
+                self._collect_used_in_expr(arg, used)
+        if isinstance(expr, IRField):
+            self._collect_used_in_expr(expr.target, used)
+
+    def _remove_dead(
+        self, block: IRBlock, user_names: Set[str], globally_used: Set[str]
+    ) -> None:
+        new_stmts: List[IRStatement] = []
+        for stmt in block.statements:
+            if (
+                isinstance(stmt, IRAssign)
+                and isinstance(stmt.target, IRLocal)
+                and stmt.target.name not in user_names
+                and stmt.target.name not in globally_used
+            ):
+                dbg_print(f"Removing dead temp assignment '{stmt.target.name}'.")
+                continue
+            new_stmts.append(stmt)
+        block.statements = new_stmts
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self._remove_dead(child, user_names, globally_used)
 
 
 class IRTraceOptimizer(TraversingIROptimizer):
@@ -2363,6 +2465,7 @@ class IRFunction:
                 IRCommonBlockMerger(self),
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRTempAssignmentInliner(self, aggressive=True),
+                IRDeadTempEliminator(self),
                 IRVoidAssignOptimizer(self),
                 IRTraceOptimizer(self),
                 IRBlockFlattener(self),
@@ -2384,15 +2487,18 @@ class IRFunction:
 
     def _optimize(self) -> None:
         """Optimize the IR"""
-        # TODO: store layers
-        dbg_print("----- Disasm -----")
-        dbg_print(disasm.func(self.code, self.func))
-        dbg_print(f"----- LLIL -----")
-        dbg_print(self.block.pprint())
-        for o in self.optimizers:
-            dbg_print(f"----- {o.__class__.__name__} -----")
-            o.optimize()
+        from .globals import DEBUG
+        if DEBUG:
+            dbg_print("----- Disasm -----")
+            dbg_print(disasm.func(self.code, self.func))
+            dbg_print(f"----- LLIL -----")
             dbg_print(self.block.pprint())
+        for o in self.optimizers:
+            if DEBUG:
+                dbg_print(f"----- {o.__class__.__name__} -----")
+            o.optimize()
+            if DEBUG:
+                dbg_print(self.block.pprint())
 
     def _name_locals(self) -> None:
         """Name locals based on debug info"""
