@@ -189,7 +189,8 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         if type_name == "DynObj":
             return "{}"
         else:
-            return f"new {disasm.type_to_haxe(type_name)}()"
+            args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args)
+            return f"new {disasm.type_to_haxe(type_name)}({args_str})"
 
     elif isinstance(expr, IRCast):
         target_name = disasm.type_name(code, expr.get_type())

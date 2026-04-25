@@ -1161,18 +1161,23 @@ class IRField(IRExpression):
 class IRNew(IRExpression):
     """Represents object allocation, e.g., `new MyClass()` or `{}`"""
 
-    def __init__(self, code: Bytecode, alloc_type: tIndex):
+    def __init__(self, code: Bytecode, alloc_type: tIndex, constructor_args: Optional[List[IRExpression]] = None):
         super().__init__(code)
         self.alloc_type_idx = alloc_type
+        self.constructor_args = constructor_args or []
 
     def get_type(self) -> Type:
         return self.alloc_type_idx.resolve(self.code)
+
+    def get_children(self) -> List[IRStatement]:
+        return [a for a in self.constructor_args if isinstance(a, IRStatement)]
 
     def __repr__(self) -> str:
         type_name = disasm.type_name(self.code, self.get_type())
         if type_name == "DynObj":
             return "<IRNew: {}>"
-        return f"<IRNew: new {type_name}>"
+        args_str = ", ".join(repr(a) for a in self.constructor_args) if self.constructor_args else ""
+        return f"<IRNew: new {type_name}({args_str})>"
 
 
 class IRCast(IRExpression):
@@ -2628,6 +2633,61 @@ class IRDeadCodeEliminator(TraversingIROptimizer):
                     self.visit_block(child)
 
 
+class IRConstructorFolder(TraversingIROptimizer):
+    """Folds `new X; __constructor__(x, args...)` into `new X(args...)`."""
+
+    def visit_block(self, block: IRBlock) -> None:
+        made_change = True
+        while made_change:
+            made_change = False
+            new_statements: List[IRStatement] = []
+            i = 0
+            while i < len(block.statements):
+                stmt = block.statements[i]
+                if (
+                    isinstance(stmt, IRAssign)
+                    and isinstance(stmt.target, IRLocal)
+                    and isinstance(stmt.expr, IRNew)
+                    and not stmt.expr.constructor_args
+                    and i + 1 < len(block.statements)
+                ):
+                    next_stmt = block.statements[i + 1]
+                    ctor_args = self._match_constructor_call(next_stmt, stmt.target)
+                    if ctor_args is not None:
+                        stmt.expr.constructor_args = ctor_args
+                        new_statements.append(stmt)
+                        i += 2
+                        made_change = True
+                        continue
+                new_statements.append(stmt)
+                i += 1
+            block.statements = new_statements
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
+    def _match_constructor_call(self, stmt: IRStatement, instance_local: IRLocal) -> Optional[List[IRExpression]]:
+        if not isinstance(stmt, IRCall):
+            return None
+        if stmt.call_type != IRCall.CallType.FUNC:
+            return None
+        if not stmt.args:
+            return None
+        first_arg = stmt.args[0]
+        if not (isinstance(first_arg, IRLocal) and first_arg == instance_local):
+            return None
+        fun_const = stmt.target
+        if not isinstance(fun_const, IRConst):
+            return None
+        if not isinstance(fun_const.value, Function):
+            return None
+        func_name = self.func.code.partial_func_name(fun_const.value)
+        if func_name and "__constructor__" in func_name:
+            return list(stmt.args[1:])
+        return None
+
+
 class IRTraceOptimizer(TraversingIROptimizer):
     """
     Finds the common `haxe.Log.trace` pattern with an anonymous object for
@@ -2644,41 +2704,58 @@ class IRTraceOptimizer(TraversingIROptimizer):
                 stmt = block.statements[i]
                 dbg_print(f"[TraceOpt] Analyzing statement {i}: {stmt}")
 
-                if not (isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)):
+                temp_local = None
+                start_idx = i
+
+                if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+                    if isinstance(stmt.expr, IRNew) and stmt.expr.get_type().definition.__class__ == DynObj:
+                        temp_local = stmt.target
+                        start_idx = i + 1
+                    else:
+                        new_statements.append(stmt)
+                        i += 1
+                        continue
+                elif isinstance(stmt, IRAssign) and isinstance(stmt.target, IRField):
+                    temp_local = stmt.target.target
+                    if isinstance(temp_local, IRLocal):
+                        start_idx = i
+                    else:
+                        new_statements.append(stmt)
+                        i += 1
+                        continue
+                else:
                     new_statements.append(stmt)
                     i += 1
                     continue
 
-                assign_new = stmt
-                temp_local = assign_new.target
-                if not (
-                    isinstance(assign_new.expr, IRNew) and assign_new.expr.get_type().definition.__class__ == DynObj
-                ):
+                if temp_local is None:
                     new_statements.append(stmt)
                     i += 1
                     continue
 
                 pos_info: Dict[str, Any] = {}
-                j = i + 1
+                j = start_idx
 
                 while j < len(block.statements):
                     next_stmt = block.statements[j]
-                    if not (
-                        isinstance(next_stmt, IRAssign)
-                        and isinstance(next_stmt.target, IRField)
-                        and next_stmt.target.target == temp_local
-                        and isinstance(next_stmt.expr, IRConst)
-                    ):
-                        break
-
-                    field_assign = next_stmt
-                    assert isinstance(field_assign.target, IRField)
-                    field_name = field_assign.target.field_name
-                    assert isinstance(field_assign.expr, IRConst)
-                    field_value = field_assign.expr.value
-                    pos_info[field_name] = field_value
-                    dbg_print(f"[TraceOpt]  -> Collected field: {field_name} = {field_value!r}")
-                    j += 1
+                    if isinstance(next_stmt, IRAssign) and isinstance(next_stmt.target, IRField):
+                        field_target = next_stmt.target
+                        if field_target.target == temp_local:
+                            field_name = field_target.field_name
+                            if isinstance(next_stmt.expr, IRConst):
+                                pos_info[field_name] = next_stmt.expr.value
+                                dbg_print(f"[TraceOpt]  -> Collected const field: {field_name} = {next_stmt.expr.value!r}")
+                                j += 1
+                                continue
+                            elif isinstance(next_stmt.expr, IRLocal):
+                                pos_info[field_name] = next_stmt.expr
+                                dbg_print(f"[TraceOpt]  -> Collected local field: {field_name} = {next_stmt.expr}")
+                                j += 1
+                                continue
+                    elif isinstance(next_stmt, IRAssign) and isinstance(next_stmt.target, IRLocal):
+                        j += 1
+                        continue
+                    break
 
                 if j < len(block.statements):
                     call_stmt = block.statements[j]
@@ -2716,7 +2793,22 @@ class IRTraceOptimizer(TraversingIROptimizer):
                     if is_valid_trace_call:
                         assert isinstance(call_stmt, IRCall)
                         msg_expr = call_stmt.args[0]
-                        trace_stmt = IRTrace(self.func.code, msg_expr, pos_info)
+                        resolved_pos: Dict[str, Any] = {}
+                        for k, v in pos_info.items():
+                            if isinstance(v, IRLocal):
+                                for s_idx in range(start_idx, j):
+                                    s = block.statements[s_idx]
+                                    if isinstance(s, IRAssign) and s.target == v and isinstance(s.expr, IRConst):
+                                        try:
+                                            resolved_pos[k] = int(s.expr.value.value if hasattr(s.expr.value, 'value') else s.expr.value)
+                                        except (ValueError, TypeError):
+                                            resolved_pos[k] = v
+                                        break
+                                else:
+                                    resolved_pos[k] = v
+                            else:
+                                resolved_pos[k] = v
+                        trace_stmt = IRTrace(self.func.code, msg_expr, resolved_pos)
                         new_statements.append(trace_stmt)
 
                         i = j + 1
@@ -2765,6 +2857,7 @@ class IRFunction:
                 IRDeadTempEliminator(self),
                 IRDeadCodeEliminator(self),
                 IRVoidAssignOptimizer(self),
+                IRConstructorFolder(self),
                 IRTraceOptimizer(self),
                 IRBlockFlattener(self),
             ]
@@ -2774,6 +2867,7 @@ class IRFunction:
         """Lift function to IR"""
         for i, reg in enumerate(self.func.regs):
             self.locals.append(IRLocal(f"var{i}", reg, code=self.code))
+        self._build_assign_map()
         self._name_locals()
         if not no_lift:
             if self.cfg.entry:
@@ -2782,6 +2876,51 @@ class IRFunction:
                 raise DecompError("Function CFG has no entry node, cannot lift to IR")
         else:
             dbg_print("Skipping lift.")
+
+    def _build_assign_map(self) -> None:
+        """Build a mapping from op index to (register, name) for SSA-esque splitting."""
+        self._op_assigns: Dict[int, Dict[int, str]] = {}
+        self._user_reg_indices: Set[int] = set()
+        self._reg_first_assign: Dict[int, int] = {}
+        self._op_id_to_idx: Dict[int, int] = {id(op): i for i, op in enumerate(self.ops)}
+        if not (self.func.has_debug and self.func.assigns):
+            return
+        for assign in self.func.assigns:
+            val = assign[1].value - 1
+            if val < 0:
+                continue
+            op = self.ops[val]
+            try:
+                reg = op.df["dst"].value
+            except KeyError:
+                continue
+            name = assign[0].resolve(self.code)
+            self._user_reg_indices.add(reg)
+            if val not in self._op_assigns:
+                self._op_assigns[val] = {}
+            self._op_assigns[val][reg] = name
+            if reg not in self._reg_first_assign or val < self._reg_first_assign[reg]:
+                self._reg_first_assign[reg] = val
+        self._op_id_to_idx: Dict[int, int] = {id(op): i for i, op in enumerate(self.ops)}
+
+    def _get_local(self, reg_idx: int) -> IRLocal:
+        """Get the current IRLocal for a register, respecting SSA-esque name transitions."""
+        return self.locals[reg_idx]
+
+    def _split_local(self, reg_idx: int, name: str) -> IRLocal:
+        """Create a new IRLocal for a register with a specific name (SSA-esque split)."""
+        reg_type = self.func.regs[reg_idx]
+        new_local = IRLocal(name, reg_type, code=self.code)
+        self.locals[reg_idx] = new_local
+        return new_local
+
+    def _check_assign(self, op_idx: int) -> None:
+        """Check if this op index has an assign entry and split the local if needed."""
+        if op_idx in self._op_assigns:
+            for reg_idx, name in self._op_assigns[op_idx].items():
+                current = self.locals[reg_idx]
+                if current.name != name:
+                    self._split_local(reg_idx, name)
 
     def _optimize(self) -> None:
         """Optimize the IR"""
@@ -2829,7 +2968,10 @@ class IRFunction:
                     reg_assigns[i].append("voidReg")
         for i, local in enumerate(self.locals):
             if reg_assigns[i]:
-                local.name = reg_assigns[i][0]
+                if i in self._reg_first_assign and self._reg_first_assign[i] > 0:
+                    pass
+                else:
+                    local.name = reg_assigns[i][0]
         dbg_print("Named locals:", self.locals)
 
     def _find_convergence(self, true_node: CFNode, false_node: CFNode, visited: Set[CFNode]) -> Optional[CFNode]:
@@ -2868,6 +3010,9 @@ class IRFunction:
 
     def _lift_ops_into_block(self, block: IRBlock, ops: List[Opcode]) -> None:
         for op in ops:
+            op_idx = self._op_id_to_idx.get(id(op))
+            if op_idx is not None:
+                self._check_assign(op_idx)
             if op.op == "Label":
                 continue
 
