@@ -48,8 +48,8 @@ def _indent_str(level: int) -> str:
     return "    " * level  # 4 spaces for indentation
 
 
-def _collect_assigned_names(stmts: List[IRStatement]) -> Set[str]:
-    names: Set[str] = set()
+def _collect_assigned_names(stmts: List[IRStatement]) -> set[str]:
+    names: set[str] = set()
     for s in stmts:
         if isinstance(s, IRAssign) and isinstance(s.target, IRLocal):
             names.add(s.target.name)
@@ -126,7 +126,7 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
             return "false"
         elif expr.left and expr.right and expr.op in op_map:
             # Normalize: constants on the right side for natural-reading output.
-            actual_op = expr.op
+            actual_op: IRBoolExpr.CompareType = expr.op
             left_expr, right_expr = expr.left, expr.right
             if isinstance(left_expr, IRConst) and not isinstance(right_expr, IRConst) and actual_op in swap_map:
                 left_expr, right_expr = right_expr, left_expr
@@ -236,7 +236,7 @@ def _inverted_bool_expr_to_haxe(expr: IRBoolExpr, code: Bytecode, ir_function: I
             IRBoolExpr.CompareType.GT: IRBoolExpr.CompareType.LT,
             IRBoolExpr.CompareType.GTE: IRBoolExpr.CompareType.LTE,
         }
-        actual_op = expr.op
+        actual_op: IRBoolExpr.CompareType = expr.op
         left_expr, right_expr = expr.left, expr.right
         if isinstance(left_expr, IRConst) and not isinstance(right_expr, IRConst) and actual_op in swap_map:
             left_expr, right_expr = right_expr, left_expr
@@ -344,7 +344,8 @@ def _generate_statements(
 
             # Simplify: if (cond) { continue; } else { break; }  →  if (!cond) { break; }
             # Also handles: if (cond) { break; } else { continue; } → if (cond) { break; }
-            _is_single = lambda stmts, typ: len(stmts) == 1 and isinstance(stmts[0], typ)
+            def _is_single(stmts: List[IRStatement], typ: type) -> bool:
+                return len(stmts) == 1 and isinstance(stmts[0], typ)
             if _is_single(true_stmts, IRContinue) and _is_single(false_stmts, IRBreak):
                 inv_cond = _inverted_bool_expr_to_haxe(stmt.condition, code, ir_function) if isinstance(stmt.condition, IRBoolExpr) else f"!({_expression_to_haxe(stmt.condition, code, ir_function)})"
                 output_lines.append(f"{indent}if ({inv_cond}) {{")

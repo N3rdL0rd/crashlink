@@ -35,7 +35,7 @@ try:
             """
             from tqdm import tqdm as _tqdm
 
-            return _tqdm(*args, **kwargs, ascii=True)  # type: ignore[call-overload]
+            return _tqdm(*args, **kwargs, ascii=True) # type: ignore[call-overload]
     else:
         from tqdm import tqdm
 

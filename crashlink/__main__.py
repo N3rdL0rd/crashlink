@@ -914,7 +914,7 @@ class Commands(BaseCommands):
         try:
             import IPython
 
-            IPython.embed(banner1=banner, user_ns=local_vars)  # type: ignore
+            IPython.embed(banner1=banner, user_ns=local_vars) # type: ignore[no-untyped-call]
         except ImportError:
             import code as cd
 
