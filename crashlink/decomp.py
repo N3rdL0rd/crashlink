@@ -665,7 +665,9 @@ class IRAssign(IRStatement):
     def __init__(self, code: Bytecode, target: IRExpression, expr: IRExpression):
         super().__init__(code)
         if not isinstance(target, (IRLocal, IRField, IRArrayAccess)):
-            raise DecompError(f"Invalid target for IRAssign: {type(target).__name__}. Must be IRLocal, IRField, or IRArrayAccess.")
+            raise DecompError(
+                f"Invalid target for IRAssign: {type(target).__name__}. Must be IRLocal, IRField, or IRArrayAccess."
+            )
         self.target = target
         self.expr = expr
 
@@ -1866,8 +1868,9 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
         if isinstance(statement, IRAssign):
             return self._statement_reads_target(statement.expr, target)
         if isinstance(statement, IRBoolExpr):
-            return (statement.left is not None and self._statement_reads_target(statement.left, target)) or \
-                   (statement.right is not None and self._statement_reads_target(statement.right, target))
+            return (statement.left is not None and self._statement_reads_target(statement.left, target)) or (
+                statement.right is not None and self._statement_reads_target(statement.right, target)
+            )
         return any(self._statement_reads_target(child, target) for child in statement.get_children())
 
     def _convert_to_while_true_break(
@@ -1918,7 +1921,9 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
         for i, stmt in enumerate(setup_statements_for_body):
             if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRExpression):
                 later_statements = list(setup_statements_for_body[i + 1 :]) + list(loop.body.statements)
-                reads_later = any(self._statement_reads_target(later_stmt, stmt.target) for later_stmt in later_statements)
+                reads_later = any(
+                    self._statement_reads_target(later_stmt, stmt.target) for later_stmt in later_statements
+                )
                 reads_in_condition = self._statement_reads_target(working_exit_condition, stmt.target)
                 if reads_later or reads_in_condition:
                     remaining_setup.append(stmt)
@@ -2421,7 +2426,9 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                         new_statements.append(current_stmt)
                         i += 1
                         continue
-                    if isinstance(expr_to_inline, IRExpression) and self._expr_contains_local(expr_to_inline, temp_local):
+                    if isinstance(expr_to_inline, IRExpression) and self._expr_contains_local(
+                        expr_to_inline, temp_local
+                    ):
                         new_statements.append(current_stmt)
                         i += 1
                         continue
@@ -2537,9 +2544,7 @@ class IRDeadTempEliminator(IROptimizer):
                         pass
         return indices
 
-    def _is_user_local(
-        self, local: IRLocal, user_names: Set[str], user_regs: Set[int]
-    ) -> bool:
+    def _is_user_local(self, local: IRLocal, user_names: Set[str], user_regs: Set[int]) -> bool:
         if local.name in user_names:
             return True
         if local.name.startswith("var"):
@@ -2716,8 +2721,9 @@ class IRTraceOptimizer(TraversingIROptimizer):
                         i += 1
                         continue
                 elif isinstance(stmt, IRAssign) and isinstance(stmt.target, IRField):
-                    temp_local = stmt.target.target
-                    if isinstance(temp_local, IRLocal):
+                    candidate = stmt.target.target
+                    if isinstance(candidate, IRLocal):
+                        temp_local = candidate
                         start_idx = i
                     else:
                         new_statements.append(stmt)
@@ -2744,7 +2750,9 @@ class IRTraceOptimizer(TraversingIROptimizer):
                             field_name = field_target.field_name
                             if isinstance(next_stmt.expr, IRConst):
                                 pos_info[field_name] = next_stmt.expr.value
-                                dbg_print(f"[TraceOpt]  -> Collected const field: {field_name} = {next_stmt.expr.value!r}")
+                                dbg_print(
+                                    f"[TraceOpt]  -> Collected const field: {field_name} = {next_stmt.expr.value!r}"
+                                )
                                 j += 1
                                 continue
                             elif isinstance(next_stmt.expr, IRLocal):
@@ -2800,7 +2808,9 @@ class IRTraceOptimizer(TraversingIROptimizer):
                                     s = block.statements[s_idx]
                                     if isinstance(s, IRAssign) and s.target == v and isinstance(s.expr, IRConst):
                                         try:
-                                            resolved_pos[k] = int(s.expr.value.value if hasattr(s.expr.value, 'value') else s.expr.value)
+                                            resolved_pos[k] = int(
+                                                s.expr.value.value if hasattr(s.expr.value, "value") else s.expr.value
+                                            )
                                         except (ValueError, TypeError):
                                             resolved_pos[k] = v
                                         break
@@ -2901,7 +2911,6 @@ class IRFunction:
             self._op_assigns[val][reg] = name
             if reg not in self._reg_first_assign or val < self._reg_first_assign[reg]:
                 self._reg_first_assign[reg] = val
-        self._op_id_to_idx: Dict[int, int] = {id(op): i for i, op in enumerate(self.ops)}
 
     def _get_local(self, reg_idx: int) -> IRLocal:
         """Get the current IRLocal for a register, respecting SSA-esque name transitions."""
@@ -2925,6 +2934,7 @@ class IRFunction:
     def _optimize(self) -> None:
         """Optimize the IR"""
         from .globals import DEBUG
+
         if DEBUG:
             dbg_print("----- Disasm -----")
             dbg_print(disasm.func(self.code, self.func))
@@ -3135,15 +3145,17 @@ class IRFunction:
                 arr_local = self.locals[op.df["bytes"].value]
                 idx_local = self.locals[op.df["index"].value]
                 block.statements.append(
-                    IRAssign(self.code, dst_local, IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df["dst"].value]))
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df["dst"].value]),
+                    )
                 )
             elif op.op == "SetMem":
                 arr_local = self.locals[op.df["bytes"].value]
                 idx_local = self.locals[op.df["index"].value]
                 src_local = self.locals[op.df["src"].value]
-                block.statements.append(
-                    IRAssign(self.code, IRArrayAccess(self.code, arr_local, idx_local), src_local)
-                )
+                block.statements.append(IRAssign(self.code, IRArrayAccess(self.code, arr_local, idx_local), src_local))
             elif op.op == "DynSet":
                 obj_local = self.locals[op.df["obj"].value]
                 src_local = self.locals[op.df["src"].value]
@@ -3162,7 +3174,9 @@ class IRFunction:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
             elif op.op == "Type":
                 dst_local = self.locals[op.df["dst"].value]
-                block.statements.append(IRAssign(self.code, dst_local, IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df["ty"])))
+                block.statements.append(
+                    IRAssign(self.code, dst_local, IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df["ty"]))
+                )
             elif op.op == "Ref":
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = self.locals[op.df["src"].value]
@@ -3179,17 +3193,14 @@ class IRFunction:
                     fid = op.df["field"].value
                     if fid < len(obj_type.definition.virtuals):
                         from .core import fIndex
+
                         fun_idx = obj_type.definition.virtuals[fid]
                         fun_const = IRConst(self.code, IRConst.ConstType.FUN, idx=fIndex(fun_idx))
                         block.statements.append(IRAssign(self.code, dst_local, fun_const))
                     else:
-                        block.statements.append(
-                            IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op))
-                        )
+                        block.statements.append(IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op)))
                 else:
-                    block.statements.append(
-                        IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op))
-                    )
+                    block.statements.append(IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op)))
             elif op.op == "NullCheck":
                 continue
             elif op.op == "EnumIndex":
@@ -3201,7 +3212,11 @@ class IRFunction:
                 enum_type = self.func.regs[op.df["dst"].value]
                 enum_def = enum_type.resolve(self.code).definition
                 cid = op.df["construct"].value
-                construct_name = enum_def.constructs[cid].name.resolve(self.code) if cid < len(enum_def.constructs) else f"construct_{cid}"
+                construct_name = (
+                    enum_def.constructs[cid].name.resolve(self.code)
+                    if cid < len(enum_def.constructs)
+                    else f"construct_{cid}"
+                )
                 args = [self.locals[arg.value] for arg in op.df["args"].value]
                 block.statements.append(
                     IRAssign(self.code, dst_local, IREnumConstruct(self.code, construct_name, args, enum_type))
@@ -3221,9 +3236,7 @@ class IRFunction:
                         IRAssign(self.code, dst_local, IREnumField(self.code, src_local, field_name, field_type))
                     )
                 else:
-                    block.statements.append(
-                        IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op))
-                    )
+                    block.statements.append(IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op)))
             else:
                 if "dst" in op.df:
                     block.statements.append(
@@ -3400,9 +3413,9 @@ class IRFunction:
             jump_target, fall_through = None, None
             for branch_node, edge_type in node.branches:
                 if edge_type == "true":
-                    jump_target = branch_node    # jump target = else block in source
+                    jump_target = branch_node  # jump target = else block in source
                 elif edge_type == "false":
-                    fall_through = branch_node   # fall-through = then block in source
+                    fall_through = branch_node  # fall-through = then block in source
 
             # Invert the jump condition to get the actual "if" condition.
             cond_expr = self._build_bool_expr_from_op(last_op)
@@ -3438,7 +3451,9 @@ class IRFunction:
                 convergence_node = self.cfg.immediate_post_dominators[node]
 
             if then_block_ir is None:
-                then_block_ir = self._lift_block(fall_through, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx)
+                then_block_ir = self._lift_block(
+                    fall_through, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                )
             if else_block_ir is None:
                 else_block_ir = self._lift_block(
                     jump_target, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
@@ -3462,7 +3477,9 @@ class IRFunction:
             cases, default_block = {}, IRBlock(self.code)
 
             for target_node, edge_type in node.branches:
-                case_block_ir = self._lift_block(target_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx)
+                case_block_ir = self._lift_block(
+                    target_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                )
                 if edge_type.startswith("switch: case:"):
                     case_val = int(edge_type.split(":")[-1].strip())
                     cases[IRConst(self.code, IRConst.ConstType.INT, value=case_val)] = case_block_ir
@@ -3490,7 +3507,9 @@ class IRFunction:
                 stop_nodes=stop_nodes,
             )
 
-            try_block_ir = self._lift_block(try_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx)
+            try_block_ir = self._lift_block(
+                try_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+            )
             catch_block_ir = self._lift_block(
                 catch_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
             )
