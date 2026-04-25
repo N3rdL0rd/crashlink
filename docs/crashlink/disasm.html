@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
-<meta name="generator" content="pdoc3 0.11.5">
+<meta name="generator" content="pdoc3 0.11.6">
 <title>crashlink.disasm API documentation</title>
 <meta name="description" content="Human-readable disassembly of opcodes and utilities to work at a relatively low level with HashLink bytecode.">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
@@ -179,6 +179,171 @@ el.replaceWith(d);
     return f&#34;f@{func.findex.value} {name} (no fun found!)&#34;</code></pre>
 </details>
 <div class="desc"><p>Generates a human-readable header for a function.</p></div>
+</dd>
+<dt id="crashlink.disasm.gen_mkdocs"><code class="name flex">
+<span>def <span class="ident">gen_mkdocs</span></span>(<span>code: Bytecode, site_name: str = 'API Reference') ‑> Dict[str, str]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def gen_mkdocs(code: Bytecode, site_name: str = &#34;API Reference&#34;) -&gt; Dict[str, str]:
+    &#34;&#34;&#34;
+    Generates a complete MkDocs + Material project for the bytecode&#39;s API.
+    Returns Dict[relative_path, content]. Dynamic/static pairs are merged into one page.
+    &#34;&#34;&#34;
+    res: Dict[str, str] = {}
+    kind = Type.TYPEDEFS.index(Obj)
+    num_classes = 0
+
+    def _process(defn: Obj) -&gt; None:
+        nonlocal num_classes
+        if getattr(defn, &#34;_is_static&#34;, None) is True and getattr(defn, &#34;_dynamic&#34;, None) is not None:
+            return
+        static_obj: Optional[Obj] = (
+            getattr(defn, &#34;_static&#34;, None) if getattr(defn, &#34;_is_static&#34;, None) is False else None
+        )
+        page_name = destaticify(defn.name.resolve(code))
+        res[&#34;src/content/docs/&#34; + _class_md_path(page_name)] = gen_mkdocs_for_obj(code, defn, static_obj)
+        num_classes += 1
+
+    try:
+        if not USE_TQDM:
+            for obj in code.types:
+                if obj.kind.value == kind:
+                    if not isinstance(obj.definition, Obj):
+                        raise TypeError(f&#34;Expected Obj, got {obj.definition}&#34;)
+                    _process(obj.definition)
+        else:
+            for obj in tqdm(code.types):  # pyright: ignore[reportPossiblyUnboundVariable]
+                if obj.kind.value == kind:
+                    if not isinstance(obj.definition, Obj):
+                        raise TypeError(f&#34;Expected Obj, got {obj.definition}&#34;)
+                    _process(obj.definition)
+    except KeyboardInterrupt:
+        print(&#34;Aborted.&#34;)
+
+    res[&#34;src/content/docs/index.md&#34;] = (
+        f&#39;---\ntitle: &#34;{site_name}&#34;\n---\n\n&#39;
+        f&#34;# {site_name}\n\n&#34;
+        f&#34;Auto-generated from HashLink bytecode using [crashlink](https://github.com/N3rdL0rd/crashlink).\n\n&#34;
+        f&#34;{num_classes} classes documented.\n&#34;
+    )
+
+    # Derive sidebar structure from generated pages
+    dirs: set[str] = set()
+    top_files: List[str] = []
+    prefix = &#34;src/content/docs/&#34;
+    for path in res:
+        if not path.startswith(prefix) or path == prefix + &#34;index.md&#34;:
+            continue
+        rel = path[len(prefix) :]
+        if &#34;/&#34; in rel:
+            dirs.add(rel.split(&#34;/&#34;)[0])
+        else:
+            top_files.append(rel[:-3])  # strip .md
+
+    sidebar_lines = [&#34;        sidebar: [&#34;]
+    if top_files:
+        sidebar_lines += [
+            &#34;          { label: &#39;Top-level&#39;, collapsed: true, items: [&#34;,
+        ]
+        for name in sorted(top_files):
+            safe = name.replace(&#34;&#39;&#34;, &#34;\\&#39;&#34;)
+            sidebar_lines.append(f&#34;            {{ label: &#39;{safe}&#39;, link: &#39;{safe}&#39; }},&#34;)
+        sidebar_lines.append(&#34;          ] },&#34;)
+    for d in sorted(dirs):
+        safe = d.replace(&#34;&#39;&#34;, &#34;\\&#39;&#34;)
+        sidebar_lines.append(
+            f&#34;          {{ label: &#39;{safe}&#39;, autogenerate: {{ directory: &#39;{safe}&#39; }}, collapsed: true }},&#34;
+        )
+    sidebar_lines.append(&#34;        ],&#34;)
+    sidebar_str = &#34;\n&#34;.join(sidebar_lines)
+
+    res[&#34;astro.config.mjs&#34;] = (
+        &#34;import { defineConfig } from &#39;astro/config&#39;;\n&#34;
+        &#34;import starlight from &#39;@astrojs/starlight&#39;;\n\n&#34;
+        &#34;export default defineConfig({\n&#34;
+        &#34;  integrations: [\n&#34;
+        &#34;    starlight({\n&#34;
+        f&#34;      title: &#39;{site_name}&#39;,\n&#34;
+        &#34;      pagination: false,\n&#34;
+        &#34;      lastUpdated: false,\n&#34;
+        f&#34;{sidebar_str}\n&#34;
+        &#34;    }),\n&#34;
+        &#34;  ],\n&#34;
+        &#34;});\n&#34;
+    )
+
+    res[&#34;package.json&#34;] = (
+        &#34;{\n&#34;
+        &#39;  &#34;name&#34;: &#34;api-reference&#34;,\n&#39;
+        &#39;  &#34;type&#34;: &#34;module&#34;,\n&#39;
+        &#39;  &#34;scripts&#34;: {\n&#39;
+        &#39;    &#34;dev&#34;: &#34;astro dev&#34;,\n&#39;
+        &#39;    &#34;build&#34;: &#34;astro build&#34;,\n&#39;
+        &#39;    &#34;preview&#34;: &#34;astro preview&#34;\n&#39;
+        &#34;  },\n&#34;
+        &#39;  &#34;dependencies&#34;: {\n&#39;
+        &#39;    &#34;@astrojs/starlight&#34;: &#34;^0.32.0&#34;,\n&#39;
+        &#39;    &#34;astro&#34;: &#34;^5.0.0&#34;\n&#39;
+        &#34;  }\n&#34;
+        &#34;}\n&#34;
+    )
+
+    res[&#34;tsconfig.json&#34;] = &#39;{\n  &#34;extends&#34;: &#34;astro/tsconfigs/strict&#34;\n}\n&#39;
+
+    res[&#34;.github/workflows/deploy.yml&#34;] = (
+        &#34;name: Deploy to GitHub Pages\n\n&#34;
+        &#34;on:\n&#34;
+        &#34;  push:\n&#34;
+        &#34;    branches: [main]\n&#34;
+        &#34;  workflow_dispatch:\n\n&#34;
+        &#34;permissions:\n&#34;
+        &#34;  contents: read\n&#34;
+        &#34;  pages: write\n&#34;
+        &#34;  id-token: write\n\n&#34;
+        &#34;concurrency:\n&#34;
+        &#34;  group: pages\n&#34;
+        &#34;  cancel-in-progress: false\n\n&#34;
+        &#34;jobs:\n&#34;
+        &#34;  build:\n&#34;
+        &#34;    runs-on: ubuntu-latest\n&#34;
+        &#34;    steps:\n&#34;
+        &#34;      - uses: actions/checkout@v4\n&#34;
+        &#34;      - uses: actions/setup-node@v4\n&#34;
+        &#34;        with:\n&#34;
+        &#34;          node-version: 20\n&#34;
+        &#34;      - run: npm ci\n&#34;
+        &#34;      - run: npm run build\n&#34;
+        &#34;      - uses: actions/upload-pages-artifact@v3\n&#34;
+        &#34;        with:\n&#34;
+        &#34;          path: dist/\n\n&#34;
+        &#34;  deploy:\n&#34;
+        &#34;    needs: build\n&#34;
+        &#34;    runs-on: ubuntu-latest\n&#34;
+        &#34;    environment:\n&#34;
+        &#34;      name: github-pages\n&#34;
+        &#34;      url: ${{ steps.deployment.outputs.page_url }}\n&#34;
+        &#34;    steps:\n&#34;
+        &#34;      - id: deployment\n&#34;
+        &#34;        uses: actions/deploy-pages@v4\n&#34;
+    )
+
+    res[&#34;src/content.config.ts&#34;] = (
+        &#34;import { defineCollection } from &#39;astro:content&#39;;\n&#34;
+        &#34;import { docsLoader } from &#39;@astrojs/starlight/loaders&#39;;\n&#34;
+        &#34;import { docsSchema } from &#39;@astrojs/starlight/schema&#39;;\n\n&#34;
+        &#34;export const collections = {\n&#34;
+        &#34;  docs: defineCollection({ loader: docsLoader(), schema: docsSchema() }),\n&#34;
+        &#34;};\n&#34;
+    )
+
+    return res</code></pre>
+</details>
+<div class="desc"><p>Generates a complete MkDocs + Material project for the bytecode's API.
+Returns Dict[relative_path, content]. Dynamic/static pairs are merged into one page.</p></div>
 </dd>
 <dt id="crashlink.disasm.is_static"><code class="name flex">
 <span>def <span class="ident">is_static</span></span>(<span>code: Bytecode, func: Function) ‑> bool</span>
@@ -429,6 +594,8 @@ el.replaceWith(d);
             return f&#34;trap to reg{op.df[&#39;exc&#39;]} (end: {idx + (op.df[&#39;offset&#39;].value)})&#34;
         case &#34;EndTrap&#34;:
             return f&#34;end trap to reg{op.df[&#39;exc&#39;]}&#34;
+        case &#34;Catch&#34;:
+            return f&#34;catch to reg{op.df[&#39;global&#39;]}&#34;
 
         # Switch
         case &#34;Switch&#34;:
@@ -596,6 +763,7 @@ Ret. 1
 <li><code><a title="crashlink.disasm.from_asm" href="#crashlink.disasm.from_asm">from_asm</a></code></li>
 <li><code><a title="crashlink.disasm.func" href="#crashlink.disasm.func">func</a></code></li>
 <li><code><a title="crashlink.disasm.func_header" href="#crashlink.disasm.func_header">func_header</a></code></li>
+<li><code><a title="crashlink.disasm.gen_mkdocs" href="#crashlink.disasm.gen_mkdocs">gen_mkdocs</a></code></li>
 <li><code><a title="crashlink.disasm.is_static" href="#crashlink.disasm.is_static">is_static</a></code></li>
 <li><code><a title="crashlink.disasm.is_std" href="#crashlink.disasm.is_std">is_std</a></code></li>
 <li><code><a title="crashlink.disasm.native_header" href="#crashlink.disasm.native_header">native_header</a></code></li>
@@ -609,7 +777,7 @@ Ret. 1
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
 </footer>
 </body>
 </html>

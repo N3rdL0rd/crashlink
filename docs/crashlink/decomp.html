@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
-<meta name="generator" content="pdoc3 0.11.5">
+<meta name="generator" content="pdoc3 0.11.6">
 <title>crashlink.decomp API documentation</title>
 <meta name="description" content="Decompilation, IR and control flow graph generation">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
@@ -351,9 +351,8 @@ el.replaceWith(d);
                 # If the destination `v` dominates the source `u`, it&#39;s a back edge.
                 if v in self.dominators.get(u, set()):
                     header = v
-                    # Now find all nodes in the body of this natural loop.
-                    # The body consists of the header and all nodes that can reach &#39;u&#39;
-                    # without passing through the header.
+                    # Build the natural loop for this back-edge. Only nodes dominated
+                    # by the header can belong to the loop body.
                     loop_body = {header, u}
                     stack = [u]
                     processed_for_body = {u, header}
@@ -361,12 +360,15 @@ el.replaceWith(d);
                     while stack:
                         current = stack.pop()
                         for pred in self.predecessors.get(current, []):
-                            if pred not in processed_for_body:
+                            if pred not in processed_for_body and header in self.dominators.get(pred, set()):
                                 processed_for_body.add(pred)
                                 loop_body.add(pred)
                                 stack.append(pred)
 
-                    self.loops[header] = loop_body
+                    if header in self.loops:
+                        self.loops[header].update(loop_body)
+                    else:
+                        self.loops[header] = loop_body
 
     def _find_post_dominators(self) -&gt; None:
         &#34;&#34;&#34;
@@ -1016,10 +1018,20 @@ def optimize(self) -&gt; None:
         self.left = left
         self.right = right
         self.op = op
+        self._cached_type: Optional[Type] = None
 
     def get_type(self) -&gt; Type:
-        # For arithmetic, result type matches left operand type
-        return self.left.get_type()
+        if self._cached_type is not None:
+            return self._cached_type
+        node = self.left
+        while isinstance(node, IRArithmetic):
+            if node._cached_type is not None:
+                self._cached_type = node._cached_type
+                return node._cached_type
+            node = node.left
+        result = node.get_type()
+        self._cached_type = result
+        return result
 
     def __repr__(self) -&gt; str:
         return f&#34;&lt;IRArithmetic: {self.left} {self.op.value} {self.right}&gt;&#34;</code></pre>
@@ -1110,8 +1122,10 @@ attributes &ndash; see the documentation for details.</p></div>
 
     def __init__(self, code: Bytecode, target: IRExpression, expr: IRExpression):
         super().__init__(code)
-        if not isinstance(target, (IRLocal, IRField)):
-            raise DecompError(f&#34;Invalid target for IRAssign: {type(target).__name__}. Must be IRLocal or IRField.&#34;)
+        if not isinstance(target, (IRLocal, IRField, IRArrayAccess)):
+            raise DecompError(
+                f&#34;Invalid target for IRAssign: {type(target).__name__}. Must be IRLocal, IRField, or IRArrayAccess.&#34;
+            )
         self.target = target
         self.expr = expr
 
@@ -1488,7 +1502,7 @@ attributes &ndash; see the documentation for details.</p></div>
 </dd>
 <dt id="crashlink.decomp.IRCall"><code class="flex name class">
 <span>class <span class="ident">IRCall</span></span>
-<span>(</span><span>code: Bytecode,<br>call_type: "'<a title="crashlink.decomp.IRCall.CallType" href="#crashlink.decomp.IRCall.CallType">IRCall.CallType</a>'",<br>target: "'<a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a>|<a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>|None'",<br>args: List[<a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>])</span>
+<span>(</span><span>code: Bytecode,<br>call_type: "'<a title="crashlink.decomp.IRCall.CallType" href="#crashlink.decomp.IRCall.CallType">IRCall.CallType</a>'",<br>target: "'<a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a>|<a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>|IRField|None'",<br>args: List[<a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>])</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -1509,7 +1523,7 @@ attributes &ndash; see the documentation for details.</p></div>
         self,
         code: Bytecode,
         call_type: &#34;IRCall.CallType&#34;,
-        target: &#34;IRConst|IRLocal|None&#34;,
+        target: &#34;IRConst|IRLocal|IRField|None&#34;,
         args: List[IRExpression],
     ):
         super().__init__(code)
@@ -1519,7 +1533,7 @@ attributes &ndash; see the documentation for details.</p></div>
         if self.call_type == IRCall.CallType.THIS and self.target is not None:
             raise DecompError(&#34;THIS calls must have a None target&#34;)
         if self.call_type != IRCall.CallType.CLOSURE and isinstance(self.target, IRLocal):
-            raise DecompError(&#34;Non-CLOSURE calls must have a constant target&#34;)
+            raise DecompError(&#34;Non-CLOSURE calls must not have a local target&#34;)
 
     def get_type(self) -&gt; Type:
         # for now, assume closure calls return dynamic type
@@ -1734,6 +1748,8 @@ attributes &ndash; see the documentation for details.</p></div>
             if value is None:
                 raise DecompError(&#34;IRConst with type BOOL must have a value&#34;)
             self.value = value
+        elif const_type == IRConst.ConstType.NULL:
+            self.value = None
         else:
             if idx is None:
                 raise DecompError(&#34;IRConst must have an index&#34;)
@@ -1844,6 +1860,50 @@ attributes &ndash; see the documentation for details.</p></div>
 </li>
 </ul>
 </dd>
+<dt id="crashlink.decomp.IRContinue"><code class="flex name class">
+<span>class <span class="ident">IRContinue</span></span>
+<span>(</span><span>code: Bytecode)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRContinue(IRStatement):
+    &#34;&#34;&#34;Continue statement&#34;&#34;&#34;
+
+    def __init__(self, code: Bytecode):
+        super().__init__(code)
+
+    def get_children(self) -&gt; List[IRStatement]:
+        return []
+
+    def __repr__(self) -&gt; str:
+        return &#34;&lt;IRContinue&gt;&#34;</code></pre>
+</details>
+<div class="desc"><p>Continue statement</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRContinue.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    return []</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
 <dt id="crashlink.decomp.IRExpression"><code class="flex name class">
 <span>class <span class="ident">IRExpression</span></span>
 <span>(</span><span>code: Bytecode)</span>
@@ -1876,14 +1936,19 @@ attributes &ndash; see the documentation for details.</p></div>
 <h3>Subclasses</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRArithmetic" href="#crashlink.decomp.IRArithmetic">IRArithmetic</a></li>
+<li>crashlink.decomp.IRArrayAccess</li>
 <li><a title="crashlink.decomp.IRBoolExpr" href="#crashlink.decomp.IRBoolExpr">IRBoolExpr</a></li>
 <li><a title="crashlink.decomp.IRCall" href="#crashlink.decomp.IRCall">IRCall</a></li>
 <li>crashlink.decomp.IRCast</li>
 <li><a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a></li>
+<li>crashlink.decomp.IREnumConstruct</li>
+<li>crashlink.decomp.IREnumField</li>
+<li>crashlink.decomp.IREnumIndex</li>
 <li>crashlink.decomp.IRField</li>
 <li><a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a></li>
 <li>crashlink.decomp.IRNew</li>
 <li><a title="crashlink.decomp.IRPrimitiveJump" href="#crashlink.decomp.IRPrimitiveJump">IRPrimitiveJump</a></li>
+<li>crashlink.decomp.IRRef</li>
 <li>crashlink.decomp.IRUnliftedOpcode</li>
 </ul>
 <h3>Methods</h3>
@@ -1957,7 +2022,11 @@ def get_type(self) -&gt; Type:
                 IRSelfAssignOptimizer(self),
                 IRCommonBlockMerger(self),
                 IRTempAssignmentInliner(self, aggressive=False),
+                IRTempAssignmentInliner(self, aggressive=True),
+                IRDeadTempEliminator(self),
+                IRDeadCodeEliminator(self),
                 IRVoidAssignOptimizer(self),
+                IRConstructorFolder(self),
                 IRTraceOptimizer(self),
                 IRBlockFlattener(self),
             ]
@@ -1967,6 +2036,7 @@ def get_type(self) -&gt; Type:
         &#34;&#34;&#34;Lift function to IR&#34;&#34;&#34;
         for i, reg in enumerate(self.func.regs):
             self.locals.append(IRLocal(f&#34;var{i}&#34;, reg, code=self.code))
+        self._build_assign_map()
         self._name_locals()
         if not no_lift:
             if self.cfg.entry:
@@ -1976,27 +2046,75 @@ def get_type(self) -&gt; Type:
         else:
             dbg_print(&#34;Skipping lift.&#34;)
 
+    def _build_assign_map(self) -&gt; None:
+        &#34;&#34;&#34;Build a mapping from op index to (register, name) for SSA-esque splitting.&#34;&#34;&#34;
+        self._op_assigns: Dict[int, Dict[int, str]] = {}
+        self._user_reg_indices: Set[int] = set()
+        self._reg_first_assign: Dict[int, int] = {}
+        self._op_id_to_idx: Dict[int, int] = {id(op): i for i, op in enumerate(self.ops)}
+        if not (self.func.has_debug and self.func.assigns):
+            return
+        for assign in self.func.assigns:
+            val = assign[1].value - 1
+            if val &lt; 0:
+                continue
+            op = self.ops[val]
+            try:
+                reg = op.df[&#34;dst&#34;].value
+            except KeyError:
+                continue
+            name = assign[0].resolve(self.code)
+            self._user_reg_indices.add(reg)
+            if val not in self._op_assigns:
+                self._op_assigns[val] = {}
+            self._op_assigns[val][reg] = name
+            if reg not in self._reg_first_assign or val &lt; self._reg_first_assign[reg]:
+                self._reg_first_assign[reg] = val
+
+    def _get_local(self, reg_idx: int) -&gt; IRLocal:
+        &#34;&#34;&#34;Get the current IRLocal for a register, respecting SSA-esque name transitions.&#34;&#34;&#34;
+        return self.locals[reg_idx]
+
+    def _split_local(self, reg_idx: int, name: str) -&gt; IRLocal:
+        &#34;&#34;&#34;Create a new IRLocal for a register with a specific name (SSA-esque split).&#34;&#34;&#34;
+        reg_type = self.func.regs[reg_idx]
+        new_local = IRLocal(name, reg_type, code=self.code)
+        self.locals[reg_idx] = new_local
+        return new_local
+
+    def _check_assign(self, op_idx: int) -&gt; None:
+        &#34;&#34;&#34;Check if this op index has an assign entry and split the local if needed.&#34;&#34;&#34;
+        if op_idx in self._op_assigns:
+            for reg_idx, name in self._op_assigns[op_idx].items():
+                current = self.locals[reg_idx]
+                if current.name != name:
+                    self._split_local(reg_idx, name)
+
     def _optimize(self) -&gt; None:
         &#34;&#34;&#34;Optimize the IR&#34;&#34;&#34;
-        # TODO: store layers
-        dbg_print(&#34;----- Disasm -----&#34;)
-        dbg_print(disasm.func(self.code, self.func))
-        dbg_print(f&#34;----- LLIL -----&#34;)
-        dbg_print(self.block.pprint())
-        for o in self.optimizers:
-            dbg_print(f&#34;----- {o.__class__.__name__} -----&#34;)
-            o.optimize()
+        from .globals import DEBUG
+
+        if DEBUG:
+            dbg_print(&#34;----- Disasm -----&#34;)
+            dbg_print(disasm.func(self.code, self.func))
+            dbg_print(f&#34;----- LLIL -----&#34;)
             dbg_print(self.block.pprint())
+        for o in self.optimizers:
+            if DEBUG:
+                dbg_print(f&#34;----- {o.__class__.__name__} -----&#34;)
+            o.optimize()
+            if DEBUG:
+                dbg_print(self.block.pprint())
 
     def _name_locals(self) -&gt; None:
         &#34;&#34;&#34;Name locals based on debug info&#34;&#34;&#34;
-        reg_assigns: List[Set[str]] = [set() for _ in self.func.regs]
+        reg_assigns: List[List[str]] = [[] for _ in self.func.regs]
         if self.func.has_debug and self.func.assigns:
             for assign in self.func.assigns:
                 # assign: Tuple[strRef (name), VarInt (op index)]
                 val = assign[1].value - 1
                 if val &lt; 0:
-                    continue  # arg name
+                    continue
                 reg: Optional[int] = None
                 op = self.ops[val]
                 try:
@@ -2005,20 +2123,24 @@ def get_type(self) -&gt; Type:
                 except KeyError:
                     pass
                 if reg is not None:
-                    reg_assigns[reg].add(assign[0].resolve(self.code))
-        # loop through arg names: all with value &lt; 0, eg:
-        # Op -1: argument_name (corresponds to reg 0)
-        # Op -1: other_arg_name (corresponds to reg 1)
-        # Op -1: third_arg_name (corresponds to reg 2)
+                    name = assign[0].resolve(self.code)
+                    if name not in reg_assigns[reg]:
+                        reg_assigns[reg].append(name)
         if self.func.assigns and self.func.has_debug:
-            for i, assign in enumerate([assign for assign in self.func.assigns if assign[1].value &lt; 0]):
-                reg_assigns[i].add(assign[0].resolve(self.code))
+            for i, assign in enumerate([assign for assign in self.func.assigns if assign[1].value &lt;= 0]):
+                name = assign[0].resolve(self.code)
+                if name not in reg_assigns[i]:
+                    reg_assigns[i].append(name)
         for i, _reg in enumerate(self.func.regs):
             if _reg.resolve(self.code).definition and isinstance(_reg.resolve(self.code).definition, Void):
-                reg_assigns[i].add(&#34;voidReg&#34;)
+                if &#34;voidReg&#34; not in reg_assigns[i]:
+                    reg_assigns[i].append(&#34;voidReg&#34;)
         for i, local in enumerate(self.locals):
-            if reg_assigns[i] and len(reg_assigns[i]) == 1:
-                local.name = reg_assigns[i].pop()
+            if reg_assigns[i]:
+                if i in self._reg_first_assign and self._reg_first_assign[i] &gt; 0:
+                    pass
+                else:
+                    local.name = reg_assigns[i][0]
         dbg_print(&#34;Named locals:&#34;, self.locals)
 
     def _find_convergence(self, true_node: CFNode, false_node: CFNode, visited: Set[CFNode]) -&gt; Optional[CFNode]:
@@ -2049,74 +2171,20 @@ def get_type(self) -&gt; Type:
 
         return None  # No convergence found
 
-    def _patch_loop_condition(self, node: CFNode) -&gt; None:
-        &#34;&#34;&#34;Patches a loop condition block to remove the Label and anything else that could get it detected as a nested loop or other statement unintentionally.&#34;&#34;&#34;
-        assert node.ops[0].op == &#34;Label&#34;, &#34;This isn&#39;t a label! This should never happen!&#34;
-        node.ops = node.ops[1:]  # remove Label
-        assert node.ops[-1].op in conditionals
+    @dataclass
+    class _LoopContext:
+        header: CFNode
+        nodes: Set[CFNode]
+        exit_node: Optional[CFNode]
 
-    def _build_bool_expr_from_op(self, op: Opcode) -&gt; IRBoolExpr:
-        &#34;&#34;&#34;Helper to create an IRBoolExpr from a conditional jump opcode.&#34;&#34;&#34;
-        cond_map = {
-            &#34;JTrue&#34;: IRBoolExpr.CompareType.ISTRUE,
-            &#34;JFalse&#34;: IRBoolExpr.CompareType.ISFALSE,
-            &#34;JNull&#34;: IRBoolExpr.CompareType.NULL,
-            &#34;JNotNull&#34;: IRBoolExpr.CompareType.NOT_NULL,
-            &#34;JSLt&#34;: IRBoolExpr.CompareType.LT,
-            &#34;JSGte&#34;: IRBoolExpr.CompareType.GTE,
-            &#34;JSGt&#34;: IRBoolExpr.CompareType.GT,
-            &#34;JSLte&#34;: IRBoolExpr.CompareType.LTE,
-            &#34;JULt&#34;: IRBoolExpr.CompareType.LT,
-            &#34;JUGte&#34;: IRBoolExpr.CompareType.GTE,
-            &#34;JEq&#34;: IRBoolExpr.CompareType.EQ,
-            &#34;JNotEq&#34;: IRBoolExpr.CompareType.NEQ,
-        }
-        assert op.op is not None, &#34;WTF??&#34;
-        cond = cond_map[op.op]
-        left, right = None, None
-        if &#34;a&#34; in op.df and &#34;b&#34; in op.df:
-            left = self.locals[op.df[&#34;a&#34;].value]
-            right = self.locals[op.df[&#34;b&#34;].value]
-        else:
-            reg_key = &#34;cond&#34; if &#34;cond&#34; in op.df else &#34;reg&#34;
-            left = self.locals[op.df[reg_key].value]
-        return IRBoolExpr(self.code, cond, left, right)
+    def _lift_ops_into_block(self, block: IRBlock, ops: List[Opcode]) -&gt; None:
+        for op in ops:
+            op_idx = self._op_id_to_idx.get(id(op))
+            if op_idx is not None:
+                self._check_assign(op_idx)
+            if op.op == &#34;Label&#34;:
+                continue
 
-    def _lift_block(
-        self,
-        node: Optional[CFNode],
-        visited: Set[CFNode],
-        stop_at: Optional[CFNode] = None,
-    ) -&gt; IRBlock:
-        &#34;&#34;&#34;
-        Recursively lifts a CFNode and its successors into an IRBlock.
-
-        Args:
-            node: The current CFNode to process.
-            visited: A set of nodes already processed in the current traversal path to prevent infinite loops.
-            stop_at: A CFNode that signals the end of the current branch (the convergence point).
-                     When this node is reached, the recursive call terminates.
-
-        Returns:
-            An IRBlock containing the lifted IR statements.
-        &#34;&#34;&#34;
-        # --- Base Cases for Recursion Termination ---
-        if node is None or node == stop_at or node in visited:
-            return IRBlock(self.code)
-        visited.add(node)
-
-        block = IRBlock(self.code)
-        last_op = node.ops[-1] if node.ops else None
-
-        # --- 1. Process the Content of the Current Node ---
-        # Determine which opcodes are for content vs. control flow.
-        # If the last op is a branch/return, we don&#39;t lift it as a regular statement.
-        is_last_op_control_flow = last_op and last_op.op in (
-            conditionals + [&#34;Switch&#34;, &#34;Ret&#34;, &#34;JAlways&#34;, &#34;Throw&#34;, &#34;Rethrow&#34;]
-        )
-        ops_to_process = node.ops[:-1] if is_last_op_control_flow else node.ops
-
-        for op in ops_to_process:
             if op.op in arithmetic:
                 dst = self.locals[op.df[&#34;dst&#34;].value]
                 lhs = self.locals[op.df[&#34;a&#34;].value]
@@ -2145,6 +2213,16 @@ def get_type(self) -&gt; Type:
                     else [self.locals[arg.value] for arg in op.df[&#34;args&#34;].value]
                 )
                 call_expr = IRCall(self.code, IRCall.CallType.FUNC, fun, args)
+
+                if dst.get_type().kind.value == Type.Kind.VOID.value:
+                    block.statements.append(call_expr)
+                else:
+                    block.statements.append(IRAssign(self.code, dst, call_expr))
+            elif op.op == &#34;CallClosure&#34;:
+                dst = self.locals[op.df[&#34;dst&#34;].value]
+                fun = self.locals[op.df[&#34;fun&#34;].value]
+                args = [self.locals[arg.value] for arg in op.df[&#34;args&#34;].value]
+                call_expr = IRCall(self.code, IRCall.CallType.CLOSURE, fun, args)
 
                 if dst.get_type().kind.value == Type.Kind.VOID.value:
                     block.statements.append(call_expr)
@@ -2183,45 +2261,384 @@ def get_type(self) -&gt; Type:
 
                 cast_expr = IRCast(self.code, f64_idx, src_local)
                 block.statements.append(IRAssign(self.code, dst_local, cast_expr))
-            # --- Add other non-branching opcode handling here ---
+            elif op.op == &#34;ToDyn&#34; or op.op == &#34;ToVirtual&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                src_local = self.locals[op.df[&#34;src&#34;].value]
+                cast_expr = IRCast(self.code, self.func.regs[op.df[&#34;dst&#34;].value], src_local)
+                block.statements.append(IRAssign(self.code, dst_local, cast_expr))
+            elif op.op == &#34;ToInt&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                src_local = self.locals[op.df[&#34;src&#34;].value]
+                cast_expr = IRCast(self.code, self.func.regs[op.df[&#34;dst&#34;].value], src_local)
+                block.statements.append(IRAssign(self.code, dst_local, cast_expr))
+            elif op.op == &#34;Incr&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                block.statements.append(
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRArithmetic(
+                            self.code,
+                            dst_local,
+                            IRConst(self.code, IRConst.ConstType.INT, value=1),
+                            IRArithmetic.ArithmeticType.ADD,
+                        ),
+                    )
+                )
+            elif op.op == &#34;Decr&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                block.statements.append(
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRArithmetic(
+                            self.code,
+                            dst_local,
+                            IRConst(self.code, IRConst.ConstType.INT, value=1),
+                            IRArithmetic.ArithmeticType.SUB,
+                        ),
+                    )
+                )
+            elif op.op == &#34;GetMem&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                arr_local = self.locals[op.df[&#34;bytes&#34;].value]
+                idx_local = self.locals[op.df[&#34;index&#34;].value]
+                block.statements.append(
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df[&#34;dst&#34;].value]),
+                    )
+                )
+            elif op.op == &#34;SetMem&#34;:
+                arr_local = self.locals[op.df[&#34;bytes&#34;].value]
+                idx_local = self.locals[op.df[&#34;index&#34;].value]
+                src_local = self.locals[op.df[&#34;src&#34;].value]
+                block.statements.append(IRAssign(self.code, IRArrayAccess(self.code, arr_local, idx_local), src_local))
+            elif op.op == &#34;DynSet&#34;:
+                obj_local = self.locals[op.df[&#34;obj&#34;].value]
+                src_local = self.locals[op.df[&#34;src&#34;].value]
+                field_name = op.df[&#34;field&#34;].resolve(self.code)
+                field_expr = IRField(self.code, obj_local, field_name, self.func.regs[op.df[&#34;src&#34;].value])
+                block.statements.append(IRAssign(self.code, field_expr, src_local))
+            elif op.op == &#34;SetField&#34;:
+                obj_local = self.locals[op.df[&#34;obj&#34;].value]
+                src_local = self.locals[op.df[&#34;src&#34;].value]
+                obj_type = obj_local.get_type()
+                if isinstance(obj_type.definition, (Obj, Virtual)):
+                    field_core = op.df[&#34;field&#34;].resolve_obj(self.code, obj_type.definition)
+                    field_expr = IRField(self.code, obj_local, field_core.name.resolve(self.code), field_core.type)
+                    block.statements.append(IRAssign(self.code, field_expr, src_local))
+                else:
+                    block.statements.append(IRUnliftedOpcode(self.code, op))
+            elif op.op == &#34;Type&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                block.statements.append(
+                    IRAssign(self.code, dst_local, IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df[&#34;ty&#34;]))
+                )
+            elif op.op == &#34;Ref&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                src_local = self.locals[op.df[&#34;src&#34;].value]
+                block.statements.append(IRAssign(self.code, dst_local, IRRef(self.code, src_local)))
+            elif op.op == &#34;StaticClosure&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                fun_const = IRConst(self.code, IRConst.ConstType.FUN, idx=op.df[&#34;fun&#34;])
+                block.statements.append(IRAssign(self.code, dst_local, fun_const))
+            elif op.op == &#34;VirtualClosure&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                obj_local = self.locals[op.df[&#34;obj&#34;].value]
+                obj_type = obj_local.get_type()
+                if isinstance(obj_type.definition, Obj):
+                    fid = op.df[&#34;field&#34;].value
+                    if fid &lt; len(obj_type.definition.virtuals):
+                        from .core import fIndex
+
+                        fun_idx = obj_type.definition.virtuals[fid]
+                        fun_const = IRConst(self.code, IRConst.ConstType.FUN, idx=fIndex(fun_idx))
+                        block.statements.append(IRAssign(self.code, dst_local, fun_const))
+                    else:
+                        block.statements.append(IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op)))
+                else:
+                    block.statements.append(IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op)))
+            elif op.op == &#34;NullCheck&#34;:
+                continue
+            elif op.op == &#34;EnumIndex&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                src_local = self.locals[op.df[&#34;value&#34;].value]
+                block.statements.append(IRAssign(self.code, dst_local, IREnumIndex(self.code, src_local)))
+            elif op.op == &#34;MakeEnum&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                enum_type = self.func.regs[op.df[&#34;dst&#34;].value]
+                enum_def = enum_type.resolve(self.code).definition
+                cid = op.df[&#34;construct&#34;].value
+                construct_name = (
+                    enum_def.constructs[cid].name.resolve(self.code)
+                    if cid &lt; len(enum_def.constructs)
+                    else f&#34;construct_{cid}&#34;
+                )
+                args = [self.locals[arg.value] for arg in op.df[&#34;args&#34;].value]
+                block.statements.append(
+                    IRAssign(self.code, dst_local, IREnumConstruct(self.code, construct_name, args, enum_type))
+                )
+            elif op.op == &#34;EnumField&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                src_local = self.locals[op.df[&#34;value&#34;].value]
+                enum_type = self.func.regs[op.df[&#34;value&#34;].value]
+                enum_def = enum_type.resolve(self.code).definition
+                cid = op.df[&#34;construct&#34;].value
+                fid = op.df[&#34;field&#34;].value
+                if cid &lt; len(enum_def.constructs) and fid &lt; len(enum_def.constructs[cid].params):
+                    field_name = f&#34;param{fid}&#34;
+                    construct = enum_def.constructs[cid]
+                    field_type = construct.params[fid]
+                    block.statements.append(
+                        IRAssign(self.code, dst_local, IREnumField(self.code, src_local, field_name, field_type))
+                    )
+                else:
+                    block.statements.append(IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op)))
             else:
-                # Fallback for any other unhandled opcodes
                 if &#34;dst&#34; in op.df:
                     block.statements.append(
                         IRAssign(self.code, self.locals[op.df[&#34;dst&#34;].value], IRUnliftedOpcode(self.code, op))
                     )
                 else:
-                    # Statement that has side-effects but no destination
                     block.statements.append(IRUnliftedOpcode(self.code, op))
+
+    def _shortest_distances(
+        self,
+        start: CFNode,
+        allowed_nodes: Optional[Set[CFNode]] = None,
+        stop_nodes: Optional[Set[CFNode]] = None,
+    ) -&gt; Dict[CFNode, int]:
+        stop_nodes = stop_nodes or set()
+        queue: List[Tuple[CFNode, int]] = [(start, 0)]
+        distances: Dict[CFNode, int] = {}
+
+        while queue:
+            current, dist = queue.pop(0)
+            if current in distances:
+                continue
+            if allowed_nodes is not None and current not in allowed_nodes:
+                continue
+            if current in stop_nodes:
+                continue
+
+            distances[current] = dist
+            for next_node, _ in current.branches:
+                if next_node not in distances:
+                    queue.append((next_node, dist + 1))
+
+        return distances
+
+    def _find_convergence_node(
+        self,
+        left: Optional[CFNode],
+        right: Optional[CFNode],
+        allowed_nodes: Optional[Set[CFNode]] = None,
+        stop_nodes: Optional[Set[CFNode]] = None,
+    ) -&gt; Optional[CFNode]:
+        if left is None or right is None:
+            return None
+
+        left_distances = self._shortest_distances(left, allowed_nodes, stop_nodes)
+        right_distances = self._shortest_distances(right, allowed_nodes, stop_nodes)
+        common_nodes = set(left_distances).intersection(right_distances)
+        if not common_nodes:
+            return None
+
+        return min(common_nodes, key=lambda node: (left_distances[node] + right_distances[node], node.base_offset))
+
+    def _loop_exit_nodes(self, loop_nodes: Set[CFNode]) -&gt; List[CFNode]:
+        exit_nodes: Set[CFNode] = set()
+        for loop_node in loop_nodes:
+            for target, _ in loop_node.branches:
+                if target not in loop_nodes:
+                    exit_nodes.add(target)
+        return sorted(exit_nodes, key=lambda n: n.base_offset)
+
+    def _lift_loop(
+        self,
+        header: CFNode,
+        visited: Set[CFNode],
+        stop_at: Optional[CFNode],
+        parent_loop: Optional[_LoopContext],
+    ) -&gt; IRBlock:
+        visited.add(header)
+        block = IRBlock(self.code)
+        loop_nodes = self.cfg.loops[header]
+        exit_nodes = self._loop_exit_nodes(loop_nodes)
+        exit_node = exit_nodes[0] if len(exit_nodes) == 1 else None
+        loop_ctx = self._LoopContext(header, loop_nodes, exit_node)
+
+        header_last_op = header.ops[-1] if header.ops else None
+        if header_last_op and header_last_op.op in conditionals:
+            cond_block = IRBlock(self.code)
+            self._lift_ops_into_block(cond_block, header.ops[:-1])
+            cond_block.statements.append(IRPrimitiveJump(self.code, header_last_op))
+
+            inside_successors = [target for target, _ in header.branches if target in loop_nodes and target != header]
+            body_start = inside_successors[0] if len(inside_successors) == 1 else None
+            body_block = (
+                self._lift_block(body_start, visited.copy(), stop_at=header, loop_ctx=loop_ctx)
+                if body_start is not None
+                else IRBlock(self.code)
+            )
+
+            block.statements.append(IRPrimitiveLoop(self.code, cond_block, body_block))
+        else:
+            body_block = self._lift_block(header, visited.copy(), stop_at=header, loop_ctx=loop_ctx)
+            block.statements.append(
+                IRWhileLoop(self.code, IRBoolExpr(self.code, IRBoolExpr.CompareType.TRUE), body_block)
+            )
+
+        next_block_ir = self._lift_block(exit_node, visited, stop_at, loop_ctx=parent_loop)
+        block.statements.extend(next_block_ir.statements)
+        return block
+
+    def _build_bool_expr_from_op(self, op: Opcode) -&gt; IRBoolExpr:
+        &#34;&#34;&#34;Helper to create an IRBoolExpr from a conditional jump opcode.&#34;&#34;&#34;
+        cond_map = {
+            &#34;JTrue&#34;: IRBoolExpr.CompareType.ISTRUE,
+            &#34;JFalse&#34;: IRBoolExpr.CompareType.ISFALSE,
+            &#34;JNull&#34;: IRBoolExpr.CompareType.NULL,
+            &#34;JNotNull&#34;: IRBoolExpr.CompareType.NOT_NULL,
+            &#34;JSLt&#34;: IRBoolExpr.CompareType.LT,
+            &#34;JSGte&#34;: IRBoolExpr.CompareType.GTE,
+            &#34;JSGt&#34;: IRBoolExpr.CompareType.GT,
+            &#34;JSLte&#34;: IRBoolExpr.CompareType.LTE,
+            &#34;JULt&#34;: IRBoolExpr.CompareType.LT,
+            &#34;JUGte&#34;: IRBoolExpr.CompareType.GTE,
+            &#34;JNotLt&#34;: IRBoolExpr.CompareType.GTE,
+            &#34;JNotGte&#34;: IRBoolExpr.CompareType.LT,
+            &#34;JEq&#34;: IRBoolExpr.CompareType.EQ,
+            &#34;JNotEq&#34;: IRBoolExpr.CompareType.NEQ,
+        }
+        assert op.op is not None, &#34;WTF??&#34;
+        cond = cond_map[op.op]
+        left, right = None, None
+        if &#34;a&#34; in op.df and &#34;b&#34; in op.df:
+            left = self.locals[op.df[&#34;a&#34;].value]
+            right = self.locals[op.df[&#34;b&#34;].value]
+        else:
+            reg_key = &#34;cond&#34; if &#34;cond&#34; in op.df else &#34;reg&#34;
+            left = self.locals[op.df[reg_key].value]
+        return IRBoolExpr(self.code, cond, left, right)
+
+    def _lift_block(
+        self,
+        node: Optional[CFNode],
+        visited: Set[CFNode],
+        stop_at: Optional[CFNode] = None,
+        loop_ctx: Optional[_LoopContext] = None,
+    ) -&gt; IRBlock:
+        &#34;&#34;&#34;
+        Recursively lifts a CFNode and its successors into an IRBlock.
+
+        Args:
+            node: The current CFNode to process.
+            visited: A set of nodes already processed in the current traversal path to prevent infinite loops.
+            stop_at: A CFNode that signals the end of the current branch (the convergence point).
+                     When this node is reached, the recursive call terminates.
+
+        Returns:
+            An IRBlock containing the lifted IR statements.
+        &#34;&#34;&#34;
+        # --- Base Cases for Recursion Termination ---
+        if node is None or node == stop_at or node in visited:
+            return IRBlock(self.code)
+        if loop_ctx and node not in loop_ctx.nodes:
+            return IRBlock(self.code)
+        if node in self.cfg.loops and (loop_ctx is None or node != loop_ctx.header):
+            return self._lift_loop(node, visited, stop_at, loop_ctx)
+        visited.add(node)
+
+        block = IRBlock(self.code)
+        last_op = node.ops[-1] if node.ops else None
+
+        # --- 1. Process the Content of the Current Node ---
+        # Determine which opcodes are for content vs. control flow.
+        # If the last op is a branch/return, we don&#39;t lift it as a regular statement.
+        is_last_op_control_flow = last_op and last_op.op in (
+            conditionals + [&#34;Switch&#34;, &#34;Ret&#34;, &#34;JAlways&#34;, &#34;Throw&#34;, &#34;Rethrow&#34;, &#34;Trap&#34;, &#34;EndTrap&#34;]
+        )
+        ops_to_process = node.ops[:-1] if is_last_op_control_flow else node.ops
+
+        self._lift_ops_into_block(block, ops_to_process)
 
         # --- 2. Handle the Control Flow based on the Last Opcode ---
         if last_op and last_op.op in conditionals:
-            convergence_node = self.cfg.immediate_post_dominators.get(node)
-            true_branch_node, false_branch_node = None, None
+            # HL conditional jumps: JXxx jumps to the target when condition is TRUE.
+            # Compilers emit &#34;JXxx(negated_if_condition) → else_block&#34; so fall-through = then.
+            jump_target, fall_through = None, None
             for branch_node, edge_type in node.branches:
                 if edge_type == &#34;true&#34;:
-                    true_branch_node = branch_node
+                    jump_target = branch_node  # jump target = else block in source
                 elif edge_type == &#34;false&#34;:
-                    false_branch_node = branch_node
+                    fall_through = branch_node  # fall-through = then block in source
 
-            true_block_ir = self._lift_block(true_branch_node, visited.copy(), stop_at=convergence_node)
-            false_block_ir = self._lift_block(false_branch_node, visited.copy(), stop_at=convergence_node)
-
+            # Invert the jump condition to get the actual &#34;if&#34; condition.
             cond_expr = self._build_bool_expr_from_op(last_op)
-            conditional_stmt = IRConditional(self.code, cond_expr, true_block_ir, false_block_ir)
+            cond_expr.invert()
+
+            def make_loop_branch(target: Optional[CFNode]) -&gt; Optional[IRBlock]:
+                if target is None:
+                    return IRBlock(self.code)
+                if loop_ctx and target == loop_ctx.header:
+                    branch_block = IRBlock(self.code)
+                    branch_block.statements.append(IRContinue(self.code))
+                    return branch_block
+                if loop_ctx and target not in loop_ctx.nodes:
+                    branch_block = IRBlock(self.code)
+                    branch_block.statements.append(IRBreak(self.code))
+                    return branch_block
+                return None
+
+            # then = fall-through, else = jump target
+            then_block_ir = make_loop_branch(fall_through)
+            else_block_ir = make_loop_branch(jump_target)
+
+            stop_nodes = {loop_ctx.header} if loop_ctx else set()
+            allowed_nodes = loop_ctx.nodes if loop_ctx else None
+            convergence_node = self._find_convergence_node(
+                jump_target,
+                fall_through,
+                allowed_nodes=allowed_nodes,
+                stop_nodes=stop_nodes,
+            )
+
+            if convergence_node is None and node in self.cfg.immediate_post_dominators:
+                convergence_node = self.cfg.immediate_post_dominators[node]
+
+            if then_block_ir is None:
+                then_block_ir = self._lift_block(
+                    fall_through, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                )
+            if else_block_ir is None:
+                else_block_ir = self._lift_block(
+                    jump_target, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                )
+
+            conditional_stmt = IRConditional(self.code, cond_expr, then_block_ir, else_block_ir)
             block.statements.append(conditional_stmt)
 
             # Continue lifting from the convergence point
-            next_block_ir = self._lift_block(convergence_node, visited)
+            next_block_ir = self._lift_block(convergence_node, visited, loop_ctx=loop_ctx)
             block.statements.extend(next_block_ir.statements)
 
         elif last_op and last_op.op == &#34;Switch&#34;:
-            convergence_node = self.cfg.immediate_post_dominators.get(node)
+            convergence_node = self._find_convergence_node(
+                node.branches[0][0] if node.branches else None,
+                node.branches[1][0] if len(node.branches) &gt; 1 else None,
+                allowed_nodes=loop_ctx.nodes if loop_ctx else None,
+                stop_nodes={loop_ctx.header} if loop_ctx else None,
+            )
             val_reg = self.locals[last_op.df[&#34;reg&#34;].value]
             cases, default_block = {}, IRBlock(self.code)
 
             for target_node, edge_type in node.branches:
-                case_block_ir = self._lift_block(target_node, visited.copy(), stop_at=convergence_node)
+                case_block_ir = self._lift_block(
+                    target_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                )
                 if edge_type.startswith(&#34;switch: case:&#34;):
                     case_val = int(edge_type.split(&#34;:&#34;)[-1].strip())
                     cases[IRConst(self.code, IRConst.ConstType.INT, value=case_val)] = case_block_ir
@@ -2229,7 +2646,36 @@ def get_type(self) -&gt; Type:
                     default_block = case_block_ir
 
             block.statements.append(IRSwitch(self.code, val_reg, cases, default_block))
-            next_block_ir = self._lift_block(convergence_node, visited)
+            next_block_ir = self._lift_block(convergence_node, visited, loop_ctx=loop_ctx)
+            block.statements.extend(next_block_ir.statements)
+
+        elif last_op and last_op.op == &#34;Trap&#34;:
+            try_branch_node, catch_branch_node = None, None
+            for branch_node, edge_type in node.branches:
+                if edge_type == &#34;fall-through&#34;:
+                    try_branch_node = branch_node
+                elif edge_type == &#34;trap&#34;:
+                    catch_branch_node = branch_node
+
+            stop_nodes = {loop_ctx.header} if loop_ctx else set()
+            allowed_nodes = loop_ctx.nodes if loop_ctx else None
+            convergence_node = self._find_convergence_node(
+                try_branch_node,
+                catch_branch_node,
+                allowed_nodes=allowed_nodes,
+                stop_nodes=stop_nodes,
+            )
+
+            try_block_ir = self._lift_block(
+                try_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+            )
+            catch_block_ir = self._lift_block(
+                catch_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+            )
+            catch_local = self.locals[last_op.df[&#34;exc&#34;].value]
+            block.statements.append(IRTryCatch(self.code, try_block_ir, catch_block_ir, catch_local))
+
+            next_block_ir = self._lift_block(convergence_node, visited, loop_ctx=loop_ctx)
             block.statements.extend(next_block_ir.statements)
 
         elif last_op and last_op.op == &#34;Ret&#34;:
@@ -2237,12 +2683,23 @@ def get_type(self) -&gt; Type:
             ret_val = self.locals[last_op.df[&#34;ret&#34;].value] if not isinstance(ret_type.definition, Void) else None
             block.statements.append(IRReturn(self.code, ret_val))
 
+        elif last_op and last_op.op == &#34;EndTrap&#34;:
+            if node.branches:
+                successor_node, _ = node.branches[0]
+                next_block_ir = self._lift_block(successor_node, visited, stop_at, loop_ctx=loop_ctx)
+                block.statements.extend(next_block_ir.statements)
+
         elif last_op and (last_op.op == &#34;JAlways&#34; or not is_last_op_control_flow):
             # Handles both explicit unconditional jumps and implicit fall-through
             if node.branches:
                 successor_node, _ = node.branches[0]
-                next_block_ir = self._lift_block(successor_node, visited, stop_at)
-                block.statements.extend(next_block_ir.statements)
+                if loop_ctx and successor_node == loop_ctx.header:
+                    return block
+                if loop_ctx and successor_node not in loop_ctx.nodes:
+                    block.statements.append(IRBreak(self.code))
+                else:
+                    next_block_ir = self._lift_block(successor_node, visited, stop_at, loop_ctx=loop_ctx)
+                    block.statements.extend(next_block_ir.statements)
 
         return block
 
@@ -2480,11 +2937,13 @@ inheritance.</p></div>
 <li><a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a></li>
 <li><a title="crashlink.decomp.IRBreak" href="#crashlink.decomp.IRBreak">IRBreak</a></li>
 <li><a title="crashlink.decomp.IRConditional" href="#crashlink.decomp.IRConditional">IRConditional</a></li>
+<li><a title="crashlink.decomp.IRContinue" href="#crashlink.decomp.IRContinue">IRContinue</a></li>
 <li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
 <li><a title="crashlink.decomp.IRPrimitiveLoop" href="#crashlink.decomp.IRPrimitiveLoop">IRPrimitiveLoop</a></li>
 <li><a title="crashlink.decomp.IRReturn" href="#crashlink.decomp.IRReturn">IRReturn</a></li>
 <li><a title="crashlink.decomp.IRSwitch" href="#crashlink.decomp.IRSwitch">IRSwitch</a></li>
 <li><a title="crashlink.decomp.IRTrace" href="#crashlink.decomp.IRTrace">IRTrace</a></li>
+<li><a title="crashlink.decomp.IRTryCatch" href="#crashlink.decomp.IRTryCatch">IRTryCatch</a></li>
 <li>crashlink.decomp.IRWhileLoop</li>
 </ul>
 <h3>Methods</h3>
@@ -2604,6 +3063,65 @@ def get_children(self) -&gt; List[IRStatement]:
 </summary>
 <pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
     return [self.msg]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.decomp.IRTryCatch"><code class="flex name class">
+<span>class <span class="ident">IRTryCatch</span></span>
+<span>(</span><span>code: Bytecode,<br>try_block: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>,<br>catch_block: <a title="crashlink.decomp.IRBlock" href="#crashlink.decomp.IRBlock">IRBlock</a>,<br>catch_local: Optional[<a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>] = None)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRTryCatch(IRStatement):
+    &#34;&#34;&#34;Structured try/catch statement.&#34;&#34;&#34;
+
+    def __init__(
+        self,
+        code: Bytecode,
+        try_block: IRBlock,
+        catch_block: IRBlock,
+        catch_local: Optional[IRLocal] = None,
+    ):
+        super().__init__(code)
+        self.try_block = try_block
+        self.catch_block = catch_block
+        self.catch_local = catch_local
+
+    def get_children(self) -&gt; List[IRStatement]:
+        children: List[IRStatement] = [self.try_block, self.catch_block]
+        if self.catch_local is not None:
+            children.insert(0, self.catch_local)
+        return children
+
+    def __repr__(self) -&gt; str:
+        return f&#34;&lt;IRTryCatch: try\n\t{self.try_block}\ncatch ({self.catch_local})\n\t{self.catch_block}&gt;&#34;</code></pre>
+</details>
+<div class="desc"><p>Structured try/catch statement.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRTryCatch.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    children: List[IRStatement] = [self.try_block, self.catch_block]
+    if self.catch_local is not None:
+        children.insert(0, self.catch_local)
+    return children</code></pre>
 </details>
 <div class="desc"></div>
 </dd>
@@ -2790,6 +3308,12 @@ def get_children(self) -&gt; List[IRStatement]:
 </ul>
 </li>
 <li>
+<h4><code><a title="crashlink.decomp.IRContinue" href="#crashlink.decomp.IRContinue">IRContinue</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRContinue.get_children" href="#crashlink.decomp.IRContinue.get_children">get_children</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.decomp.IRExpression.get_children" href="#crashlink.decomp.IRExpression.get_children">get_children</a></code></li>
@@ -2839,6 +3363,12 @@ def get_children(self) -&gt; List[IRStatement]:
 </ul>
 </li>
 <li>
+<h4><code><a title="crashlink.decomp.IRTryCatch" href="#crashlink.decomp.IRTryCatch">IRTryCatch</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRTryCatch.get_children" href="#crashlink.decomp.IRTryCatch.get_children">get_children</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="crashlink.decomp.IsolatedCFGraph" href="#crashlink.decomp.IsolatedCFGraph">IsolatedCFGraph</a></code></h4>
 </li>
 </ul>
@@ -2847,7 +3377,7 @@ def get_children(self) -&gt; List[IRStatement]:
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
 </footer>
 </body>
 </html>

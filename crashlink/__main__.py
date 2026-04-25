@@ -914,7 +914,7 @@ class Commands(BaseCommands):
         try:
             import IPython
 
-            IPython.embed(banner1=banner, user_ns=local_vars) # type: ignore[no-untyped-call]
+            IPython.embed(banner1=banner, user_ns=local_vars)  # type: ignore[no-untyped-call]
         except ImportError:
             import code as cd
 
@@ -1330,18 +1330,24 @@ def main() -> None:
             print(f"{args.file} -> {'.'.join(os.path.basename(args.file).split('.')[:-1]) + '.hl'}")
             return
 
-
     if args.dehlc:
         try:
             from .dehlc import code_from_bin
-            print("crashlink De-HL/C is IN DEVELOPMENT. Use at your own risk. Only x86 is well-supported, ARM is a work in progress.")
-            print("This will produce an in-memory bytecode image. If you want to work with any extracted information externally, use `save` to serialise it to the disk first.")
+
+            print(
+                "crashlink De-HL/C is IN DEVELOPMENT. Use at your own risk. Only x86 is well-supported, ARM is a work in progress."
+            )
+            print(
+                "This will produce an in-memory bytecode image. If you want to work with any extracted information externally, use `save` to serialise it to the disk first."
+            )
             print("Opening file...")
             with open(args.file, "rb") as f:
                 print("Reading file...")
                 code = code_from_bin(data=f.read())
         except ImportError:
-            print("You need to install crashlink with the [extras] group in order to use De-HL/C, since it requires `capstone` and `lief`. Sorry!")
+            print(
+                "You need to install crashlink with the [extras] group in order to use De-HL/C, since it requires `capstone` and `lief`. Sorry!"
+            )
             return
     else:
         is_haxe = True
@@ -1369,7 +1375,9 @@ def main() -> None:
                 with open(args.file, "rb") as f:
                     code = dill.load(f)
             except ImportError:
-                print("Dill not found. Install dill to unpickle bytecode, or install crashlink with the [extras] option.")
+                print(
+                    "Dill not found. Install dill to unpickle bytecode, or install crashlink with the [extras] option."
+                )
                 return
         else:
             print("Unknown file format.")

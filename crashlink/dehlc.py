@@ -106,9 +106,9 @@ def code_from_bin(
             new = read_bytes(address + (i * char_size), char_size)
             out += new
             if not any(new):
-                #dbg_print(
+                # dbg_print(
                 #    f"Read bytes {out.decode('utf-8' if char_size == 1 else 'utf-16', errors='replace')} from 0x{address:x}"
-                #)
+                # )
                 return out
             i += 1
 

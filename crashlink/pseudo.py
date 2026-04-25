@@ -347,8 +347,13 @@ def _generate_statements(
             # Also handles: if (cond) { break; } else { continue; } → if (cond) { break; }
             def _is_single(stmts: List[IRStatement], typ: type) -> bool:
                 return len(stmts) == 1 and isinstance(stmts[0], typ)
+
             if _is_single(true_stmts, IRContinue) and _is_single(false_stmts, IRBreak):
-                inv_cond = _inverted_bool_expr_to_haxe(stmt.condition, code, ir_function) if isinstance(stmt.condition, IRBoolExpr) else f"!({_expression_to_haxe(stmt.condition, code, ir_function)})"
+                inv_cond = (
+                    _inverted_bool_expr_to_haxe(stmt.condition, code, ir_function)
+                    if isinstance(stmt.condition, IRBoolExpr)
+                    else f"!({_expression_to_haxe(stmt.condition, code, ir_function)})"
+                )
                 output_lines.append(f"{indent}if ({inv_cond}) {{")
                 output_lines.append(f"{indent}    break;")
                 output_lines.append(f"{indent}}}")
@@ -365,7 +370,9 @@ def _generate_statements(
                     inv_cond = f"!({_expression_to_haxe(stmt.condition, code, ir_function)})"
                 output_lines.append(f"{indent}if ({inv_cond}) {{")
                 output_lines.extend(
-                    _generate_statements(false_stmts, code, ir_function, indent_level + 1, declared_vars_in_scope.copy())
+                    _generate_statements(
+                        false_stmts, code, ir_function, indent_level + 1, declared_vars_in_scope.copy()
+                    )
                 )
                 output_lines.append(f"{indent}}}")
                 declared_vars_in_scope.update(_collect_assigned_names(false_stmts))
@@ -380,14 +387,18 @@ def _generate_statements(
                 if false_stmts and not true_ends_with_cf:
                     output_lines.append(f"{indent}}} else {{")
                     output_lines.extend(
-                        _generate_statements(false_stmts, code, ir_function, indent_level + 1, declared_vars_in_scope.copy())
+                        _generate_statements(
+                            false_stmts, code, ir_function, indent_level + 1, declared_vars_in_scope.copy()
+                        )
                     )
                     output_lines.append(f"{indent}}}")
                 elif false_stmts and true_ends_with_cf:
                     output_lines.append(f"{indent}}}")
                     # Render former else block as plain statements (no else keyword needed)
                     output_lines.extend(
-                        _generate_statements(false_stmts, code, ir_function, indent_level, declared_vars_in_scope.copy())
+                        _generate_statements(
+                            false_stmts, code, ir_function, indent_level, declared_vars_in_scope.copy()
+                        )
                     )
                 else:
                     output_lines.append(f"{indent}}}")

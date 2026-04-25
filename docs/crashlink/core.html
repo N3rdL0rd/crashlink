@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
-<meta name="generator" content="pdoc3 0.11.5">
+<meta name="generator" content="pdoc3 0.11.6">
 <title>crashlink.core API documentation</title>
 <meta name="description" content="Core bytecode format definitions …">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
@@ -945,6 +945,7 @@ you.</p>
             12,
             13,
             16,
+            23,
         ], f&#34;This method can only find primitive types! Got: {kind}&#34;
         for i, typ in enumerate(self.types):
             if typ.kind.value == kind.value:
@@ -1419,6 +1420,7 @@ you.</p>
         12,
         13,
         16,
+        23,
     ], f&#34;This method can only find primitive types! Got: {kind}&#34;
     for i, typ in enumerate(self.types):
         if typ.kind.value == kind.value:
@@ -2231,6 +2233,8 @@ and recursively explores all types contained within them.</p></div>
     Represents a bytecode constant.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;_global&#34;, &#34;nfields&#34;, &#34;fields&#34;)
+
     def __init__(self) -&gt; None:
         self._global = gIndex()
         self.nfields = VarInt()
@@ -2259,6 +2263,83 @@ and recursively explores all types contained within them.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Constant.fields"><code class="name">var <span class="ident">fields</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Constant(Serialisable):
+    &#34;&#34;&#34;
+    Represents a bytecode constant.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;_global&#34;, &#34;nfields&#34;, &#34;fields&#34;)
+
+    def __init__(self) -&gt; None:
+        self._global = gIndex()
+        self.nfields = VarInt()
+        self.fields: List[VarInt] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Constant&#34;:
+        self._global.deserialise(f)
+        self.nfields.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(VarInt().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nfields.value = len(self.fields)
+        return b&#34;&#34;.join(
+            [
+                self._global.serialise(),
+                self.nfields.serialise(),
+                b&#34;&#34;.join([field.serialise() for field in self.fields]),
+            ]
+        )</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Constant.nfields"><code class="name">var <span class="ident">nfields</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Constant(Serialisable):
+    &#34;&#34;&#34;
+    Represents a bytecode constant.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;_global&#34;, &#34;nfields&#34;, &#34;fields&#34;)
+
+    def __init__(self) -&gt; None:
+        self._global = gIndex()
+        self.nfields = VarInt()
+        self.fields: List[VarInt] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Constant&#34;:
+        self._global.deserialise(f)
+        self.nfields.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(VarInt().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nfields.value = len(self.fields)
+        return b&#34;&#34;.join(
+            [
+                self._global.serialise(),
+                self.nfields.serialise(),
+                b&#34;&#34;.join([field.serialise() for field in self.fields]),
+            ]
+        )</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Constant.deserialise"><code class="name flex">
@@ -3004,6 +3085,21 @@ and recursively explores all types contained within them.</p></div>
     Represents a function in the bytecode. Due to the interesting ways in which HashLink works, this does not have a name or a signature, but rather a return type and a list of registers and opcodes.
     &#34;&#34;&#34;
 
+    __slots__ = (
+        &#34;type&#34;,
+        &#34;findex&#34;,
+        &#34;nregs&#34;,
+        &#34;nops&#34;,
+        &#34;regs&#34;,
+        &#34;ops&#34;,
+        &#34;has_debug&#34;,
+        &#34;version&#34;,
+        &#34;debuginfo&#34;,
+        &#34;nassigns&#34;,
+        &#34;assigns&#34;,
+        &#34;calls&#34;,
+    )
+
     def __init__(self) -&gt; None:
         self.type = tIndex()
         self.findex = fIndex()
@@ -3132,6 +3228,1809 @@ and recursively explores all types contained within them.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Function.assigns"><code class="name">var <span class="ident">assigns</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Function(Serialisable):
+    &#34;&#34;&#34;
+    Represents a function in the bytecode. Due to the interesting ways in which HashLink works, this does not have a name or a signature, but rather a return type and a list of registers and opcodes.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;type&#34;,
+        &#34;findex&#34;,
+        &#34;nregs&#34;,
+        &#34;nops&#34;,
+        &#34;regs&#34;,
+        &#34;ops&#34;,
+        &#34;has_debug&#34;,
+        &#34;version&#34;,
+        &#34;debuginfo&#34;,
+        &#34;nassigns&#34;,
+        &#34;assigns&#34;,
+        &#34;calls&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.type = tIndex()
+        self.findex = fIndex()
+        self.nregs = VarInt()
+        self.nops = VarInt()
+        self.regs: List[tIndex] = []
+        self.ops: List[Opcode] = []
+        self.has_debug: Optional[bool] = None
+        self.version: Optional[int] = None
+        self.debuginfo: Optional[DebugInfo] = None
+        self.nassigns: Optional[VarInt] = None
+        self.assigns: Optional[List[Tuple[strRef, VarInt]]] = None
+        self.calls: List[fIndex] = []
+
+    def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+        &#34;&#34;&#34;
+        Resolves all functions that call this function.
+        &#34;&#34;&#34;
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+
+    def resolve_fun(self, code: &#34;Bytecode&#34;) -&gt; Fun:
+        &#34;&#34;&#34;
+        Resolves the function signature of this function.
+        &#34;&#34;&#34;
+        ret = self.type.resolve(code).definition
+        assert ret is not None
+        assert isinstance(ret, Fun)
+        return ret
+
+    def resolve_file(self, code: &#34;Bytecode&#34;) -&gt; str:
+        &#34;&#34;&#34;
+        Resolves (in the Bytecode&#39;s debugfiles blob) the name of the file this function originates from. Note that this assumes the first opcode&#39;s file is the only file this Function was derived from - Functions that derive from multiple files (such as compiler-generated closures or entrypoints) will be resolved to a single file, sometimes incorrectly.
+        &#34;&#34;&#34;
+        if not self.has_debug or not self.debuginfo or not self.debuginfo.value:
+            raise ValueError(&#34;Cannot get file from non-debug or empty-debuginfo bytecode!&#34;)
+        return self.debuginfo.value[0].resolve(code)
+
+    def resolve_nargs(self, code: &#34;Bytecode&#34;) -&gt; int:
+        &#34;&#34;&#34;
+        Resolves the number of arguments this function takes.
+        &#34;&#34;&#34;
+        fun_type = self.type.resolve(code).definition
+        if isinstance(fun_type, Fun):
+            return fun_type.nargs.value
+        return 0
+
+    def deserialise(self, f: BinaryIO | BytesIO, has_debug: bool, version: int) -&gt; &#34;Function&#34;:
+        self.has_debug = has_debug
+        self.version = version
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        self.nregs.deserialise(f)
+        self.nops.deserialise(f)
+        for _ in range(self.nregs.value):
+            self.regs.append(tIndex().deserialise(f))
+        for _ in range(self.nops.value):
+            self.ops.append(Opcode().deserialise(f))
+            if self.ops[-1].op in simple_calls and &#34;fun&#34; in self.ops[-1].df:
+                self.calls.append(self.ops[-1].df[&#34;fun&#34;])
+        if self.has_debug:
+            self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
+            if self.version &gt;= 3:
+                self.nassigns = VarInt().deserialise(f)
+                self.assigns = []
+                for _ in range(self.nassigns.value):
+                    self.assigns.append((strRef().deserialise(f), VarInt().deserialise(f)))
+        return self
+
+    def insert_op(self, code: &#34;Bytecode&#34;, idx: int, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; None:
+        &#34;&#34;&#34;
+        Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.
+        &#34;&#34;&#34;
+        self.ops.insert(idx, op)
+        if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo:  # fucking typing...
+            if not debugRef:
+                debugRef = fileRef(fid=code.debugfiles.find_or_add(&#34;?&#34;), line=42)  # life, the universe, and everything
+            self.debuginfo.value.insert(idx, debugRef)
+
+    def push_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Push an Opcode into this function at the start.
+        &#34;&#34;&#34;
+        self.insert_op(code, 0, op, debugRef=debugRef)
+        return 0
+
+    def append_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Append an Opcode to the end of this function.
+        &#34;&#34;&#34;
+        self.insert_op(code, len(self.ops), op, debugRef=debugRef)
+        return len(self.ops) - 1
+
+    def serialise(self) -&gt; bytes:
+        self.nops.value = len(self.ops)
+        self.nregs.value = len(self.regs)
+        if self.assigns:
+            self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
+        if self.has_debug and self.debuginfo:
+            assert len(self.debuginfo.value) == self.nops.value, (
+                f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
+            )
+        res = b&#34;&#34;.join(
+            [
+                self.type.serialise(),
+                self.findex.serialise(),
+                self.nregs.serialise(),
+                self.nops.serialise(),
+                b&#34;&#34;.join([reg.serialise() for reg in self.regs]),
+                b&#34;&#34;.join([op.serialise() for op in self.ops]),
+            ]
+        )
+        if self.has_debug and self.debuginfo:
+            res += self.debuginfo.serialise()
+            if self.version and self.version &gt;= 3 and self.nassigns and self.assigns is not None:
+                res += self.nassigns.serialise()
+                res += b&#34;&#34;.join([b&#34;&#34;.join([v.serialise() for v in assign]) for assign in self.assigns])
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Function.calls"><code class="name">var <span class="ident">calls</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Function(Serialisable):
+    &#34;&#34;&#34;
+    Represents a function in the bytecode. Due to the interesting ways in which HashLink works, this does not have a name or a signature, but rather a return type and a list of registers and opcodes.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;type&#34;,
+        &#34;findex&#34;,
+        &#34;nregs&#34;,
+        &#34;nops&#34;,
+        &#34;regs&#34;,
+        &#34;ops&#34;,
+        &#34;has_debug&#34;,
+        &#34;version&#34;,
+        &#34;debuginfo&#34;,
+        &#34;nassigns&#34;,
+        &#34;assigns&#34;,
+        &#34;calls&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.type = tIndex()
+        self.findex = fIndex()
+        self.nregs = VarInt()
+        self.nops = VarInt()
+        self.regs: List[tIndex] = []
+        self.ops: List[Opcode] = []
+        self.has_debug: Optional[bool] = None
+        self.version: Optional[int] = None
+        self.debuginfo: Optional[DebugInfo] = None
+        self.nassigns: Optional[VarInt] = None
+        self.assigns: Optional[List[Tuple[strRef, VarInt]]] = None
+        self.calls: List[fIndex] = []
+
+    def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+        &#34;&#34;&#34;
+        Resolves all functions that call this function.
+        &#34;&#34;&#34;
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+
+    def resolve_fun(self, code: &#34;Bytecode&#34;) -&gt; Fun:
+        &#34;&#34;&#34;
+        Resolves the function signature of this function.
+        &#34;&#34;&#34;
+        ret = self.type.resolve(code).definition
+        assert ret is not None
+        assert isinstance(ret, Fun)
+        return ret
+
+    def resolve_file(self, code: &#34;Bytecode&#34;) -&gt; str:
+        &#34;&#34;&#34;
+        Resolves (in the Bytecode&#39;s debugfiles blob) the name of the file this function originates from. Note that this assumes the first opcode&#39;s file is the only file this Function was derived from - Functions that derive from multiple files (such as compiler-generated closures or entrypoints) will be resolved to a single file, sometimes incorrectly.
+        &#34;&#34;&#34;
+        if not self.has_debug or not self.debuginfo or not self.debuginfo.value:
+            raise ValueError(&#34;Cannot get file from non-debug or empty-debuginfo bytecode!&#34;)
+        return self.debuginfo.value[0].resolve(code)
+
+    def resolve_nargs(self, code: &#34;Bytecode&#34;) -&gt; int:
+        &#34;&#34;&#34;
+        Resolves the number of arguments this function takes.
+        &#34;&#34;&#34;
+        fun_type = self.type.resolve(code).definition
+        if isinstance(fun_type, Fun):
+            return fun_type.nargs.value
+        return 0
+
+    def deserialise(self, f: BinaryIO | BytesIO, has_debug: bool, version: int) -&gt; &#34;Function&#34;:
+        self.has_debug = has_debug
+        self.version = version
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        self.nregs.deserialise(f)
+        self.nops.deserialise(f)
+        for _ in range(self.nregs.value):
+            self.regs.append(tIndex().deserialise(f))
+        for _ in range(self.nops.value):
+            self.ops.append(Opcode().deserialise(f))
+            if self.ops[-1].op in simple_calls and &#34;fun&#34; in self.ops[-1].df:
+                self.calls.append(self.ops[-1].df[&#34;fun&#34;])
+        if self.has_debug:
+            self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
+            if self.version &gt;= 3:
+                self.nassigns = VarInt().deserialise(f)
+                self.assigns = []
+                for _ in range(self.nassigns.value):
+                    self.assigns.append((strRef().deserialise(f), VarInt().deserialise(f)))
+        return self
+
+    def insert_op(self, code: &#34;Bytecode&#34;, idx: int, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; None:
+        &#34;&#34;&#34;
+        Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.
+        &#34;&#34;&#34;
+        self.ops.insert(idx, op)
+        if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo:  # fucking typing...
+            if not debugRef:
+                debugRef = fileRef(fid=code.debugfiles.find_or_add(&#34;?&#34;), line=42)  # life, the universe, and everything
+            self.debuginfo.value.insert(idx, debugRef)
+
+    def push_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Push an Opcode into this function at the start.
+        &#34;&#34;&#34;
+        self.insert_op(code, 0, op, debugRef=debugRef)
+        return 0
+
+    def append_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Append an Opcode to the end of this function.
+        &#34;&#34;&#34;
+        self.insert_op(code, len(self.ops), op, debugRef=debugRef)
+        return len(self.ops) - 1
+
+    def serialise(self) -&gt; bytes:
+        self.nops.value = len(self.ops)
+        self.nregs.value = len(self.regs)
+        if self.assigns:
+            self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
+        if self.has_debug and self.debuginfo:
+            assert len(self.debuginfo.value) == self.nops.value, (
+                f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
+            )
+        res = b&#34;&#34;.join(
+            [
+                self.type.serialise(),
+                self.findex.serialise(),
+                self.nregs.serialise(),
+                self.nops.serialise(),
+                b&#34;&#34;.join([reg.serialise() for reg in self.regs]),
+                b&#34;&#34;.join([op.serialise() for op in self.ops]),
+            ]
+        )
+        if self.has_debug and self.debuginfo:
+            res += self.debuginfo.serialise()
+            if self.version and self.version &gt;= 3 and self.nassigns and self.assigns is not None:
+                res += self.nassigns.serialise()
+                res += b&#34;&#34;.join([b&#34;&#34;.join([v.serialise() for v in assign]) for assign in self.assigns])
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Function.debuginfo"><code class="name">var <span class="ident">debuginfo</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Function(Serialisable):
+    &#34;&#34;&#34;
+    Represents a function in the bytecode. Due to the interesting ways in which HashLink works, this does not have a name or a signature, but rather a return type and a list of registers and opcodes.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;type&#34;,
+        &#34;findex&#34;,
+        &#34;nregs&#34;,
+        &#34;nops&#34;,
+        &#34;regs&#34;,
+        &#34;ops&#34;,
+        &#34;has_debug&#34;,
+        &#34;version&#34;,
+        &#34;debuginfo&#34;,
+        &#34;nassigns&#34;,
+        &#34;assigns&#34;,
+        &#34;calls&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.type = tIndex()
+        self.findex = fIndex()
+        self.nregs = VarInt()
+        self.nops = VarInt()
+        self.regs: List[tIndex] = []
+        self.ops: List[Opcode] = []
+        self.has_debug: Optional[bool] = None
+        self.version: Optional[int] = None
+        self.debuginfo: Optional[DebugInfo] = None
+        self.nassigns: Optional[VarInt] = None
+        self.assigns: Optional[List[Tuple[strRef, VarInt]]] = None
+        self.calls: List[fIndex] = []
+
+    def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+        &#34;&#34;&#34;
+        Resolves all functions that call this function.
+        &#34;&#34;&#34;
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+
+    def resolve_fun(self, code: &#34;Bytecode&#34;) -&gt; Fun:
+        &#34;&#34;&#34;
+        Resolves the function signature of this function.
+        &#34;&#34;&#34;
+        ret = self.type.resolve(code).definition
+        assert ret is not None
+        assert isinstance(ret, Fun)
+        return ret
+
+    def resolve_file(self, code: &#34;Bytecode&#34;) -&gt; str:
+        &#34;&#34;&#34;
+        Resolves (in the Bytecode&#39;s debugfiles blob) the name of the file this function originates from. Note that this assumes the first opcode&#39;s file is the only file this Function was derived from - Functions that derive from multiple files (such as compiler-generated closures or entrypoints) will be resolved to a single file, sometimes incorrectly.
+        &#34;&#34;&#34;
+        if not self.has_debug or not self.debuginfo or not self.debuginfo.value:
+            raise ValueError(&#34;Cannot get file from non-debug or empty-debuginfo bytecode!&#34;)
+        return self.debuginfo.value[0].resolve(code)
+
+    def resolve_nargs(self, code: &#34;Bytecode&#34;) -&gt; int:
+        &#34;&#34;&#34;
+        Resolves the number of arguments this function takes.
+        &#34;&#34;&#34;
+        fun_type = self.type.resolve(code).definition
+        if isinstance(fun_type, Fun):
+            return fun_type.nargs.value
+        return 0
+
+    def deserialise(self, f: BinaryIO | BytesIO, has_debug: bool, version: int) -&gt; &#34;Function&#34;:
+        self.has_debug = has_debug
+        self.version = version
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        self.nregs.deserialise(f)
+        self.nops.deserialise(f)
+        for _ in range(self.nregs.value):
+            self.regs.append(tIndex().deserialise(f))
+        for _ in range(self.nops.value):
+            self.ops.append(Opcode().deserialise(f))
+            if self.ops[-1].op in simple_calls and &#34;fun&#34; in self.ops[-1].df:
+                self.calls.append(self.ops[-1].df[&#34;fun&#34;])
+        if self.has_debug:
+            self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
+            if self.version &gt;= 3:
+                self.nassigns = VarInt().deserialise(f)
+                self.assigns = []
+                for _ in range(self.nassigns.value):
+                    self.assigns.append((strRef().deserialise(f), VarInt().deserialise(f)))
+        return self
+
+    def insert_op(self, code: &#34;Bytecode&#34;, idx: int, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; None:
+        &#34;&#34;&#34;
+        Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.
+        &#34;&#34;&#34;
+        self.ops.insert(idx, op)
+        if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo:  # fucking typing...
+            if not debugRef:
+                debugRef = fileRef(fid=code.debugfiles.find_or_add(&#34;?&#34;), line=42)  # life, the universe, and everything
+            self.debuginfo.value.insert(idx, debugRef)
+
+    def push_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Push an Opcode into this function at the start.
+        &#34;&#34;&#34;
+        self.insert_op(code, 0, op, debugRef=debugRef)
+        return 0
+
+    def append_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Append an Opcode to the end of this function.
+        &#34;&#34;&#34;
+        self.insert_op(code, len(self.ops), op, debugRef=debugRef)
+        return len(self.ops) - 1
+
+    def serialise(self) -&gt; bytes:
+        self.nops.value = len(self.ops)
+        self.nregs.value = len(self.regs)
+        if self.assigns:
+            self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
+        if self.has_debug and self.debuginfo:
+            assert len(self.debuginfo.value) == self.nops.value, (
+                f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
+            )
+        res = b&#34;&#34;.join(
+            [
+                self.type.serialise(),
+                self.findex.serialise(),
+                self.nregs.serialise(),
+                self.nops.serialise(),
+                b&#34;&#34;.join([reg.serialise() for reg in self.regs]),
+                b&#34;&#34;.join([op.serialise() for op in self.ops]),
+            ]
+        )
+        if self.has_debug and self.debuginfo:
+            res += self.debuginfo.serialise()
+            if self.version and self.version &gt;= 3 and self.nassigns and self.assigns is not None:
+                res += self.nassigns.serialise()
+                res += b&#34;&#34;.join([b&#34;&#34;.join([v.serialise() for v in assign]) for assign in self.assigns])
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Function.findex"><code class="name">var <span class="ident">findex</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Function(Serialisable):
+    &#34;&#34;&#34;
+    Represents a function in the bytecode. Due to the interesting ways in which HashLink works, this does not have a name or a signature, but rather a return type and a list of registers and opcodes.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;type&#34;,
+        &#34;findex&#34;,
+        &#34;nregs&#34;,
+        &#34;nops&#34;,
+        &#34;regs&#34;,
+        &#34;ops&#34;,
+        &#34;has_debug&#34;,
+        &#34;version&#34;,
+        &#34;debuginfo&#34;,
+        &#34;nassigns&#34;,
+        &#34;assigns&#34;,
+        &#34;calls&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.type = tIndex()
+        self.findex = fIndex()
+        self.nregs = VarInt()
+        self.nops = VarInt()
+        self.regs: List[tIndex] = []
+        self.ops: List[Opcode] = []
+        self.has_debug: Optional[bool] = None
+        self.version: Optional[int] = None
+        self.debuginfo: Optional[DebugInfo] = None
+        self.nassigns: Optional[VarInt] = None
+        self.assigns: Optional[List[Tuple[strRef, VarInt]]] = None
+        self.calls: List[fIndex] = []
+
+    def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+        &#34;&#34;&#34;
+        Resolves all functions that call this function.
+        &#34;&#34;&#34;
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+
+    def resolve_fun(self, code: &#34;Bytecode&#34;) -&gt; Fun:
+        &#34;&#34;&#34;
+        Resolves the function signature of this function.
+        &#34;&#34;&#34;
+        ret = self.type.resolve(code).definition
+        assert ret is not None
+        assert isinstance(ret, Fun)
+        return ret
+
+    def resolve_file(self, code: &#34;Bytecode&#34;) -&gt; str:
+        &#34;&#34;&#34;
+        Resolves (in the Bytecode&#39;s debugfiles blob) the name of the file this function originates from. Note that this assumes the first opcode&#39;s file is the only file this Function was derived from - Functions that derive from multiple files (such as compiler-generated closures or entrypoints) will be resolved to a single file, sometimes incorrectly.
+        &#34;&#34;&#34;
+        if not self.has_debug or not self.debuginfo or not self.debuginfo.value:
+            raise ValueError(&#34;Cannot get file from non-debug or empty-debuginfo bytecode!&#34;)
+        return self.debuginfo.value[0].resolve(code)
+
+    def resolve_nargs(self, code: &#34;Bytecode&#34;) -&gt; int:
+        &#34;&#34;&#34;
+        Resolves the number of arguments this function takes.
+        &#34;&#34;&#34;
+        fun_type = self.type.resolve(code).definition
+        if isinstance(fun_type, Fun):
+            return fun_type.nargs.value
+        return 0
+
+    def deserialise(self, f: BinaryIO | BytesIO, has_debug: bool, version: int) -&gt; &#34;Function&#34;:
+        self.has_debug = has_debug
+        self.version = version
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        self.nregs.deserialise(f)
+        self.nops.deserialise(f)
+        for _ in range(self.nregs.value):
+            self.regs.append(tIndex().deserialise(f))
+        for _ in range(self.nops.value):
+            self.ops.append(Opcode().deserialise(f))
+            if self.ops[-1].op in simple_calls and &#34;fun&#34; in self.ops[-1].df:
+                self.calls.append(self.ops[-1].df[&#34;fun&#34;])
+        if self.has_debug:
+            self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
+            if self.version &gt;= 3:
+                self.nassigns = VarInt().deserialise(f)
+                self.assigns = []
+                for _ in range(self.nassigns.value):
+                    self.assigns.append((strRef().deserialise(f), VarInt().deserialise(f)))
+        return self
+
+    def insert_op(self, code: &#34;Bytecode&#34;, idx: int, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; None:
+        &#34;&#34;&#34;
+        Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.
+        &#34;&#34;&#34;
+        self.ops.insert(idx, op)
+        if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo:  # fucking typing...
+            if not debugRef:
+                debugRef = fileRef(fid=code.debugfiles.find_or_add(&#34;?&#34;), line=42)  # life, the universe, and everything
+            self.debuginfo.value.insert(idx, debugRef)
+
+    def push_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Push an Opcode into this function at the start.
+        &#34;&#34;&#34;
+        self.insert_op(code, 0, op, debugRef=debugRef)
+        return 0
+
+    def append_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Append an Opcode to the end of this function.
+        &#34;&#34;&#34;
+        self.insert_op(code, len(self.ops), op, debugRef=debugRef)
+        return len(self.ops) - 1
+
+    def serialise(self) -&gt; bytes:
+        self.nops.value = len(self.ops)
+        self.nregs.value = len(self.regs)
+        if self.assigns:
+            self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
+        if self.has_debug and self.debuginfo:
+            assert len(self.debuginfo.value) == self.nops.value, (
+                f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
+            )
+        res = b&#34;&#34;.join(
+            [
+                self.type.serialise(),
+                self.findex.serialise(),
+                self.nregs.serialise(),
+                self.nops.serialise(),
+                b&#34;&#34;.join([reg.serialise() for reg in self.regs]),
+                b&#34;&#34;.join([op.serialise() for op in self.ops]),
+            ]
+        )
+        if self.has_debug and self.debuginfo:
+            res += self.debuginfo.serialise()
+            if self.version and self.version &gt;= 3 and self.nassigns and self.assigns is not None:
+                res += self.nassigns.serialise()
+                res += b&#34;&#34;.join([b&#34;&#34;.join([v.serialise() for v in assign]) for assign in self.assigns])
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Function.has_debug"><code class="name">var <span class="ident">has_debug</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Function(Serialisable):
+    &#34;&#34;&#34;
+    Represents a function in the bytecode. Due to the interesting ways in which HashLink works, this does not have a name or a signature, but rather a return type and a list of registers and opcodes.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;type&#34;,
+        &#34;findex&#34;,
+        &#34;nregs&#34;,
+        &#34;nops&#34;,
+        &#34;regs&#34;,
+        &#34;ops&#34;,
+        &#34;has_debug&#34;,
+        &#34;version&#34;,
+        &#34;debuginfo&#34;,
+        &#34;nassigns&#34;,
+        &#34;assigns&#34;,
+        &#34;calls&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.type = tIndex()
+        self.findex = fIndex()
+        self.nregs = VarInt()
+        self.nops = VarInt()
+        self.regs: List[tIndex] = []
+        self.ops: List[Opcode] = []
+        self.has_debug: Optional[bool] = None
+        self.version: Optional[int] = None
+        self.debuginfo: Optional[DebugInfo] = None
+        self.nassigns: Optional[VarInt] = None
+        self.assigns: Optional[List[Tuple[strRef, VarInt]]] = None
+        self.calls: List[fIndex] = []
+
+    def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+        &#34;&#34;&#34;
+        Resolves all functions that call this function.
+        &#34;&#34;&#34;
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+
+    def resolve_fun(self, code: &#34;Bytecode&#34;) -&gt; Fun:
+        &#34;&#34;&#34;
+        Resolves the function signature of this function.
+        &#34;&#34;&#34;
+        ret = self.type.resolve(code).definition
+        assert ret is not None
+        assert isinstance(ret, Fun)
+        return ret
+
+    def resolve_file(self, code: &#34;Bytecode&#34;) -&gt; str:
+        &#34;&#34;&#34;
+        Resolves (in the Bytecode&#39;s debugfiles blob) the name of the file this function originates from. Note that this assumes the first opcode&#39;s file is the only file this Function was derived from - Functions that derive from multiple files (such as compiler-generated closures or entrypoints) will be resolved to a single file, sometimes incorrectly.
+        &#34;&#34;&#34;
+        if not self.has_debug or not self.debuginfo or not self.debuginfo.value:
+            raise ValueError(&#34;Cannot get file from non-debug or empty-debuginfo bytecode!&#34;)
+        return self.debuginfo.value[0].resolve(code)
+
+    def resolve_nargs(self, code: &#34;Bytecode&#34;) -&gt; int:
+        &#34;&#34;&#34;
+        Resolves the number of arguments this function takes.
+        &#34;&#34;&#34;
+        fun_type = self.type.resolve(code).definition
+        if isinstance(fun_type, Fun):
+            return fun_type.nargs.value
+        return 0
+
+    def deserialise(self, f: BinaryIO | BytesIO, has_debug: bool, version: int) -&gt; &#34;Function&#34;:
+        self.has_debug = has_debug
+        self.version = version
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        self.nregs.deserialise(f)
+        self.nops.deserialise(f)
+        for _ in range(self.nregs.value):
+            self.regs.append(tIndex().deserialise(f))
+        for _ in range(self.nops.value):
+            self.ops.append(Opcode().deserialise(f))
+            if self.ops[-1].op in simple_calls and &#34;fun&#34; in self.ops[-1].df:
+                self.calls.append(self.ops[-1].df[&#34;fun&#34;])
+        if self.has_debug:
+            self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
+            if self.version &gt;= 3:
+                self.nassigns = VarInt().deserialise(f)
+                self.assigns = []
+                for _ in range(self.nassigns.value):
+                    self.assigns.append((strRef().deserialise(f), VarInt().deserialise(f)))
+        return self
+
+    def insert_op(self, code: &#34;Bytecode&#34;, idx: int, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; None:
+        &#34;&#34;&#34;
+        Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.
+        &#34;&#34;&#34;
+        self.ops.insert(idx, op)
+        if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo:  # fucking typing...
+            if not debugRef:
+                debugRef = fileRef(fid=code.debugfiles.find_or_add(&#34;?&#34;), line=42)  # life, the universe, and everything
+            self.debuginfo.value.insert(idx, debugRef)
+
+    def push_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Push an Opcode into this function at the start.
+        &#34;&#34;&#34;
+        self.insert_op(code, 0, op, debugRef=debugRef)
+        return 0
+
+    def append_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Append an Opcode to the end of this function.
+        &#34;&#34;&#34;
+        self.insert_op(code, len(self.ops), op, debugRef=debugRef)
+        return len(self.ops) - 1
+
+    def serialise(self) -&gt; bytes:
+        self.nops.value = len(self.ops)
+        self.nregs.value = len(self.regs)
+        if self.assigns:
+            self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
+        if self.has_debug and self.debuginfo:
+            assert len(self.debuginfo.value) == self.nops.value, (
+                f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
+            )
+        res = b&#34;&#34;.join(
+            [
+                self.type.serialise(),
+                self.findex.serialise(),
+                self.nregs.serialise(),
+                self.nops.serialise(),
+                b&#34;&#34;.join([reg.serialise() for reg in self.regs]),
+                b&#34;&#34;.join([op.serialise() for op in self.ops]),
+            ]
+        )
+        if self.has_debug and self.debuginfo:
+            res += self.debuginfo.serialise()
+            if self.version and self.version &gt;= 3 and self.nassigns and self.assigns is not None:
+                res += self.nassigns.serialise()
+                res += b&#34;&#34;.join([b&#34;&#34;.join([v.serialise() for v in assign]) for assign in self.assigns])
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Function.nassigns"><code class="name">var <span class="ident">nassigns</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Function(Serialisable):
+    &#34;&#34;&#34;
+    Represents a function in the bytecode. Due to the interesting ways in which HashLink works, this does not have a name or a signature, but rather a return type and a list of registers and opcodes.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;type&#34;,
+        &#34;findex&#34;,
+        &#34;nregs&#34;,
+        &#34;nops&#34;,
+        &#34;regs&#34;,
+        &#34;ops&#34;,
+        &#34;has_debug&#34;,
+        &#34;version&#34;,
+        &#34;debuginfo&#34;,
+        &#34;nassigns&#34;,
+        &#34;assigns&#34;,
+        &#34;calls&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.type = tIndex()
+        self.findex = fIndex()
+        self.nregs = VarInt()
+        self.nops = VarInt()
+        self.regs: List[tIndex] = []
+        self.ops: List[Opcode] = []
+        self.has_debug: Optional[bool] = None
+        self.version: Optional[int] = None
+        self.debuginfo: Optional[DebugInfo] = None
+        self.nassigns: Optional[VarInt] = None
+        self.assigns: Optional[List[Tuple[strRef, VarInt]]] = None
+        self.calls: List[fIndex] = []
+
+    def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+        &#34;&#34;&#34;
+        Resolves all functions that call this function.
+        &#34;&#34;&#34;
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+
+    def resolve_fun(self, code: &#34;Bytecode&#34;) -&gt; Fun:
+        &#34;&#34;&#34;
+        Resolves the function signature of this function.
+        &#34;&#34;&#34;
+        ret = self.type.resolve(code).definition
+        assert ret is not None
+        assert isinstance(ret, Fun)
+        return ret
+
+    def resolve_file(self, code: &#34;Bytecode&#34;) -&gt; str:
+        &#34;&#34;&#34;
+        Resolves (in the Bytecode&#39;s debugfiles blob) the name of the file this function originates from. Note that this assumes the first opcode&#39;s file is the only file this Function was derived from - Functions that derive from multiple files (such as compiler-generated closures or entrypoints) will be resolved to a single file, sometimes incorrectly.
+        &#34;&#34;&#34;
+        if not self.has_debug or not self.debuginfo or not self.debuginfo.value:
+            raise ValueError(&#34;Cannot get file from non-debug or empty-debuginfo bytecode!&#34;)
+        return self.debuginfo.value[0].resolve(code)
+
+    def resolve_nargs(self, code: &#34;Bytecode&#34;) -&gt; int:
+        &#34;&#34;&#34;
+        Resolves the number of arguments this function takes.
+        &#34;&#34;&#34;
+        fun_type = self.type.resolve(code).definition
+        if isinstance(fun_type, Fun):
+            return fun_type.nargs.value
+        return 0
+
+    def deserialise(self, f: BinaryIO | BytesIO, has_debug: bool, version: int) -&gt; &#34;Function&#34;:
+        self.has_debug = has_debug
+        self.version = version
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        self.nregs.deserialise(f)
+        self.nops.deserialise(f)
+        for _ in range(self.nregs.value):
+            self.regs.append(tIndex().deserialise(f))
+        for _ in range(self.nops.value):
+            self.ops.append(Opcode().deserialise(f))
+            if self.ops[-1].op in simple_calls and &#34;fun&#34; in self.ops[-1].df:
+                self.calls.append(self.ops[-1].df[&#34;fun&#34;])
+        if self.has_debug:
+            self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
+            if self.version &gt;= 3:
+                self.nassigns = VarInt().deserialise(f)
+                self.assigns = []
+                for _ in range(self.nassigns.value):
+                    self.assigns.append((strRef().deserialise(f), VarInt().deserialise(f)))
+        return self
+
+    def insert_op(self, code: &#34;Bytecode&#34;, idx: int, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; None:
+        &#34;&#34;&#34;
+        Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.
+        &#34;&#34;&#34;
+        self.ops.insert(idx, op)
+        if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo:  # fucking typing...
+            if not debugRef:
+                debugRef = fileRef(fid=code.debugfiles.find_or_add(&#34;?&#34;), line=42)  # life, the universe, and everything
+            self.debuginfo.value.insert(idx, debugRef)
+
+    def push_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Push an Opcode into this function at the start.
+        &#34;&#34;&#34;
+        self.insert_op(code, 0, op, debugRef=debugRef)
+        return 0
+
+    def append_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Append an Opcode to the end of this function.
+        &#34;&#34;&#34;
+        self.insert_op(code, len(self.ops), op, debugRef=debugRef)
+        return len(self.ops) - 1
+
+    def serialise(self) -&gt; bytes:
+        self.nops.value = len(self.ops)
+        self.nregs.value = len(self.regs)
+        if self.assigns:
+            self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
+        if self.has_debug and self.debuginfo:
+            assert len(self.debuginfo.value) == self.nops.value, (
+                f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
+            )
+        res = b&#34;&#34;.join(
+            [
+                self.type.serialise(),
+                self.findex.serialise(),
+                self.nregs.serialise(),
+                self.nops.serialise(),
+                b&#34;&#34;.join([reg.serialise() for reg in self.regs]),
+                b&#34;&#34;.join([op.serialise() for op in self.ops]),
+            ]
+        )
+        if self.has_debug and self.debuginfo:
+            res += self.debuginfo.serialise()
+            if self.version and self.version &gt;= 3 and self.nassigns and self.assigns is not None:
+                res += self.nassigns.serialise()
+                res += b&#34;&#34;.join([b&#34;&#34;.join([v.serialise() for v in assign]) for assign in self.assigns])
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Function.nops"><code class="name">var <span class="ident">nops</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Function(Serialisable):
+    &#34;&#34;&#34;
+    Represents a function in the bytecode. Due to the interesting ways in which HashLink works, this does not have a name or a signature, but rather a return type and a list of registers and opcodes.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;type&#34;,
+        &#34;findex&#34;,
+        &#34;nregs&#34;,
+        &#34;nops&#34;,
+        &#34;regs&#34;,
+        &#34;ops&#34;,
+        &#34;has_debug&#34;,
+        &#34;version&#34;,
+        &#34;debuginfo&#34;,
+        &#34;nassigns&#34;,
+        &#34;assigns&#34;,
+        &#34;calls&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.type = tIndex()
+        self.findex = fIndex()
+        self.nregs = VarInt()
+        self.nops = VarInt()
+        self.regs: List[tIndex] = []
+        self.ops: List[Opcode] = []
+        self.has_debug: Optional[bool] = None
+        self.version: Optional[int] = None
+        self.debuginfo: Optional[DebugInfo] = None
+        self.nassigns: Optional[VarInt] = None
+        self.assigns: Optional[List[Tuple[strRef, VarInt]]] = None
+        self.calls: List[fIndex] = []
+
+    def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+        &#34;&#34;&#34;
+        Resolves all functions that call this function.
+        &#34;&#34;&#34;
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+
+    def resolve_fun(self, code: &#34;Bytecode&#34;) -&gt; Fun:
+        &#34;&#34;&#34;
+        Resolves the function signature of this function.
+        &#34;&#34;&#34;
+        ret = self.type.resolve(code).definition
+        assert ret is not None
+        assert isinstance(ret, Fun)
+        return ret
+
+    def resolve_file(self, code: &#34;Bytecode&#34;) -&gt; str:
+        &#34;&#34;&#34;
+        Resolves (in the Bytecode&#39;s debugfiles blob) the name of the file this function originates from. Note that this assumes the first opcode&#39;s file is the only file this Function was derived from - Functions that derive from multiple files (such as compiler-generated closures or entrypoints) will be resolved to a single file, sometimes incorrectly.
+        &#34;&#34;&#34;
+        if not self.has_debug or not self.debuginfo or not self.debuginfo.value:
+            raise ValueError(&#34;Cannot get file from non-debug or empty-debuginfo bytecode!&#34;)
+        return self.debuginfo.value[0].resolve(code)
+
+    def resolve_nargs(self, code: &#34;Bytecode&#34;) -&gt; int:
+        &#34;&#34;&#34;
+        Resolves the number of arguments this function takes.
+        &#34;&#34;&#34;
+        fun_type = self.type.resolve(code).definition
+        if isinstance(fun_type, Fun):
+            return fun_type.nargs.value
+        return 0
+
+    def deserialise(self, f: BinaryIO | BytesIO, has_debug: bool, version: int) -&gt; &#34;Function&#34;:
+        self.has_debug = has_debug
+        self.version = version
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        self.nregs.deserialise(f)
+        self.nops.deserialise(f)
+        for _ in range(self.nregs.value):
+            self.regs.append(tIndex().deserialise(f))
+        for _ in range(self.nops.value):
+            self.ops.append(Opcode().deserialise(f))
+            if self.ops[-1].op in simple_calls and &#34;fun&#34; in self.ops[-1].df:
+                self.calls.append(self.ops[-1].df[&#34;fun&#34;])
+        if self.has_debug:
+            self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
+            if self.version &gt;= 3:
+                self.nassigns = VarInt().deserialise(f)
+                self.assigns = []
+                for _ in range(self.nassigns.value):
+                    self.assigns.append((strRef().deserialise(f), VarInt().deserialise(f)))
+        return self
+
+    def insert_op(self, code: &#34;Bytecode&#34;, idx: int, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; None:
+        &#34;&#34;&#34;
+        Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.
+        &#34;&#34;&#34;
+        self.ops.insert(idx, op)
+        if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo:  # fucking typing...
+            if not debugRef:
+                debugRef = fileRef(fid=code.debugfiles.find_or_add(&#34;?&#34;), line=42)  # life, the universe, and everything
+            self.debuginfo.value.insert(idx, debugRef)
+
+    def push_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Push an Opcode into this function at the start.
+        &#34;&#34;&#34;
+        self.insert_op(code, 0, op, debugRef=debugRef)
+        return 0
+
+    def append_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Append an Opcode to the end of this function.
+        &#34;&#34;&#34;
+        self.insert_op(code, len(self.ops), op, debugRef=debugRef)
+        return len(self.ops) - 1
+
+    def serialise(self) -&gt; bytes:
+        self.nops.value = len(self.ops)
+        self.nregs.value = len(self.regs)
+        if self.assigns:
+            self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
+        if self.has_debug and self.debuginfo:
+            assert len(self.debuginfo.value) == self.nops.value, (
+                f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
+            )
+        res = b&#34;&#34;.join(
+            [
+                self.type.serialise(),
+                self.findex.serialise(),
+                self.nregs.serialise(),
+                self.nops.serialise(),
+                b&#34;&#34;.join([reg.serialise() for reg in self.regs]),
+                b&#34;&#34;.join([op.serialise() for op in self.ops]),
+            ]
+        )
+        if self.has_debug and self.debuginfo:
+            res += self.debuginfo.serialise()
+            if self.version and self.version &gt;= 3 and self.nassigns and self.assigns is not None:
+                res += self.nassigns.serialise()
+                res += b&#34;&#34;.join([b&#34;&#34;.join([v.serialise() for v in assign]) for assign in self.assigns])
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Function.nregs"><code class="name">var <span class="ident">nregs</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Function(Serialisable):
+    &#34;&#34;&#34;
+    Represents a function in the bytecode. Due to the interesting ways in which HashLink works, this does not have a name or a signature, but rather a return type and a list of registers and opcodes.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;type&#34;,
+        &#34;findex&#34;,
+        &#34;nregs&#34;,
+        &#34;nops&#34;,
+        &#34;regs&#34;,
+        &#34;ops&#34;,
+        &#34;has_debug&#34;,
+        &#34;version&#34;,
+        &#34;debuginfo&#34;,
+        &#34;nassigns&#34;,
+        &#34;assigns&#34;,
+        &#34;calls&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.type = tIndex()
+        self.findex = fIndex()
+        self.nregs = VarInt()
+        self.nops = VarInt()
+        self.regs: List[tIndex] = []
+        self.ops: List[Opcode] = []
+        self.has_debug: Optional[bool] = None
+        self.version: Optional[int] = None
+        self.debuginfo: Optional[DebugInfo] = None
+        self.nassigns: Optional[VarInt] = None
+        self.assigns: Optional[List[Tuple[strRef, VarInt]]] = None
+        self.calls: List[fIndex] = []
+
+    def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+        &#34;&#34;&#34;
+        Resolves all functions that call this function.
+        &#34;&#34;&#34;
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+
+    def resolve_fun(self, code: &#34;Bytecode&#34;) -&gt; Fun:
+        &#34;&#34;&#34;
+        Resolves the function signature of this function.
+        &#34;&#34;&#34;
+        ret = self.type.resolve(code).definition
+        assert ret is not None
+        assert isinstance(ret, Fun)
+        return ret
+
+    def resolve_file(self, code: &#34;Bytecode&#34;) -&gt; str:
+        &#34;&#34;&#34;
+        Resolves (in the Bytecode&#39;s debugfiles blob) the name of the file this function originates from. Note that this assumes the first opcode&#39;s file is the only file this Function was derived from - Functions that derive from multiple files (such as compiler-generated closures or entrypoints) will be resolved to a single file, sometimes incorrectly.
+        &#34;&#34;&#34;
+        if not self.has_debug or not self.debuginfo or not self.debuginfo.value:
+            raise ValueError(&#34;Cannot get file from non-debug or empty-debuginfo bytecode!&#34;)
+        return self.debuginfo.value[0].resolve(code)
+
+    def resolve_nargs(self, code: &#34;Bytecode&#34;) -&gt; int:
+        &#34;&#34;&#34;
+        Resolves the number of arguments this function takes.
+        &#34;&#34;&#34;
+        fun_type = self.type.resolve(code).definition
+        if isinstance(fun_type, Fun):
+            return fun_type.nargs.value
+        return 0
+
+    def deserialise(self, f: BinaryIO | BytesIO, has_debug: bool, version: int) -&gt; &#34;Function&#34;:
+        self.has_debug = has_debug
+        self.version = version
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        self.nregs.deserialise(f)
+        self.nops.deserialise(f)
+        for _ in range(self.nregs.value):
+            self.regs.append(tIndex().deserialise(f))
+        for _ in range(self.nops.value):
+            self.ops.append(Opcode().deserialise(f))
+            if self.ops[-1].op in simple_calls and &#34;fun&#34; in self.ops[-1].df:
+                self.calls.append(self.ops[-1].df[&#34;fun&#34;])
+        if self.has_debug:
+            self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
+            if self.version &gt;= 3:
+                self.nassigns = VarInt().deserialise(f)
+                self.assigns = []
+                for _ in range(self.nassigns.value):
+                    self.assigns.append((strRef().deserialise(f), VarInt().deserialise(f)))
+        return self
+
+    def insert_op(self, code: &#34;Bytecode&#34;, idx: int, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; None:
+        &#34;&#34;&#34;
+        Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.
+        &#34;&#34;&#34;
+        self.ops.insert(idx, op)
+        if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo:  # fucking typing...
+            if not debugRef:
+                debugRef = fileRef(fid=code.debugfiles.find_or_add(&#34;?&#34;), line=42)  # life, the universe, and everything
+            self.debuginfo.value.insert(idx, debugRef)
+
+    def push_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Push an Opcode into this function at the start.
+        &#34;&#34;&#34;
+        self.insert_op(code, 0, op, debugRef=debugRef)
+        return 0
+
+    def append_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Append an Opcode to the end of this function.
+        &#34;&#34;&#34;
+        self.insert_op(code, len(self.ops), op, debugRef=debugRef)
+        return len(self.ops) - 1
+
+    def serialise(self) -&gt; bytes:
+        self.nops.value = len(self.ops)
+        self.nregs.value = len(self.regs)
+        if self.assigns:
+            self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
+        if self.has_debug and self.debuginfo:
+            assert len(self.debuginfo.value) == self.nops.value, (
+                f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
+            )
+        res = b&#34;&#34;.join(
+            [
+                self.type.serialise(),
+                self.findex.serialise(),
+                self.nregs.serialise(),
+                self.nops.serialise(),
+                b&#34;&#34;.join([reg.serialise() for reg in self.regs]),
+                b&#34;&#34;.join([op.serialise() for op in self.ops]),
+            ]
+        )
+        if self.has_debug and self.debuginfo:
+            res += self.debuginfo.serialise()
+            if self.version and self.version &gt;= 3 and self.nassigns and self.assigns is not None:
+                res += self.nassigns.serialise()
+                res += b&#34;&#34;.join([b&#34;&#34;.join([v.serialise() for v in assign]) for assign in self.assigns])
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Function.ops"><code class="name">var <span class="ident">ops</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Function(Serialisable):
+    &#34;&#34;&#34;
+    Represents a function in the bytecode. Due to the interesting ways in which HashLink works, this does not have a name or a signature, but rather a return type and a list of registers and opcodes.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;type&#34;,
+        &#34;findex&#34;,
+        &#34;nregs&#34;,
+        &#34;nops&#34;,
+        &#34;regs&#34;,
+        &#34;ops&#34;,
+        &#34;has_debug&#34;,
+        &#34;version&#34;,
+        &#34;debuginfo&#34;,
+        &#34;nassigns&#34;,
+        &#34;assigns&#34;,
+        &#34;calls&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.type = tIndex()
+        self.findex = fIndex()
+        self.nregs = VarInt()
+        self.nops = VarInt()
+        self.regs: List[tIndex] = []
+        self.ops: List[Opcode] = []
+        self.has_debug: Optional[bool] = None
+        self.version: Optional[int] = None
+        self.debuginfo: Optional[DebugInfo] = None
+        self.nassigns: Optional[VarInt] = None
+        self.assigns: Optional[List[Tuple[strRef, VarInt]]] = None
+        self.calls: List[fIndex] = []
+
+    def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+        &#34;&#34;&#34;
+        Resolves all functions that call this function.
+        &#34;&#34;&#34;
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+
+    def resolve_fun(self, code: &#34;Bytecode&#34;) -&gt; Fun:
+        &#34;&#34;&#34;
+        Resolves the function signature of this function.
+        &#34;&#34;&#34;
+        ret = self.type.resolve(code).definition
+        assert ret is not None
+        assert isinstance(ret, Fun)
+        return ret
+
+    def resolve_file(self, code: &#34;Bytecode&#34;) -&gt; str:
+        &#34;&#34;&#34;
+        Resolves (in the Bytecode&#39;s debugfiles blob) the name of the file this function originates from. Note that this assumes the first opcode&#39;s file is the only file this Function was derived from - Functions that derive from multiple files (such as compiler-generated closures or entrypoints) will be resolved to a single file, sometimes incorrectly.
+        &#34;&#34;&#34;
+        if not self.has_debug or not self.debuginfo or not self.debuginfo.value:
+            raise ValueError(&#34;Cannot get file from non-debug or empty-debuginfo bytecode!&#34;)
+        return self.debuginfo.value[0].resolve(code)
+
+    def resolve_nargs(self, code: &#34;Bytecode&#34;) -&gt; int:
+        &#34;&#34;&#34;
+        Resolves the number of arguments this function takes.
+        &#34;&#34;&#34;
+        fun_type = self.type.resolve(code).definition
+        if isinstance(fun_type, Fun):
+            return fun_type.nargs.value
+        return 0
+
+    def deserialise(self, f: BinaryIO | BytesIO, has_debug: bool, version: int) -&gt; &#34;Function&#34;:
+        self.has_debug = has_debug
+        self.version = version
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        self.nregs.deserialise(f)
+        self.nops.deserialise(f)
+        for _ in range(self.nregs.value):
+            self.regs.append(tIndex().deserialise(f))
+        for _ in range(self.nops.value):
+            self.ops.append(Opcode().deserialise(f))
+            if self.ops[-1].op in simple_calls and &#34;fun&#34; in self.ops[-1].df:
+                self.calls.append(self.ops[-1].df[&#34;fun&#34;])
+        if self.has_debug:
+            self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
+            if self.version &gt;= 3:
+                self.nassigns = VarInt().deserialise(f)
+                self.assigns = []
+                for _ in range(self.nassigns.value):
+                    self.assigns.append((strRef().deserialise(f), VarInt().deserialise(f)))
+        return self
+
+    def insert_op(self, code: &#34;Bytecode&#34;, idx: int, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; None:
+        &#34;&#34;&#34;
+        Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.
+        &#34;&#34;&#34;
+        self.ops.insert(idx, op)
+        if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo:  # fucking typing...
+            if not debugRef:
+                debugRef = fileRef(fid=code.debugfiles.find_or_add(&#34;?&#34;), line=42)  # life, the universe, and everything
+            self.debuginfo.value.insert(idx, debugRef)
+
+    def push_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Push an Opcode into this function at the start.
+        &#34;&#34;&#34;
+        self.insert_op(code, 0, op, debugRef=debugRef)
+        return 0
+
+    def append_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Append an Opcode to the end of this function.
+        &#34;&#34;&#34;
+        self.insert_op(code, len(self.ops), op, debugRef=debugRef)
+        return len(self.ops) - 1
+
+    def serialise(self) -&gt; bytes:
+        self.nops.value = len(self.ops)
+        self.nregs.value = len(self.regs)
+        if self.assigns:
+            self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
+        if self.has_debug and self.debuginfo:
+            assert len(self.debuginfo.value) == self.nops.value, (
+                f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
+            )
+        res = b&#34;&#34;.join(
+            [
+                self.type.serialise(),
+                self.findex.serialise(),
+                self.nregs.serialise(),
+                self.nops.serialise(),
+                b&#34;&#34;.join([reg.serialise() for reg in self.regs]),
+                b&#34;&#34;.join([op.serialise() for op in self.ops]),
+            ]
+        )
+        if self.has_debug and self.debuginfo:
+            res += self.debuginfo.serialise()
+            if self.version and self.version &gt;= 3 and self.nassigns and self.assigns is not None:
+                res += self.nassigns.serialise()
+                res += b&#34;&#34;.join([b&#34;&#34;.join([v.serialise() for v in assign]) for assign in self.assigns])
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Function.regs"><code class="name">var <span class="ident">regs</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Function(Serialisable):
+    &#34;&#34;&#34;
+    Represents a function in the bytecode. Due to the interesting ways in which HashLink works, this does not have a name or a signature, but rather a return type and a list of registers and opcodes.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;type&#34;,
+        &#34;findex&#34;,
+        &#34;nregs&#34;,
+        &#34;nops&#34;,
+        &#34;regs&#34;,
+        &#34;ops&#34;,
+        &#34;has_debug&#34;,
+        &#34;version&#34;,
+        &#34;debuginfo&#34;,
+        &#34;nassigns&#34;,
+        &#34;assigns&#34;,
+        &#34;calls&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.type = tIndex()
+        self.findex = fIndex()
+        self.nregs = VarInt()
+        self.nops = VarInt()
+        self.regs: List[tIndex] = []
+        self.ops: List[Opcode] = []
+        self.has_debug: Optional[bool] = None
+        self.version: Optional[int] = None
+        self.debuginfo: Optional[DebugInfo] = None
+        self.nassigns: Optional[VarInt] = None
+        self.assigns: Optional[List[Tuple[strRef, VarInt]]] = None
+        self.calls: List[fIndex] = []
+
+    def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+        &#34;&#34;&#34;
+        Resolves all functions that call this function.
+        &#34;&#34;&#34;
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+
+    def resolve_fun(self, code: &#34;Bytecode&#34;) -&gt; Fun:
+        &#34;&#34;&#34;
+        Resolves the function signature of this function.
+        &#34;&#34;&#34;
+        ret = self.type.resolve(code).definition
+        assert ret is not None
+        assert isinstance(ret, Fun)
+        return ret
+
+    def resolve_file(self, code: &#34;Bytecode&#34;) -&gt; str:
+        &#34;&#34;&#34;
+        Resolves (in the Bytecode&#39;s debugfiles blob) the name of the file this function originates from. Note that this assumes the first opcode&#39;s file is the only file this Function was derived from - Functions that derive from multiple files (such as compiler-generated closures or entrypoints) will be resolved to a single file, sometimes incorrectly.
+        &#34;&#34;&#34;
+        if not self.has_debug or not self.debuginfo or not self.debuginfo.value:
+            raise ValueError(&#34;Cannot get file from non-debug or empty-debuginfo bytecode!&#34;)
+        return self.debuginfo.value[0].resolve(code)
+
+    def resolve_nargs(self, code: &#34;Bytecode&#34;) -&gt; int:
+        &#34;&#34;&#34;
+        Resolves the number of arguments this function takes.
+        &#34;&#34;&#34;
+        fun_type = self.type.resolve(code).definition
+        if isinstance(fun_type, Fun):
+            return fun_type.nargs.value
+        return 0
+
+    def deserialise(self, f: BinaryIO | BytesIO, has_debug: bool, version: int) -&gt; &#34;Function&#34;:
+        self.has_debug = has_debug
+        self.version = version
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        self.nregs.deserialise(f)
+        self.nops.deserialise(f)
+        for _ in range(self.nregs.value):
+            self.regs.append(tIndex().deserialise(f))
+        for _ in range(self.nops.value):
+            self.ops.append(Opcode().deserialise(f))
+            if self.ops[-1].op in simple_calls and &#34;fun&#34; in self.ops[-1].df:
+                self.calls.append(self.ops[-1].df[&#34;fun&#34;])
+        if self.has_debug:
+            self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
+            if self.version &gt;= 3:
+                self.nassigns = VarInt().deserialise(f)
+                self.assigns = []
+                for _ in range(self.nassigns.value):
+                    self.assigns.append((strRef().deserialise(f), VarInt().deserialise(f)))
+        return self
+
+    def insert_op(self, code: &#34;Bytecode&#34;, idx: int, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; None:
+        &#34;&#34;&#34;
+        Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.
+        &#34;&#34;&#34;
+        self.ops.insert(idx, op)
+        if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo:  # fucking typing...
+            if not debugRef:
+                debugRef = fileRef(fid=code.debugfiles.find_or_add(&#34;?&#34;), line=42)  # life, the universe, and everything
+            self.debuginfo.value.insert(idx, debugRef)
+
+    def push_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Push an Opcode into this function at the start.
+        &#34;&#34;&#34;
+        self.insert_op(code, 0, op, debugRef=debugRef)
+        return 0
+
+    def append_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Append an Opcode to the end of this function.
+        &#34;&#34;&#34;
+        self.insert_op(code, len(self.ops), op, debugRef=debugRef)
+        return len(self.ops) - 1
+
+    def serialise(self) -&gt; bytes:
+        self.nops.value = len(self.ops)
+        self.nregs.value = len(self.regs)
+        if self.assigns:
+            self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
+        if self.has_debug and self.debuginfo:
+            assert len(self.debuginfo.value) == self.nops.value, (
+                f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
+            )
+        res = b&#34;&#34;.join(
+            [
+                self.type.serialise(),
+                self.findex.serialise(),
+                self.nregs.serialise(),
+                self.nops.serialise(),
+                b&#34;&#34;.join([reg.serialise() for reg in self.regs]),
+                b&#34;&#34;.join([op.serialise() for op in self.ops]),
+            ]
+        )
+        if self.has_debug and self.debuginfo:
+            res += self.debuginfo.serialise()
+            if self.version and self.version &gt;= 3 and self.nassigns and self.assigns is not None:
+                res += self.nassigns.serialise()
+                res += b&#34;&#34;.join([b&#34;&#34;.join([v.serialise() for v in assign]) for assign in self.assigns])
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Function.type"><code class="name">var <span class="ident">type</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Function(Serialisable):
+    &#34;&#34;&#34;
+    Represents a function in the bytecode. Due to the interesting ways in which HashLink works, this does not have a name or a signature, but rather a return type and a list of registers and opcodes.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;type&#34;,
+        &#34;findex&#34;,
+        &#34;nregs&#34;,
+        &#34;nops&#34;,
+        &#34;regs&#34;,
+        &#34;ops&#34;,
+        &#34;has_debug&#34;,
+        &#34;version&#34;,
+        &#34;debuginfo&#34;,
+        &#34;nassigns&#34;,
+        &#34;assigns&#34;,
+        &#34;calls&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.type = tIndex()
+        self.findex = fIndex()
+        self.nregs = VarInt()
+        self.nops = VarInt()
+        self.regs: List[tIndex] = []
+        self.ops: List[Opcode] = []
+        self.has_debug: Optional[bool] = None
+        self.version: Optional[int] = None
+        self.debuginfo: Optional[DebugInfo] = None
+        self.nassigns: Optional[VarInt] = None
+        self.assigns: Optional[List[Tuple[strRef, VarInt]]] = None
+        self.calls: List[fIndex] = []
+
+    def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+        &#34;&#34;&#34;
+        Resolves all functions that call this function.
+        &#34;&#34;&#34;
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+
+    def resolve_fun(self, code: &#34;Bytecode&#34;) -&gt; Fun:
+        &#34;&#34;&#34;
+        Resolves the function signature of this function.
+        &#34;&#34;&#34;
+        ret = self.type.resolve(code).definition
+        assert ret is not None
+        assert isinstance(ret, Fun)
+        return ret
+
+    def resolve_file(self, code: &#34;Bytecode&#34;) -&gt; str:
+        &#34;&#34;&#34;
+        Resolves (in the Bytecode&#39;s debugfiles blob) the name of the file this function originates from. Note that this assumes the first opcode&#39;s file is the only file this Function was derived from - Functions that derive from multiple files (such as compiler-generated closures or entrypoints) will be resolved to a single file, sometimes incorrectly.
+        &#34;&#34;&#34;
+        if not self.has_debug or not self.debuginfo or not self.debuginfo.value:
+            raise ValueError(&#34;Cannot get file from non-debug or empty-debuginfo bytecode!&#34;)
+        return self.debuginfo.value[0].resolve(code)
+
+    def resolve_nargs(self, code: &#34;Bytecode&#34;) -&gt; int:
+        &#34;&#34;&#34;
+        Resolves the number of arguments this function takes.
+        &#34;&#34;&#34;
+        fun_type = self.type.resolve(code).definition
+        if isinstance(fun_type, Fun):
+            return fun_type.nargs.value
+        return 0
+
+    def deserialise(self, f: BinaryIO | BytesIO, has_debug: bool, version: int) -&gt; &#34;Function&#34;:
+        self.has_debug = has_debug
+        self.version = version
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        self.nregs.deserialise(f)
+        self.nops.deserialise(f)
+        for _ in range(self.nregs.value):
+            self.regs.append(tIndex().deserialise(f))
+        for _ in range(self.nops.value):
+            self.ops.append(Opcode().deserialise(f))
+            if self.ops[-1].op in simple_calls and &#34;fun&#34; in self.ops[-1].df:
+                self.calls.append(self.ops[-1].df[&#34;fun&#34;])
+        if self.has_debug:
+            self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
+            if self.version &gt;= 3:
+                self.nassigns = VarInt().deserialise(f)
+                self.assigns = []
+                for _ in range(self.nassigns.value):
+                    self.assigns.append((strRef().deserialise(f), VarInt().deserialise(f)))
+        return self
+
+    def insert_op(self, code: &#34;Bytecode&#34;, idx: int, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; None:
+        &#34;&#34;&#34;
+        Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.
+        &#34;&#34;&#34;
+        self.ops.insert(idx, op)
+        if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo:  # fucking typing...
+            if not debugRef:
+                debugRef = fileRef(fid=code.debugfiles.find_or_add(&#34;?&#34;), line=42)  # life, the universe, and everything
+            self.debuginfo.value.insert(idx, debugRef)
+
+    def push_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Push an Opcode into this function at the start.
+        &#34;&#34;&#34;
+        self.insert_op(code, 0, op, debugRef=debugRef)
+        return 0
+
+    def append_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Append an Opcode to the end of this function.
+        &#34;&#34;&#34;
+        self.insert_op(code, len(self.ops), op, debugRef=debugRef)
+        return len(self.ops) - 1
+
+    def serialise(self) -&gt; bytes:
+        self.nops.value = len(self.ops)
+        self.nregs.value = len(self.regs)
+        if self.assigns:
+            self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
+        if self.has_debug and self.debuginfo:
+            assert len(self.debuginfo.value) == self.nops.value, (
+                f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
+            )
+        res = b&#34;&#34;.join(
+            [
+                self.type.serialise(),
+                self.findex.serialise(),
+                self.nregs.serialise(),
+                self.nops.serialise(),
+                b&#34;&#34;.join([reg.serialise() for reg in self.regs]),
+                b&#34;&#34;.join([op.serialise() for op in self.ops]),
+            ]
+        )
+        if self.has_debug and self.debuginfo:
+            res += self.debuginfo.serialise()
+            if self.version and self.version &gt;= 3 and self.nassigns and self.assigns is not None:
+                res += self.nassigns.serialise()
+                res += b&#34;&#34;.join([b&#34;&#34;.join([v.serialise() for v in assign]) for assign in self.assigns])
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Function.version"><code class="name">var <span class="ident">version</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Function(Serialisable):
+    &#34;&#34;&#34;
+    Represents a function in the bytecode. Due to the interesting ways in which HashLink works, this does not have a name or a signature, but rather a return type and a list of registers and opcodes.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;type&#34;,
+        &#34;findex&#34;,
+        &#34;nregs&#34;,
+        &#34;nops&#34;,
+        &#34;regs&#34;,
+        &#34;ops&#34;,
+        &#34;has_debug&#34;,
+        &#34;version&#34;,
+        &#34;debuginfo&#34;,
+        &#34;nassigns&#34;,
+        &#34;assigns&#34;,
+        &#34;calls&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.type = tIndex()
+        self.findex = fIndex()
+        self.nregs = VarInt()
+        self.nops = VarInt()
+        self.regs: List[tIndex] = []
+        self.ops: List[Opcode] = []
+        self.has_debug: Optional[bool] = None
+        self.version: Optional[int] = None
+        self.debuginfo: Optional[DebugInfo] = None
+        self.nassigns: Optional[VarInt] = None
+        self.assigns: Optional[List[Tuple[strRef, VarInt]]] = None
+        self.calls: List[fIndex] = []
+
+    def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+        &#34;&#34;&#34;
+        Resolves all functions that call this function.
+        &#34;&#34;&#34;
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+
+    def resolve_fun(self, code: &#34;Bytecode&#34;) -&gt; Fun:
+        &#34;&#34;&#34;
+        Resolves the function signature of this function.
+        &#34;&#34;&#34;
+        ret = self.type.resolve(code).definition
+        assert ret is not None
+        assert isinstance(ret, Fun)
+        return ret
+
+    def resolve_file(self, code: &#34;Bytecode&#34;) -&gt; str:
+        &#34;&#34;&#34;
+        Resolves (in the Bytecode&#39;s debugfiles blob) the name of the file this function originates from. Note that this assumes the first opcode&#39;s file is the only file this Function was derived from - Functions that derive from multiple files (such as compiler-generated closures or entrypoints) will be resolved to a single file, sometimes incorrectly.
+        &#34;&#34;&#34;
+        if not self.has_debug or not self.debuginfo or not self.debuginfo.value:
+            raise ValueError(&#34;Cannot get file from non-debug or empty-debuginfo bytecode!&#34;)
+        return self.debuginfo.value[0].resolve(code)
+
+    def resolve_nargs(self, code: &#34;Bytecode&#34;) -&gt; int:
+        &#34;&#34;&#34;
+        Resolves the number of arguments this function takes.
+        &#34;&#34;&#34;
+        fun_type = self.type.resolve(code).definition
+        if isinstance(fun_type, Fun):
+            return fun_type.nargs.value
+        return 0
+
+    def deserialise(self, f: BinaryIO | BytesIO, has_debug: bool, version: int) -&gt; &#34;Function&#34;:
+        self.has_debug = has_debug
+        self.version = version
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        self.nregs.deserialise(f)
+        self.nops.deserialise(f)
+        for _ in range(self.nregs.value):
+            self.regs.append(tIndex().deserialise(f))
+        for _ in range(self.nops.value):
+            self.ops.append(Opcode().deserialise(f))
+            if self.ops[-1].op in simple_calls and &#34;fun&#34; in self.ops[-1].df:
+                self.calls.append(self.ops[-1].df[&#34;fun&#34;])
+        if self.has_debug:
+            self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
+            if self.version &gt;= 3:
+                self.nassigns = VarInt().deserialise(f)
+                self.assigns = []
+                for _ in range(self.nassigns.value):
+                    self.assigns.append((strRef().deserialise(f), VarInt().deserialise(f)))
+        return self
+
+    def insert_op(self, code: &#34;Bytecode&#34;, idx: int, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; None:
+        &#34;&#34;&#34;
+        Insert an Opcode into this function at the given position, adding a blank debug fileRef if none is passed.
+        &#34;&#34;&#34;
+        self.ops.insert(idx, op)
+        if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo:  # fucking typing...
+            if not debugRef:
+                debugRef = fileRef(fid=code.debugfiles.find_or_add(&#34;?&#34;), line=42)  # life, the universe, and everything
+            self.debuginfo.value.insert(idx, debugRef)
+
+    def push_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Push an Opcode into this function at the start.
+        &#34;&#34;&#34;
+        self.insert_op(code, 0, op, debugRef=debugRef)
+        return 0
+
+    def append_op(self, code: &#34;Bytecode&#34;, op: Opcode, debugRef: Optional[fileRef] = None) -&gt; int:
+        &#34;&#34;&#34;
+        Append an Opcode to the end of this function.
+        &#34;&#34;&#34;
+        self.insert_op(code, len(self.ops), op, debugRef=debugRef)
+        return len(self.ops) - 1
+
+    def serialise(self) -&gt; bytes:
+        self.nops.value = len(self.ops)
+        self.nregs.value = len(self.regs)
+        if self.assigns:
+            self.nassigns = VarInt(len(self.assigns) if self.assigns else 0)
+        if self.has_debug and self.debuginfo:
+            assert len(self.debuginfo.value) == self.nops.value, (
+                f&#34;Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?&#34;
+            )
+        res = b&#34;&#34;.join(
+            [
+                self.type.serialise(),
+                self.findex.serialise(),
+                self.nregs.serialise(),
+                self.nops.serialise(),
+                b&#34;&#34;.join([reg.serialise() for reg in self.regs]),
+                b&#34;&#34;.join([op.serialise() for op in self.ops]),
+            ]
+        )
+        if self.has_debug and self.debuginfo:
+            res += self.debuginfo.serialise()
+            if self.version and self.version &gt;= 3 and self.nassigns and self.assigns is not None:
+                res += self.nassigns.serialise()
+                res += b&#34;&#34;.join([b&#34;&#34;.join([v.serialise() for v in assign]) for assign in self.assigns])
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Function.append_op"><code class="name flex">
@@ -3333,6 +5232,30 @@ and recursively explores all types contained within them.</p></div>
 <div class="desc"></div>
 </dd>
 </dl>
+</dd>
+<dt id="crashlink.core.GUID"><code class="flex name class">
+<span>class <span class="ident">GUID</span></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class GUID(_NoDataType):
+    &#34;&#34;&#34;
+    GUID type, no data.
+    &#34;&#34;&#34;
+
+    pass</code></pre>
+</details>
+<div class="desc"><p>GUID type, no data.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>crashlink.core._NoDataType</li>
+<li><a title="crashlink.core.TypeDef" href="#crashlink.core.TypeDef">TypeDef</a></li>
+<li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
+<li>abc.ABC</li>
+</ul>
 </dd>
 <dt id="crashlink.core.I32"><code class="flex name class">
 <span>class <span class="ident">I32</span></span>
@@ -4404,6 +6327,8 @@ Where a is field 0 and b is field 1.</p></div>
     A block of raw data.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;value&#34;, &#34;length&#34;)
+
     def __init__(self, length: int):
         self.value: bytes = b&#34;&#34;
         self.length = length
@@ -4421,6 +6346,61 @@ Where a is field 0 and b is field 1.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.RawData.length"><code class="name">var <span class="ident">length</span></code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class RawData(Serialisable):
+    &#34;&#34;&#34;
+    A block of raw data.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;value&#34;, &#34;length&#34;)
+
+    def __init__(self, length: int):
+        self.value: bytes = b&#34;&#34;
+        self.length = length
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;RawData&#34;:
+        self.value = f.read(self.length)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return self.value</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.RawData.value"><code class="name">var <span class="ident">value</span></code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class RawData(Serialisable):
+    &#34;&#34;&#34;
+    A block of raw data.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;value&#34;, &#34;length&#34;)
+
+    def __init__(self, length: int):
+        self.value: bytes = b&#34;&#34;
+        self.length = length
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;RawData&#34;:
+        self.value = f.read(self.length)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return self.value</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.RawData.deserialise"><code class="name flex">
@@ -4635,6 +6615,8 @@ Where a is field 0 and b is field 1.</p></div>
     Base class for resolvable VarInts. Call `resolve` to get a direct reference to the object it points to.
     &#34;&#34;&#34;
 
+    __slots__ = ()
+
     @abstractmethod
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; Any:
         &#34;&#34;&#34;
@@ -4819,6 +6801,8 @@ def serialise(self) -&gt; bytes:
     A standard 64-bit float.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;value&#34;,)
+
     def __init__(self) -&gt; None:
         self.value = 0.0
 
@@ -4835,6 +6819,34 @@ def serialise(self) -&gt; bytes:
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.SerialisableF64.value"><code class="name">var <span class="ident">value</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class SerialisableF64(Serialisable):
+    &#34;&#34;&#34;
+    A standard 64-bit float.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;value&#34;,)
+
+    def __init__(self) -&gt; None:
+        self.value = 0.0
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;SerialisableF64&#34;:
+        self.value = struct.unpack(&#34;&lt;d&#34;, f.read(8))[0]
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return struct.pack(&#34;&lt;d&#34;, self.value)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.SerialisableF64.deserialise"><code class="name flex">
@@ -4879,6 +6891,8 @@ def serialise(self) -&gt; bytes:
     Integer of the specified byte length.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;value&#34;, &#34;length&#34;, &#34;byteorder&#34;, &#34;signed&#34;)
+
     def __init__(self) -&gt; None:
         self.value: int = -1
         self.length = 4
@@ -4913,6 +6927,181 @@ def serialise(self) -&gt; bytes:
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.SerialisableInt.byteorder"><code class="name">var <span class="ident">byteorder</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class SerialisableInt(Serialisable):
+    &#34;&#34;&#34;
+    Integer of the specified byte length.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;value&#34;, &#34;length&#34;, &#34;byteorder&#34;, &#34;signed&#34;)
+
+    def __init__(self) -&gt; None:
+        self.value: int = -1
+        self.length = 4
+        self.byteorder: Literal[&#34;little&#34;, &#34;big&#34;] = &#34;little&#34;
+        self.signed = False
+
+    def deserialise(
+        self,
+        f: BinaryIO | BytesIO,
+        length: int = 4,
+        byteorder: Literal[&#34;little&#34;, &#34;big&#34;] = &#34;little&#34;,
+        signed: bool = False,
+    ) -&gt; &#34;SerialisableInt&#34;:
+        self.length = length
+        self.byteorder = byteorder
+        self.signed = signed
+        bytes_read = f.read(length)
+        if all(b == 0 for b in bytes_read):
+            self.value = 0
+            return self
+        while len(bytes_read) &gt; 1 and bytes_read[-1] == 0:
+            bytes_read = bytes_read[:-1]
+        self.value = int.from_bytes(bytes_read, byteorder, signed=signed)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return self.value.to_bytes(self.length, self.byteorder, signed=self.signed)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.SerialisableInt.length"><code class="name">var <span class="ident">length</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class SerialisableInt(Serialisable):
+    &#34;&#34;&#34;
+    Integer of the specified byte length.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;value&#34;, &#34;length&#34;, &#34;byteorder&#34;, &#34;signed&#34;)
+
+    def __init__(self) -&gt; None:
+        self.value: int = -1
+        self.length = 4
+        self.byteorder: Literal[&#34;little&#34;, &#34;big&#34;] = &#34;little&#34;
+        self.signed = False
+
+    def deserialise(
+        self,
+        f: BinaryIO | BytesIO,
+        length: int = 4,
+        byteorder: Literal[&#34;little&#34;, &#34;big&#34;] = &#34;little&#34;,
+        signed: bool = False,
+    ) -&gt; &#34;SerialisableInt&#34;:
+        self.length = length
+        self.byteorder = byteorder
+        self.signed = signed
+        bytes_read = f.read(length)
+        if all(b == 0 for b in bytes_read):
+            self.value = 0
+            return self
+        while len(bytes_read) &gt; 1 and bytes_read[-1] == 0:
+            bytes_read = bytes_read[:-1]
+        self.value = int.from_bytes(bytes_read, byteorder, signed=signed)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return self.value.to_bytes(self.length, self.byteorder, signed=self.signed)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.SerialisableInt.signed"><code class="name">var <span class="ident">signed</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class SerialisableInt(Serialisable):
+    &#34;&#34;&#34;
+    Integer of the specified byte length.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;value&#34;, &#34;length&#34;, &#34;byteorder&#34;, &#34;signed&#34;)
+
+    def __init__(self) -&gt; None:
+        self.value: int = -1
+        self.length = 4
+        self.byteorder: Literal[&#34;little&#34;, &#34;big&#34;] = &#34;little&#34;
+        self.signed = False
+
+    def deserialise(
+        self,
+        f: BinaryIO | BytesIO,
+        length: int = 4,
+        byteorder: Literal[&#34;little&#34;, &#34;big&#34;] = &#34;little&#34;,
+        signed: bool = False,
+    ) -&gt; &#34;SerialisableInt&#34;:
+        self.length = length
+        self.byteorder = byteorder
+        self.signed = signed
+        bytes_read = f.read(length)
+        if all(b == 0 for b in bytes_read):
+            self.value = 0
+            return self
+        while len(bytes_read) &gt; 1 and bytes_read[-1] == 0:
+            bytes_read = bytes_read[:-1]
+        self.value = int.from_bytes(bytes_read, byteorder, signed=signed)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return self.value.to_bytes(self.length, self.byteorder, signed=self.signed)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.SerialisableInt.value"><code class="name">var <span class="ident">value</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class SerialisableInt(Serialisable):
+    &#34;&#34;&#34;
+    Integer of the specified byte length.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;value&#34;, &#34;length&#34;, &#34;byteorder&#34;, &#34;signed&#34;)
+
+    def __init__(self) -&gt; None:
+        self.value: int = -1
+        self.length = 4
+        self.byteorder: Literal[&#34;little&#34;, &#34;big&#34;] = &#34;little&#34;
+        self.signed = False
+
+    def deserialise(
+        self,
+        f: BinaryIO | BytesIO,
+        length: int = 4,
+        byteorder: Literal[&#34;little&#34;, &#34;big&#34;] = &#34;little&#34;,
+        signed: bool = False,
+    ) -&gt; &#34;SerialisableInt&#34;:
+        self.length = length
+        self.byteorder = byteorder
+        self.signed = signed
+        bytes_read = f.read(length)
+        if all(b == 0 for b in bytes_read):
+            self.value = 0
+            return self
+        while len(bytes_read) &gt; 1 and bytes_read[-1] == 0:
+            bytes_read = bytes_read[:-1]
+        self.value = int.from_bytes(bytes_read, byteorder, signed=signed)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return self.value.to_bytes(self.length, self.byteorder, signed=self.signed)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.SerialisableInt.deserialise"><code class="name flex">
@@ -5215,6 +7404,7 @@ def serialise(self) -&gt; bytes:
         Method,   # 20
         Struct,   # 21
         Packed,   # 22
+        GUID,     # 23, no data
     ]
     # fmt: on
 
@@ -5242,6 +7432,7 @@ def serialise(self) -&gt; bytes:
         METHOD = 20
         STRUCT = 21
         PACKED = 22
+        GUID = 23
 
     def __init__(self) -&gt; None:
         self.kind = SerialisableInt()
@@ -5560,39 +7751,27 @@ attributes &ndash; see the documentation for details.</p></div>
     Variable-length integer - can be 1, 2, or 4 bytes.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;value&#34;,)
+
     def __init__(self, value: int = 0):
         self.value: int = value
 
     def deserialise(self: T, f: BinaryIO | BytesIO) -&gt; T:
-        # Read first byte - keep int.from_bytes for single byte
-        b = int.from_bytes(f.read(1), &#34;big&#34;)
-
-        # Single byte format (0xxxxxxx)
-        if not (b &amp; 0x80):
+        b = f.read(1)[0]
+        if b &lt; 0x80:
             self.value = b
             return self
-
-        # Two byte format (10xxxxxx)
-        if not (b &amp; 0x40):
-            # Read 2 bytes as unsigned short
-            second = f.read(1)[0]  # Faster than int.from_bytes for single byte
-
-            # Combine bytes and handle sign
-            self.value = ((b &amp; 0x1F) &lt;&lt; 8) | second
-            if b &amp; 0x20:
-                self.value = -self.value
+        if b &lt; 0xC0:
+            second = f.read(1)[0]
+            val = ((b &amp; 0x1F) &lt;&lt; 8) | second
+            self.value = (val ^ -((b &gt;&gt; 5) &amp; 1)) + ((b &gt;&gt; 5) &amp; 1)
             return self
-
-        # Four byte format (11xxxxxx)
         remaining_bytes = f.read(3)
         if len(remaining_bytes) &lt; 3:
-            raise MalformedBytecode(&#34;Incomplete VarInt at end of stream&#34;)
-        remaining = _struct_medium.unpack(b&#34;\x00&#34; + remaining_bytes)[0]
-
-        # Combine all bytes and handle sign
-        self.value = ((b &amp; 0x1F) &lt;&lt; 24) | remaining
-        if b &amp; 0x20:
-            self.value = -self.value
+            raise ValueError(&#34;Incomplete VarInt at end of stream&#34;)
+        remaining = int.from_bytes(remaining_bytes, &#34;big&#34;)
+        val = ((b &amp; 0x1F) &lt;&lt; 24) | remaining
+        self.value = (val ^ -((b &gt;&gt; 5) &amp; 1)) + ((b &gt;&gt; 5) &amp; 1)
         return self
 
     def serialise(self) -&gt; bytes:
@@ -5601,7 +7780,7 @@ attributes &ndash; see the documentation for details.</p></div>
             if value &lt; 0x2000:  # 13 bits
                 return bytes([(value &gt;&gt; 8) | 0xA0, value &amp; 0xFF])
             if value &gt;= 0x20000000:
-                raise MalformedBytecode(&#34;value can&#39;t be &gt;= 0x20000000&#34;)
+                raise MalformedBytecode(&#34;The value of a VarInt can&#39;t be &gt;= 0x20000000!&#34;)
             # Optimized 4-byte case
             return bytes(
                 [
@@ -5617,7 +7796,7 @@ attributes &ndash; see the documentation for details.</p></div>
         if self.value &lt; 0x2000:  # 13 bits
             return bytes([(self.value &gt;&gt; 8) | 0x80, self.value &amp; 0xFF])
         if self.value &gt;= 0x20000000:
-            raise MalformedBytecode(&#34;value can&#39;t be &gt;= 0x20000000&#34;)
+            raise MalformedBytecode(&#34;The value of a VarInt can&#39;t be &gt;= 0x20000000!&#34;)
         # Optimized 4-byte case
         return bytes(
             [
@@ -5638,6 +7817,78 @@ attributes &ndash; see the documentation for details.</p></div>
 <ul class="hlist">
 <li><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.VarInt.value"><code class="name">var <span class="ident">value</span></code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class VarInt(Serialisable):
+    &#34;&#34;&#34;
+    Variable-length integer - can be 1, 2, or 4 bytes.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;value&#34;,)
+
+    def __init__(self, value: int = 0):
+        self.value: int = value
+
+    def deserialise(self: T, f: BinaryIO | BytesIO) -&gt; T:
+        b = f.read(1)[0]
+        if b &lt; 0x80:
+            self.value = b
+            return self
+        if b &lt; 0xC0:
+            second = f.read(1)[0]
+            val = ((b &amp; 0x1F) &lt;&lt; 8) | second
+            self.value = (val ^ -((b &gt;&gt; 5) &amp; 1)) + ((b &gt;&gt; 5) &amp; 1)
+            return self
+        remaining_bytes = f.read(3)
+        if len(remaining_bytes) &lt; 3:
+            raise ValueError(&#34;Incomplete VarInt at end of stream&#34;)
+        remaining = int.from_bytes(remaining_bytes, &#34;big&#34;)
+        val = ((b &amp; 0x1F) &lt;&lt; 24) | remaining
+        self.value = (val ^ -((b &gt;&gt; 5) &amp; 1)) + ((b &gt;&gt; 5) &amp; 1)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        if self.value &lt; 0:
+            value = -self.value
+            if value &lt; 0x2000:  # 13 bits
+                return bytes([(value &gt;&gt; 8) | 0xA0, value &amp; 0xFF])
+            if value &gt;= 0x20000000:
+                raise MalformedBytecode(&#34;The value of a VarInt can&#39;t be &gt;= 0x20000000!&#34;)
+            # Optimized 4-byte case
+            return bytes(
+                [
+                    (value &gt;&gt; 24) | 0xE0,
+                    (value &gt;&gt; 16) &amp; 0xFF,
+                    (value &gt;&gt; 8) &amp; 0xFF,
+                    value &amp; 0xFF,
+                ]
+            )
+
+        if self.value &lt; 0x80:  # 7 bits
+            return bytes([self.value])
+        if self.value &lt; 0x2000:  # 13 bits
+            return bytes([(self.value &gt;&gt; 8) | 0x80, self.value &amp; 0xFF])
+        if self.value &gt;= 0x20000000:
+            raise MalformedBytecode(&#34;The value of a VarInt can&#39;t be &gt;= 0x20000000!&#34;)
+        # Optimized 4-byte case
+        return bytes(
+            [
+                (self.value &gt;&gt; 24) | 0xC0,
+                (self.value &gt;&gt; 16) &amp; 0xFF,
+                (self.value &gt;&gt; 8) &amp; 0xFF,
+                self.value &amp; 0xFF,
+            ]
+        )</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.VarInt.deserialise"><code class="name flex">
@@ -5649,35 +7900,21 @@ attributes &ndash; see the documentation for details.</p></div>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def deserialise(self: T, f: BinaryIO | BytesIO) -&gt; T:
-    # Read first byte - keep int.from_bytes for single byte
-    b = int.from_bytes(f.read(1), &#34;big&#34;)
-
-    # Single byte format (0xxxxxxx)
-    if not (b &amp; 0x80):
+    b = f.read(1)[0]
+    if b &lt; 0x80:
         self.value = b
         return self
-
-    # Two byte format (10xxxxxx)
-    if not (b &amp; 0x40):
-        # Read 2 bytes as unsigned short
-        second = f.read(1)[0]  # Faster than int.from_bytes for single byte
-
-        # Combine bytes and handle sign
-        self.value = ((b &amp; 0x1F) &lt;&lt; 8) | second
-        if b &amp; 0x20:
-            self.value = -self.value
+    if b &lt; 0xC0:
+        second = f.read(1)[0]
+        val = ((b &amp; 0x1F) &lt;&lt; 8) | second
+        self.value = (val ^ -((b &gt;&gt; 5) &amp; 1)) + ((b &gt;&gt; 5) &amp; 1)
         return self
-
-    # Four byte format (11xxxxxx)
     remaining_bytes = f.read(3)
     if len(remaining_bytes) &lt; 3:
-        raise MalformedBytecode(&#34;Incomplete VarInt at end of stream&#34;)
-    remaining = _struct_medium.unpack(b&#34;\x00&#34; + remaining_bytes)[0]
-
-    # Combine all bytes and handle sign
-    self.value = ((b &amp; 0x1F) &lt;&lt; 24) | remaining
-    if b &amp; 0x20:
-        self.value = -self.value
+        raise ValueError(&#34;Incomplete VarInt at end of stream&#34;)
+    remaining = int.from_bytes(remaining_bytes, &#34;big&#34;)
+    val = ((b &amp; 0x1F) &lt;&lt; 24) | remaining
+    self.value = (val ^ -((b &gt;&gt; 5) &amp; 1)) + ((b &gt;&gt; 5) &amp; 1)
     return self</code></pre>
 </details>
 <div class="desc"></div>
@@ -5696,7 +7933,7 @@ attributes &ndash; see the documentation for details.</p></div>
         if value &lt; 0x2000:  # 13 bits
             return bytes([(value &gt;&gt; 8) | 0xA0, value &amp; 0xFF])
         if value &gt;= 0x20000000:
-            raise MalformedBytecode(&#34;value can&#39;t be &gt;= 0x20000000&#34;)
+            raise MalformedBytecode(&#34;The value of a VarInt can&#39;t be &gt;= 0x20000000!&#34;)
         # Optimized 4-byte case
         return bytes(
             [
@@ -5712,7 +7949,7 @@ attributes &ndash; see the documentation for details.</p></div>
     if self.value &lt; 0x2000:  # 13 bits
         return bytes([(self.value &gt;&gt; 8) | 0x80, self.value &amp; 0xFF])
     if self.value &gt;= 0x20000000:
-        raise MalformedBytecode(&#34;value can&#39;t be &gt;= 0x20000000&#34;)
+        raise MalformedBytecode(&#34;The value of a VarInt can&#39;t be &gt;= 0x20000000!&#34;)
     # Optimized 4-byte case
     return bytes(
         [
@@ -5931,6 +8168,8 @@ attributes &ndash; see the documentation for details.</p></div>
     Reference to a byte string in the bytecode.
     &#34;&#34;&#34;
 
+    __slots__ = ()
+
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; bytes:
         if code.bytes:
             return code.bytes.value[self.value]
@@ -5967,6 +8206,8 @@ attributes &ndash; see the documentation for details.</p></div>
     &#34;&#34;&#34;
     Abstract class based on VarInt to represent a distinct function index instead of just an arbitrary number.
     &#34;&#34;&#34;
+
+    __slots__ = ()
 
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Function|Native&#34;:
         for function in code.functions:
@@ -6181,6 +8422,8 @@ attributes &ndash; see the documentation for details.</p></div>
     Reference to a float in the bytecode.
     &#34;&#34;&#34;
 
+    __slots__ = ()
+
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; SerialisableF64:
         return code.floats[self.value]</code></pre>
 </details>
@@ -6214,6 +8457,8 @@ attributes &ndash; see the documentation for details.</p></div>
     &#34;&#34;&#34;
     Reference to a global object in the bytecode.
     &#34;&#34;&#34;
+
+    __slots__ = ()
 
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Type&#34;:
         return code.global_types[self.value].resolve(code)
@@ -6284,6 +8529,8 @@ attributes &ndash; see the documentation for details.</p></div>
     Reference to an integer in the bytecode.
     &#34;&#34;&#34;
 
+    __slots__ = ()
+
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; SerialisableInt:
         return code.ints[self.value]</code></pre>
 </details>
@@ -6318,6 +8565,8 @@ attributes &ndash; see the documentation for details.</p></div>
     Reference to a string in the bytecode.
     &#34;&#34;&#34;
 
+    __slots__ = ()
+
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
         return code.strings.value[self.value]</code></pre>
 </details>
@@ -6351,6 +8600,8 @@ attributes &ndash; see the documentation for details.</p></div>
     &#34;&#34;&#34;
     Reference to a type in the bytecode.
     &#34;&#34;&#34;
+
+    __slots__ = ()
 
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Type&#34;:
         return code.types[self.value]</code></pre>
@@ -6454,6 +8705,8 @@ attributes &ndash; see the documentation for details.</p></div>
 <h4><code><a title="crashlink.core.Constant" href="#crashlink.core.Constant">Constant</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.Constant.deserialise" href="#crashlink.core.Constant.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Constant.fields" href="#crashlink.core.Constant.fields">fields</a></code></li>
+<li><code><a title="crashlink.core.Constant.nfields" href="#crashlink.core.Constant.nfields">nfields</a></code></li>
 <li><code><a title="crashlink.core.Constant.serialise" href="#crashlink.core.Constant.serialise">serialise</a></code></li>
 </ul>
 </li>
@@ -6509,15 +8762,30 @@ attributes &ndash; see the documentation for details.</p></div>
 <h4><code><a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a></code></h4>
 <ul class="two-column">
 <li><code><a title="crashlink.core.Function.append_op" href="#crashlink.core.Function.append_op">append_op</a></code></li>
+<li><code><a title="crashlink.core.Function.assigns" href="#crashlink.core.Function.assigns">assigns</a></code></li>
 <li><code><a title="crashlink.core.Function.called_by" href="#crashlink.core.Function.called_by">called_by</a></code></li>
+<li><code><a title="crashlink.core.Function.calls" href="#crashlink.core.Function.calls">calls</a></code></li>
+<li><code><a title="crashlink.core.Function.debuginfo" href="#crashlink.core.Function.debuginfo">debuginfo</a></code></li>
 <li><code><a title="crashlink.core.Function.deserialise" href="#crashlink.core.Function.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Function.findex" href="#crashlink.core.Function.findex">findex</a></code></li>
+<li><code><a title="crashlink.core.Function.has_debug" href="#crashlink.core.Function.has_debug">has_debug</a></code></li>
 <li><code><a title="crashlink.core.Function.insert_op" href="#crashlink.core.Function.insert_op">insert_op</a></code></li>
+<li><code><a title="crashlink.core.Function.nassigns" href="#crashlink.core.Function.nassigns">nassigns</a></code></li>
+<li><code><a title="crashlink.core.Function.nops" href="#crashlink.core.Function.nops">nops</a></code></li>
+<li><code><a title="crashlink.core.Function.nregs" href="#crashlink.core.Function.nregs">nregs</a></code></li>
+<li><code><a title="crashlink.core.Function.ops" href="#crashlink.core.Function.ops">ops</a></code></li>
 <li><code><a title="crashlink.core.Function.push_op" href="#crashlink.core.Function.push_op">push_op</a></code></li>
+<li><code><a title="crashlink.core.Function.regs" href="#crashlink.core.Function.regs">regs</a></code></li>
 <li><code><a title="crashlink.core.Function.resolve_file" href="#crashlink.core.Function.resolve_file">resolve_file</a></code></li>
 <li><code><a title="crashlink.core.Function.resolve_fun" href="#crashlink.core.Function.resolve_fun">resolve_fun</a></code></li>
 <li><code><a title="crashlink.core.Function.resolve_nargs" href="#crashlink.core.Function.resolve_nargs">resolve_nargs</a></code></li>
 <li><code><a title="crashlink.core.Function.serialise" href="#crashlink.core.Function.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.Function.type" href="#crashlink.core.Function.type">type</a></code></li>
+<li><code><a title="crashlink.core.Function.version" href="#crashlink.core.Function.version">version</a></code></li>
 </ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.GUID" href="#crashlink.core.GUID">GUID</a></code></h4>
 </li>
 <li>
 <h4><code><a title="crashlink.core.I32" href="#crashlink.core.I32">I32</a></code></h4>
@@ -6599,7 +8867,9 @@ attributes &ndash; see the documentation for details.</p></div>
 <h4><code><a title="crashlink.core.RawData" href="#crashlink.core.RawData">RawData</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.RawData.deserialise" href="#crashlink.core.RawData.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.RawData.length" href="#crashlink.core.RawData.length">length</a></code></li>
 <li><code><a title="crashlink.core.RawData.serialise" href="#crashlink.core.RawData.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.RawData.value" href="#crashlink.core.RawData.value">value</a></code></li>
 </ul>
 </li>
 <li>
@@ -6637,13 +8907,18 @@ attributes &ndash; see the documentation for details.</p></div>
 <ul class="">
 <li><code><a title="crashlink.core.SerialisableF64.deserialise" href="#crashlink.core.SerialisableF64.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.SerialisableF64.serialise" href="#crashlink.core.SerialisableF64.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.SerialisableF64.value" href="#crashlink.core.SerialisableF64.value">value</a></code></li>
 </ul>
 </li>
 <li>
 <h4><code><a title="crashlink.core.SerialisableInt" href="#crashlink.core.SerialisableInt">SerialisableInt</a></code></h4>
-<ul class="">
+<ul class="two-column">
+<li><code><a title="crashlink.core.SerialisableInt.byteorder" href="#crashlink.core.SerialisableInt.byteorder">byteorder</a></code></li>
 <li><code><a title="crashlink.core.SerialisableInt.deserialise" href="#crashlink.core.SerialisableInt.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.SerialisableInt.length" href="#crashlink.core.SerialisableInt.length">length</a></code></li>
 <li><code><a title="crashlink.core.SerialisableInt.serialise" href="#crashlink.core.SerialisableInt.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.SerialisableInt.signed" href="#crashlink.core.SerialisableInt.signed">signed</a></code></li>
+<li><code><a title="crashlink.core.SerialisableInt.value" href="#crashlink.core.SerialisableInt.value">value</a></code></li>
 </ul>
 </li>
 <li>
@@ -6684,6 +8959,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <ul class="">
 <li><code><a title="crashlink.core.VarInt.deserialise" href="#crashlink.core.VarInt.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.VarInt.serialise" href="#crashlink.core.VarInt.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.VarInt.value" href="#crashlink.core.VarInt.value">value</a></code></li>
 </ul>
 </li>
 <li>
@@ -6750,7 +9026,7 @@ attributes &ndash; see the documentation for details.</p></div>
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
 </footer>
 </body>
 </html>
