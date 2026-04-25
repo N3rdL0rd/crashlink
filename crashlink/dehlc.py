@@ -88,7 +88,7 @@ def code_from_bin(
         val = binary.get_int_from_virtual_address(address, size)
         # dbg_print(f"Reading int sized {size:x} from 0x{address:x} -> {val}")
         if val is not None:
-            return val
+            return int(val)
         return 0
 
     def read_bytes(address: int, size: int) -> bytes:

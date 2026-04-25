@@ -677,7 +677,7 @@ def gen_mkdocs(code: Bytecode, site_name: str = "API Reference") -> Dict[str, st
     )
 
     # Derive sidebar structure from generated pages
-    dirs: set = set()
+    dirs: set[str] = set()
     top_files: List[str] = []
     prefix = "src/content/docs/"
     for path in res:

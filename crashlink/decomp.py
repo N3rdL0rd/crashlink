@@ -1107,7 +1107,7 @@ class IRWhileLoop(IRStatement):
     Represents a while loop: while (condition) { body }
     """
 
-    condition: IRStatement
+    condition: IRExpression
     body: IRBlock
 
     def __init__(self, code: Bytecode, condition: IRExpression, body: IRBlock):
@@ -1126,9 +1126,8 @@ class IRWhileLoop(IRStatement):
         self.comment = ""
 
     def get_children(self) -> List[IRStatement]:
-        children = []
-        if isinstance(self.condition, IRStatement):
-            children.append(self.condition)
+        children: List[IRStatement] = []
+        children.append(self.condition)
         children.append(self.body)
         return children
 
@@ -1594,7 +1593,7 @@ class IRConditionInliner(TraversingIROptimizer):
             inlined_something = False
 
             if isinstance(current_stmt, IRAssign) and isinstance(current_stmt.expr, IRExpression):
-                assigned_local: IRLocal | IRField = current_stmt.target
+                assigned_local: IRLocal | IRField | IRArrayAccess = current_stmt.target
                 expr_to_inline: IRExpression = current_stmt.expr
 
                 if isinstance(assigned_local, IRLocal) and self._is_user_local(assigned_local):
@@ -1715,7 +1714,7 @@ class IRConditionInliner(TraversingIROptimizer):
         block.statements = new_statements
 
     def _try_inline_into_boolexpr(
-        self, bool_expr: IRBoolExpr, target: IRLocal | IRField, expr_to_inline: IRExpression
+        self, bool_expr: IRBoolExpr, target: IRLocal | IRField | IRArrayAccess, expr_to_inline: IRExpression
     ) -> Optional[IRBoolExpr]:
         modified = False
         new_left = bool_expr.left
@@ -1748,7 +1747,7 @@ class IRConditionInliner(TraversingIROptimizer):
     def _try_inline_into_generic_expr(
         self,
         current_expr: IRExpression,
-        target: IRLocal | IRField,
+        target: IRLocal | IRField | IRArrayAccess,
         expr_to_inline: IRExpression,
     ) -> Optional[IRExpression]:
         if current_expr == target:
@@ -1837,7 +1836,7 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
         return IRBoolExpr(expr.code, expr.op, expr.left, expr.right)
 
     def _inline_into_boolexpr(
-        self, bool_expr: IRBoolExpr, target: IRLocal | IRField, expr_to_inline: IRExpression
+        self, bool_expr: IRBoolExpr, target: IRLocal | IRField | IRArrayAccess, expr_to_inline: IRExpression
     ) -> Optional[IRBoolExpr]:
         modified = False
         new_left = bool_expr.left
@@ -1856,7 +1855,7 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
             return bool_expr
         return None
 
-    def _statement_reads_target(self, statement: IRStatement, target: IRLocal | IRField) -> bool:
+    def _statement_reads_target(self, statement: IRStatement, target: IRLocal | IRField | IRArrayAccess) -> bool:
         if statement == target:
             return True
         if isinstance(statement, IRAssign):
@@ -3031,7 +3030,7 @@ class IRFunction:
                 dst_local = self.locals[op.df["dst"].value]
                 obj_local = self.locals[op.df["obj"].value]
                 obj_type = obj_local.get_type()
-                if isinstance(obj_type.definition, (Obj, Virtual)):
+                if isinstance(obj_type.definition, Obj):
                     fid = op.df["field"].value
                     if fid < len(obj_type.definition.virtuals):
                         from .core import fIndex
