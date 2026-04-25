@@ -35,7 +35,7 @@ try:
             """
             from tqdm import tqdm as _tqdm
 
-            return _tqdm(*args, **kwargs, ascii=True) # type: ignore[call-overload]
+            return _tqdm(*args, **kwargs, ascii=True)  # type: ignore[call-overload]
     else:
         from tqdm import tqdm
 
@@ -121,7 +121,8 @@ class RawData(Serialisable):
     """
     A block of raw data.
     """
-    __slots__ = ('value', 'length')
+
+    __slots__ = ("value", "length")
 
     def __init__(self, length: int):
         self.value: bytes = b""
@@ -139,7 +140,8 @@ class SerialisableInt(Serialisable):
     """
     Integer of the specified byte length.
     """
-    __slots__ = ('value', 'length', 'byteorder', 'signed')
+
+    __slots__ = ("value", "length", "byteorder", "signed")
 
     def __init__(self) -> None:
         self.value: int = -1
@@ -174,7 +176,8 @@ class SerialisableF64(Serialisable):
     """
     A standard 64-bit float.
     """
-    __slots__ = ('value',)
+
+    __slots__ = ("value",)
 
     def __init__(self) -> None:
         self.value = 0.0
@@ -195,7 +198,8 @@ class VarInt(Serialisable):
     """
     Variable-length integer - can be 1, 2, or 4 bytes.
     """
-    __slots__ = ('value',)
+
+    __slots__ = ("value",)
 
     def __init__(self, value: int = 0):
         self.value: int = value
@@ -256,6 +260,7 @@ class ResolvableVarInt(VarInt, ABC):
     """
     Base class for resolvable VarInts. Call `resolve` to get a direct reference to the object it points to.
     """
+
     __slots__ = ()
 
     @abstractmethod
@@ -270,6 +275,7 @@ class fIndex(ResolvableVarInt):
     """
     Abstract class based on VarInt to represent a distinct function index instead of just an arbitrary number.
     """
+
     __slots__ = ()
 
     def resolve(self, code: "Bytecode") -> "Function|Native":
@@ -286,6 +292,7 @@ class tIndex(ResolvableVarInt):
     """
     Reference to a type in the bytecode.
     """
+
     __slots__ = ()
 
     def resolve(self, code: "Bytecode") -> "Type":
@@ -296,6 +303,7 @@ class gIndex(ResolvableVarInt):
     """
     Reference to a global object in the bytecode.
     """
+
     __slots__ = ()
 
     def resolve(self, code: "Bytecode") -> "Type":
@@ -312,6 +320,7 @@ class strRef(ResolvableVarInt):
     """
     Reference to a string in the bytecode.
     """
+
     __slots__ = ()
 
     def resolve(self, code: "Bytecode") -> str:
@@ -322,6 +331,7 @@ class intRef(ResolvableVarInt):
     """
     Reference to an integer in the bytecode.
     """
+
     __slots__ = ()
 
     def resolve(self, code: "Bytecode") -> SerialisableInt:
@@ -332,6 +342,7 @@ class floatRef(ResolvableVarInt):
     """
     Reference to a float in the bytecode.
     """
+
     __slots__ = ()
 
     def resolve(self, code: "Bytecode") -> SerialisableF64:
@@ -342,6 +353,7 @@ class bytesRef(ResolvableVarInt):
     """
     Reference to a byte string in the bytecode.
     """
+
     __slots__ = ()
 
     def resolve(self, code: "Bytecode") -> bytes:
@@ -355,6 +367,7 @@ class fieldRef(ResolvableVarInt):
     """
     Reference to a field in an object definition.
     """
+
     obj: Optional["Obj|Virtual"] = None
 
     def resolve(self, code: "Bytecode") -> "Field":
@@ -1569,7 +1582,21 @@ class Function(Serialisable):
     """
     Represents a function in the bytecode. Due to the interesting ways in which HashLink works, this does not have a name or a signature, but rather a return type and a list of registers and opcodes.
     """
-    __slots__ = ('type', 'findex', 'nregs', 'nops', 'regs', 'ops', 'has_debug', 'version', 'debuginfo', 'nassigns', 'assigns', 'calls')
+
+    __slots__ = (
+        "type",
+        "findex",
+        "nregs",
+        "nops",
+        "regs",
+        "ops",
+        "has_debug",
+        "version",
+        "debuginfo",
+        "nassigns",
+        "assigns",
+        "calls",
+    )
 
     def __init__(self) -> None:
         self.type = tIndex()
@@ -1698,7 +1725,8 @@ class Constant(Serialisable):
     """
     Represents a bytecode constant.
     """
-    __slots__ = ('_global', 'nfields', 'fields')
+
+    __slots__ = ("_global", "nfields", "fields")
 
     def __init__(self) -> None:
         self._global = gIndex()

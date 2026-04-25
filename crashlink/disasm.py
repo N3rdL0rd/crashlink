@@ -648,7 +648,9 @@ def gen_mkdocs(code: Bytecode, site_name: str = "API Reference") -> Dict[str, st
         nonlocal num_classes
         if getattr(defn, "_is_static", None) is True and getattr(defn, "_dynamic", None) is not None:
             return
-        static_obj: Optional[Obj] = getattr(defn, "_static", None) if getattr(defn, "_is_static", None) is False else None
+        static_obj: Optional[Obj] = (
+            getattr(defn, "_static", None) if getattr(defn, "_is_static", None) is False else None
+        )
         page_name = destaticify(defn.name.resolve(code))
         res["src/content/docs/" + _class_md_path(page_name)] = gen_mkdocs_for_obj(code, defn, static_obj)
         num_classes += 1
@@ -683,7 +685,7 @@ def gen_mkdocs(code: Bytecode, site_name: str = "API Reference") -> Dict[str, st
     for path in res:
         if not path.startswith(prefix) or path == prefix + "index.md":
             continue
-        rel = path[len(prefix):]
+        rel = path[len(prefix) :]
         if "/" in rel:
             dirs.add(rel.split("/")[0])
         else:
@@ -700,7 +702,9 @@ def gen_mkdocs(code: Bytecode, site_name: str = "API Reference") -> Dict[str, st
         sidebar_lines.append("          ] },")
     for d in sorted(dirs):
         safe = d.replace("'", "\\'")
-        sidebar_lines.append(f"          {{ label: '{safe}', autogenerate: {{ directory: '{safe}' }}, collapsed: true }},")
+        sidebar_lines.append(
+            f"          {{ label: '{safe}', autogenerate: {{ directory: '{safe}' }}, collapsed: true }},"
+        )
     sidebar_lines.append("        ],")
     sidebar_str = "\n".join(sidebar_lines)
 
@@ -720,19 +724,19 @@ def gen_mkdocs(code: Bytecode, site_name: str = "API Reference") -> Dict[str, st
     )
 
     res["package.json"] = (
-        '{\n'
+        "{\n"
         '  "name": "api-reference",\n'
         '  "type": "module",\n'
         '  "scripts": {\n'
         '    "dev": "astro dev",\n'
         '    "build": "astro build",\n'
         '    "preview": "astro preview"\n'
-        '  },\n'
+        "  },\n"
         '  "dependencies": {\n'
         '    "@astrojs/starlight": "^0.32.0",\n'
         '    "astro": "^5.0.0"\n'
-        '  }\n'
-        '}\n'
+        "  }\n"
+        "}\n"
     )
 
     res["tsconfig.json"] = '{\n  "extends": "astro/tsconfigs/strict"\n}\n'

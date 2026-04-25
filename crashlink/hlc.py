@@ -1866,9 +1866,7 @@ def generate_functions(code: Bytecode) -> List[str]:
                             "Asm is not supported by either the official HL/C compiler or crashlink. This is done intentionally for feature parity."
                         )
                     case "Catch":
-                        raise MalformedBytecode(
-                            "Catch is not yet supported by crashlink HL/C code generation."
-                        )
+                        raise MalformedBytecode("Catch is not yet supported by crashlink HL/C code generation.")
                     case _:
                         unknown_ops.add(op.op if op.op else "unknown?????")
                         continue
