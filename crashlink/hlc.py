@@ -1249,7 +1249,7 @@ def generate_functions(code: Bytecode) -> List[str]:
                         _float_kind = function.regs[df["dst"].value].resolve(code).kind.value
                         rhs = f"{_fstr}f" if _float_kind == Type.Kind.F32.value else _fstr
                     case "Bool":
-                        rhs = "true" if df["value"] else "false"
+                        rhs = "true" if str(df["value"]) == "True" else "false"
                     case "Bytes":
                         # TODO not sure this is right - might be bytes pool past v5?
                         rhs = f'(vbyte*)USTR("{code.strings.value[df["ptr"].value]}")'
@@ -1346,20 +1346,104 @@ def generate_functions(code: Bytecode) -> List[str]:
                             call_args_str = ", ".join([obj] + [f"r{r.value}" for r in arg_regs])
                             rhs = f"{casted_fun}({call_args_str})"
                         elif isinstance(obj_t, Virtual):
-                            raise NotImplementedError(
-                                f"CallMethod/CallThis on Virtual type not implemented at op {i} in function {function.findex}"
-                            )
-                        else:
-                            raise MalformedBytecode(
-                                f"CallMethod/CallThis on non-Obj/Struct type: {obj_t} at op {i} in function {function.findex}"
-                            )
+                            fid = df["field"].value
+                            dst_reg = df["dst"].value
+                            ret_type_idx = function.regs[dst_reg]
+                            ret_type = ret_type_idx.resolve(code)
+                            ret_ctype = ctype(code, ret_type, ret_type_idx.value)
+                            ret_is_ptr = is_ptr(ret_type.kind.value)
+                            ret_is_void = ret_type.kind.value == Type.Kind.VOID.value
+
+                            dyn_idx = code.find_prim_type(Type.Kind.DYN)
+                            arg_type_idxs = [dyn_idx] + [function.regs[r.value] for r in arg_regs]
+                            meth = cast_fun(code, f"hl_vfields(r{obj_reg})[{fid}]", ret_type_idx, arg_type_idxs)
+                            call_args = ", ".join([f"r{obj_reg}->value"] + [f"r{r.value}" for r in arg_regs])
+
+                            assign = ""
+                            if not ret_is_void:
+                                assign = f"r{dst_reg} = ({ret_ctype})"
+
+                            field_info = obj_t.fields[fid]
+                            field_name = field_info.name.resolve(code)
+                            field_hash = hl_hash_utf8(field_name)
+                            field_type_idx = field_info.type
+
+                            has_dst = False
+                            no_semi = True
+
+                            opline(i, f"if( hl_vfields(r{obj_reg})[{fid}] ) {assign}{meth}({call_args}); else {{")
+                            with indent:
+                                if arg_regs:
+                                    args_arr_parts = []
+                                    for ar in arg_regs:
+                                        at = function.regs[ar.value].resolve(code)
+                                        if is_ptr(at.kind.value):
+                                            args_arr_parts.append(f"(void*)r{ar.value}")
+                                        else:
+                                            args_arr_parts.append(f"&r{ar.value}")
+                                    line(f"void *args[] = {{{', '.join(args_arr_parts)}}};")
+                                else:
+                                    pass
+                                if ret_is_void:
+                                    line(f"hl_dyn_call_obj(r{obj_reg}->value, &t${field_type_idx.value}, {field_hash}/*{field_name}*/, \"{field_name}\", {'NULL' if not arg_regs else 'args'}, NULL);")
+                                elif ret_is_ptr:
+                                    line(f"r{dst_reg} = ({ret_ctype})hl_dyn_call_obj(r{obj_reg}->value, &t${field_type_idx.value}, {field_hash}/*{field_name}*/, \"{field_name}\", {'NULL' if not arg_regs else 'args'}, NULL);")
+                                else:
+                                    prefix = dyn_prefix(ret_type)
+                                    line(f"{{ vdynamic _ret; hl_dyn_call_obj(r{obj_reg}->value, &t${field_type_idx.value}, {field_hash}/*{field_name}*/, \"{field_name}\", {'NULL' if not arg_regs else 'args'}, &_ret); r{dst_reg} = ({ret_ctype})_ret.v.{prefix}; }}")
+                            line("}")
+                            continue
                     case "CallClosure":
                         closure_reg = df["fun"]
                         closure_reg_str = regstr(closure_reg)
                         closure_type = function.regs[closure_reg.value].resolve(code)
                         if closure_type.kind.value == Type.Kind.DYN.value:
-                            unknown_ops.add("CallClosure_Dynamic")
-                            opline(i, f"/* CallClosure on dynamic value r{closure_reg.value} not implemented */")
+                            call_arg_regs = df["args"].value
+                            dst_reg = df["dst"].value
+                            ret_type_idx = function.regs[dst_reg]
+                            ret_type = ret_type_idx.resolve(code)
+                            dynamic_return_kinds = {
+                                Type.Kind.DYN.value,
+                                Type.Kind.FUN.value,
+                                Type.Kind.OBJ.value,
+                                Type.Kind.ARRAY.value,
+                                Type.Kind.VIRTUAL.value,
+                                Type.Kind.DYNOBJ.value,
+                                Type.Kind.ENUM.value,
+                                Type.Kind.NULL.value,
+                                Type.Kind.METHOD.value,
+                                Type.Kind.STRUCT.value,
+                            }
+                            has_dst = False
+                            no_semi = True
+                            opline(i, "{")
+                            with indent:
+                                if call_arg_regs:
+                                    args_arr_parts = []
+                                    for ar in call_arg_regs:
+                                        at = function.regs[ar.value].resolve(code)
+                                        if at.kind.value == Type.Kind.DYN.value:
+                                            args_arr_parts.append(f"r{ar.value}")
+                                        elif is_ptr(at.kind.value):
+                                            args_arr_parts.append(f"(vdynamic*)r{ar.value}")
+                                        else:
+                                            args_arr_parts.append(f"hl_make_dyn(&r{ar.value}, &t${function.regs[ar.value].value})")
+                                    line(f"vdynamic *args[] = {{{', '.join(args_arr_parts)}}};")
+                                args_name = "NULL" if not call_arg_regs else "args"
+                                if ret_type.kind.value == Type.Kind.VOID.value:
+                                    line(f"hl_dyn_call((vclosure*){closure_reg_str}, {args_name}, {len(call_arg_regs)});")
+                                elif ret_type.kind.value in dynamic_return_kinds:
+                                    ret_ctype = ctype(code, ret_type, ret_type_idx.value)
+                                    line(f"r{dst_reg} = ({ret_ctype})hl_dyn_call((vclosure*){closure_reg_str}, {args_name}, {len(call_arg_regs)});")
+                                else:
+                                    ret_ctype = ctype(code, ret_type, ret_type_idx.value)
+                                    prefix = dyn_prefix(ret_type)
+                                    type_arg = ""
+                                    if ret_type.kind.value not in {Type.Kind.F32.value, Type.Kind.F64.value, Type.Kind.I64.value}:
+                                        type_arg = f", &t${ret_type_idx.value}"
+                                    line(f"vdynamic *_ret = hl_dyn_call((vclosure*){closure_reg_str}, {args_name}, {len(call_arg_regs)});")
+                                    line(f"r{dst_reg} = ({ret_ctype})hl_dyn_cast{prefix}(&_ret, &hlt_dyn{type_arg});")
+                            line("}")
                             continue
                         if closure_type.kind.value != Type.Kind.FUN.value:
                             raise MalformedBytecode(f"CallClosure on an unexpected type: {closure_type}")
@@ -1452,6 +1536,12 @@ def generate_functions(code: Bytecode) -> List[str]:
                     case "JUGte":
                         has_dst, no_semi = False, True
                         rhs = f"if( ((unsigned)r{df['a']}) >= ((unsigned)r{df['b']}) ) goto Op_{df['offset'].value + i + 1};"
+                    case "JNotLt":
+                        has_dst, no_semi = False, True
+                        rhs = f"if( !(r{df['a']} < r{df['b']}) ) goto Op_{df['offset'].value + i + 1};"
+                    case "JNotGte":
+                        has_dst, no_semi = False, True
+                        rhs = f"if( !(r{df['a']} >= r{df['b']}) ) goto Op_{df['offset'].value + i + 1};"
                     case "JAlways":
                         has_dst, no_semi = False, True
                         rhs = f"goto Op_{df['offset'].value + i + 1};"
@@ -1537,9 +1627,9 @@ def generate_functions(code: Bytecode) -> List[str]:
 
                                 dyn_get_call = f"(({field_ctype})hl_dyn_get{prefix}(r{obj_reg}->value, {field_hash}/*{field_name}*/{type_arg}))"
 
-                                direct_access = f"(*(({field_ctype}*)hl_vfields({obj_reg})[{field_idx}]))"
+                                direct_access = f"(*(({field_ctype}*)hl_vfields(r{obj_reg})[{field_idx}]))"
 
-                                rhs = f"(hl_vfields({obj_reg})[{field_idx}] ? {direct_access} : {dyn_get_call})"
+                                rhs = f"(hl_vfields(r{obj_reg})[{field_idx}] ? {direct_access} : {dyn_get_call})"
                     case "SetField" | "SetThis":
                         if op.op == "SetField":
                             obj_reg_idx = df["obj"].value
@@ -1591,8 +1681,8 @@ def generate_functions(code: Bytecode) -> List[str]:
 
                                 dyn_set_call = f"hl_dyn_set{prefix}({obj_regs}->value, {field_hash}/*{field_name}*/{type_arg}, {val_regs})"
                                 val_cast = f"({field_ctype}){val_regs}"
-                                direct_set = f"*({field_ctype}*)(hl_vfields({obj_regs})[{field_idx}]) = {val_cast}"
-                                rhs = f"if (hl_vfields({obj_regs})[{field_idx}]) {direct_set}; else {dyn_set_call}"
+                                direct_set = f"*({field_ctype}*)(hl_vfields(r{obj_reg_idx})[{field_idx}]) = {val_cast}"
+                                rhs = f"if (hl_vfields(r{obj_reg_idx})[{field_idx}]) {direct_set}; else {dyn_set_call}"
                             case _:
                                 unknown_ops.add(f"SetField on {obj_tres.kind}")
                                 continue
