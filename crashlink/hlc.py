@@ -87,27 +87,34 @@ def sanitize_ident(name: str) -> str:
     return name
 
 
+def _signed32(v: int) -> int:
+    v = v & 0xFFFFFFFF
+    return v - 0x100000000 if v >= 0x80000000 else v
+
+
 def hl_hash_utf8(name: str) -> int:
-    """Hash UTF-8 string until null terminator"""
+    """Hash UTF-8 string until null terminator - matches C hl_hash_gen"""
     h = 0
     for char in name:
         char_val = ord(char)
         if char_val == 0:
             break
-        h = (223 * h + char_val) & 0xFFFFFFFF
-    h = h % 0x1FFFFF7B
-    return h if h < 0x7FFFFFFF else h - 0x100000000
+        h = _signed32(223 * h + char_val)
+    if h >= 0:
+        return h % 0x1FFFFF7B
+    return -((-h) % 0x1FFFFF7B)
 
 
 def hl_hash(name: bytes) -> int:
-    """General hash function - processes until null terminator"""
+    """General hash function - processes until null terminator - matches C hl_hash_gen"""
     h = 0
     for byte_val in name:
         if byte_val == 0:
             break
-        h = (223 * h + byte_val) & 0xFFFFFFFF
-    h = h % 0x1FFFFF7B
-    return h if h < 0x7FFFFFFF else h - 0x100000000
+        h = _signed32(223 * h + byte_val)
+    if h >= 0:
+        return h % 0x1FFFFF7B
+    return -((-h) % 0x1FFFFF7B)
 
 
 def hash_string(s: str) -> int:
@@ -161,7 +168,7 @@ def _ctype_no_ptr(code: Bytecode, typ: Type, i: int) -> Tuple[str, int]:
     if isinstance(defn, Method):
         return "void", 1
     if isinstance(defn, GUID):
-        return "vguid", 1
+        return "int64", 0
     if isinstance(defn, Obj) or isinstance(defn, Struct):
         return f"obj${i}", 0
 
@@ -213,6 +220,7 @@ def is_ptr(kind: int) -> bool:
         Type.Kind.F32.value,
         Type.Kind.F64.value,
         Type.Kind.BOOL.value,
+        Type.Kind.GUID.value,
     }
 
 
@@ -337,16 +345,48 @@ def generate_structs(code: Bytecode) -> List[str]:
         line(f"typedef struct _obj${i} *obj${i}; /* {dfn.name.resolve(code)} */")
     res.append("")
 
+    line("// Enum constructor struct typedefs")
+    for i, typ in enumerate(types):
+        df = typ.definition
+        if isinstance(df, Enum):
+            for cid, constr in enumerate(df.constructs):
+                if constr.params:
+                    c_name = enum_constr_type(code, df, cid)
+                    line(f"typedef struct {{")
+                    with indent:
+                        line("HL__ENUM_CONSTRUCT__")
+                        for pid, param_tindex in enumerate(constr.params):
+                            param_type = ctype(code, param_tindex.resolve(code), param_tindex.value)
+                            line(f"{param_type} p{pid};")
+                    line(f"}} {c_name};")
+    res.append("")
+
     line("// Class/Struct definitions")
     for i, typ in tqdm(sorted(struct_map.items())) if USE_TQDM else sorted(struct_map.items()):  # pyright: ignore[reportPossiblyUnboundVariable]
         df = typ.definition
         assert isinstance(df, (Obj, Struct)), f"Expected definition to be Obj or Struct, got {type(df).__name__}."
+        is_struct = isinstance(df, Struct)
+        root_is_struct = is_struct
+        current = df
+        while current.super.value >= 0:
+            parent_type = current.super.resolve(code)
+            parent_def = parent_type.definition
+            if isinstance(parent_def, (Obj, Struct)):
+                if isinstance(parent_def, Obj) and not isinstance(parent_def, Struct):
+                    root_is_struct = False
+                    break
+                current = parent_def
+            else:
+                break
+        has_parent = df.super.value >= 0
         line(f"struct _obj${i} {{ /* {df.name.resolve(code)} */")
         with indent:
-            line("hl_type *$type;")
+            if not has_parent and not root_is_struct:
+                line("hl_type *$type;")
+            elif has_parent and not root_is_struct:
+                line("hl_type *$type;")
             for f in df.resolve_fields(code):
                 field_type = ctype(code, f.type.resolve(code), f.type.value)
-                # A STRUCT FIELD IS A C IDENTIFIER, SO IT MUST BE SANITIZED.
                 field_name = sanitize_ident(f.name.resolve(code))
                 line(f"{field_type} {field_name};")
         line("};")
@@ -472,6 +512,7 @@ def is_gc_ptr(typ: Type) -> bool:
         Type.Kind.REF.value,
         Type.Kind.METHOD.value,
         Type.Kind.PACKED.value,
+        Type.Kind.GUID.value,
     }
     return typ.kind.value not in NON_GC_POINTER_KINDS
 
@@ -538,8 +579,11 @@ def generate_globals(code: Bytecode) -> List[str]:
                 if df._global and df._global.value:
                     line(f"enumt${j}.global_value = (void**)&g${df._global.value - 1};")
                 line(f"hl_init_enum(&t${j},ctx);")
-            elif isinstance(df, (Null, Ref)):
-                line(f"t${j}.tparam = &t${df.type.value};")
+            elif isinstance(df, (Null, Ref, Packed)):
+                if isinstance(df, Packed):
+                    line(f"t${j}.tparam = &t${df.inner.value};")
+                else:
+                    line(f"t${j}.tparam = &t${df.type.value};")
     line("}\n")
 
     line("\nvoid hl_init_roots() {")
@@ -581,22 +625,25 @@ unknown_ops = set()
 
 def dyn_value_field(typ: Type) -> str:
     """
-    Returns the name of the C union field used to store a value of a given type
-    within a vdynamic struct.
+    Returns the C member access path for storing a value within a vdynamic struct.
+    E.g. "v.d" for F64, "v.i" for I32, "v.ptr" for pointer types.
     """
     dfn = typ.definition
-    if isinstance(dfn, (U8, U16, I32)):
-        return "i"
-    if isinstance(dfn, I64):
-        return "i64"
+    if isinstance(dfn, U8):
+        return "v.ui8"
+    if isinstance(dfn, U16):
+        return "v.ui16"
+    if isinstance(dfn, I32):
+        return "v.i"
+    if isinstance(dfn, (I64, GUID)):
+        return "v.i64"
     if isinstance(dfn, F32):
-        return "f"
+        return "v.f"
     if isinstance(dfn, F64):
-        return "d"
+        return "v.d"
     if isinstance(dfn, Bool):
-        return "b"
-    # All other types (HBytes, HDyn, HFun, HObj, etc.) are pointers.
-    return "ptr"
+        return "v.b"
+    return "v.ptr"
 
 
 COMP_OP_MAP = {
@@ -738,8 +785,8 @@ def generate_reflection(code: Bytecode) -> List[str]:
                                             line(f"{call_str};")
                                             line("return NULL;")
                                         else:
-                                            line(f"out->v.{dyn_value_field(current_ret_type)} = {call_str};")
-                                            line(f"return &out->v.{dyn_value_field(current_ret_type)};")
+                                            line(f"out->{dyn_value_field(current_ret_type)} = {call_str};")
+                                            line(f"return &out->{dyn_value_field(current_ret_type)};")
                                         found_sig = True
                                         break
                             if not found_sig:
@@ -908,6 +955,30 @@ def generate_function_tables(code: Bytecode) -> List[str]:
     return res
 
 
+def enum_constr_type(code: Bytecode, e: Enum, cid: int) -> str:
+    """
+    Generates the C type name for a specific enum constructor struct.
+    Example: my.pack.MyEnum constructor `MyValue(a:Int)` might become `my_pack_MyEnum_MyValue`.
+    """
+    constr = e.constructs[cid]
+    if not constr.params:
+        return "venum"
+
+    enum_name_str = e.name.resolve(code)
+    c_enum_name = sanitize_ident(enum_name_str.replace(".", "__"))
+
+    constr_name_str = constr.name.resolve(code)
+    c_constr_name = sanitize_ident(constr_name_str)
+
+    if not enum_name_str:
+        return f"Enum_{c_enum_name}"
+
+    if not constr_name_str:
+        return c_enum_name
+
+    return f"{c_enum_name}_{c_constr_name}"
+
+
 def generate_functions(code: Bytecode) -> List[str]:
     global unknown_ops
 
@@ -998,7 +1069,7 @@ def generate_functions(code: Bytecode) -> List[str]:
             assert isinstance(type_a_def.type, tIndex)
             inner_type = type_a_def.type.resolve(code)
             field = dyn_value_field(inner_type)
-            pcompare = f"({reg_a}->v.{field} {comp_op_str} {reg_b}->v.{field})"
+            pcompare = f"({reg_a}->{field} {comp_op_str} {reg_b}->{field})"
 
             if op_name == "JEq":
                 return False, True, f"if ({reg_a} == {reg_b} || ({reg_a} && {reg_b} && {pcompare})) goto {label};"
@@ -1107,29 +1178,6 @@ def generate_functions(code: Bytecode) -> List[str]:
             return "i64"
         return "p"
 
-    def enum_constr_type(code: Bytecode, e: Enum, cid: int) -> str:
-        """
-        Generates the C type name for a specific enum constructor struct.
-        Example: my.pack.MyEnum constructor `MyValue(a:Int)` might become `my_pack_MyEnum_MyValue`.
-        """
-        constr = e.constructs[cid]
-        if not constr.params:
-            return "venum"
-
-        enum_name_str = e.name.resolve(code)
-        c_enum_name = sanitize_ident(enum_name_str.replace(".", "__"))
-
-        constr_name_str = constr.name.resolve(code)
-        c_constr_name = sanitize_ident(constr_name_str)
-
-        if not enum_name_str:
-            return f"Enum_{c_enum_name}"
-
-        if not constr_name_str:
-            return c_enum_name
-
-        return f"{c_enum_name}_{c_constr_name}"
-
     for function in tqdm(code.functions, desc="Generating function prototypes") if USE_TQDM else code.functions:  # pyright: ignore[reportPossiblyUnboundVariable]
         fun = function.type.resolve(code).definition
         assert isinstance(fun, Fun), (
@@ -1188,11 +1236,18 @@ def generate_functions(code: Bytecode) -> List[str]:
 
                 match op.op:
                     case "Mov":
-                        rhs = f"r{df['src']}"
+                        dst_type_idx = function.regs[df["dst"].value]
+                        rhs = rcast(code, df["src"], dst_type_idx, function)
                     case "Int":
-                        rhs = f"{code.ints[df['ptr'].value].value}"
+                        _int_val = code.ints[df['ptr'].value].value
+                        rhs = "0x80000000" if _int_val == -2147483648 else str(_int_val)
                     case "Float":
-                        rhs = f"{code.floats[df['ptr'].value].value}"
+                        _fval = code.floats[df['ptr'].value].value
+                        _fstr = f"{_fval:.19g}"
+                        if "." not in _fstr and "e" not in _fstr:
+                            _fstr += "."
+                        _float_kind = function.regs[df["dst"].value].resolve(code).kind.value
+                        rhs = f"{_fstr}f" if _float_kind == Type.Kind.F32.value else _fstr
                     case "Bool":
                         rhs = "true" if df["value"] else "false"
                     case "Bytes":
@@ -1231,15 +1286,20 @@ def generate_functions(code: Bytecode) -> List[str]:
                     case "UMod":
                         rhs = f"(r{df['b']} == 0) ? 0 : ((unsigned)r{df['a']}) % ((unsigned)r{df['b']})"
                     case "Shl":
-                        rhs = f"r{df['a']} << r{df['b']}"
+                        _shift_kind = function.regs[df["dst"].value].resolve(code).kind.value
+                        _shift_bits = {Type.Kind.U8.value: 8, Type.Kind.U16.value: 16, Type.Kind.I64.value: 64}.get(_shift_kind, 32)
+                        rhs = f"r{df['a']} << (r{df['b']} % {_shift_bits})"
                     case "SShr":
-                        rhs = f"r{df['a']} >> r{df['b']}"
+                        _shift_kind = function.regs[df["dst"].value].resolve(code).kind.value
+                        _shift_bits = {Type.Kind.U8.value: 8, Type.Kind.U16.value: 16, Type.Kind.I64.value: 64}.get(_shift_kind, 32)
+                        rhs = f"r{df['a']} >> (r{df['b']} % {_shift_bits})"
                     case "UShr":
-                        rtype = function.regs[df["dst"].value].resolve(code).kind.value
-                        if rtype == Type.Kind.I64.value:
-                            rhs = f"((uint64)r{df['a']}) >> r{df['b']}"
+                        _shift_kind = function.regs[df["dst"].value].resolve(code).kind.value
+                        _shift_bits = {Type.Kind.U8.value: 8, Type.Kind.U16.value: 16, Type.Kind.I64.value: 64}.get(_shift_kind, 32)
+                        if _shift_kind == Type.Kind.I64.value:
+                            rhs = f"((uint64)r{df['a']}) >> (r{df['b']} % {_shift_bits})"
                         else:
-                            rhs = f"((unsigned)r{df['a']}) >> r{df['b']}"
+                            rhs = f"((unsigned)r{df['a']}) >> (r{df['b']} % {_shift_bits})"
                     case "And":
                         rhs = f"r{df['a']} & r{df['b']}"
                     case "Or":
@@ -1357,19 +1417,21 @@ def generate_functions(code: Bytecode) -> List[str]:
                         rhs = f"hl_alloc_closure_ptr(&t${fun_t}, {func_ptr}, r{df['obj']})"
                     case "GetGlobal":
                         dst_reg = df["dst"].value
-                        dst = ctype(code, function.regs[dst_reg].resolve(code), function.regs[dst_reg])
+                        dst = ctype(code, function.regs[dst_reg].resolve(code), function.regs[dst_reg].value)
                         rhs = f"({dst})g${df['global'].value}"
                     case "SetGlobal":
                         src_reg = df["src"].value
                         has_dst = False
-                        rhs = f"g${df['global'].value} = r{src_reg}"
+                        global_type_idx = code.global_types[df["global"].value]
+                        global_ctype = ctype(code, global_type_idx.resolve(code), global_type_idx.value)
+                        rhs = f"g${df['global'].value} = ({global_ctype})r{src_reg}"
                     case "Ret":
                         has_dst = False
                         if fun.ret.resolve(code).kind.value == Type.Kind.VOID.value:
-                            rhs = "return /* void */"
+                            rhs = "return"
                         else:
                             dst_reg = df["ret"].value
-                            rhs = f"return r{dst_reg}"
+                            rhs = f"return {rcast(code, Reg(dst_reg), fun.ret, function)}"
                     case "JTrue":
                         has_dst, no_semi = False, True
                         rhs = f"if (r{df['cond']}) goto Op_{df['offset'].value + i + 1};"
@@ -1393,32 +1455,20 @@ def generate_functions(code: Bytecode) -> List[str]:
                     case "JAlways":
                         has_dst, no_semi = False, True
                         rhs = f"goto Op_{df['offset'].value + i + 1};"
-                    case "Label" | "Nop":
-                        has_dst = False
-                        rhs = "dummycall_label();"
+                    case "Label":
+                        opline(i, "")
+                        continue
+                    case "Nop":
+                        continue
                     case "ToDyn":
                         if function.regs[df["src"].value].resolve(code).kind.value == Type.Kind.BOOL.value:
                             rhs = f"hl_alloc_dynbool(r{df['src']})"
                         else:
                             has_dst, no_semi = False, True
                             typ = function.regs[df["src"].value].resolve(code)
-                            rhs = f"r{df['dst']} = hl_alloc_dynamic(&t${function.regs[df['src'].value]}); "
-                            match typ.kind.value:
-                                case (
-                                    Type.Kind.U8.value
-                                    | Type.Kind.U16.value
-                                    | Type.Kind.I32.value
-                                    | Type.Kind.BOOL.value
-                                ):
-                                    rhs += f"r{df['dst']}->v.i = r{df['src']};"
-                                case Type.Kind.I64.value:
-                                    rhs += f"r{df['dst']}->v.i64 = r{df['src']};"
-                                case Type.Kind.F32.value:
-                                    rhs += f"r{df['dst']}->v.f = r{df['src']};"
-                                case Type.Kind.F64.value:
-                                    rhs += f"r{df['dst']}->v.d = r{df['src']};"
-                                case _:
-                                    rhs += f"r{df['dst']}->v.ptr = r{df['src']};"
+                            field = dyn_value_field(typ)
+                            rhs = f"r{df['dst']} = hl_alloc_dynamic(&t${function.regs[df['src'].value].value}); "
+                            rhs += f"r{df['dst']}->{field} = r{df['src']};"
                             if is_ptr(typ.kind.value):
                                 rhs = f"if( r{df['src']} == NULL ) r{df['dst']} = NULL; else {{{rhs}}}"
                     case "ToSFloat":
@@ -1430,7 +1480,12 @@ def generate_functions(code: Bytecode) -> List[str]:
                         typ = function.regs[df["dst"].value].resolve(code)
                         rhs = f"r{df['dst']} = ({ctype(code, typ, function.regs[df['dst'].value].value)})(unsigned)r{df['src']}"
                     case "ToInt":
-                        rhs = f"(int)r{df['src']}"
+                        dst_type_idx = function.regs[df["dst"].value]
+                        dst_kind = dst_type_idx.resolve(code).kind.value
+                        if dst_kind == Type.Kind.I64.value:
+                            rhs = f"(int64)r{df['src']}"
+                        else:
+                            rhs = f"(int)r{df['src']}"
                     case "New":
                         dst_reg = df["dst"].value
                         dst_t = function.regs[dst_reg]
@@ -1557,14 +1612,17 @@ def generate_functions(code: Bytecode) -> List[str]:
                         dst_ctype = ctype(code, dst_type_idx.resolve(code), dst_type_idx.value)
                         rhs = f"*({dst_ctype}*)(r{df['bytes'].value} + r{df['index'].value})"
                     case "GetArray":
-                        # Opcode: GetArray: {"dst": Reg, "array": Reg, "index": Reg}
                         arr_type = function.regs[df["array"].value].resolve(code)
                         dst_type_idx = function.regs[df["dst"].value]
                         dst_ctype = ctype(code, dst_type_idx.resolve(code), dst_type_idx.value)
+                        dst_def = dst_type_idx.resolve(code).definition
 
-                        if isinstance(arr_type.definition, Abstract):  # Raw pointer array (e.g. haxe.io.Bytes)
-                            rhs = f"(({dst_ctype}*)r{df['array'].value})[r{df['index'].value}]"
-                        else:  # Standard `varray` with a header
+                        if isinstance(arr_type.definition, Abstract):
+                            if isinstance(dst_def, (Obj, Struct)):
+                                rhs = f"(({dst_ctype})r{df['array'].value}) + r{df['index'].value}"
+                            else:
+                                rhs = f"(({dst_ctype}*)r{df['array'].value})[r{df['index'].value}]"
+                        else:
                             rhs = f"(({dst_ctype}*)(r{df['array'].value} + 1))[r{df['index'].value}]"
                     case "SetUI8" | "SetI8":
                         # Opcode: SetI8: {"bytes": Reg, "index": Reg, "src": Reg}
@@ -1581,13 +1639,16 @@ def generate_functions(code: Bytecode) -> List[str]:
                         rhs = f"*({val_ctype}*)(r{df['bytes'].value} + r{df['index'].value}) = r{df['src'].value}"
                         has_dst = False
                     case "SetArray":
-                        # Opcode: SetArray: {"array": Reg, "index": Reg, "src": Reg}
                         arr_type = function.regs[df["array"].value].resolve(code)
                         val_type_idx = function.regs[df["src"].value]
                         val_ctype = ctype(code, val_type_idx.resolve(code), val_type_idx.value)
+                        val_def = val_type_idx.resolve(code).definition
 
                         if isinstance(arr_type.definition, Abstract):
-                            rhs = f"(({val_ctype}*)r{df['array'].value})[r{df['index'].value}] = r{df['src'].value}"
+                            if isinstance(val_def, (Obj, Struct)):
+                                rhs = f"(({val_ctype})r{df['array'].value})[r{df['index'].value}] = *r{df['src'].value}"
+                            else:
+                                rhs = f"(({val_ctype}*)r{df['array'].value})[r{df['index'].value}] = r{df['src'].value}"
                         else:
                             rhs = (
                                 f"(({val_ctype}*)(r{df['array'].value} + 1))[r{df['index'].value}] = r{df['src'].value}"
@@ -1603,7 +1664,7 @@ def generate_functions(code: Bytecode) -> List[str]:
 
                         if isinstance(src_type.definition, Null):
                             assert isinstance(src_type.definition.type, tIndex)
-                            rhs = f"r{src_reg} ? r{src_reg}->v.{dyn_value_field(src_type.definition.type.resolve(code))} : 0"
+                            rhs = f"r{src_reg} ? r{src_reg}->{dyn_value_field(src_type.definition.type.resolve(code))} : 0"
                         else:
                             prefix = dyn_prefix(dst_type)
                             type_arg = ""
@@ -1698,7 +1759,7 @@ def generate_functions(code: Bytecode) -> List[str]:
                                     target_var = "tmp"
 
                                     dst_type_tindex = function.regs[dst_reg_idx].value
-                                    line(f"{target_var} = hl_alloc_enum(&t{dst_type_tindex}, {cid});")
+                                    line(f"{target_var} = hl_alloc_enum(&t${dst_type_tindex}, {cid});")
 
                                     constr_ctype = enum_constr_type(code, enum_def, cid)
                                     param_types = enum_def.constructs[cid].params
@@ -1712,7 +1773,7 @@ def generate_functions(code: Bytecode) -> List[str]:
                             else:
                                 target_var = f"r{dst_reg_idx}"
                                 dst_type_tindex = function.regs[dst_reg_idx].value
-                                line(f"{target_var} = hl_alloc_enum(&t{dst_type_tindex}, {cid});")
+                                line(f"{target_var} = hl_alloc_enum(&t${dst_type_tindex}, {cid});")
 
                                 constr_ctype = enum_constr_type(code, enum_def, cid)
                                 param_types = enum_def.constructs[cid].params
@@ -1722,11 +1783,9 @@ def generate_functions(code: Bytecode) -> List[str]:
                                     line(f"(({constr_ctype}*){target_var})->p{idx} = {val_cast};")
                         continue
                     case "EnumAlloc":
-                        # Opcode: {"dst": Reg, "construct": RefEnumConstruct}
-                        # OCaml: sexpr "%s = hl_alloc_enum(%s,%d)" (reg r) (type_value ctx (rtype r)) cid
                         dst_type_idx = function.regs[df["dst"].value]
                         cid = df["construct"].value
-                        rhs = f"hl_alloc_enum(&t{dst_type_idx.value}, {cid})"
+                        rhs = f"hl_alloc_enum(&t${dst_type_idx.value}, {cid})"
                     case "EnumIndex":
                         # Opcode: {"dst": Reg, "value": Reg}
                         # OCaml: sexpr "%s = HL__ENUM_INDEX__(%s)" (reg r) (reg v)
@@ -1760,13 +1819,7 @@ def generate_functions(code: Bytecode) -> List[str]:
                         enum_type = function.regs[enum_reg_idx].resolve(code)
                         enum_def = enum_type.definition
                         assert isinstance(enum_def, Enum), "SetEnumField target must be an Enum type."
-                        cid_for_type = -1
-                        for i, constr in enumerate(enum_def.constructs):
-                            if constr.params:
-                                cid_for_type = i
-                                break
-                        if cid_for_type == -1:
-                            raise MalformedBytecode(f"SetEnumField used on an enum with no parameters at op {i}")
+                        cid_for_type = 0  # OCaml always uses constructor 0 for SetEnumField type info
 
                         constr_ctype = enum_constr_type(code, enum_def, cid_for_type)
                         field_type_idx = enum_def.constructs[cid_for_type].params[pid]
@@ -1797,7 +1850,7 @@ def generate_functions(code: Bytecode) -> List[str]:
                         continue
                     case "EndTrap":
                         trap_depth -= 1
-                        opline(i, f"hl_endtrap(&trap${trap_depth});")
+                        opline(i, f"hl_endtrap(trap${trap_depth});")
                         continue
                     case "Assert":
                         has_dst = False
@@ -1808,7 +1861,7 @@ def generate_functions(code: Bytecode) -> List[str]:
                         rhs = f"*r{df['src']}"
                     case "Setref":
                         has_dst = False
-                        rhs = r"*r{df['dst']} = r{df['value']}"
+                        rhs = f"*r{df['dst']} = r{df['value']}"
                     case "RefData":
                         dst_reg = df["dst"].value
                         src_reg = df["src"].value
@@ -1944,7 +1997,7 @@ def code_to_c(code: Bytecode) -> str:
     res += generate_globals(code)
 
     sec("Dummy label call")
-    line("void dummycall_label() { /* dummy */ }")
+    line("// no-op")
 
     sec("Functions")
     res += generate_functions(code)
