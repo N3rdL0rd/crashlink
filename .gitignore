@@ -44,3 +44,4 @@ tests/generate_hashes.exe
 test_out/
 /*.exe
 /libhl.dll
+/*.c
