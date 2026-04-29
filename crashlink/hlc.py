@@ -4,6 +4,7 @@ import enum
 from typing import Any, Callable, List, Literal, Optional, Dict, Tuple
 
 from crashlink.errors import MalformedBytecode
+from crashlink.globals import DEBUG, VERSION
 
 from .core import *
 from .core import USE_TQDM
@@ -85,6 +86,16 @@ def sanitize_ident(name: str) -> str:
     if name in KEYWORDS or name.startswith("__"):
         return "_hx_" + name
     return name
+
+
+def sanitize_field_ident(name: str, fallback: str) -> str:
+    if not name:
+        return fallback
+    return sanitize_ident(name)
+
+
+def c_escape_string(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
 
 
 def _signed32(v: int) -> int:
@@ -276,27 +287,51 @@ KIND_SHELLS = {
 }
 
 
-def generate_natives(code: Bytecode) -> List[str]:
-    """Generates forward declarations for abstract types and native function prototypes."""
+def generate_abstract_forwards(code: Bytecode) -> List[str]:
+    """Generates forward declarations for abstract C types used by HL natives and objects."""
     res = []
     indent = Indenter()
 
     def line(*args: Any) -> None:
         res.append(indent.current_indent + " ".join(str(arg) for arg in args))
 
-    line("// Abstract type forward declarations")
-    all_types = code.types
     abstract_names = set()
-    for typ in all_types:
-        if isinstance(typ.definition, Abstract):
-            name = typ.definition.name.resolve(code)
+
+    def visit_type(typ: Type) -> None:
+        dfn = typ.definition
+        if isinstance(dfn, Abstract):
+            name = dfn.name.resolve(code)
             if name not in {"hl_tls", "hl_mutex", "hl_thread"}:
                 abstract_names.add(sanitize_ident(name))
+        elif isinstance(dfn, Fun):
+            visit_type(dfn.ret.resolve(code))
+            for arg in dfn.args:
+                visit_type(arg.resolve(code))
+        elif isinstance(dfn, (Ref, Null, Packed)):
+            inner = dfn.type if hasattr(dfn, "type") else dfn.inner
+            visit_type(inner.resolve(code))
+
+    for typ in code.types:
+        visit_type(typ)
+
+    for native in code.natives:
+        native_type = native.type.resolve(code)
+        if isinstance(native_type, Type):
+            visit_type(native_type)
 
     for name in sorted(list(abstract_names)):
         line(f"typedef struct _{name} {name};")
 
-    res.append("")
+    return res
+
+
+def generate_natives(code: Bytecode) -> List[str]:
+    """Generates native function prototypes and wrapper functions."""
+    res = []
+    indent = Indenter()
+
+    def line(*args: Any) -> None:
+        res.append(indent.current_indent + " ".join(str(arg) for arg in args))
 
     line("// Native function prototypes")
     sorted_natives = sorted(code.natives, key=lambda n: (n.lib.resolve(code), n.name.resolve(code)))
@@ -385,9 +420,9 @@ def generate_structs(code: Bytecode) -> List[str]:
                 line("hl_type *$type;")
             elif has_parent and not root_is_struct:
                 line("hl_type *$type;")
-            for f in df.resolve_fields(code):
+            for field_idx, f in enumerate(df.resolve_fields(code)):
                 field_type = ctype(code, f.type.resolve(code), f.type.value)
-                field_name = sanitize_ident(f.name.resolve(code))
+                field_name = sanitize_field_ident(f.name.resolve(code), f"_fld_{field_idx}")
                 line(f"{field_type} {field_name};")
         line("};")
     return res
@@ -553,7 +588,7 @@ def generate_globals(code: Bytecode) -> List[str]:
                 const_fields.append(str(code.floats[field.value].value))
             elif isinstance(typd, Bytes):
                 val = code.strings.value[field.value]
-                c_escaped_str = val.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+                c_escaped_str = c_escape_string(val)
                 const_fields.append(f'(vbyte*)USTR("{c_escaped_str}")')
         line(f"static struct _obj${objIdx} const_g${const._global.value} = {{&t${objIdx}, {', '.join(const_fields)}}};")
 
@@ -964,6 +999,10 @@ def enum_constr_type(code: Bytecode, e: Enum, cid: int) -> str:
     if not constr.params:
         return "venum"
 
+    enum_idx = next((i for i, t in enumerate(code.types) if t.definition is e), -1)
+    if enum_idx >= 0:
+        return f"enum${enum_idx}_ctor${cid}"
+
     enum_name_str = e.name.resolve(code)
     c_enum_name = sanitize_ident(enum_name_str.replace(".", "__"))
 
@@ -971,10 +1010,10 @@ def enum_constr_type(code: Bytecode, e: Enum, cid: int) -> str:
     c_constr_name = sanitize_ident(constr_name_str)
 
     if not enum_name_str:
-        return f"Enum_{c_enum_name}"
+        return f"enum_ctor_{cid}"
 
     if not constr_name_str:
-        return c_enum_name
+        return f"{c_enum_name}_{cid}"
 
     return f"{c_enum_name}_{c_constr_name}"
 
@@ -1209,7 +1248,8 @@ def generate_functions(code: Bytecode) -> List[str]:
                 if current_trap_depth > max_trap_depth:
                     max_trap_depth = current_trap_depth
             elif op.op == "EndTrap":
-                current_trap_depth -= 1
+                if op.df["exc"].value != 0:
+                    current_trap_depth -= 1
 
         if max_trap_depth > 0:
             line("")  # cosmetic newline
@@ -1252,9 +1292,9 @@ def generate_functions(code: Bytecode) -> List[str]:
                         rhs = "true" if str(df["value"]) == "True" else "false"
                     case "Bytes":
                         # TODO not sure this is right - might be bytes pool past v5?
-                        rhs = f'(vbyte*)USTR("{code.strings.value[df["ptr"].value]}")'
+                        rhs = f'(vbyte*)USTR("{c_escape_string(code.strings.value[df["ptr"].value])}")'
                     case "String":
-                        rhs = f'(vbyte*)USTR("{code.strings.value[df["ptr"].value]}")'
+                        rhs = f'(vbyte*)USTR("{c_escape_string(code.strings.value[df["ptr"].value])}")'
                     case "Null":
                         rhs = "NULL"
                     case "Add":
@@ -1385,12 +1425,12 @@ def generate_functions(code: Bytecode) -> List[str]:
                                 else:
                                     pass
                                 if ret_is_void:
-                                    line(f"hl_dyn_call_obj(r{obj_reg}->value, &t${field_type_idx.value}, {field_hash}/*{field_name}*/, \"{field_name}\", {'NULL' if not arg_regs else 'args'}, NULL);")
+                                    line(f"hl_dyn_call_obj(r{obj_reg}->value, &t${field_type_idx.value}, {field_hash}/*{field_name}*/, {'NULL' if not arg_regs else 'args'}, NULL);")
                                 elif ret_is_ptr:
-                                    line(f"r{dst_reg} = ({ret_ctype})hl_dyn_call_obj(r{obj_reg}->value, &t${field_type_idx.value}, {field_hash}/*{field_name}*/, \"{field_name}\", {'NULL' if not arg_regs else 'args'}, NULL);")
+                                    line(f"r{dst_reg} = ({ret_ctype})hl_dyn_call_obj(r{obj_reg}->value, &t${field_type_idx.value}, {field_hash}/*{field_name}*/, {'NULL' if not arg_regs else 'args'}, NULL);")
                                 else:
                                     prefix = dyn_prefix(ret_type)
-                                    line(f"{{ vdynamic _ret; hl_dyn_call_obj(r{obj_reg}->value, &t${field_type_idx.value}, {field_hash}/*{field_name}*/, \"{field_name}\", {'NULL' if not arg_regs else 'args'}, &_ret); r{dst_reg} = ({ret_ctype})_ret.v.{prefix}; }}")
+                                    line(f"{{ vdynamic _ret; hl_dyn_call_obj(r{obj_reg}->value, &t${field_type_idx.value}, {field_hash}/*{field_name}*/, {'NULL' if not arg_regs else 'args'}, &_ret); r{dst_reg} = ({ret_ctype})_ret.v.{prefix}; }}")
                             line("}")
                             continue
                     case "CallClosure":
@@ -1497,8 +1537,11 @@ def generate_functions(code: Bytecode) -> List[str]:
                         )
                         fid = df["field"].value
                         func_ptr = f"r{df['obj']}->$type->vobj_proto[{fid}]"
-                        fun_t = objdef.virtuals[fid]
-                        rhs = f"hl_alloc_closure_ptr(&t${fun_t}, {func_ptr}, r{df['obj']})"
+                        fun_t = function.regs[df["dst"].value]
+                        assert isinstance(fun_t.resolve(code).definition, Fun), (
+                            f"VirtualClosure destination is not a function type at op {i} in function {function.findex}"
+                        )
+                        rhs = f"hl_alloc_closure_ptr(&t${fun_t.value}, {func_ptr}, r{df['obj']})"
                     case "GetGlobal":
                         dst_reg = df["dst"].value
                         dst = ctype(code, function.regs[dst_reg].resolve(code), function.regs[dst_reg].value)
@@ -1605,7 +1648,7 @@ def generate_functions(code: Bytecode) -> List[str]:
                                     f"Expected obj type definition to be Obj or Struct, got {type(dfn).__name__}. This should never happen."
                                 )
                                 field_name = dfn.resolve_fields(code)[field_idx].name.resolve(code)
-                                rhs = f"r{obj_reg}->{sanitize_ident(field_name)}"
+                                rhs = f"r{obj_reg}->{sanitize_field_ident(field_name, f'_fld_{field_idx}') }"
                             case Type.Kind.VIRTUAL.value:
                                 dfn = obj_tres.definition
                                 assert isinstance(dfn, Virtual), "This check should pass."
@@ -1651,7 +1694,7 @@ def generate_functions(code: Bytecode) -> List[str]:
                                 assert isinstance(dfn, (Obj, Struct)), "This check should pass."
 
                                 field = dfn.resolve_fields(code)[field_idx]
-                                field_name = sanitize_ident(field.name.resolve(code))
+                                field_name = sanitize_field_ident(field.name.resolve(code), f"_fld_{field_idx}")
                                 field_type_idx = field.type
                                 val_cast = rcast(code, Reg(val_reg_idx), field_type_idx, function)
 
@@ -1754,7 +1797,9 @@ def generate_functions(code: Bytecode) -> List[str]:
 
                         if isinstance(src_type.definition, Null):
                             assert isinstance(src_type.definition.type, tIndex)
-                            rhs = f"r{src_reg} ? r{src_reg}->{dyn_value_field(src_type.definition.type.resolve(code))} : 0"
+                            field = dyn_value_field(dst_type)
+                            zero = "NULL" if is_ptr(dst_type.kind.value) else "0"
+                            rhs = f"r{src_reg} ? r{src_reg}->{field} : {zero}"
                         else:
                             prefix = dyn_prefix(dst_type)
                             type_arg = ""
@@ -1939,8 +1984,9 @@ def generate_functions(code: Bytecode) -> List[str]:
                         trap_depth += 1
                         continue
                     case "EndTrap":
-                        trap_depth -= 1
-                        opline(i, f"hl_endtrap(trap${trap_depth});")
+                        opline(i, f"hl_endtrap(trap${trap_depth - 1});")
+                        if df["exc"].value != 0:
+                            trap_depth -= 1
                         continue
                     case "Assert":
                         has_dst = False
@@ -1992,7 +2038,7 @@ def generate_functions(code: Bytecode) -> List[str]:
                                 try:
                                     resolved_fields = obj_def.resolve_fields(code)
                                     field = resolved_fields[field_index]
-                                    field_c_name = sanitize_ident(field.name.resolve(code))
+                                    field_c_name = sanitize_field_ident(field.name.resolve(code), f"_fld_{field_index}")
                                     prefetch_expr = f"&{regstr(obj_r)}->{field_c_name}"
                                 except IndexError:
                                     raise MalformedBytecode(
@@ -2067,18 +2113,21 @@ def code_to_c(code: Bytecode) -> str:
 
     sec: Callable[[str], None] = lambda section: res.append(f"\n\n/*---------- {section} ----------*/\n")
 
-    line("// Generated by crashlink")
+    line(f"// Generated by crashlink {VERSION}{' (debug)' if DEBUG else ''}")
     line(
-        "// Compile with `$(CC) <this_file.c> path/to/hashlink/bin/include/hlc_main.c -Wno-incompatible-pointer-types -o Arithmetic -Ipath/to/hashlink/bin/include -Lpath/to/hashlink/bin -lhl -ldbghelp` ;)"
+        "// Compile with `$(CC) <this_file.c> path/to/hashlink/bin/include/hlc_main.c -Wno-incompatible-pointer-types -Ipath/to/hashlink/bin/include -Lpath/to/hashlink/bin -lhl -ldbghelp` ;)"
     )
     line("#include <hlc.h>")
+
+    sec("Abstract Forward Declarations")
+    res += generate_abstract_forwards(code)
+
+    sec("Structs")
+    res += generate_structs(code)
 
     sec("Natives & Abstracts Forward Declarations")
     res += generate_natives(code)
     res.append("void hl_entry_point();")
-
-    sec("Structs")
-    res += generate_structs(code)
 
     sec("Types")
     res += generate_types(code)
