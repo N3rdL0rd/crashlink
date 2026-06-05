@@ -2075,7 +2075,7 @@ class Bytecode(Serialisable):
                 self.track_section(f, f"function {i}")
                 self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
         else:
-            for i in tqdm(range(self.nfunctions.value)):
+            for i in tqdm(range(self.nfunctions.value), desc="Reading functions"):
                 self.track_section(f, f"function {i}")
                 self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
         if self.nconstants is not None:

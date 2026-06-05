@@ -1280,7 +1280,9 @@ def generate_functions(code: Bytecode) -> List[str]:
                         rhs = rcast(code, df["src"], dst_type_idx, function)
                     case "Int":
                         _int_val = code.ints[df['ptr'].value].value
-                        rhs = "0x80000000" if _int_val == -2147483648 else str(_int_val)
+                        if _int_val > 0x7FFFFFFF:
+                            _int_val = _signed32(_int_val)
+                        rhs = "(-2147483647 - 1)" if _int_val == -2147483648 else str(_int_val)
                     case "Float":
                         _fval = code.floats[df['ptr'].value].value
                         _fstr = f"{_fval:.19g}"
@@ -1811,7 +1813,30 @@ def generate_functions(code: Bytecode) -> List[str]:
                                 type_arg = f", &t${dst_type_idx.value}"
 
                             src_type_idx = function.regs[src_reg].value
-                            rhs = f"({dst_ctype})hl_dyn_cast{prefix}(&r{src_reg}, &t${src_type_idx}{type_arg})"
+                            if src_type.kind.value == Type.Kind.DYN.value and dst_type.kind.value in {
+                                Type.Kind.U8.value,
+                                Type.Kind.U16.value,
+                                Type.Kind.I32.value,
+                                Type.Kind.I64.value,
+                                Type.Kind.F32.value,
+                                Type.Kind.F64.value,
+                            }:
+                                enum_check = (
+                                    f"(r{src_reg} && r{src_reg}->t->kind == HENUM && "
+                                    f"r{src_reg}->t->tenum->constructs[((venum*)r{src_reg})->index].nparams == 0)"
+                                )
+                                if dst_type.kind.value == Type.Kind.I64.value:
+                                    enum_value = f"((int64)((venum*)r{src_reg})->index)"
+                                elif dst_type.kind.value == Type.Kind.F32.value:
+                                    enum_value = f"((float)((venum*)r{src_reg})->index)"
+                                elif dst_type.kind.value == Type.Kind.F64.value:
+                                    enum_value = f"((double)((venum*)r{src_reg})->index)"
+                                else:
+                                    enum_value = f"((venum*)r{src_reg})->index"
+                                cast_value = f"({dst_ctype})hl_dyn_cast{prefix}(&r{src_reg}, &t${src_type_idx}{type_arg})"
+                                rhs = f"{enum_check} ? {enum_value} : {cast_value}"
+                            else:
+                                rhs = f"({dst_ctype})hl_dyn_cast{prefix}(&r{src_reg}, &t${src_type_idx}{type_arg})"
                     case "UnsafeCast":
                         # Opcode: {"dst": Reg, "src": Reg}
                         # OCaml: sexpr "%s = (%s)%s" (reg r) (ctype (rtype r)) (reg v)
