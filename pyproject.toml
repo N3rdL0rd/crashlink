@@ -38,7 +38,8 @@ dev = [
   "types-Pygments",
   "markupsafe",
   "lief",
-  "capstone"
+  "capstone",
+  "mcp",
 ]
 extras = [
   "tqdm",
@@ -46,7 +47,8 @@ extras = [
   "IPython",
   "pygments",
   "lief",
-  "capstone"
+  "capstone",
+  "mcp",
 ]
 
 [build-system]

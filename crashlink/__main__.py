@@ -373,6 +373,112 @@ def _build_hlc_script(
     return "\n".join(script) + "\n"
 
 
+def info_main(argv: List[str]) -> None:
+    parser = argparse.ArgumentParser(description="Print summary information about a bytecode file.", prog="crashlink info")
+    parser.add_argument("file", help="Input .hl / .dat file")
+    parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
+    args = parser.parse_args(argv)
+    code = _load_code_from_cli_path(args.file, args.no_constants)
+    print(f"Version: {code.version}")
+    print(f"Has debug info: {code.has_debug_info}")
+    print(f"Functions: {len(code.functions)}")
+    print(f"Natives: {len(code.natives)}")
+    print(f"Types: {len(code.types)}")
+    print(f"Strings: {len(code.strings.value)}")
+    print(f"Ints: {len(code.ints)}")
+    print(f"Floats: {len(code.floats)}")
+    print(f"Globals: {len(code.global_types)}")
+
+
+def disasm_main(argv: List[str]) -> None:
+    parser = argparse.ArgumentParser(description="Disassemble a function from a bytecode file.", prog="crashlink disasm")
+    parser.add_argument("file", help="Input .hl / .dat file")
+    parser.add_argument("findex", type=int, help="Function index to disassemble")
+    parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
+    args = parser.parse_args(argv)
+    code = _load_code_from_cli_path(args.file, args.no_constants)
+    for func in code.functions:
+        if func.findex.value == args.findex:
+            print(disasm.func(code, func))
+            return
+    for native in code.natives:
+        if native.findex.value == args.findex:
+            print(disasm.native_header(code, native))
+            return
+    print(f"Function f@{args.findex} not found.", file=sys.stderr)
+    sys.exit(1)
+
+
+def search_main(argv: List[str]) -> None:
+    parser = argparse.ArgumentParser(description="Search strings in a bytecode file.", prog="crashlink search")
+    parser.add_argument("file", help="Input .hl / .dat file")
+    parser.add_argument("query", help="Substring to search for (case-insensitive)")
+    parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
+    args = parser.parse_args(argv)
+    code = _load_code_from_cli_path(args.file, args.no_constants)
+    matches = [(i, s) for i, s in enumerate(code.strings.value) if args.query.lower() in s.lower()]
+    if not matches:
+        print(f'No strings matching "{args.query}".')
+    for i, s in matches:
+        print(f"s@{i}: {s}")
+
+
+def funcs_main(argv: List[str]) -> None:
+    parser = argparse.ArgumentParser(description="List functions in a bytecode file.", prog="crashlink funcs")
+    parser.add_argument("file", help="Input .hl / .dat file")
+    parser.add_argument("--std", action="store_true", help="Include stdlib functions")
+    parser.add_argument("--natives", action="store_true", help="Include native stubs")
+    parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
+    args = parser.parse_args(argv)
+    code = _load_code_from_cli_path(args.file, args.no_constants)
+    for func in code.functions:
+        if disasm.is_std(code, func) and not args.std:
+            continue
+        print(disasm.func_header(code, func))
+    if args.natives:
+        for native in code.natives:
+            if disasm.is_std(code, native) and not args.std:
+                continue
+            print(disasm.native_header(code, native))
+
+
+def decompile_main(argv: List[str]) -> None:
+    parser = argparse.ArgumentParser(
+        description="Decompile a function or class to pseudo-Haxe. EXPERIMENTAL.",
+        prog="crashlink decompile",
+    )
+    parser.add_argument("file", help="Input .hl / .dat file")
+    parser.add_argument("index", type=int, help="findex for a function, or tIndex with --class")
+    parser.add_argument("--class", dest="is_class", action="store_true", help="Treat index as a tIndex and decompile the whole class")
+    parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
+    args = parser.parse_args(argv)
+    print("[warning] Decompiler is EXPERIMENTAL — output may be incorrect or incomplete.", file=sys.stderr)
+    code = _load_code_from_cli_path(args.file, args.no_constants)
+
+    if args.is_class:
+        from .decomp import IRClass
+        try:
+            typ = code.types[args.index]
+        except IndexError:
+            print(f"Type t@{args.index} not found.", file=sys.stderr)
+            sys.exit(1)
+        if not isinstance(typ.definition, Obj):
+            print(f"Type t@{args.index} is not a class.", file=sys.stderr)
+            sys.exit(1)
+        ir_class = IRClass(code, typ.definition)
+        print(ir_class.pseudo())
+    else:
+        from .decomp import IRFunction
+        from .pseudo import pseudo as _pseudo
+        for func in code.functions:
+            if func.findex.value == args.index:
+                ir = IRFunction(code, func)
+                print(_pseudo(ir))
+                return
+        print(f"Function f@{args.index} not found.", file=sys.stderr)
+        sys.exit(1)
+
+
 def hlc_main(argv: List[str]) -> None:
     parser = argparse.ArgumentParser(description="Transpile HashLink bytecode to C and emit a matching build script.", prog="crashlink hlc")
     parser.add_argument("file", help="Input .hl / .dat / Haxe source file")
@@ -1656,12 +1762,35 @@ def handle_cmd(code: Bytecode, cmd: str) -> None:
         print("Unknown command.")
 
 
+def mcp_main(argv: List[str]) -> None:
+    try:
+        from .mcp import run_mcp_server
+    except ImportError:
+        print(
+            "The 'mcp' package is required for 'crashlink mcp'. "
+            "Install it with: pip install crashlink[extras]",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    preload = argv[0] if argv else None
+    run_mcp_server(preload_path=preload)
+
+
 def main() -> None:
     """
     Main entrypoint.
     """
-    if len(sys.argv) > 1 and sys.argv[1] == "hlc":
-        hlc_main(sys.argv[2:])
+    _subcommands: Dict[str, Callable[[List[str]], None]] = {
+        "hlc": hlc_main,
+        "mcp": mcp_main,
+        "info": info_main,
+        "disasm": disasm_main,
+        "search": search_main,
+        "funcs": funcs_main,
+        "decompile": decompile_main,
+    }
+    if len(sys.argv) > 1 and sys.argv[1] in _subcommands:
+        _subcommands[sys.argv[1]](sys.argv[2:])
         return
 
     parser = argparse.ArgumentParser(description=f"crashlink CLI ({VERSION})", prog="crashlink")
