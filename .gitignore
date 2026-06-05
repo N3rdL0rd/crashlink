@@ -45,3 +45,5 @@ test_out/
 /*.exe
 /libhl.dll
 /*.c
+/*.build.sh
+/deadcells

@@ -198,16 +198,21 @@ def _build_compile_command(
     hdll_paths: List[Path],
     native_libs: List[str],
     extra_hdll_dirs: List[str],
+    use_clang: bool,
+    use_ccache: bool,
 ) -> List[str]:
     search_dirs = _build_search_dirs(hashlink_dir, extra_hdll_dirs)
-    cmd = [
-        "cc",
+    cmd: List[str] = []
+    if use_ccache:
+        cmd.append("ccache")
+    cmd.append("clang" if use_clang else "cc")
+    cmd.extend([
         "-O2",
         "-Wno-incompatible-pointer-types",
         f"-I{hashlink_dir / 'src'}",
         c_path,
         str(hashlink_dir / "src" / "hlc_main.c"),
-    ]
+    ])
     cmd.extend(str(p) for p in hdll_paths)
     if "uv" in native_libs:
         explicit_uv = _find_any_shared_lib(["libuv.so", "libuv.so.1"], search_dirs)
@@ -223,8 +228,10 @@ def _build_compile_command(
     if "steam" in native_libs:
         steam_api = _find_shared_lib("libsteam_api.so", search_dirs)
         if steam_api is not None:
-            cmd.append(str(steam_api))
+            cmd.append(f"-L{steam_api.parent}")
+            cmd.append("-lsteam_api")
             cmd.append(f"-Wl,-rpath-link,{steam_api.parent}")
+            cmd.append(f"-Wl,-rpath,{steam_api.parent}")
     cmd.extend(
         [
             f"-L{hashlink_dir / 'build' / 'bin'}",
@@ -232,15 +239,24 @@ def _build_compile_command(
             "-lm",
             "-ldl",
             "-lpthread",
+            "-lstdc++" if "steam" in native_libs else "",
             f"-Wl,-rpath,{hashlink_dir / 'build' / 'bin'}",
             "-o",
             bin_path,
         ]
     )
-    return cmd
+    return [part for part in cmd if part]
 
 
-def _build_hlc_script(c_path: str, bin_path: str, native_libs: List[str], hashlink_dir: Path, extra_hdll_dirs: List[str]) -> str:
+def _build_hlc_script(
+    c_path: str,
+    bin_path: str,
+    native_libs: List[str],
+    hashlink_dir: Path,
+    extra_hdll_dirs: List[str],
+    use_clang: bool,
+    use_ccache: bool,
+) -> str:
     extra_dirs_literal = " ".join(f'"{d}"' for d in extra_hdll_dirs)
     script = [
         "#!/usr/bin/env bash",
@@ -250,6 +266,8 @@ def _build_hlc_script(c_path: str, bin_path: str, native_libs: List[str], hashli
         f'C_FILE="{c_path}"',
         f'OUT_FILE="{bin_path}"',
         f'EXTRA_HDLL_DIRS=({extra_dirs_literal})',
+        f'USE_CLANG={"1" if use_clang else "0"}',
+        f'USE_CCACHE={"1" if use_ccache else "0"}',
         "",
         'if [ ! -f "$HASHLINK_DIR/build/bin/libhl.so" ]; then',
         '  echo "error: libhl.so not found under $HASHLINK_DIR/build/bin" >&2',
@@ -280,6 +298,10 @@ def _build_hlc_script(c_path: str, bin_path: str, native_libs: List[str], hashli
         'HDLL_ARGS=()',
         'HDLL_DIRS=("$HASHLINK_DIR/build/bin")',
         'EXTRA_LINK_ARGS=()',
+        'CC_BIN=cc',
+        'CC_PREFIX=()',
+        'if [ "$USE_CLANG" = "1" ]; then CC_BIN=clang; fi',
+        'if [ "$USE_CCACHE" = "1" ]; then CC_PREFIX=(ccache); fi',
         'find_shared_lib() {',
         '  local filename="$1"',
         '  shift',
@@ -327,7 +349,7 @@ def _build_hlc_script(c_path: str, bin_path: str, native_libs: List[str], hashli
         script += [
             'steam_api=$(find_shared_lib "libsteam_api.so" "${SEARCH_DIRS[@]}" || true)',
             'if [ -n "$steam_api" ]; then',
-            '  EXTRA_LINK_ARGS+=("$steam_api" "-Wl,-rpath-link,$(dirname "$steam_api")")',
+            '  EXTRA_LINK_ARGS+=("-L$(dirname "$steam_api")" "-lsteam_api" "-Wl,-rpath-link,$(dirname "$steam_api")" "-Wl,-rpath,$(dirname "$steam_api")" "-lstdc++")',
             '  HDLL_DIRS+=("$(dirname "$steam_api")")',
             'else',
             '  echo "warning: libsteam_api.so not found in search directories" >&2',
@@ -335,7 +357,7 @@ def _build_hlc_script(c_path: str, bin_path: str, native_libs: List[str], hashli
         ]
     script += [
         "",
-        "cc -O2 -Wno-incompatible-pointer-types \\",
+        '"${CC_PREFIX[@]}" "$CC_BIN" -O2 -Wno-incompatible-pointer-types \\',
         "  -I\"$HASHLINK_DIR/src\" \\",
         "  \"$C_FILE\" \"$HASHLINK_DIR/src/hlc_main.c\" \\",
         "  \"${HDLL_ARGS[@]}\" \\",
@@ -356,6 +378,8 @@ def hlc_main(argv: List[str]) -> None:
     parser.add_argument("file", help="Input .hl / .dat / Haxe source file")
     parser.add_argument("-o", "--output", help="Output C filename")
     parser.add_argument("--build", help="Compile the generated C immediately", action="store_true")
+    parser.add_argument("--clang", help="Use clang/clang++ instead of cc/c++", action="store_true")
+    parser.add_argument("--ccache", help="Prefix compiler invocation with ccache", action="store_true")
     parser.add_argument(
         "--hashlink-dir",
         help="HashLink source/build root to use for includes, libhl, and HDLL search",
@@ -385,7 +409,7 @@ def hlc_main(argv: List[str]) -> None:
         f.write(code_to_c(code))
 
     native_libs = _hlc_native_libs(code)
-    script = _build_hlc_script(out_c, out_bin, native_libs, hashlink_dir, args.hdll_dir)
+    script = _build_hlc_script(out_c, out_bin, native_libs, hashlink_dir, args.hdll_dir, args.clang, args.ccache)
     with open(build_script, "w") as f:
         f.write(script)
     os.chmod(build_script, 0o755)
@@ -413,6 +437,8 @@ def hlc_main(argv: List[str]) -> None:
             [resolved_hdlls[lib] for lib in native_libs],
             native_libs,
             args.hdll_dir,
+            args.clang,
+            args.ccache,
         )
         print("Compiling:", " ".join(cmd))
         subprocess.run(cmd, check=True)
