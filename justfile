@@ -40,12 +40,12 @@ docs:
 
 # Host and open documentation locally
 open-docs:
-    python -m webbrowser -t "http://127.0.0.1:80"
-    python -m http.server -b 127.0.0.1 80 -d docs
+    python -m webbrowser -t "http://127.0.0.1:8080"
+    python -m http.server -b 127.0.0.1 8080 -d docs
 
 # Serve documentation locally
 serve-docs:
-    python -m http.server -b 127.0.0.1 80 -d docs
+    python -m http.server -b 127.0.0.1 8080 -d docs
 
 # Run tests
 test:

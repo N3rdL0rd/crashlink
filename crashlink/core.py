@@ -67,6 +67,8 @@ class Serialisable(ABC):
     Base class for all serialisable objects.
     """
 
+    __slots__ = ()
+
     @abstractmethod
     def __init__(self) -> None:
         self.value: Any = None
@@ -368,7 +370,11 @@ class fieldRef(ResolvableVarInt):
     Reference to a field in an object definition.
     """
 
-    obj: Optional["Obj|Virtual"] = None
+    __slots__ = ("obj",)
+
+    def __init__(self, value: int = 0):
+        super().__init__(value)
+        self.obj: Optional["Obj|Virtual"] = None
 
     def resolve(self, code: "Bytecode") -> "Field":
         if self.obj:
@@ -387,6 +393,8 @@ class Reg(ResolvableVarInt):
     Reference to a register in the bytecode.
     """
 
+    __slots__ = ()
+
     def resolve(self, code: "Bytecode") -> "Type":
         return code.types[self.value]
 
@@ -395,6 +403,8 @@ class InlineBool(Serialisable):
     """
     Inline boolean value.
     """
+
+    __slots__ = ("varint", "value")
 
     def __init__(self) -> None:
         self.varint = VarInt()
@@ -414,6 +424,8 @@ class VarInts(Serialisable):
     """
     List of VarInts.
     """
+
+    __slots__ = ("n", "value")
 
     def __init__(self) -> None:
         self.n = VarInt()
@@ -435,6 +447,8 @@ class Regs(Serialisable):
     List of references to registers.
     """
 
+    __slots__ = ("n", "value")
+
     def __init__(self) -> None:
         self.n = VarInt()
         self.value: List[Reg] = []
@@ -454,6 +468,8 @@ class StringsBlock(Serialisable):
     """
     Block of strings in the bytecode. Contains a list of strings and their lengths.
     """
+
+    __slots__ = ("length", "value", "lengths")
 
     def __init__(self) -> None:
         self.length = SerialisableInt()
@@ -522,6 +538,8 @@ class BytesBlock(Serialisable):
     Block of bytes in the bytecode. Contains a list of byte strings and their lengths.
     """
 
+    __slots__ = ("size", "value", "nbytes")
+
     def __init__(self) -> None:
         self.size = SerialisableInt()
         self.size.length = 4
@@ -562,11 +580,15 @@ class TypeDef(Serialisable, ABC):
     Abstract class for all type definition fields.
     """
 
+    __slots__ = ()
+
 
 class _NoDataType(TypeDef):
     """
     Base typedef for types with no data.
     """
+
+    __slots__ = ()
 
     def __init__(self) -> None:
         pass
@@ -589,7 +611,7 @@ class Void(_NoDataType):
     Void type, no data. Used to discard data (eg. reg: Void = call f@**).
     """
 
-    pass
+    __slots__ = ()
 
 
 class U8(_NoDataType):
@@ -597,7 +619,7 @@ class U8(_NoDataType):
     Unsigned 8-bit integer type, no data.
     """
 
-    pass
+    __slots__ = ()
 
 
 class U16(_NoDataType):
@@ -605,7 +627,7 @@ class U16(_NoDataType):
     Unsigned 16-bit integer type, no data.
     """
 
-    pass
+    __slots__ = ()
 
 
 class I32(_NoDataType):
@@ -613,7 +635,7 @@ class I32(_NoDataType):
     Signed 32-bit integer type, no data.
     """
 
-    pass
+    __slots__ = ()
 
 
 class I64(_NoDataType):
@@ -621,7 +643,7 @@ class I64(_NoDataType):
     Signed 64-bit integer type, no data.
     """
 
-    pass
+    __slots__ = ()
 
 
 class F32(_NoDataType):
@@ -629,7 +651,7 @@ class F32(_NoDataType):
     32-bit float type, no data.
     """
 
-    pass
+    __slots__ = ()
 
 
 class F64(_NoDataType):
@@ -637,7 +659,7 @@ class F64(_NoDataType):
     64-bit float type, no data.
     """
 
-    pass
+    __slots__ = ()
 
 
 class Bool(_NoDataType):
@@ -645,7 +667,7 @@ class Bool(_NoDataType):
     Boolean type, no data.
     """
 
-    pass
+    __slots__ = ()
 
 
 class Bytes(_NoDataType):
@@ -653,7 +675,7 @@ class Bytes(_NoDataType):
     Bytes type, no data.
     """
 
-    pass
+    __slots__ = ()
 
 
 class Dyn(_NoDataType):
@@ -661,13 +683,15 @@ class Dyn(_NoDataType):
     Dynamic type, no data. Can store any type of data in a typed register as a pointer.
     """
 
-    pass
+    __slots__ = ()
 
 
 class Fun(TypeDef):
     """
     Stores metadata about a function (signatures). When referenced in conjunction with a Proto or Method, it can be used to reconstruct the full function signature. See `crashlink.disasm.func_header` for a working reference.
     """
+
+    __slots__ = ("nargs", "args", "ret")
 
     def __init__(self) -> None:
         self.nargs = VarInt()
@@ -709,6 +733,8 @@ class Field(Serialisable):
     Represents a field in a class definition.
     """
 
+    __slots__ = ("name", "type")
+
     def __init__(self, name: Optional[strRef] = None, type: Optional[tIndex] = None) -> None:
         if not name:
             self.name = strRef()
@@ -740,6 +766,8 @@ class Proto(Serialisable):
     Represents a prototype of a function
     """
 
+    __slots__ = ("name", "findex", "pindex")
+
     def __init__(self) -> None:
         self.name = strRef()
         self.findex = fIndex()
@@ -767,6 +795,8 @@ class Binding(Serialisable):
     Represents a binding of a function to a field in an object.
     """
 
+    __slots__ = ("field", "findex")
+
     def __init__(self) -> None:
         self.field = fieldRef()
         self.findex = fIndex()
@@ -791,6 +821,24 @@ class Obj(TypeDef):
     """
     Represents a class definition.
     """
+
+    __slots__ = (
+        "name",
+        "super",
+        "_global",
+        "nfields",
+        "nprotos",
+        "nbindings",
+        "fields",
+        "protos",
+        "bindings",
+        "_virtuals",
+        "_virtual_map",
+        "virtuals_initialized",
+        "_is_static",
+        "_static",
+        "_dynamic",
+    )
 
     def __init__(self) -> None:
         self.name = strRef()
@@ -961,7 +1009,7 @@ class Array(_NoDataType):
     Array type, no data.
     """
 
-    pass
+    __slots__ = ()
 
 
 class TypeType(_NoDataType):
@@ -969,13 +1017,15 @@ class TypeType(_NoDataType):
     Type wrapping a type, no data.
     """
 
-    pass
+    __slots__ = ()
 
 
 class Ref(TypeDef):
     """
     Memory reference to an instance of a type.
     """
+
+    __slots__ = ("type",)
 
     def __init__(self) -> None:
         self.type = tIndex()
@@ -999,6 +1049,8 @@ class Virtual(TypeDef):
     """
     Virtual type, used for virtual/abstract classes.
     """
+
+    __slots__ = ("nfields", "fields")
 
     def __init__(self) -> None:
         self.nfields = VarInt()
@@ -1033,13 +1085,15 @@ class DynObj(_NoDataType):
     Dynamic object type, no data.
     """
 
-    pass
+    __slots__ = ()
 
 
 class Abstract(TypeDef):
     """
     Abstract class type.
     """
+
+    __slots__ = ("name",)
 
     def __init__(self) -> None:
         self.name = strRef()
@@ -1063,6 +1117,8 @@ class EnumConstruct(Serialisable):
     """
     Construct of an enum.
     """
+
+    __slots__ = ("name", "nparams", "params")
 
     def __init__(self) -> None:
         self.name = strRef()
@@ -1096,6 +1152,8 @@ class Enum(TypeDef):
     """
     Enum type.
     """
+
+    __slots__ = ("name", "_global", "nconstructs", "constructs")
 
     def __init__(self) -> None:
         self.name = strRef()
@@ -1133,6 +1191,8 @@ class Null(TypeDef):
     Null of a certain type.
     """
 
+    __slots__ = ("type",)
+
     def __init__(self) -> None:
         self.type = tIndex()
 
@@ -1156,7 +1216,7 @@ class Method(Fun):
     Method type, identical to Fun.
     """
 
-    pass
+    __slots__ = ()
 
 
 class Struct(Obj):
@@ -1164,13 +1224,15 @@ class Struct(Obj):
     Struct type, identical to Obj.
     """
 
-    pass
+    __slots__ = ()
 
 
 class Packed(TypeDef):
     """
     Holds an inner type index.
     """
+
+    __slots__ = ("inner",)
 
     def __init__(self) -> None:
         self.inner = tIndex()
@@ -1195,7 +1257,7 @@ class GUID(_NoDataType):
     GUID type, no data.
     """
 
-    pass
+    __slots__ = ()
 
 
 class Type(Serialisable):
@@ -1205,6 +1267,8 @@ class Type(Serialisable):
     - kind: SerialisableInt
     - definition: TypeDef
     """
+
+    __slots__ = ("kind", "definition")
 
     # fmt: off
     TYPEDEFS: List[type] = [
@@ -1334,6 +1398,8 @@ class Native(Serialisable):
     - findex: fIndex
     """
 
+    __slots__ = ("lib", "name", "type", "findex")
+
     def __init__(self) -> None:
         self.lib = strRef()
         self.name = strRef()
@@ -1372,6 +1438,8 @@ class Opcode(Serialisable):
     """
     Represents an opcode.
     """
+
+    __slots__ = ("code", "op", "df")
 
     TYPE_MAP: Dict[str, type] = {
         "Reg": Reg,
@@ -1439,6 +1507,8 @@ class fileRef(ResolvableVarInt):
     Reference to a file in the debug info.
     """
 
+    __slots__ = ("line",)
+
     def __init__(self, fid: int = 0, line: int = -1) -> None:
         super().__init__(fid)
         self.line = line
@@ -1473,6 +1543,8 @@ class DebugInfo(Serialisable):
     """
     Represents debug information for a function, encoded with a delta encoding scheme for compression.
     """
+
+    __slots__ = ("value",)
 
     def __init__(self) -> None:
         self.value: List[fileRef] = []
