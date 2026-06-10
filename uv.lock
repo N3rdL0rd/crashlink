@@ -295,9 +295,6 @@ wheels = [
 name = "crashlink"
 version = "0.0.5"
 source = { editable = "." }
-dependencies = [
-    { name = "mcp" },
-]
 
 [package.optional-dependencies]
 dev = [
@@ -308,6 +305,7 @@ dev = [
     { name = "ipython", version = "9.6.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "lief" },
     { name = "markupsafe" },
+    { name = "mcp" },
     { name = "mypy" },
     { name = "pdoc3" },
     { name = "pygments" },
@@ -329,6 +327,7 @@ extras = [
     { name = "ipython", version = "8.37.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "ipython", version = "9.6.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "lief" },
+    { name = "mcp" },
     { name = "pygments" },
     { name = "tqdm" },
 ]
@@ -345,7 +344,8 @@ requires-dist = [
     { name = "lief", marker = "extra == 'dev'" },
     { name = "lief", marker = "extra == 'extras'" },
     { name = "markupsafe", marker = "extra == 'dev'" },
-    { name = "mcp", specifier = ">=1.27.2" },
+    { name = "mcp", marker = "extra == 'dev'" },
+    { name = "mcp", marker = "extra == 'extras'" },
     { name = "mypy", marker = "extra == 'dev'" },
     { name = "pdoc3", marker = "extra == 'dev'" },
     { name = "pygments", marker = "extra == 'dev'" },
