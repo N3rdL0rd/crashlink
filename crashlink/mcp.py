@@ -176,8 +176,7 @@ def decompile_function(findex: int) -> str:
                 return _trim(result)
             except Exception as e:
                 raise RuntimeError(
-                    f"Decompilation failed for f@{findex}: {e}\n"
-                    "Try disassemble_function for a more reliable view."
+                    f"Decompilation failed for f@{findex}: {e}\nTry disassemble_function for a more reliable view."
                 )
     raise RuntimeError(f"Function f@{findex} not found (only non-native functions can be decompiled).")
 
@@ -405,11 +404,7 @@ def search_strings(query: str, offset: int = 0, limit: int = 100) -> str:
         limit: Max number of results to return
     """
     code = _require_code()
-    matches = [
-        (i, s)
-        for i, s in enumerate(code.strings.value)
-        if query.lower() in s.lower()
-    ]
+    matches = [(i, s) for i, s in enumerate(code.strings.value) if query.lower() in s.lower()]
     total = len(matches)
     page = matches[offset : offset + limit]
     lines = [f"s@{i}: {s}" for i, s in page]
@@ -666,11 +661,7 @@ def functions_in_file(filename: str) -> str:
     code = _require_code()
     if not code.has_debug_info:
         return "No debug information in bytecode."
-    results = [
-        _disasm.func_header(code, func)
-        for func in code.functions
-        if func.resolve_file(code) == filename
-    ]
+    results = [_disasm.func_header(code, func) for func in code.functions if func.resolve_file(code) == filename]
     if not results:
         return f"No functions found in file '{filename}'."
     return _trim(f"Functions in {filename}:\n" + "\n".join(results))

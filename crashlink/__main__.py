@@ -15,7 +15,7 @@ import sys
 import tempfile
 import traceback
 import webbrowser
-from typing import Callable, Dict, List, Tuple, Set
+from typing import Callable, Dict, List, Tuple, Set, cast
 from functools import wraps
 
 from crashlink.hlc import code_to_c
@@ -70,10 +70,10 @@ def _load_code_from_cli_path(path: str, no_constants: bool) -> Bytecode:
             return Bytecode().deserialise(f, init_globals=not no_constants)
 
     try:
-        import dill
+        import dill  # type: ignore[import-untyped]
 
         with open(path, "rb") as f:
-            return dill.load(f)
+            return cast(Bytecode, dill.load(f))
     except ImportError:
         print("Dill not found. Install dill to unpickle bytecode, or install crashlink with the [extras] option.")
         sys.exit(1)
@@ -86,49 +86,6 @@ def _default_hlc_output(path: str) -> str:
 
 def _hlc_native_libs(code: Bytecode) -> List[str]:
     return sorted({n.lib.resolve(code).lstrip("?") for n in code.natives if n.lib.resolve(code).lstrip("?") != "std"})
-
-
-def _build_hlc_script(c_path: str, bin_path: str, native_libs: List[str]) -> str:
-    native_args = " \\\n+  ".join(f'"$HASHLINK_DIR/build/bin/{lib}.hdll"' for lib in native_libs)
-    hdll_path_entries = ["$HASHLINK_DIR/build/bin"] + [f'$(dirname "$HASHLINK_DIR/build/bin/{lib}.hdll")' for lib in native_libs]
-    hdll_path = ":".join(hdll_path_entries)
-    script = [
-        "#!/usr/bin/env bash",
-        "set -euo pipefail",
-        "",
-        'HASHLINK_DIR="${HASHLINK_DIR:-/home/nerd/code/hashlink}"',
-        f'C_FILE="{c_path}"',
-        f'OUT_FILE="{bin_path}"',
-        "",
-        'if [ ! -f "$HASHLINK_DIR/build/bin/libhl.so" ]; then',
-        '  echo "error: libhl.so not found under $HASHLINK_DIR/build/bin" >&2',
-        "  exit 1",
-        "fi",
-        "",
-    ]
-    for lib in native_libs:
-        script += [
-            f'if [ ! -f "$HASHLINK_DIR/build/bin/{lib}.hdll" ]; then',
-            f'  echo "warning: missing $HASHLINK_DIR/build/bin/{lib}.hdll" >&2',
-            "fi",
-        ]
-    script += [
-        "",
-        "cc -O2 -Wno-incompatible-pointer-types \\",
-        "  -I\"$HASHLINK_DIR/src\" \\",
-        "  \"$C_FILE\" \"$HASHLINK_DIR/src/hlc_main.c\" \\",
-    ]
-    if native_args:
-        script.append(f"  {native_args} \\")
-    script += [
-        "  -L\"$HASHLINK_DIR/build/bin\" -lhl -lm -ldl -lpthread \\",
-        "  -Wl,-rpath,\"$HASHLINK_DIR/build/bin\" \\",
-        "  -o \"$OUT_FILE\"",
-        "",
-        'echo "Built $OUT_FILE"',
-        f'echo "Run with: LD_LIBRARY_PATH={hdll_path} $OUT_FILE"',
-    ]
-    return "\n".join(script) + "\n"
 
 
 def _find_hdll(lib: str, search_dirs: List[Path]) -> Path | None:
@@ -178,7 +135,9 @@ def _find_any_shared_lib(filenames: List[str], search_dirs: List[Path]) -> Path 
     return None
 
 
-def _resolve_native_hdlls(native_libs: List[str], hashlink_dir: Path, extra_hdll_dirs: List[str]) -> tuple[Dict[str, Path], List[str]]:
+def _resolve_native_hdlls(
+    native_libs: List[str], hashlink_dir: Path, extra_hdll_dirs: List[str]
+) -> tuple[Dict[str, Path], List[str]]:
     resolved: Dict[str, Path] = {}
     missing: List[str] = []
     search_dirs = _build_search_dirs(hashlink_dir, extra_hdll_dirs)
@@ -206,13 +165,15 @@ def _build_compile_command(
     if use_ccache:
         cmd.append("ccache")
     cmd.append("clang" if use_clang else "cc")
-    cmd.extend([
-        "-O2",
-        "-Wno-incompatible-pointer-types",
-        f"-I{hashlink_dir / 'src'}",
-        c_path,
-        str(hashlink_dir / "src" / "hlc_main.c"),
-    ])
+    cmd.extend(
+        [
+            "-O2",
+            "-Wno-incompatible-pointer-types",
+            f"-I{hashlink_dir / 'src'}",
+            c_path,
+            str(hashlink_dir / "src" / "hlc_main.c"),
+        ]
+    )
     cmd.extend(str(p) for p in hdll_paths)
     if "uv" in native_libs:
         explicit_uv = _find_any_shared_lib(["libuv.so", "libuv.so.1"], search_dirs)
@@ -265,69 +226,69 @@ def _build_hlc_script(
         f'HASHLINK_DIR="${{HASHLINK_DIR:-{hashlink_dir}}}"',
         f'C_FILE="{c_path}"',
         f'OUT_FILE="{bin_path}"',
-        f'EXTRA_HDLL_DIRS=({extra_dirs_literal})',
-        f'USE_CLANG={"1" if use_clang else "0"}',
-        f'USE_CCACHE={"1" if use_ccache else "0"}',
+        f"EXTRA_HDLL_DIRS=({extra_dirs_literal})",
+        f"USE_CLANG={'1' if use_clang else '0'}",
+        f"USE_CCACHE={'1' if use_ccache else '0'}",
         "",
         'if [ ! -f "$HASHLINK_DIR/build/bin/libhl.so" ]; then',
         '  echo "error: libhl.so not found under $HASHLINK_DIR/build/bin" >&2',
         "  exit 1",
         "fi",
         "",
-        'find_hdll() {',
+        "find_hdll() {",
         '  local name="$1"',
-        '  shift',
+        "  shift",
         '  local filename="${name}.hdll"',
-        '  local dir match',
+        "  local dir match",
         '  for dir in "$@"; do',
         '    [ -d "$dir" ] || continue',
         '    if [ -f "$dir/$filename" ]; then',
         '      printf "%s\\n" "$dir/$filename"',
-        '      return 0',
-        '    fi',
+        "      return 0",
+        "    fi",
         '    match=$(find "$dir" -type f -name "$filename" -print -quit 2>/dev/null || true)',
         '    if [ -n "$match" ]; then',
         '      printf "%s\\n" "$match"',
-        '      return 0',
-        '    fi',
-        '  done',
-        '  return 1',
-        '}',
+        "      return 0",
+        "    fi",
+        "  done",
+        "  return 1",
+        "}",
         "",
         'SEARCH_DIRS=("$HASHLINK_DIR/build/bin" "$HASHLINK_DIR" "${EXTRA_HDLL_DIRS[@]}")',
-        'HDLL_ARGS=()',
+        "HDLL_ARGS=()",
         'HDLL_DIRS=("$HASHLINK_DIR/build/bin")',
-        'EXTRA_LINK_ARGS=()',
-        'CC_BIN=cc',
-        'CC_PREFIX=()',
+        "EXTRA_LINK_ARGS=()",
+        "CC_BIN=cc",
+        "CC_PREFIX=()",
         'if [ "$USE_CLANG" = "1" ]; then CC_BIN=clang; fi',
         'if [ "$USE_CCACHE" = "1" ]; then CC_PREFIX=(ccache); fi',
-        'find_shared_lib() {',
+        "find_shared_lib() {",
         '  local filename="$1"',
-        '  shift',
-        '  local dir match',
+        "  shift",
+        "  local dir match",
         '  for dir in "$@"; do',
         '    [ -d "$dir" ] || continue',
         '    if [ -f "$dir/$filename" ]; then',
         '      printf "%s\n" "$dir/$filename"',
-        '      return 0',
-        '    fi',
+        "      return 0",
+        "    fi",
         '    match=$(find "$dir" -type f -name "$filename" -print -quit 2>/dev/null || true)',
         '    if [ -n "$match" ]; then',
         '      printf "%s\n" "$match"',
-        '      return 0',
-        '    fi',
-        '  done',
-        '  return 1',
-        '}',
+        "      return 0",
+        "    fi",
+        "  done",
+        "  return 1",
+        "}",
     ]
     for lib in native_libs:
         script += [
             f'path=$(find_hdll "{lib}" "${{SEARCH_DIRS[@]}}" || true)',
             'if [ -z "$path" ]; then',
             f'  echo "error: could not find {lib}.hdll in search directories" >&2',
-            '  exit 1',
-            'fi',
+            "  exit 1",
+            "fi",
             'HDLL_ARGS+=("$path")',
             'HDLL_DIRS+=("$(dirname "$path")")',
         ]
@@ -338,12 +299,12 @@ def _build_hlc_script(
             'if [ -n "$explicit_uv" ]; then',
             '  EXTRA_LINK_ARGS+=("$explicit_uv" "-Wl,-rpath-link,$(dirname "$explicit_uv")")',
             '  HDLL_DIRS+=("$(dirname "$explicit_uv")")',
-            'elif command -v pkg-config >/dev/null 2>&1; then',
-            '  UV_LIBS=$(pkg-config --libs libuv 2>/dev/null || true)',
+            "elif command -v pkg-config >/dev/null 2>&1; then",
+            "  UV_LIBS=$(pkg-config --libs libuv 2>/dev/null || true)",
             '  if [ -n "$UV_LIBS" ]; then EXTRA_LINK_ARGS+=( $UV_LIBS ); else EXTRA_LINK_ARGS+=("-luv"); fi',
-            'else',
+            "else",
             '  EXTRA_LINK_ARGS+=("-luv")',
-            'fi',
+            "fi",
         ]
     if "steam" in native_libs:
         script += [
@@ -351,20 +312,20 @@ def _build_hlc_script(
             'if [ -n "$steam_api" ]; then',
             '  EXTRA_LINK_ARGS+=("-L$(dirname "$steam_api")" "-lsteam_api" "-Wl,-rpath-link,$(dirname "$steam_api")" "-Wl,-rpath,$(dirname "$steam_api")" "-lstdc++")',
             '  HDLL_DIRS+=("$(dirname "$steam_api")")',
-            'else',
+            "else",
             '  echo "warning: libsteam_api.so not found in search directories" >&2',
-            'fi',
+            "fi",
         ]
     script += [
         "",
         '"${CC_PREFIX[@]}" "$CC_BIN" -O2 -Wno-incompatible-pointer-types \\',
-        "  -I\"$HASHLINK_DIR/src\" \\",
-        "  \"$C_FILE\" \"$HASHLINK_DIR/src/hlc_main.c\" \\",
-        "  \"${HDLL_ARGS[@]}\" \\",
+        '  -I"$HASHLINK_DIR/src" \\',
+        '  "$C_FILE" "$HASHLINK_DIR/src/hlc_main.c" \\',
+        '  "${HDLL_ARGS[@]}" \\',
         "  ${EXTRA_LINK_ARGS[@]} \\",
-        "  -L\"$HASHLINK_DIR/build/bin\" -lhl -lm -ldl -lpthread \\",
-        "  -Wl,-rpath,\"$HASHLINK_DIR/build/bin\" \\",
-        "  -o \"$OUT_FILE\"",
+        '  -L"$HASHLINK_DIR/build/bin" -lhl -lm -ldl -lpthread \\',
+        '  -Wl,-rpath,"$HASHLINK_DIR/build/bin" \\',
+        '  -o "$OUT_FILE"',
         "",
         'echo "Built $OUT_FILE"',
         'LD_PATH=$(IFS=:; echo "${HDLL_DIRS[*]}")',
@@ -374,7 +335,9 @@ def _build_hlc_script(
 
 
 def info_main(argv: List[str]) -> None:
-    parser = argparse.ArgumentParser(description="Print summary information about a bytecode file.", prog="crashlink info")
+    parser = argparse.ArgumentParser(
+        description="Print summary information about a bytecode file.", prog="crashlink info"
+    )
     parser.add_argument("file", help="Input .hl / .dat file")
     parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
     args = parser.parse_args(argv)
@@ -391,7 +354,9 @@ def info_main(argv: List[str]) -> None:
 
 
 def disasm_main(argv: List[str]) -> None:
-    parser = argparse.ArgumentParser(description="Disassemble a function from a bytecode file.", prog="crashlink disasm")
+    parser = argparse.ArgumentParser(
+        description="Disassemble a function from a bytecode file.", prog="crashlink disasm"
+    )
     parser.add_argument("file", help="Input .hl / .dat file")
     parser.add_argument("findex", type=int, help="Function index to disassemble")
     parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
@@ -449,7 +414,9 @@ def decompile_main(argv: List[str]) -> None:
     )
     parser.add_argument("file", help="Input .hl / .dat file")
     parser.add_argument("index", type=int, help="findex for a function, or tIndex with --class")
-    parser.add_argument("--class", dest="is_class", action="store_true", help="Treat index as a tIndex and decompile the whole class")
+    parser.add_argument(
+        "--class", dest="is_class", action="store_true", help="Treat index as a tIndex and decompile the whole class"
+    )
     parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
     args = parser.parse_args(argv)
     print("[warning] Decompiler is EXPERIMENTAL — output may be incorrect or incomplete.", file=sys.stderr)
@@ -457,6 +424,7 @@ def decompile_main(argv: List[str]) -> None:
 
     if args.is_class:
         from .decomp import IRClass
+
         try:
             typ = code.types[args.index]
         except IndexError:
@@ -470,6 +438,7 @@ def decompile_main(argv: List[str]) -> None:
     else:
         from .decomp import IRFunction
         from .pseudo import pseudo as _pseudo
+
         for func in code.functions:
             if func.findex.value == args.index:
                 ir = IRFunction(code, func)
@@ -480,7 +449,9 @@ def decompile_main(argv: List[str]) -> None:
 
 
 def hlc_main(argv: List[str]) -> None:
-    parser = argparse.ArgumentParser(description="Transpile HashLink bytecode to C and emit a matching build script.", prog="crashlink hlc")
+    parser = argparse.ArgumentParser(
+        description="Transpile HashLink bytecode to C and emit a matching build script.", prog="crashlink hlc"
+    )
     parser.add_argument("file", help="Input .hl / .dat / Haxe source file")
     parser.add_argument("-o", "--output", help="Output C filename")
     parser.add_argument("--build", help="Compile the generated C immediately", action="store_true")
@@ -1348,7 +1319,7 @@ class Commands(BaseCommands):
             print("Usage: pickle <path>")
             return
         try:
-            import dill  # type: ignore
+            import dill
 
             with open(args[0], "wb") as f:
                 dill.dump(self.code, f)
@@ -1767,8 +1738,7 @@ def mcp_main(argv: List[str]) -> None:
         from .mcp import run_mcp_server
     except ImportError:
         print(
-            "The 'mcp' package is required for 'crashlink mcp'. "
-            "Install it with: pip install crashlink[extras]",
+            "The 'mcp' package is required for 'crashlink mcp'. Install it with: pip install crashlink[extras]",
             file=sys.stderr,
         )
         sys.exit(1)
