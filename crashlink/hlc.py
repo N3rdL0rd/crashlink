@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import enum
-from typing import Any, Callable, List, Literal, Optional, Dict, Tuple
+from typing import Any, Callable, List, Literal, Optional, Dict, Set, Tuple
 
 from crashlink.errors import MalformedBytecode
 from crashlink.globals import DEBUG, VERSION
@@ -655,7 +655,7 @@ def generate_entry(code: Bytecode) -> List[str]:
     return res
 
 
-unknown_ops = set()
+unknown_ops: Set[str] = set()
 
 
 def dyn_value_field(typ: Type) -> str:
