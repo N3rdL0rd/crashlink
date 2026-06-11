@@ -1279,12 +1279,12 @@ def generate_functions(code: Bytecode) -> List[str]:
                         dst_type_idx = function.regs[df["dst"].value]
                         rhs = rcast(code, df["src"], dst_type_idx, function)
                     case "Int":
-                        _int_val = code.ints[df['ptr'].value].value
+                        _int_val = code.ints[df["ptr"].value].value
                         if _int_val > 0x7FFFFFFF:
                             _int_val = _signed32(_int_val)
                         rhs = "(-2147483647 - 1)" if _int_val == -2147483648 else str(_int_val)
                     case "Float":
-                        _fval = code.floats[df['ptr'].value].value
+                        _fval = code.floats[df["ptr"].value].value
                         _fstr = f"{_fval:.19g}"
                         if "." not in _fstr and "e" not in _fstr:
                             _fstr += "."
@@ -1329,15 +1329,21 @@ def generate_functions(code: Bytecode) -> List[str]:
                         rhs = f"(r{df['b']} == 0) ? 0 : ((unsigned)r{df['a']}) % ((unsigned)r{df['b']})"
                     case "Shl":
                         _shift_kind = function.regs[df["dst"].value].resolve(code).kind.value
-                        _shift_bits = {Type.Kind.U8.value: 8, Type.Kind.U16.value: 16, Type.Kind.I64.value: 64}.get(_shift_kind, 32)
+                        _shift_bits = {Type.Kind.U8.value: 8, Type.Kind.U16.value: 16, Type.Kind.I64.value: 64}.get(
+                            _shift_kind, 32
+                        )
                         rhs = f"r{df['a']} << (r{df['b']} % {_shift_bits})"
                     case "SShr":
                         _shift_kind = function.regs[df["dst"].value].resolve(code).kind.value
-                        _shift_bits = {Type.Kind.U8.value: 8, Type.Kind.U16.value: 16, Type.Kind.I64.value: 64}.get(_shift_kind, 32)
+                        _shift_bits = {Type.Kind.U8.value: 8, Type.Kind.U16.value: 16, Type.Kind.I64.value: 64}.get(
+                            _shift_kind, 32
+                        )
                         rhs = f"r{df['a']} >> (r{df['b']} % {_shift_bits})"
                     case "UShr":
                         _shift_kind = function.regs[df["dst"].value].resolve(code).kind.value
-                        _shift_bits = {Type.Kind.U8.value: 8, Type.Kind.U16.value: 16, Type.Kind.I64.value: 64}.get(_shift_kind, 32)
+                        _shift_bits = {Type.Kind.U8.value: 8, Type.Kind.U16.value: 16, Type.Kind.I64.value: 64}.get(
+                            _shift_kind, 32
+                        )
                         if _shift_kind == Type.Kind.I64.value:
                             rhs = f"((uint64)r{df['a']}) >> (r{df['b']} % {_shift_bits})"
                         else:
@@ -1427,12 +1433,18 @@ def generate_functions(code: Bytecode) -> List[str]:
                                 else:
                                     pass
                                 if ret_is_void:
-                                    line(f"hl_dyn_call_obj(r{obj_reg}->value, &t${field_type_idx.value}, {field_hash}/*{field_name}*/, {'NULL' if not arg_regs else 'args'}, NULL);")
+                                    line(
+                                        f"hl_dyn_call_obj(r{obj_reg}->value, &t${field_type_idx.value}, {field_hash}/*{field_name}*/, {'NULL' if not arg_regs else 'args'}, NULL);"
+                                    )
                                 elif ret_is_ptr:
-                                    line(f"r{dst_reg} = ({ret_ctype})hl_dyn_call_obj(r{obj_reg}->value, &t${field_type_idx.value}, {field_hash}/*{field_name}*/, {'NULL' if not arg_regs else 'args'}, NULL);")
+                                    line(
+                                        f"r{dst_reg} = ({ret_ctype})hl_dyn_call_obj(r{obj_reg}->value, &t${field_type_idx.value}, {field_hash}/*{field_name}*/, {'NULL' if not arg_regs else 'args'}, NULL);"
+                                    )
                                 else:
                                     prefix = dyn_prefix(ret_type)
-                                    line(f"{{ vdynamic _ret; hl_dyn_call_obj(r{obj_reg}->value, &t${field_type_idx.value}, {field_hash}/*{field_name}*/, {'NULL' if not arg_regs else 'args'}, &_ret); r{dst_reg} = ({ret_ctype})_ret.v.{prefix}; }}")
+                                    line(
+                                        f"{{ vdynamic _ret; hl_dyn_call_obj(r{obj_reg}->value, &t${field_type_idx.value}, {field_hash}/*{field_name}*/, {'NULL' if not arg_regs else 'args'}, &_ret); r{dst_reg} = ({ret_ctype})_ret.v.{prefix}; }}"
+                                    )
                             line("}")
                             continue
                     case "CallClosure":
@@ -1469,21 +1481,33 @@ def generate_functions(code: Bytecode) -> List[str]:
                                         elif is_ptr(at.kind.value):
                                             args_arr_parts.append(f"(vdynamic*)r{ar.value}")
                                         else:
-                                            args_arr_parts.append(f"hl_make_dyn(&r{ar.value}, &t${function.regs[ar.value].value})")
+                                            args_arr_parts.append(
+                                                f"hl_make_dyn(&r{ar.value}, &t${function.regs[ar.value].value})"
+                                            )
                                     line(f"vdynamic *args[] = {{{', '.join(args_arr_parts)}}};")
                                 args_name = "NULL" if not call_arg_regs else "args"
                                 if ret_type.kind.value == Type.Kind.VOID.value:
-                                    line(f"hl_dyn_call((vclosure*){closure_reg_str}, {args_name}, {len(call_arg_regs)});")
+                                    line(
+                                        f"hl_dyn_call((vclosure*){closure_reg_str}, {args_name}, {len(call_arg_regs)});"
+                                    )
                                 elif ret_type.kind.value in dynamic_return_kinds:
                                     ret_ctype = ctype(code, ret_type, ret_type_idx.value)
-                                    line(f"r{dst_reg} = ({ret_ctype})hl_dyn_call((vclosure*){closure_reg_str}, {args_name}, {len(call_arg_regs)});")
+                                    line(
+                                        f"r{dst_reg} = ({ret_ctype})hl_dyn_call((vclosure*){closure_reg_str}, {args_name}, {len(call_arg_regs)});"
+                                    )
                                 else:
                                     ret_ctype = ctype(code, ret_type, ret_type_idx.value)
                                     prefix = dyn_prefix(ret_type)
                                     type_arg = ""
-                                    if ret_type.kind.value not in {Type.Kind.F32.value, Type.Kind.F64.value, Type.Kind.I64.value}:
+                                    if ret_type.kind.value not in {
+                                        Type.Kind.F32.value,
+                                        Type.Kind.F64.value,
+                                        Type.Kind.I64.value,
+                                    }:
                                         type_arg = f", &t${ret_type_idx.value}"
-                                    line(f"vdynamic *_ret = hl_dyn_call((vclosure*){closure_reg_str}, {args_name}, {len(call_arg_regs)});")
+                                    line(
+                                        f"vdynamic *_ret = hl_dyn_call((vclosure*){closure_reg_str}, {args_name}, {len(call_arg_regs)});"
+                                    )
                                     line(f"r{dst_reg} = ({ret_ctype})hl_dyn_cast{prefix}(&_ret, &hlt_dyn{type_arg});")
                             line("}")
                             continue
@@ -1650,7 +1674,7 @@ def generate_functions(code: Bytecode) -> List[str]:
                                     f"Expected obj type definition to be Obj or Struct, got {type(dfn).__name__}. This should never happen."
                                 )
                                 field_name = dfn.resolve_fields(code)[field_idx].name.resolve(code)
-                                rhs = f"r{obj_reg}->{sanitize_field_ident(field_name, f'_fld_{field_idx}') }"
+                                rhs = f"r{obj_reg}->{sanitize_field_ident(field_name, f'_fld_{field_idx}')}"
                             case Type.Kind.VIRTUAL.value:
                                 dfn = obj_tres.definition
                                 assert isinstance(dfn, Virtual), "This check should pass."
@@ -1695,9 +1719,9 @@ def generate_functions(code: Bytecode) -> List[str]:
                                 dfn = obj_tres.definition
                                 assert isinstance(dfn, (Obj, Struct)), "This check should pass."
 
-                                field = dfn.resolve_fields(code)[field_idx]
-                                field_name = sanitize_field_ident(field.name.resolve(code), f"_fld_{field_idx}")
-                                field_type_idx = field.type
+                                class_field = dfn.resolve_fields(code)[field_idx]
+                                field_name = sanitize_field_ident(class_field.name.resolve(code), f"_fld_{field_idx}")
+                                field_type_idx = class_field.type
                                 val_cast = rcast(code, Reg(val_reg_idx), field_type_idx, function)
 
                                 rhs = f"{obj_regs}->{field_name} = {val_cast}"
@@ -1833,7 +1857,9 @@ def generate_functions(code: Bytecode) -> List[str]:
                                     enum_value = f"((double)((venum*)r{src_reg})->index)"
                                 else:
                                     enum_value = f"((venum*)r{src_reg})->index"
-                                cast_value = f"({dst_ctype})hl_dyn_cast{prefix}(&r{src_reg}, &t${src_type_idx}{type_arg})"
+                                cast_value = (
+                                    f"({dst_ctype})hl_dyn_cast{prefix}(&r{src_reg}, &t${src_type_idx}{type_arg})"
+                                )
                                 rhs = f"{enum_check} ? {enum_value} : {cast_value}"
                             else:
                                 rhs = f"({dst_ctype})hl_dyn_cast{prefix}(&r{src_reg}, &t${src_type_idx}{type_arg})"

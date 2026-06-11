@@ -66,6 +66,8 @@ you.</p>
     Abstract class type.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;name&#34;,)
+
     def __init__(self) -&gt; None:
         self.name = strRef()
 
@@ -90,6 +92,41 @@ you.</p>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Abstract.name"><code class="name">var <span class="ident">name</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Abstract(TypeDef):
+    &#34;&#34;&#34;
+    Abstract class type.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;name&#34;,)
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Abstract&#34;:
+        self.name.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return self.name.serialise()
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Abstract):
+            return NotImplemented
+        res = self.name == other.name
+        assert isinstance(res, bool), &#34;Abstract equality check must return a boolean&#34;
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Abstract.deserialise"><code class="name flex">
@@ -134,7 +171,7 @@ you.</p>
     Array type, no data.
     &#34;&#34;&#34;
 
-    pass</code></pre>
+    __slots__ = ()</code></pre>
 </details>
 <div class="desc"><p>Array type, no data.</p></div>
 <h3>Ancestors</h3>
@@ -157,6 +194,8 @@ you.</p>
     &#34;&#34;&#34;
     Represents a binding of a function to a field in an object.
     &#34;&#34;&#34;
+
+    __slots__ = (&#34;field&#34;, &#34;findex&#34;)
 
     def __init__(self) -&gt; None:
         self.field = fieldRef()
@@ -183,6 +222,77 @@ you.</p>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Binding.field"><code class="name">var <span class="ident">field</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Binding(Serialisable):
+    &#34;&#34;&#34;
+    Represents a binding of a function to a field in an object.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;field&#34;, &#34;findex&#34;)
+
+    def __init__(self) -&gt; None:
+        self.field = fieldRef()
+        self.findex = fIndex()
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Binding&#34;:
+        self.field.deserialise(f)
+        self.findex.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join([self.field.serialise(), self.findex.serialise()])
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Binding):
+            return NotImplemented
+        res = self.field == other.field and self.findex == other.findex
+        assert isinstance(res, bool), &#34;Binding equality check must return a boolean&#34;
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Binding.findex"><code class="name">var <span class="ident">findex</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Binding(Serialisable):
+    &#34;&#34;&#34;
+    Represents a binding of a function to a field in an object.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;field&#34;, &#34;findex&#34;)
+
+    def __init__(self) -&gt; None:
+        self.field = fieldRef()
+        self.findex = fIndex()
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Binding&#34;:
+        self.field.deserialise(f)
+        self.findex.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join([self.field.serialise(), self.findex.serialise()])
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Binding):
+            return NotImplemented
+        res = self.field == other.field and self.findex == other.findex
+        assert isinstance(res, bool), &#34;Binding equality check must return a boolean&#34;
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Binding.deserialise"><code class="name flex">
@@ -228,7 +338,7 @@ you.</p>
     Boolean type, no data.
     &#34;&#34;&#34;
 
-    pass</code></pre>
+    __slots__ = ()</code></pre>
 </details>
 <div class="desc"><p>Boolean type, no data.</p></div>
 <h3>Ancestors</h3>
@@ -571,7 +681,7 @@ you.</p>
                 self.track_section(f, f&#34;function {i}&#34;)
                 self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
         else:
-            for i in tqdm(range(self.nfunctions.value)):
+            for i in tqdm(range(self.nfunctions.value), desc=&#34;Reading functions&#34;):
                 self.track_section(f, f&#34;function {i}&#34;)
                 self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
         if self.nconstants is not None:
@@ -1371,7 +1481,7 @@ you.</p>
             self.track_section(f, f&#34;function {i}&#34;)
             self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
     else:
-        for i in tqdm(range(self.nfunctions.value)):
+        for i in tqdm(range(self.nfunctions.value), desc=&#34;Reading functions&#34;):
             self.track_section(f, f&#34;function {i}&#34;)
             self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
     if self.nconstants is not None:
@@ -2104,7 +2214,7 @@ and recursively explores all types contained within them.</p></div>
     Bytes type, no data.
     &#34;&#34;&#34;
 
-    pass</code></pre>
+    __slots__ = ()</code></pre>
 </details>
 <div class="desc"><p>Bytes type, no data.</p></div>
 <h3>Ancestors</h3>
@@ -2127,6 +2237,8 @@ and recursively explores all types contained within them.</p></div>
     &#34;&#34;&#34;
     Block of bytes in the bytecode. Contains a list of byte strings and their lengths.
     &#34;&#34;&#34;
+
+    __slots__ = (&#34;size&#34;, &#34;value&#34;, &#34;nbytes&#34;)
 
     def __init__(self) -&gt; None:
         self.size = SerialisableInt()
@@ -2168,6 +2280,156 @@ and recursively explores all types contained within them.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.BytesBlock.nbytes"><code class="name">var <span class="ident">nbytes</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class BytesBlock(Serialisable):
+    &#34;&#34;&#34;
+    Block of bytes in the bytecode. Contains a list of byte strings and their lengths.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;size&#34;, &#34;value&#34;, &#34;nbytes&#34;)
+
+    def __init__(self) -&gt; None:
+        self.size = SerialisableInt()
+        self.size.length = 4
+        self.value: List[bytes] = []
+        self.nbytes = 0
+
+    def deserialise(self, f: BinaryIO | BytesIO, nbytes: int) -&gt; &#34;BytesBlock&#34;:
+        self.nbytes = nbytes
+        self.size.deserialise(f, length=4)
+        raw = f.read(self.size.value)
+        positions: List[VarInt] = []
+        for _ in range(nbytes):
+            pos = VarInt()
+            pos.deserialise(f)
+            positions.append(pos)
+        positions_int = [pos.value for pos in positions]
+        for i in range(len(positions_int)):
+            start = positions_int[i]
+            end = positions_int[i + 1] if i + 1 &lt; len(positions_int) else len(raw)
+            self.value.append(raw[start:end])  # Append the extracted byte string
+        return self
+
+    def serialise(self) -&gt; bytes:
+        raw_data = b&#34;&#34;.join(self.value)
+        self.size.value = len(raw_data)
+        size_serialised = self.size.serialise()
+        positions = []
+        current_pos = 0
+        for byte_str in self.value:
+            positions.append(VarInt(current_pos))
+            current_pos += len(byte_str)
+        positions_serialised = b&#34;&#34;.join([pos.serialise() for pos in positions])
+        return size_serialised + raw_data + positions_serialised</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.BytesBlock.size"><code class="name">var <span class="ident">size</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class BytesBlock(Serialisable):
+    &#34;&#34;&#34;
+    Block of bytes in the bytecode. Contains a list of byte strings and their lengths.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;size&#34;, &#34;value&#34;, &#34;nbytes&#34;)
+
+    def __init__(self) -&gt; None:
+        self.size = SerialisableInt()
+        self.size.length = 4
+        self.value: List[bytes] = []
+        self.nbytes = 0
+
+    def deserialise(self, f: BinaryIO | BytesIO, nbytes: int) -&gt; &#34;BytesBlock&#34;:
+        self.nbytes = nbytes
+        self.size.deserialise(f, length=4)
+        raw = f.read(self.size.value)
+        positions: List[VarInt] = []
+        for _ in range(nbytes):
+            pos = VarInt()
+            pos.deserialise(f)
+            positions.append(pos)
+        positions_int = [pos.value for pos in positions]
+        for i in range(len(positions_int)):
+            start = positions_int[i]
+            end = positions_int[i + 1] if i + 1 &lt; len(positions_int) else len(raw)
+            self.value.append(raw[start:end])  # Append the extracted byte string
+        return self
+
+    def serialise(self) -&gt; bytes:
+        raw_data = b&#34;&#34;.join(self.value)
+        self.size.value = len(raw_data)
+        size_serialised = self.size.serialise()
+        positions = []
+        current_pos = 0
+        for byte_str in self.value:
+            positions.append(VarInt(current_pos))
+            current_pos += len(byte_str)
+        positions_serialised = b&#34;&#34;.join([pos.serialise() for pos in positions])
+        return size_serialised + raw_data + positions_serialised</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.BytesBlock.value"><code class="name">var <span class="ident">value</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class BytesBlock(Serialisable):
+    &#34;&#34;&#34;
+    Block of bytes in the bytecode. Contains a list of byte strings and their lengths.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;size&#34;, &#34;value&#34;, &#34;nbytes&#34;)
+
+    def __init__(self) -&gt; None:
+        self.size = SerialisableInt()
+        self.size.length = 4
+        self.value: List[bytes] = []
+        self.nbytes = 0
+
+    def deserialise(self, f: BinaryIO | BytesIO, nbytes: int) -&gt; &#34;BytesBlock&#34;:
+        self.nbytes = nbytes
+        self.size.deserialise(f, length=4)
+        raw = f.read(self.size.value)
+        positions: List[VarInt] = []
+        for _ in range(nbytes):
+            pos = VarInt()
+            pos.deserialise(f)
+            positions.append(pos)
+        positions_int = [pos.value for pos in positions]
+        for i in range(len(positions_int)):
+            start = positions_int[i]
+            end = positions_int[i + 1] if i + 1 &lt; len(positions_int) else len(raw)
+            self.value.append(raw[start:end])  # Append the extracted byte string
+        return self
+
+    def serialise(self) -&gt; bytes:
+        raw_data = b&#34;&#34;.join(self.value)
+        self.size.value = len(raw_data)
+        size_serialised = self.size.serialise()
+        positions = []
+        current_pos = 0
+        for byte_str in self.value:
+            positions.append(VarInt(current_pos))
+            current_pos += len(byte_str)
+        positions_serialised = b&#34;&#34;.join([pos.serialise() for pos in positions])
+        return size_serialised + raw_data + positions_serialised</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.BytesBlock.deserialise"><code class="name flex">
@@ -2394,6 +2656,8 @@ and recursively explores all types contained within them.</p></div>
     Represents debug information for a function, encoded with a delta encoding scheme for compression.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;value&#34;,)
+
     def __init__(self) -&gt; None:
         self.value: List[fileRef] = []
 
@@ -2503,6 +2767,127 @@ and recursively explores all types contained within them.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.DebugInfo.value"><code class="name">var <span class="ident">value</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class DebugInfo(Serialisable):
+    &#34;&#34;&#34;
+    Represents debug information for a function, encoded with a delta encoding scheme for compression.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;value&#34;,)
+
+    def __init__(self) -&gt; None:
+        self.value: List[fileRef] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO, nops: int) -&gt; &#34;DebugInfo&#34;:
+        tmp = []
+        currfile: int = -1
+        currline: int = 0
+        i = 0
+        while i &lt; nops:
+            try:
+                c_byte = f.read(1)
+                if not c_byte:
+                    break
+                c = ctypes.c_uint8(ord(c_byte)).value
+                if c &amp; 1 != 0:
+                    c &gt;&gt;= 1
+                    b2_byte = f.read(1)
+                    if not b2_byte:
+                        break
+                    currfile = (c &lt;&lt; 8) | ctypes.c_uint8(ord(b2_byte)).value
+                elif c &amp; 2 != 0:
+                    delta = c &gt;&gt; 6
+                    count = (c &gt;&gt; 2) &amp; 15
+                    for _ in range(count):
+                        tmp.append(fileRef(currfile, currline))
+                        i += 1
+                    currline += delta
+                elif c &amp; 4 != 0:
+                    currline += c &gt;&gt; 3
+                    tmp.append(fileRef(currfile, currline))
+                    i += 1
+                else:
+                    b2_byte, b3_byte = f.read(1), f.read(1)
+                    if not b2_byte or not b3_byte:
+                        break
+                    b2 = ctypes.c_uint8(ord(b2_byte)).value
+                    b3 = ctypes.c_uint8(ord(b3_byte)).value
+                    currline = (c &gt;&gt; 3) | (b2 &lt;&lt; 5) | (b3 &lt;&lt; 13)
+                    tmp.append(fileRef(currfile, currline))
+                    i += 1
+            except (IOError, IndexError):
+                break
+        self.value = tmp
+        return self
+
+    def _flush_repeat(
+        self,
+        w: BinaryIO | BytesIO,
+        curpos: ctypes.c_size_t,
+        rcount: ctypes.c_size_t,
+        pos: int,
+    ) -&gt; None:
+        if rcount.value &gt; 0:
+            if rcount.value &gt; 15:
+                w.write(ctypes.c_uint8((15 &lt;&lt; 2) | 2).value.to_bytes(1, &#34;little&#34;))
+                rcount.value -= 15
+                self._flush_repeat(w, curpos, rcount, pos)
+            else:
+                delta = pos - curpos.value
+                delta = delta if 0 &lt; delta &lt; 4 else 0
+                w.write(ctypes.c_uint8(((delta &lt;&lt; 6) | (rcount.value &lt;&lt; 2) | 2)).value.to_bytes(1, &#34;little&#34;))
+                rcount.value = 0
+                curpos.value += delta
+
+    def serialise(self) -&gt; bytes:
+        w = BytesIO()
+        curfile = -1
+        curpos = ctypes.c_size_t(0)
+        rcount = ctypes.c_size_t(0)
+
+        for ref in self.value:
+            f = ref.value
+            p = ref.line
+            if f != curfile:
+                self._flush_repeat(w, curpos, rcount, p)
+                curfile = f
+                w.write(ctypes.c_uint8(((f &gt;&gt; 7) | 1)).value.to_bytes(1, &#34;little&#34;))
+                w.write(ctypes.c_uint8(f &amp; 0xFF).value.to_bytes(1, &#34;little&#34;))
+
+            if p != curpos.value:
+                self._flush_repeat(w, curpos, rcount, p)
+
+            if p == curpos.value:
+                rcount.value += 1
+            else:
+                delta = p - curpos.value
+                if 0 &lt; delta &lt; 32:
+                    w.write(ctypes.c_uint8((delta &lt;&lt; 3) | 4).value.to_bytes(1, &#34;little&#34;))
+                else:
+                    w.write(ctypes.c_uint8((p &lt;&lt; 3) &amp; 0xFF).value.to_bytes(1, &#34;little&#34;))
+                    w.write(ctypes.c_uint8((p &gt;&gt; 5) &amp; 0xFF).value.to_bytes(1, &#34;little&#34;))
+                    w.write(ctypes.c_uint8((p &gt;&gt; 13) &amp; 0xFF).value.to_bytes(1, &#34;little&#34;))
+                curpos.value = p
+
+        self._flush_repeat(w, curpos, rcount, curpos.value)
+
+        return w.getvalue()
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, DebugInfo):
+            return NotImplemented
+        return self.value == other.value</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.DebugInfo.deserialise"><code class="name flex">
@@ -2616,7 +3001,7 @@ and recursively explores all types contained within them.</p></div>
     Dynamic type, no data. Can store any type of data in a typed register as a pointer.
     &#34;&#34;&#34;
 
-    pass</code></pre>
+    __slots__ = ()</code></pre>
 </details>
 <div class="desc"><p>Dynamic type, no data. Can store any type of data in a typed register as a pointer.</p></div>
 <h3>Ancestors</h3>
@@ -2640,7 +3025,7 @@ and recursively explores all types contained within them.</p></div>
     Dynamic object type, no data.
     &#34;&#34;&#34;
 
-    pass</code></pre>
+    __slots__ = ()</code></pre>
 </details>
 <div class="desc"><p>Dynamic object type, no data.</p></div>
 <h3>Ancestors</h3>
@@ -2663,6 +3048,8 @@ and recursively explores all types contained within them.</p></div>
     &#34;&#34;&#34;
     Enum type.
     &#34;&#34;&#34;
+
+    __slots__ = (&#34;name&#34;, &#34;_global&#34;, &#34;nconstructs&#34;, &#34;constructs&#34;)
 
     def __init__(self) -&gt; None:
         self.name = strRef()
@@ -2701,6 +3088,144 @@ and recursively explores all types contained within them.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Enum.constructs"><code class="name">var <span class="ident">constructs</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Enum(TypeDef):
+    &#34;&#34;&#34;
+    Enum type.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;name&#34;, &#34;_global&#34;, &#34;nconstructs&#34;, &#34;constructs&#34;)
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        self._global = gIndex()
+        self.nconstructs = VarInt()
+        self.constructs: List[EnumConstruct] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Enum&#34;:
+        self.name.deserialise(f)
+        self._global.deserialise(f)
+        self.nconstructs.deserialise(f)
+        for _ in range(self.nconstructs.value):
+            self.constructs.append(EnumConstruct().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nconstructs.value = len(self.constructs)
+        return b&#34;&#34;.join(
+            [
+                self.name.serialise(),
+                self._global.serialise(),
+                self.nconstructs.serialise(),
+                b&#34;&#34;.join([construct.serialise() for construct in self.constructs]),
+            ]
+        )
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Enum):
+            return NotImplemented
+        return self.name == other.name and self.constructs == other.constructs</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Enum.name"><code class="name">var <span class="ident">name</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Enum(TypeDef):
+    &#34;&#34;&#34;
+    Enum type.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;name&#34;, &#34;_global&#34;, &#34;nconstructs&#34;, &#34;constructs&#34;)
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        self._global = gIndex()
+        self.nconstructs = VarInt()
+        self.constructs: List[EnumConstruct] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Enum&#34;:
+        self.name.deserialise(f)
+        self._global.deserialise(f)
+        self.nconstructs.deserialise(f)
+        for _ in range(self.nconstructs.value):
+            self.constructs.append(EnumConstruct().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nconstructs.value = len(self.constructs)
+        return b&#34;&#34;.join(
+            [
+                self.name.serialise(),
+                self._global.serialise(),
+                self.nconstructs.serialise(),
+                b&#34;&#34;.join([construct.serialise() for construct in self.constructs]),
+            ]
+        )
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Enum):
+            return NotImplemented
+        return self.name == other.name and self.constructs == other.constructs</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Enum.nconstructs"><code class="name">var <span class="ident">nconstructs</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Enum(TypeDef):
+    &#34;&#34;&#34;
+    Enum type.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;name&#34;, &#34;_global&#34;, &#34;nconstructs&#34;, &#34;constructs&#34;)
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        self._global = gIndex()
+        self.nconstructs = VarInt()
+        self.constructs: List[EnumConstruct] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Enum&#34;:
+        self.name.deserialise(f)
+        self._global.deserialise(f)
+        self.nconstructs.deserialise(f)
+        for _ in range(self.nconstructs.value):
+            self.constructs.append(EnumConstruct().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nconstructs.value = len(self.constructs)
+        return b&#34;&#34;.join(
+            [
+                self.name.serialise(),
+                self._global.serialise(),
+                self.nconstructs.serialise(),
+                b&#34;&#34;.join([construct.serialise() for construct in self.constructs]),
+            ]
+        )
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Enum):
+            return NotImplemented
+        return self.name == other.name and self.constructs == other.constructs</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Enum.deserialise"><code class="name flex">
@@ -2757,6 +3282,8 @@ and recursively explores all types contained within them.</p></div>
     Construct of an enum.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;name&#34;, &#34;nparams&#34;, &#34;params&#34;)
+
     def __init__(self) -&gt; None:
         self.name = strRef()
         self.nparams = VarInt()
@@ -2790,6 +3317,135 @@ and recursively explores all types contained within them.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.EnumConstruct.name"><code class="name">var <span class="ident">name</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class EnumConstruct(Serialisable):
+    &#34;&#34;&#34;
+    Construct of an enum.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;name&#34;, &#34;nparams&#34;, &#34;params&#34;)
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        self.nparams = VarInt()
+        self.params: List[tIndex] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;EnumConstruct&#34;:
+        self.name.deserialise(f)
+        self.nparams.deserialise(f)
+        for _ in range(self.nparams.value):
+            self.params.append(tIndex().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nparams.value = len(self.params)
+        return b&#34;&#34;.join(
+            [
+                self.name.serialise(),
+                self.nparams.serialise(),
+                b&#34;&#34;.join([param.serialise() for param in self.params]),
+            ]
+        )
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, EnumConstruct):
+            return NotImplemented
+        return self.name == other.name and self.params == other.params</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.EnumConstruct.nparams"><code class="name">var <span class="ident">nparams</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class EnumConstruct(Serialisable):
+    &#34;&#34;&#34;
+    Construct of an enum.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;name&#34;, &#34;nparams&#34;, &#34;params&#34;)
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        self.nparams = VarInt()
+        self.params: List[tIndex] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;EnumConstruct&#34;:
+        self.name.deserialise(f)
+        self.nparams.deserialise(f)
+        for _ in range(self.nparams.value):
+            self.params.append(tIndex().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nparams.value = len(self.params)
+        return b&#34;&#34;.join(
+            [
+                self.name.serialise(),
+                self.nparams.serialise(),
+                b&#34;&#34;.join([param.serialise() for param in self.params]),
+            ]
+        )
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, EnumConstruct):
+            return NotImplemented
+        return self.name == other.name and self.params == other.params</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.EnumConstruct.params"><code class="name">var <span class="ident">params</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class EnumConstruct(Serialisable):
+    &#34;&#34;&#34;
+    Construct of an enum.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;name&#34;, &#34;nparams&#34;, &#34;params&#34;)
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        self.nparams = VarInt()
+        self.params: List[tIndex] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;EnumConstruct&#34;:
+        self.name.deserialise(f)
+        self.nparams.deserialise(f)
+        for _ in range(self.nparams.value):
+            self.params.append(tIndex().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nparams.value = len(self.params)
+        return b&#34;&#34;.join(
+            [
+                self.name.serialise(),
+                self.nparams.serialise(),
+                b&#34;&#34;.join([param.serialise() for param in self.params]),
+            ]
+        )
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, EnumConstruct):
+            return NotImplemented
+        return self.name == other.name and self.params == other.params</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.EnumConstruct.deserialise"><code class="name flex">
@@ -2844,7 +3500,7 @@ and recursively explores all types contained within them.</p></div>
     32-bit float type, no data.
     &#34;&#34;&#34;
 
-    pass</code></pre>
+    __slots__ = ()</code></pre>
 </details>
 <div class="desc"><p>32-bit float type, no data.</p></div>
 <h3>Ancestors</h3>
@@ -2868,7 +3524,7 @@ and recursively explores all types contained within them.</p></div>
     64-bit float type, no data.
     &#34;&#34;&#34;
 
-    pass</code></pre>
+    __slots__ = ()</code></pre>
 </details>
 <div class="desc"><p>64-bit float type, no data.</p></div>
 <h3>Ancestors</h3>
@@ -2892,6 +3548,8 @@ and recursively explores all types contained within them.</p></div>
     &#34;&#34;&#34;
     Represents a field in a class definition.
     &#34;&#34;&#34;
+
+    __slots__ = (&#34;name&#34;, &#34;type&#34;)
 
     def __init__(self, name: Optional[strRef] = None, type: Optional[tIndex] = None) -&gt; None:
         if not name:
@@ -2924,6 +3582,89 @@ and recursively explores all types contained within them.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Field.name"><code class="name">var <span class="ident">name</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Field(Serialisable):
+    &#34;&#34;&#34;
+    Represents a field in a class definition.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;name&#34;, &#34;type&#34;)
+
+    def __init__(self, name: Optional[strRef] = None, type: Optional[tIndex] = None) -&gt; None:
+        if not name:
+            self.name = strRef()
+        else:
+            self.name = name
+        if not type:
+            self.type = tIndex()
+        else:
+            self.type = type
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Field&#34;:
+        self.name.deserialise(f)
+        self.type.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join([self.name.serialise(), self.type.serialise()])
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Field):
+            return NotImplemented
+        res = self.name == other.name and self.type == other.type
+        assert isinstance(res, bool), &#34;Field equality check must return a boolean&#34;
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Field.type"><code class="name">var <span class="ident">type</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Field(Serialisable):
+    &#34;&#34;&#34;
+    Represents a field in a class definition.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;name&#34;, &#34;type&#34;)
+
+    def __init__(self, name: Optional[strRef] = None, type: Optional[tIndex] = None) -&gt; None:
+        if not name:
+            self.name = strRef()
+        else:
+            self.name = name
+        if not type:
+            self.type = tIndex()
+        else:
+            self.type = type
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Field&#34;:
+        self.name.deserialise(f)
+        self.type.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join([self.name.serialise(), self.type.serialise()])
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Field):
+            return NotImplemented
+        res = self.name == other.name and self.type == other.type
+        assert isinstance(res, bool), &#34;Field equality check must return a boolean&#34;
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Field.deserialise"><code class="name flex">
@@ -2968,6 +3709,8 @@ and recursively explores all types contained within them.</p></div>
     &#34;&#34;&#34;
     Stores metadata about a function (signatures). When referenced in conjunction with a Proto or Method, it can be used to reconstruct the full function signature. See `crashlink.disasm.func_header` for a working reference.
     &#34;&#34;&#34;
+
+    __slots__ = (&#34;nargs&#34;, &#34;args&#34;, &#34;ret&#34;)
 
     def __init__(self) -&gt; None:
         self.nargs = VarInt()
@@ -3014,6 +3757,156 @@ and recursively explores all types contained within them.</p></div>
 <ul class="hlist">
 <li><a title="crashlink.core.Method" href="#crashlink.core.Method">Method</a></li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Fun.args"><code class="name">var <span class="ident">args</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Fun(TypeDef):
+    &#34;&#34;&#34;
+    Stores metadata about a function (signatures). When referenced in conjunction with a Proto or Method, it can be used to reconstruct the full function signature. See `crashlink.disasm.func_header` for a working reference.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;nargs&#34;, &#34;args&#34;, &#34;ret&#34;)
+
+    def __init__(self) -&gt; None:
+        self.nargs = VarInt()
+        self.args: List[tIndex] = []
+        self.ret = tIndex()
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Fun&#34;:
+        self.nargs.deserialise(f)
+        for _ in range(self.nargs.value):
+            self.args.append(tIndex().deserialise(f))
+        self.ret.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nargs.value = len(self.args)
+        return b&#34;&#34;.join(
+            [
+                self.nargs.serialise(),
+                b&#34;&#34;.join([idx.serialise() for idx in self.args]),
+                self.ret.serialise(),
+            ]
+        )
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        &#34;&#34;&#34;
+        Returns a pretty-printed string representation of the function signature.
+        &#34;&#34;&#34;
+        args_str = &#34;, &#34;.join([arg.resolve(code).str_resolve(code) for arg in self.args])
+        return f&#34;({args_str}) -&gt; {self.ret.resolve(code).str_resolve(code)}&#34;
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Fun):
+            return NotImplemented
+        return self.nargs == other.nargs and self.args == other.args and self.ret == other.ret</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Fun.nargs"><code class="name">var <span class="ident">nargs</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Fun(TypeDef):
+    &#34;&#34;&#34;
+    Stores metadata about a function (signatures). When referenced in conjunction with a Proto or Method, it can be used to reconstruct the full function signature. See `crashlink.disasm.func_header` for a working reference.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;nargs&#34;, &#34;args&#34;, &#34;ret&#34;)
+
+    def __init__(self) -&gt; None:
+        self.nargs = VarInt()
+        self.args: List[tIndex] = []
+        self.ret = tIndex()
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Fun&#34;:
+        self.nargs.deserialise(f)
+        for _ in range(self.nargs.value):
+            self.args.append(tIndex().deserialise(f))
+        self.ret.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nargs.value = len(self.args)
+        return b&#34;&#34;.join(
+            [
+                self.nargs.serialise(),
+                b&#34;&#34;.join([idx.serialise() for idx in self.args]),
+                self.ret.serialise(),
+            ]
+        )
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        &#34;&#34;&#34;
+        Returns a pretty-printed string representation of the function signature.
+        &#34;&#34;&#34;
+        args_str = &#34;, &#34;.join([arg.resolve(code).str_resolve(code) for arg in self.args])
+        return f&#34;({args_str}) -&gt; {self.ret.resolve(code).str_resolve(code)}&#34;
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Fun):
+            return NotImplemented
+        return self.nargs == other.nargs and self.args == other.args and self.ret == other.ret</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Fun.ret"><code class="name">var <span class="ident">ret</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Fun(TypeDef):
+    &#34;&#34;&#34;
+    Stores metadata about a function (signatures). When referenced in conjunction with a Proto or Method, it can be used to reconstruct the full function signature. See `crashlink.disasm.func_header` for a working reference.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;nargs&#34;, &#34;args&#34;, &#34;ret&#34;)
+
+    def __init__(self) -&gt; None:
+        self.nargs = VarInt()
+        self.args: List[tIndex] = []
+        self.ret = tIndex()
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Fun&#34;:
+        self.nargs.deserialise(f)
+        for _ in range(self.nargs.value):
+            self.args.append(tIndex().deserialise(f))
+        self.ret.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nargs.value = len(self.args)
+        return b&#34;&#34;.join(
+            [
+                self.nargs.serialise(),
+                b&#34;&#34;.join([idx.serialise() for idx in self.args]),
+                self.ret.serialise(),
+            ]
+        )
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        &#34;&#34;&#34;
+        Returns a pretty-printed string representation of the function signature.
+        &#34;&#34;&#34;
+        args_str = &#34;, &#34;.join([arg.resolve(code).str_resolve(code) for arg in self.args])
+        return f&#34;({args_str}) -&gt; {self.ret.resolve(code).str_resolve(code)}&#34;
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Fun):
+            return NotImplemented
+        return self.nargs == other.nargs and self.args == other.args and self.ret == other.ret</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Fun.deserialise"><code class="name flex">
@@ -5246,7 +6139,7 @@ and recursively explores all types contained within them.</p></div>
     GUID type, no data.
     &#34;&#34;&#34;
 
-    pass</code></pre>
+    __slots__ = ()</code></pre>
 </details>
 <div class="desc"><p>GUID type, no data.</p></div>
 <h3>Ancestors</h3>
@@ -5270,7 +6163,7 @@ and recursively explores all types contained within them.</p></div>
     Signed 32-bit integer type, no data.
     &#34;&#34;&#34;
 
-    pass</code></pre>
+    __slots__ = ()</code></pre>
 </details>
 <div class="desc"><p>Signed 32-bit integer type, no data.</p></div>
 <h3>Ancestors</h3>
@@ -5294,7 +6187,7 @@ and recursively explores all types contained within them.</p></div>
     Signed 64-bit integer type, no data.
     &#34;&#34;&#34;
 
-    pass</code></pre>
+    __slots__ = ()</code></pre>
 </details>
 <div class="desc"><p>Signed 64-bit integer type, no data.</p></div>
 <h3>Ancestors</h3>
@@ -5318,6 +6211,8 @@ and recursively explores all types contained within them.</p></div>
     Inline boolean value.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;varint&#34;, &#34;value&#34;)
+
     def __init__(self) -&gt; None:
         self.varint = VarInt()
         self.value: bool = False
@@ -5337,6 +6232,65 @@ and recursively explores all types contained within them.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.InlineBool.value"><code class="name">var <span class="ident">value</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class InlineBool(Serialisable):
+    &#34;&#34;&#34;
+    Inline boolean value.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;varint&#34;, &#34;value&#34;)
+
+    def __init__(self) -&gt; None:
+        self.varint = VarInt()
+        self.value: bool = False
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;InlineBool&#34;:
+        self.varint.deserialise(f)
+        self.value = bool(self.varint.value)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.varint.value = int(self.value)
+        return self.varint.serialise()</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.InlineBool.varint"><code class="name">var <span class="ident">varint</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class InlineBool(Serialisable):
+    &#34;&#34;&#34;
+    Inline boolean value.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;varint&#34;, &#34;value&#34;)
+
+    def __init__(self) -&gt; None:
+        self.varint = VarInt()
+        self.value: bool = False
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;InlineBool&#34;:
+        self.varint.deserialise(f)
+        self.value = bool(self.varint.value)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.varint.value = int(self.value)
+        return self.varint.serialise()</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.InlineBool.deserialise"><code class="name flex">
@@ -5383,7 +6337,7 @@ and recursively explores all types contained within them.</p></div>
     Method type, identical to Fun.
     &#34;&#34;&#34;
 
-    pass</code></pre>
+    __slots__ = ()</code></pre>
 </details>
 <div class="desc"><p>Method type, identical to Fun.</p></div>
 <h3>Ancestors</h3>
@@ -5419,6 +6373,8 @@ and recursively explores all types contained within them.</p></div>
     - type: tIndex
     - findex: fIndex
     &#34;&#34;&#34;
+
+    __slots__ = (&#34;lib&#34;, &#34;name&#34;, &#34;type&#34;, &#34;findex&#34;)
 
     def __init__(self) -&gt; None:
         self.lib = strRef()
@@ -5465,6 +6421,221 @@ and recursively explores all types contained within them.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Native.findex"><code class="name">var <span class="ident">findex</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Native(Serialisable):
+    &#34;&#34;&#34;
+    Represents a native function.
+
+    - lib: strRef
+    - name: strRef
+    - type: tIndex
+    - findex: fIndex
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;lib&#34;, &#34;name&#34;, &#34;type&#34;, &#34;findex&#34;)
+
+    def __init__(self) -&gt; None:
+        self.lib = strRef()
+        self.name = strRef()
+        self.type = tIndex()
+        self.findex = fIndex()
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Native&#34;:
+        self.lib.deserialise(f)
+        self.name.deserialise(f)
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        return self
+
+    def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+        &#34;&#34;&#34;
+        Resolves all functions that call this native.
+        &#34;&#34;&#34;
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join(
+            [
+                self.lib.serialise(),
+                self.name.serialise(),
+                self.type.serialise(),
+                self.findex.serialise(),
+            ]
+        )</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Native.lib"><code class="name">var <span class="ident">lib</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Native(Serialisable):
+    &#34;&#34;&#34;
+    Represents a native function.
+
+    - lib: strRef
+    - name: strRef
+    - type: tIndex
+    - findex: fIndex
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;lib&#34;, &#34;name&#34;, &#34;type&#34;, &#34;findex&#34;)
+
+    def __init__(self) -&gt; None:
+        self.lib = strRef()
+        self.name = strRef()
+        self.type = tIndex()
+        self.findex = fIndex()
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Native&#34;:
+        self.lib.deserialise(f)
+        self.name.deserialise(f)
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        return self
+
+    def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+        &#34;&#34;&#34;
+        Resolves all functions that call this native.
+        &#34;&#34;&#34;
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join(
+            [
+                self.lib.serialise(),
+                self.name.serialise(),
+                self.type.serialise(),
+                self.findex.serialise(),
+            ]
+        )</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Native.name"><code class="name">var <span class="ident">name</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Native(Serialisable):
+    &#34;&#34;&#34;
+    Represents a native function.
+
+    - lib: strRef
+    - name: strRef
+    - type: tIndex
+    - findex: fIndex
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;lib&#34;, &#34;name&#34;, &#34;type&#34;, &#34;findex&#34;)
+
+    def __init__(self) -&gt; None:
+        self.lib = strRef()
+        self.name = strRef()
+        self.type = tIndex()
+        self.findex = fIndex()
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Native&#34;:
+        self.lib.deserialise(f)
+        self.name.deserialise(f)
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        return self
+
+    def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+        &#34;&#34;&#34;
+        Resolves all functions that call this native.
+        &#34;&#34;&#34;
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join(
+            [
+                self.lib.serialise(),
+                self.name.serialise(),
+                self.type.serialise(),
+                self.findex.serialise(),
+            ]
+        )</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Native.type"><code class="name">var <span class="ident">type</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Native(Serialisable):
+    &#34;&#34;&#34;
+    Represents a native function.
+
+    - lib: strRef
+    - name: strRef
+    - type: tIndex
+    - findex: fIndex
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;lib&#34;, &#34;name&#34;, &#34;type&#34;, &#34;findex&#34;)
+
+    def __init__(self) -&gt; None:
+        self.lib = strRef()
+        self.name = strRef()
+        self.type = tIndex()
+        self.findex = fIndex()
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Native&#34;:
+        self.lib.deserialise(f)
+        self.name.deserialise(f)
+        self.type.deserialise(f)
+        self.findex.deserialise(f)
+        return self
+
+    def called_by(self, code: &#34;Bytecode&#34;) -&gt; List[fIndex]:
+        &#34;&#34;&#34;
+        Resolves all functions that call this native.
+        &#34;&#34;&#34;
+        caller_indices = []
+        for func in code.functions:
+            if any(call_idx.value == self.findex.value for call_idx in func.calls):
+                caller_indices.append(func.findex)
+        return caller_indices
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join(
+            [
+                self.lib.serialise(),
+                self.name.serialise(),
+                self.type.serialise(),
+                self.findex.serialise(),
+            ]
+        )</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Native.called_by"><code class="name flex">
@@ -5539,6 +6710,8 @@ and recursively explores all types contained within them.</p></div>
     Null of a certain type.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;type&#34;,)
+
     def __init__(self) -&gt; None:
         self.type = tIndex()
 
@@ -5563,6 +6736,41 @@ and recursively explores all types contained within them.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Null.type"><code class="name">var <span class="ident">type</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Null(TypeDef):
+    &#34;&#34;&#34;
+    Null of a certain type.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;type&#34;,)
+
+    def __init__(self) -&gt; None:
+        self.type = tIndex()
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Null&#34;:
+        self.type.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return self.type.serialise()
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Null):
+            return NotImplemented
+        res = self.type == other.type
+        assert isinstance(res, bool), &#34;Null equality check must return a boolean&#34;
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Null.deserialise"><code class="name flex">
@@ -5606,6 +6814,24 @@ and recursively explores all types contained within them.</p></div>
     &#34;&#34;&#34;
     Represents a class definition.
     &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;name&#34;,
+        &#34;super&#34;,
+        &#34;_global&#34;,
+        &#34;nfields&#34;,
+        &#34;nprotos&#34;,
+        &#34;nbindings&#34;,
+        &#34;fields&#34;,
+        &#34;protos&#34;,
+        &#34;bindings&#34;,
+        &#34;_virtuals&#34;,
+        &#34;_virtual_map&#34;,
+        &#34;virtuals_initialized&#34;,
+        &#34;_is_static&#34;,
+        &#34;_static&#34;,
+        &#34;_dynamic&#34;,
+    )
 
     def __init__(self) -&gt; None:
         self.name = strRef()
@@ -5783,8 +7009,198 @@ and recursively explores all types contained within them.</p></div>
 </ul>
 <h3>Instance variables</h3>
 <dl>
-<dt id="crashlink.core.Obj.bindings"><code class="name">var <span class="ident">bindings</span></code></dt>
+<dt id="crashlink.core.Obj.bindings"><code class="name">var <span class="ident">bindings</span> : None</code></dt>
 <dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Obj(TypeDef):
+    &#34;&#34;&#34;
+    Represents a class definition.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;name&#34;,
+        &#34;super&#34;,
+        &#34;_global&#34;,
+        &#34;nfields&#34;,
+        &#34;nprotos&#34;,
+        &#34;nbindings&#34;,
+        &#34;fields&#34;,
+        &#34;protos&#34;,
+        &#34;bindings&#34;,
+        &#34;_virtuals&#34;,
+        &#34;_virtual_map&#34;,
+        &#34;virtuals_initialized&#34;,
+        &#34;_is_static&#34;,
+        &#34;_static&#34;,
+        &#34;_dynamic&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        &#34;&#34;&#34;The name of this object type.&#34;&#34;&#34;
+        self.super = tIndex()
+        &#34;&#34;&#34;The superclass of this object type, or -1 if it has no superclass.&#34;&#34;&#34;
+        self._global = gIndex()
+        &#34;&#34;&#34;The global object index of this type.&#34;&#34;&#34;
+        self.nfields = VarInt()
+        &#34;&#34;&#34;Number of fields&#34;&#34;&#34;
+        self.nprotos = VarInt()
+        &#34;&#34;&#34;Number of prototypes&#34;&#34;&#34;
+        self.nbindings = VarInt()
+        &#34;&#34;&#34;Number of bindings&#34;&#34;&#34;
+        self.fields: List[Field] = []
+        &#34;&#34;&#34;List of fields in this object type.&#34;&#34;&#34;
+        self.protos: List[Proto] = []
+        &#34;&#34;&#34;List of prototypes for this object type.&#34;&#34;&#34;
+        self.bindings: List[Binding] = []
+        &#34;&#34;&#34;List of bindings for this object type.&#34;&#34;&#34;
+        self._virtuals: List[int] = []
+        self._virtual_map: Dict[str, int] = {}
+        self.virtuals_initialized: bool = False
+
+        self._is_static: Optional[bool] = None
+        self._static: &#34;Optional[Obj]&#34; = None
+        self._dynamic: &#34;Optional[Obj]&#34; = None
+
+    def get_containing_type(self, code: Bytecode) -&gt; Type:
+        &#34;&#34;&#34;Finds the Type object that contains this Obj definition.&#34;&#34;&#34;
+        for t in code.types:
+            if t.definition is self:
+                return t
+        raise RuntimeError(&#34;Could not find containing Type for Obj instance.&#34;)
+
+    @property
+    def virtuals(self) -&gt; List[int]:
+        &#34;&#34;&#34;Returns the list of virtual function indices for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtuals
+
+    @property
+    def virtual_map(self) -&gt; Dict[str, int]:
+        &#34;&#34;&#34;Returns the map of method names to their virtual ID for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtual_map
+
+    @property
+    def is_static(self) -&gt; bool:
+        &#34;&#34;&#34;True if this Obj is static, else False. If True, you can get this Obj&#39;s dynamic counterpart with `Obj.dynamic`.&#34;&#34;&#34;
+        if self._is_static is not None:
+            return self._is_static
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def static(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s static counterpart. Accessing will raise an exception if `Obj.is_static` is True.&#34;&#34;&#34;
+        if self._static is not None:
+            return self._static
+        if self._is_static is not None and self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def dynamic(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s dynamic counterpart. Accessing will raise an exception if `Obj.is_static` is False.&#34;&#34;&#34;
+        if self._dynamic is not None:
+            return self._dynamic
+        if self._is_static is not None and not self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Obj&#34;:
+        self.name.deserialise(f)
+        self.super.deserialise(f)
+        self._global.deserialise(f)
+        self.nfields.deserialise(f)
+        self.nprotos.deserialise(f)
+        self.nbindings.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(Field().deserialise(f))
+        for _ in range(self.nprotos.value):
+            self.protos.append(Proto().deserialise(f))
+        for _ in range(self.nbindings.value):
+            self.bindings.append(Binding().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nfields.value = len(self.fields)
+        self.nprotos.value = len(self.protos)
+        self.nbindings.value = len(self.bindings)
+        return b&#34;&#34;.join(
+            [
+                self.name.serialise(),
+                self.super.serialise(),
+                self._global.serialise(),
+                self.nfields.serialise(),
+                self.nprotos.serialise(),
+                self.nbindings.serialise(),
+                b&#34;&#34;.join([field.serialise() for field in self.fields]),
+                b&#34;&#34;.join([proto.serialise() for proto in self.protos]),
+                b&#34;&#34;.join([binding.serialise() for binding in self.bindings]),
+            ]
+        )
+
+    def resolve_fields(self, code: &#34;Bytecode&#34;) -&gt; List[Field]:
+        &#34;&#34;&#34;
+        Resolves all fields across the class hierarchy. For instance:
+        class A {
+            var a: Int;
+        }
+        class B extends A {
+            var b: Int;
+        }
+        Where a is field 0 and b is field 1.
+        &#34;&#34;&#34;
+        if self.super.value &lt; 0:  # no superclass
+            return self.fields
+        fields: List[Field] = []
+        visited_types = set()
+        current_type: Optional[Obj] = self
+        while current_type:
+            if id(current_type) in visited_types:
+                raise ValueError(&#34;Cyclic inheritance detected in class hierarchy.&#34;)
+            visited_types.add(id(current_type))
+            fields = current_type.fields + fields
+            if current_type.super.value &lt; 0:
+                current_type = None
+            else:
+                defn = current_type.super.resolve(code).definition
+                if not isinstance(defn, Obj):
+                    raise ValueError(&#34;Invalid superclass type.&#34;)
+                current_type = defn
+        return fields
+
+    def __str__(self) -&gt; str:
+        return f&#34;&lt;Obj: s@{self.name}&gt;&#34;
+
+    def __repr__(self) -&gt; str:
+        return self.__str__()
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        return f&#34;&lt;Obj: {self.name.resolve(code)}&gt;&#34;
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Obj):
+            return NotImplemented
+        return (
+            self.name == other.name
+            and self.super == other.super
+            and self._global == other._global
+            and self.fields == other.fields
+            and self.protos == other.protos
+            and self.bindings == other.bindings
+        )</code></pre>
+</details>
 <div class="desc"><p>List of bindings for this object type.</p></div>
 </dd>
 <dt id="crashlink.core.Obj.dynamic"><code class="name">prop <span class="ident">dynamic</span> : '<a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a>'</code></dt>
@@ -5806,8 +7222,198 @@ def dynamic(self) -&gt; &#34;Obj&#34;:
 </details>
 <div class="desc"><p>This Obj's dynamic counterpart. Accessing will raise an exception if <code><a title="crashlink.core.Obj.is_static" href="#crashlink.core.Obj.is_static">Obj.is_static</a></code> is False.</p></div>
 </dd>
-<dt id="crashlink.core.Obj.fields"><code class="name">var <span class="ident">fields</span></code></dt>
+<dt id="crashlink.core.Obj.fields"><code class="name">var <span class="ident">fields</span> : None</code></dt>
 <dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Obj(TypeDef):
+    &#34;&#34;&#34;
+    Represents a class definition.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;name&#34;,
+        &#34;super&#34;,
+        &#34;_global&#34;,
+        &#34;nfields&#34;,
+        &#34;nprotos&#34;,
+        &#34;nbindings&#34;,
+        &#34;fields&#34;,
+        &#34;protos&#34;,
+        &#34;bindings&#34;,
+        &#34;_virtuals&#34;,
+        &#34;_virtual_map&#34;,
+        &#34;virtuals_initialized&#34;,
+        &#34;_is_static&#34;,
+        &#34;_static&#34;,
+        &#34;_dynamic&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        &#34;&#34;&#34;The name of this object type.&#34;&#34;&#34;
+        self.super = tIndex()
+        &#34;&#34;&#34;The superclass of this object type, or -1 if it has no superclass.&#34;&#34;&#34;
+        self._global = gIndex()
+        &#34;&#34;&#34;The global object index of this type.&#34;&#34;&#34;
+        self.nfields = VarInt()
+        &#34;&#34;&#34;Number of fields&#34;&#34;&#34;
+        self.nprotos = VarInt()
+        &#34;&#34;&#34;Number of prototypes&#34;&#34;&#34;
+        self.nbindings = VarInt()
+        &#34;&#34;&#34;Number of bindings&#34;&#34;&#34;
+        self.fields: List[Field] = []
+        &#34;&#34;&#34;List of fields in this object type.&#34;&#34;&#34;
+        self.protos: List[Proto] = []
+        &#34;&#34;&#34;List of prototypes for this object type.&#34;&#34;&#34;
+        self.bindings: List[Binding] = []
+        &#34;&#34;&#34;List of bindings for this object type.&#34;&#34;&#34;
+        self._virtuals: List[int] = []
+        self._virtual_map: Dict[str, int] = {}
+        self.virtuals_initialized: bool = False
+
+        self._is_static: Optional[bool] = None
+        self._static: &#34;Optional[Obj]&#34; = None
+        self._dynamic: &#34;Optional[Obj]&#34; = None
+
+    def get_containing_type(self, code: Bytecode) -&gt; Type:
+        &#34;&#34;&#34;Finds the Type object that contains this Obj definition.&#34;&#34;&#34;
+        for t in code.types:
+            if t.definition is self:
+                return t
+        raise RuntimeError(&#34;Could not find containing Type for Obj instance.&#34;)
+
+    @property
+    def virtuals(self) -&gt; List[int]:
+        &#34;&#34;&#34;Returns the list of virtual function indices for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtuals
+
+    @property
+    def virtual_map(self) -&gt; Dict[str, int]:
+        &#34;&#34;&#34;Returns the map of method names to their virtual ID for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtual_map
+
+    @property
+    def is_static(self) -&gt; bool:
+        &#34;&#34;&#34;True if this Obj is static, else False. If True, you can get this Obj&#39;s dynamic counterpart with `Obj.dynamic`.&#34;&#34;&#34;
+        if self._is_static is not None:
+            return self._is_static
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def static(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s static counterpart. Accessing will raise an exception if `Obj.is_static` is True.&#34;&#34;&#34;
+        if self._static is not None:
+            return self._static
+        if self._is_static is not None and self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def dynamic(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s dynamic counterpart. Accessing will raise an exception if `Obj.is_static` is False.&#34;&#34;&#34;
+        if self._dynamic is not None:
+            return self._dynamic
+        if self._is_static is not None and not self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Obj&#34;:
+        self.name.deserialise(f)
+        self.super.deserialise(f)
+        self._global.deserialise(f)
+        self.nfields.deserialise(f)
+        self.nprotos.deserialise(f)
+        self.nbindings.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(Field().deserialise(f))
+        for _ in range(self.nprotos.value):
+            self.protos.append(Proto().deserialise(f))
+        for _ in range(self.nbindings.value):
+            self.bindings.append(Binding().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nfields.value = len(self.fields)
+        self.nprotos.value = len(self.protos)
+        self.nbindings.value = len(self.bindings)
+        return b&#34;&#34;.join(
+            [
+                self.name.serialise(),
+                self.super.serialise(),
+                self._global.serialise(),
+                self.nfields.serialise(),
+                self.nprotos.serialise(),
+                self.nbindings.serialise(),
+                b&#34;&#34;.join([field.serialise() for field in self.fields]),
+                b&#34;&#34;.join([proto.serialise() for proto in self.protos]),
+                b&#34;&#34;.join([binding.serialise() for binding in self.bindings]),
+            ]
+        )
+
+    def resolve_fields(self, code: &#34;Bytecode&#34;) -&gt; List[Field]:
+        &#34;&#34;&#34;
+        Resolves all fields across the class hierarchy. For instance:
+        class A {
+            var a: Int;
+        }
+        class B extends A {
+            var b: Int;
+        }
+        Where a is field 0 and b is field 1.
+        &#34;&#34;&#34;
+        if self.super.value &lt; 0:  # no superclass
+            return self.fields
+        fields: List[Field] = []
+        visited_types = set()
+        current_type: Optional[Obj] = self
+        while current_type:
+            if id(current_type) in visited_types:
+                raise ValueError(&#34;Cyclic inheritance detected in class hierarchy.&#34;)
+            visited_types.add(id(current_type))
+            fields = current_type.fields + fields
+            if current_type.super.value &lt; 0:
+                current_type = None
+            else:
+                defn = current_type.super.resolve(code).definition
+                if not isinstance(defn, Obj):
+                    raise ValueError(&#34;Invalid superclass type.&#34;)
+                current_type = defn
+        return fields
+
+    def __str__(self) -&gt; str:
+        return f&#34;&lt;Obj: s@{self.name}&gt;&#34;
+
+    def __repr__(self) -&gt; str:
+        return self.__str__()
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        return f&#34;&lt;Obj: {self.name.resolve(code)}&gt;&#34;
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Obj):
+            return NotImplemented
+        return (
+            self.name == other.name
+            and self.super == other.super
+            and self._global == other._global
+            and self.fields == other.fields
+            and self.protos == other.protos
+            and self.bindings == other.bindings
+        )</code></pre>
+</details>
 <div class="desc"><p>List of fields in this object type.</p></div>
 </dd>
 <dt id="crashlink.core.Obj.is_static"><code class="name">prop <span class="ident">is_static</span> : bool</code></dt>
@@ -5827,24 +7433,974 @@ def is_static(self) -&gt; bool:
 </details>
 <div class="desc"><p>True if this Obj is static, else False. If True, you can get this Obj's dynamic counterpart with <code><a title="crashlink.core.Obj.dynamic" href="#crashlink.core.Obj.dynamic">Obj.dynamic</a></code>.</p></div>
 </dd>
-<dt id="crashlink.core.Obj.name"><code class="name">var <span class="ident">name</span></code></dt>
+<dt id="crashlink.core.Obj.name"><code class="name">var <span class="ident">name</span> : None</code></dt>
 <dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Obj(TypeDef):
+    &#34;&#34;&#34;
+    Represents a class definition.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;name&#34;,
+        &#34;super&#34;,
+        &#34;_global&#34;,
+        &#34;nfields&#34;,
+        &#34;nprotos&#34;,
+        &#34;nbindings&#34;,
+        &#34;fields&#34;,
+        &#34;protos&#34;,
+        &#34;bindings&#34;,
+        &#34;_virtuals&#34;,
+        &#34;_virtual_map&#34;,
+        &#34;virtuals_initialized&#34;,
+        &#34;_is_static&#34;,
+        &#34;_static&#34;,
+        &#34;_dynamic&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        &#34;&#34;&#34;The name of this object type.&#34;&#34;&#34;
+        self.super = tIndex()
+        &#34;&#34;&#34;The superclass of this object type, or -1 if it has no superclass.&#34;&#34;&#34;
+        self._global = gIndex()
+        &#34;&#34;&#34;The global object index of this type.&#34;&#34;&#34;
+        self.nfields = VarInt()
+        &#34;&#34;&#34;Number of fields&#34;&#34;&#34;
+        self.nprotos = VarInt()
+        &#34;&#34;&#34;Number of prototypes&#34;&#34;&#34;
+        self.nbindings = VarInt()
+        &#34;&#34;&#34;Number of bindings&#34;&#34;&#34;
+        self.fields: List[Field] = []
+        &#34;&#34;&#34;List of fields in this object type.&#34;&#34;&#34;
+        self.protos: List[Proto] = []
+        &#34;&#34;&#34;List of prototypes for this object type.&#34;&#34;&#34;
+        self.bindings: List[Binding] = []
+        &#34;&#34;&#34;List of bindings for this object type.&#34;&#34;&#34;
+        self._virtuals: List[int] = []
+        self._virtual_map: Dict[str, int] = {}
+        self.virtuals_initialized: bool = False
+
+        self._is_static: Optional[bool] = None
+        self._static: &#34;Optional[Obj]&#34; = None
+        self._dynamic: &#34;Optional[Obj]&#34; = None
+
+    def get_containing_type(self, code: Bytecode) -&gt; Type:
+        &#34;&#34;&#34;Finds the Type object that contains this Obj definition.&#34;&#34;&#34;
+        for t in code.types:
+            if t.definition is self:
+                return t
+        raise RuntimeError(&#34;Could not find containing Type for Obj instance.&#34;)
+
+    @property
+    def virtuals(self) -&gt; List[int]:
+        &#34;&#34;&#34;Returns the list of virtual function indices for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtuals
+
+    @property
+    def virtual_map(self) -&gt; Dict[str, int]:
+        &#34;&#34;&#34;Returns the map of method names to their virtual ID for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtual_map
+
+    @property
+    def is_static(self) -&gt; bool:
+        &#34;&#34;&#34;True if this Obj is static, else False. If True, you can get this Obj&#39;s dynamic counterpart with `Obj.dynamic`.&#34;&#34;&#34;
+        if self._is_static is not None:
+            return self._is_static
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def static(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s static counterpart. Accessing will raise an exception if `Obj.is_static` is True.&#34;&#34;&#34;
+        if self._static is not None:
+            return self._static
+        if self._is_static is not None and self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def dynamic(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s dynamic counterpart. Accessing will raise an exception if `Obj.is_static` is False.&#34;&#34;&#34;
+        if self._dynamic is not None:
+            return self._dynamic
+        if self._is_static is not None and not self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Obj&#34;:
+        self.name.deserialise(f)
+        self.super.deserialise(f)
+        self._global.deserialise(f)
+        self.nfields.deserialise(f)
+        self.nprotos.deserialise(f)
+        self.nbindings.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(Field().deserialise(f))
+        for _ in range(self.nprotos.value):
+            self.protos.append(Proto().deserialise(f))
+        for _ in range(self.nbindings.value):
+            self.bindings.append(Binding().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nfields.value = len(self.fields)
+        self.nprotos.value = len(self.protos)
+        self.nbindings.value = len(self.bindings)
+        return b&#34;&#34;.join(
+            [
+                self.name.serialise(),
+                self.super.serialise(),
+                self._global.serialise(),
+                self.nfields.serialise(),
+                self.nprotos.serialise(),
+                self.nbindings.serialise(),
+                b&#34;&#34;.join([field.serialise() for field in self.fields]),
+                b&#34;&#34;.join([proto.serialise() for proto in self.protos]),
+                b&#34;&#34;.join([binding.serialise() for binding in self.bindings]),
+            ]
+        )
+
+    def resolve_fields(self, code: &#34;Bytecode&#34;) -&gt; List[Field]:
+        &#34;&#34;&#34;
+        Resolves all fields across the class hierarchy. For instance:
+        class A {
+            var a: Int;
+        }
+        class B extends A {
+            var b: Int;
+        }
+        Where a is field 0 and b is field 1.
+        &#34;&#34;&#34;
+        if self.super.value &lt; 0:  # no superclass
+            return self.fields
+        fields: List[Field] = []
+        visited_types = set()
+        current_type: Optional[Obj] = self
+        while current_type:
+            if id(current_type) in visited_types:
+                raise ValueError(&#34;Cyclic inheritance detected in class hierarchy.&#34;)
+            visited_types.add(id(current_type))
+            fields = current_type.fields + fields
+            if current_type.super.value &lt; 0:
+                current_type = None
+            else:
+                defn = current_type.super.resolve(code).definition
+                if not isinstance(defn, Obj):
+                    raise ValueError(&#34;Invalid superclass type.&#34;)
+                current_type = defn
+        return fields
+
+    def __str__(self) -&gt; str:
+        return f&#34;&lt;Obj: s@{self.name}&gt;&#34;
+
+    def __repr__(self) -&gt; str:
+        return self.__str__()
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        return f&#34;&lt;Obj: {self.name.resolve(code)}&gt;&#34;
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Obj):
+            return NotImplemented
+        return (
+            self.name == other.name
+            and self.super == other.super
+            and self._global == other._global
+            and self.fields == other.fields
+            and self.protos == other.protos
+            and self.bindings == other.bindings
+        )</code></pre>
+</details>
 <div class="desc"><p>The name of this object type.</p></div>
 </dd>
-<dt id="crashlink.core.Obj.nbindings"><code class="name">var <span class="ident">nbindings</span></code></dt>
+<dt id="crashlink.core.Obj.nbindings"><code class="name">var <span class="ident">nbindings</span> : None</code></dt>
 <dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Obj(TypeDef):
+    &#34;&#34;&#34;
+    Represents a class definition.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;name&#34;,
+        &#34;super&#34;,
+        &#34;_global&#34;,
+        &#34;nfields&#34;,
+        &#34;nprotos&#34;,
+        &#34;nbindings&#34;,
+        &#34;fields&#34;,
+        &#34;protos&#34;,
+        &#34;bindings&#34;,
+        &#34;_virtuals&#34;,
+        &#34;_virtual_map&#34;,
+        &#34;virtuals_initialized&#34;,
+        &#34;_is_static&#34;,
+        &#34;_static&#34;,
+        &#34;_dynamic&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        &#34;&#34;&#34;The name of this object type.&#34;&#34;&#34;
+        self.super = tIndex()
+        &#34;&#34;&#34;The superclass of this object type, or -1 if it has no superclass.&#34;&#34;&#34;
+        self._global = gIndex()
+        &#34;&#34;&#34;The global object index of this type.&#34;&#34;&#34;
+        self.nfields = VarInt()
+        &#34;&#34;&#34;Number of fields&#34;&#34;&#34;
+        self.nprotos = VarInt()
+        &#34;&#34;&#34;Number of prototypes&#34;&#34;&#34;
+        self.nbindings = VarInt()
+        &#34;&#34;&#34;Number of bindings&#34;&#34;&#34;
+        self.fields: List[Field] = []
+        &#34;&#34;&#34;List of fields in this object type.&#34;&#34;&#34;
+        self.protos: List[Proto] = []
+        &#34;&#34;&#34;List of prototypes for this object type.&#34;&#34;&#34;
+        self.bindings: List[Binding] = []
+        &#34;&#34;&#34;List of bindings for this object type.&#34;&#34;&#34;
+        self._virtuals: List[int] = []
+        self._virtual_map: Dict[str, int] = {}
+        self.virtuals_initialized: bool = False
+
+        self._is_static: Optional[bool] = None
+        self._static: &#34;Optional[Obj]&#34; = None
+        self._dynamic: &#34;Optional[Obj]&#34; = None
+
+    def get_containing_type(self, code: Bytecode) -&gt; Type:
+        &#34;&#34;&#34;Finds the Type object that contains this Obj definition.&#34;&#34;&#34;
+        for t in code.types:
+            if t.definition is self:
+                return t
+        raise RuntimeError(&#34;Could not find containing Type for Obj instance.&#34;)
+
+    @property
+    def virtuals(self) -&gt; List[int]:
+        &#34;&#34;&#34;Returns the list of virtual function indices for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtuals
+
+    @property
+    def virtual_map(self) -&gt; Dict[str, int]:
+        &#34;&#34;&#34;Returns the map of method names to their virtual ID for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtual_map
+
+    @property
+    def is_static(self) -&gt; bool:
+        &#34;&#34;&#34;True if this Obj is static, else False. If True, you can get this Obj&#39;s dynamic counterpart with `Obj.dynamic`.&#34;&#34;&#34;
+        if self._is_static is not None:
+            return self._is_static
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def static(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s static counterpart. Accessing will raise an exception if `Obj.is_static` is True.&#34;&#34;&#34;
+        if self._static is not None:
+            return self._static
+        if self._is_static is not None and self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def dynamic(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s dynamic counterpart. Accessing will raise an exception if `Obj.is_static` is False.&#34;&#34;&#34;
+        if self._dynamic is not None:
+            return self._dynamic
+        if self._is_static is not None and not self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Obj&#34;:
+        self.name.deserialise(f)
+        self.super.deserialise(f)
+        self._global.deserialise(f)
+        self.nfields.deserialise(f)
+        self.nprotos.deserialise(f)
+        self.nbindings.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(Field().deserialise(f))
+        for _ in range(self.nprotos.value):
+            self.protos.append(Proto().deserialise(f))
+        for _ in range(self.nbindings.value):
+            self.bindings.append(Binding().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nfields.value = len(self.fields)
+        self.nprotos.value = len(self.protos)
+        self.nbindings.value = len(self.bindings)
+        return b&#34;&#34;.join(
+            [
+                self.name.serialise(),
+                self.super.serialise(),
+                self._global.serialise(),
+                self.nfields.serialise(),
+                self.nprotos.serialise(),
+                self.nbindings.serialise(),
+                b&#34;&#34;.join([field.serialise() for field in self.fields]),
+                b&#34;&#34;.join([proto.serialise() for proto in self.protos]),
+                b&#34;&#34;.join([binding.serialise() for binding in self.bindings]),
+            ]
+        )
+
+    def resolve_fields(self, code: &#34;Bytecode&#34;) -&gt; List[Field]:
+        &#34;&#34;&#34;
+        Resolves all fields across the class hierarchy. For instance:
+        class A {
+            var a: Int;
+        }
+        class B extends A {
+            var b: Int;
+        }
+        Where a is field 0 and b is field 1.
+        &#34;&#34;&#34;
+        if self.super.value &lt; 0:  # no superclass
+            return self.fields
+        fields: List[Field] = []
+        visited_types = set()
+        current_type: Optional[Obj] = self
+        while current_type:
+            if id(current_type) in visited_types:
+                raise ValueError(&#34;Cyclic inheritance detected in class hierarchy.&#34;)
+            visited_types.add(id(current_type))
+            fields = current_type.fields + fields
+            if current_type.super.value &lt; 0:
+                current_type = None
+            else:
+                defn = current_type.super.resolve(code).definition
+                if not isinstance(defn, Obj):
+                    raise ValueError(&#34;Invalid superclass type.&#34;)
+                current_type = defn
+        return fields
+
+    def __str__(self) -&gt; str:
+        return f&#34;&lt;Obj: s@{self.name}&gt;&#34;
+
+    def __repr__(self) -&gt; str:
+        return self.__str__()
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        return f&#34;&lt;Obj: {self.name.resolve(code)}&gt;&#34;
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Obj):
+            return NotImplemented
+        return (
+            self.name == other.name
+            and self.super == other.super
+            and self._global == other._global
+            and self.fields == other.fields
+            and self.protos == other.protos
+            and self.bindings == other.bindings
+        )</code></pre>
+</details>
 <div class="desc"><p>Number of bindings</p></div>
 </dd>
-<dt id="crashlink.core.Obj.nfields"><code class="name">var <span class="ident">nfields</span></code></dt>
+<dt id="crashlink.core.Obj.nfields"><code class="name">var <span class="ident">nfields</span> : None</code></dt>
 <dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Obj(TypeDef):
+    &#34;&#34;&#34;
+    Represents a class definition.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;name&#34;,
+        &#34;super&#34;,
+        &#34;_global&#34;,
+        &#34;nfields&#34;,
+        &#34;nprotos&#34;,
+        &#34;nbindings&#34;,
+        &#34;fields&#34;,
+        &#34;protos&#34;,
+        &#34;bindings&#34;,
+        &#34;_virtuals&#34;,
+        &#34;_virtual_map&#34;,
+        &#34;virtuals_initialized&#34;,
+        &#34;_is_static&#34;,
+        &#34;_static&#34;,
+        &#34;_dynamic&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        &#34;&#34;&#34;The name of this object type.&#34;&#34;&#34;
+        self.super = tIndex()
+        &#34;&#34;&#34;The superclass of this object type, or -1 if it has no superclass.&#34;&#34;&#34;
+        self._global = gIndex()
+        &#34;&#34;&#34;The global object index of this type.&#34;&#34;&#34;
+        self.nfields = VarInt()
+        &#34;&#34;&#34;Number of fields&#34;&#34;&#34;
+        self.nprotos = VarInt()
+        &#34;&#34;&#34;Number of prototypes&#34;&#34;&#34;
+        self.nbindings = VarInt()
+        &#34;&#34;&#34;Number of bindings&#34;&#34;&#34;
+        self.fields: List[Field] = []
+        &#34;&#34;&#34;List of fields in this object type.&#34;&#34;&#34;
+        self.protos: List[Proto] = []
+        &#34;&#34;&#34;List of prototypes for this object type.&#34;&#34;&#34;
+        self.bindings: List[Binding] = []
+        &#34;&#34;&#34;List of bindings for this object type.&#34;&#34;&#34;
+        self._virtuals: List[int] = []
+        self._virtual_map: Dict[str, int] = {}
+        self.virtuals_initialized: bool = False
+
+        self._is_static: Optional[bool] = None
+        self._static: &#34;Optional[Obj]&#34; = None
+        self._dynamic: &#34;Optional[Obj]&#34; = None
+
+    def get_containing_type(self, code: Bytecode) -&gt; Type:
+        &#34;&#34;&#34;Finds the Type object that contains this Obj definition.&#34;&#34;&#34;
+        for t in code.types:
+            if t.definition is self:
+                return t
+        raise RuntimeError(&#34;Could not find containing Type for Obj instance.&#34;)
+
+    @property
+    def virtuals(self) -&gt; List[int]:
+        &#34;&#34;&#34;Returns the list of virtual function indices for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtuals
+
+    @property
+    def virtual_map(self) -&gt; Dict[str, int]:
+        &#34;&#34;&#34;Returns the map of method names to their virtual ID for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtual_map
+
+    @property
+    def is_static(self) -&gt; bool:
+        &#34;&#34;&#34;True if this Obj is static, else False. If True, you can get this Obj&#39;s dynamic counterpart with `Obj.dynamic`.&#34;&#34;&#34;
+        if self._is_static is not None:
+            return self._is_static
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def static(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s static counterpart. Accessing will raise an exception if `Obj.is_static` is True.&#34;&#34;&#34;
+        if self._static is not None:
+            return self._static
+        if self._is_static is not None and self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def dynamic(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s dynamic counterpart. Accessing will raise an exception if `Obj.is_static` is False.&#34;&#34;&#34;
+        if self._dynamic is not None:
+            return self._dynamic
+        if self._is_static is not None and not self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Obj&#34;:
+        self.name.deserialise(f)
+        self.super.deserialise(f)
+        self._global.deserialise(f)
+        self.nfields.deserialise(f)
+        self.nprotos.deserialise(f)
+        self.nbindings.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(Field().deserialise(f))
+        for _ in range(self.nprotos.value):
+            self.protos.append(Proto().deserialise(f))
+        for _ in range(self.nbindings.value):
+            self.bindings.append(Binding().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nfields.value = len(self.fields)
+        self.nprotos.value = len(self.protos)
+        self.nbindings.value = len(self.bindings)
+        return b&#34;&#34;.join(
+            [
+                self.name.serialise(),
+                self.super.serialise(),
+                self._global.serialise(),
+                self.nfields.serialise(),
+                self.nprotos.serialise(),
+                self.nbindings.serialise(),
+                b&#34;&#34;.join([field.serialise() for field in self.fields]),
+                b&#34;&#34;.join([proto.serialise() for proto in self.protos]),
+                b&#34;&#34;.join([binding.serialise() for binding in self.bindings]),
+            ]
+        )
+
+    def resolve_fields(self, code: &#34;Bytecode&#34;) -&gt; List[Field]:
+        &#34;&#34;&#34;
+        Resolves all fields across the class hierarchy. For instance:
+        class A {
+            var a: Int;
+        }
+        class B extends A {
+            var b: Int;
+        }
+        Where a is field 0 and b is field 1.
+        &#34;&#34;&#34;
+        if self.super.value &lt; 0:  # no superclass
+            return self.fields
+        fields: List[Field] = []
+        visited_types = set()
+        current_type: Optional[Obj] = self
+        while current_type:
+            if id(current_type) in visited_types:
+                raise ValueError(&#34;Cyclic inheritance detected in class hierarchy.&#34;)
+            visited_types.add(id(current_type))
+            fields = current_type.fields + fields
+            if current_type.super.value &lt; 0:
+                current_type = None
+            else:
+                defn = current_type.super.resolve(code).definition
+                if not isinstance(defn, Obj):
+                    raise ValueError(&#34;Invalid superclass type.&#34;)
+                current_type = defn
+        return fields
+
+    def __str__(self) -&gt; str:
+        return f&#34;&lt;Obj: s@{self.name}&gt;&#34;
+
+    def __repr__(self) -&gt; str:
+        return self.__str__()
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        return f&#34;&lt;Obj: {self.name.resolve(code)}&gt;&#34;
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Obj):
+            return NotImplemented
+        return (
+            self.name == other.name
+            and self.super == other.super
+            and self._global == other._global
+            and self.fields == other.fields
+            and self.protos == other.protos
+            and self.bindings == other.bindings
+        )</code></pre>
+</details>
 <div class="desc"><p>Number of fields</p></div>
 </dd>
-<dt id="crashlink.core.Obj.nprotos"><code class="name">var <span class="ident">nprotos</span></code></dt>
+<dt id="crashlink.core.Obj.nprotos"><code class="name">var <span class="ident">nprotos</span> : None</code></dt>
 <dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Obj(TypeDef):
+    &#34;&#34;&#34;
+    Represents a class definition.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;name&#34;,
+        &#34;super&#34;,
+        &#34;_global&#34;,
+        &#34;nfields&#34;,
+        &#34;nprotos&#34;,
+        &#34;nbindings&#34;,
+        &#34;fields&#34;,
+        &#34;protos&#34;,
+        &#34;bindings&#34;,
+        &#34;_virtuals&#34;,
+        &#34;_virtual_map&#34;,
+        &#34;virtuals_initialized&#34;,
+        &#34;_is_static&#34;,
+        &#34;_static&#34;,
+        &#34;_dynamic&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        &#34;&#34;&#34;The name of this object type.&#34;&#34;&#34;
+        self.super = tIndex()
+        &#34;&#34;&#34;The superclass of this object type, or -1 if it has no superclass.&#34;&#34;&#34;
+        self._global = gIndex()
+        &#34;&#34;&#34;The global object index of this type.&#34;&#34;&#34;
+        self.nfields = VarInt()
+        &#34;&#34;&#34;Number of fields&#34;&#34;&#34;
+        self.nprotos = VarInt()
+        &#34;&#34;&#34;Number of prototypes&#34;&#34;&#34;
+        self.nbindings = VarInt()
+        &#34;&#34;&#34;Number of bindings&#34;&#34;&#34;
+        self.fields: List[Field] = []
+        &#34;&#34;&#34;List of fields in this object type.&#34;&#34;&#34;
+        self.protos: List[Proto] = []
+        &#34;&#34;&#34;List of prototypes for this object type.&#34;&#34;&#34;
+        self.bindings: List[Binding] = []
+        &#34;&#34;&#34;List of bindings for this object type.&#34;&#34;&#34;
+        self._virtuals: List[int] = []
+        self._virtual_map: Dict[str, int] = {}
+        self.virtuals_initialized: bool = False
+
+        self._is_static: Optional[bool] = None
+        self._static: &#34;Optional[Obj]&#34; = None
+        self._dynamic: &#34;Optional[Obj]&#34; = None
+
+    def get_containing_type(self, code: Bytecode) -&gt; Type:
+        &#34;&#34;&#34;Finds the Type object that contains this Obj definition.&#34;&#34;&#34;
+        for t in code.types:
+            if t.definition is self:
+                return t
+        raise RuntimeError(&#34;Could not find containing Type for Obj instance.&#34;)
+
+    @property
+    def virtuals(self) -&gt; List[int]:
+        &#34;&#34;&#34;Returns the list of virtual function indices for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtuals
+
+    @property
+    def virtual_map(self) -&gt; Dict[str, int]:
+        &#34;&#34;&#34;Returns the map of method names to their virtual ID for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtual_map
+
+    @property
+    def is_static(self) -&gt; bool:
+        &#34;&#34;&#34;True if this Obj is static, else False. If True, you can get this Obj&#39;s dynamic counterpart with `Obj.dynamic`.&#34;&#34;&#34;
+        if self._is_static is not None:
+            return self._is_static
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def static(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s static counterpart. Accessing will raise an exception if `Obj.is_static` is True.&#34;&#34;&#34;
+        if self._static is not None:
+            return self._static
+        if self._is_static is not None and self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def dynamic(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s dynamic counterpart. Accessing will raise an exception if `Obj.is_static` is False.&#34;&#34;&#34;
+        if self._dynamic is not None:
+            return self._dynamic
+        if self._is_static is not None and not self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Obj&#34;:
+        self.name.deserialise(f)
+        self.super.deserialise(f)
+        self._global.deserialise(f)
+        self.nfields.deserialise(f)
+        self.nprotos.deserialise(f)
+        self.nbindings.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(Field().deserialise(f))
+        for _ in range(self.nprotos.value):
+            self.protos.append(Proto().deserialise(f))
+        for _ in range(self.nbindings.value):
+            self.bindings.append(Binding().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nfields.value = len(self.fields)
+        self.nprotos.value = len(self.protos)
+        self.nbindings.value = len(self.bindings)
+        return b&#34;&#34;.join(
+            [
+                self.name.serialise(),
+                self.super.serialise(),
+                self._global.serialise(),
+                self.nfields.serialise(),
+                self.nprotos.serialise(),
+                self.nbindings.serialise(),
+                b&#34;&#34;.join([field.serialise() for field in self.fields]),
+                b&#34;&#34;.join([proto.serialise() for proto in self.protos]),
+                b&#34;&#34;.join([binding.serialise() for binding in self.bindings]),
+            ]
+        )
+
+    def resolve_fields(self, code: &#34;Bytecode&#34;) -&gt; List[Field]:
+        &#34;&#34;&#34;
+        Resolves all fields across the class hierarchy. For instance:
+        class A {
+            var a: Int;
+        }
+        class B extends A {
+            var b: Int;
+        }
+        Where a is field 0 and b is field 1.
+        &#34;&#34;&#34;
+        if self.super.value &lt; 0:  # no superclass
+            return self.fields
+        fields: List[Field] = []
+        visited_types = set()
+        current_type: Optional[Obj] = self
+        while current_type:
+            if id(current_type) in visited_types:
+                raise ValueError(&#34;Cyclic inheritance detected in class hierarchy.&#34;)
+            visited_types.add(id(current_type))
+            fields = current_type.fields + fields
+            if current_type.super.value &lt; 0:
+                current_type = None
+            else:
+                defn = current_type.super.resolve(code).definition
+                if not isinstance(defn, Obj):
+                    raise ValueError(&#34;Invalid superclass type.&#34;)
+                current_type = defn
+        return fields
+
+    def __str__(self) -&gt; str:
+        return f&#34;&lt;Obj: s@{self.name}&gt;&#34;
+
+    def __repr__(self) -&gt; str:
+        return self.__str__()
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        return f&#34;&lt;Obj: {self.name.resolve(code)}&gt;&#34;
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Obj):
+            return NotImplemented
+        return (
+            self.name == other.name
+            and self.super == other.super
+            and self._global == other._global
+            and self.fields == other.fields
+            and self.protos == other.protos
+            and self.bindings == other.bindings
+        )</code></pre>
+</details>
 <div class="desc"><p>Number of prototypes</p></div>
 </dd>
-<dt id="crashlink.core.Obj.protos"><code class="name">var <span class="ident">protos</span></code></dt>
+<dt id="crashlink.core.Obj.protos"><code class="name">var <span class="ident">protos</span> : None</code></dt>
 <dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Obj(TypeDef):
+    &#34;&#34;&#34;
+    Represents a class definition.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;name&#34;,
+        &#34;super&#34;,
+        &#34;_global&#34;,
+        &#34;nfields&#34;,
+        &#34;nprotos&#34;,
+        &#34;nbindings&#34;,
+        &#34;fields&#34;,
+        &#34;protos&#34;,
+        &#34;bindings&#34;,
+        &#34;_virtuals&#34;,
+        &#34;_virtual_map&#34;,
+        &#34;virtuals_initialized&#34;,
+        &#34;_is_static&#34;,
+        &#34;_static&#34;,
+        &#34;_dynamic&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        &#34;&#34;&#34;The name of this object type.&#34;&#34;&#34;
+        self.super = tIndex()
+        &#34;&#34;&#34;The superclass of this object type, or -1 if it has no superclass.&#34;&#34;&#34;
+        self._global = gIndex()
+        &#34;&#34;&#34;The global object index of this type.&#34;&#34;&#34;
+        self.nfields = VarInt()
+        &#34;&#34;&#34;Number of fields&#34;&#34;&#34;
+        self.nprotos = VarInt()
+        &#34;&#34;&#34;Number of prototypes&#34;&#34;&#34;
+        self.nbindings = VarInt()
+        &#34;&#34;&#34;Number of bindings&#34;&#34;&#34;
+        self.fields: List[Field] = []
+        &#34;&#34;&#34;List of fields in this object type.&#34;&#34;&#34;
+        self.protos: List[Proto] = []
+        &#34;&#34;&#34;List of prototypes for this object type.&#34;&#34;&#34;
+        self.bindings: List[Binding] = []
+        &#34;&#34;&#34;List of bindings for this object type.&#34;&#34;&#34;
+        self._virtuals: List[int] = []
+        self._virtual_map: Dict[str, int] = {}
+        self.virtuals_initialized: bool = False
+
+        self._is_static: Optional[bool] = None
+        self._static: &#34;Optional[Obj]&#34; = None
+        self._dynamic: &#34;Optional[Obj]&#34; = None
+
+    def get_containing_type(self, code: Bytecode) -&gt; Type:
+        &#34;&#34;&#34;Finds the Type object that contains this Obj definition.&#34;&#34;&#34;
+        for t in code.types:
+            if t.definition is self:
+                return t
+        raise RuntimeError(&#34;Could not find containing Type for Obj instance.&#34;)
+
+    @property
+    def virtuals(self) -&gt; List[int]:
+        &#34;&#34;&#34;Returns the list of virtual function indices for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtuals
+
+    @property
+    def virtual_map(self) -&gt; Dict[str, int]:
+        &#34;&#34;&#34;Returns the map of method names to their virtual ID for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtual_map
+
+    @property
+    def is_static(self) -&gt; bool:
+        &#34;&#34;&#34;True if this Obj is static, else False. If True, you can get this Obj&#39;s dynamic counterpart with `Obj.dynamic`.&#34;&#34;&#34;
+        if self._is_static is not None:
+            return self._is_static
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def static(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s static counterpart. Accessing will raise an exception if `Obj.is_static` is True.&#34;&#34;&#34;
+        if self._static is not None:
+            return self._static
+        if self._is_static is not None and self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def dynamic(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s dynamic counterpart. Accessing will raise an exception if `Obj.is_static` is False.&#34;&#34;&#34;
+        if self._dynamic is not None:
+            return self._dynamic
+        if self._is_static is not None and not self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Obj&#34;:
+        self.name.deserialise(f)
+        self.super.deserialise(f)
+        self._global.deserialise(f)
+        self.nfields.deserialise(f)
+        self.nprotos.deserialise(f)
+        self.nbindings.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(Field().deserialise(f))
+        for _ in range(self.nprotos.value):
+            self.protos.append(Proto().deserialise(f))
+        for _ in range(self.nbindings.value):
+            self.bindings.append(Binding().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nfields.value = len(self.fields)
+        self.nprotos.value = len(self.protos)
+        self.nbindings.value = len(self.bindings)
+        return b&#34;&#34;.join(
+            [
+                self.name.serialise(),
+                self.super.serialise(),
+                self._global.serialise(),
+                self.nfields.serialise(),
+                self.nprotos.serialise(),
+                self.nbindings.serialise(),
+                b&#34;&#34;.join([field.serialise() for field in self.fields]),
+                b&#34;&#34;.join([proto.serialise() for proto in self.protos]),
+                b&#34;&#34;.join([binding.serialise() for binding in self.bindings]),
+            ]
+        )
+
+    def resolve_fields(self, code: &#34;Bytecode&#34;) -&gt; List[Field]:
+        &#34;&#34;&#34;
+        Resolves all fields across the class hierarchy. For instance:
+        class A {
+            var a: Int;
+        }
+        class B extends A {
+            var b: Int;
+        }
+        Where a is field 0 and b is field 1.
+        &#34;&#34;&#34;
+        if self.super.value &lt; 0:  # no superclass
+            return self.fields
+        fields: List[Field] = []
+        visited_types = set()
+        current_type: Optional[Obj] = self
+        while current_type:
+            if id(current_type) in visited_types:
+                raise ValueError(&#34;Cyclic inheritance detected in class hierarchy.&#34;)
+            visited_types.add(id(current_type))
+            fields = current_type.fields + fields
+            if current_type.super.value &lt; 0:
+                current_type = None
+            else:
+                defn = current_type.super.resolve(code).definition
+                if not isinstance(defn, Obj):
+                    raise ValueError(&#34;Invalid superclass type.&#34;)
+                current_type = defn
+        return fields
+
+    def __str__(self) -&gt; str:
+        return f&#34;&lt;Obj: s@{self.name}&gt;&#34;
+
+    def __repr__(self) -&gt; str:
+        return self.__str__()
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        return f&#34;&lt;Obj: {self.name.resolve(code)}&gt;&#34;
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Obj):
+            return NotImplemented
+        return (
+            self.name == other.name
+            and self.super == other.super
+            and self._global == other._global
+            and self.fields == other.fields
+            and self.protos == other.protos
+            and self.bindings == other.bindings
+        )</code></pre>
+</details>
 <div class="desc"><p>List of prototypes for this object type.</p></div>
 </dd>
 <dt id="crashlink.core.Obj.static"><code class="name">prop <span class="ident">static</span> : '<a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a>'</code></dt>
@@ -5866,8 +8422,198 @@ def static(self) -&gt; &#34;Obj&#34;:
 </details>
 <div class="desc"><p>This Obj's static counterpart. Accessing will raise an exception if <code><a title="crashlink.core.Obj.is_static" href="#crashlink.core.Obj.is_static">Obj.is_static</a></code> is True.</p></div>
 </dd>
-<dt id="crashlink.core.Obj.super"><code class="name">var <span class="ident">super</span></code></dt>
+<dt id="crashlink.core.Obj.super"><code class="name">var <span class="ident">super</span> : None</code></dt>
 <dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Obj(TypeDef):
+    &#34;&#34;&#34;
+    Represents a class definition.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;name&#34;,
+        &#34;super&#34;,
+        &#34;_global&#34;,
+        &#34;nfields&#34;,
+        &#34;nprotos&#34;,
+        &#34;nbindings&#34;,
+        &#34;fields&#34;,
+        &#34;protos&#34;,
+        &#34;bindings&#34;,
+        &#34;_virtuals&#34;,
+        &#34;_virtual_map&#34;,
+        &#34;virtuals_initialized&#34;,
+        &#34;_is_static&#34;,
+        &#34;_static&#34;,
+        &#34;_dynamic&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        &#34;&#34;&#34;The name of this object type.&#34;&#34;&#34;
+        self.super = tIndex()
+        &#34;&#34;&#34;The superclass of this object type, or -1 if it has no superclass.&#34;&#34;&#34;
+        self._global = gIndex()
+        &#34;&#34;&#34;The global object index of this type.&#34;&#34;&#34;
+        self.nfields = VarInt()
+        &#34;&#34;&#34;Number of fields&#34;&#34;&#34;
+        self.nprotos = VarInt()
+        &#34;&#34;&#34;Number of prototypes&#34;&#34;&#34;
+        self.nbindings = VarInt()
+        &#34;&#34;&#34;Number of bindings&#34;&#34;&#34;
+        self.fields: List[Field] = []
+        &#34;&#34;&#34;List of fields in this object type.&#34;&#34;&#34;
+        self.protos: List[Proto] = []
+        &#34;&#34;&#34;List of prototypes for this object type.&#34;&#34;&#34;
+        self.bindings: List[Binding] = []
+        &#34;&#34;&#34;List of bindings for this object type.&#34;&#34;&#34;
+        self._virtuals: List[int] = []
+        self._virtual_map: Dict[str, int] = {}
+        self.virtuals_initialized: bool = False
+
+        self._is_static: Optional[bool] = None
+        self._static: &#34;Optional[Obj]&#34; = None
+        self._dynamic: &#34;Optional[Obj]&#34; = None
+
+    def get_containing_type(self, code: Bytecode) -&gt; Type:
+        &#34;&#34;&#34;Finds the Type object that contains this Obj definition.&#34;&#34;&#34;
+        for t in code.types:
+            if t.definition is self:
+                return t
+        raise RuntimeError(&#34;Could not find containing Type for Obj instance.&#34;)
+
+    @property
+    def virtuals(self) -&gt; List[int]:
+        &#34;&#34;&#34;Returns the list of virtual function indices for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtuals
+
+    @property
+    def virtual_map(self) -&gt; Dict[str, int]:
+        &#34;&#34;&#34;Returns the map of method names to their virtual ID for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtual_map
+
+    @property
+    def is_static(self) -&gt; bool:
+        &#34;&#34;&#34;True if this Obj is static, else False. If True, you can get this Obj&#39;s dynamic counterpart with `Obj.dynamic`.&#34;&#34;&#34;
+        if self._is_static is not None:
+            return self._is_static
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def static(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s static counterpart. Accessing will raise an exception if `Obj.is_static` is True.&#34;&#34;&#34;
+        if self._static is not None:
+            return self._static
+        if self._is_static is not None and self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def dynamic(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s dynamic counterpart. Accessing will raise an exception if `Obj.is_static` is False.&#34;&#34;&#34;
+        if self._dynamic is not None:
+            return self._dynamic
+        if self._is_static is not None and not self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Obj&#34;:
+        self.name.deserialise(f)
+        self.super.deserialise(f)
+        self._global.deserialise(f)
+        self.nfields.deserialise(f)
+        self.nprotos.deserialise(f)
+        self.nbindings.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(Field().deserialise(f))
+        for _ in range(self.nprotos.value):
+            self.protos.append(Proto().deserialise(f))
+        for _ in range(self.nbindings.value):
+            self.bindings.append(Binding().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nfields.value = len(self.fields)
+        self.nprotos.value = len(self.protos)
+        self.nbindings.value = len(self.bindings)
+        return b&#34;&#34;.join(
+            [
+                self.name.serialise(),
+                self.super.serialise(),
+                self._global.serialise(),
+                self.nfields.serialise(),
+                self.nprotos.serialise(),
+                self.nbindings.serialise(),
+                b&#34;&#34;.join([field.serialise() for field in self.fields]),
+                b&#34;&#34;.join([proto.serialise() for proto in self.protos]),
+                b&#34;&#34;.join([binding.serialise() for binding in self.bindings]),
+            ]
+        )
+
+    def resolve_fields(self, code: &#34;Bytecode&#34;) -&gt; List[Field]:
+        &#34;&#34;&#34;
+        Resolves all fields across the class hierarchy. For instance:
+        class A {
+            var a: Int;
+        }
+        class B extends A {
+            var b: Int;
+        }
+        Where a is field 0 and b is field 1.
+        &#34;&#34;&#34;
+        if self.super.value &lt; 0:  # no superclass
+            return self.fields
+        fields: List[Field] = []
+        visited_types = set()
+        current_type: Optional[Obj] = self
+        while current_type:
+            if id(current_type) in visited_types:
+                raise ValueError(&#34;Cyclic inheritance detected in class hierarchy.&#34;)
+            visited_types.add(id(current_type))
+            fields = current_type.fields + fields
+            if current_type.super.value &lt; 0:
+                current_type = None
+            else:
+                defn = current_type.super.resolve(code).definition
+                if not isinstance(defn, Obj):
+                    raise ValueError(&#34;Invalid superclass type.&#34;)
+                current_type = defn
+        return fields
+
+    def __str__(self) -&gt; str:
+        return f&#34;&lt;Obj: s@{self.name}&gt;&#34;
+
+    def __repr__(self) -&gt; str:
+        return self.__str__()
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        return f&#34;&lt;Obj: {self.name.resolve(code)}&gt;&#34;
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Obj):
+            return NotImplemented
+        return (
+            self.name == other.name
+            and self.super == other.super
+            and self._global == other._global
+            and self.fields == other.fields
+            and self.protos == other.protos
+            and self.bindings == other.bindings
+        )</code></pre>
+</details>
 <div class="desc"><p>The superclass of this object type, or -1 if it has no superclass.</p></div>
 </dd>
 <dt id="crashlink.core.Obj.virtual_map"><code class="name">prop <span class="ident">virtual_map</span> : Dict[str, int]</code></dt>
@@ -5899,6 +8645,200 @@ def virtuals(self) -&gt; List[int]:
     return self._virtuals</code></pre>
 </details>
 <div class="desc"><p>Returns the list of virtual function indices for this object type.</p></div>
+</dd>
+<dt id="crashlink.core.Obj.virtuals_initialized"><code class="name">var <span class="ident">virtuals_initialized</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Obj(TypeDef):
+    &#34;&#34;&#34;
+    Represents a class definition.
+    &#34;&#34;&#34;
+
+    __slots__ = (
+        &#34;name&#34;,
+        &#34;super&#34;,
+        &#34;_global&#34;,
+        &#34;nfields&#34;,
+        &#34;nprotos&#34;,
+        &#34;nbindings&#34;,
+        &#34;fields&#34;,
+        &#34;protos&#34;,
+        &#34;bindings&#34;,
+        &#34;_virtuals&#34;,
+        &#34;_virtual_map&#34;,
+        &#34;virtuals_initialized&#34;,
+        &#34;_is_static&#34;,
+        &#34;_static&#34;,
+        &#34;_dynamic&#34;,
+    )
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        &#34;&#34;&#34;The name of this object type.&#34;&#34;&#34;
+        self.super = tIndex()
+        &#34;&#34;&#34;The superclass of this object type, or -1 if it has no superclass.&#34;&#34;&#34;
+        self._global = gIndex()
+        &#34;&#34;&#34;The global object index of this type.&#34;&#34;&#34;
+        self.nfields = VarInt()
+        &#34;&#34;&#34;Number of fields&#34;&#34;&#34;
+        self.nprotos = VarInt()
+        &#34;&#34;&#34;Number of prototypes&#34;&#34;&#34;
+        self.nbindings = VarInt()
+        &#34;&#34;&#34;Number of bindings&#34;&#34;&#34;
+        self.fields: List[Field] = []
+        &#34;&#34;&#34;List of fields in this object type.&#34;&#34;&#34;
+        self.protos: List[Proto] = []
+        &#34;&#34;&#34;List of prototypes for this object type.&#34;&#34;&#34;
+        self.bindings: List[Binding] = []
+        &#34;&#34;&#34;List of bindings for this object type.&#34;&#34;&#34;
+        self._virtuals: List[int] = []
+        self._virtual_map: Dict[str, int] = {}
+        self.virtuals_initialized: bool = False
+
+        self._is_static: Optional[bool] = None
+        self._static: &#34;Optional[Obj]&#34; = None
+        self._dynamic: &#34;Optional[Obj]&#34; = None
+
+    def get_containing_type(self, code: Bytecode) -&gt; Type:
+        &#34;&#34;&#34;Finds the Type object that contains this Obj definition.&#34;&#34;&#34;
+        for t in code.types:
+            if t.definition is self:
+                return t
+        raise RuntimeError(&#34;Could not find containing Type for Obj instance.&#34;)
+
+    @property
+    def virtuals(self) -&gt; List[int]:
+        &#34;&#34;&#34;Returns the list of virtual function indices for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtuals
+
+    @property
+    def virtual_map(self) -&gt; Dict[str, int]:
+        &#34;&#34;&#34;Returns the map of method names to their virtual ID for this object type.&#34;&#34;&#34;
+        if not self.virtuals_initialized:
+            raise ValueError(&#34;Virtuals not initialized. Call `code.init_virtuals()` after deserialisation.&#34;)
+        return self._virtual_map
+
+    @property
+    def is_static(self) -&gt; bool:
+        &#34;&#34;&#34;True if this Obj is static, else False. If True, you can get this Obj&#39;s dynamic counterpart with `Obj.dynamic`.&#34;&#34;&#34;
+        if self._is_static is not None:
+            return self._is_static
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def static(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s static counterpart. Accessing will raise an exception if `Obj.is_static` is True.&#34;&#34;&#34;
+        if self._static is not None:
+            return self._static
+        if self._is_static is not None and self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    @property
+    def dynamic(self) -&gt; &#34;Obj&#34;:
+        &#34;&#34;&#34;This Obj&#39;s dynamic counterpart. Accessing will raise an exception if `Obj.is_static` is False.&#34;&#34;&#34;
+        if self._dynamic is not None:
+            return self._dynamic
+        if self._is_static is not None and not self._is_static:
+            raise ValueError(&#34;This Obj is static! Try `Obj.dynamic` for its counterpart instead.&#34;)
+        raise ValueError(
+            &#34;Static-dynamic object mapping not initialized. Call `code.map_statics()` after deserialisation.&#34;
+        )
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Obj&#34;:
+        self.name.deserialise(f)
+        self.super.deserialise(f)
+        self._global.deserialise(f)
+        self.nfields.deserialise(f)
+        self.nprotos.deserialise(f)
+        self.nbindings.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(Field().deserialise(f))
+        for _ in range(self.nprotos.value):
+            self.protos.append(Proto().deserialise(f))
+        for _ in range(self.nbindings.value):
+            self.bindings.append(Binding().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nfields.value = len(self.fields)
+        self.nprotos.value = len(self.protos)
+        self.nbindings.value = len(self.bindings)
+        return b&#34;&#34;.join(
+            [
+                self.name.serialise(),
+                self.super.serialise(),
+                self._global.serialise(),
+                self.nfields.serialise(),
+                self.nprotos.serialise(),
+                self.nbindings.serialise(),
+                b&#34;&#34;.join([field.serialise() for field in self.fields]),
+                b&#34;&#34;.join([proto.serialise() for proto in self.protos]),
+                b&#34;&#34;.join([binding.serialise() for binding in self.bindings]),
+            ]
+        )
+
+    def resolve_fields(self, code: &#34;Bytecode&#34;) -&gt; List[Field]:
+        &#34;&#34;&#34;
+        Resolves all fields across the class hierarchy. For instance:
+        class A {
+            var a: Int;
+        }
+        class B extends A {
+            var b: Int;
+        }
+        Where a is field 0 and b is field 1.
+        &#34;&#34;&#34;
+        if self.super.value &lt; 0:  # no superclass
+            return self.fields
+        fields: List[Field] = []
+        visited_types = set()
+        current_type: Optional[Obj] = self
+        while current_type:
+            if id(current_type) in visited_types:
+                raise ValueError(&#34;Cyclic inheritance detected in class hierarchy.&#34;)
+            visited_types.add(id(current_type))
+            fields = current_type.fields + fields
+            if current_type.super.value &lt; 0:
+                current_type = None
+            else:
+                defn = current_type.super.resolve(code).definition
+                if not isinstance(defn, Obj):
+                    raise ValueError(&#34;Invalid superclass type.&#34;)
+                current_type = defn
+        return fields
+
+    def __str__(self) -&gt; str:
+        return f&#34;&lt;Obj: s@{self.name}&gt;&#34;
+
+    def __repr__(self) -&gt; str:
+        return self.__str__()
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        return f&#34;&lt;Obj: {self.name.resolve(code)}&gt;&#34;
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Obj):
+            return NotImplemented
+        return (
+            self.name == other.name
+            and self.super == other.super
+            and self._global == other._global
+            and self.fields == other.fields
+            and self.protos == other.protos
+            and self.bindings == other.bindings
+        )</code></pre>
+</details>
+<div class="desc"></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -6049,6 +8989,8 @@ Where a is field 0 and b is field 1.</p></div>
     Represents an opcode.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;code&#34;, &#34;op&#34;, &#34;df&#34;)
+
     TYPE_MAP: Dict[str, type] = {
         &#34;Reg&#34;: Reg,
         &#34;Regs&#34;: Regs,
@@ -6122,6 +9064,234 @@ Where a is field 0 and b is field 1.</p></div>
 <div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Opcode.code"><code class="name">var <span class="ident">code</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Opcode(Serialisable):
+    &#34;&#34;&#34;
+    Represents an opcode.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;code&#34;, &#34;op&#34;, &#34;df&#34;)
+
+    TYPE_MAP: Dict[str, type] = {
+        &#34;Reg&#34;: Reg,
+        &#34;Regs&#34;: Regs,
+        &#34;RefInt&#34;: intRef,
+        &#34;RefFloat&#34;: floatRef,
+        &#34;InlineBool&#34;: InlineBool,
+        &#34;RefBytes&#34;: bytesRef,
+        &#34;RefString&#34;: strRef,
+        &#34;RefFun&#34;: fIndex,
+        &#34;RefField&#34;: fieldRef,
+        &#34;RefGlobal&#34;: gIndex,
+        &#34;JumpOffset&#34;: VarInt,
+        &#34;JumpOffsets&#34;: VarInts,
+        &#34;RefType&#34;: tIndex,
+        &#34;RefEnumConstant&#34;: VarInt,
+        &#34;RefEnumConstruct&#34;: VarInt,
+        &#34;InlineInt&#34;: VarInt,
+    }
+
+    def __init__(self, op: Optional[str] = None, df: Optional[Dict[Any, Any]] = None) -&gt; None:
+        self.code = VarInt()
+        self.op: Optional[str] = None
+        if op:
+            self.op = op
+        self.df: Dict[Any, Any] = {}
+        if df:
+            self.df = df
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Opcode&#34;:
+        # dbg_print(f&#34;Deserialising opcode at {tell(f)}... &#34;, end=&#34;&#34;)
+        self.code.deserialise(f)
+        # dbg_print(f&#34;{self.code.value}... &#34;, end=&#34;&#34;)
+        try:
+            _def = opcodes[list(opcodes.keys())[self.code.value]]
+        except IndexError:
+            raise InvalidOpCode(f&#34;Unknown opcode at {tell(f)} - {self.code.value}&#34;)
+        for param, _type in _def.items():
+            if _type in self.TYPE_MAP:
+                self.df[param] = self.TYPE_MAP[_type]().deserialise(f)
+                continue
+            raise InvalidOpCode(f&#34;Invalid opcode definition for {param, _type} at {tell(f)}&#34;)
+        self.op = list(opcodes.keys())[self.code.value]
+        return self
+
+    def serialise(self) -&gt; bytes:
+        if self.op:
+            self.code.value = list(opcodes.keys()).index(self.op)
+        return b&#34;&#34;.join(
+            [
+                self.code.serialise(),
+                b&#34;&#34;.join([definition.serialise() for name, definition in self.df.items()]),
+            ]
+        )
+
+    def __repr__(self) -&gt; str:
+        return f&#34;&lt;Opcode: {self.op} {self.df}&gt;&#34;
+
+    def __str__(self) -&gt; str:
+        return self.__repr__()</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Opcode.df"><code class="name">var <span class="ident">df</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Opcode(Serialisable):
+    &#34;&#34;&#34;
+    Represents an opcode.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;code&#34;, &#34;op&#34;, &#34;df&#34;)
+
+    TYPE_MAP: Dict[str, type] = {
+        &#34;Reg&#34;: Reg,
+        &#34;Regs&#34;: Regs,
+        &#34;RefInt&#34;: intRef,
+        &#34;RefFloat&#34;: floatRef,
+        &#34;InlineBool&#34;: InlineBool,
+        &#34;RefBytes&#34;: bytesRef,
+        &#34;RefString&#34;: strRef,
+        &#34;RefFun&#34;: fIndex,
+        &#34;RefField&#34;: fieldRef,
+        &#34;RefGlobal&#34;: gIndex,
+        &#34;JumpOffset&#34;: VarInt,
+        &#34;JumpOffsets&#34;: VarInts,
+        &#34;RefType&#34;: tIndex,
+        &#34;RefEnumConstant&#34;: VarInt,
+        &#34;RefEnumConstruct&#34;: VarInt,
+        &#34;InlineInt&#34;: VarInt,
+    }
+
+    def __init__(self, op: Optional[str] = None, df: Optional[Dict[Any, Any]] = None) -&gt; None:
+        self.code = VarInt()
+        self.op: Optional[str] = None
+        if op:
+            self.op = op
+        self.df: Dict[Any, Any] = {}
+        if df:
+            self.df = df
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Opcode&#34;:
+        # dbg_print(f&#34;Deserialising opcode at {tell(f)}... &#34;, end=&#34;&#34;)
+        self.code.deserialise(f)
+        # dbg_print(f&#34;{self.code.value}... &#34;, end=&#34;&#34;)
+        try:
+            _def = opcodes[list(opcodes.keys())[self.code.value]]
+        except IndexError:
+            raise InvalidOpCode(f&#34;Unknown opcode at {tell(f)} - {self.code.value}&#34;)
+        for param, _type in _def.items():
+            if _type in self.TYPE_MAP:
+                self.df[param] = self.TYPE_MAP[_type]().deserialise(f)
+                continue
+            raise InvalidOpCode(f&#34;Invalid opcode definition for {param, _type} at {tell(f)}&#34;)
+        self.op = list(opcodes.keys())[self.code.value]
+        return self
+
+    def serialise(self) -&gt; bytes:
+        if self.op:
+            self.code.value = list(opcodes.keys()).index(self.op)
+        return b&#34;&#34;.join(
+            [
+                self.code.serialise(),
+                b&#34;&#34;.join([definition.serialise() for name, definition in self.df.items()]),
+            ]
+        )
+
+    def __repr__(self) -&gt; str:
+        return f&#34;&lt;Opcode: {self.op} {self.df}&gt;&#34;
+
+    def __str__(self) -&gt; str:
+        return self.__repr__()</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Opcode.op"><code class="name">var <span class="ident">op</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Opcode(Serialisable):
+    &#34;&#34;&#34;
+    Represents an opcode.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;code&#34;, &#34;op&#34;, &#34;df&#34;)
+
+    TYPE_MAP: Dict[str, type] = {
+        &#34;Reg&#34;: Reg,
+        &#34;Regs&#34;: Regs,
+        &#34;RefInt&#34;: intRef,
+        &#34;RefFloat&#34;: floatRef,
+        &#34;InlineBool&#34;: InlineBool,
+        &#34;RefBytes&#34;: bytesRef,
+        &#34;RefString&#34;: strRef,
+        &#34;RefFun&#34;: fIndex,
+        &#34;RefField&#34;: fieldRef,
+        &#34;RefGlobal&#34;: gIndex,
+        &#34;JumpOffset&#34;: VarInt,
+        &#34;JumpOffsets&#34;: VarInts,
+        &#34;RefType&#34;: tIndex,
+        &#34;RefEnumConstant&#34;: VarInt,
+        &#34;RefEnumConstruct&#34;: VarInt,
+        &#34;InlineInt&#34;: VarInt,
+    }
+
+    def __init__(self, op: Optional[str] = None, df: Optional[Dict[Any, Any]] = None) -&gt; None:
+        self.code = VarInt()
+        self.op: Optional[str] = None
+        if op:
+            self.op = op
+        self.df: Dict[Any, Any] = {}
+        if df:
+            self.df = df
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Opcode&#34;:
+        # dbg_print(f&#34;Deserialising opcode at {tell(f)}... &#34;, end=&#34;&#34;)
+        self.code.deserialise(f)
+        # dbg_print(f&#34;{self.code.value}... &#34;, end=&#34;&#34;)
+        try:
+            _def = opcodes[list(opcodes.keys())[self.code.value]]
+        except IndexError:
+            raise InvalidOpCode(f&#34;Unknown opcode at {tell(f)} - {self.code.value}&#34;)
+        for param, _type in _def.items():
+            if _type in self.TYPE_MAP:
+                self.df[param] = self.TYPE_MAP[_type]().deserialise(f)
+                continue
+            raise InvalidOpCode(f&#34;Invalid opcode definition for {param, _type} at {tell(f)}&#34;)
+        self.op = list(opcodes.keys())[self.code.value]
+        return self
+
+    def serialise(self) -&gt; bytes:
+        if self.op:
+            self.code.value = list(opcodes.keys()).index(self.op)
+        return b&#34;&#34;.join(
+            [
+                self.code.serialise(),
+                b&#34;&#34;.join([definition.serialise() for name, definition in self.df.items()]),
+            ]
+        )
+
+    def __repr__(self) -&gt; str:
+        return f&#34;&lt;Opcode: {self.op} {self.df}&gt;&#34;
+
+    def __str__(self) -&gt; str:
+        return self.__repr__()</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Opcode.deserialise"><code class="name flex">
@@ -6185,6 +9355,8 @@ Where a is field 0 and b is field 1.</p></div>
     Holds an inner type index.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;inner&#34;,)
+
     def __init__(self) -&gt; None:
         self.inner = tIndex()
 
@@ -6209,6 +9381,41 @@ Where a is field 0 and b is field 1.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Packed.inner"><code class="name">var <span class="ident">inner</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Packed(TypeDef):
+    &#34;&#34;&#34;
+    Holds an inner type index.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;inner&#34;,)
+
+    def __init__(self) -&gt; None:
+        self.inner = tIndex()
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Packed&#34;:
+        self.inner.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return self.inner.serialise()
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Packed):
+            return NotImplemented
+        res = self.inner == other.inner
+        assert isinstance(res, bool), &#34;Packed equality check must return a boolean&#34;
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Packed.deserialise"><code class="name flex">
@@ -6253,6 +9460,8 @@ Where a is field 0 and b is field 1.</p></div>
     Represents a prototype of a function
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;name&#34;, &#34;findex&#34;, &#34;pindex&#34;)
+
     def __init__(self) -&gt; None:
         self.name = strRef()
         self.findex = fIndex()
@@ -6280,6 +9489,117 @@ Where a is field 0 and b is field 1.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Proto.findex"><code class="name">var <span class="ident">findex</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Proto(Serialisable):
+    &#34;&#34;&#34;
+    Represents a prototype of a function
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;name&#34;, &#34;findex&#34;, &#34;pindex&#34;)
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        self.findex = fIndex()
+        self.pindex = VarInt()  # unknown use
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Proto&#34;:
+        self.name.deserialise(f)
+        self.findex.deserialise(f)
+        self.pindex.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join([self.name.serialise(), self.findex.serialise(), self.pindex.serialise()])
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Proto):
+            return NotImplemented
+        res = self.name == other.name and self.findex == other.findex and self.pindex == other.pindex
+        assert isinstance(res, bool), &#34;Proto equality check must return a boolean&#34;
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Proto.name"><code class="name">var <span class="ident">name</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Proto(Serialisable):
+    &#34;&#34;&#34;
+    Represents a prototype of a function
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;name&#34;, &#34;findex&#34;, &#34;pindex&#34;)
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        self.findex = fIndex()
+        self.pindex = VarInt()  # unknown use
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Proto&#34;:
+        self.name.deserialise(f)
+        self.findex.deserialise(f)
+        self.pindex.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join([self.name.serialise(), self.findex.serialise(), self.pindex.serialise()])
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Proto):
+            return NotImplemented
+        res = self.name == other.name and self.findex == other.findex and self.pindex == other.pindex
+        assert isinstance(res, bool), &#34;Proto equality check must return a boolean&#34;
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Proto.pindex"><code class="name">var <span class="ident">pindex</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Proto(Serialisable):
+    &#34;&#34;&#34;
+    Represents a prototype of a function
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;name&#34;, &#34;findex&#34;, &#34;pindex&#34;)
+
+    def __init__(self) -&gt; None:
+        self.name = strRef()
+        self.findex = fIndex()
+        self.pindex = VarInt()  # unknown use
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Proto&#34;:
+        self.name.deserialise(f)
+        self.findex.deserialise(f)
+        self.pindex.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join([self.name.serialise(), self.findex.serialise(), self.pindex.serialise()])
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Proto):
+            return NotImplemented
+        res = self.name == other.name and self.findex == other.findex and self.pindex == other.pindex
+        assert isinstance(res, bool), &#34;Proto equality check must return a boolean&#34;
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Proto.deserialise"><code class="name flex">
@@ -6445,6 +9765,8 @@ Where a is field 0 and b is field 1.</p></div>
     Memory reference to an instance of a type.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;type&#34;,)
+
     def __init__(self) -&gt; None:
         self.type = tIndex()
 
@@ -6469,6 +9791,41 @@ Where a is field 0 and b is field 1.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Ref.type"><code class="name">var <span class="ident">type</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Ref(TypeDef):
+    &#34;&#34;&#34;
+    Memory reference to an instance of a type.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;type&#34;,)
+
+    def __init__(self) -&gt; None:
+        self.type = tIndex()
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Ref&#34;:
+        self.type.deserialise(f)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return self.type.serialise()
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Ref):
+            return NotImplemented
+        res = self.type == other.type
+        assert isinstance(res, bool), &#34;Ref equality check must return a boolean&#34;
+        return res</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Ref.deserialise"><code class="name flex">
@@ -6514,6 +9871,8 @@ Where a is field 0 and b is field 1.</p></div>
     Reference to a register in the bytecode.
     &#34;&#34;&#34;
 
+    __slots__ = ()
+
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Type&#34;:
         return code.types[self.value]</code></pre>
 </details>
@@ -6547,6 +9906,8 @@ Where a is field 0 and b is field 1.</p></div>
     List of references to registers.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;n&#34;, &#34;value&#34;)
+
     def __init__(self) -&gt; None:
         self.n = VarInt()
         self.value: List[Reg] = []
@@ -6567,6 +9928,67 @@ Where a is field 0 and b is field 1.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Regs.n"><code class="name">var <span class="ident">n</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Regs(Serialisable):
+    &#34;&#34;&#34;
+    List of references to registers.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;n&#34;, &#34;value&#34;)
+
+    def __init__(self) -&gt; None:
+        self.n = VarInt()
+        self.value: List[Reg] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Regs&#34;:
+        self.n.deserialise(f)
+        for _ in range(self.n.value):
+            self.value.append(Reg().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.n.value = len(self.value)
+        return b&#34;&#34;.join([self.n.serialise(), b&#34;&#34;.join([value.serialise() for value in self.value])])</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Regs.value"><code class="name">var <span class="ident">value</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Regs(Serialisable):
+    &#34;&#34;&#34;
+    List of references to registers.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;n&#34;, &#34;value&#34;)
+
+    def __init__(self) -&gt; None:
+        self.n = VarInt()
+        self.value: List[Reg] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Regs&#34;:
+        self.n.deserialise(f)
+        for _ in range(self.n.value):
+            self.value.append(Reg().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.n.value = len(self.value)
+        return b&#34;&#34;.join([self.n.serialise(), b&#34;&#34;.join([value.serialise() for value in self.value])])</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Regs.deserialise"><code class="name flex">
@@ -6678,7 +10100,8 @@ def resolve(self, code: &#34;Bytecode&#34;) -&gt; Any:
     Base class for all serialisable objects.
     &#34;&#34;&#34;
 
-    @abstractmethod
+    __slots__ = (&#34;value&#34;,)
+
     def __init__(self) -&gt; None:
         self.value: Any = None
 
@@ -6756,6 +10179,72 @@ def resolve(self, code: &#34;Bytecode&#34;) -&gt; Any:
 <li><a title="crashlink.core.VarInt" href="#crashlink.core.VarInt">VarInt</a></li>
 <li><a title="crashlink.core.VarInts" href="#crashlink.core.VarInts">VarInts</a></li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Serialisable.value"><code class="name">var <span class="ident">value</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Serialisable(ABC):
+    &#34;&#34;&#34;
+    Base class for all serialisable objects.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;value&#34;,)
+
+    def __init__(self) -&gt; None:
+        self.value: Any = None
+
+    @abstractmethod
+    def deserialise(self, f: BinaryIO | BytesIO, *args: Any, **kwargs: Any) -&gt; &#34;Serialisable&#34;:
+        pass
+
+    @abstractmethod
+    def serialise(self) -&gt; bytes:
+        pass
+
+    def __str__(self) -&gt; str:
+        try:
+            return str(self.value)
+        except AttributeError:
+            return super().__repr__()
+
+    def __repr__(self) -&gt; str:
+        try:
+            return str(self.value)
+        except AttributeError:
+            return super().__repr__()
+
+    def __eq__(self, other: object) -&gt; Any:
+        if not isinstance(other, Serialisable):
+            return NotImplemented
+        try:
+            return self.value == other.value
+        except AttributeError:
+            # Fallback if a subclass doesn&#39;t define .value but also doesn&#39;t override __eq__
+            return NotImplemented
+
+    def __ne__(self, other: object) -&gt; Any:
+        if not isinstance(other, Serialisable):
+            return NotImplemented
+        try:
+            return self.value != other.value
+        except AttributeError:
+            return NotImplemented
+
+    def __lt__(self, other: object) -&gt; Any:
+        if not isinstance(other, Serialisable):
+            return NotImplemented
+        try:
+            return self.value &lt; other.value
+        except AttributeError:
+            return NotImplemented</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Serialisable.deserialise"><code class="name flex">
@@ -7161,6 +10650,8 @@ def serialise(self) -&gt; bytes:
     Block of strings in the bytecode. Contains a list of strings and their lengths.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;length&#34;, &#34;value&#34;, &#34;lengths&#34;)
+
     def __init__(self) -&gt; None:
         self.length = SerialisableInt()
         self.length.length = 4
@@ -7228,6 +10719,237 @@ def serialise(self) -&gt; bytes:
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.StringsBlock.length"><code class="name">var <span class="ident">length</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class StringsBlock(Serialisable):
+    &#34;&#34;&#34;
+    Block of strings in the bytecode. Contains a list of strings and their lengths.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;length&#34;, &#34;value&#34;, &#34;lengths&#34;)
+
+    def __init__(self) -&gt; None:
+        self.length = SerialisableInt()
+        self.length.length = 4
+        self.value: List[str] = []
+        self.lengths: List[VarInt] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO, nstrings: int) -&gt; &#34;StringsBlock&#34;:
+        self.length.deserialise(f, length=4)
+        size = self.length.value
+        sdata: bytes = f.read(size)
+        strings: List[str] = []
+        lengths: List[VarInt] = []
+        curpos = 0
+
+        for _ in range(nstrings):
+            sz = VarInt().deserialise(f)
+            # Check if we can read string + null terminator
+            if curpos + sz.value + 1 &gt; size:
+                raise ValueError(&#34;Invalid string&#34;)
+
+            # Verify null terminator
+            if sdata[curpos + sz.value] != 0:
+                raise ValueError(&#34;Invalid string&#34;)
+
+            str_value = sdata[curpos : curpos + sz.value]
+            strings.append(str_value.decode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;))
+            lengths.append(sz)
+
+            curpos += sz.value + 1  # Move past string and null terminator
+
+        self.value = strings
+        self.lengths = lengths
+        return self
+
+    def serialise(self) -&gt; bytes:
+        strings_data = bytearray()
+        for string in self.value:
+            encoded = string.encode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;)
+            strings_data.extend(encoded)
+            strings_data.append(0)  # null terminator
+
+        self.length.value = len(strings_data)
+        self.lengths = [VarInt(len(string.encode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;))) for string in self.value]
+
+        result = bytearray(self.length.serialise())
+        result.extend(strings_data)
+        for length in self.lengths:
+            result.extend(length.serialise())
+
+        return bytes(result)
+
+    def find_or_add(self, val: str) -&gt; int:
+        &#34;&#34;&#34;
+        Finds and returns the index of a string value in this block, or adds it to this block and returns its index.
+        &#34;&#34;&#34;
+        try:
+            return self.value.index(val)
+        except ValueError:
+            self.value.append(val)
+            return len(self.value) - 1</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.StringsBlock.lengths"><code class="name">var <span class="ident">lengths</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class StringsBlock(Serialisable):
+    &#34;&#34;&#34;
+    Block of strings in the bytecode. Contains a list of strings and their lengths.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;length&#34;, &#34;value&#34;, &#34;lengths&#34;)
+
+    def __init__(self) -&gt; None:
+        self.length = SerialisableInt()
+        self.length.length = 4
+        self.value: List[str] = []
+        self.lengths: List[VarInt] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO, nstrings: int) -&gt; &#34;StringsBlock&#34;:
+        self.length.deserialise(f, length=4)
+        size = self.length.value
+        sdata: bytes = f.read(size)
+        strings: List[str] = []
+        lengths: List[VarInt] = []
+        curpos = 0
+
+        for _ in range(nstrings):
+            sz = VarInt().deserialise(f)
+            # Check if we can read string + null terminator
+            if curpos + sz.value + 1 &gt; size:
+                raise ValueError(&#34;Invalid string&#34;)
+
+            # Verify null terminator
+            if sdata[curpos + sz.value] != 0:
+                raise ValueError(&#34;Invalid string&#34;)
+
+            str_value = sdata[curpos : curpos + sz.value]
+            strings.append(str_value.decode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;))
+            lengths.append(sz)
+
+            curpos += sz.value + 1  # Move past string and null terminator
+
+        self.value = strings
+        self.lengths = lengths
+        return self
+
+    def serialise(self) -&gt; bytes:
+        strings_data = bytearray()
+        for string in self.value:
+            encoded = string.encode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;)
+            strings_data.extend(encoded)
+            strings_data.append(0)  # null terminator
+
+        self.length.value = len(strings_data)
+        self.lengths = [VarInt(len(string.encode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;))) for string in self.value]
+
+        result = bytearray(self.length.serialise())
+        result.extend(strings_data)
+        for length in self.lengths:
+            result.extend(length.serialise())
+
+        return bytes(result)
+
+    def find_or_add(self, val: str) -&gt; int:
+        &#34;&#34;&#34;
+        Finds and returns the index of a string value in this block, or adds it to this block and returns its index.
+        &#34;&#34;&#34;
+        try:
+            return self.value.index(val)
+        except ValueError:
+            self.value.append(val)
+            return len(self.value) - 1</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.StringsBlock.value"><code class="name">var <span class="ident">value</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class StringsBlock(Serialisable):
+    &#34;&#34;&#34;
+    Block of strings in the bytecode. Contains a list of strings and their lengths.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;length&#34;, &#34;value&#34;, &#34;lengths&#34;)
+
+    def __init__(self) -&gt; None:
+        self.length = SerialisableInt()
+        self.length.length = 4
+        self.value: List[str] = []
+        self.lengths: List[VarInt] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO, nstrings: int) -&gt; &#34;StringsBlock&#34;:
+        self.length.deserialise(f, length=4)
+        size = self.length.value
+        sdata: bytes = f.read(size)
+        strings: List[str] = []
+        lengths: List[VarInt] = []
+        curpos = 0
+
+        for _ in range(nstrings):
+            sz = VarInt().deserialise(f)
+            # Check if we can read string + null terminator
+            if curpos + sz.value + 1 &gt; size:
+                raise ValueError(&#34;Invalid string&#34;)
+
+            # Verify null terminator
+            if sdata[curpos + sz.value] != 0:
+                raise ValueError(&#34;Invalid string&#34;)
+
+            str_value = sdata[curpos : curpos + sz.value]
+            strings.append(str_value.decode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;))
+            lengths.append(sz)
+
+            curpos += sz.value + 1  # Move past string and null terminator
+
+        self.value = strings
+        self.lengths = lengths
+        return self
+
+    def serialise(self) -&gt; bytes:
+        strings_data = bytearray()
+        for string in self.value:
+            encoded = string.encode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;)
+            strings_data.extend(encoded)
+            strings_data.append(0)  # null terminator
+
+        self.length.value = len(strings_data)
+        self.lengths = [VarInt(len(string.encode(&#34;utf-8&#34;, errors=&#34;surrogateescape&#34;))) for string in self.value]
+
+        result = bytearray(self.length.serialise())
+        result.extend(strings_data)
+        for length in self.lengths:
+            result.extend(length.serialise())
+
+        return bytes(result)
+
+    def find_or_add(self, val: str) -&gt; int:
+        &#34;&#34;&#34;
+        Finds and returns the index of a string value in this block, or adds it to this block and returns its index.
+        &#34;&#34;&#34;
+        try:
+            return self.value.index(val)
+        except ValueError:
+            self.value.append(val)
+            return len(self.value) - 1</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.StringsBlock.deserialise"><code class="name flex">
@@ -7330,7 +11052,7 @@ def serialise(self) -&gt; bytes:
     Struct type, identical to Obj.
     &#34;&#34;&#34;
 
-    pass</code></pre>
+    __slots__ = ()</code></pre>
 </details>
 <div class="desc"><p>Struct type, identical to Obj.</p></div>
 <h3>Ancestors</h3>
@@ -7378,6 +11100,8 @@ def serialise(self) -&gt; bytes:
     - kind: SerialisableInt
     - definition: TypeDef
     &#34;&#34;&#34;
+
+    __slots__ = (&#34;kind&#34;, &#34;definition&#34;)
 
     # fmt: off
     TYPEDEFS: List[type] = [
@@ -7566,6 +11290,279 @@ attributes &ndash; see the documentation for details.</p></div>
 <div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 </dl>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Type.definition"><code class="name">var <span class="ident">definition</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Type(Serialisable):
+    &#34;&#34;&#34;
+    Type definition:
+
+    - kind: SerialisableInt
+    - definition: TypeDef
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;kind&#34;, &#34;definition&#34;)
+
+    # fmt: off
+    TYPEDEFS: List[type] = [
+        Void,     # 0, no data
+        U8,       # 1, no data
+        U16,      # 2, no data
+        I32,      # 3, no data
+        I64,      # 4, no data
+        F32,      # 5, no data
+        F64,      # 6, no data
+        Bool,     # 7, no data
+        Bytes,    # 8, no data
+        Dyn,      # 9, no data
+        Fun,      # 10
+        Obj,      # 11
+        Array,    # 12, no data
+        TypeType, # 13, no data
+        Ref,      # 14
+        Virtual,  # 15
+        DynObj,   # 16, no data
+        Abstract, # 17
+        Enum,     # 18
+        Null,     # 19
+        Method,   # 20
+        Struct,   # 21
+        Packed,   # 22
+        GUID,     # 23, no data
+    ]
+    # fmt: on
+
+    class Kind(_Enum):
+        VOID = 0
+        U8 = 1
+        U16 = 2
+        I32 = 3
+        I64 = 4
+        F32 = 5
+        F64 = 6
+        BOOL = 7
+        BYTES = 8
+        DYN = 9
+        FUN = 10
+        OBJ = 11
+        ARRAY = 12
+        TYPETYPE = 13
+        REF = 14
+        VIRTUAL = 15
+        DYNOBJ = 16
+        ABSTRACT = 17
+        ENUM = 18
+        NULL = 19
+        METHOD = 20
+        STRUCT = 21
+        PACKED = 22
+        GUID = 23
+
+    def __init__(self) -&gt; None:
+        self.kind = SerialisableInt()
+        self.kind.length = 1
+        self.definition: Optional[TypeDef] = None
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Type&#34;:
+        # dbg_print(f&#34;Type @ {tell(f)}&#34;)
+        self.kind.deserialise(f, length=1)
+        try:
+            self.TYPEDEFS[self.kind.value]
+            _def = self.TYPEDEFS[self.kind.value]()
+            if isinstance(_def, TypeDef):
+                deserialised = _def.deserialise(f)
+                if isinstance(deserialised, TypeDef):
+                    self.definition = deserialised
+                else:
+                    raise MalformedBytecode(f&#34;Invalid type definition found @{tell(f)}&#34;)
+            else:
+                raise MalformedBytecode(f&#34;Invalid type definition found @{tell(f)}&#34;)
+        except IndexError:
+            raise MalformedBytecode(f&#34;Invalid type kind found @{tell(f)}&#34;)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join(
+            [
+                self.kind.serialise(),
+                self.definition.serialise() if self.definition else b&#34;&#34;,
+            ]
+        )
+
+    def __str__(self) -&gt; str:
+        return f&#34;&lt;Type: {self.kind.value} ({self.definition.__class__.__name__})&gt;&#34;
+
+    def __repr__(self) -&gt; str:
+        return self.__str__()
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        if isinstance(self.definition, Obj):
+            return self.definition.str_resolve(code)
+        if isinstance(self.definition, Fun):
+            return self.definition.str_resolve(code)
+        return f&#34;&lt;Type: {self.kind.value} ({self.definition.__class__.__name__})&gt;&#34;
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Type):
+            return NotImplemented
+        if self is other:
+            return True
+        # Definitions can be None
+        if self.definition is None and other.definition is None:
+            res = self.kind == other.kind
+            return res if isinstance(res, bool) else False
+        if self.definition is None or other.definition is None:
+            return False
+        res = self.kind == other.kind and self.definition == other.definition
+        assert isinstance(res, bool), &#34;Type equality check must return a boolean&#34;
+        return res
+
+    def __hash__(self) -&gt; int:
+        return hash(self.serialise())</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Type.kind"><code class="name">var <span class="ident">kind</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Type(Serialisable):
+    &#34;&#34;&#34;
+    Type definition:
+
+    - kind: SerialisableInt
+    - definition: TypeDef
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;kind&#34;, &#34;definition&#34;)
+
+    # fmt: off
+    TYPEDEFS: List[type] = [
+        Void,     # 0, no data
+        U8,       # 1, no data
+        U16,      # 2, no data
+        I32,      # 3, no data
+        I64,      # 4, no data
+        F32,      # 5, no data
+        F64,      # 6, no data
+        Bool,     # 7, no data
+        Bytes,    # 8, no data
+        Dyn,      # 9, no data
+        Fun,      # 10
+        Obj,      # 11
+        Array,    # 12, no data
+        TypeType, # 13, no data
+        Ref,      # 14
+        Virtual,  # 15
+        DynObj,   # 16, no data
+        Abstract, # 17
+        Enum,     # 18
+        Null,     # 19
+        Method,   # 20
+        Struct,   # 21
+        Packed,   # 22
+        GUID,     # 23, no data
+    ]
+    # fmt: on
+
+    class Kind(_Enum):
+        VOID = 0
+        U8 = 1
+        U16 = 2
+        I32 = 3
+        I64 = 4
+        F32 = 5
+        F64 = 6
+        BOOL = 7
+        BYTES = 8
+        DYN = 9
+        FUN = 10
+        OBJ = 11
+        ARRAY = 12
+        TYPETYPE = 13
+        REF = 14
+        VIRTUAL = 15
+        DYNOBJ = 16
+        ABSTRACT = 17
+        ENUM = 18
+        NULL = 19
+        METHOD = 20
+        STRUCT = 21
+        PACKED = 22
+        GUID = 23
+
+    def __init__(self) -&gt; None:
+        self.kind = SerialisableInt()
+        self.kind.length = 1
+        self.definition: Optional[TypeDef] = None
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Type&#34;:
+        # dbg_print(f&#34;Type @ {tell(f)}&#34;)
+        self.kind.deserialise(f, length=1)
+        try:
+            self.TYPEDEFS[self.kind.value]
+            _def = self.TYPEDEFS[self.kind.value]()
+            if isinstance(_def, TypeDef):
+                deserialised = _def.deserialise(f)
+                if isinstance(deserialised, TypeDef):
+                    self.definition = deserialised
+                else:
+                    raise MalformedBytecode(f&#34;Invalid type definition found @{tell(f)}&#34;)
+            else:
+                raise MalformedBytecode(f&#34;Invalid type definition found @{tell(f)}&#34;)
+        except IndexError:
+            raise MalformedBytecode(f&#34;Invalid type kind found @{tell(f)}&#34;)
+        return self
+
+    def serialise(self) -&gt; bytes:
+        return b&#34;&#34;.join(
+            [
+                self.kind.serialise(),
+                self.definition.serialise() if self.definition else b&#34;&#34;,
+            ]
+        )
+
+    def __str__(self) -&gt; str:
+        return f&#34;&lt;Type: {self.kind.value} ({self.definition.__class__.__name__})&gt;&#34;
+
+    def __repr__(self) -&gt; str:
+        return self.__str__()
+
+    def str_resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        if isinstance(self.definition, Obj):
+            return self.definition.str_resolve(code)
+        if isinstance(self.definition, Fun):
+            return self.definition.str_resolve(code)
+        return f&#34;&lt;Type: {self.kind.value} ({self.definition.__class__.__name__})&gt;&#34;
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Type):
+            return NotImplemented
+        if self is other:
+            return True
+        # Definitions can be None
+        if self.definition is None and other.definition is None:
+            res = self.kind == other.kind
+            return res if isinstance(res, bool) else False
+        if self.definition is None or other.definition is None:
+            return False
+        res = self.kind == other.kind and self.definition == other.definition
+        assert isinstance(res, bool), &#34;Type equality check must return a boolean&#34;
+        return res
+
+    def __hash__(self) -&gt; int:
+        return hash(self.serialise())</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Type.deserialise"><code class="name flex">
@@ -7644,7 +11641,9 @@ attributes &ndash; see the documentation for details.</p></div>
 <pre><code class="python">class TypeDef(Serialisable, ABC):
     &#34;&#34;&#34;
     Abstract class for all type definition fields.
-    &#34;&#34;&#34;</code></pre>
+    &#34;&#34;&#34;
+
+    __slots__ = ()</code></pre>
 </details>
 <div class="desc"><p>Abstract class for all type definition fields.</p></div>
 <h3>Ancestors</h3>
@@ -7678,7 +11677,7 @@ attributes &ndash; see the documentation for details.</p></div>
     Type wrapping a type, no data.
     &#34;&#34;&#34;
 
-    pass</code></pre>
+    __slots__ = ()</code></pre>
 </details>
 <div class="desc"><p>Type wrapping a type, no data.</p></div>
 <h3>Ancestors</h3>
@@ -7702,7 +11701,7 @@ attributes &ndash; see the documentation for details.</p></div>
     Unsigned 16-bit integer type, no data.
     &#34;&#34;&#34;
 
-    pass</code></pre>
+    __slots__ = ()</code></pre>
 </details>
 <div class="desc"><p>Unsigned 16-bit integer type, no data.</p></div>
 <h3>Ancestors</h3>
@@ -7726,7 +11725,7 @@ attributes &ndash; see the documentation for details.</p></div>
     Unsigned 8-bit integer type, no data.
     &#34;&#34;&#34;
 
-    pass</code></pre>
+    __slots__ = ()</code></pre>
 </details>
 <div class="desc"><p>Unsigned 8-bit integer type, no data.</p></div>
 <h3>Ancestors</h3>
@@ -7977,6 +11976,8 @@ attributes &ndash; see the documentation for details.</p></div>
     List of VarInts.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;n&#34;, &#34;value&#34;)
+
     def __init__(self) -&gt; None:
         self.n = VarInt()
         self.value: List[VarInt] = []
@@ -7997,6 +11998,67 @@ attributes &ndash; see the documentation for details.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.VarInts.n"><code class="name">var <span class="ident">n</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class VarInts(Serialisable):
+    &#34;&#34;&#34;
+    List of VarInts.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;n&#34;, &#34;value&#34;)
+
+    def __init__(self) -&gt; None:
+        self.n = VarInt()
+        self.value: List[VarInt] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;VarInts&#34;:
+        self.n.deserialise(f)
+        for _ in range(self.n.value):
+            self.value.append(VarInt().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.n.value = len(self.value)
+        return b&#34;&#34;.join([self.n.serialise(), b&#34;&#34;.join([value.serialise() for value in self.value])])</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.VarInts.value"><code class="name">var <span class="ident">value</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class VarInts(Serialisable):
+    &#34;&#34;&#34;
+    List of VarInts.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;n&#34;, &#34;value&#34;)
+
+    def __init__(self) -&gt; None:
+        self.n = VarInt()
+        self.value: List[VarInt] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;VarInts&#34;:
+        self.n.deserialise(f)
+        for _ in range(self.n.value):
+            self.value.append(VarInt().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.n.value = len(self.value)
+        return b&#34;&#34;.join([self.n.serialise(), b&#34;&#34;.join([value.serialise() for value in self.value])])</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.VarInts.deserialise"><code class="name flex">
@@ -8044,6 +12106,8 @@ attributes &ndash; see the documentation for details.</p></div>
     Virtual type, used for virtual/abstract classes.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;nfields&#34;, &#34;fields&#34;)
+
     def __init__(self) -&gt; None:
         self.nfields = VarInt()
         self.fields: List[Field] = []
@@ -8078,6 +12142,93 @@ attributes &ndash; see the documentation for details.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.Virtual.fields"><code class="name">var <span class="ident">fields</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Virtual(TypeDef):
+    &#34;&#34;&#34;
+    Virtual type, used for virtual/abstract classes.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;nfields&#34;, &#34;fields&#34;)
+
+    def __init__(self) -&gt; None:
+        self.nfields = VarInt()
+        self.fields: List[Field] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Virtual&#34;:
+        self.nfields.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(Field().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nfields.value = len(self.fields)
+        return b&#34;&#34;.join(
+            [
+                self.nfields.serialise(),
+                b&#34;&#34;.join([field.serialise() for field in self.fields]),
+            ]
+        )
+
+    def resolve_fields(self, code: &#34;Bytecode&#34;) -&gt; List[Field]:
+        return self.fields
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Virtual):
+            return NotImplemented
+        return self.fields == other.fields</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.Virtual.nfields"><code class="name">var <span class="ident">nfields</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Virtual(TypeDef):
+    &#34;&#34;&#34;
+    Virtual type, used for virtual/abstract classes.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;nfields&#34;, &#34;fields&#34;)
+
+    def __init__(self) -&gt; None:
+        self.nfields = VarInt()
+        self.fields: List[Field] = []
+
+    def deserialise(self, f: BinaryIO | BytesIO) -&gt; &#34;Virtual&#34;:
+        self.nfields.deserialise(f)
+        for _ in range(self.nfields.value):
+            self.fields.append(Field().deserialise(f))
+        return self
+
+    def serialise(self) -&gt; bytes:
+        self.nfields.value = len(self.fields)
+        return b&#34;&#34;.join(
+            [
+                self.nfields.serialise(),
+                b&#34;&#34;.join([field.serialise() for field in self.fields]),
+            ]
+        )
+
+    def resolve_fields(self, code: &#34;Bytecode&#34;) -&gt; List[Field]:
+        return self.fields
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, Virtual):
+            return NotImplemented
+        return self.fields == other.fields</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.Virtual.deserialise"><code class="name flex">
@@ -8143,7 +12294,7 @@ attributes &ndash; see the documentation for details.</p></div>
     Void type, no data. Used to discard data (eg. reg: Void = call f@**).
     &#34;&#34;&#34;
 
-    pass</code></pre>
+    __slots__ = ()</code></pre>
 </details>
 <div class="desc"><p>Void type, no data. Used to discard data (eg. reg: Void = call f@**).</p></div>
 <h3>Ancestors</h3>
@@ -8249,7 +12400,11 @@ attributes &ndash; see the documentation for details.</p></div>
     Reference to a field in an object definition.
     &#34;&#34;&#34;
 
-    obj: Optional[&#34;Obj|Virtual&#34;] = None
+    __slots__ = (&#34;obj&#34;,)
+
+    def __init__(self, value: int = 0):
+        super().__init__(value)
+        self.obj: Optional[&#34;Obj|Virtual&#34;] = None
 
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Field&#34;:
         if self.obj:
@@ -8270,11 +12425,37 @@ attributes &ndash; see the documentation for details.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
-<h3>Class variables</h3>
+<h3>Instance variables</h3>
 <dl>
-<dt id="crashlink.core.fieldRef.obj"><code class="name">var <span class="ident">obj</span> : <a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a> | <a title="crashlink.core.Virtual" href="#crashlink.core.Virtual">Virtual</a> | None</code></dt>
+<dt id="crashlink.core.fieldRef.obj"><code class="name">var <span class="ident">obj</span></code></dt>
 <dd>
-<div class="desc"><p>The type of the None singleton.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class fieldRef(ResolvableVarInt):
+    &#34;&#34;&#34;
+    Reference to a field in an object definition.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;obj&#34;,)
+
+    def __init__(self, value: int = 0):
+        super().__init__(value)
+        self.obj: Optional[&#34;Obj|Virtual&#34;] = None
+
+    def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Field&#34;:
+        if self.obj:
+            return self.obj.resolve_fields(code)[self.value]
+        raise ValueError(
+            &#34;Cannot resolve field without context. Try setting `field.obj` to an instance of `Obj`, or use `field.resolve_obj(code, obj)` instead.&#34;
+        )
+
+    def resolve_obj(self, code: &#34;Bytecode&#34;, obj: &#34;Obj|Virtual&#34;) -&gt; &#34;Field&#34;:
+        self.obj = obj
+        return obj.resolve_fields(code)[self.value]</code></pre>
+</details>
+<div class="desc"></div>
 </dd>
 </dl>
 <h3>Methods</h3>
@@ -8317,6 +12498,8 @@ attributes &ndash; see the documentation for details.</p></div>
     Reference to a file in the debug info.
     &#34;&#34;&#34;
 
+    __slots__ = (&#34;line&#34;,)
+
     def __init__(self, fid: int = 0, line: int = -1) -&gt; None:
         super().__init__(fid)
         self.line = line
@@ -8354,6 +12537,53 @@ attributes &ndash; see the documentation for details.</p></div>
 <li><a title="crashlink.core.Serialisable" href="#crashlink.core.Serialisable">Serialisable</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.fileRef.line"><code class="name">var <span class="ident">line</span> : None</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class fileRef(ResolvableVarInt):
+    &#34;&#34;&#34;
+    Reference to a file in the debug info.
+    &#34;&#34;&#34;
+
+    __slots__ = (&#34;line&#34;,)
+
+    def __init__(self, fid: int = 0, line: int = -1) -&gt; None:
+        super().__init__(fid)
+        self.line = line
+
+    def resolve(self, code: &#34;Bytecode&#34;) -&gt; str:
+        &#34;&#34;&#34;
+        Resolve to the filename of the reference.
+        &#34;&#34;&#34;
+        if not code.debugfiles:
+            raise MalformedBytecode(&#34;No debug files found.&#34;)
+        return code.debugfiles.value[self.value]
+
+    def resolve_line(self, code: &#34;Bytecode&#34;) -&gt; int:
+        &#34;&#34;&#34;
+        Resolve to the line number in the file of the reference.
+        &#34;&#34;&#34;
+        return self.line
+
+    def resolve_pretty(self, code: &#34;Bytecode&#34;) -&gt; str:
+        &#34;&#34;&#34;
+        Resolve a pretty-printed string: &lt;filename&gt;:&lt;line number&gt;
+        &#34;&#34;&#34;
+        return f&#34;{self.resolve(code)}:{self.line}&#34;
+
+    def __eq__(self, other: object) -&gt; bool:
+        if not isinstance(other, fileRef):
+            return NotImplemented
+        return self.value == other.value and self.line == other.line</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="crashlink.core.fileRef.resolve"><code class="name flex">
@@ -8642,6 +12872,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <h4><code><a title="crashlink.core.Abstract" href="#crashlink.core.Abstract">Abstract</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.Abstract.deserialise" href="#crashlink.core.Abstract.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Abstract.name" href="#crashlink.core.Abstract.name">name</a></code></li>
 <li><code><a title="crashlink.core.Abstract.serialise" href="#crashlink.core.Abstract.serialise">serialise</a></code></li>
 </ul>
 </li>
@@ -8652,6 +12883,8 @@ attributes &ndash; see the documentation for details.</p></div>
 <h4><code><a title="crashlink.core.Binding" href="#crashlink.core.Binding">Binding</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.Binding.deserialise" href="#crashlink.core.Binding.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Binding.field" href="#crashlink.core.Binding.field">field</a></code></li>
+<li><code><a title="crashlink.core.Binding.findex" href="#crashlink.core.Binding.findex">findex</a></code></li>
 <li><code><a title="crashlink.core.Binding.serialise" href="#crashlink.core.Binding.serialise">serialise</a></code></li>
 </ul>
 </li>
@@ -8698,7 +12931,10 @@ attributes &ndash; see the documentation for details.</p></div>
 <h4><code><a title="crashlink.core.BytesBlock" href="#crashlink.core.BytesBlock">BytesBlock</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.BytesBlock.deserialise" href="#crashlink.core.BytesBlock.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.BytesBlock.nbytes" href="#crashlink.core.BytesBlock.nbytes">nbytes</a></code></li>
 <li><code><a title="crashlink.core.BytesBlock.serialise" href="#crashlink.core.BytesBlock.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.BytesBlock.size" href="#crashlink.core.BytesBlock.size">size</a></code></li>
+<li><code><a title="crashlink.core.BytesBlock.value" href="#crashlink.core.BytesBlock.value">value</a></code></li>
 </ul>
 </li>
 <li>
@@ -8715,6 +12951,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <ul class="">
 <li><code><a title="crashlink.core.DebugInfo.deserialise" href="#crashlink.core.DebugInfo.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.DebugInfo.serialise" href="#crashlink.core.DebugInfo.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.DebugInfo.value" href="#crashlink.core.DebugInfo.value">value</a></code></li>
 </ul>
 </li>
 <li>
@@ -8726,7 +12963,10 @@ attributes &ndash; see the documentation for details.</p></div>
 <li>
 <h4><code><a title="crashlink.core.Enum" href="#crashlink.core.Enum">Enum</a></code></h4>
 <ul class="">
+<li><code><a title="crashlink.core.Enum.constructs" href="#crashlink.core.Enum.constructs">constructs</a></code></li>
 <li><code><a title="crashlink.core.Enum.deserialise" href="#crashlink.core.Enum.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Enum.name" href="#crashlink.core.Enum.name">name</a></code></li>
+<li><code><a title="crashlink.core.Enum.nconstructs" href="#crashlink.core.Enum.nconstructs">nconstructs</a></code></li>
 <li><code><a title="crashlink.core.Enum.serialise" href="#crashlink.core.Enum.serialise">serialise</a></code></li>
 </ul>
 </li>
@@ -8734,6 +12974,9 @@ attributes &ndash; see the documentation for details.</p></div>
 <h4><code><a title="crashlink.core.EnumConstruct" href="#crashlink.core.EnumConstruct">EnumConstruct</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.EnumConstruct.deserialise" href="#crashlink.core.EnumConstruct.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.EnumConstruct.name" href="#crashlink.core.EnumConstruct.name">name</a></code></li>
+<li><code><a title="crashlink.core.EnumConstruct.nparams" href="#crashlink.core.EnumConstruct.nparams">nparams</a></code></li>
+<li><code><a title="crashlink.core.EnumConstruct.params" href="#crashlink.core.EnumConstruct.params">params</a></code></li>
 <li><code><a title="crashlink.core.EnumConstruct.serialise" href="#crashlink.core.EnumConstruct.serialise">serialise</a></code></li>
 </ul>
 </li>
@@ -8747,13 +12990,18 @@ attributes &ndash; see the documentation for details.</p></div>
 <h4><code><a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.Field.deserialise" href="#crashlink.core.Field.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Field.name" href="#crashlink.core.Field.name">name</a></code></li>
 <li><code><a title="crashlink.core.Field.serialise" href="#crashlink.core.Field.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.Field.type" href="#crashlink.core.Field.type">type</a></code></li>
 </ul>
 </li>
 <li>
 <h4><code><a title="crashlink.core.Fun" href="#crashlink.core.Fun">Fun</a></code></h4>
-<ul class="">
+<ul class="two-column">
+<li><code><a title="crashlink.core.Fun.args" href="#crashlink.core.Fun.args">args</a></code></li>
 <li><code><a title="crashlink.core.Fun.deserialise" href="#crashlink.core.Fun.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Fun.nargs" href="#crashlink.core.Fun.nargs">nargs</a></code></li>
+<li><code><a title="crashlink.core.Fun.ret" href="#crashlink.core.Fun.ret">ret</a></code></li>
 <li><code><a title="crashlink.core.Fun.serialise" href="#crashlink.core.Fun.serialise">serialise</a></code></li>
 <li><code><a title="crashlink.core.Fun.str_resolve" href="#crashlink.core.Fun.str_resolve">str_resolve</a></code></li>
 </ul>
@@ -8798,6 +13046,8 @@ attributes &ndash; see the documentation for details.</p></div>
 <ul class="">
 <li><code><a title="crashlink.core.InlineBool.deserialise" href="#crashlink.core.InlineBool.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.InlineBool.serialise" href="#crashlink.core.InlineBool.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.InlineBool.value" href="#crashlink.core.InlineBool.value">value</a></code></li>
+<li><code><a title="crashlink.core.InlineBool.varint" href="#crashlink.core.InlineBool.varint">varint</a></code></li>
 </ul>
 </li>
 <li>
@@ -8805,10 +13055,14 @@ attributes &ndash; see the documentation for details.</p></div>
 </li>
 <li>
 <h4><code><a title="crashlink.core.Native" href="#crashlink.core.Native">Native</a></code></h4>
-<ul class="">
+<ul class="two-column">
 <li><code><a title="crashlink.core.Native.called_by" href="#crashlink.core.Native.called_by">called_by</a></code></li>
 <li><code><a title="crashlink.core.Native.deserialise" href="#crashlink.core.Native.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Native.findex" href="#crashlink.core.Native.findex">findex</a></code></li>
+<li><code><a title="crashlink.core.Native.lib" href="#crashlink.core.Native.lib">lib</a></code></li>
+<li><code><a title="crashlink.core.Native.name" href="#crashlink.core.Native.name">name</a></code></li>
 <li><code><a title="crashlink.core.Native.serialise" href="#crashlink.core.Native.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.Native.type" href="#crashlink.core.Native.type">type</a></code></li>
 </ul>
 </li>
 <li>
@@ -8816,11 +13070,12 @@ attributes &ndash; see the documentation for details.</p></div>
 <ul class="">
 <li><code><a title="crashlink.core.Null.deserialise" href="#crashlink.core.Null.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.Null.serialise" href="#crashlink.core.Null.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.Null.type" href="#crashlink.core.Null.type">type</a></code></li>
 </ul>
 </li>
 <li>
 <h4><code><a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a></code></h4>
-<ul class="two-column">
+<ul class="">
 <li><code><a title="crashlink.core.Obj.bindings" href="#crashlink.core.Obj.bindings">bindings</a></code></li>
 <li><code><a title="crashlink.core.Obj.deserialise" href="#crashlink.core.Obj.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.Obj.dynamic" href="#crashlink.core.Obj.dynamic">dynamic</a></code></li>
@@ -8839,13 +13094,17 @@ attributes &ndash; see the documentation for details.</p></div>
 <li><code><a title="crashlink.core.Obj.super" href="#crashlink.core.Obj.super">super</a></code></li>
 <li><code><a title="crashlink.core.Obj.virtual_map" href="#crashlink.core.Obj.virtual_map">virtual_map</a></code></li>
 <li><code><a title="crashlink.core.Obj.virtuals" href="#crashlink.core.Obj.virtuals">virtuals</a></code></li>
+<li><code><a title="crashlink.core.Obj.virtuals_initialized" href="#crashlink.core.Obj.virtuals_initialized">virtuals_initialized</a></code></li>
 </ul>
 </li>
 <li>
 <h4><code><a title="crashlink.core.Opcode" href="#crashlink.core.Opcode">Opcode</a></code></h4>
-<ul class="">
+<ul class="two-column">
 <li><code><a title="crashlink.core.Opcode.TYPE_MAP" href="#crashlink.core.Opcode.TYPE_MAP">TYPE_MAP</a></code></li>
+<li><code><a title="crashlink.core.Opcode.code" href="#crashlink.core.Opcode.code">code</a></code></li>
 <li><code><a title="crashlink.core.Opcode.deserialise" href="#crashlink.core.Opcode.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Opcode.df" href="#crashlink.core.Opcode.df">df</a></code></li>
+<li><code><a title="crashlink.core.Opcode.op" href="#crashlink.core.Opcode.op">op</a></code></li>
 <li><code><a title="crashlink.core.Opcode.serialise" href="#crashlink.core.Opcode.serialise">serialise</a></code></li>
 </ul>
 </li>
@@ -8853,6 +13112,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <h4><code><a title="crashlink.core.Packed" href="#crashlink.core.Packed">Packed</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.Packed.deserialise" href="#crashlink.core.Packed.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Packed.inner" href="#crashlink.core.Packed.inner">inner</a></code></li>
 <li><code><a title="crashlink.core.Packed.serialise" href="#crashlink.core.Packed.serialise">serialise</a></code></li>
 </ul>
 </li>
@@ -8860,6 +13120,9 @@ attributes &ndash; see the documentation for details.</p></div>
 <h4><code><a title="crashlink.core.Proto" href="#crashlink.core.Proto">Proto</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.Proto.deserialise" href="#crashlink.core.Proto.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Proto.findex" href="#crashlink.core.Proto.findex">findex</a></code></li>
+<li><code><a title="crashlink.core.Proto.name" href="#crashlink.core.Proto.name">name</a></code></li>
+<li><code><a title="crashlink.core.Proto.pindex" href="#crashlink.core.Proto.pindex">pindex</a></code></li>
 <li><code><a title="crashlink.core.Proto.serialise" href="#crashlink.core.Proto.serialise">serialise</a></code></li>
 </ul>
 </li>
@@ -8877,6 +13140,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <ul class="">
 <li><code><a title="crashlink.core.Ref.deserialise" href="#crashlink.core.Ref.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.Ref.serialise" href="#crashlink.core.Ref.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.Ref.type" href="#crashlink.core.Ref.type">type</a></code></li>
 </ul>
 </li>
 <li>
@@ -8886,7 +13150,9 @@ attributes &ndash; see the documentation for details.</p></div>
 <h4><code><a title="crashlink.core.Regs" href="#crashlink.core.Regs">Regs</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.Regs.deserialise" href="#crashlink.core.Regs.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Regs.n" href="#crashlink.core.Regs.n">n</a></code></li>
 <li><code><a title="crashlink.core.Regs.serialise" href="#crashlink.core.Regs.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.Regs.value" href="#crashlink.core.Regs.value">value</a></code></li>
 </ul>
 </li>
 <li>
@@ -8900,6 +13166,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <ul class="">
 <li><code><a title="crashlink.core.Serialisable.deserialise" href="#crashlink.core.Serialisable.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.Serialisable.serialise" href="#crashlink.core.Serialisable.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.Serialisable.value" href="#crashlink.core.Serialisable.value">value</a></code></li>
 </ul>
 </li>
 <li>
@@ -8923,10 +13190,13 @@ attributes &ndash; see the documentation for details.</p></div>
 </li>
 <li>
 <h4><code><a title="crashlink.core.StringsBlock" href="#crashlink.core.StringsBlock">StringsBlock</a></code></h4>
-<ul class="">
+<ul class="two-column">
 <li><code><a title="crashlink.core.StringsBlock.deserialise" href="#crashlink.core.StringsBlock.deserialise">deserialise</a></code></li>
 <li><code><a title="crashlink.core.StringsBlock.find_or_add" href="#crashlink.core.StringsBlock.find_or_add">find_or_add</a></code></li>
+<li><code><a title="crashlink.core.StringsBlock.length" href="#crashlink.core.StringsBlock.length">length</a></code></li>
+<li><code><a title="crashlink.core.StringsBlock.lengths" href="#crashlink.core.StringsBlock.lengths">lengths</a></code></li>
 <li><code><a title="crashlink.core.StringsBlock.serialise" href="#crashlink.core.StringsBlock.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.StringsBlock.value" href="#crashlink.core.StringsBlock.value">value</a></code></li>
 </ul>
 </li>
 <li>
@@ -8934,10 +13204,12 @@ attributes &ndash; see the documentation for details.</p></div>
 </li>
 <li>
 <h4><code><a title="crashlink.core.Type" href="#crashlink.core.Type">Type</a></code></h4>
-<ul class="">
+<ul class="two-column">
 <li><code><a title="crashlink.core.Type.Kind" href="#crashlink.core.Type.Kind">Kind</a></code></li>
 <li><code><a title="crashlink.core.Type.TYPEDEFS" href="#crashlink.core.Type.TYPEDEFS">TYPEDEFS</a></code></li>
+<li><code><a title="crashlink.core.Type.definition" href="#crashlink.core.Type.definition">definition</a></code></li>
 <li><code><a title="crashlink.core.Type.deserialise" href="#crashlink.core.Type.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Type.kind" href="#crashlink.core.Type.kind">kind</a></code></li>
 <li><code><a title="crashlink.core.Type.serialise" href="#crashlink.core.Type.serialise">serialise</a></code></li>
 <li><code><a title="crashlink.core.Type.str_resolve" href="#crashlink.core.Type.str_resolve">str_resolve</a></code></li>
 </ul>
@@ -8966,13 +13238,17 @@ attributes &ndash; see the documentation for details.</p></div>
 <h4><code><a title="crashlink.core.VarInts" href="#crashlink.core.VarInts">VarInts</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.VarInts.deserialise" href="#crashlink.core.VarInts.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.VarInts.n" href="#crashlink.core.VarInts.n">n</a></code></li>
 <li><code><a title="crashlink.core.VarInts.serialise" href="#crashlink.core.VarInts.serialise">serialise</a></code></li>
+<li><code><a title="crashlink.core.VarInts.value" href="#crashlink.core.VarInts.value">value</a></code></li>
 </ul>
 </li>
 <li>
 <h4><code><a title="crashlink.core.Virtual" href="#crashlink.core.Virtual">Virtual</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.Virtual.deserialise" href="#crashlink.core.Virtual.deserialise">deserialise</a></code></li>
+<li><code><a title="crashlink.core.Virtual.fields" href="#crashlink.core.Virtual.fields">fields</a></code></li>
+<li><code><a title="crashlink.core.Virtual.nfields" href="#crashlink.core.Virtual.nfields">nfields</a></code></li>
 <li><code><a title="crashlink.core.Virtual.resolve_fields" href="#crashlink.core.Virtual.resolve_fields">resolve_fields</a></code></li>
 <li><code><a title="crashlink.core.Virtual.serialise" href="#crashlink.core.Virtual.serialise">serialise</a></code></li>
 </ul>
@@ -8996,6 +13272,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <li>
 <h4><code><a title="crashlink.core.fileRef" href="#crashlink.core.fileRef">fileRef</a></code></h4>
 <ul class="">
+<li><code><a title="crashlink.core.fileRef.line" href="#crashlink.core.fileRef.line">line</a></code></li>
 <li><code><a title="crashlink.core.fileRef.resolve" href="#crashlink.core.fileRef.resolve">resolve</a></code></li>
 <li><code><a title="crashlink.core.fileRef.resolve_line" href="#crashlink.core.fileRef.resolve_line">resolve_line</a></code></li>
 <li><code><a title="crashlink.core.fileRef.resolve_pretty" href="#crashlink.core.fileRef.resolve_pretty">resolve_pretty</a></code></li>

@@ -67,9 +67,8 @@ class Serialisable(ABC):
     Base class for all serialisable objects.
     """
 
-    __slots__ = ()
+    __slots__ = ("value",)
 
-    @abstractmethod
     def __init__(self) -> None:
         self.value: Any = None
 
