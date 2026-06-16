@@ -373,6 +373,11 @@ class CFGraph:
         Computes post-dominators by running the dominator algorithm on the
         reversed graph. Handles multiple exit points by creating a virtual exit.
         A node 'p' post-dominates 'n' if all paths from 'n' to exit pass through 'p'.
+
+        In the reversed graph G', edges are reversed: u→v in G becomes v→u in G'.
+        The virtual EXIT is the start of G'. For the dominator algorithm on G':
+            preds_G'(n) = successors_G(n)
+        Exit nodes (no successors in G) connect only to VIRTUAL_EXIT in G'.
         """
         all_nodes = self.nodes
         exit_nodes = [n for n in all_nodes if not n.branches]
@@ -382,25 +387,23 @@ class CFGraph:
             self.post_dominators = {}
             return
 
-        # Reverse the graph edges
-        reversed_successors = {n: self.predecessors.get(n, []) for n in all_nodes}
-
-        # Use a virtual exit node to handle multiple exits gracefully
+        # Use a virtual exit node to unify all original exit nodes.
         VIRTUAL_EXIT = CFNode([])
-        reversed_successors[VIRTUAL_EXIT] = exit_nodes
         nodes_for_pd_analysis = all_nodes + [VIRTUAL_EXIT]
 
-        # Run the iterative dominator algorithm on the reversed graph
+        # Run the iterative dominator algorithm on the reversed graph.
         pd = {node: set(nodes_for_pd_analysis) for node in nodes_for_pd_analysis}
         pd[VIRTUAL_EXIT] = {VIRTUAL_EXIT}
 
         changed = True
         while changed:
             changed = False
-            for node in sorted(all_nodes, key=lambda n: n.base_offset):  # Process in fixed order
-                preds_in_reversed_graph = reversed_successors.get(node, [])
+            for node in sorted(all_nodes, key=lambda n: n.base_offset):
+                # In G', predecessors of `node` = successors of `node` in G.
+                # Exit nodes (no successors in G) connect to VIRTUAL_EXIT in G'.
+                preds_in_reversed_graph = [target for target, _ in node.branches]
                 if not preds_in_reversed_graph:
-                    continue
+                    preds_in_reversed_graph = [VIRTUAL_EXIT]
 
                 pred_pdom_sets = [pd[p] for p in preds_in_reversed_graph]
                 new_pd = {node}.union(set.intersection(*pred_pdom_sets))
@@ -2175,6 +2178,116 @@ class IRGlobalStringOptimizer(TraversingIROptimizer):
                 pass
 
 
+class IRStringIntConcatOptimizer(TraversingIROptimizer):
+    """
+    Collapses the HashLink string+int lowering pattern at the IR level.
+
+    HashLink compiles `str + int` as:
+        var_bytes = itos(int_local, ref(int_local))
+        var_str   = String.__alloc__(var_bytes, int_local)  [or inline itos]
+        result    = String.__add__(left, var_str)
+
+    Does a single forward pass tracking the most-recent assignment for each
+    local so that reused registers (same var7 for multiple conversions) are
+    resolved correctly.  Both top-level __alloc__ assignments and __alloc__
+    nested inside __add__ are collapsed to the plain integer local.
+    """
+
+    def _check_conversion_call(self, expr: IRExpression) -> Optional[Tuple["IRLocal", "IRLocal"]]:
+        """
+        If `expr` is itos(val, ref) or ftos(val, ref), return (value_local, count_ref_local).
+        For itos, HashLink uses the same variable as both value and ref storage.
+        For ftos, a separate int variable stores the byte count.
+        """
+        if not (isinstance(expr, IRCall) and isinstance(expr.target, IRConst) and isinstance(expr.target.value, Native)):
+            return None
+        func_name = expr.target.value.name.resolve(self.func.code)
+        if func_name not in ("itos", "ftos"):
+            return None
+        if len(expr.args) < 2:
+            return None
+        if not isinstance(expr.args[0], IRLocal):
+            return None
+        # arg1 is the ref where byte count is stored back (IRLocal or IRRef wrapping one)
+        count_ref: Optional[IRLocal] = None
+        arg1 = expr.args[1]
+        if isinstance(arg1, IRLocal):
+            count_ref = arg1
+        elif isinstance(arg1, IRRef) and isinstance(arg1.target, IRLocal):
+            count_ref = arg1.target
+        if count_ref is None:
+            return None
+        return expr.args[0], count_ref
+
+    def _try_collapse_alloc(self, expr: IRExpression, current_assigns: Dict[str, "IRAssign"]) -> Optional[IRLocal]:
+        """
+        If `expr` is __alloc__(itos/ftos_bytes, count_ref) with matching count_ref, return
+        the value local (int for itos, float for ftos). `current_assigns` maps local names
+        to their most-recent assignments seen so far.
+        """
+        if not isinstance(expr, IRCall):
+            return None
+        if not (isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function)):
+            return None
+        if self.func.code.partial_func_name(expr.target.value) != "__alloc__":
+            return None
+        if len(expr.args) != 2:
+            return None
+
+        bytes_arg, int_arg = expr.args[0], expr.args[1]
+        if not isinstance(int_arg, IRLocal):
+            return None
+
+        value_local: Optional[IRLocal] = None
+        count_ref_local: Optional[IRLocal] = None
+        if isinstance(bytes_arg, IRCall):
+            result = self._check_conversion_call(bytes_arg)
+            if result:
+                value_local, count_ref_local = result
+        elif isinstance(bytes_arg, IRLocal) and bytes_arg.name in current_assigns:
+            defn = current_assigns[bytes_arg.name]
+            if isinstance(defn.expr, IRCall):
+                result = self._check_conversion_call(defn.expr)
+                if result:
+                    value_local, count_ref_local = result
+
+        if value_local is None or count_ref_local is None:
+            return None
+
+        # Direct match: count_ref is the same local as int_arg
+        if count_ref_local.name == int_arg.name:
+            return value_local
+
+        # Indirect match: count_ref = &int_arg (before IRConditionInliner runs, the Ref
+        # is a separate local var6 = &var13; we need to look through it)
+        if count_ref_local.name in current_assigns:
+            ref_defn = current_assigns[count_ref_local.name]
+            if isinstance(ref_defn.expr, IRRef) and isinstance(ref_defn.expr.target, IRLocal):
+                if ref_defn.expr.target.name == int_arg.name:
+                    return value_local
+
+        return None
+
+    def _rewrite_expr(self, expr: IRExpression, current_assigns: Dict[str, "IRAssign"]) -> IRExpression:
+        """Recursively collapse __alloc__ within an expression."""
+        collapsed = self._try_collapse_alloc(expr, current_assigns)
+        if collapsed is not None:
+            dbg_print(f"IRStringIntConcatOptimizer: collapsing __alloc__(...,{collapsed.name}) → {collapsed.name}")
+            return collapsed
+        if isinstance(expr, IRCall):
+            expr.args = [self._rewrite_expr(a, current_assigns) for a in expr.args]
+        return expr
+
+    def visit_block(self, block: IRBlock) -> None:
+        current_assigns: Dict[str, IRAssign] = {}
+        for stmt in block.statements:
+            if isinstance(stmt, IRAssign):
+                if isinstance(stmt.target, IRLocal):
+                    current_assigns[stmt.target.name] = stmt
+                if isinstance(stmt.expr, IRExpression):
+                    stmt.expr = self._rewrite_expr(stmt.expr, current_assigns)
+
+
 class IRTempAssignmentInliner(TraversingIROptimizer):
     """
     Optimizes IR by inlining temporary variable assignments.
@@ -2214,16 +2327,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         dbg_print(f"IRTempAssignmentInliner: Protecting user reg indices: {self._user_reg_indices}")
 
     def _is_user_local(self, local: IRLocal) -> bool:
-        if local.name in self._user_variable_names:
-            return True
-        if local.name.startswith("var"):
-            try:
-                idx = int(local.name[3:])
-                if idx in self._user_reg_indices:
-                    return True
-            except ValueError:
-                pass
-        return False
+        return local.name in self._user_variable_names
 
     def _substitute_in_expr(
         self, expr: IRExpression, target: IRLocal, replacement: IRExpression
@@ -2472,7 +2576,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                         continue
                     if i + 1 < len(statements):
                         next_stmt = statements[i + 1]
-                        if self._substitute_in_statement(next_stmt, temp_local, expr_to_inline):
+                        if self._substitute_shallow(next_stmt, temp_local, expr_to_inline):
                             dbg_print(f"Conservatively inlining assignment for temporary '{temp_local.name}'.")
                             new_statements.append(next_stmt)
                             copy_target = None
@@ -2489,7 +2593,16 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                                     and later_stmt.target == temp_local
                                 ):
                                     break
-                                sub = copy_target if copy_target is not None else expr_to_inline
+                                if copy_target is not None:
+                                    sub = copy_target
+                                elif (
+                                    isinstance(next_stmt, IRAssign)
+                                    and isinstance(next_stmt.target, IRLocal)
+                                    and next_stmt.target == temp_local
+                                ):
+                                    sub = next_stmt.expr
+                                else:
+                                    sub = expr_to_inline
                                 self._substitute_shallow(later_stmt, temp_local, sub)
                             i += 2
                             inlined = True
@@ -2549,6 +2662,221 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
+
+
+class IRCopyPropOptimizer(TraversingIROptimizer):
+    """
+    Propagates copies of user-named locals introduced by switch/conditional branches.
+
+    If every branch of an IRConditional or IRSwitch ends with the same
+    `user_local = temp` assignment, then after the construct `temp` is equivalent
+    to `user_local`. We can replace subsequent reads of `temp` with `user_local`
+    until `temp` is redefined.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements: List[IRStatement] = []
+        for stmt in block.statements:
+            replacement = self._propagate(stmt)
+            if replacement is not None:
+                new_statements.append(replacement)
+            else:
+                new_statements.append(stmt)
+        block.statements = new_statements
+
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
+    def _propagate(self, stmt: IRStatement) -> Optional[IRStatement]:
+        if not isinstance(stmt, (IRConditional, IRSwitch)):
+            return None
+
+        copy = self._common_copy(stmt)
+        if copy is None:
+            return None
+
+        temp_local, user_local = copy
+        # Find the index of this statement and replace reads in later siblings
+        # until temp_local is redefined.
+        block = self._find_parent_block(stmt)
+        if block is None:
+            return None
+
+        idx = block.statements.index(stmt)
+        for later in block.statements[idx + 1 :]:
+            if isinstance(later, IRAssign) and isinstance(later.target, IRLocal) and later.target == temp_local:
+                break
+            self._replace_local_shallow(later, temp_local, user_local)
+        return None
+
+    def _find_parent_block(self, stmt: IRStatement) -> Optional[IRBlock]:
+        # Traversal state is not kept, so search from the root block.
+        return self._search_block(self.func.block, stmt)
+
+    def _search_block(self, block: IRBlock, target: IRStatement) -> Optional[IRBlock]:
+        if target in block.statements:
+            return block
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    result = self._search_block(child, target)
+                    if result is not None:
+                        return result
+        return None
+
+    def _common_copy(self, stmt: IRStatement) -> Optional[Tuple[IRLocal, IRLocal]]:
+        """Return (temp_local, user_local) if all branches end with user_local = temp_local."""
+        branches: List[IRBlock] = []
+        if isinstance(stmt, IRConditional):
+            branches.append(stmt.true_block)
+            if stmt.false_block:
+                branches.append(stmt.false_block)
+        elif isinstance(stmt, IRSwitch):
+            branches.extend(stmt.cases.values())
+            if stmt.default:
+                branches.append(stmt.default)
+        else:
+            return None
+
+        copy: Optional[Tuple[IRLocal, IRLocal]] = None
+        for branch in branches:
+            last = self._last_significant_statement(branch)
+            if not isinstance(last, IRAssign):
+                return None
+            if not isinstance(last.target, IRLocal) or not isinstance(last.expr, IRLocal):
+                return None
+            user, temp = last.target, last.expr
+            # The assignment direction must be user_local = temp (temp is the switch value).
+            if self._is_user_local(user) and not self._is_user_local(temp):
+                current = (temp, user)
+            elif self._is_user_local(temp) and not self._is_user_local(user):
+                current = (user, temp)
+            else:
+                return None
+            if copy is None:
+                copy = current
+            elif copy != current:
+                return None
+        return copy
+
+    def _last_significant_statement(self, block: IRBlock) -> Optional[IRStatement]:
+        """Return the last non-IRReturn statement in a block, or None."""
+        for s in reversed(block.statements):
+            if not isinstance(s, IRReturn):
+                return s
+        return None
+
+    def _replace_local_shallow(self, stmt: IRStatement, target: IRLocal, replacement: IRLocal) -> bool:
+        """Replace reads of target with replacement only at the top level of stmt."""
+        made_change = False
+        if isinstance(stmt, IRAssign):
+            if isinstance(stmt.target, IRExpression) and stmt.target != target:
+                _, changed = self._replace_local_in_expr(stmt.target, target, replacement)
+                made_change = made_change or changed
+            if isinstance(stmt.expr, IRExpression):
+                stmt.expr, changed = self._replace_local_in_expr(stmt.expr, target, replacement)
+                made_change = made_change or changed
+        elif isinstance(stmt, IRExpression):
+            _, changed = self._replace_local_in_expr(stmt, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(stmt, IRReturn):
+            if stmt.value:
+                stmt.value, changed = self._replace_local_in_expr(stmt.value, target, replacement)
+                made_change = made_change or changed
+        elif isinstance(stmt, IRConditional):
+            stmt.condition, changed = self._replace_local_in_expr(stmt.condition, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(stmt, IRWhileLoop):
+            stmt.condition, changed = self._replace_local_in_expr(stmt.condition, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(stmt, IRSwitch):
+            stmt.value, changed = self._replace_local_in_expr(stmt.value, target, replacement)
+            made_change = made_change or changed
+        return made_change
+
+    def _replace_local_in_statement(self, stmt: IRStatement, target: IRLocal, replacement: IRLocal) -> bool:
+        made_change = False
+        if isinstance(stmt, IRAssign):
+            if isinstance(stmt.target, IRExpression) and stmt.target != target:
+                _, changed = self._replace_local_in_expr(stmt.target, target, replacement)
+                made_change = made_change or changed
+            if isinstance(stmt.expr, IRExpression):
+                stmt.expr, changed = self._replace_local_in_expr(stmt.expr, target, replacement)
+                made_change = made_change or changed
+        elif isinstance(stmt, IRExpression):
+            _, changed = self._replace_local_in_expr(stmt, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(stmt, IRReturn):
+            if stmt.value:
+                stmt.value, changed = self._replace_local_in_expr(stmt.value, target, replacement)
+                made_change = made_change or changed
+        elif isinstance(stmt, IRConditional):
+            stmt.condition, changed = self._replace_local_in_expr(stmt.condition, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(stmt, IRWhileLoop):
+            stmt.condition, changed = self._replace_local_in_expr(stmt.condition, target, replacement)
+            made_change = made_change or changed
+
+        for child in stmt.get_children():
+            if child is not stmt and isinstance(child, IRStatement):
+                if self._replace_local_in_statement(child, target, replacement):
+                    made_change = True
+        return made_change
+
+    def _replace_local_in_expr(
+        self, expr: IRExpression, target: IRLocal, replacement: IRLocal
+    ) -> Tuple[IRExpression, bool]:
+        if expr == target:
+            return replacement, True
+        made_change = False
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            if expr.left is not None:
+                expr.left, changed = self._replace_local_in_expr(expr.left, target, replacement)
+                made_change = made_change or changed
+            if expr.right is not None:
+                expr.right, changed = self._replace_local_in_expr(expr.right, target, replacement)
+                made_change = made_change or changed
+        elif isinstance(expr, IRCall):
+            for i, arg in enumerate(expr.args):
+                expr.args[i], changed = self._replace_local_in_expr(arg, target, replacement)
+                made_change = made_change or changed
+        elif isinstance(expr, IRField):
+            expr.target, changed = self._replace_local_in_expr(expr.target, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(expr, (IRCast, IREnumIndex, IREnumField)):
+            expr.value, changed = self._replace_local_in_expr(expr.value, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(expr, IRArrayAccess):
+            expr.array, changed = self._replace_local_in_expr(expr.array, target, replacement)
+            made_change = made_change or changed
+            expr.index, changed = self._replace_local_in_expr(expr.index, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(expr, IREnumConstruct):
+            for i, arg in enumerate(expr.args):
+                expr.args[i], changed = self._replace_local_in_expr(arg, target, replacement)
+                made_change = made_change or changed
+        return expr, made_change
+
+    def _is_user_local(self, local: IRLocal) -> bool:
+        if not self.func.func.has_debug or not self.func.func.assigns:
+            return False
+        user_names = {name_ref.resolve(self.func.code) for name_ref, _ in self.func.func.assigns}
+        if local.name in user_names:
+            return True
+        if local.name.startswith("var"):
+            try:
+                idx = int(local.name[3:])
+            except ValueError:
+                return False
+            for _, op_idx in self.func.func.assigns:
+                val = op_idx.value - 1
+                if 0 <= val < len(self.func.ops):
+                    op = self.func.ops[val]
+                    if "dst" in op.df and op.df["dst"].value == idx:
+                        return True
+        return False
 
 
 class IRDeadTempEliminator(IROptimizer):
@@ -2681,6 +3009,16 @@ class IRDeadTempEliminator(IROptimizer):
                 and stmt.target.name not in globally_used
             ):
                 dbg_print(f"Removing dead temp assignment '{stmt.target.name}'.")
+                # Preserve user-visible function calls as bare statements (side effects).
+                # Native calls (itos, ftos, alloc_array, etc.) can be dropped entirely
+                # when their result is dead — they have no user-visible side effects beyond
+                # writing through a ref argument that is itself dead.
+                if (
+                    isinstance(stmt.expr, IRCall)
+                    and isinstance(stmt.expr.target, IRConst)
+                    and isinstance(stmt.expr.target.value, Function)
+                ):
+                    new_stmts.append(stmt.expr)
                 continue
             new_stmts.append(stmt)
         block.statements = new_stmts
@@ -3600,10 +3938,12 @@ class IRFunction:
                 IRConstructorFolder(self),
                 IRPrimitiveJumpLifter(self),
                 IRGlobalStringOptimizer(self),
+                IRStringIntConcatOptimizer(self),
                 IRConditionInliner(self),
                 IRLoopConditionOptimizer(self),
                 IRSelfAssignOptimizer(self),
                 IRCommonBlockMerger(self),
+                IRCopyPropOptimizer(self),
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRTempAssignmentInliner(self, aggressive=True),
                 IRDeadTempEliminator(self),
@@ -3727,6 +4067,14 @@ class IRFunction:
                     pass
                 else:
                     local.name = reg_assigns[i][0]
+        # Register 0 is `this` in instance methods and constructors.
+        # Detect by either: full name has no leading `$` (instance method), or
+        # the function contains SetThis/GetThis opcodes (constructor).
+        if self.locals and self.locals[0].name == "var0":
+            is_instance = not self.code.full_func_name(self.func).startswith("$")
+            has_this_ops = any(op.op in ("SetThis", "GetThis") for op in self.func.ops)
+            if is_instance or has_this_ops:
+                self.locals[0].name = "this"
         dbg_print("Named locals:", self.locals)
 
     def _find_convergence(self, true_node: CFNode, false_node: CFNode, visited: Set[CFNode]) -> Optional[CFNode]:
@@ -3850,6 +4198,26 @@ class IRFunction:
                 field_core = op.df["field"].resolve_obj(self.code, obj_type.definition)
                 field_expr = IRField(self.code, obj_local, field_core.name.resolve(self.code), field_core.type)
                 block.statements.append(IRAssign(self.code, dst_local, field_expr))
+            elif op.op == "GetThis":
+                dst_local = self.locals[op.df["dst"].value]
+                this_local = source_locals[0]
+                this_type_def = self.code.types[self.func.regs[0].value]
+                if isinstance(this_type_def.definition, (Obj, Virtual)):
+                    field_core = op.df["field"].resolve_obj(self.code, this_type_def.definition)
+                    field_expr = IRField(self.code, this_local, field_core.name.resolve(self.code), field_core.type)
+                    block.statements.append(IRAssign(self.code, dst_local, field_expr))
+                else:
+                    block.statements.append(IRUnliftedOpcode(self.code, op))
+            elif op.op == "SetThis":
+                src_local = source_locals[op.df["src"].value]
+                this_local = source_locals[0]
+                this_type_def = self.code.types[self.func.regs[0].value]
+                if isinstance(this_type_def.definition, (Obj, Virtual)):
+                    field_core = op.df["field"].resolve_obj(self.code, this_type_def.definition)
+                    field_expr = IRField(self.code, this_local, field_core.name.resolve(self.code), field_core.type)
+                    block.statements.append(IRAssign(self.code, field_expr, src_local))
+                else:
+                    block.statements.append(IRUnliftedOpcode(self.code, op))
             elif op.op == "New":
                 dst_local = self.locals[op.df["dst"].value]
                 alloc_type_idx = self.func.regs[op.df["dst"].value]
@@ -4230,8 +4598,10 @@ class IRFunction:
             conditional_stmt = IRConditional(self.code, cond_expr, then_block_ir, else_block_ir)
             block.statements.append(conditional_stmt)
 
-            # Continue lifting from the convergence point
-            next_block_ir = self._lift_block(convergence_node, visited, loop_ctx=loop_ctx)
+            # Continue lifting from the convergence point, but stop at the outer boundary.
+            # This prevents the convergence node from being consumed here when it equals
+            # the outer stop_at, which would leave the outer caller with nothing to lift.
+            next_block_ir = self._lift_block(convergence_node, visited, stop_at=stop_at, loop_ctx=loop_ctx)
             block.statements.extend(next_block_ir.statements)
 
         elif last_op and last_op.op == "Switch":
