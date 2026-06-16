@@ -401,9 +401,12 @@ def _generate_statements(
     # Track declared variables in the current scope to decide between "var x =" and "x ="
     # This is a simplification; a proper symbol table would be more robust.
     declared_vars_in_scope: set[str],
+    inline_declarations: Optional[Dict[IRStatement, Tuple[str, str]]] = None,
 ) -> List[str]:
     output_lines: List[str] = []
     indent = _indent_str(indent_level)
+    if inline_declarations is None:
+        inline_declarations = {}
 
     for stmt in statements:
         if isinstance(stmt, IRBlock):  # Nested block, usually from if/else/loop bodies
@@ -416,8 +419,16 @@ def _generate_statements(
                     ir_function,
                     indent_level,
                     declared_vars_in_scope.copy(),
+                    inline_declarations=inline_declarations,
                 )
             )
+        elif isinstance(stmt, IRAssign) and stmt in inline_declarations:
+            # Emit as `var name: type = value;` at its natural position.
+            local_name, type_str = inline_declarations[stmt]
+            value_str = _expression_to_haxe(stmt.expr, code, ir_function)
+            output_lines.append(f"{indent}var {local_name}: {type_str} = {value_str};")
+            declared_vars_in_scope.add(local_name)
+
         elif isinstance(stmt, IRAssign):
             target_str = _expression_to_haxe(stmt.target, code, ir_function)
 
@@ -514,7 +525,8 @@ def _generate_statements(
                 output_lines.append(f"{indent}if ({inv_cond}) {{")
                 output_lines.extend(
                     _generate_statements(
-                        false_stmts, code, ir_function, indent_level + 1, declared_vars_in_scope.copy()
+                        false_stmts, code, ir_function, indent_level + 1, declared_vars_in_scope.copy(),
+                        inline_declarations=inline_declarations,
                     )
                 )
                 output_lines.append(f"{indent}}}")
@@ -523,7 +535,10 @@ def _generate_statements(
                 cond_str = _expression_to_haxe(stmt.condition, code, ir_function)
                 output_lines.append(f"{indent}if ({cond_str}) {{")
                 output_lines.extend(
-                    _generate_statements(true_stmts, code, ir_function, indent_level + 1, declared_vars_in_scope.copy())
+                    _generate_statements(
+                        true_stmts, code, ir_function, indent_level + 1, declared_vars_in_scope.copy(),
+                        inline_declarations=inline_declarations,
+                    )
                 )
                 # If the true block ends with a control-flow statement, the else is unnecessary.
                 true_ends_with_cf = bool(true_stmts) and isinstance(true_stmts[-1], (IRBreak, IRContinue, IRReturn))
@@ -531,7 +546,8 @@ def _generate_statements(
                     output_lines.append(f"{indent}}} else {{")
                     output_lines.extend(
                         _generate_statements(
-                            false_stmts, code, ir_function, indent_level + 1, declared_vars_in_scope.copy()
+                            false_stmts, code, ir_function, indent_level + 1, declared_vars_in_scope.copy(),
+                            inline_declarations=inline_declarations,
                         )
                     )
                     output_lines.append(f"{indent}}}")
@@ -540,7 +556,8 @@ def _generate_statements(
                     # Render former else block as plain statements (no else keyword needed)
                     output_lines.extend(
                         _generate_statements(
-                            false_stmts, code, ir_function, indent_level, declared_vars_in_scope.copy()
+                            false_stmts, code, ir_function, indent_level, declared_vars_in_scope.copy(),
+                            inline_declarations=inline_declarations,
                         )
                     )
                 else:
@@ -571,6 +588,7 @@ def _generate_statements(
                             ir_function,
                             indent_level + 1,
                             declared_vars_in_scope.copy(),
+                            inline_declarations=inline_declarations,
                         )
                     )
                     cond_str = _inverted_bool_expr_to_haxe(last_stmt.condition, code, ir_function)
@@ -587,6 +605,7 @@ def _generate_statements(
                         ir_function,
                         indent_level + 1,
                         declared_vars_in_scope.copy(),
+                        inline_declarations=inline_declarations,
                     )
                 )
                 output_lines.append(f"{indent}}}")
@@ -601,6 +620,7 @@ def _generate_statements(
                     ir_function,
                     indent_level + 1,
                     declared_vars_in_scope.copy(),
+                    inline_declarations=inline_declarations,
                 )
             )
             output_lines.append(f"{indent}}}")
@@ -612,6 +632,7 @@ def _generate_statements(
                     ir_function,
                     indent_level + 1,
                     declared_vars_in_scope.copy(),
+                    inline_declarations=inline_declarations,
                 )
             )
             output_lines.append(f"{indent}}}")
@@ -637,6 +658,12 @@ def _generate_statements(
                 enum_type = stmt.value.value.get_type().definition
             elif isinstance(stmt.value.get_type().definition, Enum):
                 enum_type = stmt.value.get_type().definition
+            else:
+                # Switch on an int that may be an enum index — detect from case blocks.
+                detected = _detect_enum_value_from_cases(stmt)
+                if detected is not None:
+                    enum_value_str = _expression_to_haxe(detected, code, ir_function)
+                    enum_type = detected.get_type().definition
 
             expr_switch = _is_expression_switch(stmt)
             if expr_switch is not None:
@@ -656,7 +683,14 @@ def _generate_statements(
                 continue
 
             output_lines.append(f"{indent}switch ({enum_value_str}) {{")
-            switch_value_expr = stmt.value.value if isinstance(stmt.value, IREnumIndex) else stmt.value
+            if isinstance(stmt.value, IREnumIndex):
+                switch_value_expr = stmt.value.value
+            elif enum_type is not None:
+                # Use the detected enum expression as the switch value for param matching.
+                detected2 = _detect_enum_value_from_cases(stmt)
+                switch_value_expr = detected2 if detected2 is not None else stmt.value
+            else:
+                switch_value_expr = stmt.value
             for case_value, case_block in stmt.cases.items():
                 param_names = _enum_case_params(case_block, switch_value_expr)
                 case_str = _case_value_to_haxe(
@@ -671,6 +705,7 @@ def _generate_statements(
                         ir_function,
                         indent_level + 2,
                         declared_vars_in_scope.copy(),
+                        inline_declarations=inline_declarations,
                     )
                 )
                 if param_names:
@@ -689,6 +724,7 @@ def _generate_statements(
                         ir_function,
                         indent_level + 2,
                         declared_vars_in_scope.copy(),
+                        inline_declarations=inline_declarations,
                     )
                 )
                 for s in stmt.default.statements:
@@ -713,6 +749,7 @@ def _generate_statements(
                     ir_function,
                     indent_level + 1,
                     declared_vars_in_scope.copy(),
+                    inline_declarations=inline_declarations,
                 )
             )
             output_lines.append(f"{indent}}} catch ({catch_name}:{catch_type}) {{")
@@ -723,6 +760,7 @@ def _generate_statements(
                     ir_function,
                     indent_level + 1,
                     declared_vars_in_scope.copy(),
+                    inline_declarations=inline_declarations,
                 )
             )
             output_lines.append(f"{indent}}}")
@@ -804,7 +842,7 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
                     param_name = arg_assigns[debug_idx][0].resolve(code)
 
             param_type_decl = (
-                f": {arg_haxe_type_name}" if arg_haxe_type_name and arg_haxe_type_name != "Dynamic" else ""
+                f": {arg_haxe_type_name}" if arg_haxe_type_name else ""
             )
             params_str_list.append(f"{param_name}{param_type_decl}")
 
@@ -822,24 +860,42 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
     output_lines.append(func_header)
 
     initial_declared_vars = {p.split(":")[0].strip() for p in params_str_list}
+    # For instance methods and constructors, register 0 is `this` — skip it.
+    if (is_instance or is_constructor) and ir_func.locals:
+        initial_declared_vars.add(ir_func.locals[0].name)
 
-    # Hoist all local variable declarations to the top of the function. This
-    # avoids Haxe block-scoping problems where a variable declared inside an
-    # if/else branch is later used outside that branch.
+    # Classify locals: those with an unconditional first assignment can be declared
+    # inline at that assignment site (`var x = expr;`); those without must be
+    # pre-declared at the top of the function to avoid Haxe block-scoping errors
+    # (the variable would otherwise be undefined at the point of first *use*).
     local_types = _collect_locals(ir_func.block)
-    hoisted_assignments: Set[IRStatement] = set()
+    catch_locals = _collect_catch_local_names(ir_func.block)
+    # Variables used only as the value of an enum-detected switch (the enum index temp)
+    # don't need to be declared at all — the switch renders `switch(c)` not `switch(var4)`.
+    enum_switch_index_vars = _collect_enum_switch_index_names(ir_func.block)
+    inline_declarations: Dict[IRStatement, Tuple[str, str]] = {}  # stmt → (name, type_str)
     for local_name in local_types:
         if local_name in initial_declared_vars or local_name == "this":
             continue
+        # Catch-clause locals are declared by the `catch (e:T)` syntax; skip them.
+        if local_name in catch_locals:
+            continue
+        # Enum switch index temps are rendered as the enum expression, not declared.
+        if local_name in enum_switch_index_vars:
+            continue
         type_str = local_types[local_name]
-        # If the local is assigned unconditionally before it is ever read, we
-        # can fold that first assignment into the declaration.
         defining_stmt = _find_defining_assignment(local_name, ir_func.block)
         if defining_stmt is not None:
-            init_str = _expression_to_haxe(defining_stmt.expr, code, ir_func)
-            output_lines.append(f"    var {local_name}: {type_str} = {init_str};")
-            hoisted_assignments.add(defining_stmt)
+            # Emit inline at the assignment site, preserving statement order.
+            inline_declarations[defining_stmt] = (local_name, type_str)
             continue
+        # If the variable only lives inside a single compound statement, declare
+        # it inline there rather than pre-declaring at function level.
+        inner_stmt = _find_inner_defining_assignment(local_name, ir_func.block)
+        if inner_stmt is not None:
+            inline_declarations[inner_stmt] = (local_name, type_str)
+            continue
+        # No unconditional first assignment found — pre-declare with default value.
         default_init = {
             "Int": "0",
             "Float": "0.0",
@@ -852,11 +908,13 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
         init = f" = {default_init}" if default_init is not None else ""
         output_lines.append(f"    var {local_name}: {type_str}{init};")
 
-    # Remove the folded assignments from the body so they are not emitted twice.
-    body_statements = [s for s in ir_func.block.statements if s not in hoisted_assignments]
-    body_lines = _generate_statements(body_statements, code, ir_func, base_indent + 1, initial_declared_vars)
-    # Suppress trailing bare `return;` for Void functions — it's implicit.
-    if return_type_str in ("Void", "void") and body_lines and body_lines[-1].strip() == "return;":
+    body_lines = _generate_statements(
+        ir_func.block.statements, code, ir_func, base_indent + 1, initial_declared_vars,
+        inline_declarations=inline_declarations,
+    )
+    # Suppress trailing bare `return;` for Void functions and constructors — it's implicit.
+    is_void_return = return_type_str in ("Void", "void") or is_constructor
+    if is_void_return and body_lines and body_lines[-1].strip() == "return;":
         body_lines = body_lines[:-1]
     output_lines.extend(body_lines)
 
@@ -885,6 +943,24 @@ def pseudo(ir_func: IRFunction) -> str:
     return "\n".join(final_output)
 
 
+def _collect_catch_local_names(block: IRBlock) -> Set[str]:
+    """Collect names of all catch-clause locals at any depth in block."""
+    names: Set[str] = set()
+    for stmt in block.statements:
+        if isinstance(stmt, IRTryCatch):
+            if stmt.catch_local and stmt.catch_local.name:
+                names.add(stmt.catch_local.name)
+            names.update(_collect_catch_local_names(stmt.try_block))
+            names.update(_collect_catch_local_names(stmt.catch_block))
+        elif isinstance(stmt, IRConditional):
+            names.update(_collect_catch_local_names(stmt.true_block))
+            if stmt.false_block:
+                names.update(_collect_catch_local_names(stmt.false_block))
+        elif isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop)):
+            names.update(_collect_catch_local_names(stmt.body))
+    return names
+
+
 def _find_defining_assignment(local_name: str, block: IRBlock) -> Optional[IRAssign]:
     """Return the top-level assignment that defines a local if it happens
     unconditionally before any read of that local.
@@ -905,6 +981,75 @@ def _find_defining_assignment(local_name: str, block: IRBlock) -> Optional[IRAss
                 return stmt
         if _contains_local_name(local_name, stmt):
             return None
+    return None
+
+
+def _find_inner_defining_assignment(local_name: str, block: IRBlock) -> Optional[IRAssign]:
+    """If `local_name` is only used inside a single sub-block of a single top-level
+    compound statement, return the first assignment to it in that sub-block.
+
+    Safe cases:
+    - IRTryCatch: variable only in try_block or only in catch_block (not both).
+    - IRConditional: variable only in true_block or only in false_block (not both),
+      with no other reads/writes in the function.
+    """
+    # Ensure the variable doesn't appear in top-level assignments or reads.
+    compound_stmts = [s for s in block.statements
+                      if isinstance(s, (IRTryCatch, IRConditional, IRSwitch))]
+    non_compound = [s for s in block.statements
+                    if not isinstance(s, (IRTryCatch, IRConditional, IRSwitch))]
+    if any(_contains_local_name(local_name, s) or _find_assignment_recursive(local_name, s) is not None
+           for s in non_compound):
+        return None
+    # Must appear in exactly one compound statement.
+    containing = [s for s in compound_stmts
+                  if _find_assignment_recursive(local_name, s) is not None
+                  or _contains_local_name(local_name, s)]
+    if len(containing) != 1:
+        return None
+    stmt = containing[0]
+
+    if isinstance(stmt, IRTryCatch):
+        in_try = (_find_assignment_recursive(local_name, stmt.try_block) is not None
+                  or _contains_local_name(local_name, stmt.try_block))
+        in_catch = (_find_assignment_recursive(local_name, stmt.catch_block) is not None
+                    or _contains_local_name(local_name, stmt.catch_block))
+        if in_try and not in_catch:
+            # Use _find_defining_assignment on the sub-block to ensure it's safe.
+            return _find_defining_assignment(local_name, stmt.try_block)
+        if in_catch and not in_try:
+            return _find_defining_assignment(local_name, stmt.catch_block)
+
+    elif isinstance(stmt, IRConditional):
+        true_block = stmt.true_block
+        false_block = stmt.false_block
+        in_true = (true_block is not None
+                   and (_find_assignment_recursive(local_name, true_block) is not None
+                        or _contains_local_name(local_name, true_block)))
+        in_false = (false_block is not None
+                    and (_find_assignment_recursive(local_name, false_block) is not None
+                         or _contains_local_name(local_name, false_block)))
+        if in_true and not in_false:
+            return _find_defining_assignment(local_name, true_block)
+        if in_false and not in_true:
+            return _find_defining_assignment(local_name, false_block)
+
+    elif isinstance(stmt, IRSwitch):
+        candidate_block: Optional[IRBlock] = None
+        for case_block in stmt.cases.values():
+            if (_find_assignment_recursive(local_name, case_block) is not None
+                    or _contains_local_name(local_name, case_block)):
+                if candidate_block is not None:
+                    return None
+                candidate_block = case_block
+        if stmt.default and (_find_assignment_recursive(local_name, stmt.default) is not None
+                             or _contains_local_name(local_name, stmt.default)):
+            if candidate_block is not None:
+                return None
+            candidate_block = stmt.default
+        if candidate_block is not None:
+            return _find_defining_assignment(local_name, candidate_block)
+
     return None
 
 
@@ -1056,6 +1201,38 @@ def _is_std_function(func: "Function", code: Bytecode) -> bool:
     return "/std/" in path.replace("\\", "/")
 
 
+def _collect_enum_switch_index_names(block: IRBlock) -> Set[str]:
+    """Collect names of integer locals that serve only as enum index temporaries
+    for switch statements where we can detect the real enum value from case blocks.
+    These don't need to be declared since pseudo renders `switch(c)` not `switch(var4)`.
+    """
+    names: Set[str] = set()
+    for stmt in block.statements:
+        if isinstance(stmt, IRSwitch):
+            if isinstance(stmt.value, IRLocal) and not isinstance(stmt.value, IREnumIndex):
+                detected = _detect_enum_value_from_cases(stmt)
+                if detected is not None:
+                    names.add(stmt.value.name)
+    return names
+
+
+def _detect_enum_value_from_cases(stmt: "IRSwitch") -> Optional["IRExpression"]:
+    """For a switch on an integer (enum index) look inside case blocks to find
+    the actual enum expression being indexed.  Returns it if all enum-field
+    accesses agree on the same base expression, else None.
+    """
+    candidate: Optional["IRExpression"] = None
+    for case_block in stmt.cases.values():
+        for s in case_block.statements:
+            if isinstance(s, IRAssign) and isinstance(s.expr, IREnumField):
+                base = s.expr.value
+                if candidate is None:
+                    candidate = base
+                elif candidate is not base:
+                    return None
+    return candidate
+
+
 def _enum_case_params(case_block: IRBlock, switch_value: IRExpression) -> Optional[List[str]]:
     """
     Detect the lowered form of a Haxe enum pattern match.
@@ -1064,13 +1241,19 @@ def _enum_case_params(case_block: IRBlock, switch_value: IRExpression) -> Option
     If such a sequence is found, return the parameter names so they can be
     emitted as part of the case pattern instead of as separate statements.
     """
+
+    def _same_expr(a: IRExpression, b: IRExpression) -> bool:
+        if isinstance(a, IRLocal) and isinstance(b, IRLocal):
+            return a.name == b.name
+        return a is b
+
     params: List[str] = []
     for stmt in case_block.statements:
         if not isinstance(stmt, IRAssign) or not isinstance(stmt.target, IRLocal):
             break
         if not isinstance(stmt.expr, IREnumField):
             break
-        if stmt.expr.value is not switch_value:
+        if not _same_expr(stmt.expr.value, switch_value):
             break
         expected = f"param{len(params)}"
         if stmt.expr.field_name != expected:
@@ -1098,7 +1281,14 @@ def _case_value_to_haxe(
     if enum_type and isinstance(case_value, IRConst) and case_value.const_type == IRConst.ConstType.INT:
         idx = int(case_value.value.value if hasattr(case_value.value, "value") else case_value.value)
         if idx < len(enum_type.constructs):
-            return enum_type.constructs[idx].name.resolve(code)
+            construct = enum_type.constructs[idx]
+            name = construct.name.resolve(code)
+            params = param_names if param_names else (
+                [f"arg{i}" for i in range(len(construct.params))] if construct.params else []
+            )
+            if params:
+                return f"{name}({', '.join(params)})"
+            return name
         return _expression_to_haxe(case_value, code, ir_function)
     return _expression_to_haxe(case_value, code, ir_function)
 
@@ -1245,7 +1435,11 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
             return
         seen.add(id(stmt))
         if isinstance(stmt, IRSwitch):
-            switch_value = stmt.value.value if isinstance(stmt.value, IREnumIndex) else stmt.value
+            if isinstance(stmt.value, IREnumIndex):
+                switch_value = stmt.value.value
+            else:
+                detected = _detect_enum_value_from_cases(stmt)
+                switch_value = detected if detected is not None else stmt.value
             for case_block in stmt.cases.values():
                 params = _enum_case_params(case_block, switch_value)
                 if params:
