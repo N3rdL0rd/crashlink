@@ -4,8 +4,10 @@ Dataclass models.
 
 import json
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import List, Optional
+
+SIMILARITY_THRESHOLD = 0.70
 
 
 @dataclass
@@ -26,6 +28,58 @@ class TestFile:
 
 
 @dataclass
+class MethodComparison:
+    """Opcode-level comparison result for a single method."""
+
+    name: str
+    similarity: float
+    original_count: int
+    recompiled_count: int
+    orig_disasm: str = ""
+    recomp_disasm: str = ""
+    error: Optional[str] = None
+
+    def to_json(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_json(cls, data: dict) -> "MethodComparison":
+        return cls(
+            name=data["name"],
+            similarity=data["similarity"],
+            original_count=data["original_count"],
+            recompiled_count=data["recompiled_count"],
+            orig_disasm=data.get("orig_disasm", ""),
+            recomp_disasm=data.get("recomp_disasm", ""),
+            error=data.get("error"),
+        )
+
+
+@dataclass
+class OpcodeComparison:
+    """Opcode-level comparison between original and recompiled bytecode."""
+
+    overall_similarity: float
+    methods: List[MethodComparison] = field(default_factory=list)
+    recompile_error: Optional[str] = None
+
+    def to_json(self) -> dict:
+        return {
+            "overall_similarity": self.overall_similarity,
+            "methods": [m.to_json() for m in self.methods],
+            "recompile_error": self.recompile_error,
+        }
+
+    @classmethod
+    def from_json(cls, data: dict) -> "OpcodeComparison":
+        return cls(
+            overall_similarity=data["overall_similarity"],
+            methods=[MethodComparison.from_json(m) for m in data.get("methods", [])],
+            recompile_error=data.get("recompile_error"),
+        )
+
+
+@dataclass
 class TestCase:
     """
     Represents a test case.
@@ -38,6 +92,7 @@ class TestCase:
     failed: bool
     test_name: Optional[str] = None
     error: Optional[str] = None
+    opcode_comparison: Optional[OpcodeComparison] = None
 
     def to_json(self) -> dict:
         return {
@@ -48,10 +103,12 @@ class TestCase:
             "test_name": self.test_name,
             "failed": self.failed,
             "error": self.error,
+            "opcode_comparison": self.opcode_comparison.to_json() if self.opcode_comparison else None,
         }
 
     @classmethod
     def from_json(cls, data: dict) -> "TestCase":
+        oc_data = data.get("opcode_comparison")
         return cls(
             original=TestFile.from_json(data["original"]),
             decompiled=TestFile.from_json(data["decompiled"]),
@@ -59,7 +116,8 @@ class TestCase:
             test_id=data["test_id"],
             test_name=data["test_name"],
             failed=data["failed"],
-            error=data["error"] if data["error"] else None,
+            error=data["error"] if data.get("error") else None,
+            opcode_comparison=OpcodeComparison.from_json(oc_data) if oc_data else None,
         )
 
 
@@ -112,6 +170,16 @@ class Run:
     timestamp: str
     status: str
     status_color: str = "#a6e3a1"
+
+    def avg_similarity(self) -> Optional[float]:
+        scores = [
+            c.opcode_comparison.overall_similarity
+            for c in self.cases
+            if c.opcode_comparison and c.opcode_comparison.overall_similarity >= 0
+        ]
+        if not scores:
+            return None
+        return sum(scores) / len(scores)
 
     def to_json(self) -> dict:
         return {
