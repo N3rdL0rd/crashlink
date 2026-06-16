@@ -63,8 +63,27 @@ def type_to_haxe(type: str) -> str:
         "Bytes": "hl.Bytes",
         "Dyn": "Dynamic",
         "DynObj": "Dynamic",
-        "Fun": "Function",
+        "Fun": "Dynamic",
     }
+    if type.startswith("hl.types.ArrayBytes_"):
+        suffix = type.split("_")[-1]
+        element_map = {
+            "Int": "Int",
+            "Float": "Float",
+            "Bool": "Bool",
+            "Single": "Single",
+            "F64": "Float",
+            "I32": "Int",
+        }
+        return f"Array<{element_map.get(suffix, 'Dynamic')}>"
+    if type in ("hl.types.ArrayObj", "hl.types.ArrayDyn"):
+        return "Array<Dynamic>"
+    if type == "Array":
+        return "Array<Dynamic>"
+    if type in ("Function", "Native"):
+        return "Dynamic"
+    if type == "Null":
+        return "Dynamic"
     return destaticify(mapping.get(type, type))
 
 

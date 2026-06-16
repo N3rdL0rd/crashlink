@@ -14,6 +14,7 @@ from . import disasm
 from .core import (
     Bytecode,
     DynObj,
+    Enum,
     Function,
     Native,
     Obj,
@@ -718,6 +719,13 @@ class IRCall(IRExpression):
             return _get_type_in_code(self.code, "Obj")
         return self.target.get_type()
 
+    def get_children(self) -> List[IRStatement]:
+        children: List[IRStatement] = []
+        if self.target is not None:
+            children.append(self.target)
+        children.extend(self.args)
+        return children
+
     def __repr__(self) -> str:
         return f"<IRCall: {self.target}({', '.join([str(arg) for arg in self.args])})>"
 
@@ -960,7 +968,7 @@ class IRReturn(IRStatement):
         self.value = value
 
     def get_children(self) -> List[IRStatement]:
-        return []
+        return [self.value] if self.value is not None else []
 
     def __repr__(self) -> str:
         return f"<IRReturn: {self.value}>"
@@ -1201,6 +1209,26 @@ class IRCast(IRExpression):
         return f"<IRCast: ({type_name}){self.expr}>"
 
 
+class IRArrayLiteral(IRExpression):
+    """Represents a Haxe array literal, e.g. [1, 2, 3]."""
+
+    def __init__(self, code: Bytecode, elements: List[IRExpression], elem_type: Optional[tIndex] = None):
+        super().__init__(code)
+        self.elements = elements
+        self.elem_type_idx = elem_type
+
+    def get_type(self) -> Type:
+        if self.elem_type_idx:
+            return self.elem_type_idx.resolve(self.code)
+        return _get_type_in_code(self.code, "Dyn")
+
+    def get_children(self) -> List[IRStatement]:
+        return [e for e in self.elements]
+
+    def __repr__(self) -> str:
+        return f"<IRArrayLiteral: [{', '.join(repr(e) for e in self.elements)}]>"
+
+
 class IRArrayAccess(IRExpression):
     """Represents an array/memory access expression, e.g., `arr[idx]`"""
 
@@ -1216,7 +1244,7 @@ class IRArrayAccess(IRExpression):
         return _get_type_in_code(self.code, "Void")
 
     def get_children(self) -> List[IRStatement]:
-        return []
+        return [self.array, self.index]
 
     def __repr__(self) -> str:
         return f"<IRArrayAccess: {self.array}[{self.index}]>"
@@ -1233,7 +1261,7 @@ class IRRef(IRExpression):
         return _get_type_in_code(self.code, "Void")
 
     def get_children(self) -> List[IRStatement]:
-        return []
+        return [self.target]
 
     def __repr__(self) -> str:
         return f"<IRRef: &{self.target}>"
@@ -1270,7 +1298,7 @@ class IREnumIndex(IRExpression):
         return _get_type_in_code(self.code, "I32")
 
     def get_children(self) -> List[IRStatement]:
-        return []
+        return [self.value]
 
     def __repr__(self) -> str:
         return f"<IREnumIndex: indexof({self.value})>"
@@ -1289,7 +1317,7 @@ class IREnumField(IRExpression):
         return self.field_type_idx.resolve(self.code)
 
     def get_children(self) -> List[IRStatement]:
-        return []
+        return [self.value]
 
     def __repr__(self) -> str:
         return f"<IREnumField: {self.value}.{self.field_name}>"
@@ -2234,6 +2262,13 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             made_change = made_change or changed
             expr.index, changed = self._substitute_in_expr(expr.index, target, replacement)
             made_change = made_change or changed
+        elif isinstance(expr, IRNew):
+            new_args = []
+            for arg in expr.constructor_args:
+                new_arg, changed = self._substitute_in_expr(arg, target, replacement)
+                new_args.append(new_arg)
+                made_change = made_change or changed
+            expr.constructor_args = new_args
         elif isinstance(expr, IRRef):
             expr.target, changed = self._substitute_in_expr(expr.target, target, replacement)
             made_change = made_change or changed
@@ -2387,12 +2422,15 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         return False
 
     def is_safe_to_inline_conservatively(self, expr: IRExpression) -> bool:
+        # Avoid inlining calls in conservative mode: they can have side effects
+        # and removing the assignment eliminates evidence needed by pattern
+        # optimizers (e.g. alloc_bytes for array literals).
+        if isinstance(expr, IRCall):
+            return False
         if isinstance(expr, (IRConst, IRLocal)):
             return True
         if isinstance(expr, IRCast):
             return self.is_safe_to_inline_conservatively(expr.expr)
-        if isinstance(expr, IRCall):
-            return True
         # Allow flat arithmetic (both operands are leaves) to enable compound assignment detection.
         # Nested arithmetic is excluded to prevent exponential chaining.
         if isinstance(expr, IRArithmetic):
@@ -2559,40 +2597,73 @@ class IRDeadTempEliminator(IROptimizer):
     def _collect_all_used_names(self, block: IRBlock) -> Set[str]:
         used: Set[str] = set()
         for stmt in block.statements:
-            if isinstance(stmt, IRAssign):
-                self._collect_used_in_expr(stmt.expr, used)
-            if isinstance(stmt, IRReturn) and stmt.value:
-                self._collect_used_in_expr(stmt.value, used)
+            self._collect_used_in_stmt(stmt, used)
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     used.update(self._collect_all_used_names(child))
         return used
 
-    def _collect_used_in_expr(self, expr: IRExpression, used: Set[str]) -> None:
+    def _collect_used_in_stmt(self, stmt: IRStatement, used: Set[str]) -> None:
+        if isinstance(stmt, IRAssign):
+            self._collect_used_in_expr(stmt.expr, used)
+            # For array-element assignments, the array/index expressions are still reads.
+            if isinstance(stmt.target, IRArrayAccess):
+                self._collect_used_in_expr(stmt.target.array, used)
+                self._collect_used_in_expr(stmt.target.index, used)
+        elif isinstance(stmt, IRReturn) and stmt.value:
+            self._collect_used_in_expr(stmt.value, used)
+        elif isinstance(stmt, IRCall):
+            self._collect_used_in_expr(stmt.target, used)
+            for arg in stmt.args:
+                self._collect_used_in_expr(arg, used)
+        elif isinstance(stmt, IRTrace):
+            self._collect_used_in_expr(stmt.msg, used)
+        elif isinstance(stmt, IRConditional):
+            self._collect_used_in_expr(stmt.condition, used)
+        elif isinstance(stmt, IRWhileLoop):
+            self._collect_used_in_expr(stmt.condition, used)
+        elif isinstance(stmt, IRPrimitiveLoop):
+            used.update(self._collect_all_used_names(stmt.condition))
+        elif isinstance(stmt, IRSwitch):
+            self._collect_used_in_expr(stmt.value, used)
+
+    def _collect_used_in_expr(self, expr: Optional[IRExpression], used: Set[str]) -> None:
+        if expr is None:
+            return
         if isinstance(expr, IRLocal):
             used.add(expr.name)
-        if isinstance(expr, IRArithmetic):
+        elif isinstance(expr, IRArithmetic):
             self._collect_used_in_expr(expr.left, used)
             self._collect_used_in_expr(expr.right, used)
-        if isinstance(expr, IRCast):
-            self._collect_used_in_expr(expr.expr, used)
-        if isinstance(expr, IRCall):
-            for arg in expr.args:
-                self._collect_used_in_expr(arg, used)
-        if isinstance(expr, IRField):
-            self._collect_used_in_expr(expr.target, used)
-        if isinstance(expr, IRArrayAccess):
+        elif isinstance(expr, IRArrayAccess):
             self._collect_used_in_expr(expr.array, used)
             self._collect_used_in_expr(expr.index, used)
-        if isinstance(expr, IRRef):
+        elif isinstance(expr, IRArrayLiteral):
+            for element in expr.elements:
+                self._collect_used_in_expr(element, used)
+        elif isinstance(expr, IRBoolExpr):
+            self._collect_used_in_expr(expr.left, used)
+            self._collect_used_in_expr(expr.right, used)
+        elif isinstance(expr, IRCast):
+            self._collect_used_in_expr(expr.expr, used)
+        elif isinstance(expr, IRCall):
             self._collect_used_in_expr(expr.target, used)
-        if isinstance(expr, IREnumConstruct):
             for arg in expr.args:
                 self._collect_used_in_expr(arg, used)
-        if isinstance(expr, IREnumIndex):
+        elif isinstance(expr, IREnumConstruct):
+            for arg in expr.args:
+                self._collect_used_in_expr(arg, used)
+        elif isinstance(expr, IREnumField):
             self._collect_used_in_expr(expr.value, used)
-        if isinstance(expr, IREnumField):
+        elif isinstance(expr, IREnumIndex):
             self._collect_used_in_expr(expr.value, used)
+        elif isinstance(expr, IRField):
+            self._collect_used_in_expr(expr.target, used)
+        elif isinstance(expr, IRNew):
+            for arg in expr.constructor_args:
+                self._collect_used_in_expr(arg, used)
+        elif isinstance(expr, IRRef):
+            self._collect_used_in_expr(expr.target, used)
 
     def _remove_dead(
         self,
@@ -2654,15 +2725,27 @@ class IRConstructorFolder(TraversingIROptimizer):
                     and isinstance(stmt.target, IRLocal)
                     and isinstance(stmt.expr, IRNew)
                     and not stmt.expr.constructor_args
-                    and i + 1 < len(block.statements)
                 ):
-                    next_stmt = block.statements[i + 1]
-                    ctor_args = self._match_constructor_call(next_stmt, stmt.target)
-                    if ctor_args is not None:
-                        stmt.expr.constructor_args = ctor_args
-                        new_statements.append(stmt)
-                        i += 2
-                        made_change = True
+                    folded = False
+                    for j in range(i + 1, len(block.statements)):
+                        next_stmt = block.statements[j]
+                        ctor_args = self._match_constructor_call(next_stmt, stmt.target)
+                        if ctor_args is not None:
+                            # Keep any statements between the allocation and the
+                            # constructor call (e.g. initializers for constructor
+                            # arguments), and place the folded `new` after them.
+                            stmt.expr.constructor_args = ctor_args
+                            new_statements.extend(block.statements[i + 1 : j])
+                            new_statements.append(stmt)
+                            i = j + 1
+                            made_change = True
+                            folded = True
+                            break
+                        # We can only fold across statements that don't touch the
+                        # freshly allocated instance.
+                        if self._statement_uses_local(next_stmt, stmt.target):
+                            break
+                    if folded:
                         continue
                 new_statements.append(stmt)
                 i += 1
@@ -2691,6 +2774,23 @@ class IRConstructorFolder(TraversingIROptimizer):
         if func_name and "__constructor__" in func_name:
             return list(stmt.args[1:])
         return None
+
+    def _statement_uses_local(self, stmt: IRStatement, local: IRLocal) -> bool:
+        """Return True if stmt reads or writes the given local."""
+        if isinstance(stmt, IRAssign):
+            if stmt.target == local:
+                return True
+            return self._expr_uses_local(stmt.expr, local)
+        if isinstance(stmt, IRExpression):
+            return self._expr_uses_local(stmt, local)
+        if isinstance(stmt, IRReturn):
+            return stmt.value is not None and self._expr_uses_local(stmt.value, local)
+        return False
+
+    def _expr_uses_local(self, expr: IRStatement, local: IRLocal) -> bool:
+        if expr == local:
+            return True
+        return any(self._expr_uses_local(child, local) for child in expr.get_children())
 
 
 class IRTraceOptimizer(TraversingIROptimizer):
@@ -2833,6 +2933,646 @@ class IRTraceOptimizer(TraversingIROptimizer):
             block.statements = new_statements
 
 
+class IREnumSwitchOptimizer(TraversingIROptimizer):
+    """
+    Transform switches on enum indices into switches on the enum value itself,
+    using enum constructor names for the cases.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        made_change = True
+        while made_change:
+            made_change = False
+            new_statements: List[IRStatement] = []
+            i = 0
+            while i < len(block.statements):
+                stmt = block.statements[i]
+                match = self._try_enum_switch(block.statements, i)
+                if match:
+                    switch_stmt, consumed = match
+                    new_statements.append(switch_stmt)
+                    i += consumed
+                    made_change = True
+                    continue
+                new_statements.append(stmt)
+                i += 1
+            block.statements = new_statements
+
+    def _try_enum_switch(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRSwitch, int]]:
+        if start >= len(stmts):
+            return None
+        stmt = stmts[start]
+        if not isinstance(stmt, IRAssign) or not isinstance(stmt.target, IRLocal):
+            return None
+        if not isinstance(stmt.expr, IREnumIndex):
+            return None
+        idx_var = stmt.target
+        enum_value = stmt.expr.value
+
+        if start + 1 >= len(stmts):
+            return None
+        next_stmt = stmts[start + 1]
+        if not isinstance(next_stmt, IRSwitch):
+            return None
+        if not isinstance(next_stmt.value, IRLocal) or next_stmt.value.name != idx_var.name:
+            return None
+        if not isinstance(enum_value, IRLocal):
+            return None
+        enum_type = enum_value.get_type()
+        if not isinstance(enum_type.definition, Enum):
+            return None
+
+        new_cases: Dict[IRConst, IRBlock] = {}
+        enum_def = enum_type.definition
+        for case_val, case_block in next_stmt.cases.items():
+            if not isinstance(case_val, IRConst) or case_val.const_type != IRConst.ConstType.INT:
+                return None
+            idx = int(case_val.value.value if hasattr(case_val.value, "value") else case_val.value)
+            if idx >= len(enum_def.constructs):
+                return None
+            construct = enum_def.constructs[idx]
+            # Create a new IRConst for the constructor name. We repurpose the
+            # existing IRConst by changing its value to the constructor name
+            # string, but create a fresh one to avoid side effects.
+            new_case_val = IRConst(self.func.code, IRConst.ConstType.GLOBAL_STRING, value=construct.name.resolve(self.func.code))
+            new_cases[new_case_val] = case_block
+
+        new_switch = IRSwitch(self.func.code, enum_value, new_cases, next_stmt.default)
+        return new_switch, 2
+
+
+class IRArrayPatternOptimizer(TraversingIROptimizer):
+    """
+    Recognise low-level HashLink array implementation patterns and rewrite them
+    into high-level Haxe array operations.
+
+    Currently handles:
+      - Fixed-size integer array literals built with alloc_bytes + stores + allocI32.
+      - Conditional arr.bytes[idx << 2] loads with length guard -> arr[idx].
+      - ArrayObj allocation with <none>(alloc_array(...)) -> [].
+      - temp = arr.bytes; ...; x = temp[idx << 2] -> x = arr[idx].
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        made_change = True
+        while made_change:
+            made_change = False
+            new_statements: List[IRStatement] = []
+            i = 0
+            while i < len(block.statements):
+                stmt = block.statements[i]
+                literal_match = self._try_array_literal(block.statements, i)
+                if literal_match:
+                    arr_assign, consumed = literal_match
+                    new_statements.append(arr_assign)
+                    i += consumed
+                    made_change = True
+                    continue
+
+                obj_literal_match = self._try_array_obj_literal(block.statements, i)
+                if obj_literal_match:
+                    use_stmt, consumed = obj_literal_match
+                    new_statements.append(use_stmt)
+                    i += consumed
+                    made_change = True
+                    continue
+
+                access_match = self._try_array_access(block.statements, i)
+                if access_match:
+                    arr_assign, consumed = access_match
+                    new_statements.append(arr_assign)
+                    i += consumed
+                    made_change = True
+                    continue
+
+                temp_match = self._try_eliminate_bytes_temp(block.statements, i)
+                if temp_match:
+                    new_statements, consumed = temp_match
+                    i += consumed
+                    made_change = True
+                    continue
+
+                new_statements.append(stmt)
+                i += 1
+            block.statements = new_statements
+
+    def _try_eliminate_bytes_temp(
+        self, stmts: List[IRStatement], start: int
+    ) -> Optional[Tuple[List[IRStatement], int]]:
+        # Pattern: temp = expr.bytes
+        # followed by zero or more statements, then a use of temp[idx << 2] that
+        # can be rewritten to expr[idx].
+        if start >= len(stmts):
+            return None
+        stmt = stmts[start]
+        if not isinstance(stmt, IRAssign) or not isinstance(stmt.target, IRLocal):
+            return None
+        if not isinstance(stmt.expr, IRField) or stmt.expr.field_name != "bytes":
+            return None
+        temp = stmt.target
+        arr_expr = stmt.expr.target
+
+        # Scan forward for the first use of temp in an array access.
+        for j in range(start + 1, len(stmts)):
+            use = stmts[j]
+            accesses = self._find_temp_accesses(use, temp, arr_expr)
+            if accesses:
+                new_use = self._replace_temp_accesses(use, accesses)
+                return stmts[:start] + [new_use] + stmts[start + 1 : j] + stmts[j + 1 :], 1
+        return None
+
+    def _find_temp_accesses(
+        self, stmt: IRStatement, temp: IRLocal, arr_expr: IRExpression
+    ) -> List[Tuple[IRArrayAccess, IRExpression]]:
+        """Find array accesses in stmt that read temp[idx << 2]."""
+        result: List[Tuple[IRArrayAccess, IRExpression]] = []
+
+        def visit(node: IRStatement) -> None:
+            if isinstance(node, IRArrayAccess):
+                if (
+                    isinstance(node.array, IRLocal)
+                    and node.array.name == temp.name
+                    and isinstance(node.index, IRArithmetic)
+                    and node.index.op.value == "<<"
+                    and isinstance(node.index.right, IRConst)
+                    and int(
+                        node.index.right.value.value
+                        if hasattr(node.index.right.value, "value")
+                        else node.index.right.value
+                    )
+                    == 2
+                ):
+                    result.append((node, IRArrayAccess(node.code, arr_expr, node.index.left)))
+            for child in node.get_children():
+                visit(child)
+
+        visit(stmt)
+        return result
+
+    def _replace_temp_accesses(
+        self, stmt: IRStatement, replacements: List[Tuple[IRArrayAccess, IRExpression]]
+    ) -> IRStatement:
+        if not replacements:
+            return stmt
+        old, new = replacements[0]
+        if stmt is old:
+            return new
+        for child in stmt.get_children():
+            if child is old:
+                # Replace child reference directly if possible.
+                self._replace_child(stmt, child, new)
+                return stmt
+            else:
+                replaced = self._replace_temp_accesses(child, replacements)
+                if replaced is not child:
+                    self._replace_child(stmt, child, replaced)
+                    return stmt
+        return stmt
+
+    def _replace_child(self, parent: IRStatement, old: IRStatement, new: Any) -> None:
+        if isinstance(parent, IRAssign):
+            if parent.target is old:
+                parent.target = new
+            elif parent.expr is old:
+                parent.expr = new
+        elif isinstance(parent, IRReturn):
+            parent.value = new
+        elif isinstance(parent, IRArithmetic):
+            if parent.left is old:
+                parent.left = new
+            elif parent.right is old:
+                parent.right = new
+        elif isinstance(parent, IRBoolExpr):
+            if parent.left is old:
+                parent.left = new
+            elif parent.right is old:
+                parent.right = new
+        elif isinstance(parent, IRCall):
+            if parent.target is old:
+                parent.target = new
+            parent.args = [new if a is old else a for a in parent.args]
+        elif isinstance(parent, IRArrayAccess):
+            if parent.array is old:
+                parent.array = new
+            elif parent.index is old:
+                parent.index = new
+        elif isinstance(parent, IRField):
+            if parent.target is old:
+                parent.target = new
+        elif isinstance(parent, IRCast):
+            if parent.expr is old:
+                parent.expr = new
+        elif isinstance(parent, IRNew):
+            parent.constructor_args = [new if a is old else a for a in parent.constructor_args]
+        elif isinstance(parent, IREnumConstruct):
+            parent.args = [new if a is old else a for a in parent.args]
+        elif isinstance(parent, IREnumField):
+            if parent.value is old:
+                parent.value = new
+        elif isinstance(parent, IRArrayLiteral):
+            parent.elements = [new if e is old else e for e in parent.elements]
+        elif isinstance(parent, IRConditional):
+            if parent.condition is old:
+                parent.condition = new
+        elif isinstance(parent, IRPrimitiveLoop):
+            if parent.condition is old:
+                parent.condition = new
+            elif parent.body is old:
+                parent.body = new
+        elif isinstance(parent, IRWhileLoop):
+            if parent.condition is old:
+                parent.condition = new
+            elif parent.body is old:
+                parent.body = new
+        elif isinstance(parent, IRSwitch):
+            if parent.value is old:
+                parent.value = new
+        elif isinstance(parent, IRTryCatch):
+            if parent.try_block is old:
+                parent.try_block = new
+            elif parent.catch_block is old:
+                parent.catch_block = new
+        elif isinstance(parent, IRTrace):
+            if parent.msg is old:
+                parent.msg = new
+
+    def _is_alloc_bytes(self, expr: IRStatement) -> bool:
+        if not isinstance(expr, IRCall):
+            return False
+        if not isinstance(expr.target, IRConst) or not isinstance(expr.target.value, Native):
+            return False
+        return expr.target.value.name.resolve(self.func.code) == "alloc_bytes"
+
+    def _is_alloc_i32(self, expr: IRStatement) -> bool:
+        if not isinstance(expr, IRCall):
+            return False
+        if not isinstance(expr.target, IRConst) or not isinstance(expr.target.value, Function):
+            return False
+        return self.func.code.partial_func_name(expr.target.value) == "allocI32"
+
+    def _is_shifted_index(self, idx: IRStatement, local: IRLocal, shift: int) -> bool:
+        if not isinstance(idx, IRArithmetic):
+            return False
+        if idx.op.value != "<<":
+            return False
+        if not isinstance(idx.left, IRLocal) or idx.left.name != local.name:
+            return False
+        if not isinstance(idx.right, IRConst) or idx.right.const_type != IRConst.ConstType.INT:
+            return False
+        val = idx.right.value.value if hasattr(idx.right.value, "value") else idx.right.value
+        return int(val) == shift
+
+    def _is_alloc_array(self, expr: IRStatement) -> bool:
+        if not isinstance(expr, IRCall):
+            return False
+        if not isinstance(expr.target, IRConst) or not isinstance(expr.target.value, Native):
+            return False
+        return expr.target.value.name.resolve(self.func.code) == "alloc_array"
+
+    def _is_arrayobj_anon(self, expr: IRStatement) -> bool:
+        if not isinstance(expr, IRCall):
+            return False
+        if not isinstance(expr.target, IRConst) or not isinstance(expr.target.value, Function):
+            return False
+        if len(expr.args) != 1:
+            return False
+        fun = expr.target.value
+        try:
+            path = fun.resolve_file(self.func.code)
+        except Exception:
+            path = ""
+        if "ArrayObj.hx" not in path.replace("\\", "/"):
+            return False
+        try:
+            sig = fun.resolve_fun(self.func.code)
+            ret_name = disasm.type_name(self.func.code, sig.ret.resolve(self.func.code))
+        except Exception:
+            ret_name = ""
+        return "ArrayObj" in ret_name or "Array" in ret_name
+
+    def _find_anon_call(
+        self, node: Optional[IRStatement], arr_local: IRLocal
+    ) -> Optional[IRCall]:
+        if node is None:
+            return None
+        if isinstance(node, IRCall) and self._is_arrayobj_anon(node):
+            if (
+                node.args
+                and isinstance(node.args[0], IRLocal)
+                and node.args[0].name == arr_local.name
+            ):
+                return node
+        # Many expression classes have incomplete get_children(); recurse into the
+        # known attributes we care about here.
+        if isinstance(node, IRAssign):
+            return self._find_anon_call(node.expr, arr_local)
+        if isinstance(node, IRReturn) and node.value:
+            return self._find_anon_call(node.value, arr_local)
+        if isinstance(node, IRCall):
+            for arg in node.args:
+                found = self._find_anon_call(arg, arr_local)
+                if found:
+                    return found
+        if isinstance(node, IRCast):
+            return self._find_anon_call(node.expr, arr_local)
+        if isinstance(node, IRField):
+            return self._find_anon_call(node.target, arr_local)
+        if isinstance(node, IRArrayAccess):
+            found = self._find_anon_call(node.array, arr_local)
+            if found:
+                return found
+            return self._find_anon_call(node.index, arr_local)
+        if isinstance(node, IRArithmetic):
+            found = self._find_anon_call(node.left, arr_local)
+            if found:
+                return found
+            return self._find_anon_call(node.right, arr_local)
+        if isinstance(node, IRBoolExpr):
+            found = self._find_anon_call(node.left, arr_local)
+            if found:
+                return found
+            return self._find_anon_call(node.right, arr_local)
+        if isinstance(node, IREnumField):
+            return self._find_anon_call(node.value, arr_local)
+        if isinstance(node, IREnumIndex):
+            return self._find_anon_call(node.value, arr_local)
+        if isinstance(node, IREnumConstruct):
+            for arg in node.args:
+                found = self._find_anon_call(arg, arr_local)
+                if found:
+                    return found
+        if isinstance(node, IRArrayLiteral):
+            for e in node.elements:
+                found = self._find_anon_call(e, arr_local)
+                if found:
+                    return found
+        if isinstance(node, IRNew):
+            for arg in node.constructor_args:
+                found = self._find_anon_call(arg, arr_local)
+                if found:
+                    return found
+        return None
+
+    def _try_array_obj_literal(
+        self, stmts: List[IRStatement], start: int
+    ) -> Optional[Tuple[IRStatement, int]]:
+        # Pattern:
+        #   arr = alloc_array(type, size)
+        #   [elem = expr;] arr[i] = elem
+        #   ...
+        #   use(ArrayObj.anon(arr))
+        # Rewrite the ArrayObj.anon(arr) expression to [expr0, expr1, ...].
+        if start >= len(stmts):
+            return None
+        stmt = stmts[start]
+        if not isinstance(stmt, IRAssign) or not isinstance(stmt.target, IRLocal):
+            return None
+        arr_local = stmt.target
+        if not self._is_alloc_array(stmt.expr):
+            return None
+
+        values: List[IRExpression] = []
+        i = start + 1
+        while i < len(stmts):
+            elem_expr: Optional[IRExpression] = None
+            store_stmt: Optional[IRAssign] = None
+            # Look for an element initializer immediately followed by a store
+            # using that same local.  This handles patterns like:
+            #   var9 = new TestClass();
+            #   arr[0] = var9;
+            s1 = stmts[i]
+            if (
+                isinstance(s1, IRAssign)
+                and isinstance(s1.target, IRLocal)
+                and i + 1 < len(stmts)
+            ):
+                s2 = stmts[i + 1]
+                if (
+                    isinstance(s2, IRAssign)
+                    and isinstance(s2.target, IRArrayAccess)
+                    and isinstance(s2.target.array, IRLocal)
+                    and s2.target.array.name == arr_local.name
+                    and isinstance(s2.target.index, IRConst)
+                    and s2.target.index.const_type == IRConst.ConstType.INT
+                    and isinstance(s2.expr, IRLocal)
+                    and s2.expr.name == s1.target.name
+                ):
+                    elem_expr = s1.expr
+                    store_stmt = s2
+                    i += 2
+            if elem_expr is None:
+                # Otherwise accept a bare store.
+                if (
+                    isinstance(s1, IRAssign)
+                    and isinstance(s1.target, IRArrayAccess)
+                    and isinstance(s1.target.array, IRLocal)
+                    and s1.target.array.name == arr_local.name
+                    and isinstance(s1.target.index, IRConst)
+                    and s1.target.index.const_type == IRConst.ConstType.INT
+                ):
+                    elem_expr = s1.expr
+                    store_stmt = s1
+                    i += 1
+            if elem_expr is None or store_stmt is None:
+                break
+            store_access = cast(IRArrayAccess, store_stmt.target)
+            idx_const = cast(IRConst, store_access.index)
+            idx = int(
+                idx_const.value.value
+                if hasattr(idx_const.value, "value")
+                else idx_const.value
+            )
+            if idx != len(values):
+                break
+            values.append(elem_expr)
+
+        if not values:
+            return None
+
+        if i >= len(stmts):
+            return None
+        use_stmt = stmts[i]
+        anon_call = self._find_anon_call(use_stmt, arr_local)
+        if anon_call is None:
+            return None
+
+        literal = IRArrayLiteral(self.func.code, values)
+        self._replace_child(use_stmt, anon_call, literal)
+        return use_stmt, i - start + 1
+
+    def _try_array_literal(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int]]:
+        # bytes_var = alloc_bytes(...)
+        if start >= len(stmts):
+            return None
+        stmt = stmts[start]
+        if not isinstance(stmt, IRAssign) or not isinstance(stmt.target, IRLocal):
+            return None
+        bytes_var = stmt.target
+        if not self._is_alloc_bytes(stmt.expr):
+            return None
+
+        # idx_var = 0
+        if start + 1 >= len(stmts):
+            return None
+        stmt2 = stmts[start + 1]
+        if not isinstance(stmt2, IRAssign) or not isinstance(stmt2.target, IRLocal):
+            return None
+        idx_var = stmt2.target
+        if not isinstance(stmt2.expr, IRConst) or stmt2.expr.const_type != IRConst.ConstType.INT:
+            return None
+        if int(stmt2.expr.value.value if hasattr(stmt2.expr.value, "value") else stmt2.expr.value) != 0:
+            return None
+
+        values: List[IRExpression] = []
+        i = start + 2
+        while i < len(stmts):
+            # bytes_var[idx_var << 2] = value
+            s = stmts[i]
+            if not isinstance(s, IRAssign) or not isinstance(s.target, IRArrayAccess):
+                break
+            access = s.target
+            if not isinstance(access.array, IRLocal) or access.array.name != bytes_var.name:
+                break
+            if not self._is_shifted_index(access.index, idx_var, 2):
+                break
+            values.append(s.expr)
+            i += 1
+            # idx_var = idx_var + 1
+            if i >= len(stmts):
+                break
+            s2 = stmts[i]
+            if not isinstance(s2, IRAssign) or not isinstance(s2.target, IRLocal) or s2.target.name != idx_var.name:
+                break
+            if not isinstance(s2.expr, IRArithmetic) or s2.expr.op.value != "+":
+                break
+            if not isinstance(s2.expr.left, IRLocal) or s2.expr.left.name != idx_var.name:
+                break
+            if not isinstance(s2.expr.right, IRConst) or s2.expr.right.const_type != IRConst.ConstType.INT:
+                break
+            if int(s2.expr.right.value.value if hasattr(s2.expr.right.value, "value") else s2.expr.right.value) != 1:
+                break
+            i += 1
+
+        if not values:
+            return None
+
+        # Allow an optional `idx_var = count` assignment before the allocI32 call.
+        if i < len(stmts):
+            opt = stmts[i]
+            if (
+                isinstance(opt, IRAssign)
+                and isinstance(opt.target, IRLocal)
+                and opt.target.name == idx_var.name
+                and isinstance(opt.expr, IRConst)
+                and opt.expr.const_type == IRConst.ConstType.INT
+            ):
+                i += 1
+
+        # arr_var = allocI32(bytes_var, count) OR return allocI32(bytes_var, count)
+        if i >= len(stmts):
+            return None
+        final = stmts[i]
+        if isinstance(final, IRAssign) and isinstance(final.expr, IRCall):
+            call = final.expr
+            return_target = final.target
+        elif isinstance(final, IRReturn) and isinstance(final.value, IRCall):
+            call = final.value
+            return_target = None
+        else:
+            return None
+        if not self._is_alloc_i32(call):
+            return None
+        if len(call.args) != 2 or (isinstance(call.args[0], IRLocal) and call.args[0].name != bytes_var.name):
+            return None
+
+        arr_type = _get_type_in_code(self.func.code, "Dyn")
+        for t in self.func.code.types:
+            if disasm.type_name(self.func.code, t) == "Array":
+                arr_type = t
+                break
+        literal = IRArrayLiteral(self.func.code, values)
+        if return_target is not None:
+            new_assign = IRAssign(self.func.code, return_target, literal)
+            return new_assign, i - start + 1
+        else:
+            new_return = IRReturn(self.func.code, literal)
+            return new_return, i - start + 1
+
+    def _try_array_access(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int]]:
+        # Pattern:
+        #   if (idx >= arr.length) { value = default; } else { value = arr.bytes[idx << 2]; }
+        if start >= len(stmts):
+            return None
+        stmt = stmts[start]
+        if not isinstance(stmt, IRConditional):
+            return None
+        cond = stmt.condition
+        if not isinstance(cond, IRBoolExpr) or cond.op != IRBoolExpr.CompareType.GTE:
+            return None
+        if not isinstance(cond.left, IRLocal) or not isinstance(cond.right, IRField):
+            return None
+        idx_var = cond.left
+        arr_field = cond.right
+        if arr_field.field_name != "length" or not isinstance(arr_field.target, IRLocal):
+            return None
+        arr_var = arr_field.target
+
+        then_block = stmt.true_block
+        else_block = stmt.false_block
+        if len(then_block.statements) != 1 or len(else_block.statements) != 1:
+            return None
+        then_assign = then_block.statements[0]
+        else_assign = else_block.statements[0]
+        if not isinstance(then_assign, IRAssign) or not isinstance(else_assign, IRAssign):
+            return None
+        if then_assign.target != else_assign.target or not isinstance(then_assign.target, IRLocal):
+            return None
+        value_var = then_assign.target
+        if not isinstance(else_assign.expr, IRArrayAccess):
+            return None
+        access = else_assign.expr
+        if not isinstance(access.array, IRField):
+            return None
+        if not isinstance(access.array.target, IRLocal):
+            return None
+        if access.array.field_name != "bytes" or access.array.target.name != arr_var.name:
+            return None
+        if not isinstance(access.index, IRArithmetic) or access.index.op.value != "<<":
+            return None
+        if not isinstance(access.index.right, IRConst):
+            return None
+        # Use the condition index for the resulting high-level access.
+        new_access = IRArrayAccess(self.func.code, arr_var, idx_var)
+        new_assign = IRAssign(self.func.code, value_var, new_access)
+        return new_assign, 1
+
+
+def _build_enum_global_map(code: Bytecode) -> Dict[int, Tuple[str, tIndex]]:
+    """
+    HashLink stores parameterless enum constants as globals whose type is the
+    enum type.  The declaration order of those constants matches the order of
+    the enum's parameterless constructors.  Build a map from global index to
+    the constructor name and enum type index so that `GetGlobal` can be lifted
+    to `Red`/`Green`/... instead of an opaque enum-typed global object.
+    """
+    enum_globals: Dict[int, List[int]] = {}
+    for gi, gt in enumerate(code.global_types):
+        typ = gt.resolve(code)
+        if isinstance(typ.definition, Enum):
+            enum_globals.setdefault(gt.value, []).append(gi)
+
+    result: Dict[int, Tuple[str, tIndex]] = {}
+    for type_idx, globals in enum_globals.items():
+        enum_def = code.types[type_idx].definition
+        if not isinstance(enum_def, Enum):
+            continue
+        globals.sort()
+        parameterless = [c for c in enum_def.constructs if c.nparams.value == 0]
+        for gi, construct in zip(globals, parameterless):
+            result[gi] = (construct.name.resolve(code), code.global_types[gi])
+    return result
+
+
 class IRFunction:
     """
     Intermediate representation of a function.
@@ -2849,6 +3589,7 @@ class IRFunction:
         self.cfg = CFGraph(func)
         self.cfg.build()
         self.code = code
+        self._enum_global_map = _build_enum_global_map(code)
         self.ops = func.ops
         self.locals: List[IRLocal] = []
         self.block: IRBlock
@@ -2856,6 +3597,7 @@ class IRFunction:
         if do_optimize:
             self.optimizers: List[IROptimizer] = [
                 IRBlockFlattener(self),
+                IRConstructorFolder(self),
                 IRPrimitiveJumpLifter(self),
                 IRGlobalStringOptimizer(self),
                 IRConditionInliner(self),
@@ -2866,9 +3608,12 @@ class IRFunction:
                 IRTempAssignmentInliner(self, aggressive=True),
                 IRDeadTempEliminator(self),
                 IRDeadCodeEliminator(self),
+                IRArrayPatternOptimizer(self),
                 IRVoidAssignOptimizer(self),
-                IRConstructorFolder(self),
+                IRDeadCodeEliminator(self),
+                IRSelfAssignOptimizer(self),
                 IRTraceOptimizer(self),
+                IREnumSwitchOptimizer(self),
                 IRBlockFlattener(self),
             ]
             self._optimize()
@@ -3021,6 +3766,14 @@ class IRFunction:
     def _lift_ops_into_block(self, block: IRBlock, ops: List[Opcode]) -> None:
         for op in ops:
             op_idx = self._op_id_to_idx.get(id(op))
+            # Capture the register-to-local mapping before any debug-name split.
+            # HashLink frequently reuses a register as both a source and the
+            # destination for the same opcode (e.g. `reg0 = String.__add__(reg0,
+            # reg1)`).  If we split the local for the destination first, the
+            # source operand incorrectly picks up the new, empty local.  Source
+            # operands below therefore read from this pre-opcode snapshot, while
+            # destinations read from `self.locals` after the split.
+            source_locals = self.locals.copy()
             if op_idx is not None:
                 self._check_assign(op_idx)
             if op.op == "Label":
@@ -3028,8 +3781,8 @@ class IRFunction:
 
             if op.op in arithmetic:
                 dst = self.locals[op.df["dst"].value]
-                lhs = self.locals[op.df["a"].value]
-                rhs = self.locals[op.df["b"].value]
+                lhs = source_locals[op.df["a"].value]
+                rhs = source_locals[op.df["b"].value]
                 block.statements.append(
                     IRAssign(
                         self.code, dst, IRArithmetic(self.code, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])
@@ -3049,9 +3802,9 @@ class IRFunction:
                 dst = self.locals[op.df["dst"].value]
                 fun = IRConst(self.code, IRConst.ConstType.FUN, op.df["fun"])
                 args = (
-                    [self.locals[op.df[f"arg{i}"].value] for i in range(n)]
+                    [source_locals[op.df[f"arg{i}"].value] for i in range(n)]
                     if op.op != "CallN"
-                    else [self.locals[arg.value] for arg in op.df["args"].value]
+                    else [source_locals[arg.value] for arg in op.df["args"].value]
                 )
                 call_expr = IRCall(self.code, IRCall.CallType.FUNC, fun, args)
 
@@ -3061,8 +3814,8 @@ class IRFunction:
                     block.statements.append(IRAssign(self.code, dst, call_expr))
             elif op.op == "CallClosure":
                 dst = self.locals[op.df["dst"].value]
-                fun = self.locals[op.df["fun"].value]
-                args = [self.locals[arg.value] for arg in op.df["args"].value]
+                fun = source_locals[op.df["fun"].value]
+                args = [source_locals[arg.value] for arg in op.df["args"].value]
                 call_expr = IRCall(self.code, IRCall.CallType.CLOSURE, fun, args)
 
                 if dst.get_type().kind.value == Type.Kind.VOID.value:
@@ -3071,18 +3824,26 @@ class IRFunction:
                     block.statements.append(IRAssign(self.code, dst, call_expr))
             elif op.op == "Mov":
                 block.statements.append(
-                    IRAssign(self.code, self.locals[op.df["dst"].value], self.locals[op.df["src"].value])
+                    IRAssign(self.code, self.locals[op.df["dst"].value], source_locals[op.df["src"].value])
                 )
             elif op.op == "GetGlobal":
+                global_idx = op.df["global"].value
+                enum_const = self._enum_global_map.get(global_idx)
+                if enum_const is not None:
+                    construct_name, enum_type_idx = enum_const
+                    expr = IREnumConstruct(self.code, construct_name, [], enum_type_idx)
+                else:
+                    expr = IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df["global"])
                 block.statements.append(
                     IRAssign(
                         self.code,
                         self.locals[op.df["dst"].value],
-                        IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df["global"]),
+                        expr,
                     )
                 )
             elif op.op == "Field":
-                dst_local, obj_local = self.locals[op.df["dst"].value], self.locals[op.df["obj"].value]
+                dst_local = self.locals[op.df["dst"].value]
+                obj_local = source_locals[op.df["obj"].value]
                 obj_type = obj_local.get_type()
                 if not isinstance(obj_type.definition, (Obj, Virtual)):
                     raise DecompError(f"Field opcode used on non-object type: {obj_type.definition}")
@@ -3096,7 +3857,7 @@ class IRFunction:
                 block.statements.append(IRAssign(self.code, dst_local, new_expr))
             elif op.op == "ToSFloat":
                 dst_local = self.locals[op.df["dst"].value]
-                src_local = self.locals[op.df["src"].value]
+                src_local = source_locals[op.df["src"].value]
 
                 f64_idx = self.code.find_prim_type(Type.Kind.F64)
 
@@ -3104,23 +3865,24 @@ class IRFunction:
                 block.statements.append(IRAssign(self.code, dst_local, cast_expr))
             elif op.op == "ToDyn" or op.op == "ToVirtual":
                 dst_local = self.locals[op.df["dst"].value]
-                src_local = self.locals[op.df["src"].value]
+                src_local = source_locals[op.df["src"].value]
                 cast_expr = IRCast(self.code, self.func.regs[op.df["dst"].value], src_local)
                 block.statements.append(IRAssign(self.code, dst_local, cast_expr))
             elif op.op == "ToInt":
                 dst_local = self.locals[op.df["dst"].value]
-                src_local = self.locals[op.df["src"].value]
+                src_local = source_locals[op.df["src"].value]
                 cast_expr = IRCast(self.code, self.func.regs[op.df["dst"].value], src_local)
                 block.statements.append(IRAssign(self.code, dst_local, cast_expr))
             elif op.op == "Incr":
                 dst_local = self.locals[op.df["dst"].value]
+                old_local = source_locals[op.df["dst"].value]
                 block.statements.append(
                     IRAssign(
                         self.code,
                         dst_local,
                         IRArithmetic(
                             self.code,
-                            dst_local,
+                            old_local,
                             IRConst(self.code, IRConst.ConstType.INT, value=1),
                             IRArithmetic.ArithmeticType.ADD,
                         ),
@@ -3128,13 +3890,14 @@ class IRFunction:
                 )
             elif op.op == "Decr":
                 dst_local = self.locals[op.df["dst"].value]
+                old_local = source_locals[op.df["dst"].value]
                 block.statements.append(
                     IRAssign(
                         self.code,
                         dst_local,
                         IRArithmetic(
                             self.code,
-                            dst_local,
+                            old_local,
                             IRConst(self.code, IRConst.ConstType.INT, value=1),
                             IRArithmetic.ArithmeticType.SUB,
                         ),
@@ -3142,8 +3905,8 @@ class IRFunction:
                 )
             elif op.op == "GetMem":
                 dst_local = self.locals[op.df["dst"].value]
-                arr_local = self.locals[op.df["bytes"].value]
-                idx_local = self.locals[op.df["index"].value]
+                arr_local = source_locals[op.df["bytes"].value]
+                idx_local = source_locals[op.df["index"].value]
                 block.statements.append(
                     IRAssign(
                         self.code,
@@ -3152,19 +3915,24 @@ class IRFunction:
                     )
                 )
             elif op.op == "SetMem":
-                arr_local = self.locals[op.df["bytes"].value]
-                idx_local = self.locals[op.df["index"].value]
-                src_local = self.locals[op.df["src"].value]
+                arr_local = source_locals[op.df["bytes"].value]
+                idx_local = source_locals[op.df["index"].value]
+                src_local = source_locals[op.df["src"].value]
                 block.statements.append(IRAssign(self.code, IRArrayAccess(self.code, arr_local, idx_local), src_local))
+            elif op.op == "SetArray":
+                arr_local = source_locals[op.df["array"].value]
+                idx_local = source_locals[op.df["index"].value]
+                src_local = source_locals[op.df["src"].value]
+                block.statements.append(IRAssign(self.code, IRArrayAccess(self.code, arr_local, idx_local, src_local.get_type()), src_local))
             elif op.op == "DynSet":
-                obj_local = self.locals[op.df["obj"].value]
-                src_local = self.locals[op.df["src"].value]
+                obj_local = source_locals[op.df["obj"].value]
+                src_local = source_locals[op.df["src"].value]
                 field_name = op.df["field"].resolve(self.code)
                 field_expr = IRField(self.code, obj_local, field_name, self.func.regs[op.df["src"].value])
                 block.statements.append(IRAssign(self.code, field_expr, src_local))
             elif op.op == "SetField":
-                obj_local = self.locals[op.df["obj"].value]
-                src_local = self.locals[op.df["src"].value]
+                obj_local = source_locals[op.df["obj"].value]
+                src_local = source_locals[op.df["src"].value]
                 obj_type = obj_local.get_type()
                 if isinstance(obj_type.definition, (Obj, Virtual)):
                     field_core = op.df["field"].resolve_obj(self.code, obj_type.definition)
@@ -3179,7 +3947,7 @@ class IRFunction:
                 )
             elif op.op == "Ref":
                 dst_local = self.locals[op.df["dst"].value]
-                src_local = self.locals[op.df["src"].value]
+                src_local = source_locals[op.df["src"].value]
                 block.statements.append(IRAssign(self.code, dst_local, IRRef(self.code, src_local)))
             elif op.op == "StaticClosure":
                 dst_local = self.locals[op.df["dst"].value]
@@ -3187,7 +3955,7 @@ class IRFunction:
                 block.statements.append(IRAssign(self.code, dst_local, fun_const))
             elif op.op == "VirtualClosure":
                 dst_local = self.locals[op.df["dst"].value]
-                obj_local = self.locals[op.df["obj"].value]
+                obj_local = source_locals[op.df["obj"].value]
                 obj_type = obj_local.get_type()
                 if isinstance(obj_type.definition, Obj):
                     fid = op.df["field"].value
@@ -3205,7 +3973,7 @@ class IRFunction:
                 continue
             elif op.op == "EnumIndex":
                 dst_local = self.locals[op.df["dst"].value]
-                src_local = self.locals[op.df["value"].value]
+                src_local = source_locals[op.df["value"].value]
                 block.statements.append(IRAssign(self.code, dst_local, IREnumIndex(self.code, src_local)))
             elif op.op == "MakeEnum":
                 dst_local = self.locals[op.df["dst"].value]
@@ -3217,13 +3985,13 @@ class IRFunction:
                     if cid < len(enum_def.constructs)
                     else f"construct_{cid}"
                 )
-                args = [self.locals[arg.value] for arg in op.df["args"].value]
+                args = [source_locals[arg.value] for arg in op.df["args"].value]
                 block.statements.append(
                     IRAssign(self.code, dst_local, IREnumConstruct(self.code, construct_name, args, enum_type))
                 )
             elif op.op == "EnumField":
                 dst_local = self.locals[op.df["dst"].value]
-                src_local = self.locals[op.df["value"].value]
+                src_local = source_locals[op.df["value"].value]
                 enum_type = self.func.regs[op.df["value"].value]
                 enum_def = enum_type.resolve(self.code).definition
                 cid = op.df["construct"].value

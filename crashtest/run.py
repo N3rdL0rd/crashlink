@@ -13,10 +13,56 @@ from typing import List, Optional, Tuple
 from markupsafe import escape
 
 from crashlink import Bytecode, decomp, globals
-from crashlink.disasm import to_asm
+from crashlink.core import (
+    Bytecode,
+    Function,
+    Opcode,
+    Reg,
+    bytesRef,
+    fIndex,
+    floatRef,
+    gIndex,
+    intRef,
+    strRef,
+    tIndex,
+)
+from crashlink.disasm import to_asm, type_name
 from crashlink.pseudo import pseudo
 
 from .models import SIMILARITY_THRESHOLD, GitInfo, MethodComparison, OpcodeComparison, Run, TestCase, TestContext, TestFile, save_run
+
+
+def _fmt_operand(val: object, code: Bytecode) -> str:
+    """Resolve a single opcode operand to its semantic value."""
+    try:
+        if isinstance(val, Reg):
+            return f"r{val.value}"
+        if isinstance(val, strRef):
+            return repr(val.resolve(code))
+        if isinstance(val, intRef):
+            return str(val.resolve(code).value)
+        if isinstance(val, floatRef):
+            return str(val.resolve(code).value)
+        if isinstance(val, fIndex):
+            return code.full_func_name(val.resolve(code))
+        if isinstance(val, tIndex):
+            return type_name(code, val.resolve(code))
+        if isinstance(val, gIndex):
+            return f"global[{type_name(code, val.resolve(code))}]"
+        if isinstance(val, bytesRef):
+            return repr(val.resolve(code))
+    except Exception:
+        pass
+    return str(val)
+
+
+def to_asm_resolved(func: Function, code: Bytecode) -> str:
+    """Like to_asm but resolves constant-pool indices to their actual values."""
+    lines = []
+    for op in func.ops:
+        parts = [op.op or "?"] + [_fmt_operand(v, code) for v in op.df.values()]
+        lines.append(". ".join(parts))
+    return "\n".join(lines)
 
 
 def get_repo_info() -> GitInfo:
@@ -91,7 +137,7 @@ def compare_opcodes(original_code: Bytecode, recompiled_code: Bytecode, class_na
     method_results: List[MethodComparison] = []
     for name, orig_func in orig_funcs.items():
         orig_ops = [op.op for op in orig_func.ops if op.op is not None]
-        orig_asm = to_asm(orig_func.ops)
+        orig_asm = to_asm_resolved(orig_func, original_code)
         if name in recomp_funcs:
             recomp_func = recomp_funcs[name]
             recomp_ops = [op.op for op in recomp_func.ops if op.op is not None]
@@ -103,7 +149,7 @@ def compare_opcodes(original_code: Bytecode, recompiled_code: Bytecode, class_na
                     original_count=len(orig_ops),
                     recompiled_count=len(recomp_ops),
                     orig_disasm=orig_asm,
-                    recomp_disasm=to_asm(recomp_func.ops),
+                    recomp_disasm=to_asm_resolved(recomp_func, recompiled_code),
                 )
             )
         else:
