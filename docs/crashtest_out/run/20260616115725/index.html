@@ -1,6 +1,7 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="utf-8">
     <title>crashtest (crashlink v0.0.5)</title>
     <style>
         :root {
@@ -7445,29 +7446,6 @@ class Base {
 
     function esc(s) {
         return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    }
-
-    function renderUnified(diff) {
-        let html = '<div class="diff-unified">';
-        let lineA = 1, lineB = 1;
-        for (const {type, line} of diff) {
-            const sign = type === 'same' ? ' ' : type === 'add' ? '+' : '-';
-            const cls  = type === 'same' ? '' : type === 'add' ? ' add' : ' rem';
-            const gutter = type === 'rem'
-                ? lineA++
-                : type === 'add'
-                    ? lineB++
-                    : (lineA++ + (lineB++ - lineA + 1) >= 0 ? lineA - 1 : lineA);
-            // For same lines, show both
-            const g = type === 'same' ? (lineA - 1) : (type === 'rem' ? lineA - 1 : lineB - 1);
-            html += `<div class="diff-line${cls}">` +
-                    `<span class="diff-gutter">${g}</span>` +
-                    `<span class="diff-sign">${sign}</span>` +
-                    `<span class="diff-text">${esc(line)}</span>` +
-                    `</div>`;
-        }
-        // Recount correctly
-        return renderUnifiedCorrect(diff);
     }
 
     function renderUnifiedCorrect(diff) {
