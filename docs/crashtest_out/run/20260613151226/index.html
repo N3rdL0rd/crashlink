@@ -408,8 +408,8 @@
             <small>
                 crashlink v0.0.5
                 
-                    
-                    &mdash; <a href="https://github.com/N3rdL0rd/crashlink/commit/fc98c7193acb6175dc713247f900f0ac3d3122ae">main@fc98c719</a>
+                     &mdash; <b style="color:var(--yellow)">dirty</b>
+                    &mdash; <a href="https://github.com/N3rdL0rd/crashlink/commit/ca683b8fd5646c5dbaf050a09c617275555d50d5">main@ca683b8f</a>
                 
             </small>
         </h1>
@@ -486,12 +486,14 @@
     
         
     
+        
+    
 
     <div class="run-summary">
         <div class="summary-stat">
             <div class="label">Decompile</div>
-            <div class="value" style="color: var(--yellow)">
-                29/33 passed
+            <div class="value" style="color: var(--green)">
+                34/34 passed
             </div>
         </div>
         
@@ -538,15 +540,12 @@ class Anonymous {
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class Anonymous {
-    static function log(arg0, arg1: Int, arg2): Void {
-        trace(var0); // { fileName: &#39;Anonymous.hx&#39;, lineNumber: 10, className: &#39;Anonymous&#39;, methodName: &#39;log&#39; }
-        return;
+    public static function log(argument_name_cannot_be_confused_at_all, other_arg_name: Int, third_arg): Void {
+        trace(argument_name_cannot_be_confused_at_all); // { fileName: &#39;Anonymous.hx&#39;, lineNumber: 10, className: &#39;Anonymous&#39;, methodName: &#39;log&#39; }
     }
 
-    static function main(): Void {
-        var var3 = /* UNLIFTED OPCODE: ToDyn unknown operation ToDyn */;
-        log(var3, 4, /* UNLIFTED OPCODE: ToDyn unknown operation ToDyn */);
-        return;
+    public static function main(): Void {
+        Anonymous.log(3, 4, 5);
     }
 }</code></pre>
             </div>
@@ -555,15 +554,14 @@ class Anonymous {
                 <pre><code class="language-txt">// --- Static Method: $Anonymous.log ---
 
 [
-	[&lt;IRTrace: msg=&lt;IRLocal: var0 Dyn&gt;, pos={ fileName: Anonymous.hx, lineNumber: 10, className: Anonymous, methodName: log }&gt;,
+	[&lt;IRTrace: msg=&lt;IRLocal: argument_name_cannot_be_confused_at_all Dyn&gt;, pos={ fileName: Anonymous.hx, lineNumber: 10, className: Anonymous, methodName: log }&gt;,
 	&lt;IRReturn: None&gt;]
 ]
 
 // --- Static Method: $Anonymous.main ---
 
 [
-	[&lt;IRAssign: &lt;IRLocal: var3 Dyn&gt; = &lt;IRUntranslatedOpcode: ToDyn&gt; (Dyn)&gt;,
-	&lt;IRCall: &lt;IRConst: f@23 static $Anonymous.log (Dyn, I32, Dyn) -&gt; Void (from Anonymous.hx)&gt;(&lt;IRLocal: var3 Dyn&gt;, &lt;IRConst: 4&gt;, &lt;IRUntranslatedOpcode: ToDyn&gt;)&gt;,
+	[&lt;IRCall: &lt;IRConst: f@23 static $Anonymous.log (Dyn, I32, Dyn) -&gt; Void (from Anonymous.hx)&gt;(&lt;IRCast: (Dyn)&lt;IRConst: 3&gt;&gt;, &lt;IRConst: 4&gt;, &lt;IRCast: (Dyn)&lt;IRConst: 5&gt;&gt;)&gt;,
 	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
@@ -625,18 +623,34 @@ class Anonymous {
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class Arithmetic {
-    static function main(): Void {
-        var res: Int = 3 + 4;
-        var res2: Int = 3 - 4;
-        var res3: Int = 3 * 4;
-        var res4: Float = /* UNLIFTED OPCODE: ToSFloat reg8 = SFloat(reg0) */;
-        res4 = res4 / /* UNLIFTED OPCODE: ToSFloat reg9 = SFloat(reg2) */;
-        var res5: Int = 3 % 4;
-        var res6: Int = 3 &lt;&lt; 4;
-        if (3 &gt;= 4) {
-            if (3 &gt;= 4) {
-                return;
-            }
+    public static function main(): Void {
+        var bool_res: Bool = false;
+        var res: Int = 0;
+        var res2: Int = 0;
+        var res3: Int = 0;
+        var res4: Float = 0.0;
+        var res5: Int = 0;
+        var res6: Int = 0;
+        var second_var: Int = 0;
+        var test: String = &#34;&#34;;
+        var third_var: Int = 0;
+        var var8: Float = 0.0;
+        third_var = 3;
+        second_var = 4;
+        test = &#34;test!!!&#34;;
+        res = third_var + second_var;
+        res2 = third_var - second_var;
+        res3 = third_var * second_var;
+        var8 = third_var;
+        res4 /= second_var;
+        res5 = third_var % second_var;
+        res6 = third_var &lt;&lt; second_var;
+        if (third_var &gt;= second_var) {
+            bool_res = false;
+        } else {
+            bool_res = true;
+        }
+        if (third_var &gt;= second_var) {
         }
     }
 }</code></pre>
@@ -646,24 +660,29 @@ class Anonymous {
                 <pre><code class="language-txt">// --- Static Method: $Arithmetic.main ---
 
 [
-	[&lt;IRAssign: &lt;IRLocal: res I32&gt; = &lt;IRArithmetic: &lt;IRConst: 3&gt; + &lt;IRConst: 4&gt;&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: res2 I32&gt; = &lt;IRArithmetic: &lt;IRConst: 3&gt; - &lt;IRConst: 4&gt;&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: res3 I32&gt; = &lt;IRArithmetic: &lt;IRConst: 3&gt; * &lt;IRConst: 4&gt;&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: res4 F64&gt; = &lt;IRUntranslatedOpcode: ToSFloat&gt; (F64)&gt;,
-	&lt;IRAssign: &lt;IRLocal: res4 F64&gt; = &lt;IRArithmetic: &lt;IRLocal: res4 F64&gt; / &lt;IRUntranslatedOpcode: ToSFloat&gt;&gt; (F64)&gt;,
-	&lt;IRAssign: &lt;IRLocal: res5 I32&gt; = &lt;IRArithmetic: &lt;IRConst: 3&gt; % &lt;IRConst: 4&gt;&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: res6 I32&gt; = &lt;IRArithmetic: &lt;IRConst: 3&gt; &lt;&lt; &lt;IRConst: 4&gt;&gt; (I32)&gt;,
-	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 3&gt; &gt;= &lt;IRConst: 4&gt;&gt; then
+	[&lt;IRAssign: &lt;IRLocal: third_var I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: second_var I32&gt; = &lt;IRConst: 4&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: test String&gt; = &lt;IRConst: &#34;test!!!&#34;&gt; (String)&gt;,
+	&lt;IRAssign: &lt;IRLocal: res I32&gt; = &lt;IRArithmetic: &lt;IRLocal: third_var I32&gt; + &lt;IRLocal: second_var I32&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: res2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: third_var I32&gt; - &lt;IRLocal: second_var I32&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: res3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: third_var I32&gt; * &lt;IRLocal: second_var I32&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var8 F64&gt; = &lt;IRCast: (F64)&lt;IRLocal: third_var I32&gt;&gt; (F64)&gt;,
+	&lt;IRAssign: &lt;IRLocal: res4 F64&gt; = &lt;IRArithmetic: &lt;IRLocal: res4 F64&gt; / &lt;IRCast: (F64)&lt;IRLocal: second_var I32&gt;&gt;&gt; (F64)&gt;,
+	&lt;IRAssign: &lt;IRLocal: res5 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: third_var I32&gt; % &lt;IRLocal: second_var I32&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: res6 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: third_var I32&gt; &lt;&lt; &lt;IRLocal: second_var I32&gt;&gt; (I32)&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: third_var I32&gt; &gt;= &lt;IRLocal: second_var I32&gt;&gt; then
 		[
-		[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 3&gt; &gt;= &lt;IRConst: 4&gt;&gt; then
-			[
-			[&lt;IRReturn: None&gt;]
-		]
-		else
-			[]&gt;]
+		[&lt;IRAssign: &lt;IRLocal: bool_res Bool&gt; = &lt;IRConst: False&gt; (Bool)&gt;]
 	]
 	else
-		[]&gt;]
+		[
+		[&lt;IRAssign: &lt;IRLocal: bool_res Bool&gt; = &lt;IRConst: True&gt; (Bool)&gt;]
+	]&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: third_var I32&gt; &gt;= &lt;IRLocal: second_var I32&gt;&gt; then
+		[]
+	else
+		[]&gt;,
+	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
         </div>
@@ -708,31 +727,42 @@ class Anonymous {
             </div>
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
-                <pre><code class="language-haxe">class ArrayAccezz {
-    static function array(): hl.types.ArrayBytes_Int {
-        var var1: hl.Bytes = &lt;crashlink.core.Native object at 0x7fa42a368520&gt;(12);
+                <pre><code class="language-haxe">extern class Native {
+    static function alloc_bytes(arg0: Dynamic): Dynamic;
+}
+
+extern class StdFuncs {
+    static function __std_43_allocI32(arg0: Dynamic, arg1: Dynamic): Dynamic;
+}
+
+class ArrayAccezz {
+    public static function array(): Array&lt;Int&gt; {
+        var var0: Array&lt;Int&gt; = [];
+        var var1: hl.Bytes;
         var var2: Int = 0;
-        var var4: Int = var2 &lt;&lt; 2;
-        // UNLIFTED OPCODE: reg1[reg4] = reg3
-        var2 = var2 + 1;
-        var4 = var2 &lt;&lt; 2;
-        // UNLIFTED OPCODE: reg1[reg4] = reg3
-        var2 = var2 + 1;
-        var4 = var2 &lt;&lt; 2;
-        // UNLIFTED OPCODE: reg1[reg4] = reg3
-        var2 = var2 + 1;
-        var var0: hl.types.ArrayBytes_Int = allocI32(var1, 3);
+        var1 = Native.alloc_bytes(12);
+        var2 = 0;
+        var1[var2 &lt;&lt; 2] = 1;
+        var2++;
+        var1[var2 &lt;&lt; 2] = 2;
+        var2++;
+        var1[var2 &lt;&lt; 2] = 3;
+        var2++;
+        var0 = StdFuncs.__std_43_allocI32(var1, 3);
         return var0;
     }
 
-    static function main(): Void {
-        var a: hl.types.ArrayBytes_Int = array();
+    public static function main(): Void {
+        var a: Array&lt;Int&gt; = [];
         var b: Int = 0;
-        if (b &gt;= a.length) {
-            return;
+        var var2: Int = 0;
+        a = ArrayAccezz.array();
+        var2 = 0;
+        if (var2 &gt;= a.length) {
+            b = 0;
         } else {
-            var var3: Int = b &lt;&lt; 2;
-            b = /* UNLIFTED OPCODE: GetMem reg2 = reg4[reg3] */;
+            b = a[b];
+            b = a[b];
         }
     }
 }</code></pre>
@@ -742,16 +772,13 @@ class Anonymous {
                 <pre><code class="language-txt">// --- Static Method: $ArrayAccezz.array ---
 
 [
-	[&lt;IRAssign: &lt;IRLocal: var1 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fa42a368520&gt;&gt;(&lt;IRConst: 12&gt;)&gt; (Fun)&gt;,
+	[&lt;IRAssign: &lt;IRLocal: var1 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebcfe4b80&gt;&gt;(&lt;IRConst: 12&gt;)&gt; (Fun)&gt;,
 	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-	&lt;IRUntranslatedOpcode: SetMem&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var1 Bytes&gt;[&lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt;]&gt; = &lt;IRConst: 1&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-	&lt;IRUntranslatedOpcode: SetMem&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var1 Bytes&gt;[&lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt;]&gt; = &lt;IRConst: 2&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-	&lt;IRUntranslatedOpcode: SetMem&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var1 Bytes&gt;[&lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt;]&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: var0 hl.types.ArrayBytes_Int&gt; = &lt;IRCall: &lt;IRConst: f@43 static hl.types.$ArrayBase.allocI32 (Bytes, I32) -&gt; hl.types.ArrayBytes_Int (from /usr/share/haxe/std/hl/types/ArrayBase.hx)&gt;(&lt;IRLocal: var1 Bytes&gt;, &lt;IRConst: 3&gt;)&gt; (Fun)&gt;,
 	&lt;IRReturn: &lt;IRLocal: var0 hl.types.ArrayBytes_Int&gt;&gt;]
@@ -761,16 +788,17 @@ class Anonymous {
 
 [
 	[&lt;IRAssign: &lt;IRLocal: a hl.types.ArrayBytes_Int&gt; = &lt;IRCall: &lt;IRConst: f@183 static $ArrayAccezz.array () -&gt; hl.types.ArrayBytes_Int (from ArrayAccezz.hx)&gt;()&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
-	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: b I32&gt; &gt;= &lt;IRField: &lt;IRLocal: a hl.types.ArrayBytes_Int&gt;.length&gt;&gt; then
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var2 I32&gt; &gt;= &lt;IRField: &lt;IRLocal: a hl.types.ArrayBytes_Int&gt;.length&gt;&gt; then
 		[
-		[&lt;IRReturn: None&gt;]
+		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;]
 	]
 	else
 		[
-		[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-		&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRUntranslatedOpcode: GetMem&gt; (I32)&gt;]
-	]&gt;]
+		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArrayAccess: &lt;IRLocal: a hl.types.ArrayBytes_Int&gt;[&lt;IRLocal: b I32&gt;]&gt; (Void)&gt;,
+		&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArrayAccess: &lt;IRLocal: a hl.types.ArrayBytes_Int&gt;[&lt;IRLocal: b I32&gt;]&gt; (Void)&gt;]
+	]&gt;,
+	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
         </div>
@@ -819,70 +847,65 @@ class Anonymous {
             </div>
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
-                <pre><code class="language-haxe">class Arrays {
-    static function main(): Void {
-        var var1: hl.Bytes = &lt;crashlink.core.Native object at 0x7fa42a2e64a0&gt;(12);
+                <pre><code class="language-haxe">extern class Native {
+    static function alloc_array(arg0: Dynamic, arg1: Dynamic): Dynamic;
+    static function alloc_bytes(arg0: Dynamic): Dynamic;
+}
+
+extern class StdFuncs {
+    static function __std_43_allocI32(arg0: Dynamic, arg1: Dynamic): Dynamic;
+    static function __std_50_push(arg0: Dynamic, arg1: Dynamic): Dynamic;
+    static function __std_252_anon(arg0: Dynamic): Dynamic;
+    static function __std_253_alloc(arg0: Dynamic, arg1: Dynamic): Dynamic;
+}
+
+class Arrays {
+    public static function main(): Void {
+        var a: Array&lt;Int&gt; = [];
+        var arr: Array&lt;Int&gt; = [];
+        var b: Array&lt;Dynamic&gt; = [];
         var first: Int = 0;
-        var var3: Int = 1;
-        var var4: Int = first &lt;&lt; 2;
-        // UNLIFTED OPCODE: reg1[reg4] = reg3
-        first = first + 1;
-        var3 = 2;
-        var4 = first &lt;&lt; 2;
-        // UNLIFTED OPCODE: reg1[reg4] = reg3
-        first = first + 1;
-        var3 = 3;
-        var4 = first &lt;&lt; 2;
-        // UNLIFTED OPCODE: reg1[reg4] = reg3
-        first = first + 1;
-        var a: hl.types.ArrayBytes_Int = allocI32(var1, 3);
-        var var7: haxe.Log = haxe.Log;
-        var var6: Function = var7.trace;
-        var var9 = {};
-        var9.fileName = &#34;Arrays.hx&#34;;
-        var9.lineNumber = 4;
-        var9.className = &#34;Arrays&#34;;
-        var9.methodName = &#34;main&#34;;
-        var6(a, var9);
-        var var14: TypeType = /* UNLIFTED OPCODE: Type unknown operation Type */;
-        var var13: Array = &lt;crashlink.core.Native object at 0x7fa42a2e6430&gt;(var14, 0);
-        var var15: hl.types.ArrayObj = &lt;none&gt;(var13);
-        var b: hl.types.ArrayDyn = alloc(var15, /* UNLIFTED OPCODE: Ref reg17 = &amp;reg16 */);
-        var7 = haxe.Log;
-        var6 = var7.trace;
-        var9 = {};
-        var9.fileName = &#34;Arrays.hx&#34;;
-        var9.lineNumber = 6;
-        var9.className = &#34;Arrays&#34;;
-        var9.methodName = &#34;main&#34;;
-        var6(b, var9);
-        var1 = &lt;crashlink.core.Native object at 0x7fa42a2e64a0&gt;(12);
-        first = 0;
-        var3 = 1;
-        var4 = first &lt;&lt; 2;
-        // UNLIFTED OPCODE: reg1[reg4] = reg3
-        first = first + 1;
-        var3 = 2;
-        var4 = first &lt;&lt; 2;
-        // UNLIFTED OPCODE: reg1[reg4] = reg3
-        first = first + 1;
-        var3 = 3;
-        var4 = first &lt;&lt; 2;
-        // UNLIFTED OPCODE: reg1[reg4] = reg3
-        first = first + 1;
-        var arr: hl.types.ArrayBytes_Int = allocI32(var1, 3);
-        first = push(arr, 4);
-        var var18: Null = pop(arr);
-        first = 0;
-        if (first &gt;= arr.length) {
-            trace(arr); // { fileName: &#39;Arrays.hx&#39;, lineNumber: 11, className: &#39;Arrays&#39;, methodName: &#39;main&#39; }
-            var var19 = /* UNLIFTED OPCODE: ToDyn unknown operation ToDyn */;
-            trace(var19); // { fileName: &#39;Arrays.hx&#39;, lineNumber: 12, className: &#39;Arrays&#39;, methodName: &#39;main&#39; }
-            return;
+        var var1: hl.Bytes;
+        var var15: Array&lt;Dynamic&gt; = [];
+        var var2: Int = 0;
+        var2 = 12;
+        var1 = Native.alloc_bytes(var2);
+        var2 = 0;
+        var1[var2 &lt;&lt; 2] = 1;
+        var2++;
+        var1[var2 &lt;&lt; 2] = 2;
+        var2++;
+        var1[var2 &lt;&lt; 2] = 3;
+        var2++;
+        var2 = 3;
+        a = StdFuncs.__std_43_allocI32(var1, var2);
+        trace(a); // { fileName: &#39;Arrays.hx&#39;, lineNumber: 4, className: &#39;Arrays&#39;, methodName: &#39;main&#39; }
+        var2 = 0;
+        var15 = StdFuncs.__std_252_anon(Native.alloc_array(null, var2));
+        b = StdFuncs.__std_253_alloc(var15, true);
+        trace(b); // { fileName: &#39;Arrays.hx&#39;, lineNumber: 6, className: &#39;Arrays&#39;, methodName: &#39;main&#39; }
+        var2 = 12;
+        var1 = Native.alloc_bytes(var2);
+        var2 = 0;
+        var1[var2 &lt;&lt; 2] = 1;
+        var2++;
+        var1[var2 &lt;&lt; 2] = 2;
+        var2++;
+        var1[var2 &lt;&lt; 2] = 3;
+        var2++;
+        var2 = 3;
+        arr = StdFuncs.__std_43_allocI32(var1, var2);
+        var2 = 4;
+        var2 = StdFuncs.__std_50_push(arr, var2);
+        var2 = 0;
+        if (var2 &gt;= arr.length) {
+            first = 0;
         } else {
-            var3 = first &lt;&lt; 2;
-            first = /* UNLIFTED OPCODE: GetMem reg2 = reg1[reg3] */;
+            first = arr[first];
+            first = arr[first];
         }
+        trace(arr); // { fileName: &#39;Arrays.hx&#39;, lineNumber: 11, className: &#39;Arrays&#39;, methodName: &#39;main&#39; }
+        trace(first); // { fileName: &#39;Arrays.hx&#39;, lineNumber: 12, className: &#39;Arrays&#39;, methodName: &#39;main&#39; }
     }
 }</code></pre>
             </div>
@@ -891,71 +914,48 @@ class Anonymous {
                 <pre><code class="language-txt">// --- Static Method: $Arrays.main ---
 
 [
-	[&lt;IRAssign: &lt;IRLocal: var1 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fa42a2e64a0&gt;&gt;(&lt;IRConst: 12&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: first I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRConst: 1&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: first I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-	&lt;IRUntranslatedOpcode: SetMem&gt;,
-	&lt;IRAssign: &lt;IRLocal: first I32&gt; = &lt;IRArithmetic: &lt;IRLocal: first I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRConst: 2&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: first I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-	&lt;IRUntranslatedOpcode: SetMem&gt;,
-	&lt;IRAssign: &lt;IRLocal: first I32&gt; = &lt;IRArithmetic: &lt;IRLocal: first I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: first I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-	&lt;IRUntranslatedOpcode: SetMem&gt;,
-	&lt;IRAssign: &lt;IRLocal: first I32&gt; = &lt;IRArithmetic: &lt;IRLocal: first I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: a hl.types.ArrayBytes_Int&gt; = &lt;IRCall: &lt;IRConst: f@43 static hl.types.$ArrayBase.allocI32 (Bytes, I32) -&gt; hl.types.ArrayBytes_Int (from /usr/share/haxe/std/hl/types/ArrayBase.hx)&gt;(&lt;IRLocal: var1 Bytes&gt;, &lt;IRConst: 3&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var7 haxe.$Log&gt; = &lt;IRConst: &lt;Type: 11 (Obj)&gt;&gt; (haxe.$Log)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var6 Fun&gt; = &lt;IRField: &lt;IRLocal: var7 haxe.$Log&gt;.trace&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var9 DynObj&gt; = &lt;IRNew: {}&gt; (DynObj)&gt;,
-	&lt;IRAssign: &lt;IRField: &lt;IRLocal: var9 DynObj&gt;.fileName&gt; = &lt;IRConst: &#34;Arrays.hx&#34;&gt; (String)&gt;,
-	&lt;IRAssign: &lt;IRField: &lt;IRLocal: var9 DynObj&gt;.lineNumber&gt; = &lt;IRConst: 4&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRField: &lt;IRLocal: var9 DynObj&gt;.className&gt; = &lt;IRConst: &#34;Arrays&#34;&gt; (String)&gt;,
-	&lt;IRAssign: &lt;IRField: &lt;IRLocal: var9 DynObj&gt;.methodName&gt; = &lt;IRConst: &#34;main&#34;&gt; (String)&gt;,
-	&lt;IRCall: &lt;IRLocal: var6 Fun&gt;(&lt;IRLocal: a hl.types.ArrayBytes_Int&gt;, &lt;IRCast: (Virtual[className, customParams, fileName, lineNumber, methodName])&lt;IRLocal: var9 DynObj&gt;&gt;)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var14 TypeType&gt; = &lt;IRUntranslatedOpcode: Type&gt; (TypeType)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var13 Array&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fa42a2e6430&gt;&gt;(&lt;IRLocal: var14 TypeType&gt;, &lt;IRConst: 0&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var15 hl.types.ArrayObj&gt; = &lt;IRCall: &lt;IRConst: f@252 &lt;none&gt; (Array) -&gt; hl.types.ArrayObj (from /usr/share/haxe/std/hl/types/ArrayObj.hx)&gt;(&lt;IRLocal: var13 Array&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: b hl.types.ArrayDyn&gt; = &lt;IRCall: &lt;IRConst: f@253 static hl.types.$ArrayDyn.alloc (hl.types.ArrayBase, Ref) -&gt; hl.types.ArrayDyn (from /usr/share/haxe/std/hl/types/ArrayDyn.hx)&gt;(&lt;IRLocal: var15 hl.types.ArrayObj&gt;, &lt;IRUntranslatedOpcode: Ref&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var7 haxe.$Log&gt; = &lt;IRConst: &lt;Type: 11 (Obj)&gt;&gt; (haxe.$Log)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var6 Fun&gt; = &lt;IRField: &lt;IRLocal: var7 haxe.$Log&gt;.trace&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var9 DynObj&gt; = &lt;IRNew: {}&gt; (DynObj)&gt;,
-	&lt;IRAssign: &lt;IRField: &lt;IRLocal: var9 DynObj&gt;.fileName&gt; = &lt;IRConst: &#34;Arrays.hx&#34;&gt; (String)&gt;,
-	&lt;IRAssign: &lt;IRField: &lt;IRLocal: var9 DynObj&gt;.lineNumber&gt; = &lt;IRConst: 6&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRField: &lt;IRLocal: var9 DynObj&gt;.className&gt; = &lt;IRConst: &#34;Arrays&#34;&gt; (String)&gt;,
-	&lt;IRAssign: &lt;IRField: &lt;IRLocal: var9 DynObj&gt;.methodName&gt; = &lt;IRConst: &#34;main&#34;&gt; (String)&gt;,
-	&lt;IRCall: &lt;IRLocal: var6 Fun&gt;(&lt;IRLocal: b hl.types.ArrayDyn&gt;, &lt;IRCast: (Virtual[className, customParams, fileName, lineNumber, methodName])&lt;IRLocal: var9 DynObj&gt;&gt;)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var1 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fa42a2e64a0&gt;&gt;(&lt;IRConst: 12&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: first I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRConst: 1&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: first I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-	&lt;IRUntranslatedOpcode: SetMem&gt;,
-	&lt;IRAssign: &lt;IRLocal: first I32&gt; = &lt;IRArithmetic: &lt;IRLocal: first I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRConst: 2&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: first I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-	&lt;IRUntranslatedOpcode: SetMem&gt;,
-	&lt;IRAssign: &lt;IRLocal: first I32&gt; = &lt;IRArithmetic: &lt;IRLocal: first I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: first I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-	&lt;IRUntranslatedOpcode: SetMem&gt;,
-	&lt;IRAssign: &lt;IRLocal: first I32&gt; = &lt;IRArithmetic: &lt;IRLocal: first I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: arr hl.types.ArrayBytes_Int&gt; = &lt;IRCall: &lt;IRConst: f@43 static hl.types.$ArrayBase.allocI32 (Bytes, I32) -&gt; hl.types.ArrayBytes_Int (from /usr/share/haxe/std/hl/types/ArrayBase.hx)&gt;(&lt;IRLocal: var1 Bytes&gt;, &lt;IRConst: 3&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: first I32&gt; = &lt;IRCall: &lt;IRConst: f@50 hl.types.ArrayBytes_Int.push (hl.types.ArrayBytes_Int, I32) -&gt; I32 (from /usr/share/haxe/std/hl/types/ArrayBytes.hx)&gt;(&lt;IRLocal: arr hl.types.ArrayBytes_Int&gt;, &lt;IRConst: 4&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var18 Null&gt; = &lt;IRCall: &lt;IRConst: f@49 hl.types.ArrayBytes_Int.pop (hl.types.ArrayBytes_Int) -&gt; Null (from /usr/share/haxe/std/hl/types/ArrayBytes.hx)&gt;(&lt;IRLocal: arr hl.types.ArrayBytes_Int&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: first I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
-	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: first I32&gt; &gt;= &lt;IRField: &lt;IRLocal: arr hl.types.ArrayBytes_Int&gt;.length&gt;&gt; then
+	[&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 12&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var1 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebd303790&gt;&gt;(&lt;IRLocal: var2 I32&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var1 Bytes&gt;[&lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt;]&gt; = &lt;IRConst: 1&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var1 Bytes&gt;[&lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt;]&gt; = &lt;IRConst: 2&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var1 Bytes&gt;[&lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt;]&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: a hl.types.ArrayBytes_Int&gt; = &lt;IRCall: &lt;IRConst: f@43 static hl.types.$ArrayBase.allocI32 (Bytes, I32) -&gt; hl.types.ArrayBytes_Int (from /usr/share/haxe/std/hl/types/ArrayBase.hx)&gt;(&lt;IRLocal: var1 Bytes&gt;, &lt;IRLocal: var2 I32&gt;)&gt; (Fun)&gt;,
+	&lt;IRTrace: msg=&lt;IRLocal: a hl.types.ArrayBytes_Int&gt;, pos={ fileName: Arrays.hx, lineNumber: 4, className: Arrays, methodName: main }&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var15 hl.types.ArrayObj&gt; = &lt;IRCall: &lt;IRConst: f@252 &lt;none&gt; (Array) -&gt; hl.types.ArrayObj (from /usr/share/haxe/std/hl/types/ArrayObj.hx)&gt;(&lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebd303740&gt;&gt;(&lt;IRConst: &lt;Type: 9 (Dyn)&gt;&gt;, &lt;IRLocal: var2 I32&gt;)&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: b hl.types.ArrayDyn&gt; = &lt;IRCall: &lt;IRConst: f@253 static hl.types.$ArrayDyn.alloc (hl.types.ArrayBase, Ref) -&gt; hl.types.ArrayDyn (from /usr/share/haxe/std/hl/types/ArrayDyn.hx)&gt;(&lt;IRLocal: var15 hl.types.ArrayObj&gt;, &lt;IRRef: &amp;&lt;IRConst: True&gt;&gt;)&gt; (Fun)&gt;,
+	&lt;IRTrace: msg=&lt;IRLocal: b hl.types.ArrayDyn&gt;, pos={ fileName: Arrays.hx, lineNumber: 6, className: Arrays, methodName: main }&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 12&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var1 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebd303790&gt;&gt;(&lt;IRLocal: var2 I32&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var1 Bytes&gt;[&lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt;]&gt; = &lt;IRConst: 1&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var1 Bytes&gt;[&lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt;]&gt; = &lt;IRConst: 2&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var1 Bytes&gt;[&lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt;]&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: arr hl.types.ArrayBytes_Int&gt; = &lt;IRCall: &lt;IRConst: f@43 static hl.types.$ArrayBase.allocI32 (Bytes, I32) -&gt; hl.types.ArrayBytes_Int (from /usr/share/haxe/std/hl/types/ArrayBase.hx)&gt;(&lt;IRLocal: var1 Bytes&gt;, &lt;IRLocal: var2 I32&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 4&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRCall: &lt;IRConst: f@50 hl.types.ArrayBytes_Int.push (hl.types.ArrayBytes_Int, I32) -&gt; I32 (from /usr/share/haxe/std/hl/types/ArrayBytes.hx)&gt;(&lt;IRLocal: arr hl.types.ArrayBytes_Int&gt;, &lt;IRLocal: var2 I32&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var2 I32&gt; &gt;= &lt;IRField: &lt;IRLocal: arr hl.types.ArrayBytes_Int&gt;.length&gt;&gt; then
 		[
-		[&lt;IRTrace: msg=&lt;IRLocal: arr hl.types.ArrayBytes_Int&gt;, pos={ fileName: Arrays.hx, lineNumber: 11, className: Arrays, methodName: main }&gt;,
-		&lt;IRAssign: &lt;IRLocal: var19 Dyn&gt; = &lt;IRUntranslatedOpcode: ToDyn&gt; (Dyn)&gt;,
-		&lt;IRTrace: msg=&lt;IRLocal: var19 Dyn&gt;, pos={ fileName: Arrays.hx, lineNumber: 12, className: Arrays, methodName: main }&gt;,
-		&lt;IRReturn: None&gt;]
+		[&lt;IRAssign: &lt;IRLocal: first I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;]
 	]
 	else
 		[
-		[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: first I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-		&lt;IRAssign: &lt;IRLocal: first I32&gt; = &lt;IRUntranslatedOpcode: GetMem&gt; (I32)&gt;]
-	]&gt;]
+		[&lt;IRAssign: &lt;IRLocal: first I32&gt; = &lt;IRArrayAccess: &lt;IRLocal: arr hl.types.ArrayBytes_Int&gt;[&lt;IRLocal: first I32&gt;]&gt; (Void)&gt;,
+		&lt;IRAssign: &lt;IRLocal: first I32&gt; = &lt;IRArrayAccess: &lt;IRLocal: arr hl.types.ArrayBytes_Int&gt;[&lt;IRLocal: first I32&gt;]&gt; (Void)&gt;]
+	]&gt;,
+	&lt;IRTrace: msg=&lt;IRLocal: arr hl.types.ArrayBytes_Int&gt;, pos={ fileName: Arrays.hx, lineNumber: 11, className: Arrays, methodName: main }&gt;,
+	&lt;IRTrace: msg=&lt;IRCast: (Dyn)&lt;IRLocal: first I32&gt;&gt;, pos={ fileName: Arrays.hx, lineNumber: 12, className: Arrays, methodName: main }&gt;,
+	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
         </div>
@@ -1051,28 +1051,91 @@ class Anonymous {
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class BigControlFlow {
-    static function factorial(arg0: Int): Int {
-        if (1 &gt;= var0) {
+    public static function factorial(n: Int): Int {
+        var var1: Int = 0;
+        if (n &lt;= 1) {
             return 1;
-        } else {
-            var var2: Int = var0 - 1;
-            var var1: Int = var0 * factorial(var2);
-            return var1;
         }
+        var1 = n * BigControlFlow.factorial(n - 1);
+        return var1;
     }
 
-    static function main(): Void {
+    public static function main(): Void {
+        var a: Float = 0.0;
         var result: Float = 0.0;
-        if (5 &lt; 10) {
-            var z: Int = 10 * 2;
-            var var5: Float = /* UNLIFTED OPCODE: ToSFloat reg5 = SFloat(reg3) */;
-            z = /* UNLIFTED OPCODE: ToInt unknown operation ToInt */;
-            // &lt;Unhandled IRStatement: IRSwitch&gt; &lt;IRSwitch: &lt;IRLocal: z I32&gt;
-    	&lt;IRConst: 0&gt;: [
-    	[&lt;IR...
+        var var10: Dynamic = null;
+        var var3: Int = 0;
+        var var4: Int = 0;
+        var var8: Int = 0;
+        var w: Int = 0;
+        var x: Int = 0;
+        var y: Float = 0.0;
+        var z: Int = 0;
+        x = 10;
+        result = 0.0;
+        var4 = 5;
+        if (var4 &lt; x) {
+            var4 = 2;
+            var3 = x * var4;
         } else {
-            var z: Int = 10 + 2;
-            var var5: Float = /* UNLIFTED OPCODE: ToSFloat reg5 = SFloat(reg3) */;
+            var4 = 2;
+            var3 = x + var4;
+        }
+        result = var3;
+        y = 2.0;
+        var3 = Std.int(y);
+        switch (var3) {
+            case 0:
+                result = y + 10.0;
+            case 1:
+                result = y * 10.0;
+            case 2:
+                result = y - 10.0;
+            default:
+                result = y / 10.0;
+        }
+        result += 0.0;
+        result += 2.0;
+        result += 4.0;
+        result += 6.0;
+        result += 8.0;
+        z = 0;
+        while (z &lt; 5) {
+            var4 = z + 3;
+            result += var4;
+            z++;
+        }
+        w = 0;
+        do {
+            result += w - 3;
+            w++;
+        } while (w &lt; 5);
+        try {
+            result = 10.0;
+            a /= 0.0;
+        } catch (e:Dynamic) {
+            a = -1.0;
+            result = a;
+        }
+        var8 = BigControlFlow.factorial(5);
+        result += var8;
+        var8 = 0 % 2;
+        if (0 == 0) {
+            result += 0.0;
+        } else {
+            result -= 0.0;
+        }
+        var8 = 1 % 2;
+        if (1 == 0) {
+            result += 5.0;
+        } else {
+            result -= 5.0;
+        }
+        var8 = 2 % 2;
+        if (2 == 0) {
+            result += 10.0;
+        } else {
+            result -= 10.0;
         }
     }
 }</code></pre>
@@ -1082,74 +1145,114 @@ class Anonymous {
                 <pre><code class="language-txt">// --- Static Method: $BigControlFlow.factorial ---
 
 [
-	[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 1&gt; &gt;= &lt;IRLocal: var0 I32&gt;&gt; then
+	[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 1&gt; &gt;= &lt;IRLocal: n I32&gt;&gt; then
 		[
 		[&lt;IRReturn: &lt;IRConst: 1&gt;&gt;]
 	]
 	else
-		[
-		[&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var0 I32&gt; - &lt;IRConst: 1&gt;&gt; (I32)&gt;,
-		&lt;IRAssign: &lt;IRLocal: var1 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var0 I32&gt; * &lt;IRCall: &lt;IRConst: f@23 static $BigControlFlow.factorial (I32) -&gt; I32 (from BigControlFlow.hx)&gt;(&lt;IRLocal: var2 I32&gt;)&gt;&gt; (I32)&gt;,
-		&lt;IRReturn: &lt;IRLocal: var1 I32&gt;&gt;]
-	]&gt;]
+		[]&gt;,
+	&lt;IRAssign: &lt;IRLocal: var1 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: n I32&gt; * &lt;IRCall: &lt;IRConst: f@23 static $BigControlFlow.factorial (I32) -&gt; I32 (from BigControlFlow.hx)&gt;(&lt;IRArithmetic: &lt;IRLocal: n I32&gt; - &lt;IRConst: 1&gt;&gt;)&gt;&gt; (I32)&gt;,
+	&lt;IRReturn: &lt;IRLocal: var1 I32&gt;&gt;]
 ]
 
 // --- Static Method: $BigControlFlow.main ---
 
 [
-	[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRConst: 0.0&gt; (F64)&gt;,
-	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 5&gt; &lt; &lt;IRConst: 10&gt;&gt; then
+	[&lt;IRAssign: &lt;IRLocal: x I32&gt; = &lt;IRConst: 10&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRConst: 0.0&gt; (F64)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRConst: 5&gt; (I32)&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var4 I32&gt; &lt; &lt;IRLocal: x I32&gt;&gt; then
 		[
-		[&lt;IRAssign: &lt;IRLocal: z I32&gt; = &lt;IRArithmetic: &lt;IRConst: 10&gt; * &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-		&lt;IRAssign: &lt;IRLocal: var5 F64&gt; = &lt;IRUntranslatedOpcode: ToSFloat&gt; (F64)&gt;,
-		&lt;IRAssign: &lt;IRLocal: z I32&gt; = &lt;IRUntranslatedOpcode: ToInt&gt; (I32)&gt;,
-		&lt;IRSwitch: &lt;IRLocal: z I32&gt;
-			&lt;IRConst: 0&gt;: [
-			[&lt;IRAssign: &lt;IRLocal: var6 F64&gt; = &lt;IRArithmetic: &lt;IRConst: 2.0&gt; + &lt;IRConst: 10.0&gt;&gt; (F64)&gt;,
-			&lt;IRAssign: &lt;IRLocal: var6 F64&gt; = &lt;IRArithmetic: &lt;IRLocal: var6 F64&gt; + &lt;IRConst: 0.0&gt;&gt; (F64)&gt;,
-			&lt;IRAssign: &lt;IRLocal: var6 F64&gt; = &lt;IRArithmetic: &lt;IRLocal: var6 F64&gt; + &lt;IRConst: 2.0&gt;&gt; (F64)&gt;,
-			&lt;IRAssign: &lt;IRLocal: var6 F64&gt; = &lt;IRArithmetic: &lt;IRLocal: var6 F64&gt; + &lt;IRConst: 4.0&gt;&gt; (F64)&gt;,
-			&lt;IRAssign: &lt;IRLocal: var6 F64&gt; = &lt;IRArithmetic: &lt;IRLocal: var6 F64&gt; + &lt;IRConst: 6.0&gt;&gt; (F64)&gt;,
-			&lt;IRAssign: &lt;IRLocal: var6 F64&gt; = &lt;IRArithmetic: &lt;IRLocal: var6 F64&gt; + &lt;IRConst: 8.0&gt;&gt; (F64)&gt;,
-			&lt;IRAssign: &lt;IRLocal: z I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
-			&lt;IRWhileLoop: while (&lt;IRBoolExpr: &lt;IRLocal: z I32&gt; &lt; &lt;IRConst: 5&gt;&gt;) {
-				[
-					[&lt;IRAssign: &lt;IRLocal: w I32&gt; = &lt;IRArithmetic: &lt;IRLocal: z I32&gt; + &lt;IRConst: 3&gt;&gt; (I32)&gt;,
-					&lt;IRAssign: &lt;IRLocal: var6 F64&gt; = &lt;IRArithmetic: &lt;IRLocal: var6 F64&gt; + &lt;IRUntranslatedOpcode: ToSFloat&gt;&gt; (F64)&gt;,
-					&lt;IRAssign: &lt;IRLocal: z I32&gt; = &lt;IRArithmetic: &lt;IRLocal: z I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
-				]
-			}&gt;,
-			&lt;IRAssign: &lt;IRLocal: w I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
-			&lt;IRWhileLoop: while (&lt;IRBoolExpr: true&gt;) {
-				[
-					[&lt;IRAssign: &lt;IRLocal: var8 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: w I32&gt; - &lt;IRConst: 3&gt;&gt; (I32)&gt;,
-					&lt;IRAssign: &lt;IRLocal: var6 F64&gt; = &lt;IRArithmetic: &lt;IRLocal: var6 F64&gt; + &lt;IRUntranslatedOpcode: ToSFloat&gt;&gt; (F64)&gt;,
-					&lt;IRAssign: &lt;IRLocal: w I32&gt; = &lt;IRArithmetic: &lt;IRLocal: w I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
-					&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: w I32&gt; &gt;= &lt;IRConst: 5&gt;&gt; then
-						[
-						[&lt;IRBreak&gt;]
-					]
-					else
-						[]&gt;]
-				]
-			}&gt;,
-			&lt;IRUntranslatedOpcode: Trap&gt;]
-		]
-			&lt;IRConst: 1&gt;: [
-			[&lt;IRAssign: &lt;IRLocal: var6 F64&gt; = &lt;IRArithmetic: &lt;IRConst: 2.0&gt; * &lt;IRConst: 10.0&gt;&gt; (F64)&gt;]
-		]
-			&lt;IRConst: 2&gt;: [
-			[&lt;IRAssign: &lt;IRLocal: var6 F64&gt; = &lt;IRArithmetic: &lt;IRConst: 2.0&gt; - &lt;IRConst: 10.0&gt;&gt; (F64)&gt;]
-		]
-			default: [
-			[&lt;IRAssign: &lt;IRLocal: var6 F64&gt; = &lt;IRArithmetic: &lt;IRConst: 2.0&gt; / &lt;IRConst: 10.0&gt;&gt; (F64)&gt;]
-		]&gt;]
+		[&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRConst: 2&gt; (I32)&gt;,
+		&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: x I32&gt; * &lt;IRLocal: var4 I32&gt;&gt; (I32)&gt;]
 	]
 	else
 		[
-		[&lt;IRAssign: &lt;IRLocal: z I32&gt; = &lt;IRArithmetic: &lt;IRConst: 10&gt; + &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-		&lt;IRAssign: &lt;IRLocal: var5 F64&gt; = &lt;IRUntranslatedOpcode: ToSFloat&gt; (F64)&gt;]
-	]&gt;]
+		[&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRConst: 2&gt; (I32)&gt;,
+		&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: x I32&gt; + &lt;IRLocal: var4 I32&gt;&gt; (I32)&gt;]
+	]&gt;,
+	&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRCast: (F64)&lt;IRLocal: var3 I32&gt;&gt; (F64)&gt;,
+	&lt;IRAssign: &lt;IRLocal: y F64&gt; = &lt;IRConst: 2.0&gt; (F64)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCast: (I32)&lt;IRLocal: y F64&gt;&gt; (I32)&gt;,
+	&lt;IRSwitch: &lt;IRLocal: var3 I32&gt;
+		&lt;IRConst: 0&gt;: [
+		[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: y F64&gt; + &lt;IRConst: 10.0&gt;&gt; (F64)&gt;]
+	]
+		&lt;IRConst: 1&gt;: [
+		[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: y F64&gt; * &lt;IRConst: 10.0&gt;&gt; (F64)&gt;]
+	]
+		&lt;IRConst: 2&gt;: [
+		[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: y F64&gt; - &lt;IRConst: 10.0&gt;&gt; (F64)&gt;]
+	]
+		default: [
+		[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: y F64&gt; / &lt;IRConst: 10.0&gt;&gt; (F64)&gt;]
+	]&gt;,
+	&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; + &lt;IRConst: 0.0&gt;&gt; (F64)&gt;,
+	&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; + &lt;IRConst: 2.0&gt;&gt; (F64)&gt;,
+	&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; + &lt;IRConst: 4.0&gt;&gt; (F64)&gt;,
+	&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; + &lt;IRConst: 6.0&gt;&gt; (F64)&gt;,
+	&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; + &lt;IRConst: 8.0&gt;&gt; (F64)&gt;,
+	&lt;IRAssign: &lt;IRLocal: z I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
+	&lt;IRWhileLoop: while (&lt;IRBoolExpr: &lt;IRLocal: z I32&gt; &lt; &lt;IRConst: 5&gt;&gt;) {
+		[
+			[&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: z I32&gt; + &lt;IRConst: 3&gt;&gt; (I32)&gt;,
+			&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; + &lt;IRCast: (F64)&lt;IRLocal: var4 I32&gt;&gt;&gt; (F64)&gt;,
+			&lt;IRAssign: &lt;IRLocal: z I32&gt; = &lt;IRArithmetic: &lt;IRLocal: z I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
+		]
+	}&gt;,
+	&lt;IRAssign: &lt;IRLocal: w I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
+	&lt;IRWhileLoop: while (&lt;IRBoolExpr: true&gt;) {
+		[
+			[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; + &lt;IRCast: (F64)&lt;IRArithmetic: &lt;IRLocal: w I32&gt; - &lt;IRConst: 3&gt;&gt;&gt;&gt; (F64)&gt;,
+			&lt;IRAssign: &lt;IRLocal: w I32&gt; = &lt;IRArithmetic: &lt;IRLocal: w I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
+			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: w I32&gt; &gt;= &lt;IRConst: 5&gt;&gt; then
+				[
+				[&lt;IRBreak&gt;]
+			]
+			else
+				[]&gt;]
+		]
+	}&gt;,
+	&lt;IRTryCatch: try
+		[
+		[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRConst: 10.0&gt; (F64)&gt;,
+		&lt;IRAssign: &lt;IRLocal: a F64&gt; = &lt;IRArithmetic: &lt;IRLocal: a F64&gt; / &lt;IRConst: 0.0&gt;&gt; (F64)&gt;]
+	]
+	catch (&lt;IRLocal: var10 Dyn&gt;)
+		[
+		[&lt;IRAssign: &lt;IRLocal: a F64&gt; = &lt;IRConst: -1.0&gt; (F64)&gt;,
+		&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRLocal: a F64&gt; (F64)&gt;]
+	]&gt;,
+	&lt;IRAssign: &lt;IRLocal: var8 I32&gt; = &lt;IRCall: &lt;IRConst: f@23 static $BigControlFlow.factorial (I32) -&gt; I32 (from BigControlFlow.hx)&gt;(&lt;IRConst: 5&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; + &lt;IRCast: (F64)&lt;IRLocal: var8 I32&gt;&gt;&gt; (F64)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var8 I32&gt; = &lt;IRArithmetic: &lt;IRConst: 0&gt; % &lt;IRConst: 2&gt;&gt; (I32)&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 0&gt; == &lt;IRConst: 0&gt;&gt; then
+		[
+		[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; + &lt;IRConst: 0.0&gt;&gt; (F64)&gt;]
+	]
+	else
+		[
+		[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; - &lt;IRConst: 0.0&gt;&gt; (F64)&gt;]
+	]&gt;,
+	&lt;IRAssign: &lt;IRLocal: var8 I32&gt; = &lt;IRArithmetic: &lt;IRConst: 1&gt; % &lt;IRConst: 2&gt;&gt; (I32)&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 1&gt; == &lt;IRConst: 0&gt;&gt; then
+		[
+		[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; + &lt;IRConst: 5.0&gt;&gt; (F64)&gt;]
+	]
+	else
+		[
+		[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; - &lt;IRConst: 5.0&gt;&gt; (F64)&gt;]
+	]&gt;,
+	&lt;IRAssign: &lt;IRLocal: var8 I32&gt; = &lt;IRArithmetic: &lt;IRConst: 2&gt; % &lt;IRConst: 2&gt;&gt; (I32)&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 2&gt; == &lt;IRConst: 0&gt;&gt; then
+		[
+		[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; + &lt;IRConst: 10.0&gt;&gt; (F64)&gt;]
+	]
+	else
+		[
+		[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; - &lt;IRConst: 10.0&gt;&gt; (F64)&gt;]
+	]&gt;,
+	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
         </div>
@@ -1198,11 +1301,15 @@ class Anonymous {
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class Branch {
-    static function main(): Void {
+    public static function main(): Void {
         var a: Int = 0;
-        if (1 &lt; a) {
+        a = 0;
+        if (a &lt;= 1) {
+            a = 2;
+            return;
         }
-        return;
+        a = 1;
+        a = 3;
     }
 }</code></pre>
             </div>
@@ -1215,7 +1322,11 @@ class Anonymous {
 	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 1&gt; &lt; &lt;IRLocal: a I32&gt;&gt; then
 		[]
 	else
-		[]&gt;,
+		[
+		[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 2&gt; (I32)&gt;, &lt;IRReturn: None&gt;]
+	]&gt;,
+	&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 1&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
 	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
@@ -1262,9 +1373,14 @@ class Anonymous {
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class BranchExpr {
-    static function main(): Void {
-        if (true) {
-            return;
+    public static function main(): Void {
+        var a: Bool = false;
+        var b: Int = 0;
+        a = true;
+        if (a) {
+            b = 3;
+        } else {
+            b = 2;
         }
     }
 }</code></pre>
@@ -1274,12 +1390,16 @@ class Anonymous {
                 <pre><code class="language-txt">// --- Static Method: $BranchExpr.main ---
 
 [
-	[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: True&gt; is true&gt; then
+	[&lt;IRAssign: &lt;IRLocal: a Bool&gt; = &lt;IRConst: True&gt; (Bool)&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: a Bool&gt; is true&gt; then
 		[
-		[&lt;IRReturn: None&gt;]
+		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;]
 	]
 	else
-		[]&gt;]
+		[
+		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 2&gt; (I32)&gt;]
+	]&gt;,
+	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
         </div>
@@ -1339,24 +1459,35 @@ class Anonymous {
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class BranchNested {
-    static function main(): Void {
+    public static function main(): Void {
         var a: Int = 0;
-        if (1 &lt; a) {
+        var cond: Bool = false;
+        a = 0;
+        if (a &gt; 1) {
             a = 1;
             if (a == 10) {
+                a = 42;
                 return;
-            } else {
-                if (4 == 3) {
-                    if (false) {
-                        return;
-                    }
-                }
             }
         } else {
-            if (2 &gt;= a) {
-                return;
+            if (a &lt;= 2) {
+                a = 2;
+            } else {
+                a = 3;
             }
+            return;
         }
+        a = 41;
+        a = 4;
+        if (a == 3) {
+            cond = false;
+        } else {
+            cond = true;
+        }
+        if (cond) {
+            a = 16;
+        }
+        a = 3;
     }
 }</code></pre>
             </div>
@@ -1371,32 +1502,41 @@ class Anonymous {
 		[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 1&gt; (I32)&gt;,
 		&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: a I32&gt; == &lt;IRConst: 10&gt;&gt; then
 			[
-			[&lt;IRReturn: None&gt;]
+			[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 42&gt; (I32)&gt;, &lt;IRReturn: None&gt;]
 		]
 		else
-			[
-			[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 4&gt; == &lt;IRConst: 3&gt;&gt; then
-				[
-				[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: False&gt; is true&gt; then
-					[
-					[&lt;IRReturn: None&gt;]
-				]
-				else
-					[]&gt;]
-			]
-			else
-				[]&gt;]
-		]&gt;]
+			[]&gt;]
 	]
 	else
 		[
 		[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 2&gt; &gt;= &lt;IRLocal: a I32&gt;&gt; then
 			[
-			[&lt;IRReturn: None&gt;]
+			[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 2&gt; (I32)&gt;]
 		]
 		else
-			[]&gt;]
-	]&gt;]
+			[
+			[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;]
+		]&gt;,
+		&lt;IRReturn: None&gt;]
+	]&gt;,
+	&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 41&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 4&gt; (I32)&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: a I32&gt; == &lt;IRConst: 3&gt;&gt; then
+		[
+		[&lt;IRAssign: &lt;IRLocal: cond Bool&gt; = &lt;IRConst: False&gt; (Bool)&gt;]
+	]
+	else
+		[
+		[&lt;IRAssign: &lt;IRLocal: cond Bool&gt; = &lt;IRConst: True&gt; (Bool)&gt;]
+	]&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: cond Bool&gt; is true&gt; then
+		[
+		[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 16&gt; (I32)&gt;]
+	]
+	else
+		[]&gt;,
+	&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
+	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
         </div>
@@ -1458,22 +1598,29 @@ class Parent {
                 <pre><code class="language-haxe">class Clazz extends Parent {
     public var b: Int;
 
-    static function __constructor__(arg0: Clazz): Void {
+    public function new() {
         // UNLIFTED OPCODE: this.field1 = reg1
         return;
     }
 
-    static function main(): Void {
-        __constructor__(new Clazz());
-        // UNLIFTED OPCODE: reg0.b = reg2
-        var var3: Int = method(c);
-        return;
+    public static function main(): Void {
+        var a: Int = 0;
+        var c: Clazz;
+        var var2: Int = 0;
+        c = new Clazz();
+        var2 = 15;
+        c.b = var2;
+        a = c.b;
     }
 
-    function method(arg0: Clazz): Int {
+    public function method(): Int {
         // UNLIFTED OPCODE: this.field1 = reg1
         return 42;
     }
+}
+
+class Parent {
+    public var a: Int;
 }</code></pre>
             </div>
             <div class="code-panel ir-panel" style="display:none;">
@@ -1487,9 +1634,10 @@ class Parent {
 // --- Static Method: $Clazz.main ---
 
 [
-	[&lt;IRCall: &lt;IRConst: f@24 static $Clazz.__constructor__ (Clazz) -&gt; Void (from Clazz.hx)&gt;(&lt;IRNew: new Clazz&gt;)&gt;,
-	&lt;IRUntranslatedOpcode: SetField&gt;,
-	&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: f@23 Clazz.method (Clazz) -&gt; I32 (from Clazz.hx)&gt;(&lt;IRLocal: c Clazz&gt;)&gt; (Fun)&gt;,
+	[&lt;IRAssign: &lt;IRLocal: c Clazz&gt; = &lt;IRNew: new Clazz()&gt; (Clazz)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 15&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRField: &lt;IRLocal: c Clazz&gt;.b&gt; = &lt;IRLocal: var2 I32&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRField: &lt;IRLocal: c Clazz&gt;.b&gt; (I32)&gt;,
 	&lt;IRReturn: None&gt;]
 ]
 
@@ -1541,13 +1689,17 @@ class Parent {
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class Closure {
-    static function main(): Void {
-        var fun: Function = /* UNLIFTED OPCODE: StaticClosure unknown operation StaticClosure */;
-        var var4: String = fun();
+    public static function main(): Void {
+        var fun: Dynamic = null;
+        var var4: String = &#34;&#34;;
+        fun = __anon_23;
         trace(var4); // { fileName: &#39;Closure.hx&#39;, lineNumber: 4, className: &#39;Closure&#39;, methodName: &#39;main&#39; }
         trace(fun); // { fileName: &#39;Closure.hx&#39;, lineNumber: 5, className: &#39;Closure&#39;, methodName: &#39;main&#39; }
         trace(&#34; there&#34;); // { fileName: &#39;Closure.hx&#39;, lineNumber: 7, className: &#39;Closure&#39;, methodName: &#39;main&#39; }
-        return;
+    }
+
+    public static function __anon_23(): String {
+        return &#34;hello&#34;;
     }
 }</code></pre>
             </div>
@@ -1556,8 +1708,7 @@ class Parent {
                 <pre><code class="language-txt">// --- Static Method: $Closure.main ---
 
 [
-	[&lt;IRAssign: &lt;IRLocal: fun Fun&gt; = &lt;IRUntranslatedOpcode: StaticClosure&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRLocal: fun Fun&gt;()&gt; (Dyn)&gt;,
+	[&lt;IRAssign: &lt;IRLocal: fun Fun&gt; = &lt;IRConst: f@23 &lt;none&gt; () -&gt; String (from Closure.hx)&gt; (Fun)&gt;,
 	&lt;IRTrace: msg=&lt;IRLocal: var4 String&gt;, pos={ fileName: Closure.hx, lineNumber: 4, className: Closure, methodName: main }&gt;,
 	&lt;IRTrace: msg=&lt;IRLocal: fun Fun&gt;, pos={ fileName: Closure.hx, lineNumber: 5, className: Closure, methodName: main }&gt;,
 	&lt;IRTrace: msg=&lt;IRConst: &#34; there&#34;&gt;, pos={ fileName: Closure.hx, lineNumber: 7, className: Closure, methodName: main }&gt;,
@@ -1612,19 +1763,22 @@ class Parent {
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class Constructor {
-    static function __constructor__(arg0: Constructor, arg1: Int, arg2: String): Void {
+    public function new(b: Int, arg1: String) {
         return;
     }
 
-    static function other(): Int {
+    public static function other(): Int {
         return 42;
     }
 
-    static function main(): Void {
-        var instance: Constructor = new Constructor();
-        __constructor__(instance, 45, &#34;1.4142135623&#34;);
-        var b: Int = other();
-        return;
+    public static function main(): Void {
+        var a: Int = 0;
+        var b: Int = 0;
+        var instance: Constructor;
+        var var4: String = &#34;&#34;;
+        a = 45;
+        instance = new Constructor(a, var4);
+        b = Constructor.other();
     }
 }</code></pre>
             </div>
@@ -1645,8 +1799,8 @@ class Parent {
 // --- Static Method: $Constructor.main ---
 
 [
-	[&lt;IRAssign: &lt;IRLocal: instance Constructor&gt; = &lt;IRNew: new Constructor&gt; (Constructor)&gt;,
-	&lt;IRCall: &lt;IRConst: f@24 static $Constructor.__constructor__ (Constructor, I32, String) -&gt; Void (from Constructor.hx)&gt;(&lt;IRLocal: instance Constructor&gt;, &lt;IRConst: 45&gt;, &lt;IRConst: &#34;1.4142135623&#34;&gt;)&gt;,
+	[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 45&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: instance Constructor&gt; = &lt;IRNew: new Constructor(&lt;IRLocal: a I32&gt;, &lt;IRLocal: var4 String&gt;)&gt; (Constructor)&gt;,
 	&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRCall: &lt;IRConst: f@23 static $Constructor.other () -&gt; I32 (from Constructor.hx)&gt;()&gt; (Fun)&gt;,
 	&lt;IRReturn: None&gt;]
 ]</code></pre>
@@ -1688,8 +1842,7 @@ class Parent {
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class Empty {
-    static function main(): Void {
-        return;
+    public static function main(): Void {
     }
 }</code></pre>
             </div>
@@ -1758,16 +1911,56 @@ enum Color {
             </div>
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
-                <pre><code class="language-haxe">class Enums {
-    static function main(): Void {
-        var r: Int = 255;
-        var g: Int = 255;
-        var b: Int = 0;
-        var c: Color = /* UNLIFTED OPCODE: MakeEnum unknown operation MakeEnum */;
-        r = /* UNLIFTED OPCODE: EnumIndex unknown operation EnumIndex */;
-        // &lt;Unhandled IRStatement: IRSwitch&gt; &lt;IRSwitch: &lt;IRLocal: r I32&gt;
-    	&lt;IRConst: 0&gt;: [
-    	[&lt;IR...
+                <pre><code class="language-haxe">extern class Native {
+    static function itos(arg0: Dynamic, arg1: Dynamic): Dynamic;
+}
+
+extern class StdFuncs {
+    static function __std_16___alloc__(arg0: Dynamic, arg1: Dynamic): Dynamic;
+    static function __std_20___add__(arg0: Dynamic, arg1: Dynamic): Dynamic;
+}
+
+enum Color {
+    Red;
+    Green;
+    Blue;
+    Rgb(arg0: Int, arg1: Int, arg2: Int);
+}
+
+class Enums {
+    public static function main(): Void {
+        var a: Color;
+        var b: Dynamic = null;
+        var c: Color;
+        var g: Int = 0;
+        var r: Int = 0;
+        var var15: hl.Bytes;
+        var var4: Int = 0;
+        var var5: Int = 0;
+        var var6: Int = 0;
+        var var9: String = &#34;&#34;;
+        a = null;
+        b = null;
+        var4 = 255;
+        var5 = 255;
+        var6 = 0;
+        c = Rgb(var4, var5, var6);
+        switch (c) {
+            case Red:
+                trace(&#34;red&#34;); // { fileName: &#39;Enums.hx&#39;, lineNumber: 8, className: &#39;Enums&#39;, methodName: &#39;main&#39; }
+            case Green:
+                trace(&#34;Color was green&#34;); // { fileName: &#39;Enums.hx&#39;, lineNumber: 10, className: &#39;Enums&#39;, methodName: &#39;main&#39; }
+            case Blue:
+                trace(&#34;Color was blue&#34;); // { fileName: &#39;Enums.hx&#39;, lineNumber: 12, className: &#39;Enums&#39;, methodName: &#39;main&#39; }
+            case Rgb(arg0, arg1, arg2):
+                r = (c : Dynamic).param0;
+                g = (c : Dynamic).param1;
+                b = (c : Dynamic).param2;
+                var9 = &#34;Color had a red value of &#34;;
+                var15 = Native.itos(r, r);
+                var9 = StdFuncs.__std_20___add__(var9, StdFuncs.__std_16___alloc__(var15, r));
+                trace(var9); // { fileName: &#39;Enums.hx&#39;, lineNumber: 14, className: &#39;Enums&#39;, methodName: &#39;main&#39; }
+        }
     }
 }</code></pre>
             </div>
@@ -1776,32 +1969,33 @@ enum Color {
                 <pre><code class="language-txt">// --- Static Method: $Enums.main ---
 
 [
-	[&lt;IRAssign: &lt;IRLocal: r I32&gt; = &lt;IRConst: 255&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: g I32&gt; = &lt;IRConst: 255&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: c Color&gt; = &lt;IRUntranslatedOpcode: MakeEnum&gt; (Color)&gt;,
-	&lt;IRAssign: &lt;IRLocal: r I32&gt; = &lt;IRUntranslatedOpcode: EnumIndex&gt; (I32)&gt;,
-	&lt;IRSwitch: &lt;IRLocal: r I32&gt;
-		&lt;IRConst: 0&gt;: [
-		[&lt;IRTrace: msg=&lt;IRConst: &#34;red&#34;&gt;, pos={ fileName: Enums.hx, lineNumber: 8, className: Enums, methodName: main }&gt;,
-		&lt;IRReturn: None&gt;]
+	[&lt;IRAssign: &lt;IRLocal: a Color&gt; = &lt;IRConst: &lt;Type: 18 (Enum)&gt;&gt; (Color)&gt;,
+	&lt;IRAssign: &lt;IRLocal: b Color&gt; = &lt;IRConst: &lt;Type: 18 (Enum)&gt;&gt; (Color)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRConst: 255&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var5 I32&gt; = &lt;IRConst: 255&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var6 I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: c Color&gt; = &lt;IREnumConstruct: Rgb(&lt;IRLocal: var4 I32&gt;, &lt;IRLocal: var5 I32&gt;, &lt;IRLocal: var6 I32&gt;)&gt; (Color)&gt;,
+	&lt;IRSwitch: &lt;IRLocal: c Color&gt;
+		&lt;IRConst: &#34;Red&#34;&gt;: [
+		[&lt;IRTrace: msg=&lt;IRConst: &#34;red&#34;&gt;, pos={ fileName: Enums.hx, lineNumber: 8, className: Enums, methodName: main }&gt;]
 	]
-		&lt;IRConst: 1&gt;: [
+		&lt;IRConst: &#34;Green&#34;&gt;: [
 		[&lt;IRTrace: msg=&lt;IRConst: &#34;Color was green&#34;&gt;, pos={ fileName: Enums.hx, lineNumber: 10, className: Enums, methodName: main }&gt;]
 	]
-		&lt;IRConst: 2&gt;: [
+		&lt;IRConst: &#34;Blue&#34;&gt;: [
 		[&lt;IRTrace: msg=&lt;IRConst: &#34;Color was blue&#34;&gt;, pos={ fileName: Enums.hx, lineNumber: 12, className: Enums, methodName: main }&gt;]
 	]
-		&lt;IRConst: 3&gt;: [
-		[&lt;IRAssign: &lt;IRLocal: r I32&gt; = &lt;IRUntranslatedOpcode: EnumField&gt; (I32)&gt;,
-		&lt;IRAssign: &lt;IRLocal: g I32&gt; = &lt;IRUntranslatedOpcode: EnumField&gt; (I32)&gt;,
-		&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRUntranslatedOpcode: EnumField&gt; (I32)&gt;,
+		&lt;IRConst: &#34;Rgb&#34;&gt;: [
+		[&lt;IRAssign: &lt;IRLocal: r I32&gt; = &lt;IREnumField: &lt;IRLocal: c Color&gt;.param0&gt; (I32)&gt;,
+		&lt;IRAssign: &lt;IRLocal: g I32&gt; = &lt;IREnumField: &lt;IRLocal: c Color&gt;.param1&gt; (I32)&gt;,
+		&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IREnumField: &lt;IRLocal: c Color&gt;.param2&gt; (I32)&gt;,
 		&lt;IRAssign: &lt;IRLocal: var9 String&gt; = &lt;IRConst: &#34;Color had a red value of &#34;&gt; (String)&gt;,
-		&lt;IRAssign: &lt;IRLocal: var15 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fa42a8ccc90&gt;&gt;(&lt;IRLocal: r I32&gt;, &lt;IRUntranslatedOpcode: Ref&gt;)&gt; (Fun)&gt;,
+		&lt;IRAssign: &lt;IRLocal: var15 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebcec7ce0&gt;&gt;(&lt;IRLocal: r I32&gt;, &lt;IRRef: &amp;&lt;IRLocal: r I32&gt;&gt;)&gt; (Fun)&gt;,
 		&lt;IRAssign: &lt;IRLocal: var9 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var9 String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var15 Bytes&gt;, &lt;IRLocal: r I32&gt;)&gt;)&gt; (Fun)&gt;,
 		&lt;IRTrace: msg=&lt;IRLocal: var9 String&gt;, pos={ fileName: Enums.hx, lineNumber: 14, className: Enums, methodName: main }&gt;]
 	]
-		default: []&gt;]
+		default: []&gt;,
+	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
         </div>
@@ -1868,37 +2062,39 @@ enum Color {
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class If {
-    static function main(): Void {
-        spacer();
-        if (10 &lt; 500) {
-            other();
-            spacer();
-            if (400 &lt; 500) {
-                if (10 &lt; 500) {
-                    other();
-                    return;
-                } else {
-                    other2();
-                }
-            }
+    public static function main(): Void {
+        var a: Int = 0;
+        var b: Int = 0;
+        a = 500;
+        b = 10;
+        If.spacer();
+        if (b &lt; a) {
+            If.other();
         } else {
-            other2();
+            If.other2();
         }
+        If.spacer();
+        if (a &gt; 400) {
+            if (b &lt; a) {
+                If.other();
+            } else {
+                If.other2();
+            }
+            return;
+        }
+        If.other2();
     }
 
-    static function spacer(): Void {
+    public static function spacer(): Void {
         trace(&#34;spacer&#34;); // { fileName: &#39;If.hx&#39;, lineNumber: 11, className: &#39;If&#39;, methodName: &#39;spacer&#39; }
-        return;
     }
 
-    static function other2(): Void {
+    public static function other2(): Void {
         trace(&#34;hi dad&#34;); // { fileName: &#39;If.hx&#39;, lineNumber: 7, className: &#39;If&#39;, methodName: &#39;other2&#39; }
-        return;
     }
 
-    static function other(): Void {
+    public static function other(): Void {
         trace(&#34;hi mom&#34;); // { fileName: &#39;If.hx&#39;, lineNumber: 3, className: &#39;If&#39;, methodName: &#39;other&#39; }
-        return;
     }
 }</code></pre>
             </div>
@@ -1907,30 +2103,34 @@ enum Color {
                 <pre><code class="language-txt">// --- Static Method: $If.main ---
 
 [
-	[&lt;IRCall: &lt;IRConst: f@221 static $If.spacer () -&gt; Void (from If.hx)&gt;()&gt;,
-	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 10&gt; &lt; &lt;IRConst: 500&gt;&gt; then
+	[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 500&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 10&gt; (I32)&gt;,
+	&lt;IRCall: &lt;IRConst: f@221 static $If.spacer () -&gt; Void (from If.hx)&gt;()&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: b I32&gt; &lt; &lt;IRLocal: a I32&gt;&gt; then
 		[
-		[&lt;IRCall: &lt;IRConst: f@27 static $If.other () -&gt; Void (from If.hx)&gt;()&gt;,
-		&lt;IRCall: &lt;IRConst: f@221 static $If.spacer () -&gt; Void (from If.hx)&gt;()&gt;,
-		&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 400&gt; &lt; &lt;IRConst: 500&gt;&gt; then
-			[
-			[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 10&gt; &lt; &lt;IRConst: 500&gt;&gt; then
-				[
-				[&lt;IRCall: &lt;IRConst: f@27 static $If.other () -&gt; Void (from If.hx)&gt;()&gt;,
-				&lt;IRReturn: None&gt;]
-			]
-			else
-				[
-				[&lt;IRCall: &lt;IRConst: f@220 static $If.other2 () -&gt; Void (from If.hx)&gt;()&gt;]
-			]&gt;]
-		]
-		else
-			[]&gt;]
+		[&lt;IRCall: &lt;IRConst: f@27 static $If.other () -&gt; Void (from If.hx)&gt;()&gt;]
 	]
 	else
 		[
 		[&lt;IRCall: &lt;IRConst: f@220 static $If.other2 () -&gt; Void (from If.hx)&gt;()&gt;]
-	]&gt;]
+	]&gt;,
+	&lt;IRCall: &lt;IRConst: f@221 static $If.spacer () -&gt; Void (from If.hx)&gt;()&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 400&gt; &lt; &lt;IRLocal: a I32&gt;&gt; then
+		[
+		[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: b I32&gt; &lt; &lt;IRLocal: a I32&gt;&gt; then
+			[
+			[&lt;IRCall: &lt;IRConst: f@27 static $If.other () -&gt; Void (from If.hx)&gt;()&gt;]
+		]
+		else
+			[
+			[&lt;IRCall: &lt;IRConst: f@220 static $If.other2 () -&gt; Void (from If.hx)&gt;()&gt;]
+		]&gt;,
+		&lt;IRReturn: None&gt;]
+	]
+	else
+		[]&gt;,
+	&lt;IRCall: &lt;IRConst: f@220 static $If.other2 () -&gt; Void (from If.hx)&gt;()&gt;,
+	&lt;IRReturn: None&gt;]
 ]
 
 // --- Static Method: $If.spacer ---
@@ -2337,8 +2537,9 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class LongString {
-    static function main(): Void {
-        trace(&#34;Lorem ipsum dolor sit amet, consectetur adipiscing elit. In ut ultricies sapien. Proin nec magna iaculis, eleifend magna a, eleifend elit. Fusce a sodales dolor. Donec sit amet auctor turpis. Curabitur hendrerit vel lacus eu ornare. Pellentesque sed imperdiet lorem. Curabitur libero purus, laoreet a dolor mattis, tincidunt dapibus orci. Vivamus ultrices aliquet volutpat. Morbi consequat tortor sem, ac suscipit est pretium ultricies. Vivamus sed ligula ante.
+    public static function main(): Void {
+        var longString: String = &#34;&#34;;
+        longString = &#34;Lorem ipsum dolor sit amet, consectetur adipiscing elit. In ut ultricies sapien. Proin nec magna iaculis, eleifend magna a, eleifend elit. Fusce a sodales dolor. Donec sit amet auctor turpis. Curabitur hendrerit vel lacus eu ornare. Pellentesque sed imperdiet lorem. Curabitur libero purus, laoreet a dolor mattis, tincidunt dapibus orci. Vivamus ultrices aliquet volutpat. Morbi consequat tortor sem, ac suscipit est pretium ultricies. Vivamus sed ligula ante.
     
     In et neque mi. Vestibulum pharetra tortor sem, sed pellentesque ante tincidunt dignissim. Pellentesque sit amet egestas velit. Nam pharetra gravida libero, vel mattis turpis tincidunt eu. Cras iaculis sagittis quam, a luctus eros suscipit sed. Nullam vestibulum lectus id nunc volutpat, vitae sollicitudin turpis convallis. Vivamus auctor neque porttitor, vehicula dolor in, blandit odio. Nunc placerat, velit vel interdum auctor, diam urna sodales lorem, ut vestibulum tortor ex ut lorem. Ut consequat, ante id malesuada consectetur, tortor sapien sodales lacus, malesuada vehicula tellus tortor id justo. Cras nec pharetra est. Donec vehicula dui sed quam feugiat, ut venenatis tellus luctus.
     
@@ -2682,8 +2883,8 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
     
     Donec vitae ante ac augue vulputate rutrum nec eget lectus. Curabitur gravida sapien lobortis mauris interdum cursus. Integer ac lacus at tellus pharetra semper sit amet quis lacus. Donec eleifend augue nec metus venenatis convallis. Sed finibus, est in lobortis rutrum, lacus est tristique orci, nec aliquet orci lectus sed ante. Mauris nec nunc ut ligula tincidunt fringilla. In hac habitasse platea dictumst. Nulla ac condimentum dui, sit amet rhoncus justo. Vestibulum vestibulum suscipit tempus. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Vestibulum non sapien eget ligula sollicitudin pulvinar. Mauris ut suscipit nunc, vel dapibus nisl. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; Sed pharetra, dolor facilisis varius convallis, ipsum elit semper ante, ac volutpat purus metus et eros. Ut dapibus turpis sed elementum condimentum. In hac habitasse platea dictumst.
     
-    Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisque at neque. Aenean odio mi, feugiat at libero eu, suscipit pharetra tortor. Ut dictum consequat velit eget consequat. Nullam in arcu ut in.&#34;); // { fileName: &#39;LongString.hx&#39;, lineNumber: 348, className: &#39;LongString&#39;, methodName: &#39;main&#39; }
-        return;
+    Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisque at neque. Aenean odio mi, feugiat at libero eu, suscipit pharetra tortor. Ut dictum consequat velit eget consequat. Nullam in arcu ut in.&#34;;
+        trace(longString); // { fileName: &#39;LongString.hx&#39;, lineNumber: 348, className: &#39;LongString&#39;, methodName: &#39;main&#39; }
     }
 }</code></pre>
             </div>
@@ -2692,7 +2893,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <pre><code class="language-txt">// --- Static Method: $LongString.main ---
 
 [
-	[&lt;IRTrace: msg=&lt;IRConst: &#34;Lorem ipsum dolor sit amet, consectetur adipiscing elit. In ut ultricies sapien. Proin nec magna iaculis, eleifend magna a, eleifend elit. Fusce a sodales dolor. Donec sit amet auctor turpis. Curabitur hendrerit vel lacus eu ornare. Pellentesque sed imperdiet lorem. Curabitur libero purus, laoreet a dolor mattis, tincidunt dapibus orci. Vivamus ultrices aliquet volutpat. Morbi consequat tortor sem, ac suscipit est pretium ultricies. Vivamus sed ligula ante.
+	[&lt;IRAssign: &lt;IRLocal: longString String&gt; = &lt;IRConst: &#34;Lorem ipsum dolor sit amet, consectetur adipiscing elit. In ut ultricies sapien. Proin nec magna iaculis, eleifend magna a, eleifend elit. Fusce a sodales dolor. Donec sit amet auctor turpis. Curabitur hendrerit vel lacus eu ornare. Pellentesque sed imperdiet lorem. Curabitur libero purus, laoreet a dolor mattis, tincidunt dapibus orci. Vivamus ultrices aliquet volutpat. Morbi consequat tortor sem, ac suscipit est pretium ultricies. Vivamus sed ligula ante.
 	
 	In et neque mi. Vestibulum pharetra tortor sem, sed pellentesque ante tincidunt dignissim. Pellentesque sit amet egestas velit. Nam pharetra gravida libero, vel mattis turpis tincidunt eu. Cras iaculis sagittis quam, a luctus eros suscipit sed. Nullam vestibulum lectus id nunc volutpat, vitae sollicitudin turpis convallis. Vivamus auctor neque porttitor, vehicula dolor in, blandit odio. Nunc placerat, velit vel interdum auctor, diam urna sodales lorem, ut vestibulum tortor ex ut lorem. Ut consequat, ante id malesuada consectetur, tortor sapien sodales lacus, malesuada vehicula tellus tortor id justo. Cras nec pharetra est. Donec vehicula dui sed quam feugiat, ut venenatis tellus luctus.
 	
@@ -3036,7 +3237,8 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
 	
 	Donec vitae ante ac augue vulputate rutrum nec eget lectus. Curabitur gravida sapien lobortis mauris interdum cursus. Integer ac lacus at tellus pharetra semper sit amet quis lacus. Donec eleifend augue nec metus venenatis convallis. Sed finibus, est in lobortis rutrum, lacus est tristique orci, nec aliquet orci lectus sed ante. Mauris nec nunc ut ligula tincidunt fringilla. In hac habitasse platea dictumst. Nulla ac condimentum dui, sit amet rhoncus justo. Vestibulum vestibulum suscipit tempus. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Vestibulum non sapien eget ligula sollicitudin pulvinar. Mauris ut suscipit nunc, vel dapibus nisl. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; Sed pharetra, dolor facilisis varius convallis, ipsum elit semper ante, ac volutpat purus metus et eros. Ut dapibus turpis sed elementum condimentum. In hac habitasse platea dictumst.
 	
-	Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisque at neque. Aenean odio mi, feugiat at libero eu, suscipit pharetra tortor. Ut dictum consequat velit eget consequat. Nullam in arcu ut in.&#34;&gt;, pos={ fileName: LongString.hx, lineNumber: 348, className: LongString, methodName: main }&gt;,
+	Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisque at neque. Aenean odio mi, feugiat at libero eu, suscipit pharetra tortor. Ut dictum consequat velit eget consequat. Nullam in arcu ut in.&#34;&gt; (String)&gt;,
+	&lt;IRTrace: msg=&lt;IRLocal: longString String&gt;, pos={ fileName: LongString.hx, lineNumber: 348, className: LongString, methodName: main }&gt;,
 	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
@@ -3048,7 +3250,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
     
     
     <div class="test-case" id="15">
-        <div class="test-header fail">
+        <div class="test-header pass">
             <h2>
                 <a href="#15"><i class="fa fa-link"></i></a>
                 Loop Continue
@@ -3064,9 +3266,6 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
             </div>
         </div>
 
-        
-        <div class="error-box">An error occurred during decompilation: Conditional jump missing a true or false branch.
-crashlink.errors.DecompError: Conditional jump missing a true or false branch.</div>
         
 
         <div class="container" style="--visible-columns: 2;">
@@ -3086,11 +3285,39 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             </div>
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
-                <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
+                <pre><code class="language-haxe">class LoopContinue {
+    public static function main(): Void {
+        var b: Int = 0;
+        b = 69;
+        while (b &lt; 1024) {
+            if (b - 2 == 0) {
+                continue;
+            }
+            b -= 2;
+        }
+    }
+}</code></pre>
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre><code class="language-txt">Failed to produce IR.</code></pre>
+                <pre><code class="language-txt">// --- Static Method: $LoopContinue.main ---
+
+[
+	[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 69&gt; (I32)&gt;,
+	&lt;IRWhileLoop: while (&lt;IRBoolExpr: &lt;IRLocal: b I32&gt; &lt; &lt;IRConst: 1024&gt;&gt;) {
+		[
+			[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRArithmetic: &lt;IRLocal: b I32&gt; - &lt;IRConst: 2&gt;&gt; == &lt;IRConst: 0&gt;&gt; then
+				[
+				[&lt;IRContinue&gt;]
+			]
+			else
+				[
+				[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; - &lt;IRConst: 2&gt;&gt; (I32)&gt;]
+			]&gt;]
+		]
+	}&gt;,
+	&lt;IRReturn: None&gt;]
+]</code></pre>
             </div>
         </div>
 
@@ -3100,7 +3327,7 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
     
     
     <div class="test-case" id="16">
-        <div class="test-header fail">
+        <div class="test-header pass">
             <h2>
                 <a href="#16"><i class="fa fa-link"></i></a>
                 Loop For Each
@@ -3116,9 +3343,6 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             </div>
         </div>
 
-        
-        <div class="error-box">An error occurred during decompilation: Conditional jump missing a true or false branch.
-crashlink.errors.DecompError: Conditional jump missing a true or false branch.</div>
         
 
         <div class="container" style="--visible-columns: 2;">
@@ -3137,11 +3361,92 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             </div>
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
-                <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
+                <pre><code class="language-haxe">extern class Native {
+    static function alloc_bytes(arg0: Dynamic): Dynamic;
+}
+
+extern class StdFuncs {
+    static function __std_43_allocI32(arg0: Dynamic, arg1: Dynamic): Dynamic;
+}
+
+class LoopForEach {
+    public static function items(): Array&lt;Int&gt; {
+        var var0: Array&lt;Int&gt; = [];
+        var var1: hl.Bytes;
+        var var2: Int = 0;
+        var1 = Native.alloc_bytes(12);
+        var2 = 0;
+        var1[var2 &lt;&lt; 2] = 1;
+        var2++;
+        var1[var2 &lt;&lt; 2] = 2;
+        var2++;
+        var1[var2 &lt;&lt; 2] = 3;
+        var2++;
+        var0 = StdFuncs.__std_43_allocI32(var1, 3);
+        return var0;
+    }
+
+    public static function main(): Void {
+        var i: Int = 0;
+        var sum: Int = 0;
+        var var2: Int = 0;
+        var var3: Array&lt;Int&gt; = [];
+        sum = 0;
+        var2 = 0;
+        var3 = LoopForEach.items();
+        while (var2 &lt; var3.length) {
+            if (var2 &gt;= var3.length) {
+                i = 0;
+            } else {
+                i = var3[var2];
+                i = var3[var2];
+            }
+            var2++;
+            sum += i;
+        }
+    }
+}</code></pre>
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre><code class="language-txt">Failed to produce IR.</code></pre>
+                <pre><code class="language-txt">// --- Static Method: $LoopForEach.items ---
+
+[
+	[&lt;IRAssign: &lt;IRLocal: var1 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebcec4130&gt;&gt;(&lt;IRConst: 12&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var1 Bytes&gt;[&lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt;]&gt; = &lt;IRConst: 1&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var1 Bytes&gt;[&lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt;]&gt; = &lt;IRConst: 2&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var1 Bytes&gt;[&lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt;]&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var0 hl.types.ArrayBytes_Int&gt; = &lt;IRCall: &lt;IRConst: f@43 static hl.types.$ArrayBase.allocI32 (Bytes, I32) -&gt; hl.types.ArrayBytes_Int (from /usr/share/haxe/std/hl/types/ArrayBase.hx)&gt;(&lt;IRLocal: var1 Bytes&gt;, &lt;IRConst: 3&gt;)&gt; (Fun)&gt;,
+	&lt;IRReturn: &lt;IRLocal: var0 hl.types.ArrayBytes_Int&gt;&gt;]
+]
+
+// --- Static Method: $LoopForEach.main ---
+
+[
+	[&lt;IRAssign: &lt;IRLocal: sum I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var3 hl.types.ArrayBytes_Int&gt; = &lt;IRCall: &lt;IRConst: f@183 static $LoopForEach.items () -&gt; hl.types.ArrayBytes_Int (from LoopForEach.hx)&gt;()&gt; (Fun)&gt;,
+	&lt;IRWhileLoop: while (&lt;IRBoolExpr: &lt;IRLocal: var2 I32&gt; &lt; &lt;IRField: &lt;IRLocal: var3 hl.types.ArrayBytes_Int&gt;.length&gt;&gt;) {
+		[
+			[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var2 I32&gt; &gt;= &lt;IRField: &lt;IRLocal: var3 hl.types.ArrayBytes_Int&gt;.length&gt;&gt; then
+				[
+				[&lt;IRAssign: &lt;IRLocal: i I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;]
+			]
+			else
+				[
+				[&lt;IRAssign: &lt;IRLocal: i I32&gt; = &lt;IRArrayAccess: &lt;IRLocal: var3 hl.types.ArrayBytes_Int&gt;[&lt;IRLocal: var2 I32&gt;]&gt; (Void)&gt;,
+				&lt;IRAssign: &lt;IRLocal: i I32&gt; = &lt;IRArrayAccess: &lt;IRLocal: var3 hl.types.ArrayBytes_Int&gt;[&lt;IRLocal: var2 I32&gt;]&gt; (Void)&gt;]
+			]&gt;,
+			&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var2 I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
+			&lt;IRAssign: &lt;IRLocal: sum I32&gt; = &lt;IRArithmetic: &lt;IRLocal: sum I32&gt; + &lt;IRLocal: i I32&gt;&gt; (I32)&gt;]
+		]
+	}&gt;,
+	&lt;IRReturn: None&gt;]
+]</code></pre>
             </div>
         </div>
 
@@ -3187,15 +3492,12 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class LoopInfinite {
-    static function main(): Void {
-        var b: Int = 69;
-        while (true) {
-            var var2: Int = b * 2;
-            if (1000 &lt; var2) {
-                break;
-            }
-        }
-        return;
+    public static function main(): Void {
+        var b: Int = 0;
+        b = 69;
+        do {
+            b *= 2;
+        } while (b &lt;= 1000);
     }
 }</code></pre>
             </div>
@@ -3207,8 +3509,8 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
 	[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 69&gt; (I32)&gt;,
 	&lt;IRWhileLoop: while (&lt;IRBoolExpr: true&gt;) {
 		[
-			[&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; * &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 1000&gt; &lt; &lt;IRLocal: var2 I32&gt;&gt; then
+			[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; * &lt;IRConst: 2&gt;&gt; (I32)&gt;,
+			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 1000&gt; &lt; &lt;IRLocal: b I32&gt;&gt; then
 				[
 				[&lt;IRBreak&gt;]
 			]
@@ -3227,7 +3529,7 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
     
     
     <div class="test-case" id="18">
-        <div class="test-header fail">
+        <div class="test-header pass">
             <h2>
                 <a href="#18"><i class="fa fa-link"></i></a>
                 Loop Nested
@@ -3243,9 +3545,6 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             </div>
         </div>
 
-        
-        <div class="error-box">An error occurred during decompilation: Conditional jump missing a true or false branch.
-crashlink.errors.DecompError: Conditional jump missing a true or false branch.</div>
         
 
         <div class="container" style="--visible-columns: 2;">
@@ -3278,11 +3577,94 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             </div>
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
-                <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
+                <pre><code class="language-haxe">class LoopNested {
+    public static function main(): Void {
+        var a: Int = 0;
+        var b: Int = 0;
+        var var3: Int = 0;
+        var var4: Int = 0;
+        b = 69;
+        while (true) {
+            var4 = 2;
+            var3 = b * var4;
+            b = var3;
+            var4 = 1000;
+            if (var4 &lt; var3) {
+                break;
+            }
+            a = 0;
+            if (a &gt; 1) {
+                a = 1;
+            } else {
+                break;
+            }
+            do {
+                a = b * 2;
+                b = a;
+            } while (a &lt;= 1000);
+            do {
+                a = b * 2;
+                b = a;
+            } while (a &lt;= 1000);
+        }
+    }
+}</code></pre>
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre><code class="language-txt">Failed to produce IR.</code></pre>
+                <pre><code class="language-txt">// --- Static Method: $LoopNested.main ---
+
+[
+	[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 69&gt; (I32)&gt;,
+	&lt;IRWhileLoop: while (&lt;IRBoolExpr: &lt;IRConst: True&gt; is true&gt;) {
+		[
+			[&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRConst: 2&gt; (I32)&gt;,
+			&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; * &lt;IRLocal: var4 I32&gt;&gt; (I32)&gt;,
+			&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRLocal: var3 I32&gt; (I32)&gt;,
+			&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRConst: 1000&gt; (I32)&gt;,
+			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var4 I32&gt; &lt; &lt;IRLocal: var3 I32&gt;&gt; then
+				[
+				[&lt;IRBreak&gt;]
+			]
+			else
+				[
+				[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
+				&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 1&gt; &lt; &lt;IRLocal: a I32&gt;&gt; then
+					[
+					[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 1&gt; (I32)&gt;]
+				]
+				else
+					[
+					[&lt;IRBreak&gt;]
+				]&gt;,
+				&lt;IRWhileLoop: while (&lt;IRBoolExpr: true&gt;) {
+					[
+						[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; * &lt;IRConst: 2&gt;&gt; (I32)&gt;,
+						&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRLocal: a I32&gt; (I32)&gt;,
+						&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 1000&gt; &lt; &lt;IRLocal: a I32&gt;&gt; then
+							[
+							[&lt;IRBreak&gt;]
+						]
+						else
+							[]&gt;]
+					]
+				}&gt;]
+			]&gt;,
+			&lt;IRWhileLoop: while (&lt;IRBoolExpr: true&gt;) {
+				[
+					[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; * &lt;IRConst: 2&gt;&gt; (I32)&gt;,
+					&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRLocal: a I32&gt; (I32)&gt;,
+					&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 1000&gt; &lt; &lt;IRLocal: a I32&gt;&gt; then
+						[
+						[&lt;IRBreak&gt;]
+					]
+					else
+						[]&gt;]
+				]
+			}&gt;]
+		]
+	}&gt;]
+]</code></pre>
             </div>
         </div>
 
@@ -3326,12 +3708,15 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class LoopWhile {
-    static function main(): Void {
-        var b: Int = 69;
-        while (5 &lt; b) {
-            b = b - 2;
+    public static function main(): Void {
+        var b: Int = 0;
+        var var2: Int = 0;
+        b = 69;
+        while (b &gt; 5) {
+            var2 = b - 2;
+            b = var2;
         }
-        return;
+        b = 999;
     }
 }</code></pre>
             </div>
@@ -3343,9 +3728,11 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
 	[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 69&gt; (I32)&gt;,
 	&lt;IRWhileLoop: while (&lt;IRBoolExpr: &lt;IRConst: 5&gt; &lt; &lt;IRLocal: b I32&gt;&gt;) {
 		[
-			[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; - &lt;IRConst: 2&gt;&gt; (I32)&gt;]
+			[&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; - &lt;IRConst: 2&gt;&gt; (I32)&gt;,
+			&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRLocal: var2 I32&gt; (I32)&gt;]
 		]
 	}&gt;,
+	&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 999&gt; (I32)&gt;,
 	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
@@ -3395,17 +3782,18 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class Method {
-    static function __constructor__(arg0: Method): Void {
+    public function new() {
         return;
     }
 
-    static function main(): Void {
-        __constructor__(new Method());
-        var a: Int = a(instance);
-        return;
+    public static function main(): Void {
+        var a: Int = 0;
+        var instance: Method;
+        instance = new Method();
+        a = instance.a();
     }
 
-    function a(arg0: Method): Int {
+    public function a(): Int {
         return 42;
     }
 }</code></pre>
@@ -3421,7 +3809,7 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
 // --- Static Method: $Method.main ---
 
 [
-	[&lt;IRCall: &lt;IRConst: f@24 static $Method.__constructor__ (Method) -&gt; Void (from Method.hx)&gt;(&lt;IRNew: new Method&gt;)&gt;,
+	[&lt;IRAssign: &lt;IRLocal: instance Method&gt; = &lt;IRNew: new Method()&gt; (Method)&gt;,
 	&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRCall: &lt;IRConst: f@23 Method.a (Method) -&gt; I32 (from Method.hx)&gt;(&lt;IRLocal: instance Method&gt;)&gt; (Fun)&gt;,
 	&lt;IRReturn: None&gt;]
 ]
@@ -3440,7 +3828,7 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
     
     
     <div class="test-case" id="21">
-        <div class="test-header fail">
+        <div class="test-header pass">
             <h2>
                 <a href="#21"><i class="fa fa-link"></i></a>
                 Nested
@@ -3456,9 +3844,6 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             </div>
         </div>
 
-        
-        <div class="error-box">An error occurred during decompilation: Conditional jump missing a true or false branch.
-crashlink.errors.DecompError: Conditional jump missing a true or false branch.</div>
         
 
         <div class="container" style="--visible-columns: 2;">
@@ -3483,11 +3868,59 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             </div>
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
-                <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
+                <pre><code class="language-haxe">class Nested {
+    public static function main(): Void {
+        var b: Float = 0.0;
+        b = 512.0;
+        while (b &gt; 5.0) {
+            b /= 2.0;
+            if (b &lt; 10.0) {
+                while (b &lt; 100.0) {
+                    b *= 2.0;
+                    if (b &gt; 50.0) {
+                        break;
+                    }
+                }
+            } else {
+                continue;
+            }
+        }
+    }
+}</code></pre>
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre><code class="language-txt">Failed to produce IR.</code></pre>
+                <pre><code class="language-txt">// --- Static Method: $Nested.main ---
+
+[
+	[&lt;IRAssign: &lt;IRLocal: b F64&gt; = &lt;IRConst: 512.0&gt; (F64)&gt;,
+	&lt;IRWhileLoop: while (&lt;IRBoolExpr: &lt;IRConst: 5.0&gt; &lt; &lt;IRLocal: b F64&gt;&gt;) {
+		[
+			[&lt;IRAssign: &lt;IRLocal: b F64&gt; = &lt;IRArithmetic: &lt;IRLocal: b F64&gt; / &lt;IRConst: 2.0&gt;&gt; (F64)&gt;,
+			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: b F64&gt; &lt; &lt;IRConst: 10.0&gt;&gt; then
+				[
+				[&lt;IRWhileLoop: while (&lt;IRBoolExpr: &lt;IRLocal: b F64&gt; &lt; &lt;IRConst: 100.0&gt;&gt;) {
+					[
+						[&lt;IRAssign: &lt;IRLocal: b F64&gt; = &lt;IRArithmetic: &lt;IRLocal: b F64&gt; * &lt;IRConst: 2.0&gt;&gt; (F64)&gt;,
+						&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 50.0&gt; &lt; &lt;IRLocal: b F64&gt;&gt; then
+							[
+							[&lt;IRBreak&gt;]
+						]
+						else
+							[
+							[&lt;IRContinue&gt;]
+						]&gt;]
+					]
+				}&gt;]
+			]
+			else
+				[
+				[&lt;IRContinue&gt;]
+			]&gt;]
+		]
+	}&gt;,
+	&lt;IRReturn: None&gt;]
+]</code></pre>
             </div>
         </div>
 
@@ -3500,7 +3933,7 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
         <div class="test-header pass">
             <h2>
                 <a href="#22"><i class="fa fa-link"></i></a>
-                Println
+                Patch Me
             </h2>
             <div class="header-right">
                 
@@ -3508,6 +3941,252 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
                     <i class="fas fa-eye"></i> IR
                 </button>
                 <button class="btn toggle-ops" data-testid="22">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
+        </div>
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
+            <div class="code-panel">
+                <div class="panel-label">Original</div>
+                <pre><code class="language-haxe">// If you&#39;re confused - that&#39;s okay! I am too!
+// This test file exists as a test for both pyhl and hlmod. It was backported here for convenience.
+
+import haxe.io.Bytes;
+
+class SuperTestClass {
+    public static var STATIC_VAL: Int = 8;
+
+    public function do_a_thing() {
+        trace(&#34;Hello world! superclass&#34;);
+    }
+}
+
+class TestClass extends SuperTestClass {
+    public var test: Int = 5;
+
+    public function new() {}
+
+    public override function do_a_thing() {
+        trace(&#34;Hello world! subclass&#34;);
+    }
+}
+
+class PatchMe {
+    static function main() {
+        var val = get_value();
+        var val2 = 2.0;
+        thing(val, val2, &#34;Unpatched message!&#34;, new TestClass());
+        array_test();
+        trace(SuperTestClass.STATIC_VAL);
+    }
+
+    static function array_test() {
+        arraybytes_consumer([1, 2, 3]);
+        arrayobj_consumer([new TestClass(), new TestClass(), new TestClass()]);
+    }
+
+    static function arraybytes_consumer(test: Array&lt;Int&gt;) {
+        trace(test);
+    }
+
+    static function arrayobj_consumer(test: Array&lt;TestClass&gt;) {
+        trace(test);
+    }
+
+    static function get_value(): Float {
+        return 1.0;
+    }
+
+    static function thing(val: Float, val2: Null&lt;Float&gt;, msg: String, val3: Null&lt;TestClass&gt;) {
+        if (val == 2.0) {
+            trace(msg);
+            trace(val3.test);
+        } else {
+            trace(&#34;Patch failed!&#34;);
+        }
+    }
+}</code></pre>
+            </div>
+            <div class="code-panel">
+                <div class="panel-label">Decompiled</div>
+                <pre><code class="language-haxe">extern class Native {
+    static function alloc_bytes(arg0: Dynamic): Dynamic;
+}
+
+extern class StdFuncs {
+    static function __std_265_anon(arg0: Dynamic): Dynamic;
+}
+
+class PatchMe {
+    public static function thing(val: Float, val2, msg: String, val3: TestClass): Void {
+        if (val == 2.0) {
+            trace(msg); // { fileName: &#39;PatchMe.hx&#39;, lineNumber: 52, className: &#39;PatchMe&#39;, methodName: &#39;thing&#39; }
+            trace(val3.test); // { fileName: &#39;PatchMe.hx&#39;, lineNumber: 53, className: &#39;PatchMe&#39;, methodName: &#39;thing&#39; }
+        } else {
+            trace(&#34;Patch failed!&#34;); // { fileName: &#39;PatchMe.hx&#39;, lineNumber: 55, className: &#39;PatchMe&#39;, methodName: &#39;thing&#39; }
+        }
+    }
+
+    public static function get_value(): Float {
+        return 1.0;
+    }
+
+    public static function arrayobj_consumer(test: Array&lt;Dynamic&gt;): Void {
+        trace(test); // { fileName: &#39;PatchMe.hx&#39;, lineNumber: 43, className: &#39;PatchMe&#39;, methodName: &#39;arrayobj_consumer&#39; }
+    }
+
+    public static function arraybytes_consumer(test: Array&lt;Int&gt;): Void {
+        trace(test); // { fileName: &#39;PatchMe.hx&#39;, lineNumber: 39, className: &#39;PatchMe&#39;, methodName: &#39;arraybytes_consumer&#39; }
+    }
+
+    public static function array_test(): Void {
+        var var1: Array&lt;Int&gt; = [];
+        var var2: hl.Bytes;
+        var var3: Int = 0;
+        var var7: Array&lt;Dynamic&gt; = [];
+        var var9: TestClass;
+        var2 = Native.alloc_bytes(12);
+        var3 = 0;
+        var2[var3 &lt;&lt; 2] = 1;
+        var3++;
+        var2[var3 &lt;&lt; 2] = 2;
+        var3++;
+        var2[var3 &lt;&lt; 2] = 3;
+        var3++;
+        PatchMe.arraybytes_consumer(var1);
+        var9 = new TestClass();
+        var7[0] = var9;
+        var9 = new TestClass();
+        var7[1] = var9;
+        var9 = new TestClass();
+        var7[2] = var9;
+        PatchMe.arrayobj_consumer(StdFuncs.__std_265_anon(var7));
+    }
+
+    public static function main(): Void {
+        var val: Float = 0.0;
+        var val2: Float = 0.0;
+        val = PatchMe.get_value();
+        val2 = 2.0;
+        PatchMe.thing(val, val2, &#34;Unpatched message!&#34;, new TestClass());
+        PatchMe.array_test();
+        trace(SuperTestClass.STATIC_VAL); // { fileName: &#39;PatchMe.hx&#39;, lineNumber: 30, className: &#39;PatchMe&#39;, methodName: &#39;main&#39; }
+    }
+}
+
+class SuperTestClass {
+    public static var STATIC_VAL: Int;
+
+    public function do_a_thing(): Void {
+        trace(&#34;Hello world! superclass&#34;); // { fileName: &#39;PatchMe.hx&#39;, lineNumber: 10, className: &#39;SuperTestClass&#39;, methodName: &#39;do_a_thing&#39; }
+    }
+}
+
+class TestClass extends SuperTestClass {
+    public var test: Int;
+
+    public function new() {
+        // UNLIFTED OPCODE: this.field0 = reg1
+        return;
+    }
+
+    public override function do_a_thing(): Void {
+        trace(&#34;Hello world! subclass&#34;); // { fileName: &#39;PatchMe.hx&#39;, lineNumber: 20, className: &#39;TestClass&#39;, methodName: &#39;do_a_thing&#39; }
+    }
+}</code></pre>
+            </div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
+                <pre><code class="language-txt">// --- Static Method: $PatchMe.thing ---
+
+[
+	[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: val F64&gt; == &lt;IRConst: 2.0&gt;&gt; then
+		[
+		[&lt;IRTrace: msg=&lt;IRLocal: msg String&gt;, pos={ fileName: PatchMe.hx, lineNumber: 52, className: PatchMe, methodName: thing }&gt;,
+		&lt;IRTrace: msg=&lt;IRCast: (Dyn)&lt;IRField: &lt;IRLocal: val3 TestClass&gt;.test&gt;&gt;, pos={ fileName: PatchMe.hx, lineNumber: 53, className: PatchMe, methodName: thing }&gt;]
+	]
+	else
+		[
+		[&lt;IRTrace: msg=&lt;IRConst: &#34;Patch failed!&#34;&gt;, pos={ fileName: PatchMe.hx, lineNumber: 55, className: PatchMe, methodName: thing }&gt;]
+	]&gt;,
+	&lt;IRReturn: None&gt;]
+]
+
+// --- Static Method: $PatchMe.get_value ---
+
+[
+	[&lt;IRReturn: &lt;IRConst: 1.0&gt;&gt;]
+]
+
+// --- Static Method: $PatchMe.arrayobj_consumer ---
+
+[
+	[&lt;IRTrace: msg=&lt;IRLocal: test hl.types.ArrayObj&gt;, pos={ fileName: PatchMe.hx, lineNumber: 43, className: PatchMe, methodName: arrayobj_consumer }&gt;,
+	&lt;IRReturn: None&gt;]
+]
+
+// --- Static Method: $PatchMe.arraybytes_consumer ---
+
+[
+	[&lt;IRTrace: msg=&lt;IRLocal: test hl.types.ArrayBytes_Int&gt;, pos={ fileName: PatchMe.hx, lineNumber: 39, className: PatchMe, methodName: arraybytes_consumer }&gt;,
+	&lt;IRReturn: None&gt;]
+]
+
+// --- Static Method: $PatchMe.array_test ---
+
+[
+	[&lt;IRAssign: &lt;IRLocal: var2 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebce81c60&gt;&gt;(&lt;IRConst: 12&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var2 Bytes&gt;[&lt;IRArithmetic: &lt;IRLocal: var3 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt;]&gt; = &lt;IRConst: 1&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var3 I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var2 Bytes&gt;[&lt;IRArithmetic: &lt;IRLocal: var3 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt;]&gt; = &lt;IRConst: 2&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var3 I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var2 Bytes&gt;[&lt;IRArithmetic: &lt;IRLocal: var3 I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt;]&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: var3 I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
+	&lt;IRCall: &lt;IRConst: f@226 static $PatchMe.arraybytes_consumer (hl.types.ArrayBytes_Int) -&gt; Void (from PatchMe.hx)&gt;(&lt;IRLocal: var1 hl.types.ArrayBytes_Int&gt;)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var9 TestClass&gt; = &lt;IRNew: new TestClass()&gt; (TestClass)&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var7 Array&gt;[&lt;IRConst: 0&gt;]&gt; = &lt;IRLocal: var9 TestClass&gt; (TestClass)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var9 TestClass&gt; = &lt;IRNew: new TestClass()&gt; (TestClass)&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var7 Array&gt;[&lt;IRConst: 1&gt;]&gt; = &lt;IRLocal: var9 TestClass&gt; (TestClass)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var9 TestClass&gt; = &lt;IRNew: new TestClass()&gt; (TestClass)&gt;,
+	&lt;IRAssign: &lt;IRArrayAccess: &lt;IRLocal: var7 Array&gt;[&lt;IRConst: 2&gt;]&gt; = &lt;IRLocal: var9 TestClass&gt; (TestClass)&gt;,
+	&lt;IRCall: &lt;IRConst: f@263 static $PatchMe.arrayobj_consumer (hl.types.ArrayObj) -&gt; Void (from PatchMe.hx)&gt;(&lt;IRCall: &lt;IRConst: f@265 &lt;none&gt; (Array) -&gt; hl.types.ArrayObj (from /usr/share/haxe/std/hl/types/ArrayObj.hx)&gt;(&lt;IRLocal: var7 Array&gt;)&gt;)&gt;,
+	&lt;IRReturn: None&gt;]
+]
+
+// --- Static Method: $PatchMe.main ---
+
+[
+	[&lt;IRAssign: &lt;IRLocal: val F64&gt; = &lt;IRCall: &lt;IRConst: f@223 static $PatchMe.get_value () -&gt; F64 (from PatchMe.hx)&gt;()&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: val2 F64&gt; = &lt;IRConst: 2.0&gt; (F64)&gt;,
+	&lt;IRCall: &lt;IRConst: f@224 static $PatchMe.thing (F64, Null, String, TestClass) -&gt; Void (from PatchMe.hx)&gt;(&lt;IRLocal: val F64&gt;, &lt;IRCast: (Null)&lt;IRLocal: val2 F64&gt;&gt;, &lt;IRConst: &#34;Unpatched message!&#34;&gt;, &lt;IRNew: new TestClass()&gt;)&gt;,
+	&lt;IRCall: &lt;IRConst: f@225 static $PatchMe.array_test () -&gt; Void (from PatchMe.hx)&gt;()&gt;,
+	&lt;IRTrace: msg=&lt;IRCast: (Dyn)&lt;IRField: &lt;IRConst: &lt;Type: 11 (Obj)&gt;&gt;.STATIC_VAL&gt;&gt;, pos={ fileName: PatchMe.hx, lineNumber: 30, className: PatchMe, methodName: main }&gt;,
+	&lt;IRReturn: None&gt;]
+]</code></pre>
+            </div>
+        </div>
+
+        
+    </div>
+    
+    
+    
+    <div class="test-case" id="23">
+        <div class="test-header pass">
+            <h2>
+                <a href="#23"><i class="fa fa-link"></i></a>
+                Println
+            </h2>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="23">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="23">
                     <i class="fas fa-microchip"></i> Opcodes
                 </button>
             </div>
@@ -3526,10 +4205,13 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             </div>
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
-                <pre><code class="language-haxe">class Println {
-    static function main(): Void {
-        println(&#34;Hello, println!&#34;);
-        return;
+                <pre><code class="language-haxe">extern class StdFuncs {
+    static function __std_28_println(arg0: Dynamic): Dynamic;
+}
+
+class Println {
+    public static function main(): Void {
+        StdFuncs.__std_28_println(&#34;Hello, println!&#34;);
     }
 }</code></pre>
             </div>
@@ -3549,18 +4231,148 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
     
     
     
-    <div class="test-case" id="23">
+    <div class="test-case" id="24">
         <div class="test-header pass">
             <h2>
-                <a href="#23"><i class="fa fa-link"></i></a>
+                <a href="#24"><i class="fa fa-link"></i></a>
+                Random
+            </h2>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="24">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="24">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
+        </div>
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
+            <div class="code-panel">
+                <div class="panel-label">Original</div>
+                <pre><code class="language-haxe">class Random {
+    static function main() {
+        var randomNumber = Std.random(10);
+        trace(&#34;A random number between 0 and 9: &#34; + randomNumber);
+
+        var min = 1;
+        var max = 100;
+        var rangedRandomNumber = min + Std.random(max - min + 1);
+        trace(&#34;A random number between &#34; + min + &#34; and &#34; + max + &#34;: &#34; + rangedRandomNumber);
+
+        var randomFloat = Math.random();
+        trace(&#34;A random float between 0 and 1: &#34; + randomFloat);
+    }
+}</code></pre>
+            </div>
+            <div class="code-panel">
+                <div class="panel-label">Decompiled</div>
+                <pre><code class="language-haxe">extern class Native {
+    static function ftos(arg0: Dynamic, arg1: Dynamic): Dynamic;
+    static function itos(arg0: Dynamic, arg1: Dynamic): Dynamic;
+}
+
+extern class StdFuncs {
+    static function __std_16___alloc__(arg0: Dynamic, arg1: Dynamic): Dynamic;
+    static function __std_20___add__(arg0: Dynamic, arg1: Dynamic): Dynamic;
+    static function __std_27_random(): Dynamic;
+    static function __std_29_random(arg0: Dynamic): Dynamic;
+}
+
+class Random {
+    public static function main(): Void {
+        var max: Int = 0;
+        var min: Int = 0;
+        var randomFloat: Float = 0.0;
+        var randomNumber: Int = 0;
+        var rangedRandomNumber: Int = 0;
+        var var0: Int = 0;
+        var var4: String = &#34;&#34;;
+        var var5: Int = 0;
+        var var7: hl.Bytes;
+        var0 = 10;
+        randomNumber = StdFuncs.__std_29_random(randomNumber);
+        var4 = &#34;A random number between 0 and 9: &#34;;
+        var5 = randomNumber;
+        var7 = Native.itos(var5, var5);
+        var4 = StdFuncs.__std_20___add__(var4, StdFuncs.__std_16___alloc__(var7, var5));
+        trace(var4); // { fileName: &#39;Random.hx&#39;, lineNumber: 4, className: &#39;Random&#39;, methodName: &#39;main&#39; }
+        min = 1;
+        max = 100;
+        rangedRandomNumber = min + StdFuncs.__std_29_random(max - min);
+        var4 = &#34;A random number between &#34;;
+        var7 = Native.itos(min, min);
+        var4 = StdFuncs.__std_20___add__(var4, StdFuncs.__std_16___alloc__(var7, min));
+        var4 = StdFuncs.__std_20___add__(var4, &#34; and &#34;);
+        var7 = Native.itos(max, max);
+        var4 = StdFuncs.__std_20___add__(var4, StdFuncs.__std_16___alloc__(var7, max));
+        var4 = StdFuncs.__std_20___add__(var4, &#34;: &#34;);
+        var7 = Native.itos(rangedRandomNumber, rangedRandomNumber);
+        var4 = StdFuncs.__std_20___add__(var4, StdFuncs.__std_16___alloc__(var7, rangedRandomNumber));
+        trace(var4); // { fileName: &#39;Random.hx&#39;, lineNumber: 9, className: &#39;Random&#39;, methodName: &#39;main&#39; }
+        randomFloat = StdFuncs.__std_27_random();
+        var4 = &#34;A random float between 0 and 1: &#34;;
+        var7 = Native.ftos(randomFloat, rangedRandomNumber);
+        var4 = StdFuncs.__std_20___add__(var4, StdFuncs.__std_16___alloc__(var7, rangedRandomNumber));
+        trace(var4); // { fileName: &#39;Random.hx&#39;, lineNumber: 12, className: &#39;Random&#39;, methodName: &#39;main&#39; }
+    }
+}</code></pre>
+            </div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
+                <pre><code class="language-txt">// --- Static Method: $Random.main ---
+
+[
+	[&lt;IRAssign: &lt;IRLocal: var0 I32&gt; = &lt;IRConst: 10&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: randomNumber I32&gt; = &lt;IRCall: &lt;IRConst: f@29 static $Std.random (I32) -&gt; I32 (from /usr/share/haxe/std/hl/_std/Std.hx)&gt;(&lt;IRLocal: randomNumber I32&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRConst: &#34;A random number between 0 and 9: &#34;&gt; (String)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var5 I32&gt; = &lt;IRLocal: randomNumber I32&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var7 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebce83e20&gt;&gt;(&lt;IRLocal: var5 I32&gt;, &lt;IRRef: &amp;&lt;IRLocal: var5 I32&gt;&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var7 Bytes&gt;, &lt;IRLocal: var5 I32&gt;)&gt;)&gt; (Fun)&gt;,
+	&lt;IRTrace: msg=&lt;IRLocal: var4 String&gt;, pos={ fileName: Random.hx, lineNumber: 4, className: Random, methodName: main }&gt;,
+	&lt;IRAssign: &lt;IRLocal: min I32&gt; = &lt;IRConst: 1&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: max I32&gt; = &lt;IRConst: 100&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: rangedRandomNumber I32&gt; = &lt;IRArithmetic: &lt;IRLocal: min I32&gt; + &lt;IRCall: &lt;IRConst: f@29 static $Std.random (I32) -&gt; I32 (from /usr/share/haxe/std/hl/_std/Std.hx)&gt;(&lt;IRArithmetic: &lt;IRLocal: max I32&gt; - &lt;IRLocal: min I32&gt;&gt;)&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRConst: &#34;A random number between &#34;&gt; (String)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var7 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebce83e20&gt;&gt;(&lt;IRLocal: min I32&gt;, &lt;IRRef: &amp;&lt;IRLocal: min I32&gt;&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var7 Bytes&gt;, &lt;IRLocal: min I32&gt;)&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRConst: &#34; and &#34;&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var7 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebce83e20&gt;&gt;(&lt;IRLocal: max I32&gt;, &lt;IRRef: &amp;&lt;IRLocal: max I32&gt;&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var7 Bytes&gt;, &lt;IRLocal: max I32&gt;)&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRConst: &#34;: &#34;&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var7 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebce83e20&gt;&gt;(&lt;IRLocal: rangedRandomNumber I32&gt;, &lt;IRRef: &amp;&lt;IRLocal: rangedRandomNumber I32&gt;&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var7 Bytes&gt;, &lt;IRLocal: rangedRandomNumber I32&gt;)&gt;)&gt; (Fun)&gt;,
+	&lt;IRTrace: msg=&lt;IRLocal: var4 String&gt;, pos={ fileName: Random.hx, lineNumber: 9, className: Random, methodName: main }&gt;,
+	&lt;IRAssign: &lt;IRLocal: randomFloat F64&gt; = &lt;IRCall: &lt;IRConst: f@27 static $Math.random () -&gt; F64 (from /usr/share/haxe/std/hl/_std/Math.hx)&gt;()&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRConst: &#34;A random float between 0 and 1: &#34;&gt; (String)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var7 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebce83e70&gt;&gt;(&lt;IRLocal: randomFloat F64&gt;, &lt;IRRef: &amp;&lt;IRLocal: rangedRandomNumber I32&gt;&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var7 Bytes&gt;, &lt;IRLocal: rangedRandomNumber I32&gt;)&gt;)&gt; (Fun)&gt;,
+	&lt;IRTrace: msg=&lt;IRLocal: var4 String&gt;, pos={ fileName: Random.hx, lineNumber: 12, className: Random, methodName: main }&gt;,
+	&lt;IRReturn: None&gt;]
+]</code></pre>
+            </div>
+        </div>
+
+        
+    </div>
+    
+    
+    
+    <div class="test-case" id="25">
+        <div class="test-header pass">
+            <h2>
+                <a href="#25"><i class="fa fa-link"></i></a>
                 Simple If
             </h2>
             <div class="header-right">
                 
-                <button class="btn toggle-ir" data-testid="23">
+                <button class="btn toggle-ir" data-testid="25">
                     <i class="fas fa-eye"></i> IR
                 </button>
-                <button class="btn toggle-ops" data-testid="23">
+                <button class="btn toggle-ops" data-testid="25">
                     <i class="fas fa-microchip"></i> Opcodes
                 </button>
             </div>
@@ -3592,19 +4404,20 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class SimpleIf {
-    static function main(): Void {
-        if (400 &lt; 500) {
-            call();
-            call();
-            call();
-            return;
-        } else {
-            call();
+    public static function main(): Void {
+        var a: Int = 0;
+        var b: Int = 0;
+        a = 500;
+        if (a &gt; 400) {
+            SimpleIf.call();
+            SimpleIf.call();
         }
+        SimpleIf.call();
+        a = 300;
+        b = 999;
     }
 
-    static function call(): Void {
-        return;
+    public static function call(): Void {
     }
 }</code></pre>
             </div>
@@ -3613,17 +4426,18 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
                 <pre><code class="language-txt">// --- Static Method: $SimpleIf.main ---
 
 [
-	[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 400&gt; &lt; &lt;IRConst: 500&gt;&gt; then
+	[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 500&gt; (I32)&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 400&gt; &lt; &lt;IRLocal: a I32&gt;&gt; then
 		[
 		[&lt;IRCall: &lt;IRConst: f@22 static $SimpleIf.call () -&gt; Void (from SimpleIf.hx)&gt;()&gt;,
-		&lt;IRCall: &lt;IRConst: f@22 static $SimpleIf.call () -&gt; Void (from SimpleIf.hx)&gt;()&gt;,
-		&lt;IRCall: &lt;IRConst: f@22 static $SimpleIf.call () -&gt; Void (from SimpleIf.hx)&gt;()&gt;,
-		&lt;IRReturn: None&gt;]
+		&lt;IRCall: &lt;IRConst: f@22 static $SimpleIf.call () -&gt; Void (from SimpleIf.hx)&gt;()&gt;]
 	]
 	else
-		[
-		[&lt;IRCall: &lt;IRConst: f@22 static $SimpleIf.call () -&gt; Void (from SimpleIf.hx)&gt;()&gt;]
-	]&gt;]
+		[]&gt;,
+	&lt;IRCall: &lt;IRConst: f@22 static $SimpleIf.call () -&gt; Void (from SimpleIf.hx)&gt;()&gt;,
+	&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 300&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 999&gt; (I32)&gt;,
+	&lt;IRReturn: None&gt;]
 ]
 
 // --- Static Method: $SimpleIf.call ---
@@ -3639,18 +4453,18 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
     
     
     
-    <div class="test-case" id="24">
+    <div class="test-case" id="26">
         <div class="test-header pass">
             <h2>
-                <a href="#24"><i class="fa fa-link"></i></a>
+                <a href="#26"><i class="fa fa-link"></i></a>
                 String Concat
             </h2>
             <div class="header-right">
                 
-                <button class="btn toggle-ir" data-testid="24">
+                <button class="btn toggle-ir" data-testid="26">
                     <i class="fas fa-eye"></i> IR
                 </button>
-                <button class="btn toggle-ops" data-testid="24">
+                <button class="btn toggle-ops" data-testid="26">
                     <i class="fas fa-microchip"></i> Opcodes
                 </button>
             </div>
@@ -3671,14 +4485,30 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             </div>
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
-                <pre><code class="language-haxe">class StringConcat {
-    static function main(): Void {
-        var a: String = &#34;hello&#34;;
-        a = __add__(a, &#34;world&#34;);
-        var b: String = &#34;number : &#34;;
-        var var6: hl.Bytes = &lt;crashlink.core.Native object at 0x7fa42a9d3e00&gt;(3, /* UNLIFTED OPCODE: Ref reg5 = &amp;reg4 */);
-        b = __add__(b, __alloc__(var6, 3));
-        return;
+                <pre><code class="language-haxe">extern class Native {
+    static function itos(arg0: Dynamic, arg1: Dynamic): Dynamic;
+}
+
+extern class StdFuncs {
+    static function __std_16___alloc__(arg0: Dynamic, arg1: Dynamic): Dynamic;
+    static function __std_20___add__(arg0: Dynamic, arg1: Dynamic): Dynamic;
+}
+
+class StringConcat {
+    public static function main(): Void {
+        var a: String = &#34;&#34;;
+        var b: String = &#34;&#34;;
+        var c: Int = 0;
+        var var0: String = &#34;&#34;;
+        var var1: String = &#34;&#34;;
+        var var6: hl.Bytes;
+        var0 = &#34;hello&#34;;
+        var1 = &#34;world&#34;;
+        a = StdFuncs.__std_20___add__(a, var1);
+        c = 3;
+        var1 = &#34;number : &#34;;
+        var6 = Native.itos(c, c);
+        b = StdFuncs.__std_20___add__(b, StdFuncs.__std_16___alloc__(var6, c));
     }
 }</code></pre>
             </div>
@@ -3687,11 +4517,13 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
                 <pre><code class="language-txt">// --- Static Method: $StringConcat.main ---
 
 [
-	[&lt;IRAssign: &lt;IRLocal: a String&gt; = &lt;IRConst: &#34;hello&#34;&gt; (String)&gt;,
-	&lt;IRAssign: &lt;IRLocal: a String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: a String&gt;, &lt;IRConst: &#34;world&#34;&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: b String&gt; = &lt;IRConst: &#34;number : &#34;&gt; (String)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var6 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fa42a9d3e00&gt;&gt;(&lt;IRConst: 3&gt;, &lt;IRUntranslatedOpcode: Ref&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: b String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: b String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var6 Bytes&gt;, &lt;IRConst: 3&gt;)&gt;)&gt; (Fun)&gt;,
+	[&lt;IRAssign: &lt;IRLocal: var0 String&gt; = &lt;IRConst: &#34;hello&#34;&gt; (String)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var1 String&gt; = &lt;IRConst: &#34;world&#34;&gt; (String)&gt;,
+	&lt;IRAssign: &lt;IRLocal: a String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: a String&gt;, &lt;IRLocal: var1 String&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: c I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var1 String&gt; = &lt;IRConst: &#34;number : &#34;&gt; (String)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var6 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebcdf4a90&gt;&gt;(&lt;IRLocal: c I32&gt;, &lt;IRRef: &amp;&lt;IRLocal: c I32&gt;&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: b String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: b String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var6 Bytes&gt;, &lt;IRLocal: c I32&gt;)&gt;)&gt; (Fun)&gt;,
 	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
@@ -3702,18 +4534,18 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
     
     
     
-    <div class="test-case" id="25">
+    <div class="test-case" id="27">
         <div class="test-header pass">
             <h2>
-                <a href="#25"><i class="fa fa-link"></i></a>
+                <a href="#27"><i class="fa fa-link"></i></a>
                 String Interp
             </h2>
             <div class="header-right">
                 
-                <button class="btn toggle-ir" data-testid="25">
+                <button class="btn toggle-ir" data-testid="27">
                     <i class="fas fa-eye"></i> IR
                 </button>
-                <button class="btn toggle-ops" data-testid="25">
+                <button class="btn toggle-ops" data-testid="27">
                     <i class="fas fa-microchip"></i> Opcodes
                 </button>
             </div>
@@ -3734,17 +4566,30 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             </div>
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
-                <pre><code class="language-haxe">class StringInterp {
-    static function main(): Void {
-        var b: Int = 42 + 1;
-        b = &#34;the number is &#34;;
-        var var6: hl.Bytes = &lt;crashlink.core.Native object at 0x7fa42a8ca9e0&gt;(42, /* UNLIFTED OPCODE: Ref reg5 = &amp;reg3 */);
-        b = __add__(b, __alloc__(var6, 42));
-        b = __add__(b, &#34;, a + 1 = &#34;);
-        var6 = &lt;crashlink.core.Native object at 0x7fa42a8ca9e0&gt;(b, /* UNLIFTED OPCODE: Ref reg5 = &amp;reg3 */);
-        b = __add__(b, __alloc__(var6, b));
-        b = __add__(b, &#34; !&#34;);
-        return;
+                <pre><code class="language-haxe">extern class Native {
+    static function itos(arg0: Dynamic, arg1: Dynamic): Dynamic;
+}
+
+extern class StdFuncs {
+    static function __std_16___alloc__(arg0: Dynamic, arg1: Dynamic): Dynamic;
+    static function __std_20___add__(arg0: Dynamic, arg1: Dynamic): Dynamic;
+}
+
+class StringInterp {
+    public static function main(): Void {
+        var a: Int = 0;
+        var b: Dynamic = null;
+        var var4: String = &#34;&#34;;
+        var var6: hl.Bytes;
+        a = 42;
+        b = a + 1;
+        var4 = &#34;the number is &#34;;
+        var6 = Native.itos(a, a);
+        var4 = StdFuncs.__std_20___add__(var4, StdFuncs.__std_16___alloc__(var6, a));
+        var4 = StdFuncs.__std_20___add__(var4, &#34;, a + 1 = &#34;);
+        var6 = Native.itos(b, b);
+        var4 = StdFuncs.__std_20___add__(var4, StdFuncs.__std_16___alloc__(var6, b));
+        b = StdFuncs.__std_20___add__(b, &#34; !&#34;);
     }
 }</code></pre>
             </div>
@@ -3753,13 +4598,14 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
                 <pre><code class="language-txt">// --- Static Method: $StringInterp.main ---
 
 [
-	[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRConst: 42&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: b String&gt; = &lt;IRConst: &#34;the number is &#34;&gt; (String)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var6 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fa42a8ca9e0&gt;&gt;(&lt;IRConst: 42&gt;, &lt;IRUntranslatedOpcode: Ref&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: b String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: b String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var6 Bytes&gt;, &lt;IRConst: 42&gt;)&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: b String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: b String&gt;, &lt;IRConst: &#34;, a + 1 = &#34;&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var6 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fa42a8ca9e0&gt;&gt;(&lt;IRLocal: b I32&gt;, &lt;IRUntranslatedOpcode: Ref&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: b String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: b String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var6 Bytes&gt;, &lt;IRLocal: b I32&gt;)&gt;)&gt; (Fun)&gt;,
+	[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 42&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRConst: &#34;the number is &#34;&gt; (String)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var6 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebcdf4f40&gt;&gt;(&lt;IRLocal: a I32&gt;, &lt;IRRef: &amp;&lt;IRLocal: a I32&gt;&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var6 Bytes&gt;, &lt;IRLocal: a I32&gt;)&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRConst: &#34;, a + 1 = &#34;&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var6 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebcdf4f40&gt;&gt;(&lt;IRLocal: b I32&gt;, &lt;IRRef: &amp;&lt;IRLocal: b I32&gt;&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var6 Bytes&gt;, &lt;IRLocal: b I32&gt;)&gt;)&gt; (Fun)&gt;,
 	&lt;IRAssign: &lt;IRLocal: b String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: b String&gt;, &lt;IRConst: &#34; !&#34;&gt;)&gt; (Fun)&gt;,
 	&lt;IRReturn: None&gt;]
 ]</code></pre>
@@ -3771,18 +4617,18 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
     
     
     
-    <div class="test-case" id="26">
+    <div class="test-case" id="28">
         <div class="test-header pass">
             <h2>
-                <a href="#26"><i class="fa fa-link"></i></a>
+                <a href="#28"><i class="fa fa-link"></i></a>
                 Switch
             </h2>
             <div class="header-right">
                 
-                <button class="btn toggle-ir" data-testid="26">
+                <button class="btn toggle-ir" data-testid="28">
                     <i class="fas fa-eye"></i> IR
                 </button>
-                <button class="btn toggle-ops" data-testid="26">
+                <button class="btn toggle-ops" data-testid="28">
                     <i class="fas fa-microchip"></i> Opcodes
                 </button>
             </div>
@@ -3807,10 +4653,18 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class Switch {
-    static function main(): Void {
-        // &lt;Unhandled IRStatement: IRSwitch&gt; &lt;IRSwitch: &lt;IRLocal: a I32&gt;
-    	&lt;IRConst: 0&gt;: [
-    	[&lt;IR...
+    public static function main(): Void {
+        var a: Int = 0;
+        var b: Int = 0;
+        a = 3;
+        switch (a) {
+            case 0:
+                b = a * 2;
+            case 3:
+                b = a - 1;
+            default:
+                b = a &lt;&lt; 2;
+        }
     }
 }</code></pre>
             </div>
@@ -3819,17 +4673,18 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
                 <pre><code class="language-txt">// --- Static Method: $Switch.main ---
 
 [
-	[&lt;IRSwitch: &lt;IRLocal: a I32&gt;
+	[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
+	&lt;IRSwitch: &lt;IRLocal: a I32&gt;
 		&lt;IRConst: 0&gt;: [
-		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRConst: 3&gt; * &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-		&lt;IRReturn: None&gt;]
+		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; * &lt;IRConst: 2&gt;&gt; (I32)&gt;]
 	]
 		&lt;IRConst: 3&gt;: [
-		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRConst: 3&gt; - &lt;IRConst: 1&gt;&gt; (I32)&gt;]
+		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; - &lt;IRConst: 1&gt;&gt; (I32)&gt;]
 	]
 		default: [
-		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRConst: 3&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt; (I32)&gt;]
-	]&gt;]
+		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt; (I32)&gt;]
+	]&gt;,
+	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
         </div>
@@ -3839,18 +4694,18 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
     
     
     
-    <div class="test-case" id="27">
+    <div class="test-case" id="29">
         <div class="test-header pass">
             <h2>
-                <a href="#27"><i class="fa fa-link"></i></a>
+                <a href="#29"><i class="fa fa-link"></i></a>
                 Switch Big
             </h2>
             <div class="header-right">
                 
-                <button class="btn toggle-ir" data-testid="27">
+                <button class="btn toggle-ir" data-testid="29">
                     <i class="fas fa-eye"></i> IR
                 </button>
-                <button class="btn toggle-ops" data-testid="27">
+                <button class="btn toggle-ops" data-testid="29">
                     <i class="fas fa-microchip"></i> Opcodes
                 </button>
             </div>
@@ -3889,12 +4744,132 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             </div>
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
-                <pre><code class="language-haxe">class SwitchBig {
-    static function main(): Void {
-        var a: Int = 3;
-        // &lt;Unhandled IRStatement: IRSwitch&gt; &lt;IRSwitch: &lt;IRLocal: a I32&gt;
-    	&lt;IRConst: 0&gt;: [
-    	[&lt;IR...
+                <pre><code class="language-haxe">extern class Native {
+    static function string_compare(arg0: Dynamic, arg1: Dynamic, arg2: Dynamic): Dynamic;
+}
+
+class SwitchBig {
+    public static function main(): Void {
+        var a: Int = 0;
+        var b: Int = 0;
+        var c: String = &#34;&#34;;
+        var var3: Int = 0;
+        a = 3;
+        switch (a) {
+            case 0:
+                b = a * 2;
+            case 3:
+                b = a - 1;
+            default:
+                b = a &lt;&lt; 2;
+        }
+        switch (var3) {
+            case 0:
+                b++;
+            case 1:
+                b++;
+            case 2:
+                b++;
+        }
+        if (a != -5) {
+            if (a == -1) {
+                b++;
+            }
+            c = &#34;hello&#34;;
+            if (c != null) {
+                var3 = c.length;
+                if (var3 == 5) {
+                    var3 = Native.string_compare(c, &#34;hello&#34;, var3);
+                    if (var3 != 0) {
+                        if (c != null) {
+                            var3 = c.length;
+                            if (var3 == 5) {
+                                var3 = Native.string_compare(c, &#34;world&#34;, var3);
+                                if (var3 == 0) {
+                                    a++;
+                                }
+                                return;
+                            }
+                            return;
+                        }
+                        return;
+                    }
+                    a++;
+                    return;
+                }
+                if (c != null) {
+                    var3 = c.length;
+                    if (var3 == 5) {
+                        var3 = Native.string_compare(c, &#34;world&#34;, var3);
+                        if (var3 == 0) {
+                            a++;
+                        }
+                        return;
+                    }
+                    return;
+                }
+                return;
+            }
+            if (c != null) {
+                var3 = c.length;
+                if (var3 == 5) {
+                    var3 = Native.string_compare(c, &#34;world&#34;, var3);
+                    if (var3 == 0) {
+                        a++;
+                    }
+                    return;
+                }
+                return;
+            }
+            return;
+        }
+        b++;
+        c = &#34;hello&#34;;
+        if (c != null) {
+            var3 = c.length;
+            if (var3 == 5) {
+                var3 = Native.string_compare(c, &#34;hello&#34;, var3);
+                if (var3 != 0) {
+                    if (c != null) {
+                        var3 = c.length;
+                        if (var3 == 5) {
+                            var3 = Native.string_compare(c, &#34;world&#34;, var3);
+                            if (var3 == 0) {
+                                a++;
+                            }
+                            return;
+                        }
+                        return;
+                    }
+                    return;
+                }
+                a++;
+                return;
+            }
+            if (c != null) {
+                var3 = c.length;
+                if (var3 == 5) {
+                    var3 = Native.string_compare(c, &#34;world&#34;, var3);
+                    if (var3 == 0) {
+                        a++;
+                    }
+                    return;
+                }
+                return;
+            }
+            return;
+        }
+        if (c != null) {
+            var3 = c.length;
+            if (var3 == 5) {
+                var3 = Native.string_compare(c, &#34;world&#34;, var3);
+                if (var3 == 0) {
+                    a++;
+                }
+                return;
+            }
+            return;
+        }
     }
 }</code></pre>
             </div>
@@ -3906,79 +4881,206 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
 	[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
 	&lt;IRSwitch: &lt;IRLocal: a I32&gt;
 		&lt;IRConst: 0&gt;: [
-		[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; * &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-		&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRLocal: var3 I32&gt; (I32)&gt;,
-		&lt;IRSwitch: &lt;IRLocal: var3 I32&gt;
-			&lt;IRConst: 0&gt;: [
-			[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
-			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 4294967291&gt; != &lt;IRLocal: a I32&gt;&gt; then
+		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; * &lt;IRConst: 2&gt;&gt; (I32)&gt;]
+	]
+		&lt;IRConst: 3&gt;: [
+		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; - &lt;IRConst: 1&gt;&gt; (I32)&gt;]
+	]
+		default: [
+		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt; (I32)&gt;]
+	]&gt;,
+	&lt;IRSwitch: &lt;IRLocal: var3 I32&gt;
+		&lt;IRConst: 0&gt;: [
+		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
+	]
+		&lt;IRConst: 1&gt;: [
+		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
+	]
+		&lt;IRConst: 2&gt;: [
+		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
+	]
+		default: []&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 4294967291&gt; != &lt;IRLocal: a I32&gt;&gt; then
+		[
+		[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 4294967295&gt; != &lt;IRLocal: a I32&gt;&gt; then
+			[]
+		else
+			[
+			[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
+		]&gt;,
+		&lt;IRAssign: &lt;IRLocal: c String&gt; = &lt;IRConst: &#34;hello&#34;&gt; (String)&gt;,
+		&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: c String&gt; is not null&gt; then
+			[
+			[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRField: &lt;IRLocal: c String&gt;.length&gt; (I32)&gt;,
+			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; == &lt;IRConst: 5&gt;&gt; then
 				[
-				[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 4294967295&gt; != &lt;IRLocal: a I32&gt;&gt; then
+				[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebce82f70&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: hello&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
+				&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; != &lt;IRConst: 0&gt;&gt; then
 					[
-					[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: &#34;hello&#34;&gt; is not null&gt; then
+					[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: c String&gt; is not null&gt; then
 						[
 						[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRField: &lt;IRLocal: c String&gt;.length&gt; (I32)&gt;,
 						&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; == &lt;IRConst: 5&gt;&gt; then
 							[
-							[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fa42a8cb9a0&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: hello&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
+							[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebce82f70&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: world&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
 							&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; != &lt;IRConst: 0&gt;&gt; then
-								[
-								[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: c String&gt; is not null&gt; then
-									[
-									[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRField: &lt;IRLocal: c String&gt;.length&gt; (I32)&gt;,
-									&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; == &lt;IRConst: 5&gt;&gt; then
-										[
-										[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fa42a8cb9a0&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: world&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
-										&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; != &lt;IRConst: 0&gt;&gt; then
-											[
-											[&lt;IRReturn: None&gt;]
-										]
-										else
-											[
-											[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
-										]&gt;]
-									]
-									else
-										[]&gt;]
-								]
-								else
-									[]&gt;]
-							]
+								[]
 							else
 								[
 								[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
-							]&gt;]
+							]&gt;,
+							&lt;IRReturn: None&gt;]
 						]
 						else
-							[]&gt;]
+							[]&gt;,
+						&lt;IRReturn: None&gt;]
 					]
 					else
-						[]&gt;]
+						[]&gt;,
+					&lt;IRReturn: None&gt;]
 				]
 				else
 					[
-					[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
-				]&gt;]
+					[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
+				]&gt;,
+				&lt;IRReturn: None&gt;]
+			]
+			else
+				[]&gt;,
+			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: c String&gt; is not null&gt; then
+				[
+				[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRField: &lt;IRLocal: c String&gt;.length&gt; (I32)&gt;,
+				&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; == &lt;IRConst: 5&gt;&gt; then
+					[
+					[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebce82f70&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: world&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
+					&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; != &lt;IRConst: 0&gt;&gt; then
+						[]
+					else
+						[
+						[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
+					]&gt;,
+					&lt;IRReturn: None&gt;]
+				]
+				else
+					[]&gt;,
+				&lt;IRReturn: None&gt;]
+			]
+			else
+				[]&gt;,
+			&lt;IRReturn: None&gt;]
+		]
+		else
+			[]&gt;,
+		&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: c String&gt; is not null&gt; then
+			[
+			[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRField: &lt;IRLocal: c String&gt;.length&gt; (I32)&gt;,
+			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; == &lt;IRConst: 5&gt;&gt; then
+				[
+				[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebce82f70&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: world&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
+				&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; != &lt;IRConst: 0&gt;&gt; then
+					[]
+				else
+					[
+					[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
+				]&gt;,
+				&lt;IRReturn: None&gt;]
+			]
+			else
+				[]&gt;,
+			&lt;IRReturn: None&gt;]
+		]
+		else
+			[]&gt;,
+		&lt;IRReturn: None&gt;]
+	]
+	else
+		[
+		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
+	]&gt;,
+	&lt;IRAssign: &lt;IRLocal: c String&gt; = &lt;IRConst: &#34;hello&#34;&gt; (String)&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: c String&gt; is not null&gt; then
+		[
+		[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRField: &lt;IRLocal: c String&gt;.length&gt; (I32)&gt;,
+		&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; == &lt;IRConst: 5&gt;&gt; then
+			[
+			[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebce82f70&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: hello&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
+			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; != &lt;IRConst: 0&gt;&gt; then
+				[
+				[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: c String&gt; is not null&gt; then
+					[
+					[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRField: &lt;IRLocal: c String&gt;.length&gt; (I32)&gt;,
+					&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; == &lt;IRConst: 5&gt;&gt; then
+						[
+						[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebce82f70&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: world&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
+						&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; != &lt;IRConst: 0&gt;&gt; then
+							[]
+						else
+							[
+							[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
+						]&gt;,
+						&lt;IRReturn: None&gt;]
+					]
+					else
+						[]&gt;,
+					&lt;IRReturn: None&gt;]
+				]
+				else
+					[]&gt;,
+				&lt;IRReturn: None&gt;]
 			]
 			else
 				[
-				[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
-			]&gt;]
+				[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
+			]&gt;,
+			&lt;IRReturn: None&gt;]
 		]
-			&lt;IRConst: 1&gt;: [
-			[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
+		else
+			[]&gt;,
+		&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: c String&gt; is not null&gt; then
+			[
+			[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRField: &lt;IRLocal: c String&gt;.length&gt; (I32)&gt;,
+			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; == &lt;IRConst: 5&gt;&gt; then
+				[
+				[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebce82f70&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: world&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
+				&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; != &lt;IRConst: 0&gt;&gt; then
+					[]
+				else
+					[
+					[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
+				]&gt;,
+				&lt;IRReturn: None&gt;]
+			]
+			else
+				[]&gt;,
+			&lt;IRReturn: None&gt;]
 		]
-			&lt;IRConst: 2&gt;: [
-			[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
-		]
-			default: []&gt;]
+		else
+			[]&gt;,
+		&lt;IRReturn: None&gt;]
 	]
-		&lt;IRConst: 3&gt;: [
-		[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; - &lt;IRConst: 1&gt;&gt; (I32)&gt;]
+	else
+		[]&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: c String&gt; is not null&gt; then
+		[
+		[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRField: &lt;IRLocal: c String&gt;.length&gt; (I32)&gt;,
+		&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; == &lt;IRConst: 5&gt;&gt; then
+			[
+			[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7fdebce82f70&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: world&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
+			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; != &lt;IRConst: 0&gt;&gt; then
+				[]
+			else
+				[
+				[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
+			]&gt;,
+			&lt;IRReturn: None&gt;]
+		]
+		else
+			[]&gt;,
+		&lt;IRReturn: None&gt;]
 	]
-		default: [
-		[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt; (I32)&gt;]
-	]&gt;]
+	else
+		[]&gt;,
+	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
         </div>
@@ -3988,18 +5090,18 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
     
     
     
-    <div class="test-case" id="28">
+    <div class="test-case" id="30">
         <div class="test-header pass">
             <h2>
-                <a href="#28"><i class="fa fa-link"></i></a>
+                <a href="#30"><i class="fa fa-link"></i></a>
                 Tiny
             </h2>
             <div class="header-right">
                 
-                <button class="btn toggle-ir" data-testid="28">
+                <button class="btn toggle-ir" data-testid="30">
                     <i class="fas fa-eye"></i> IR
                 </button>
-                <button class="btn toggle-ops" data-testid="28">
+                <button class="btn toggle-ops" data-testid="30">
                     <i class="fas fa-microchip"></i> Opcodes
                 </button>
             </div>
@@ -4022,12 +5124,12 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class Tiny {
-    static function main(): Void {
-        var b: Int = 10;
-        while (3 &lt; b) {
-            b = b - 1;
+    public static function main(): Void {
+        var b: Int = 0;
+        b = 10;
+        while (b &gt; 3) {
+            b--;
         }
-        return;
     }
 }</code></pre>
             </div>
@@ -4052,18 +5154,18 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
     
     
     
-    <div class="test-case" id="29">
+    <div class="test-case" id="31">
         <div class="test-header pass">
             <h2>
-                <a href="#29"><i class="fa fa-link"></i></a>
+                <a href="#31"><i class="fa fa-link"></i></a>
                 Trace
             </h2>
             <div class="header-right">
                 
-                <button class="btn toggle-ir" data-testid="29">
+                <button class="btn toggle-ir" data-testid="31">
                     <i class="fas fa-eye"></i> IR
                 </button>
-                <button class="btn toggle-ops" data-testid="29">
+                <button class="btn toggle-ops" data-testid="31">
                     <i class="fas fa-microchip"></i> Opcodes
                 </button>
             </div>
@@ -4085,10 +5187,9 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class Trace {
-    static function main(): Void {
+    public static function main(): Void {
         trace(&#34;Hello&#34;); // { fileName: &#39;Trace.hx&#39;, lineNumber: 3, className: &#39;Trace&#39;, methodName: &#39;main&#39; }
         trace(&#34;World&#34;); // { fileName: &#39;Trace.hx&#39;, lineNumber: 4, className: &#39;Trace&#39;, methodName: &#39;main&#39; }
-        return;
     }
 }</code></pre>
             </div>
@@ -4109,18 +5210,18 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
     
     
     
-    <div class="test-case" id="30">
+    <div class="test-case" id="32">
         <div class="test-header pass">
             <h2>
-                <a href="#30"><i class="fa fa-link"></i></a>
+                <a href="#32"><i class="fa fa-link"></i></a>
                 Try Catch
             </h2>
             <div class="header-right">
                 
-                <button class="btn toggle-ir" data-testid="30">
+                <button class="btn toggle-ir" data-testid="32">
                     <i class="fas fa-eye"></i> IR
                 </button>
-                <button class="btn toggle-ops" data-testid="30">
+                <button class="btn toggle-ops" data-testid="32">
                     <i class="fas fa-microchip"></i> Opcodes
                 </button>
             </div>
@@ -4144,8 +5245,15 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class TryCatch {
-    static function main(): Void {
-        // UNLIFTED OPCODE: trap to reg0 (end: 3)
+    public static function main(): Void {
+        var a: Int = 0;
+        var b: Int = 0;
+        var var0: Dynamic = null;
+        try {
+            a = 0;
+        } catch (e:Dynamic) {
+            b = 3;
+        }
     }
 }</code></pre>
             </div>
@@ -4154,107 +5262,14 @@ crashlink.errors.DecompError: Conditional jump missing a true or false branch.</
                 <pre><code class="language-txt">// --- Static Method: $TryCatch.main ---
 
 [
-	[&lt;IRUntranslatedOpcode: Trap&gt;]
-]</code></pre>
-            </div>
-        </div>
-
-        
-    </div>
-    
-    
-    
-    <div class="test-case" id="31">
-        <div class="test-header pass">
-            <h2>
-                <a href="#31"><i class="fa fa-link"></i></a>
-                Patch Me
-            </h2>
-            <div class="header-right">
-                
-                <button class="btn toggle-ir" data-testid="31">
-                    <i class="fas fa-eye"></i> IR
-                </button>
-                <button class="btn toggle-ops" data-testid="31">
-                    <i class="fas fa-microchip"></i> Opcodes
-                </button>
-            </div>
-        </div>
-
-        
-
-        <div class="container" style="--visible-columns: 2;">
-            <div class="code-panel">
-                <div class="panel-label">Original</div>
-                <pre><code class="language-haxe">import haxe.io.Bytes;
-
-class TestClass {
-    public var test: Int = 5;
-
-    public function new() {}
-}
-
-class PatchMe {
-    static function main() {
-        var val = 1.0;
-        var val2 = 2.0;
-        thing(val, val2, &#34;Unpatched message!&#34;, new TestClass());
-    }
-
-    static function thing(val: Float, val2: Float, msg: String, val3: TestClass) {
-        if (val == 2.0) {
-            trace(msg);
-            trace(val3.test);
-        } else {
-            trace(&#34;Patch failed!&#34;);
-        }
-    }
-}</code></pre>
-            </div>
-            <div class="code-panel">
-                <div class="panel-label">Decompiled</div>
-                <pre><code class="language-haxe">class PatchMe {
-    static function thing(arg0: Float, arg1: Float, arg2: String, arg3: TestClass): Void {
-        if (var0 == 2.0) {
-            trace(var2); // { fileName: &#39;PatchMe.hx&#39;, lineNumber: 18, className: &#39;PatchMe&#39;, methodName: &#39;thing&#39; }
-            var var13 = /* UNLIFTED OPCODE: ToDyn unknown operation ToDyn */;
-            trace(var13); // { fileName: &#39;PatchMe.hx&#39;, lineNumber: 19, className: &#39;PatchMe&#39;, methodName: &#39;thing&#39; }
-            return;
-        } else {
-            trace(&#34;Patch failed!&#34;); // { fileName: &#39;PatchMe.hx&#39;, lineNumber: 21, className: &#39;PatchMe&#39;, methodName: &#39;thing&#39; }
-        }
-    }
-
-    static function main(): Void {
-        __constructor__(new TestClass());
-        thing(1.0, 2.0, &#34;Unpatched message!&#34;, var4);
-        return;
-    }
-}</code></pre>
-            </div>
-            <div class="code-panel ir-panel" style="display:none;">
-                <div class="panel-label">IR</div>
-                <pre><code class="language-txt">// --- Static Method: $PatchMe.thing ---
-
-[
-	[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var0 F64&gt; == &lt;IRConst: 2.0&gt;&gt; then
+	[&lt;IRTryCatch: try
 		[
-		[&lt;IRTrace: msg=&lt;IRLocal: var2 String&gt;, pos={ fileName: PatchMe.hx, lineNumber: 18, className: PatchMe, methodName: thing }&gt;,
-		&lt;IRAssign: &lt;IRLocal: var13 Dyn&gt; = &lt;IRUntranslatedOpcode: ToDyn&gt; (Dyn)&gt;,
-		&lt;IRTrace: msg=&lt;IRLocal: var13 Dyn&gt;, pos={ fileName: PatchMe.hx, lineNumber: 19, className: PatchMe, methodName: thing }&gt;,
-		&lt;IRReturn: None&gt;]
+		[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;]
 	]
-	else
+	catch (&lt;IRLocal: var0 Dyn&gt;)
 		[
-		[&lt;IRTrace: msg=&lt;IRConst: &#34;Patch failed!&#34;&gt;, pos={ fileName: PatchMe.hx, lineNumber: 21, className: PatchMe, methodName: thing }&gt;]
-	]&gt;]
-]
-
-// --- Static Method: $PatchMe.main ---
-
-[
-	[&lt;IRCall: &lt;IRConst: f@27 static $TestClass.__constructor__ (TestClass) -&gt; Void (from PatchMe.hx)&gt;(&lt;IRNew: new TestClass&gt;)&gt;,
-	&lt;IRCall: &lt;IRConst: f@29 static $PatchMe.thing (F64, F64, String, TestClass) -&gt; Void (from PatchMe.hx)&gt;(&lt;IRConst: 1.0&gt;, &lt;IRConst: 2.0&gt;, &lt;IRConst: &#34;Unpatched message!&#34;&gt;, &lt;IRLocal: var4 TestClass&gt;)&gt;,
+		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;]
+	]&gt;,
 	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
@@ -4265,18 +5280,18 @@ class PatchMe {
     
     
     
-    <div class="test-case" id="32">
+    <div class="test-case" id="33">
         <div class="test-header pass">
             <h2>
-                <a href="#32"><i class="fa fa-link"></i></a>
+                <a href="#33"><i class="fa fa-link"></i></a>
                 Virtual Closure
             </h2>
             <div class="header-right">
                 
-                <button class="btn toggle-ir" data-testid="32">
+                <button class="btn toggle-ir" data-testid="33">
                     <i class="fas fa-eye"></i> IR
                 </button>
-                <button class="btn toggle-ops" data-testid="32">
+                <button class="btn toggle-ops" data-testid="33">
                     <i class="fas fa-microchip"></i> Opcodes
                 </button>
             </div>
@@ -4326,11 +5341,34 @@ class VirtualClosure {
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class VirtualClosure {
-    static function main(): Void {
-        __constructor__(new Child());
-        var func: Function = /* UNLIFTED OPCODE: VirtualClosure unknown operation VirtualClosure */;
+    public static function main(): Void {
+        var func: Dynamic = null;
+        var myObject: Child;
+        myObject = new Child();
+        func = myObject.sayHello;
         func();
+    }
+}
+
+class Child extends Base {
+    public function new() {
+        var var0: Child;
+        super();
         return;
+    }
+
+    public override function sayHello(): Void {
+        trace(&#34;GREETINGS FROM CHILD!&#34;); // { fileName: &#39;VirtualClosure.hx&#39;, lineNumber: 15, className: &#39;Child&#39;, methodName: &#39;sayHello&#39; }
+    }
+}
+
+class Base {
+    public function new() {
+        return;
+    }
+
+    public function sayHello(): Void {
+        trace(&#34;Hello from Base&#34;); // { fileName: &#39;VirtualClosure.hx&#39;, lineNumber: 5, className: &#39;Base&#39;, methodName: &#39;sayHello&#39; }
     }
 }</code></pre>
             </div>
@@ -4339,8 +5377,8 @@ class VirtualClosure {
                 <pre><code class="language-txt">// --- Static Method: $VirtualClosure.main ---
 
 [
-	[&lt;IRCall: &lt;IRConst: f@302 static $Child.__constructor__ (Child) -&gt; Void (from VirtualClosure.hx)&gt;(&lt;IRNew: new Child&gt;)&gt;,
-	&lt;IRAssign: &lt;IRLocal: func Fun&gt; = &lt;IRUntranslatedOpcode: VirtualClosure&gt; (Fun)&gt;,
+	[&lt;IRAssign: &lt;IRLocal: myObject Child&gt; = &lt;IRNew: new Child()&gt; (Child)&gt;,
+	&lt;IRAssign: &lt;IRLocal: func Fun&gt; = &lt;IRConst: f@303 Child.sayHello (Child) -&gt; Void (from VirtualClosure.hx)&gt; (Fun)&gt;,
 	&lt;IRCall: &lt;IRLocal: func Fun&gt;()&gt;,
 	&lt;IRReturn: None&gt;]
 ]</code></pre>

@@ -4,112 +4,396 @@
     <title>crashtest (crashlink v0.0.2a)</title>
     <style>
         :root {
-            --visible-columns: 2;
+            --bg:       #1e1e2e;
+            --mantle:   #181825;
+            --crust:    #11111b;
+            --surface0: #313244;
+            --surface1: #45475a;
+            --surface2: #585b70;
+            --overlay0: #6c7086;
+            --text:     #cdd6f4;
+            --subtext:  #a6adc8;
+            --mauve:    #cba6f7;
+            --blue:     #89b4fa;
+            --sapphire: #74c7ec;
+            --green:    #a6e3a1;
+            --red:      #f38ba8;
+            --yellow:   #f9e2af;
+            --peach:    #fab387;
+            --pink:     #f5c2e7;
         }
-        body { margin: 0; font-family: sans-serif; }
-        .test-case {
-            margin: 2rem 0;
-            border-top: 2px solid #eee;
-        }
-        .test-header {
-            padding: 1rem;
-            background: #f8f9fa;
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-        .test-header h2 {
+        * { box-sizing: border-box; }
+        body {
             margin: 0;
-            font-size: 1.25rem;
+            font-family: sans-serif;
+            background: var(--bg);
+            color: var(--text);
         }
-        .container {
-            display: grid;
-            grid-template-columns: repeat(var(--visible-columns), 1fr);
-            transition: grid-template-columns 0.3s ease;
-        }
-        .code-panel {
-            padding: 1rem;
-            border-right: 1px solid #ccc;
-            overflow: auto;
-        }
+        a { color: var(--mauve); text-decoration: none; }
+        a:hover { color: var(--blue); }
 
-        small {
-            font-size: 0.8rem;
-            color: #525252;
+        /* ── Header ── */
+        .site-header {
+            background: var(--mantle);
+            border-bottom: 1px solid var(--surface1);
+            padding: 0.9rem 1.25rem;
         }
+        .back-link { color: var(--peach); font-size: 0.85rem; }
+        .back-link:hover { color: var(--yellow); }
+        .site-header h1 { margin: 0.15rem 0 0; font-size: 1.3rem; color: var(--mauve); }
+        .site-header h1 small { color: var(--subtext); font-size: 0.75rem; font-weight: 400; }
+        .site-header h1 small a { color: var(--peach); }
 
-        h1 {
-            padding-left: 1rem;
+        /* ── Run summary bar ── */
+        .run-summary {
+            display: flex;
+            gap: 2rem;
+            padding: 0.65rem 1.25rem;
+            background: var(--surface0);
+            border-bottom: 1px solid var(--surface1);
+            font-size: 0.85rem;
+            flex-wrap: wrap;
         }
+        .summary-stat .label {
+            color: var(--subtext);
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+        .summary-stat .value { font-weight: 600; }
 
-        h1 > small > a {
-            color: #36007e;
-            background-color: transparent;
-        }
+        /* ── Test case shell ── */
+        .test-case { border-top: 2px solid var(--surface1); }
 
         .test-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 1rem;
-            background: #f8f9fa;
+            padding: 0.65rem 1rem;
+            background: var(--surface0);
             position: sticky;
             top: 0;
             z-index: 100;
             gap: 1rem;
+            border-bottom: 1px solid var(--surface1);
         }
+        .test-header.pass { border-left: 4px solid var(--green); }
+        .test-header.fail { border-left: 4px solid var(--red); }
+        .test-header.warn { border-left: 4px solid var(--yellow); }
 
-        .test-header.pass {
-            background: #a2ff9e;
-        }
-
-        .test-header.fail {
-            background: #ff8888;
-        }
-    
-        .toggle-ir {
-            background: #cba6f7;
-            color: black;
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background-color 0.2s ease;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-    
-        .toggle-ir:hover {
-            background: #b4befe;
-        }
-    
-        .toggle-ir:active {
-            background: #74c7ec;
-        }        
-    
         .test-header h2 {
             margin: 0;
-            font-size: 1.25rem;
+            font-size: 1rem;
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.4rem;
         }
-    
-        .fa-link {
-            color: #666;
-            font-size: 0.8em;
-            transition: color 0.2s ease;
+        .fa-link { color: var(--surface2); font-size: 0.8em; }
+        .fa-link:hover { color: var(--pink); }
+
+        .header-right { display: flex; align-items: center; gap: 0.6rem; }
+
+        .badge {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.2rem 0.55rem;
+            border-radius: 99px;
+            white-space: nowrap;
         }
-    
-        .fa-link:hover {
-            color: #f5c2e7;
+        .badge-green  { background: #1a3a2a; color: var(--green); }
+        .badge-yellow { background: #3a3010; color: var(--yellow); }
+        .badge-red    { background: #3a1010; color: var(--red); }
+        .badge-gray   { background: var(--surface1); color: var(--subtext); }
+
+        .btn {
+            background: var(--surface1);
+            color: var(--text);
+            border: none;
+            padding: 0.3rem 0.7rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: background 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .btn:hover { background: var(--surface2); }
+        .btn.btn-primary { background: var(--mauve); color: var(--crust); font-weight: 600; }
+        .btn.btn-primary:hover { background: var(--blue); }
+
+        /* ── Code panels ── */
+        .container {
+            display: grid;
+            grid-template-columns: repeat(var(--visible-columns, 2), 1fr);
+            transition: grid-template-columns 0.25s ease;
+        }
+        .code-panel {
+            padding: 0.75rem 1rem;
+            border-right: 1px solid var(--surface1);
+            overflow: auto;
+            min-width: 0;
+        }
+        .panel-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--overlay0);
+            margin-bottom: 0.4rem;
+        }
+        pre { margin: 0; }
+        code { font-size: 0.8rem !important; }
+
+        /* ── Error box ── */
+        .error-box {
+            background: #2a1010;
+            border-left: 3px solid var(--red);
+            color: var(--red);
+            padding: 0.6rem 1rem;
+            font-family: monospace;
+            font-size: 0.82rem;
+            white-space: pre-wrap;
+            word-break: break-all;
+            margin: 0.75rem 1rem;
+            border-radius: 0 4px 4px 0;
         }
 
-        .a {
-            color: #36007e !important;
-            background-color: transparent;
+        /* ── Opcode panel ── */
+        .opcode-panel {
+            padding: 0.75rem 1rem 1rem;
+            border-top: 1px solid var(--surface1);
         }
+        .opcode-panel h3 {
+            margin: 0 0 0.6rem;
+            font-size: 0.75rem;
+            color: var(--subtext);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+        .recompile-error {
+            background: #2a1e00;
+            border-left: 3px solid var(--yellow);
+            color: var(--yellow);
+            padding: 0.5rem 0.75rem;
+            border-radius: 0 4px 4px 0;
+            font-family: monospace;
+            font-size: 0.8rem;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        /* ── Method table ── */
+        .method-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+        }
+        .method-table th {
+            text-align: left;
+            color: var(--subtext);
+            font-weight: 500;
+            padding: 0.25rem 0.6rem;
+            border-bottom: 1px solid var(--surface1);
+        }
+        .method-table td {
+            padding: 0.3rem 0.6rem;
+            border-bottom: 1px solid var(--surface0);
+        }
+        .method-table tr.method-row { cursor: pointer; }
+        .method-table tr.method-row:hover td { background: var(--surface0); }
+        .method-table tr.method-row td:first-child { font-family: monospace; }
+        .method-table .no-diff { cursor: default !important; }
+        .method-table .no-diff:hover td { background: none; }
+
+        .diff-hint {
+            color: var(--overlay0);
+            font-size: 0.72rem;
+            font-style: italic;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .sim-bar-wrap { display: flex; align-items: center; gap: 0.5rem; }
+        .sim-bar {
+            flex: 1;
+            height: 5px;
+            background: var(--surface1);
+            border-radius: 3px;
+            overflow: hidden;
+            min-width: 60px;
+        }
+        .sim-bar-fill { height: 100%; border-radius: 3px; }
+        .sim-pct { min-width: 3.2rem; text-align: right; font-size: 0.78rem; }
+        .method-error { color: var(--red); font-size: 0.78rem; }
+
+        /* ── Diff modal ── */
+        .diff-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 500;
+            background: rgba(0,0,0,0.65);
+            align-items: center;
+            justify-content: center;
+        }
+        .diff-modal.open { display: flex; }
+
+        .diff-modal-content {
+            background: var(--mantle);
+            border: 1px solid var(--surface1);
+            border-radius: 8px;
+            width: min(92vw, 1100px);
+            max-height: 88vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 12px 48px rgba(0,0,0,0.5);
+            animation: modalIn 0.18s ease;
+        }
+        @keyframes modalIn {
+            from { opacity: 0; transform: scale(0.97) translateY(-10px); }
+            to   { opacity: 1; transform: none; }
+        }
+
+        .diff-modal-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--surface1);
+            flex-shrink: 0;
+        }
+        .diff-modal-title {
+            font-family: monospace;
+            font-size: 0.95rem;
+            color: var(--mauve);
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .diff-modal-meta { color: var(--subtext); font-size: 0.8rem; white-space: nowrap; }
+        .diff-modal-close {
+            background: none;
+            border: none;
+            color: var(--overlay0);
+            cursor: pointer;
+            font-size: 1.2rem;
+            padding: 0;
+            line-height: 1;
+        }
+        .diff-modal-close:hover { color: var(--red); }
+
+        .diff-view-tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 1px solid var(--surface1);
+            flex-shrink: 0;
+            background: var(--crust);
+        }
+        .diff-tab {
+            padding: 0.45rem 1rem;
+            font-size: 0.82rem;
+            color: var(--subtext);
+            cursor: pointer;
+            border: none;
+            background: none;
+            border-bottom: 2px solid transparent;
+            transition: color 0.15s, border-color 0.15s;
+        }
+        .diff-tab:hover { color: var(--text); }
+        .diff-tab.active { color: var(--mauve); border-bottom-color: var(--mauve); }
+
+        .diff-body {
+            overflow: auto;
+            flex: 1;
+            min-height: 0;
+        }
+
+        /* Unified diff */
+        .diff-unified {
+            font-family: monospace;
+            font-size: 0.8rem;
+            line-height: 1.5;
+            padding: 0.5rem 0;
+        }
+        .diff-line {
+            display: flex;
+            padding: 0 0.75rem;
+            gap: 0.5rem;
+        }
+        .diff-line:hover { background: var(--surface0); }
+        .diff-line.add  { background: #0d2b0d; }
+        .diff-line.add:hover  { background: #1a3a1a; }
+        .diff-line.rem  { background: #2b0d0d; }
+        .diff-line.rem:hover  { background: #3a1a1a; }
+        .diff-gutter {
+            width: 2rem;
+            text-align: right;
+            color: var(--surface2);
+            user-select: none;
+            flex-shrink: 0;
+        }
+        .diff-sign {
+            width: 1rem;
+            flex-shrink: 0;
+            color: var(--overlay0);
+        }
+        .diff-line.add .diff-sign { color: var(--green); }
+        .diff-line.rem .diff-sign { color: var(--red); }
+        .diff-text { color: var(--text); white-space: pre; }
+        .diff-line.add .diff-text { color: var(--green); }
+        .diff-line.rem .diff-text { color: var(--red); }
+
+        /* Side-by-side diff */
+        .diff-side-by-side {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            font-family: monospace;
+            font-size: 0.8rem;
+            line-height: 1.5;
+        }
+        .diff-side-col {
+            border-right: 1px solid var(--surface1);
+            overflow: auto;
+        }
+        .diff-side-col:last-child { border-right: none; }
+        .diff-side-header {
+            padding: 0.35rem 0.75rem;
+            background: var(--surface0);
+            color: var(--subtext);
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            border-bottom: 1px solid var(--surface1);
+            position: sticky;
+            top: 0;
+        }
+        .diff-side-lines { padding: 0.3rem 0; }
+        .diff-side-line {
+            display: flex;
+            padding: 0 0.6rem;
+            gap: 0.4rem;
+            min-height: 1.5em;
+        }
+        .diff-side-line:hover { background: var(--surface0); }
+        .diff-side-line.orig-rem { background: #2b0d0d; }
+        .diff-side-line.orig-rem:hover { background: #3a1a1a; }
+        .diff-side-line.recomp-add { background: #0d2b0d; }
+        .diff-side-line.recomp-add:hover { background: #1a3a1a; }
+        .diff-side-line.empty { background: var(--crust); opacity: 0.5; }
+        .diff-side-gutter {
+            width: 2.2rem;
+            text-align: right;
+            color: var(--surface2);
+            user-select: none;
+            flex-shrink: 0;
+            font-size: 0.75em;
+        }
+        .diff-side-text { color: var(--text); white-space: pre; }
+        .diff-side-line.orig-rem .diff-side-text  { color: var(--red); }
+        .diff-side-line.recomp-add .diff-side-text { color: var(--green); }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism-tomorrow.min.css" rel="stylesheet" />
@@ -117,7 +401,102 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/line-numbers/prism-line-numbers.min.css" rel="stylesheet" />
 </head>
 <body class="line-numbers">
-    <h1><small><a href="../../">Back to all runs</a></small><br>crashtest <small>crashlink v0.0.2a on <a href="https://github.com/N3rdL0rd/crashlink/commit/ec1ada1da3d95295ee3139975d79097a5243481a">main@ec1ada1d</a> </small></h1>
+    <div class="site-header">
+        <a class="back-link" href="../../"><i class="fas fa-arrow-left"></i> All runs</a>
+        <h1>
+            crashtest
+            <small>
+                crashlink v0.0.2a
+                
+                    
+                    &mdash; <a href="https://github.com/N3rdL0rd/crashlink/commit/ec1ada1da3d95295ee3139975d79097a5243481a">main@ec1ada1d</a>
+                
+            </small>
+        </h1>
+    </div>
+
+    
+    
+    
+    
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+        
+    
+
+    <div class="run-summary">
+        <div class="summary-stat">
+            <div class="label">Decompile</div>
+            <div class="value" style="color: var(--yellow)">
+                19/32 passed
+            </div>
+        </div>
+        
+    </div>
+
+    
+    
     
     <div class="test-case" id="0">
         <div class="test-header pass">
@@ -125,14 +504,22 @@
                 <a href="#0"><i class="fa fa-link"></i></a>
                 Anonymous
             </h2>
-            <button class="toggle-ir" data-testid="0">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="0">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="0">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">import haxe.Int32;
 
 class Anonymous {
@@ -146,9 +533,8 @@ class Anonymous {
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _Anonymous {
   static function main():Void {
       var reg0:Int = 3;
@@ -158,9 +544,8 @@ class Anonymous {
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRAssign: &lt;IRLocal: reg0 I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: reg2 I32&gt; = &lt;IRConst: 4&gt; (I32)&gt;,
@@ -169,7 +554,11 @@ class Anonymous {
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="1">
         <div class="test-header pass">
@@ -177,14 +566,22 @@ class Anonymous {
                 <a href="#1"><i class="fa fa-link"></i></a>
                 Arithmetic
             </h2>
-            <button class="toggle-ir" data-testid="1">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="1">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="1">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class Arithmetic {
     static function main() {
         var first_var = 3;
@@ -211,9 +608,8 @@ class Anonymous {
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _Arithmetic {
   static function main():Void {
       var reg0:Int = 3;
@@ -237,9 +633,8 @@ class Anonymous {
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRAssign: &lt;IRLocal: reg0 I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: res I32&gt; = &lt;IRArithmetic: &lt;IRLocal: reg0 I32&gt; + &lt;IRConst: 4&gt;&gt; (I32)&gt;,
@@ -274,7 +669,11 @@ class Anonymous {
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="2">
         <div class="test-header pass">
@@ -282,14 +681,22 @@ class Anonymous {
                 <a href="#2"><i class="fa fa-link"></i></a>
                 Array Accezz
             </h2>
-            <button class="toggle-ir" data-testid="2">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="2">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="2">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class ArrayAccezz {
     static function main() {
         var a = array();
@@ -301,9 +708,8 @@ class Anonymous {
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _ArrayAccezz {
   static function main():Void {
       var a:hl.types.ArrayBytes_Int = array();
@@ -316,9 +722,8 @@ class Anonymous {
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRAssign: &lt;IRLocal: a hl.types.ArrayBytes_Int&gt; = &lt;IRCall: &lt;IRConst: f@183 static $ArrayAccezz.array () -&gt; hl.types.ArrayBytes_Int (from ArrayAccezz.hx)&gt;()&gt; (Fun)&gt;,
 	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 0&gt; &gt;= &lt;IRLocal: reg3 I32&gt;&gt; then
@@ -336,7 +741,11 @@ class Anonymous {
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="3">
         <div class="test-header fail">
@@ -344,14 +753,25 @@ class Anonymous {
                 <a href="#3"><i class="fa fa-link"></i></a>
                 Arrays
             </h2>
-            <button class="toggle-ir" data-testid="3">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="3">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="3">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+        <div class="error-box">Failed to load bytecode: Expected function index to resolve to a function, got &lt;crashlink.core.Native object at 0x7fbfa6954750&gt;
+crashlink.errors.DecompError: Expected function index to resolve to a function, got &lt;crashlink.core.Native object at 0x7fbfa6954750&gt;</div>
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class Arrays {
     static function main() {
         var a = [1, 2, 3];
@@ -367,18 +787,20 @@ class Anonymous {
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">Failed to produce IR.</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="4">
         <div class="test-header fail">
@@ -386,14 +808,25 @@ class Anonymous {
                 <a href="#4"><i class="fa fa-link"></i></a>
                 Big Control Flow
             </h2>
-            <button class="toggle-ir" data-testid="4">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="4">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="4">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+        <div class="error-box">Failed to load bytecode: Conditional jump missing true/false branch. Check CFG generation maybe?
+crashlink.errors.DecompError: Conditional jump missing true/false branch. Check CFG generation maybe?</div>
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class BigControlFlow {
     public static function main() {
         var x = 10;
@@ -455,18 +888,20 @@ class Anonymous {
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">Failed to produce IR.</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="5">
         <div class="test-header fail">
@@ -474,14 +909,25 @@ class Anonymous {
                 <a href="#5"><i class="fa fa-link"></i></a>
                 Branch
             </h2>
-            <button class="toggle-ir" data-testid="5">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="5">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="5">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+        <div class="error-box">Failed to load bytecode: No next node found for conditional branches
+crashlink.errors.DecompError: No next node found for conditional branches</div>
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class Branch {
     static function main() {
         var a = 0;
@@ -496,18 +942,20 @@ class Anonymous {
 }
 </code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">Failed to produce IR.</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="6">
         <div class="test-header pass">
@@ -515,14 +963,25 @@ class Anonymous {
                 <a href="#6"><i class="fa fa-link"></i></a>
                 Branch Expr
             </h2>
-            <button class="toggle-ir" data-testid="6">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="6">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="6">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+        <div class="error-box">Failed to generate pseudocode: Found empty statement!
+AssertionError: Found empty statement!</div>
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class BranchExpr {
     static function main() {
         var a = true;
@@ -534,14 +993,12 @@ class Anonymous {
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRAssign: &lt;IRLocal: a Bool&gt; = &lt;IRConst: True&gt; (Bool)&gt;,
 	&lt;IRConditional: if &lt;IRBoolExpr: None is true&gt; then
@@ -559,7 +1016,11 @@ class Anonymous {
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="7">
         <div class="test-header fail">
@@ -567,14 +1028,25 @@ class Anonymous {
                 <a href="#7"><i class="fa fa-link"></i></a>
                 Branch Nested
             </h2>
-            <button class="toggle-ir" data-testid="7">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="7">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="7">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+        <div class="error-box">Failed to load bytecode: No next node found for conditional branches
+crashlink.errors.DecompError: No next node found for conditional branches</div>
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class BranchNested {
     static function main() {
         var a = 0;
@@ -600,18 +1072,20 @@ class Anonymous {
 }
 </code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">Failed to produce IR.</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="8">
         <div class="test-header pass">
@@ -619,14 +1093,22 @@ class Anonymous {
                 <a href="#8"><i class="fa fa-link"></i></a>
                 Clazz
             </h2>
-            <button class="toggle-ir" data-testid="8">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="8">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="8">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class Clazz extends Parent {
     var b: Int;
 
@@ -652,9 +1134,8 @@ class Parent {
 }
 </code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _Clazz {
   static function main():Void {
       var void = __constructor__(c);
@@ -664,9 +1145,8 @@ class Parent {
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRAssign: &lt;IRLocal: void Void&gt; = &lt;IRCall: &lt;IRConst: f@24 static $Clazz.__constructor__ (Clazz) -&gt; Void (from Clazz.hx)&gt;(&lt;IRLocal: c Clazz&gt;)&gt; (Fun)&gt;,
 	&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 15&gt; (I32)&gt;,
@@ -675,7 +1155,11 @@ class Parent {
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="9">
         <div class="test-header pass">
@@ -683,14 +1167,22 @@ class Parent {
                 <a href="#9"><i class="fa fa-link"></i></a>
                 Closure
             </h2>
-            <button class="toggle-ir" data-testid="9">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="9">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="9">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class Closure {
     static function main() {
         var fun = () -&gt; &#34;hello&#34;;
@@ -701,9 +1193,8 @@ class Parent {
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _Closure {
   static function main():Void {
       var reg7:Int = 4;
@@ -713,9 +1204,8 @@ class Parent {
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRAssign: &lt;IRLocal: reg7 I32&gt; = &lt;IRConst: 4&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: reg7 I32&gt; = &lt;IRConst: 5&gt; (I32)&gt;,
@@ -724,7 +1214,11 @@ class Parent {
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="10">
         <div class="test-header pass">
@@ -732,14 +1226,22 @@ class Parent {
                 <a href="#10"><i class="fa fa-link"></i></a>
                 Constructor
             </h2>
-            <button class="toggle-ir" data-testid="10">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="10">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="10">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class Constructor {
 
     function new(a: Int, b: String) {}
@@ -756,9 +1258,8 @@ class Parent {
 }
 </code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _Constructor {
   static function main():Void {
       var void = __constructor__(instance, 45, reg4);
@@ -767,9 +1268,8 @@ class Parent {
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRAssign: &lt;IRLocal: void Void&gt; = &lt;IRCall: &lt;IRConst: f@24 static $Constructor.__constructor__ (Constructor, I32, String) -&gt; Void (from Constructor.hx)&gt;(&lt;IRLocal: instance Constructor&gt;, &lt;IRConst: 45&gt;, &lt;IRLocal: reg4 String&gt;)&gt; (Fun)&gt;,
 	&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRCall: &lt;IRConst: f@23 static $Constructor.other () -&gt; I32 (from Constructor.hx)&gt;()&gt; (Fun)&gt;,
@@ -777,7 +1277,11 @@ class Parent {
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="11">
         <div class="test-header pass">
@@ -785,37 +1289,47 @@ class Parent {
                 <a href="#11"><i class="fa fa-link"></i></a>
                 Empty
             </h2>
-            <button class="toggle-ir" data-testid="11">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="11">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="11">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class Empty {
     static function main() {}
 }
 </code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _Empty {
   static function main():Void {
       return;
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="12">
         <div class="test-header fail">
@@ -823,14 +1337,25 @@ class Parent {
                 <a href="#12"><i class="fa fa-link"></i></a>
                 Enums
             </h2>
-            <button class="toggle-ir" data-testid="12">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="12">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="12">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+        <div class="error-box">Failed to load bytecode: Expected function index to resolve to a function, got &lt;crashlink.core.Native object at 0x7fbfa6dafc40&gt;
+crashlink.errors.DecompError: Expected function index to resolve to a function, got &lt;crashlink.core.Native object at 0x7fbfa6dafc40&gt;</div>
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class Enums {
     static function main() {
         var a = Red;
@@ -857,18 +1382,20 @@ enum Color {
 }
 </code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">Failed to produce IR.</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="13">
         <div class="test-header pass">
@@ -876,14 +1403,22 @@ enum Color {
                 <a href="#13"><i class="fa fa-link"></i></a>
                 If
             </h2>
-            <button class="toggle-ir" data-testid="13">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="13">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="13">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class If {
     public static function other() {
         trace(&#39;hi mom&#39;);
@@ -916,9 +1451,8 @@ enum Color {
 }
 </code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _If {
   static function main():Void {
       var a:Int = 500;
@@ -940,9 +1474,8 @@ enum Color {
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 500&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 10&gt; (I32)&gt;,
@@ -984,7 +1517,11 @@ enum Color {
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="14">
         <div class="test-header pass">
@@ -992,14 +1529,22 @@ enum Color {
                 <a href="#14"><i class="fa fa-link"></i></a>
                 Long String
             </h2>
-            <button class="toggle-ir" data-testid="14">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="14">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="14">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class LongString {
     public static function main() {
         var longString = &#34;Lorem ipsum dolor sit amet, consectetur adipiscing elit. In ut ultricies sapien. Proin nec magna iaculis, eleifend magna a, eleifend elit. Fusce a sodales dolor. Donec sit amet auctor turpis. Curabitur hendrerit vel lacus eu ornare. Pellentesque sed imperdiet lorem. Curabitur libero purus, laoreet a dolor mattis, tincidunt dapibus orci. Vivamus ultrices aliquet volutpat. Morbi consequat tortor sem, ac suscipit est pretium ultricies. Vivamus sed ligula ante.
@@ -1351,9 +1896,8 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _LongString {
   static function main():Void {
       var reg6:Int = 348;
@@ -1361,16 +1905,19 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRAssign: &lt;IRLocal: reg6 I32&gt; = &lt;IRConst: 348&gt; (I32)&gt;,
 	&lt;IRReturn: &lt;IRLocal: void Void&gt;&gt;]
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="15">
         <div class="test-header fail">
@@ -1378,14 +1925,25 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <a href="#15"><i class="fa fa-link"></i></a>
                 Loop Continue
             </h2>
-            <button class="toggle-ir" data-testid="15">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="15">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="15">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+        <div class="error-box">Failed to load bytecode: Conditional jump missing true/false branch. Check CFG generation maybe?
+crashlink.errors.DecompError: Conditional jump missing true/false branch. Check CFG generation maybe?</div>
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class LoopContinue {
     static function main() {
         var b = 69;
@@ -1398,18 +1956,20 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">Failed to produce IR.</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="16">
         <div class="test-header fail">
@@ -1417,14 +1977,25 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <a href="#16"><i class="fa fa-link"></i></a>
                 Loop For Each
             </h2>
-            <button class="toggle-ir" data-testid="16">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="16">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="16">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+        <div class="error-box">Failed to load bytecode: Conditional jump missing true/false branch. Check CFG generation maybe?
+crashlink.errors.DecompError: Conditional jump missing true/false branch. Check CFG generation maybe?</div>
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class LoopForEach {
     static function main() {
         var sum = 0;
@@ -1436,18 +2007,20 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">Failed to produce IR.</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="17">
         <div class="test-header fail">
@@ -1455,14 +2028,25 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <a href="#17"><i class="fa fa-link"></i></a>
                 Loop Infinite
             </h2>
-            <button class="toggle-ir" data-testid="17">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="17">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="17">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+        <div class="error-box">Failed to load bytecode: Conditional jump missing true/false branch. Check CFG generation maybe?
+crashlink.errors.DecompError: Conditional jump missing true/false branch. Check CFG generation maybe?</div>
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class LoopInfinite {
     static function main() {
         var b = 69;
@@ -1475,18 +2059,20 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">Failed to produce IR.</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="18">
         <div class="test-header fail">
@@ -1494,14 +2080,25 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <a href="#18"><i class="fa fa-link"></i></a>
                 Loop Nested
             </h2>
-            <button class="toggle-ir" data-testid="18">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="18">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="18">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+        <div class="error-box">Failed to load bytecode: Conditional jump missing true/false branch. Check CFG generation maybe?
+crashlink.errors.DecompError: Conditional jump missing true/false branch. Check CFG generation maybe?</div>
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class LoopNested {
     static function main() {
         var b = 69;
@@ -1527,18 +2124,20 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">Failed to produce IR.</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="19">
         <div class="test-header pass">
@@ -1546,14 +2145,22 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <a href="#19"><i class="fa fa-link"></i></a>
                 Loop While
             </h2>
-            <button class="toggle-ir" data-testid="19">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="19">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="19">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class LoopWhile {
     static function main() {
         var b = 69;
@@ -1564,9 +2171,8 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _LoopWhile {
   static function main():Void {
       var b:Int = 69;
@@ -1578,9 +2184,8 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 69&gt; (I32)&gt;,
 	[
@@ -1598,7 +2203,11 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="20">
         <div class="test-header pass">
@@ -1606,14 +2215,22 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <a href="#20"><i class="fa fa-link"></i></a>
                 Method
             </h2>
-            <button class="toggle-ir" data-testid="20">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="20">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="20">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class Method {
 
     function new() {}
@@ -1628,9 +2245,8 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _Method {
   static function main():Void {
       var void = __constructor__(instance);
@@ -1639,9 +2255,8 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRAssign: &lt;IRLocal: void Void&gt; = &lt;IRCall: &lt;IRConst: f@24 static $Method.__constructor__ (Method) -&gt; Void (from Method.hx)&gt;(&lt;IRLocal: instance Method&gt;)&gt; (Fun)&gt;,
 	&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRCall: &lt;IRConst: f@23 Method.a (Method) -&gt; I32 (from Method.hx)&gt;(&lt;IRLocal: instance Method&gt;)&gt; (Fun)&gt;,
@@ -1649,7 +2264,11 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="21">
         <div class="test-header fail">
@@ -1657,14 +2276,25 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <a href="#21"><i class="fa fa-link"></i></a>
                 Nested
             </h2>
-            <button class="toggle-ir" data-testid="21">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="21">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="21">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+        <div class="error-box">Failed to load bytecode: Conditional jump missing true/false branch. Check CFG generation maybe?
+crashlink.errors.DecompError: Conditional jump missing true/false branch. Check CFG generation maybe?</div>
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class Nested {
     static function main() {
         var b = 512.0;
@@ -1682,18 +2312,20 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">Failed to produce IR.</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="22">
         <div class="test-header pass">
@@ -1701,23 +2333,30 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <a href="#22"><i class="fa fa-link"></i></a>
                 Println
             </h2>
-            <button class="toggle-ir" data-testid="22">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="22">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="22">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class Println {
     static function main() {
         Sys.println(&#34;Hello, println!&#34;);
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _Println {
   static function main():Void {
       var void = println(reg1);
@@ -1725,16 +2364,19 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRAssign: &lt;IRLocal: void Void&gt; = &lt;IRCall: &lt;IRConst: f@28 static $Sys.println (Dyn) -&gt; Void (from /usr/share/haxe/std/hl/_std/Sys.hx)&gt;(&lt;IRLocal: reg1 String&gt;)&gt; (Fun)&gt;,
 	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="23">
         <div class="test-header pass">
@@ -1742,14 +2384,22 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <a href="#23"><i class="fa fa-link"></i></a>
                 Simple If
             </h2>
-            <button class="toggle-ir" data-testid="23">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="23">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="23">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class SimpleIf {
     public static function call() {}
     
@@ -1768,9 +2418,8 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
 }
 </code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _SimpleIf {
   static function main():Void {
       var a:Int = 500;
@@ -1787,9 +2436,8 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 500&gt; (I32)&gt;,
 	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 400&gt; &lt; &lt;IRLocal: a I32&gt;&gt; then
@@ -1813,7 +2461,11 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="24">
         <div class="test-header fail">
@@ -1821,14 +2473,25 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <a href="#24"><i class="fa fa-link"></i></a>
                 String Concat
             </h2>
-            <button class="toggle-ir" data-testid="24">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="24">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="24">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+        <div class="error-box">Failed to load bytecode: Expected function index to resolve to a function, got &lt;crashlink.core.Native object at 0x7fbfa6954050&gt;
+crashlink.errors.DecompError: Expected function index to resolve to a function, got &lt;crashlink.core.Native object at 0x7fbfa6954050&gt;</div>
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class StringConcat {
     static function main() {
         var a = &#34;hello&#34; + &#34;world&#34;;
@@ -1837,18 +2500,20 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">Failed to produce IR.</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="25">
         <div class="test-header fail">
@@ -1856,14 +2521,25 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <a href="#25"><i class="fa fa-link"></i></a>
                 String Interp
             </h2>
-            <button class="toggle-ir" data-testid="25">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="25">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="25">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+        <div class="error-box">Failed to load bytecode: Expected function index to resolve to a function, got &lt;crashlink.core.Native object at 0x7fbfa6ba3070&gt;
+crashlink.errors.DecompError: Expected function index to resolve to a function, got &lt;crashlink.core.Native object at 0x7fbfa6ba3070&gt;</div>
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class StringInterp {
     static function main() {
         var a = 42;
@@ -1872,18 +2548,20 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">Failed to produce IR.</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="26">
         <div class="test-header pass">
@@ -1891,14 +2569,22 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <a href="#26"><i class="fa fa-link"></i></a>
                 Switch
             </h2>
-            <button class="toggle-ir" data-testid="26">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="26">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="26">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class Switch {
     static function main() {
         var a = 3;
@@ -1910,9 +2596,8 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _Switch {
   static function main():Void {
       var a:Int = 3;
@@ -1922,9 +2607,8 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
 	&lt;IRSwitch: &lt;IRLocal: a I32&gt;
@@ -1948,7 +2632,11 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="27">
         <div class="test-header fail">
@@ -1956,14 +2644,25 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <a href="#27"><i class="fa fa-link"></i></a>
                 Switch Big
             </h2>
-            <button class="toggle-ir" data-testid="27">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="27">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="27">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+        <div class="error-box">Failed to load bytecode: Expected function index to resolve to a function, got &lt;crashlink.core.Native object at 0x7fbfa6ba20b0&gt;
+crashlink.errors.DecompError: Expected function index to resolve to a function, got &lt;crashlink.core.Native object at 0x7fbfa6ba20b0&gt;</div>
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class SwitchBig {
     static function main() {
         var a = 3;
@@ -1990,18 +2689,20 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">Failed to produce pseudocode.</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">Failed to produce IR.</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="28">
         <div class="test-header pass">
@@ -2009,14 +2710,22 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <a href="#28"><i class="fa fa-link"></i></a>
                 Tiny
             </h2>
-            <button class="toggle-ir" data-testid="28">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="28">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="28">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class Tiny {
     static function main() {
         var b = 10;
@@ -2026,9 +2735,8 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _Tiny {
   static function main():Void {
       var b:Int = 10;
@@ -2038,9 +2746,8 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 10&gt; (I32)&gt;,
 	[
@@ -2056,7 +2763,11 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="29">
         <div class="test-header pass">
@@ -2064,14 +2775,22 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <a href="#29"><i class="fa fa-link"></i></a>
                 Trace
             </h2>
-            <button class="toggle-ir" data-testid="29">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="29">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="29">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class Trace {
     static function main() {
         trace(&#34;Hello&#34;);
@@ -2080,9 +2799,8 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
 }
 </code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _Trace {
   static function main():Void {
       var reg6:Int = 3;
@@ -2091,9 +2809,8 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRAssign: &lt;IRLocal: reg6 I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: reg6 I32&gt; = &lt;IRConst: 4&gt; (I32)&gt;,
@@ -2101,7 +2818,11 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="30">
         <div class="test-header pass">
@@ -2109,14 +2830,22 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <a href="#30"><i class="fa fa-link"></i></a>
                 Try Catch
             </h2>
-            <button class="toggle-ir" data-testid="30">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="30">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="30">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">class TryCatch {
     static function main() {
         try {
@@ -2127,21 +2856,23 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _TryCatch {
   static function main():Void {
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[]</code></pre>
             </div>
         </div>
+
+        
     </div>
+    
+    
     
     <div class="test-case" id="31">
         <div class="test-header pass">
@@ -2149,14 +2880,22 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <a href="#31"><i class="fa fa-link"></i></a>
                 Patch Me
             </h2>
-            <button class="toggle-ir" data-testid="31">
-                <i class="fas fa-eye"></i>
-                Toggle IR
-            </button>
+            <div class="header-right">
+                
+                <button class="btn toggle-ir" data-testid="31">
+                    <i class="fas fa-eye"></i> IR
+                </button>
+                <button class="btn toggle-ops" data-testid="31">
+                    <i class="fas fa-microchip"></i> Opcodes
+                </button>
+            </div>
         </div>
-        <div class="container">
+
+        
+
+        <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
-                <div class="filename">Original</div>
+                <div class="panel-label">Original</div>
                 <pre><code class="language-haxe">import haxe.io.Bytes;
 
 class TestClass {
@@ -2182,9 +2921,8 @@ class PatchMe {
     }
 }</code></pre>
             </div>
-            
             <div class="code-panel">
-                <div class="filename">Decompiled</div>
+                <div class="panel-label">Decompiled</div>
                 <pre><code class="language-haxe">class _PatchMe {
   static function main():Void {
       var val:Float = 1.0;
@@ -2194,9 +2932,8 @@ class PatchMe {
   }
 }</code></pre>
             </div>
-
-            <div class="code-panel ir-panel">
-                <div class="filename">IR</div>
+            <div class="code-panel ir-panel" style="display:none;">
+                <div class="panel-label">IR</div>
                 <pre><code class="language-txt">[
 	[&lt;IRAssign: &lt;IRLocal: val F64&gt; = &lt;IRConst: 1.0&gt; (F64)&gt;,
 	&lt;IRAssign: &lt;IRLocal: val2 F64&gt; = &lt;IRConst: 2.0&gt; (F64)&gt;,
@@ -2205,42 +2942,258 @@ class PatchMe {
 ]</code></pre>
             </div>
         </div>
+
+        
     </div>
     
+
+    <!-- Disassembly diff modal -->
+    <div class="diff-modal" id="diff-modal" onclick="if(event.target===this)closeDiff()">
+        <div class="diff-modal-content">
+            <div class="diff-modal-header">
+                <span class="diff-modal-title" id="diff-title"></span>
+                <span class="diff-modal-meta" id="diff-meta"></span>
+                <button class="diff-modal-close" onclick="closeDiff()">&times;</button>
+            </div>
+            <div class="diff-view-tabs">
+                <button class="diff-tab active" onclick="switchTab('unified', this)">Unified</button>
+                <button class="diff-tab" onclick="switchTab('sidebyside', this)">Side by side</button>
+            </div>
+            <div class="diff-body" id="diff-body"></div>
+        </div>
+    </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/prism.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-haxe.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/line-numbers/prism-line-numbers.min.js"></script>
-    
+
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            Prism.highlightAll();
-        });
-        
-        document.querySelectorAll('.toggle-ir').forEach(button => {
-            button.addEventListener('click', function() {
-                const testCase = this.closest('.test-case');
-                const container = testCase.querySelector('.container');
-                const irPanel = testCase.querySelector('.ir-panel');
+    // ── Prism & panel toggles ─────────────────────────────────────────────────
+
+    document.addEventListener('DOMContentLoaded', () => {
+        Prism.highlightAll();
+
+        document.querySelectorAll('.toggle-ir').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const tc = this.closest('.test-case');
+                const container = tc.querySelector('.container');
+                const panel = tc.querySelector('.ir-panel');
+                const open = panel.style.display !== 'none';
+                panel.style.display = open ? 'none' : 'block';
+                const cols = parseInt(container.style.getPropertyValue('--visible-columns') || '2');
+                container.style.setProperty('--visible-columns', open ? cols - 1 : cols + 1);
                 const icon = this.querySelector('i');
-                
-                irPanel.style.display = irPanel.style.display === 'none' ? 'block' : 'none';
-                const visibleColumns = parseInt(getComputedStyle(container)
-                    .getPropertyValue('--visible-columns'));
-                container.style.setProperty('--visible-columns', 
-                    visibleColumns === 2 ? 3 : 2);
-                
-                icon.classList.toggle('fa-eye');
-                icon.classList.toggle('fa-eye-slash');
-                
-                if (irPanel.style.display === 'block') {
-                    Prism.highlightAllUnder(irPanel);
-                }
+                icon.classList.toggle('fa-eye', open);
+                icon.classList.toggle('fa-eye-slash', !open);
+                if (!open) Prism.highlightAllUnder(panel);
             });
         });
-        document.querySelectorAll('.ir-panel').forEach(panel => {
-            panel.style.display = 'none';
+
+        document.querySelectorAll('.toggle-ops').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const tc = this.closest('.test-case');
+                const panel = tc.querySelector('.ops-panel');
+                if (!panel) return;
+                panel.style.display = panel.style.display !== 'none' ? 'none' : 'block';
+            });
         });
+    });
+
+    // ── LCS diff engine ───────────────────────────────────────────────────────
+
+    /**
+     * Myers-LCS diff. Returns an array of {type, line} where type is
+     * 'same' | 'add' | 'rem'.
+     */
+    function diffLines(aLines, bLines) {
+        const m = aLines.length, n = bLines.length;
+        // Build LCS table
+        const dp = [];
+        for (let i = 0; i <= m; i++) dp.push(new Int32Array(n + 1));
+        for (let i = 1; i <= m; i++)
+            for (let j = 1; j <= n; j++)
+                dp[i][j] = aLines[i-1] === bLines[j-1]
+                    ? dp[i-1][j-1] + 1
+                    : Math.max(dp[i-1][j], dp[i][j-1]);
+
+        // Backtrack
+        const ops = [];
+        let i = m, j = n;
+        while (i > 0 || j > 0) {
+            if (i > 0 && j > 0 && aLines[i-1] === bLines[j-1]) {
+                ops.push({ type: 'same', line: aLines[i-1] });
+                i--; j--;
+            } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
+                ops.push({ type: 'add', line: bLines[j-1] });
+                j--;
+            } else {
+                ops.push({ type: 'rem', line: aLines[i-1] });
+                i--;
+            }
+        }
+        return ops.reverse();
+    }
+
+    // ── Diff renderers ────────────────────────────────────────────────────────
+
+    function esc(s) {
+        return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function renderUnified(diff) {
+        let html = '<div class="diff-unified">';
+        let lineA = 1, lineB = 1;
+        for (const {type, line} of diff) {
+            const sign = type === 'same' ? ' ' : type === 'add' ? '+' : '-';
+            const cls  = type === 'same' ? '' : type === 'add' ? ' add' : ' rem';
+            const gutter = type === 'rem'
+                ? lineA++
+                : type === 'add'
+                    ? lineB++
+                    : (lineA++ + (lineB++ - lineA + 1) >= 0 ? lineA - 1 : lineA);
+            // For same lines, show both
+            const g = type === 'same' ? (lineA - 1) : (type === 'rem' ? lineA - 1 : lineB - 1);
+            html += `<div class="diff-line${cls}">` +
+                    `<span class="diff-gutter">${g}</span>` +
+                    `<span class="diff-sign">${sign}</span>` +
+                    `<span class="diff-text">${esc(line)}</span>` +
+                    `</div>`;
+        }
+        // Recount correctly
+        return renderUnifiedCorrect(diff);
+    }
+
+    function renderUnifiedCorrect(diff) {
+        let html = '<div class="diff-unified">';
+        let la = 1, lb = 1;
+        for (const {type, line} of diff) {
+            let gutter = '';
+            let sign = ' ';
+            let cls = '';
+            if (type === 'same') {
+                gutter = `${la}`;
+                la++; lb++;
+            } else if (type === 'rem') {
+                gutter = `${la}`;
+                la++;
+                sign = '-'; cls = ' rem';
+            } else {
+                gutter = `${lb}`;
+                lb++;
+                sign = '+'; cls = ' add';
+            }
+            html += `<div class="diff-line${cls}">` +
+                    `<span class="diff-gutter">${gutter}</span>` +
+                    `<span class="diff-sign">${sign}</span>` +
+                    `<span class="diff-text">${esc(line)}</span>` +
+                    `</div>`;
+        }
+        html += '</div>';
+        return html;
+    }
+
+    function renderSideBySide(diff) {
+        // Pair up rem/add into rows; same lines go in both columns.
+        const rows = [];
+        let i = 0;
+        while (i < diff.length) {
+            const {type, line} = diff[i];
+            if (type === 'same') {
+                rows.push({ left: line, right: line, cls: 'same' });
+                i++;
+            } else if (type === 'rem') {
+                // Peek ahead: if next is add, pair them
+                if (i + 1 < diff.length && diff[i+1].type === 'add') {
+                    rows.push({ left: line, right: diff[i+1].line, cls: 'changed' });
+                    i += 2;
+                } else {
+                    rows.push({ left: line, right: null, cls: 'rem' });
+                    i++;
+                }
+            } else {
+                rows.push({ left: null, right: line, cls: 'add' });
+                i++;
+            }
+        }
+
+        let la = 1, lb = 1;
+        let leftLines = '', rightLines = '';
+        for (const row of rows) {
+            const lCls = (row.cls === 'rem' || row.cls === 'changed') ? ' orig-rem' : row.left === null ? ' empty' : '';
+            const rCls = (row.cls === 'add' || row.cls === 'changed') ? ' recomp-add' : row.right === null ? ' empty' : '';
+            if (row.left !== null) {
+                leftLines += `<div class="diff-side-line${lCls}"><span class="diff-side-gutter">${la++}</span><span class="diff-side-text">${esc(row.left)}</span></div>`;
+            } else {
+                leftLines += `<div class="diff-side-line empty"><span class="diff-side-gutter"></span><span class="diff-side-text"></span></div>`;
+            }
+            if (row.right !== null) {
+                rightLines += `<div class="diff-side-line${rCls}"><span class="diff-side-gutter">${lb++}</span><span class="diff-side-text">${esc(row.right)}</span></div>`;
+            } else {
+                rightLines += `<div class="diff-side-line empty"><span class="diff-side-gutter"></span><span class="diff-side-text"></span></div>`;
+            }
+        }
+
+        return `<div class="diff-side-by-side">
+            <div class="diff-side-col">
+                <div class="diff-side-header">Original</div>
+                <div class="diff-side-lines">${leftLines}</div>
+            </div>
+            <div class="diff-side-col">
+                <div class="diff-side-header">Recompiled</div>
+                <div class="diff-side-lines">${rightLines}</div>
+            </div>
+        </div>`;
+    }
+
+    // ── Modal state ───────────────────────────────────────────────────────────
+
+    let _currentDiff = null;
+    let _currentTab = 'unified';
+
+    function openDiff(row) {
+        const name      = row.dataset.name;
+        const origRaw   = JSON.parse(row.dataset.orig);
+        const recompRaw = JSON.parse(row.dataset.recomp);
+        const origCount = row.dataset.origCount;
+        const recompCount = row.dataset.recompCount;
+        const sim       = row.dataset.sim;
+
+        const origLines  = origRaw.trim().split('\n');
+        const recompLines = recompRaw.trim() ? recompRaw.trim().split('\n') : [];
+
+        _currentDiff = diffLines(origLines, recompLines);
+        _currentTab = 'unified';
+
+        document.getElementById('diff-title').textContent = name;
+        document.getElementById('diff-meta').textContent =
+            `${sim}% match · ${origCount} → ${recompCount} ops`;
+
+        document.querySelectorAll('.diff-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.diff-tab')[0].classList.add('active');
+
+        document.getElementById('diff-body').innerHTML = renderUnifiedCorrect(_currentDiff);
+        document.getElementById('diff-modal').classList.add('open');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeDiff() {
+        document.getElementById('diff-modal').classList.remove('open');
+        document.body.style.overflow = '';
+    }
+
+    function switchTab(tab, btn) {
+        _currentTab = tab;
+        document.querySelectorAll('.diff-tab').forEach(t => t.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('diff-body').innerHTML =
+            tab === 'unified'
+                ? renderUnifiedCorrect(_currentDiff)
+                : renderSideBySide(_currentDiff);
+    }
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') closeDiff();
+    });
     </script>
 </body>
 </html>
