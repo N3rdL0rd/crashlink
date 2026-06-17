@@ -5,7 +5,7 @@ Dataclass models.
 import json
 import os
 from dataclasses import asdict, dataclass, field
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 SIMILARITY_THRESHOLD = 0.70
 
@@ -93,6 +93,7 @@ class TestCase:
     test_name: Optional[str] = None
     error: Optional[str] = None
     opcode_comparison: Optional[OpcodeComparison] = None
+    layers: Optional[Dict[str, Any]] = None
 
     def to_json(self) -> dict:
         return {
@@ -104,6 +105,7 @@ class TestCase:
             "failed": self.failed,
             "error": self.error,
             "opcode_comparison": self.opcode_comparison.to_json() if self.opcode_comparison else None,
+            "layers": self.layers,
         }
 
     @classmethod
@@ -118,6 +120,7 @@ class TestCase:
             failed=data["failed"],
             error=data["error"] if data.get("error") else None,
             opcode_comparison=OpcodeComparison.from_json(oc_data) if oc_data else None,
+            layers=data.get("layers"),
         )
 
 

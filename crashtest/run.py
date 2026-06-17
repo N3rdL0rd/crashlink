@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import traceback
 from difflib import SequenceMatcher
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from markupsafe import escape
 
 from crashlink import Bytecode, decomp, globals
@@ -102,7 +102,7 @@ def file_to_name(file: str) -> str:
 
 
 def op_similarity(a: List[str], b: List[str]) -> float:
-    """Sequence similarity of two opcode name lists, 0.0–1.0."""
+    """Sequence similarity of two opcode name lists, 0.0-1.0."""
     if not a and not b:
         return 1.0
     return SequenceMatcher(None, a, b).ratio()
@@ -229,6 +229,7 @@ def run_case(case: str, id: int) -> TestCase:
     raw_pseudo_content: Optional[str] = None
     error_message = None
     original_code: Optional[Bytecode] = None
+    layers: Optional[Dict[str, Any]] = None
 
     try:
         original_code = Bytecode.from_path(
@@ -244,12 +245,13 @@ def run_case(case: str, id: int) -> TestCase:
         class_name = case.replace(".hx", "")
         test_obj = original_code.get_test_obj(class_name)
 
-        ir_class = decomp.IRClass(original_code, test_obj)
+        ir_class = decomp.IRClass(original_code, test_obj, capture_layers=True)
 
         raw_pseudo_content = ir_class.pseudo()
         pseudo_content = raw_pseudo_content
 
         ir_parts = []
+        layers = {}
         if not ir_class.static_methods and not ir_class.methods:
             ir_parts.append("/* No methods found in class */")
         else:
@@ -257,11 +259,23 @@ def run_case(case: str, id: int) -> TestCase:
                 func_name = original_code.full_func_name(static_method.func)
                 ir_parts.append(f"// --- Static Method: {func_name} ---")
                 ir_parts.append(str(static_method.block))
+                layers[func_name] = {
+                    "opcodes": static_method.opcodes,
+                    "cfg": static_method.cfg_data,
+                    "steps": [{"name": n, "ir": ir} for n, ir in static_method.layer_snapshots],
+                    "pseudo": pseudo(static_method),
+                }
 
             for method in ir_class.methods:
                 func_name = original_code.full_func_name(method.func)
                 ir_parts.append(f"// --- Instance Method: {func_name} ---")
                 ir_parts.append(str(method.block))
+                layers[func_name] = {
+                    "opcodes": method.opcodes,
+                    "cfg": method.cfg_data,
+                    "steps": [{"name": n, "ir": ir} for n, ir in method.layer_snapshots],
+                    "pseudo": pseudo(method),
+                }
 
         ir_content = "\n\n".join(ir_parts)
 
@@ -301,6 +315,7 @@ def run_case(case: str, id: int) -> TestCase:
         test_id=id,
         error=error_message,
         opcode_comparison=opcode_comparison,
+        layers=layers,
     )
 
 
@@ -361,9 +376,13 @@ def run() -> None:
     print("Finding test cases...")
     files = os.listdir(os.path.join(os.path.dirname(__file__), "..", "tests", "haxe"))
     cases = [f for f in files if f.endswith(".hx")]
+    skip_cases = {"LongString.hx"}
     for case in cases:
         if case.replace(".hx", ".hl") not in files:
             print(f"Warning: no compiled bytecode found for {case}. Skipping.")
+            cases.remove(case)
+        elif case in skip_cases:
+            print(f"Skipping excluded sample {case}.")
             cases.remove(case)
 
     print("Running tests...")

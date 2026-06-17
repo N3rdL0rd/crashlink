@@ -61,7 +61,25 @@
             text-transform: uppercase;
             letter-spacing: 0.06em;
         }
-        .summary-stat .value { font-weight: 600; }
+        .summary-stat.sort-control {
+            margin-left: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+        .summary-stat.sort-control select {
+            background: var(--mantle);
+            color: var(--text);
+            border: 1px solid var(--surface1);
+            border-radius: 4px;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+        .summary-stat.sort-control select:focus {
+            outline: none;
+            border-color: var(--mauve);
+        }
 
         /* ── Test case shell ── */
         .test-case { border-top: 2px solid var(--surface1); }
@@ -120,6 +138,7 @@
             gap: 0.35rem;
         }
         .btn:hover { background: var(--surface2); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn.btn-primary { background: var(--mauve); color: var(--crust); font-weight: 600; }
         .btn.btn-primary:hover { background: var(--blue); }
 
@@ -142,8 +161,37 @@
             color: var(--overlay0);
             margin-bottom: 0.4rem;
         }
-        pre { margin: 0; }
-        code { font-size: 0.8rem !important; }
+        pre {
+            margin: 0;
+            border-radius: 4px;
+        }
+
+        /* Prism line numbers: keep gutter and code on the same rhythm */
+        code {
+            font-size: 0.85rem !important;
+            line-height: 1.6 !important;
+        }
+        pre.line-numbers,
+        pre.line-numbers > code {
+            line-height: 1.6 !important;
+        }
+        pre.line-numbers {
+            padding-left: 3.6rem !important;
+        }
+        pre.line-numbers > code {
+            padding-left: 0 !important;
+        }
+        .line-numbers .line-numbers-rows {
+            font-size: 0.85rem !important;
+            line-height: 1.6 !important;
+            left: -3.6rem !important;
+            width: 3rem !important;
+            border-right: 1px solid var(--surface1);
+        }
+        .line-numbers .line-numbers-rows > span::before {
+            color: var(--overlay0);
+            padding-right: 0.5rem;
+        }
 
         /* ── Error box ── */
         .error-box {
@@ -330,11 +378,12 @@
         .diff-line.rem  { background: #2b0d0d; }
         .diff-line.rem:hover  { background: #3a1a1a; }
         .diff-gutter {
-            width: 2rem;
+            width: 3rem;
             text-align: right;
             color: var(--surface2);
             user-select: none;
             flex-shrink: 0;
+            padding-right: 0.5rem;
         }
         .diff-sign {
             width: 1rem;
@@ -385,21 +434,126 @@
         .diff-side-line.recomp-add:hover { background: #1a3a1a; }
         .diff-side-line.empty { background: var(--crust); opacity: 0.5; }
         .diff-side-gutter {
-            width: 2.2rem;
+            width: 3rem;
             text-align: right;
             color: var(--surface2);
             user-select: none;
             flex-shrink: 0;
             font-size: 0.75em;
+            padding-right: 0.4rem;
         }
         .diff-side-text { color: var(--text); white-space: pre; }
         .diff-side-line.orig-rem .diff-side-text  { color: var(--red); }
         .diff-side-line.recomp-add .diff-side-text { color: var(--green); }
+
+        /* ── Layers modal ── */
+        .layers-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 600;
+            background: rgba(0,0,0,0.7);
+            align-items: center;
+            justify-content: center;
+        }
+        .layers-modal.open { display: flex; }
+        .layers-modal-content {
+            background: var(--mantle);
+            border: 1px solid var(--surface1);
+            border-radius: 8px;
+            width: min(96vw, 1300px);
+            max-height: 92vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 12px 48px rgba(0,0,0,0.5);
+            animation: modalIn 0.18s ease;
+        }
+        .layers-modal-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--surface1);
+            flex-shrink: 0;
+        }
+        .layers-modal-header select {
+            background: var(--crust);
+            color: var(--text);
+            border: 1px solid var(--surface1);
+            border-radius: 4px;
+            padding: 0.35rem 0.6rem;
+            font-size: 0.85rem;
+            max-width: 60vw;
+        }
+        .layers-modal-header select:focus { outline: none; border-color: var(--mauve); }
+        .layers-method-meta { color: var(--subtext); font-size: 0.8rem; }
+        .layers-view-tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 1px solid var(--surface1);
+            flex-shrink: 0;
+            background: var(--crust);
+            overflow-x: auto;
+        }
+        .layers-tab {
+            padding: 0.45rem 0.9rem;
+            font-size: 0.82rem;
+            color: var(--subtext);
+            cursor: pointer;
+            border: none;
+            background: none;
+            border-bottom: 2px solid transparent;
+            transition: color 0.15s, border-color 0.15s;
+            white-space: nowrap;
+        }
+        .layers-tab:hover { color: var(--text); }
+        .layers-tab.active { color: var(--mauve); border-bottom-color: var(--mauve); }
+        .layers-body {
+            overflow: auto;
+            flex: 1;
+            min-height: 0;
+            padding: 0.75rem 1rem;
+        }
+        .layers-code {
+            font-family: monospace;
+            font-size: 0.8rem;
+            white-space: pre;
+            line-height: 1.5;
+        }
+        .layers-cfg-wrap {
+            height: 60vh;
+            min-height: 400px;
+            border: 1px solid var(--surface1);
+            border-radius: 4px;
+            background: var(--crust);
+            overflow: auto;
+        }
+        .layers-cfg-wrap svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        .layers-nav {
+            background: var(--surface1);
+            color: var(--text);
+            border: none;
+            width: 1.8rem;
+            height: 1.8rem;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+        }
+        .layers-nav:hover { background: var(--surface2); }
+        .layers-nav:disabled { opacity: 0.4; cursor: not-allowed; }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism-tomorrow.min.css" rel="stylesheet" />
-    <link href="https://prismjs.catppuccin.com/frappe.css" rel="stylesheet" />
+    <link href="https://prismjs.catppuccin.com/mocha.css" rel="stylesheet" />
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/line-numbers/prism-line-numbers.min.css" rel="stylesheet" />
+    <script src="https://unpkg.com/@viz-js/viz@3/lib/viz-standalone.js"></script>
 </head>
 <body class="line-numbers">
     <div class="site-header">
@@ -445,12 +599,31 @@
             <div class="value">{{ sim_scores|length }}/{{ total }}</div>
         </div>
         {% endif %}
+        <div class="summary-stat sort-control">
+            <div class="label">Sort by</div>
+            <select id="sort-select">
+                <option value="default">Default</option>
+                <option value="name-asc">Name (A-Z)</option>
+                <option value="name-desc">Name (Z-A)</option>
+                <option value="length-asc">Length (short first)</option>
+                <option value="length-desc">Length (long first)</option>
+                <option value="sim-desc">Opcode match (high first)</option>
+                <option value="sim-asc">Opcode match (low first)</option>
+                <option value="status">Status (failing first)</option>
+            </select>
+        </div>
     </div>
 
     {% for case in cases %}
     {% set oc = case.opcode_comparison %}
     {% set sim_pct = (oc.overall_similarity * 100)|round(1) if oc and oc.overall_similarity >= 0 else -1 %}
-    <div class="test-case" id="{{ case.test_id }}">
+    <div class="test-case"
+         id="{{ case.test_id }}"
+         data-name="{{ case.test_name }}"
+         data-length="{{ case.original.content|length }}"
+         data-sim="{{ sim_pct }}"
+         data-failed="{{ '1' if case.failed else '0' }}"
+         data-index="{{ loop.index0 }}">
         <div class="test-header {% if case.failed %}fail{% elif sim_pct >= 0 and sim_pct < 70 %}warn{% else %}pass{% endif %}">
             <h2>
                 <a href="#{{ case.test_id }}"><i class="fa fa-link"></i></a>
@@ -472,6 +645,9 @@
                 <button class="btn toggle-ops" data-testid="{{ case.test_id }}">
                     <i class="fas fa-microchip"></i> Opcodes
                 </button>
+                <button class="btn toggle-layers" data-testid="{{ case.test_id }}" {% if not case.layers %}disabled{% endif %}>
+                    <i class="fas fa-layer-group"></i> Layers
+                </button>
             </div>
         </div>
 
@@ -482,15 +658,15 @@
         <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
                 <div class="panel-label">Original</div>
-                <pre><code class="language-haxe">{{ case.original.content }}</code></pre>
+                <pre class="line-numbers"><code class="language-haxe">{{ case.original.content }}</code></pre>
             </div>
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
-                <pre><code class="language-haxe">{{ case.decompiled.content }}</code></pre>
+                <pre class="line-numbers"><code class="language-haxe">{{ case.decompiled.content }}</code></pre>
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre><code class="language-txt">{{ case.ir.content }}</code></pre>
+                <pre class="line-numbers"><code class="language-txt">{{ case.ir.content }}</code></pre>
             </div>
         </div>
 
@@ -572,6 +748,21 @@
         </div>
     </div>
 
+    <!-- Layers modal -->
+    <div class="layers-modal" id="layers-modal" onclick="if(event.target===this)closeLayers()">
+        <div class="layers-modal-content">
+            <div class="layers-modal-header">
+                <button class="layers-nav" id="layers-prev" title="Previous layer"><i class="fas fa-chevron-left"></i></button>
+                <select id="layers-method-select"></select>
+                <span class="layers-method-meta" id="layers-method-meta"></span>
+                <button class="layers-nav" id="layers-next" title="Next layer"><i class="fas fa-chevron-right"></i></button>
+                <button class="diff-modal-close" onclick="closeLayers()">&times;</button>
+            </div>
+            <div class="layers-view-tabs" id="layers-tabs"></div>
+            <div class="layers-body" id="layers-body"></div>
+        </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/prism.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-haxe.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/line-numbers/prism-line-numbers.min.js"></script>
@@ -579,8 +770,53 @@
     <script>
     // ── Prism & panel toggles ─────────────────────────────────────────────────
 
+    window.caseLayers = {};
+    {% for case in cases %}{% if case.layers %}
+    window.caseLayers[{{ case.test_id }}] = {{ case.layers | tojson }};
+    {% endif %}{% endfor %}
+
     document.addEventListener('DOMContentLoaded', () => {
         Prism.highlightAll();
+
+        // ── Sorting ─────────────────────────────────────────────────────────────
+        const sortSelect = document.getElementById('sort-select');
+        if (sortSelect) {
+            sortSelect.addEventListener('change', () => {
+                const mode = sortSelect.value;
+                const container = document.body;
+                const cases = Array.from(document.querySelectorAll('.test-case'));
+                const parent = cases[0]?.parentNode;
+                if (!parent) return;
+
+                const getVal = (el, key) => {
+                    if (key === 'name') return el.dataset.name.toLowerCase();
+                    if (key === 'length') return parseInt(el.dataset.length, 10);
+                    if (key === 'sim') return parseFloat(el.dataset.sim);
+                    if (key === 'failed') return parseInt(el.dataset.failed, 10);
+                    if (key === 'index') return parseInt(el.dataset.index, 10);
+                    return 0;
+                };
+
+                const comparators = {
+                    'default': (a, b) => getVal(a, 'index') - getVal(b, 'index'),
+                    'name-asc': (a, b) => getVal(a, 'name').localeCompare(getVal(b, 'name')),
+                    'name-desc': (a, b) => getVal(b, 'name').localeCompare(getVal(a, 'name')),
+                    'length-asc': (a, b) => getVal(a, 'length') - getVal(b, 'length'),
+                    'length-desc': (a, b) => getVal(b, 'length') - getVal(a, 'length'),
+                    'sim-desc': (a, b) => getVal(b, 'sim') - getVal(a, 'sim'),
+                    'sim-asc': (a, b) => getVal(a, 'sim') - getVal(b, 'sim'),
+                    'status': (a, b) => {
+                        const fa = getVal(a, 'failed'), fb = getVal(b, 'failed');
+                        if (fa !== fb) return fb - fa;
+                        return getVal(b, 'sim') - getVal(a, 'sim');
+                    },
+                };
+
+                const cmp = comparators[mode] || comparators['default'];
+                cases.sort(cmp);
+                cases.forEach(c => parent.appendChild(c));
+            });
+        }
 
         document.querySelectorAll('.toggle-ir').forEach(btn => {
             btn.addEventListener('click', function () {
@@ -606,6 +842,18 @@
                 panel.style.display = panel.style.display !== 'none' ? 'none' : 'block';
             });
         });
+
+        document.querySelectorAll('.toggle-layers').forEach(btn => {
+            btn.addEventListener('click', function () {
+                if (this.disabled) return;
+                openLayers(this.dataset.testid);
+            });
+        });
+
+        const layersPrev = document.getElementById('layers-prev');
+        const layersNext = document.getElementById('layers-next');
+        if (layersPrev) layersPrev.addEventListener('click', prevLayersTab);
+        if (layersNext) layersNext.addEventListener('click', nextLayersTab);
     });
 
     // ── LCS diff engine ───────────────────────────────────────────────────────
@@ -777,8 +1025,155 @@
                 : renderSideBySide(_currentDiff);
     }
 
+    // ── Layers viewer ─────────────────────────────────────────────────────────
+
+    let _currentLayers = null;
+    let _currentLayersMethod = null;
+    let _currentLayersTab = 'opcodes';
+
+    function openLayers(testId) {
+        const layers = window.caseLayers[testId];
+        if (!layers) return;
+        _currentLayers = layers;
+        const methods = Object.keys(layers).sort();
+        if (!methods.length) return;
+        _currentLayersMethod = methods[0];
+        _currentLayersTab = 'opcodes';
+
+        const select = document.getElementById('layers-method-select');
+        select.innerHTML = methods.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
+        select.value = _currentLayersMethod;
+        select.onchange = () => {
+            _currentLayersMethod = select.value;
+            _currentLayersTab = 'opcodes';
+            renderLayers();
+        };
+
+        renderLayers();
+        document.getElementById('layers-modal').classList.add('open');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeLayers() {
+        document.getElementById('layers-modal').classList.remove('open');
+        document.body.style.overflow = '';
+        _currentLayers = null;
+        _currentLayersMethod = null;
+    }
+
+    function layerTabOrder() {
+        if (!_currentLayers || !_currentLayersMethod) return [];
+        const method = _currentLayers[_currentLayersMethod];
+        const order = ['opcodes', 'cfg'];
+        method.steps.forEach((_, i) => order.push(`step-${i}`));
+        order.push('pseudo');
+        return order;
+    }
+
+    function updateLayersNav() {
+        const order = layerTabOrder();
+        const idx = order.indexOf(_currentLayersTab);
+        const prevBtn = document.getElementById('layers-prev');
+        const nextBtn = document.getElementById('layers-next');
+        if (prevBtn) prevBtn.disabled = idx <= 0;
+        if (nextBtn) nextBtn.disabled = idx < 0 || idx >= order.length - 1;
+    }
+
+    function nextLayersTab() {
+        const order = layerTabOrder();
+        const idx = order.indexOf(_currentLayersTab);
+        if (idx >= 0 && idx < order.length - 1) {
+            _currentLayersTab = order[idx + 1];
+            renderLayers();
+        }
+    }
+
+    function prevLayersTab() {
+        const order = layerTabOrder();
+        const idx = order.indexOf(_currentLayersTab);
+        if (idx > 0) {
+            _currentLayersTab = order[idx - 1];
+            renderLayers();
+        }
+    }
+
+    function renderLayers() {
+        if (!_currentLayers || !_currentLayersMethod) return;
+        const method = _currentLayers[_currentLayersMethod];
+        const tabsEl = document.getElementById('layers-tabs');
+        const bodyEl = document.getElementById('layers-body');
+
+        const tabDefs = [
+            { key: 'opcodes', label: 'Opcodes' },
+            { key: 'cfg', label: 'CFG' },
+        ];
+        method.steps.forEach((s, i) => {
+            tabDefs.push({ key: `step-${i}`, label: s.name });
+        });
+        tabDefs.push({ key: 'pseudo', label: 'Pseudo' });
+
+        if (!tabDefs.some(t => t.key === _currentLayersTab)) {
+            _currentLayersTab = 'opcodes';
+        }
+
+        tabsEl.innerHTML = tabDefs.map(t =>
+            `<button class="layers-tab ${t.key === _currentLayersTab ? 'active' : ''}"` +
+            ` onclick="switchLayersTab('${t.key}')">${esc(t.label)}</button>`
+        ).join('');
+
+        document.getElementById('layers-method-meta').textContent =
+            `${method.cfg.nodes.length} nodes · ${method.cfg.edges.length} edges · ${method.steps.length} optimizer passes`;
+
+        bodyEl.innerHTML = '';
+        if (_currentLayersTab === 'opcodes') {
+            bodyEl.innerHTML = `<pre class="line-numbers"><code class="language-txt">${esc(method.opcodes)}</code></pre>`;
+        } else if (_currentLayersTab === 'cfg') {
+            bodyEl.innerHTML = '<div id="layers-cfg" class="layers-cfg-wrap"></div>';
+            renderLayersDOT(method.cfg.dot);
+        } else if (_currentLayersTab === 'pseudo') {
+            bodyEl.innerHTML = `<pre class="line-numbers"><code class="language-haxe">${esc(method.pseudo)}</code></pre>`;
+        } else if (_currentLayersTab.startsWith('step-')) {
+            const idx = parseInt(_currentLayersTab.split('-')[1], 10);
+            const step = method.steps[idx];
+            bodyEl.innerHTML = `<pre class="line-numbers"><code class="language-txt">${esc(step ? step.ir : '')}</code></pre>`;
+        }
+        Prism.highlightAllUnder(bodyEl);
+        updateLayersNav();
+    }
+
+    function switchLayersTab(key) {
+        _currentLayersTab = key;
+        renderLayers();
+    }
+
+    function renderLayersDOT(dot) {
+        const container = document.getElementById('layers-cfg');
+        if (!container || typeof Viz === 'undefined') return;
+        Viz.instance().then(viz => {
+            if (!container) return;
+            const svg = viz.renderSVGElement(dot);
+            svg.style.width = '100%';
+            svg.style.height = '100%';
+            container.innerHTML = '';
+            container.appendChild(svg);
+        });
+    }
+
     document.addEventListener('keydown', e => {
-        if (e.key === 'Escape') closeDiff();
+        if (e.key === 'Escape') {
+            closeDiff();
+            closeLayers();
+        }
+        const layersOpen = document.getElementById('layers-modal').classList.contains('open');
+        if (layersOpen) {
+            if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                nextLayersTab();
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                prevLayersTab();
+            }
+        }
     });
     </script>
 </body>

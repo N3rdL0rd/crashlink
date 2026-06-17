@@ -135,18 +135,18 @@ You can use the following pre-defined commands with `just`:
 - [x] Bytecode parsing
 - [x] Opcode disassembly
   - [x] Local resolution and naming
-- [ ] IR lifter (layer 0)
+- [x] IR lifter (layer 0)
   - [x] If statements
   - [x] Loops
   - [x] Switch opcode statements
   - [x] Function calls
     - [x] CallClosure
-  - [ ] Closures, lambdas
+  - [x] Closures, lambdas
 - [ ] IR optimization layers
-  - [ ] Resolve locals from assigns block
+  - [x] Resolve locals from assigns block
   - [x] Trace optimization
   - [ ] Nested if/else/if/else -> switch
-- [ ] Haxe pseudocode
+- [x] Haxe pseudocode
 - [ ] Partial recompilation (against stubs of other functions)
 - [ ] GUI? (customtkinter or dearpygui)
   - [ ] Graphical disassembler
