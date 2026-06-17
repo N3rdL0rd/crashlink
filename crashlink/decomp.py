@@ -5266,13 +5266,12 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
     def _array_literal_is_worth_recovering(
         self, arr_local: IRLocal, stmts: List[IRStatement], end_idx: int
     ) -> bool:
-        """Return False if `arr_local` is only used for constant-index reads after
-        the literal allocation.
+        """Return True if `arr_local` is used for anything other than a bounds
+        guard after the literal allocation.
 
-        Array bounds-guard conditionals are also ignored: they will be rewritten
-        to guarded array accesses later and should not force literal recovery of
-        a low-level allocI32 pattern (which recompiles closer to the original
-        bytecode).
+        Constant-index reads now count as real uses: recovering the array
+        literal produces much cleaner Haxe source even though the compiler may
+        later constant-fold it.
         """
 
         def _only_guard_fields(node: Optional[IRStatement]) -> bool:
@@ -5293,10 +5292,6 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
 
         for stmt in stmts[end_idx + 1 :]:
             if self._local_in_stmt(stmt, arr_local):
-                if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRArrayAccess):
-                    access = stmt.expr
-                    if access.array == arr_local and isinstance(access.index, IRConst):
-                        continue
                 if isinstance(stmt, IRConditional) and _only_guard_fields(stmt.condition):
                     continue
                 return True
@@ -5404,6 +5399,11 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             # different locals, but reg_idx lets us recover the original constant.
             assert idx_var is not None
             const_idx = self._recover_constant_index(stmts, start, idx_var, access, value_var)
+            # If the index local is a user-named variable (e.g. `i`), keep the
+            # variable index so the source reads `a[i]`. This preserves the array
+            # allocation instead of letting Haxe constant-fold it away.
+            if const_idx is not None and idx_var is not None and not self._is_compiler_temp(idx_var):
+                const_idx = None
 
         if const_idx is not None:
             index_expr: IRExpression = IRConst(
@@ -5438,6 +5438,9 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             if val is not None:
                 return val
         return None
+
+    def _is_compiler_temp(self, local: IRLocal) -> bool:
+        return bool(re.fullmatch(r"var\d+", local.name))
 
     def _const_loaded_for_local(
         self, stmts: List[IRStatement], start: int, local: IRLocal
