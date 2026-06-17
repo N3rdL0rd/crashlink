@@ -1160,6 +1160,33 @@ class IRWhileLoop(IRStatement):
         return self.__repr__()
 
 
+class IRForEachLoop(IRStatement):
+    """
+    Represents a Haxe for-each loop: for (elem in array) { body }
+    """
+
+    elem: IRLocal
+    array: IRExpression
+    body: IRBlock
+
+    def __init__(self, code: Bytecode, elem: IRLocal, array: IRExpression, body: IRBlock):
+        super().__init__(code)
+        self.elem = elem
+        self.array = array
+        self.body = body
+        self.comment = ""
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.elem, self.array, self.body]
+
+    def __repr__(self) -> str:
+        body_repr = pformat(self.body, indent=0).replace("\n", "\n\t")
+        return f"<IRForEachLoop: for ({self.elem} in {self.array}) {{\n\t{body_repr}\n}}>"
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
+
 class IRField(IRExpression):
     """Represents an object field access expression, e.g., `obj.field`"""
 
@@ -3836,6 +3863,246 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
         return cases, default, tail
 
 
+class IRForEachLoopOptimizer(TraversingIROptimizer):
+    """
+    Recover Haxe for-each loops from the manual index-while lowering.
+
+    HashLink compiles `for (elem in array) { body }` as:
+        idx = 0
+        while (idx < array.length) {
+            elem = array[idx]
+            idx++
+            body
+        }
+
+    This pass recognises that pattern and raises it back, but only when the
+    index temporary is compiler-generated (no debug assign).  User-written
+    `while (idx < arr.length)` loops keep their explicit index.
+    """
+
+    def _is_user_local(self, local: IRLocal) -> bool:
+        if not self.func.func.has_debug or not self.func.func.assigns:
+            return False
+        user_regs: Set[int] = set()
+        for _, op_idx in self.func.func.assigns:
+            val = op_idx.value - 1
+            if 0 <= val < len(self.func.ops):
+                op = self.func.ops[val]
+                if "dst" in op.df:
+                    user_regs.add(op.df["dst"].value)
+        if local.name.startswith("var"):
+            try:
+                return int(local.name[3:]) in user_regs
+            except ValueError:
+                pass
+        return True
+
+    def _expr_reads_local(self, expr: Optional[IRExpression], local: IRLocal) -> bool:
+        if expr is None:
+            return False
+        if expr == local:
+            return True
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            return self._expr_reads_local(expr.left, local) or self._expr_reads_local(expr.right, local)
+        if isinstance(expr, IRCall):
+            if expr.target is not None and self._expr_reads_local(expr.target, local):
+                return True
+            return any(self._expr_reads_local(arg, local) for arg in expr.args)
+        if isinstance(expr, IRField):
+            return self._expr_reads_local(expr.target, local)
+        if isinstance(expr, IRCast):
+            return self._expr_reads_local(expr.expr, local)
+        if isinstance(expr, IRArrayAccess):
+            return self._expr_reads_local(expr.array, local) or self._expr_reads_local(expr.index, local)
+        if isinstance(expr, IRArrayLiteral):
+            return any(self._expr_reads_local(e, local) for e in expr.elements)
+        if isinstance(expr, (IREnumIndex, IREnumField)):
+            return self._expr_reads_local(expr.value, local)
+        if isinstance(expr, IRNew):
+            return any(self._expr_reads_local(arg, local) for arg in expr.constructor_args)
+        return False
+
+    def _stmt_reads_local(self, stmt: IRStatement, local: IRLocal) -> bool:
+        if isinstance(stmt, IRLocal):
+            return stmt == local
+        if isinstance(stmt, IRAssign):
+            if self._expr_reads_local(stmt.expr, local):
+                return True
+            if isinstance(stmt.target, IRArrayAccess):
+                return self._expr_reads_local(stmt.target.array, local) or self._expr_reads_local(stmt.target.index, local)
+            return False
+        if isinstance(stmt, IRReturn):
+            return stmt.value is not None and self._expr_reads_local(stmt.value, local)
+        if isinstance(stmt, IRCall):
+            if stmt.target is not None and self._expr_reads_local(stmt.target, local):
+                return True
+            return any(self._expr_reads_local(arg, local) for arg in expr.args)
+        if isinstance(stmt, IRConditional):
+            if self._expr_reads_local(stmt.condition, local):
+                return True
+            return any(self._stmt_reads_local(s, local) for s in stmt.true_block.statements) or any(
+                self._stmt_reads_local(s, local) for s in stmt.false_block.statements
+            )
+        if isinstance(stmt, (IRWhileLoop, IRForEachLoop)):
+            if self._expr_reads_local(stmt.condition, local):
+                return True
+            return any(self._stmt_reads_local(s, local) for s in stmt.body.statements)
+        if isinstance(stmt, IRPrimitiveLoop):
+            return any(self._stmt_reads_local(s, local) for s in stmt.condition.statements) or any(
+                self._stmt_reads_local(s, local) for s in stmt.body.statements
+            )
+        if isinstance(stmt, IRSwitch):
+            if self._expr_reads_local(stmt.value, local):
+                return True
+            for case_block in stmt.cases.values():
+                if any(self._stmt_reads_local(s, local) for s in case_block.statements):
+                    return True
+            if stmt.default and any(self._stmt_reads_local(s, local) for s in stmt.default.statements):
+                return True
+        if isinstance(stmt, IRTrace):
+            return self._expr_reads_local(stmt.msg, local)
+        return False
+
+    def _stmt_assigns_local(self, stmt: IRStatement, local: IRExpression) -> bool:
+        if isinstance(stmt, IRAssign) and stmt.target == local:
+            return True
+        for child in stmt.get_children():
+            if isinstance(child, IRBlock):
+                if any(self._stmt_assigns_local(s, local) for s in child.statements):
+                    return True
+            elif self._stmt_assigns_local(child, local):
+                return True
+        return False
+
+    def _is_index_increment(self, stmt: IRStatement, idx: IRLocal) -> bool:
+        if not isinstance(stmt, IRAssign) or stmt.target != idx:
+            return False
+        expr = stmt.expr
+        if isinstance(expr, IRCast):
+            expr = expr.expr
+        if not isinstance(expr, IRArithmetic) or expr.op != IRArithmetic.ArithmeticType.ADD:
+            return False
+        if expr.left != idx:
+            return False
+        if not isinstance(expr.right, IRConst) or expr.right.const_type != IRConst.ConstType.INT:
+            return False
+        val = _int_const_value(expr.right)
+        return val == 1
+
+    def _try_convert(self, loop: IRWhileLoop) -> Optional[Tuple[IRForEachLoop, IRLocal]]:
+        cond = loop.condition
+        if not isinstance(cond, IRBoolExpr):
+            return None
+        idx: Optional[IRLocal] = None
+        arr: Optional[IRExpression] = None
+        if cond.op == IRBoolExpr.CompareType.LT:
+            if isinstance(cond.left, IRLocal) and isinstance(cond.right, IRField) and cond.right.field_name == "length":
+                idx = cond.left
+                arr = cond.right.target
+        elif cond.op == IRBoolExpr.CompareType.GT:
+            if isinstance(cond.right, IRLocal) and isinstance(cond.left, IRField) and cond.left.field_name == "length":
+                idx = cond.right
+                arr = cond.left.target
+        if idx is None or arr is None:
+            return None
+        if self._is_user_local(idx):
+            return None
+        body = loop.body
+        if len(body.statements) < 2:
+            return None
+        first = body.statements[0]
+        if not isinstance(first, IRAssign) or not isinstance(first.target, IRLocal):
+            return None
+        if not isinstance(first.expr, IRArrayAccess):
+            return None
+        if first.expr.array != arr or first.expr.index != idx:
+            return None
+        elem = first.target
+        if not self._is_index_increment(body.statements[1], idx):
+            return None
+        rest = body.statements[2:]
+        for s in rest:
+            if self._stmt_reads_local(s, idx):
+                return None
+            if self._stmt_assigns_local(s, elem):
+                return None
+        for s in body.statements:
+            if self._stmt_assigns_local(s, arr):
+                return None
+        new_body = IRBlock(loop.code)
+        new_body.statements = list(rest)
+        return IRForEachLoop(loop.code, elem, arr, new_body), idx
+
+    def visit_block(self, block: IRBlock) -> None:
+        made_change = True
+        while made_change:
+            made_change = False
+            new_statements: List[IRStatement] = []
+            i = 0
+            while i < len(block.statements):
+                stmt = block.statements[i]
+                converted: Optional[Tuple[IRForEachLoop, IRLocal]] = None
+                if isinstance(stmt, IRWhileLoop):
+                    converted = self._try_convert(stmt)
+                if converted is not None:
+                    foreach_loop, idx = converted
+                    # The index temporary's `idx = 0` initializer may have been
+                    # hoisted several statements before the loop (e.g. because
+                    # the array expression was lifted into a temp).  Find the
+                    # closest preceding safe assignment to the index and remove
+                    # it, but only if nothing between it and the loop touches
+                    # the index.
+                    for j in range(len(new_statements) - 1, -1, -1):
+                        prev = new_statements[j]
+                        if isinstance(prev, IRAssign) and prev.target == idx:
+                            if isinstance(prev.expr, IRConst) and not self._expr_reads_local(prev.expr, idx):
+                                del new_statements[j]
+                            break
+                        if self._stmt_reads_local(prev, idx):
+                            break
+
+                    # If the iterable was lifted into a compiler temp that is
+                    # only used by this loop, inline it into the `for (...)`
+                    # header.  This recovers `for (i in foo())` instead of
+                    # leaving a separate `var arr = foo();` declaration.
+                    if isinstance(foreach_loop.array, IRLocal):
+                        arr_local = foreach_loop.array
+                        for j in range(len(new_statements) - 1, -1, -1):
+                            prev = new_statements[j]
+                            if not (
+                                isinstance(prev, IRAssign)
+                                and prev.target == arr_local
+                                and not self._is_user_local(arr_local)
+                            ):
+                                continue
+                            # Ensure nothing else reads or redefines the temp
+                            # between the assignment and the loop.
+                            intervening = new_statements[j + 1 :]
+                            if any(self._stmt_reads_local(s, arr_local) for s in intervening):
+                                break
+                            if any(self._stmt_assigns_local(s, arr_local) for s in intervening):
+                                break
+                            if self._stmt_reads_local(foreach_loop.body, arr_local):
+                                break
+                            if self._stmt_assigns_local(foreach_loop.body, arr_local):
+                                break
+                            foreach_loop.array = prev.expr
+                            del new_statements[j]
+                            break
+
+                    new_statements.append(foreach_loop)
+                    i += 1
+                    made_change = True
+                    continue
+                new_statements.append(stmt)
+                i += 1
+            block.statements = new_statements
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
+
 class IREnumSwitchOptimizer(TraversingIROptimizer):
     """
     Transform switches on enum indices into switches on the enum value itself,
@@ -4532,6 +4799,7 @@ class IRFunction:
                 IRDeadTempEliminator(self),
                 IRDeadCodeEliminator(self),
                 IRBlockFlattener(self),
+                IRForEachLoopOptimizer(self),
             ]
             self._optimize()
 

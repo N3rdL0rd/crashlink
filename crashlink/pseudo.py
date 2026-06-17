@@ -37,6 +37,7 @@ from .decomp import (
     IREnumIndex,
     IREnumField,
     IRWhileLoop,
+    IRForEachLoop,
     IRPrimitiveLoop,
     IRReturn,
     IRPrimitiveJump,
@@ -638,6 +639,22 @@ def _generate_statements(
             )
             output_lines.append(f"{indent}}}")
 
+        elif isinstance(stmt, IRForEachLoop):
+            elem_str = stmt.elem.name
+            array_str = _expression_to_haxe(stmt.array, code, ir_function)
+            output_lines.append(f"{indent}for ({elem_str} in {array_str}) {{")
+            output_lines.extend(
+                _generate_statements(
+                    stmt.body.statements,
+                    code,
+                    ir_function,
+                    indent_level + 1,
+                    declared_vars_in_scope.copy(),
+                    inline_declarations=inline_declarations,
+                )
+            )
+            output_lines.append(f"{indent}}}")
+
         elif isinstance(stmt, IRReturn):
             if stmt.value:
                 if isinstance(stmt.value, IRLocal) and stmt.value.type.resolve(code).kind.value == Type.Kind.VOID.value:
@@ -881,6 +898,7 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
     # Variables used only as the value of an enum-detected switch (the enum index temp)
     # don't need to be declared at all — the switch renders `switch(c)` not `switch(var4)`.
     enum_switch_index_vars = _collect_enum_switch_index_names(ir_func.block)
+    foreach_elem_names = _collect_foreach_elem_names(ir_func.block)
     inline_declarations: Dict[IRStatement, Tuple[str, str]] = {}  # stmt → (name, type_str)
     for local_name in local_types:
         if local_name in initial_declared_vars or local_name == "this":
@@ -890,6 +908,9 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
             continue
         # Enum switch index temps are rendered as the enum expression, not declared.
         if local_name in enum_switch_index_vars:
+            continue
+        # For-each loop variables are declared by the `for (x in y)` syntax.
+        if local_name in foreach_elem_names:
             continue
         type_str = local_types[local_name]
         defining_stmt = _find_defining_assignment(local_name, ir_func.block)
@@ -949,6 +970,31 @@ def pseudo(ir_func: IRFunction) -> str:
     final_output.append("}")
 
     return "\n".join(final_output)
+
+
+def _collect_foreach_elem_names(block: IRBlock) -> Set[str]:
+    """Collect names of IRForEachLoop element locals at any depth in block."""
+    names: Set[str] = set()
+    for stmt in block.statements:
+        if isinstance(stmt, IRForEachLoop):
+            if stmt.elem.name:
+                names.add(stmt.elem.name)
+            names.update(_collect_foreach_elem_names(stmt.body))
+        elif isinstance(stmt, IRConditional):
+            names.update(_collect_foreach_elem_names(stmt.true_block))
+            if stmt.false_block:
+                names.update(_collect_foreach_elem_names(stmt.false_block))
+        elif isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop)):
+            names.update(_collect_foreach_elem_names(stmt.body))
+        elif isinstance(stmt, IRTryCatch):
+            names.update(_collect_foreach_elem_names(stmt.try_block))
+            names.update(_collect_foreach_elem_names(stmt.catch_block))
+        elif isinstance(stmt, IRSwitch):
+            for case_block in stmt.cases.values():
+                names.update(_collect_foreach_elem_names(case_block))
+            if stmt.default:
+                names.update(_collect_foreach_elem_names(stmt.default))
+    return names
 
 
 def _collect_catch_local_names(block: IRBlock) -> Set[str]:
