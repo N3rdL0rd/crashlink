@@ -2575,6 +2575,8 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         # optimizers (e.g. alloc_bytes for array literals).
         if isinstance(expr, IRCall):
             return False
+        if isinstance(expr, IRArrayLiteral):
+            return True
         if isinstance(expr, (IRConst, IRLocal)):
             return True
         if isinstance(expr, IRCast):
@@ -4518,6 +4520,7 @@ class IRFunction:
                 IRDeadTempEliminator(self),
                 IRDeadCodeEliminator(self),
                 IRArrayPatternOptimizer(self),
+                IRTempAssignmentInliner(self, aggressive=False),
                 IRVoidAssignOptimizer(self),
                 IRDeadCodeEliminator(self),
                 IRSelfAssignOptimizer(self),
