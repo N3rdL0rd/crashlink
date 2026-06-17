@@ -1145,10 +1145,9 @@ def _find_inner_defining_assignment(local_name: str, block: IRBlock) -> Optional
       with no other reads/writes in the function.
     """
     # Ensure the variable doesn't appear in top-level assignments or reads.
-    compound_stmts = [s for s in block.statements
-                      if isinstance(s, (IRTryCatch, IRConditional, IRSwitch))]
-    non_compound = [s for s in block.statements
-                    if not isinstance(s, (IRTryCatch, IRConditional, IRSwitch))]
+    compound_types = (IRTryCatch, IRConditional, IRSwitch, IRWhileLoop, IRPrimitiveLoop)
+    compound_stmts = [s for s in block.statements if isinstance(s, compound_types)]
+    non_compound = [s for s in block.statements if not isinstance(s, compound_types)]
     if any(_contains_local_name(local_name, s) or _find_assignment_recursive(local_name, s) is not None
            for s in non_compound):
         return None
@@ -1200,6 +1199,16 @@ def _find_inner_defining_assignment(local_name: str, block: IRBlock) -> Optional
             candidate_block = stmt.default
         if candidate_block is not None:
             return _find_defining_assignment(local_name, candidate_block)
+
+    elif isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop)):
+        # The local lives only inside this loop. Declare it inline at its first
+        # assignment in the loop body, recursing in case it nests deeper.
+        if _contains_local_name(local_name, stmt.condition):
+            return None
+        inner = _find_defining_assignment(local_name, stmt.body)
+        if inner is not None:
+            return inner
+        return _find_inner_defining_assignment(local_name, stmt.body)
 
     return None
 
