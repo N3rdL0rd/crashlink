@@ -4217,7 +4217,9 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
 
                 access_match = self._try_array_access(block.statements, i)
                 if access_match:
-                    arr_assign, consumed = access_match
+                    arr_assign, consumed, preceding_to_pop = access_match
+                    for _ in range(preceding_to_pop):
+                        new_statements.pop()
                     new_statements.append(arr_assign)
                     i += consumed
                     made_change = True
@@ -4676,31 +4678,74 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             new_return = IRReturn(self.func.code, literal)
             return new_return, i - start + 1
 
-    def _try_array_access(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int]]:
+    def _array_from_length_expr(
+        self, stmts: List[IRStatement], start: int, expr: IRExpression
+    ) -> Optional[Tuple[IRLocal, int]]:
+        """Resolve the array variable behind a `.length` expression or a temp holding it.
+
+        Returns the array local and the index of the statement that produced the
+        length value, so the caller can consume it.
+        """
+        if isinstance(expr, IRField) and expr.field_name == "length" and isinstance(expr.target, IRLocal):
+            return expr.target, start
+        if not isinstance(expr, IRLocal):
+            return None
+        for j in range(start - 1, max(-1, start - 5), -1):
+            prev = stmts[j]
+            if (
+                isinstance(prev, IRAssign)
+                and isinstance(prev.target, IRLocal)
+                and prev.target.same_register(expr)
+                and isinstance(prev.expr, IRField)
+                and prev.expr.field_name == "length"
+                and isinstance(prev.expr.target, IRLocal)
+            ):
+                return prev.expr.target, j
+        return None
+
+    def _try_array_access(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int, int]]:
         # Pattern:
         #   if (idx >= arr.length) { value = default; } else { value = arr.bytes[idx << 2]; }
+        # Returns (replacement_stmt, consumed_from_start, preceding_statements_to_pop).
         if start >= len(stmts):
             return None
         stmt = stmts[start]
         if not isinstance(stmt, IRConditional):
             return None
         cond = stmt.condition
-        if not isinstance(cond, IRBoolExpr) or cond.op != IRBoolExpr.CompareType.GTE:
+        if not isinstance(cond, IRBoolExpr):
             return None
-        if not isinstance(cond.left, IRLocal) or not isinstance(cond.right, IRField):
+        if cond.op == IRBoolExpr.CompareType.GTE:
+            idx_expr = cond.left
+            length_expr = cond.right
+        elif cond.op == IRBoolExpr.CompareType.LTE:
+            length_expr = cond.left
+            idx_expr = cond.right
+        else:
             return None
-        idx_var = cond.left
-        arr_field = cond.right
-        if arr_field.field_name != "length" or not isinstance(arr_field.target, IRLocal):
+
+        const_idx: Optional[int] = None
+        idx_var: Optional[IRLocal] = None
+        if isinstance(idx_expr, IRConst) and idx_expr.const_type == IRConst.ConstType.INT:
+            const_idx = _int_const_value(idx_expr)
+            if const_idx is None:
+                return None
+        elif isinstance(idx_expr, IRLocal):
+            idx_var = idx_expr
+        else:
             return None
-        arr_var = arr_field.target
+
+        resolved = self._array_from_length_expr(stmts, start, length_expr)
+        if resolved is None:
+            return None
+        arr_var, length_assign_idx = resolved
 
         then_block = stmt.true_block
         else_block = stmt.false_block
-        if len(then_block.statements) != 1 or len(else_block.statements) != 1:
+        if len(then_block.statements) != 1 or not else_block.statements:
             return None
         then_assign = then_block.statements[0]
-        else_assign = else_block.statements[0]
+        else_assign = else_block.statements[-1]
         if not isinstance(then_assign, IRAssign) or not isinstance(else_assign, IRAssign):
             return None
         if then_assign.target != else_assign.target or not isinstance(then_assign.target, IRLocal):
@@ -4719,10 +4764,61 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             return None
         if not isinstance(access.index.right, IRConst):
             return None
-        # Use the condition index for the resulting high-level access.
-        new_access = IRArrayAccess(self.func.code, arr_var, idx_var)
+
+        if const_idx is None:
+            # For constant-index accesses the compiler loads the constant into the
+            # result register and then uses that register as the index scratchpad.
+            # After debug-name splitting the index temp and the value temp look like
+            # different locals, but reg_idx lets us recover the original constant.
+            assert idx_var is not None
+            const_idx = self._recover_constant_index(stmts, start, idx_var, access, value_var)
+
+        if const_idx is not None:
+            index_expr: IRExpression = IRConst(
+                self.func.code, IRConst.ConstType.INT, value=const_idx
+            )
+        else:
+            assert idx_var is not None
+            index_expr = idx_var
+
+        new_access = IRArrayAccess(self.func.code, arr_var, index_expr)
         new_assign = IRAssign(self.func.code, value_var, new_access)
-        return new_assign, 1
+        # If the length was loaded into a temp immediately before the guard, drop
+        # that temp as well; otherwise later passes can leave a dead assignment.
+        preceding_to_pop = start - length_assign_idx
+        return new_assign, 1, preceding_to_pop
+
+    def _recover_constant_index(
+        self,
+        stmts: List[IRStatement],
+        start: int,
+        idx_var: IRLocal,
+        access: IRArrayAccess,
+        value_var: IRLocal,
+    ) -> Optional[int]:
+        """Look for an immediately preceding `temp = const` that loads the index."""
+        candidates = [idx_var, value_var]
+        if isinstance(access.index, IRArithmetic) and isinstance(access.index.left, IRLocal):
+            candidates.append(access.index.left)
+
+        for candidate in candidates:
+            val = self._const_loaded_for_local(stmts, start, candidate)
+            if val is not None:
+                return val
+        return None
+
+    def _const_loaded_for_local(
+        self, stmts: List[IRStatement], start: int, local: IRLocal
+    ) -> Optional[int]:
+        """Scan the few statements before `start` for `local_reg = const`."""
+        for j in range(start - 1, max(-1, start - 5), -1):
+            prev = stmts[j]
+            if isinstance(prev, IRAssign) and isinstance(prev.target, IRLocal):
+                if prev.target.same_register(local):
+                    if isinstance(prev.expr, IRConst):
+                        return _int_const_value(prev.expr)
+                    return None
+        return None
 
 
 def _build_enum_global_map(code: Bytecode) -> Dict[int, Tuple[str, tIndex]]:
