@@ -314,13 +314,19 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
                     return f"{callee_str}({args_str})"
 
             callee_str = _expression_to_haxe(expr.target, code, ir_function)
-            # Std functions used as direct call targets need a qualifying extern class.
+            # Std functions used as direct call targets can usually be rendered
+            # with their Haxe-qualified name (e.g. Std.random, Math.random)
+            # instead of a synthetic extern stub.
             if (
                 isinstance(expr.target, IRConst)
                 and isinstance(expr.target.value, Function)
                 and _is_std_function(expr.target.value, code)
             ):
-                callee_str = f"StdFuncs.{_std_func_name(expr.target.value, code)}"
+                std_name = _std_call_name(expr.target.value, code)
+                if std_name:
+                    callee_str = std_name
+                else:
+                    callee_str = f"StdFuncs.{_std_func_name(expr.target.value, code)}"
         else:
             raise ValueError(f"IRCall missing target or unhandled type: {expr.call_type}")
 
@@ -1589,6 +1595,21 @@ def _std_func_name(func: "Function", code: Bytecode) -> str:
         base = "anon"
     base = base.replace("<", "").replace(">", "").replace(".", "_")
     return f"__std_{func.findex.value}_{base}"
+
+
+def _std_call_name(func: "Function", code: Bytecode) -> Optional[str]:
+    """Return a Haxe-qualified name like 'Std.random' for a std call, or None."""
+    full = code.full_func_name(func)
+    if not full or full == "<none>.<none>":
+        return None
+    if "." not in full:
+        return None
+    class_name, method_name = full.rsplit(".", 1)
+    class_name = destaticify(class_name).lstrip("$")
+    # Keep synthetic internal helpers as extern stubs.
+    if method_name.startswith("__") and method_name != "__init__":
+        return None
+    return f"{class_name}.{method_name}"
 
 
 def _collect_function_externs(root: IRStatement, code: Bytecode) -> Dict[int, Tuple[str, int]]:

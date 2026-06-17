@@ -2998,6 +2998,11 @@ class IRDeadTempEliminator(IROptimizer):
     def _is_user_local(self, local: IRLocal, user_names: Set[str], user_regs: Set[int]) -> bool:
         if local.name in user_names:
             return True
+        # Preserve names like `b1` that were generated to disambiguate two
+        # user-named locals with different types.
+        for name in user_names:
+            if local.name.startswith(name) and local.name[len(name):].isdigit():
+                return True
         if local.name.startswith("var"):
             try:
                 idx = int(local.name[3:])
@@ -3360,121 +3365,206 @@ class IRStringConcatFolder(TraversingIROptimizer):
     """
     Folds chained string-concat temporaries into a single inline expression.
 
-    HashLink often lowers `trace("..." + x)` to:
+    HashLink often lowers `trace("..." + x)` or `var s = "..." + x` to:
         temp = "...";
         temp = String.__add__(temp, x);
-        trace(temp);
+        temp = String.__add__(temp, y);
+        ... use(temp);
 
-    After dead-temp cleanup the first two assignments become adjacent.  This
-    pass collapses them into `trace(String.__add__("...", x))`, which the
-    pseudocode printer then renders as `trace("..." + x)`.
+    After dead-temp cleanup the assignments become adjacent.  This pass collapses
+    the whole chain into a single String.__add__ expression at the use site, which
+    the pseudocode printer then renders with Haxe's `+` operator.
     """
 
     def visit_block(self, block: IRBlock) -> None:
-        new_statements: List[IRStatement] = []
-        i = 0
-        n = len(block.statements)
-        while i < n:
-            stmt = block.statements[i]
-            fold = self._try_fold_concat_temp(block.statements, i)
-            if fold is not None:
-                trace_stmt, removed_indices = fold
-                new_statements.append(trace_stmt)
-                # Skip the consumed statements; removed_indices are absolute
-                # positions in the original list.
-                i = max(i + 1, max(removed_indices) + 1)
-                continue
-            new_statements.append(stmt)
-            i += 1
-        block.statements = new_statements
+        made_change = True
+        while made_change:
+            made_change = False
+            new_statements: List[IRStatement] = []
+            i = 0
+            n = len(block.statements)
+            while i < n:
+                fold = self._try_fold_concat_temp(block.statements, i)
+                if fold is not None:
+                    use_stmt, consumed = fold
+                    new_statements.append(use_stmt)
+                    i += consumed
+                    made_change = True
+                    continue
+                new_statements.append(block.statements[i])
+                i += 1
+            block.statements = new_statements
 
     def _try_fold_concat_temp(
         self, statements: List[IRStatement], start: int
-    ) -> Optional[Tuple[IRTrace, List[int]]]:
-        # Look for: temp = const_string; temp = String.__add__(temp, rhs); trace(temp)
-        if start + 2 >= len(statements):
+    ) -> Optional[Tuple[IRStatement, int]]:
+        # Look for: temp = init_string_expr;
+        #           temp = String.__add__(temp, rhs1);
+        #           temp = String.__add__(temp, rhs2);
+        #           ...
+        #           use(temp)   (trace(temp) or target = temp)
+        if start >= len(statements):
             return None
 
         first = statements[start]
         if not (
             isinstance(first, IRAssign)
             and isinstance(first.target, IRLocal)
-            and isinstance(first.expr, IRConst)
-            and isinstance(first.expr.value, str)
+            and self._is_string_expr(first.expr)
         ):
             return None
 
         temp = first.target
-        const_expr = first.expr
+        init_expr = first.expr
 
-        # Find the next statement that assigns to temp.
-        concat_idx: Optional[int] = None
-        for j in range(start + 1, len(statements)):
-            stmt = statements[j]
-            # The next assignment to temp is the candidate concat.  Check it
-            # before treating its read of temp as a blocking use.
-            if isinstance(stmt, IRAssign) and stmt.target == temp:
-                if self._is_string_add_with_temp(stmt.expr, temp):
-                    concat_idx = j
+        # Collect a chain of adjacent `temp = String.__add__(temp, rhs)` assignments.
+        i = start + 1
+        parts: List[IRExpression] = [init_expr]
+        while i < len(statements):
+            stmt = statements[i]
+            if not isinstance(stmt, IRAssign) or stmt.target != temp:
                 break
-            if self._statement_reads_local(stmt, temp):
-                # temp is used before the next assignment; cannot fold safely.
-                return None
-        if concat_idx is None:
-            return None
+            add_call = stmt.expr
+            if not self._is_string_add_with_temp(add_call, temp):
+                break
+            assert isinstance(add_call, IRCall)
+            rhs = add_call.args[1]
+            if self._expr_contains_local(rhs, temp):
+                break
+            parts.append(rhs)
+            i += 1
 
-        concat_stmt = cast(IRAssign, statements[concat_idx])
-        add_call = cast(IRCall, concat_stmt.expr)
-        rhs = add_call.args[1]
+        if len(parts) == 1:
+            return None  # No concat happened.
 
-        # Find the single trace use of temp after the concat assignment.
-        trace_idx: Optional[int] = None
-        for k in range(concat_idx + 1, len(statements)):
-            stmt = statements[k]
+        # Now find the single use of `temp` after the chain.  We allow unrelated
+        # statements in between as long as they don't touch `temp`.
+        use_idx: Optional[int] = None
+        folded_expr_for_use: Optional[IRCall] = None
+        for j in range(i, len(statements)):
+            stmt = statements[j]
             if self._statement_assigns_local(stmt, temp):
                 break
             if self._statement_reads_local(stmt, temp):
-                if trace_idx is not None:
-                    # More than one read; keep the assignment.
+                if use_idx is not None:
                     return None
                 if isinstance(stmt, IRTrace) and stmt.msg == temp:
-                    trace_idx = k
+                    use_idx = j
+                elif isinstance(stmt, IRAssign) and stmt.expr == temp:
+                    use_idx = j
+                elif (
+                    isinstance(stmt, IRAssign)
+                    and self._is_string_add_with_temp(stmt.expr, temp)
+                ):
+                    use_idx = j
+                    folded_expr_for_use = self._fold_concat(parts + [cast(IRCall, stmt.expr).args[1]])
                 else:
                     return None
 
-        if trace_idx is None:
+        if use_idx is None:
             return None
 
-        trace_stmt = cast(IRTrace, statements[trace_idx])
-        new_call = IRCall(
-            code=self.func.code,
-            call_type=add_call.call_type,
-            target=add_call.target,
-            args=[const_expr, rhs],
-        )
-        new_trace = IRTrace(
-            code=self.func.code,
-            msg=new_call,
-            pos_info=trace_stmt.pos_info,
-        )
-        return new_trace, [start, concat_idx, trace_idx]
+        use_stmt = statements[use_idx]
+        if folded_expr_for_use is None:
+            folded_expr_for_use = self._fold_concat(parts)
 
-    def _is_string_add_with_temp(self, expr: IRExpression, temp: IRLocal) -> bool:
+        if isinstance(use_stmt, IRTrace):
+            new_use = IRTrace(
+                code=self.func.code,
+                msg=folded_expr_for_use,
+                pos_info=use_stmt.pos_info,
+            )
+        elif isinstance(use_stmt, IRAssign):
+            new_use = IRAssign(
+                code=self.func.code,
+                target=use_stmt.target,
+                expr=folded_expr_for_use,
+            )
+        else:
+            return None
+
+        return new_use, use_idx - start + 1
+
+    def _is_string_expr(self, expr: IRExpression) -> bool:
+        if isinstance(expr, IRConst) and isinstance(expr.value, str):
+            return True
+        if isinstance(expr, IRLocal):
+            return True
+        if isinstance(expr, IRCall):
+            return self._is_string_add(expr)
+        return False
+
+    def _is_string_add(self, expr: IRExpression) -> bool:
         if not isinstance(expr, IRCall):
             return False
         if not (isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function)):
             return False
-        if self.func.code.partial_func_name(expr.target.value) != "__add__":
+        return self.func.code.partial_func_name(expr.target.value) == "__add__"
+
+    def _is_string_add_with_temp(self, expr: IRExpression, temp: IRLocal) -> bool:
+        if not self._is_string_add(expr):
             return False
-        if len(expr.args) != 2:
+        assert isinstance(expr, IRCall)
+        return len(expr.args) == 2 and expr.args[0] == temp
+
+    def _fold_concat(self, parts: List[IRExpression]) -> IRCall:
+        # Build a left-associative String.__add__ chain from the parts.
+        add_func = self._string_add_func()
+        result: IRExpression = parts[0]
+        for part in parts[1:]:
+            result = IRCall(
+                code=self.func.code,
+                call_type=IRCall.CallType.FUNC,
+                target=IRConst(self.func.code, IRConst.ConstType.FUN, idx=add_func.findex),
+                args=[result, part],
+            )
+        assert isinstance(result, IRCall)
+        return result
+
+    def _string_add_func(self) -> Function:
+        # Locate String.__add__ in the bytecode.  It is needed often enough that
+        # caching it avoids creating mismatched call targets.
+        for f in self.func.code.functions:
+            if self.func.code.partial_func_name(f) == "__add__":
+                try:
+                    path = f.resolve_file(self.func.code)
+                except Exception:
+                    continue
+                if "String.hx" in path.replace("\\", "/"):
+                    return f
+        raise DecompError("String.__add__ not found in bytecode")
+
+    def _statement_reads_local(self, stmt: IRStatement, local: IRLocal) -> bool:
+        if isinstance(stmt, IRAssign):
+            return self._expr_contains_local(stmt.expr, local)
+        if isinstance(stmt, IRReturn):
+            return stmt.value is not None and self._expr_contains_local(stmt.value, local)
+        if isinstance(stmt, IRTrace):
+            return self._expr_contains_local(stmt.msg, local)
+        if isinstance(stmt, IRConditional):
+            return self._expr_contains_local(stmt.condition, local)
+        if isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop)):
+            return self._expr_contains_local(getattr(stmt, "condition", None), local)
+        if isinstance(stmt, IRSwitch):
+            return self._expr_contains_local(stmt.value, local)
+        if isinstance(stmt, IRCall):
+            if stmt.target is not None and self._expr_contains_local(stmt.target, local):
+                return True
+            return any(self._expr_contains_local(arg, local) for arg in stmt.args)
+        return False
+
+    def _statement_assigns_local(self, stmt: IRStatement, local: IRLocal) -> bool:
+        return isinstance(stmt, IRAssign) and stmt.target == local
+
+    def _expr_contains_local(self, expr: Optional[IRStatement], local: IRLocal) -> bool:
+        if expr is None:
             return False
-        if expr.args[0] != temp:
-            return False
-        # The right-hand side must not reference temp, otherwise removing the
-        # first assignment would leave that read undefined.
-        if self._expr_contains_local(expr.args[1], temp):
-            return False
-        return True
+        if expr == local:
+            return True
+        for child in expr.get_children():
+            if self._expr_contains_local(child, local):
+                return True
+        return False
 
     def _statement_assigns_local(self, stmt: IRStatement, local: IRLocal) -> bool:
         if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target == local:
@@ -5048,7 +5138,13 @@ class IRFunction:
     def _split_local(self, reg_idx: int, name: str) -> IRLocal:
         """Create a new IRLocal for a register with a specific name (SSA-esque split)."""
         reg_type = self.func.regs[reg_idx]
-        current = self.locals[reg_idx]
+        # Avoid name collisions with a different register's current local.
+        base_name = name
+        suffix = 1
+        existing_names = {loc.name for i, loc in enumerate(self.locals) if i != reg_idx}
+        while name in existing_names:
+            name = f"{base_name}{suffix}"
+            suffix += 1
         new_local = IRLocal(name, reg_type, code=self.code, reg_idx=reg_idx)
         self.locals[reg_idx] = new_local
         return new_local
@@ -5200,6 +5296,30 @@ class IRFunction:
                     pass
                 else:
                     local.name = reg_assigns[i][0]
+
+        # If the same debug name is assigned to two different registers with
+        # different types, suffix the later one so Haxe sees two distinct
+        # variables instead of a single Dynamic variable.
+        name_to_regs: Dict[str, List[int]] = {}
+        for i, local in enumerate(self.locals):
+            name_to_regs.setdefault(local.name, []).append(i)
+        for name, regs in name_to_regs.items():
+            if len(regs) <= 1:
+                continue
+            typed_regs: Dict[int, List[int]] = {}
+            for r in regs:
+                typ = self.func.regs[r]
+                typ_key = id(typ.resolve(self.code))
+                typed_regs.setdefault(typ_key, []).append(r)
+            if len(typed_regs) <= 1:
+                continue
+            # Keep the earliest-appearing register's name; rename the rest.
+            ordered = sorted(regs, key=lambda r: self._reg_first_assign.get(r, float("inf")))
+            suffix_counter = 1
+            for r in ordered[1:]:
+                self.locals[r].name = f"{name}{suffix_counter}"
+                suffix_counter += 1
+
         # Register 0 is `this` in instance methods and constructors.
         # Detect by either: full name has no leading `$` (instance method), or
         # the function contains SetThis/GetThis opcodes (constructor).
