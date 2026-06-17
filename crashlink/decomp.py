@@ -2589,6 +2589,56 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                     return True
         return False
 
+    def _collect_free_locals(self, expr: IRStatement) -> Set[str]:
+        """Collect the names of all locals read within an expression.
+
+        IR expression nodes do not implement get_children(), so traverse the
+        known expression shapes explicitly (mirroring _expr_contains_local).
+        """
+        names: Set[str] = set()
+
+        def walk(e: Optional[IRStatement]) -> None:
+            if e is None:
+                return
+            if isinstance(e, IRLocal):
+                names.add(e.name)
+            elif isinstance(e, (IRArithmetic, IRBoolExpr)):
+                walk(e.left)
+                walk(e.right)
+            elif isinstance(e, IRCall):
+                walk(e.target)
+                for arg in e.args:
+                    walk(arg)
+            elif isinstance(e, IRField):
+                walk(e.target)
+            elif isinstance(e, IRCast):
+                walk(e.expr)
+            elif isinstance(e, IRArrayAccess):
+                walk(e.array)
+                walk(e.index)
+            elif isinstance(e, IRRef):
+                walk(e.target)
+            elif isinstance(e, IREnumConstruct):
+                for arg in e.args:
+                    walk(arg)
+            elif isinstance(e, (IREnumIndex, IREnumField)):
+                walk(e.value)
+            elif isinstance(e, IRNew):
+                for arg in e.constructor_args:
+                    walk(arg)
+
+        walk(expr)
+        return names
+
+    def _stmt_reassigns_any(self, stmt: IRStatement, names: Set[str]) -> bool:
+        """Return True if `stmt` (or any nested statement) assigns to a local in `names`."""
+        if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target.name in names:
+            return True
+        for child in stmt.get_children():
+            if child is not stmt and self._stmt_reassigns_any(child, names):
+                return True
+        return False
+
     def is_safe_to_inline_aggressively(self, expr: IRExpression) -> bool:
         """
         Determines if an expression can be safely copied multiple times
@@ -2734,10 +2784,25 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 if self._is_local_redefined(temp_local, remaining_statements):
                     continue
 
+                # The inlined expression reads other locals (its free variables).
+                # If one of them is reassigned at a later statement, the value of
+                # `expr_to_inline` there differs from its value at the definition
+                # site, so we must not substitute past that point.
+                free_vars = self._collect_free_locals(expr_to_inline)
+                free_vars.discard(temp_local.name)
+
                 any_substituted = False
                 for subsequent_stmt in remaining_statements:
                     if self._substitute_in_statement(subsequent_stmt, temp_local, expr_to_inline):
                         any_substituted = True
+                    # Stop once a free variable of the inlined expression is
+                    # reassigned: later reads of the temp need the new value.
+                    if free_vars and self._stmt_reassigns_any(subsequent_stmt, free_vars):
+                        # The temp is not redefined in remaining_statements (checked
+                        # above), so a later use would read a stale value. Bail on
+                        # removing the definition; leave the assignment in place.
+                        any_substituted = False
+                        break
 
                 if not any_substituted:
                     continue
@@ -2797,13 +2862,18 @@ class IRCopyPropOptimizer(TraversingIROptimizer):
             return None
 
         # Simple sequential copy propagation: after `user = temp`, replace reads
-        # of `temp` with `user` until `temp` is redefined.
+        # of `temp` with `user` until `temp` (or `user`) is redefined.
+        #
+        # `temp` qualifies if it is a non-user local, or a syntactic `varN`
+        # compiler temp. The latter matters when a register is later reused for
+        # a user variable (so the reg-based _is_user_local check returns True)
+        # but the assignment is still really `user = <synthetic temp>`.
         if (
             isinstance(stmt, IRAssign)
             and isinstance(stmt.target, IRLocal)
             and isinstance(stmt.expr, IRLocal)
             and self._is_user_local(stmt.target)
-            and not self._is_user_local(stmt.expr)
+            and (not self._is_user_local(stmt.expr) or self._is_synthetic_temp(stmt.expr))
         ):
             user_local = stmt.target
             temp_local = stmt.expr
@@ -2811,10 +2881,19 @@ class IRCopyPropOptimizer(TraversingIROptimizer):
             if block is not None:
                 idx = block.statements.index(stmt)
                 for later in block.statements[idx + 1 :]:
-                    if isinstance(later, IRAssign) and isinstance(later.target, IRLocal) and later.target == temp_local:
+                    # Stop once either name is reassigned: after that point the
+                    # two are no longer guaranteed equal.
+                    if isinstance(later, IRAssign) and isinstance(later.target, IRLocal) and (
+                        later.target == temp_local or later.target == user_local
+                    ):
                         break
                     self._replace_local_shallow(later, temp_local, user_local)
         return None
+
+    @staticmethod
+    def _is_synthetic_temp(local: IRLocal) -> bool:
+        """Return True for compiler-generated `varN` temporaries (no debug name)."""
+        return bool(re.fullmatch(r"var\d+", local.name))
 
     def _find_parent_block(self, stmt: IRStatement) -> Optional[IRBlock]:
         # Traversal state is not kept, so search from the root block.
@@ -3035,6 +3114,26 @@ class IRDeadTempEliminator(IROptimizer):
                 pass
         return False
 
+    def _is_dead_removable(self, local: IRLocal, user_names: Set[str], user_regs: Set[int]) -> bool:
+        """Return True if an unread assignment to `local` is safe to delete.
+
+        Non-user locals are always removable. A purely synthetic `varN` temp is
+        also removable even when its register index is reused by a user variable:
+        the caller has already confirmed the name is never read anywhere, so the
+        register-reuse protection (meant to keep live SSA-split user values) does
+        not apply. User-named locals (real names, or `nameN` disambiguations) are
+        never removed here.
+        """
+        if not self._is_user_local(local, user_names, user_regs):
+            return True
+        if local.name in user_names:
+            return False
+        for name in user_names:
+            if local.name.startswith(name) and local.name[len(name):].isdigit():
+                return False
+        # Only reached for `varN` names kept alive solely by register reuse.
+        return bool(re.fullmatch(r"var\d+", local.name))
+
     def _collect_all_used_names(self, block: IRBlock) -> Set[str]:
         used: Set[str] = set()
         for stmt in block.statements:
@@ -3118,8 +3217,8 @@ class IRDeadTempEliminator(IROptimizer):
             if (
                 isinstance(stmt, IRAssign)
                 and isinstance(stmt.target, IRLocal)
-                and not self._is_user_local(stmt.target, user_names, user_regs)
                 and stmt.target.name not in globally_used
+                and self._is_dead_removable(stmt.target, user_names, user_regs)
             ):
                 dbg_print(f"Removing dead temp assignment '{stmt.target.name}'.")
                 # Preserve user-visible function calls as bare statements (side effects).
