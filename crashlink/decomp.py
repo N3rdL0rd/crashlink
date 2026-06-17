@@ -4225,6 +4225,12 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                     made_change = True
                     continue
 
+                guard_match = self._try_write_bounds_guard(block.statements, i)
+                if guard_match:
+                    i += guard_match
+                    made_change = True
+                    continue
+
                 temp_match = self._try_eliminate_bytes_temp(block.statements, i)
                 if temp_match:
                     new_statements, consumed = temp_match
@@ -4837,6 +4843,76 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                     if isinstance(prev.expr, IRConst):
                         return _int_const_value(prev.expr)
                     return None
+        return None
+
+    def _try_write_bounds_guard(self, stmts: List[IRStatement], start: int) -> Optional[int]:
+        """Drop the no-op `if (C >= a.length) a.__expand(C)` guard before an array write."""
+        if start + 1 >= len(stmts):
+            return None
+        stmt = stmts[start]
+        if not isinstance(stmt, IRConditional):
+            return None
+        cond = stmt.condition
+        if not isinstance(cond, IRBoolExpr):
+            return None
+        if cond.op == IRBoolExpr.CompareType.GTE:
+            idx_expr = cond.left
+            length_expr = cond.right
+        elif cond.op == IRBoolExpr.CompareType.LTE:
+            length_expr = cond.left
+            idx_expr = cond.right
+        else:
+            return None
+
+        arr_var = self._array_var_from_length_expr(length_expr)
+        if arr_var is None:
+            return None
+
+        if len(stmt.true_block.statements) != 1 or stmt.false_block.statements:
+            return None
+        call_stmt = stmt.true_block.statements[0]
+        if not isinstance(call_stmt, IRCall):
+            return None
+        if not isinstance(call_stmt.target, IRConst) or not isinstance(call_stmt.target.value, Function):
+            return None
+        if self.func.code.partial_func_name(call_stmt.target.value) != "__expand":
+            return None
+        if len(call_stmt.args) != 2:
+            return None
+        if call_stmt.args[0] != arr_var or call_stmt.args[1] != idx_expr:
+            return None
+
+        next_stmt = stmts[start + 1]
+        if not isinstance(next_stmt, IRAssign) or not isinstance(next_stmt.target, IRArrayAccess):
+            return None
+        access = next_stmt.target
+        # High-level store: a[idx]
+        if isinstance(access.array, IRLocal) and access.array.name == arr_var.name:
+            if access.index != idx_expr:
+                return None
+        # Low-level store: a.bytes[idx << 2]
+        elif isinstance(access.array, IRField) and access.array.field_name == "bytes":
+            if not isinstance(access.array.target, IRLocal) or access.array.target.name != arr_var.name:
+                return None
+            if not isinstance(access.index, IRArithmetic) or access.index.op.value != "<<":
+                return None
+            if access.index.left != idx_expr:
+                return None
+            if not isinstance(access.index.right, IRConst):
+                return None
+        else:
+            return None
+
+        return 1
+
+    def _array_var_from_length_expr(self, expr: IRExpression) -> Optional[IRLocal]:
+        """Return the array local if `expr` is `arr.length` (or a temp holding it)."""
+        if isinstance(expr, IRField) and expr.field_name == "length" and isinstance(expr.target, IRLocal):
+            return expr.target
+        if isinstance(expr, IRLocal):
+            # We do not attempt to trace back to the source here; the preceding
+            # temp must have been removed or inlined by the time this runs.
+            return None
         return None
 
 
@@ -5483,6 +5559,21 @@ class IRFunction:
 
         return min(common_nodes, key=lambda node: (left_distances[node] + right_distances[node], node.base_offset))
 
+    def _is_terminal_branch_node(
+        self, node: Optional[CFNode], loop_ctx: Optional[_LoopContext]
+    ) -> bool:
+        """Return True if a branch target has no live successors within the current region."""
+        if node is None:
+            return True
+        if loop_ctx is not None and node == loop_ctx.header:
+            return False
+        if not node.branches:
+            return True
+        # A node that only leaves the current region is also terminal for our purposes.
+        if loop_ctx is not None:
+            return all(successor not in loop_ctx.nodes for successor, _ in node.branches)
+        return False
+
     def _loop_exit_nodes(self, loop_nodes: Set[CFNode]) -> List[CFNode]:
         exit_nodes: Set[CFNode] = set()
         for loop_node in loop_nodes:
@@ -5643,6 +5734,19 @@ class IRFunction:
 
             if convergence_node is None and node in self.cfg.immediate_post_dominators:
                 convergence_node = self.cfg.immediate_post_dominators[node]
+
+            # If the branches do not share a real convergence point because one of
+            # them terminates (e.g. returns), use the post-dominator of the live
+            # branch as the convergence.  This keeps the code after the terminating
+            # branch outside the conditional instead of inlining it into the other
+            # branch.
+            if convergence_node is None:
+                terminal_left = self._is_terminal_branch_node(jump_target, loop_ctx)
+                terminal_right = self._is_terminal_branch_node(fall_through, loop_ctx)
+                if terminal_left and not terminal_right and fall_through in self.cfg.immediate_post_dominators:
+                    convergence_node = self.cfg.immediate_post_dominators[fall_through]
+                elif terminal_right and not terminal_left and jump_target in self.cfg.immediate_post_dominators:
+                    convergence_node = self.cfg.immediate_post_dominators[jump_target]
 
             if then_block_ir is None:
                 then_block_ir = self._lift_block(
