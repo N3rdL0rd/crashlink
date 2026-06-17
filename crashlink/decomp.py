@@ -4786,12 +4786,44 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                 arr_type = t
                 break
         literal = IRArrayLiteral(self.func.code, values)
+
+        # If the only uses of the recovered literal are constant-index reads, the
+        # Haxe compiler will often constant-fold the whole array away.  Keep the
+        # low-level allocation in that case so the recompiled bytecode stays close
+        # to the original.
+        if return_target is not None and not self._array_literal_is_worth_recovering(
+            return_target, stmts, i
+        ):
+            return None
+
         if return_target is not None:
             new_assign = IRAssign(self.func.code, return_target, literal)
             return new_assign, i - start + 1
         else:
             new_return = IRReturn(self.func.code, literal)
             return new_return, i - start + 1
+
+    def _array_literal_is_worth_recovering(
+        self, arr_local: IRLocal, stmts: List[IRStatement], end_idx: int
+    ) -> bool:
+        """Return False if `arr_local` is only used for constant-index reads after
+        the literal allocation."""
+        for stmt in stmts[end_idx + 1 :]:
+            if self._local_in_stmt(stmt, arr_local):
+                if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRArrayAccess):
+                    access = stmt.expr
+                    if access.array == arr_local and isinstance(access.index, IRConst):
+                        continue
+                return True
+        return False
+
+    def _local_in_stmt(self, stmt: IRStatement, local: IRLocal) -> bool:
+        if stmt == local:
+            return True
+        for child in stmt.get_children():
+            if self._local_in_stmt(child, local):
+                return True
+        return False
 
     def _array_from_length_expr(
         self, stmts: List[IRStatement], start: int, expr: IRExpression
