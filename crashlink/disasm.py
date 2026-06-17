@@ -60,20 +60,22 @@ def type_to_haxe(type: str) -> str:
     mapping = {
         "I32": "Int",
         "F64": "Float",
+        "F32": "Single",
+        "U16": "hl.UI16",
+        "UI16": "hl.UI16",
         "Bytes": "hl.Bytes",
         "Dyn": "Dynamic",
         "DynObj": "Dynamic",
         "Fun": "Dynamic",
     }
     if type.startswith("hl.types.ArrayBytes_"):
-        suffix = type.split("_")[-1]
+        suffix = type[len("hl.types.ArrayBytes_") :]
         element_map = {
             "Int": "Int",
             "Float": "Float",
             "Bool": "Bool",
-            "Single": "Single",
-            "F64": "Float",
-            "I32": "Int",
+            "hl_F32": "Single",
+            "hl_UI16": "hl.UI16",
         }
         return f"Array<{element_map.get(suffix, 'Dynamic')}>"
     if type in ("hl.types.ArrayObj", "hl.types.ArrayDyn"):

@@ -225,32 +225,24 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         arr_str = _expression_to_haxe(expr.array, code, ir_function)
         idx_str = _expression_to_haxe(expr.index, code, ir_function)
         # HashLink stores array data in a `.bytes` field and indexes by element
-        # size. Convert `arr.bytes[idx << 2]` back to `arr[idx]`.
+        # size. Convert `arr.bytes[idx << n]` back to `arr[idx]` for any shift.
         if (
             isinstance(expr.array, IRField)
             and expr.array.field_name == "bytes"
             and isinstance(expr.index, IRArithmetic)
             and expr.index.op.value == "<<"
             and isinstance(expr.index.right, IRConst)
-            and int(
-                expr.index.right.value.value if hasattr(expr.index.right.value, "value") else expr.index.right.value
-            )
-            == 2
         ):
             arr_str = _expression_to_haxe(expr.array.target, code, ir_function)
             idx_str = _expression_to_haxe(expr.index.left, code, ir_function)
         # Raw hl.Bytes temporaries that feed ArrayBase.alloc* are upgraded to
-        # hl.BytesAccess<T>; render `bytes[idx << 2]` as `bytes[idx]`.
+        # hl.BytesAccess<T>; render `bytes[idx << n]` as `bytes[idx]`.
         elif (
             isinstance(expr.array, IRLocal)
             and disasm.type_to_haxe(disasm.type_name(code, expr.array.get_type())).startswith("hl.BytesAccess")
             and isinstance(expr.index, IRArithmetic)
             and expr.index.op.value == "<<"
             and isinstance(expr.index.right, IRConst)
-            and int(
-                expr.index.right.value.value if hasattr(expr.index.right.value, "value") else expr.index.right.value
-            )
-            == 2
         ):
             arr_str = expr.array.name
             idx_str = _expression_to_haxe(expr.index.left, code, ir_function)
@@ -377,6 +369,15 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
             call_name = code.full_func_name(expr.target.value) or code.partial_func_name(expr.target.value) or ""
         if "ArrayBase.alloc" in call_name:
             return f"cast {callee_str}({args_str})"
+        # Mixed-type dynamic array literals lower to ArrayDyn.alloc([...], true).
+        # Rendering the wrapper as the literal itself lets Haxe infer the target
+        # as Array<Dynamic> and recompile.
+        if (
+            call_name.endswith("ArrayDyn.alloc")
+            and len(expr.args) == 2
+            and isinstance(expr.args[0], IRArrayLiteral)
+        ):
+            return f"({_expression_to_haxe(expr.args[0], code, ir_function)} : Array<Dynamic>)"
         return f"{callee_str}({args_str})"
 
     elif isinstance(expr, IRUnliftedOpcode):
