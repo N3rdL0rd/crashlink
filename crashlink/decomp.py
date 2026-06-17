@@ -4576,6 +4576,14 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                     made_change = True
                     continue
 
+                dyn_literal_match = self._try_array_dyn_literal(block.statements, i)
+                if dyn_literal_match:
+                    use_stmt, consumed = dyn_literal_match
+                    new_statements.append(use_stmt)
+                    i += consumed
+                    made_change = True
+                    continue
+
                 guard_match = self._try_write_bounds_guard(block.statements, i)
                 if guard_match:
                     i += guard_match
@@ -4621,7 +4629,12 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
     def _find_temp_accesses(
         self, stmt: IRStatement, temp: IRLocal, arr_expr: IRExpression
     ) -> List[Tuple[IRArrayAccess, IRExpression]]:
-        """Find array accesses in stmt that read temp[idx << 2]."""
+        """Find array accesses in stmt that read temp[idx << n].
+
+        The shift amount is ignored; any left-shift on a raw `.bytes` temporary
+        is treated as an element index, so Float (shift 3), Single/Int (shift 2)
+        and UI16 (shift 1) arrays all recover correctly.
+        """
         result: List[Tuple[IRArrayAccess, IRExpression]] = []
 
         def visit(node: IRStatement) -> None:
@@ -4632,12 +4645,6 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                     and isinstance(node.index, IRArithmetic)
                     and node.index.op.value == "<<"
                     and isinstance(node.index.right, IRConst)
-                    and int(
-                        node.index.right.value.value
-                        if hasattr(node.index.right.value, "value")
-                        else node.index.right.value
-                    )
-                    == 2
                 ):
                     result.append((node, IRArrayAccess(node.code, arr_expr, node.index.left)))
             for child in node.get_children():
@@ -4740,12 +4747,24 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             return False
         return expr.target.value.name.resolve(self.func.code) == "alloc_bytes"
 
-    def _is_alloc_i32(self, expr: IRStatement) -> bool:
+    def _is_alloc_typed_array(self, expr: IRStatement) -> Optional[str]:
+        """Return the alloc helper name (allocI32/allocF32/allocF64/allocUI16) if
+        expr is a call to one of HashLink's typed ArrayBase alloc functions."""
         if not isinstance(expr, IRCall):
-            return False
+            return None
         if not isinstance(expr.target, IRConst) or not isinstance(expr.target.value, Function):
-            return False
-        return self.func.code.partial_func_name(expr.target.value) == "allocI32"
+            return None
+        name = self.func.code.partial_func_name(expr.target.value)
+        if name in ("allocI32", "allocF32", "allocF64", "allocUI16"):
+            return name
+        return None
+
+    _ALLOC_SHIFTS: Dict[str, int] = {
+        "allocI32": 2,
+        "allocF32": 2,
+        "allocF64": 3,
+        "allocUI16": 1,
+    }
 
     def _is_shifted_index(self, idx: IRStatement, local: IRLocal, shift: int) -> bool:
         if not isinstance(idx, IRArithmetic):
@@ -5023,6 +5042,19 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         new_assign = IRAssign(self.func.code, s1.target, literal)
         return new_assign, 2
 
+    def _index_shift(self, idx: IRStatement, local: IRLocal) -> Optional[int]:
+        """Return the shift amount if `idx` is `local << const`."""
+        if not isinstance(idx, IRArithmetic):
+            return None
+        if idx.op.value != "<<":
+            return None
+        if not isinstance(idx.left, IRLocal) or idx.left.name != local.name:
+            return None
+        if not isinstance(idx.right, IRConst) or idx.right.const_type != IRConst.ConstType.INT:
+            return None
+        val = idx.right.value.value if hasattr(idx.right.value, "value") else idx.right.value
+        return int(val)
+
     def _parse_store_and_increment(
         self,
         stmts: List[IRStatement],
@@ -5030,11 +5062,12 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         bytes_var: IRLocal,
         idx_var: IRLocal,
         values: List[IRExpression],
-    ) -> Optional[int]:
-        """Parse one `bytes_var[idx_var << 2] = value; idx_var++` pair.
+        expected_shift: Optional[int] = None,
+    ) -> Optional[Tuple[int, int]]:
+        """Parse one `bytes_var[idx_var << n] = value; idx_var++` pair.
 
-        Returns the index of the statement following the increment, or None if
-        the pattern does not match.
+        Returns `(index_after_increment, shift)` if the pattern matches, or None.
+        When `expected_shift` is provided, only the given shift is accepted.
         """
         if i >= len(stmts):
             return None
@@ -5061,7 +5094,10 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         access = s.target
         if not isinstance(access.array, IRLocal) or access.array.name != bytes_var.name:
             return None
-        if not self._is_shifted_index(access.index, idx_var, 2):
+        shift = self._index_shift(access.index, idx_var)
+        if shift is None:
+            return None
+        if expected_shift is not None and shift != expected_shift:
             return None
         values.append(elem_expr if elem_expr is not None else s.expr)
         i += 1
@@ -5079,7 +5115,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             return None
         if int(s2.expr.right.value.value if hasattr(s2.expr.right.value, "value") else s2.expr.right.value) != 1:
             return None
-        return i + 1
+        return i + 1, shift
 
     def _try_array_literal(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int]]:
         # bytes_var = alloc_bytes(...)
@@ -5092,11 +5128,10 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         if not self._is_alloc_bytes(stmt.expr):
             return None
 
-        # DEBUG
-
         values: List[IRExpression] = []
         i: Optional[int] = None
         idx_var: Optional[IRLocal] = None
+        shift: Optional[int] = None
 
         # Pattern 1: explicit `idx_var = 0` then a sequence of stores.
         if start + 1 < len(stmts):
@@ -5109,20 +5144,20 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                 and int(stmt2.expr.value.value if hasattr(stmt2.expr.value, "value") else stmt2.expr.value) == 0
             ):
                 idx_var = stmt2.target
-                i = self._parse_store_and_increment(stmts, start + 2, bytes_var, idx_var, values)
-                while i is not None:
-                    nxt = self._parse_store_and_increment(stmts, i, bytes_var, idx_var, values)
-                    if nxt is None:
-                        break
-                    i = nxt
-                if i is None or not values:
-                    i = None
-
-        # DEBUG
+                parsed = self._parse_store_and_increment(stmts, start + 2, bytes_var, idx_var, values)
+                if parsed is not None:
+                    i, shift = parsed
+                    while True:
+                        nxt = self._parse_store_and_increment(stmts, i, bytes_var, idx_var, values, shift)
+                        if nxt is None:
+                            break
+                        i, _ = nxt
+                    if not values:
+                        i = None
 
         # Pattern 2: first store uses a constant 0 index; the counter is inferred
-        # from the following increment (e.g. `bytes[0 << 2] = v0; idx++; ...`).
-        if i is None and start + 2 < len(stmts):
+        # from the following increment (e.g. `bytes[0 << n] = v0; idx++; ...`).
+        if i is None and shift is None and start + 2 < len(stmts):
             first_store = stmts[start + 1]
             if (
                 isinstance(first_store, IRAssign)
@@ -5139,8 +5174,12 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                     and int(access.index.left.value.value if hasattr(access.index.left.value, "value") else access.index.left.value) == 0
                     and isinstance(access.index.right, IRConst)
                     and access.index.right.const_type == IRConst.ConstType.INT
-                    and int(access.index.right.value.value if hasattr(access.index.right.value, "value") else access.index.right.value) == 2
                 ):
+                    shift = int(
+                        access.index.right.value.value
+                        if hasattr(access.index.right.value, "value")
+                        else access.index.right.value
+                    )
                     values = [first_store.expr]
                     inc_stmt = stmts[start + 2]
                     if (
@@ -5154,22 +5193,22 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                         and int(inc_stmt.expr.right.value.value if hasattr(inc_stmt.expr.right.value, "value") else inc_stmt.expr.right.value) == 1
                     ):
                         idx_var = inc_stmt.target
-                        i = self._parse_store_and_increment(stmts, start + 3, bytes_var, idx_var, values)
-                        while i is not None:
-                            nxt = self._parse_store_and_increment(stmts, i, bytes_var, idx_var, values)
-                            if nxt is None:
-                                break
-                            i = nxt
-                        if i is None:
+                        parsed = self._parse_store_and_increment(stmts, start + 3, bytes_var, idx_var, values, shift)
+                        if parsed is not None:
+                            i, _ = parsed
+                            while True:
+                                nxt = self._parse_store_and_increment(stmts, i, bytes_var, idx_var, values, shift)
+                                if nxt is None:
+                                    break
+                                i, _ = nxt
+                        else:
                             values = []
+                            shift = None
 
-        if not values or idx_var is None or i is None:
+        if not values or idx_var is None or i is None or shift is None:
             return None
 
-        # DEBUG
-
-        # Allow an optional `idx_var = count` assignment before the allocI32 call
-        # (only expected for the explicit-counter pattern).
+        # Allow an optional `idx_var = count` assignment before the alloc call.
         if i < len(stmts):
             opt = stmts[i]
             if (
@@ -5181,7 +5220,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             ):
                 i += 1
 
-        # arr_var = allocI32(bytes_var, count) OR return allocI32(bytes_var, count)
+        # arr_var = alloc*(bytes_var, count) OR return alloc*(bytes_var, count)
         if i >= len(stmts):
             return None
         final = stmts[i]
@@ -5193,7 +5232,10 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             return_target = None
         else:
             return None
-        if not self._is_alloc_i32(call):
+        alloc_name = self._is_alloc_typed_array(call)
+        if alloc_name is None:
+            return None
+        if self._ALLOC_SHIFTS.get(alloc_name) != shift:
             return None
         if len(call.args) != 2 or (isinstance(call.args[0], IRLocal) and call.args[0].name != bytes_var.name):
             return None
@@ -5409,6 +5451,43 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                         return _int_const_value(prev.expr)
                     return None
         return None
+
+    def _try_array_dyn_literal(
+        self, stmts: List[IRStatement], start: int
+    ) -> Optional[Tuple[IRStatement, int]]:
+        """Rewrite `target = ArrayDyn.alloc([...], true)` to `target = [...]`.
+
+        The ArrayObj.anon + ArrayDyn.alloc pair is already lowered to a typed
+        array literal for the first argument. Removing the wrapper lets Haxe
+        infer the target as Array<Dynamic>, which is required for mixed-type
+        literals to recompile.
+        """
+        if start >= len(stmts):
+            return None
+        s = stmts[start]
+        if not isinstance(s, IRAssign) or not isinstance(s.expr, IRCall):
+            return None
+        call = s.expr
+        if not self._is_arraydyn_alloc(call):
+            return None
+        if len(call.args) != 2:
+            return None
+        first_arg, second_arg = call.args
+        if not isinstance(first_arg, IRArrayLiteral):
+            return None
+        true_ok = False
+        if isinstance(second_arg, IRConst) and isinstance(second_arg.value, bool) and second_arg.value:
+            true_ok = True
+        elif (
+            isinstance(second_arg, IRRef)
+            and isinstance(second_arg.target, IRConst)
+            and isinstance(second_arg.target.value, bool)
+            and second_arg.target.value
+        ):
+            true_ok = True
+        if not true_ok:
+            return None
+        return IRAssign(self.func.code, s.target, first_arg), 1
 
     def _try_write_bounds_guard(self, stmts: List[IRStatement], start: int) -> Optional[int]:
         """Drop the no-op `if (C >= a.length) a.__expand(C)` guard before an array write."""
@@ -6032,7 +6111,23 @@ class IRFunction:
                         IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df["dst"].value]),
                     )
                 )
+            elif op.op in ("GetI16", "GetI8"):
+                dst_local = self.locals[op.df["dst"].value]
+                arr_local = source_locals[op.df["bytes"].value]
+                idx_local = source_locals[op.df["index"].value]
+                block.statements.append(
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df["dst"].value]),
+                    )
+                )
             elif op.op == "SetMem":
+                arr_local = source_locals[op.df["bytes"].value]
+                idx_local = source_locals[op.df["index"].value]
+                src_local = source_locals[op.df["src"].value]
+                block.statements.append(IRAssign(self.code, IRArrayAccess(self.code, arr_local, idx_local), src_local))
+            elif op.op in ("SetI16", "SetI8"):
                 arr_local = source_locals[op.df["bytes"].value]
                 idx_local = source_locals[op.df["index"].value]
                 src_local = source_locals[op.df["src"].value]
