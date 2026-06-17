@@ -811,7 +811,7 @@ class Commands(BaseCommands):
                 return
         print("Function not found.")
 
-    @alias("decompile", "dec", "pseudo")
+    @alias("decompile", "dec", "pseudo", "d")
     def decomp(self, args: List[str]) -> None:
         """Prints the pseudocode decompilation of a function. `decomp <idx>`"""
         if len(args) == 0:
