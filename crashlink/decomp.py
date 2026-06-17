@@ -816,6 +816,14 @@ class IRBoolExpr(IRExpression):
         else:
             raise DecompError(f"Unknown IRBoolExpr type: {self.op}")
 
+    def get_children(self) -> List[IRStatement]:
+        children: List[IRStatement] = []
+        if self.left is not None:
+            children.append(self.left)
+        if self.right is not None:
+            children.append(self.right)
+        return children
+
     def __repr__(self) -> str:
         if self.op in [IRBoolExpr.CompareType.NULL, IRBoolExpr.CompareType.NOT_NULL]:
             return f"<IRBoolExpr: {self.left} {self.op.value}>"
@@ -1208,6 +1216,8 @@ class IRField(IRExpression):
         return self.field_type_idx.resolve(self.code)
 
     def get_children(self) -> List[IRStatement]:
+        if self.target is not None and isinstance(self.target, IRStatement):
+            return [self.target]
         return []
 
     def __repr__(self) -> str:
@@ -2772,25 +2782,38 @@ class IRCopyPropOptimizer(TraversingIROptimizer):
                     self.visit_block(child)
 
     def _propagate(self, stmt: IRStatement) -> Optional[IRStatement]:
-        if not isinstance(stmt, (IRConditional, IRSwitch)):
+        # Branch-level copy propagation for switch/conditional merge temps.
+        if isinstance(stmt, (IRConditional, IRSwitch)):
+            copy = self._common_copy(stmt)
+            if copy is not None:
+                temp_local, user_local = copy
+                block = self._find_parent_block(stmt)
+                if block is not None:
+                    idx = block.statements.index(stmt)
+                    for later in block.statements[idx + 1 :]:
+                        if isinstance(later, IRAssign) and isinstance(later.target, IRLocal) and later.target == temp_local:
+                            break
+                        self._replace_local_shallow(later, temp_local, user_local)
             return None
 
-        copy = self._common_copy(stmt)
-        if copy is None:
-            return None
-
-        temp_local, user_local = copy
-        # Find the index of this statement and replace reads in later siblings
-        # until temp_local is redefined.
-        block = self._find_parent_block(stmt)
-        if block is None:
-            return None
-
-        idx = block.statements.index(stmt)
-        for later in block.statements[idx + 1 :]:
-            if isinstance(later, IRAssign) and isinstance(later.target, IRLocal) and later.target == temp_local:
-                break
-            self._replace_local_shallow(later, temp_local, user_local)
+        # Simple sequential copy propagation: after `user = temp`, replace reads
+        # of `temp` with `user` until `temp` is redefined.
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRLocal)
+            and isinstance(stmt.expr, IRLocal)
+            and self._is_user_local(stmt.target)
+            and not self._is_user_local(stmt.expr)
+        ):
+            user_local = stmt.target
+            temp_local = stmt.expr
+            block = self._find_parent_block(stmt)
+            if block is not None:
+                idx = block.statements.index(stmt)
+                for later in block.statements[idx + 1 :]:
+                    if isinstance(later, IRAssign) and isinstance(later.target, IRLocal) and later.target == temp_local:
+                        break
+                    self._replace_local_shallow(later, temp_local, user_local)
         return None
 
     def _find_parent_block(self, stmt: IRStatement) -> Optional[IRBlock]:
@@ -4289,6 +4312,16 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             i = 0
             while i < len(block.statements):
                 stmt = block.statements[i]
+                access_match = self._try_array_access(block.statements, i)
+                if access_match:
+                    arr_assign, consumed, preceding_to_pop = access_match
+                    for _ in range(preceding_to_pop):
+                        new_statements.pop()
+                    new_statements.append(arr_assign)
+                    i += consumed
+                    made_change = True
+                    continue
+
                 literal_match = self._try_array_literal(block.statements, i)
                 if literal_match:
                     arr_assign, consumed = literal_match
@@ -4305,12 +4338,10 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                     made_change = True
                     continue
 
-                access_match = self._try_array_access(block.statements, i)
-                if access_match:
-                    arr_assign, consumed, preceding_to_pop = access_match
-                    for _ in range(preceding_to_pop):
-                        new_statements.pop()
-                    new_statements.append(arr_assign)
+                empty_dyn_match = self._try_empty_array_dyn(block.statements, i)
+                if empty_dyn_match:
+                    use_stmt, consumed = empty_dyn_match
+                    new_statements.append(use_stmt)
                     i += consumed
                     made_change = True
                     continue
@@ -4676,6 +4707,150 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         self._replace_child(use_stmt, anon_call, literal)
         return use_stmt, i - start + 1
 
+    def _is_empty_alloc_array(self, expr: IRStatement) -> bool:
+        if not self._is_alloc_array(expr):
+            return False
+        call = cast(IRCall, expr)
+        if len(call.args) != 2:
+            return False
+        type_arg, size_arg = call.args
+        if not isinstance(size_arg, IRConst) or size_arg.const_type != IRConst.ConstType.INT:
+            return False
+        if int(size_arg.value.value if hasattr(size_arg.value, "value") else size_arg.value) != 0:
+            return False
+        if isinstance(type_arg, IRConst) and (
+            type_arg.const_type == IRConst.ConstType.NULL
+            or isinstance(type_arg.value, Type)
+        ):
+            return True
+        return False
+
+    def _is_empty_arrayobj_anon(self, expr: IRStatement) -> bool:
+        if not self._is_arrayobj_anon(expr):
+            return False
+        call = cast(IRCall, expr)
+        return len(call.args) == 1 and self._is_empty_alloc_array(call.args[0])
+
+    def _is_arraydyn_alloc(self, expr: IRStatement) -> bool:
+        if not isinstance(expr, IRCall):
+            return False
+        if not isinstance(expr.target, IRConst) or not isinstance(expr.target.value, Function):
+            return False
+        func = expr.target.value
+        name = self.func.code.full_func_name(func)
+        if not name:
+            name = self.func.code.partial_func_name(func)
+        if not name:
+            return False
+        return name.endswith("ArrayDyn.alloc")
+
+    def _try_empty_array_dyn(
+        self, stmts: List[IRStatement], start: int
+    ) -> Optional[Tuple[IRStatement, int]]:
+        # Pattern:
+        #   temp = ArrayObj.anon(alloc_array(null, 0))
+        #   target = ArrayDyn.alloc(temp, true)
+        # Rewrite both statements to target = [] when temp has no later uses.
+        if start + 1 >= len(stmts):
+            return None
+        s0 = stmts[start]
+        if not isinstance(s0, IRAssign) or not isinstance(s0.target, IRLocal):
+            return None
+        temp = s0.target
+        if not self._is_empty_arrayobj_anon(s0.expr):
+            return None
+
+        s1 = stmts[start + 1]
+        if not isinstance(s1, IRAssign) or not isinstance(s1.expr, IRCall):
+            return None
+        call = s1.expr
+        if not self._is_arraydyn_alloc(call):
+            return None
+        if len(call.args) != 2:
+            return None
+        first_arg, second_arg = call.args
+        if not isinstance(first_arg, IRLocal) or first_arg.name != temp.name:
+            return None
+
+        true_ok = False
+        if isinstance(second_arg, IRConst) and isinstance(second_arg.value, bool) and second_arg.value:
+            true_ok = True
+        elif (
+            isinstance(second_arg, IRRef)
+            and isinstance(second_arg.target, IRConst)
+            and isinstance(second_arg.target.value, bool)
+            and second_arg.target.value
+        ):
+            true_ok = True
+        if not true_ok:
+            return None
+
+        for later in stmts[start + 2 :]:
+            if self._local_in_stmt(later, temp):
+                return None
+
+        literal = IRArrayLiteral(self.func.code, [])
+        new_assign = IRAssign(self.func.code, s1.target, literal)
+        return new_assign, 2
+
+    def _parse_store_and_increment(
+        self,
+        stmts: List[IRStatement],
+        i: int,
+        bytes_var: IRLocal,
+        idx_var: IRLocal,
+        values: List[IRExpression],
+    ) -> Optional[int]:
+        """Parse one `bytes_var[idx_var << 2] = value; idx_var++` pair.
+
+        Returns the index of the statement following the increment, or None if
+        the pattern does not match.
+        """
+        if i >= len(stmts):
+            return None
+        elem_expr: Optional[IRExpression] = None
+        s = stmts[i]
+        if (
+            isinstance(s, IRAssign)
+            and isinstance(s.target, IRLocal)
+            and s.target.name.startswith("var")
+            and i + 1 < len(stmts)
+        ):
+            nxt = stmts[i + 1]
+            if (
+                isinstance(nxt, IRAssign)
+                and isinstance(nxt.target, IRArrayAccess)
+                and nxt.expr == s.target
+            ):
+                elem_expr = s.expr
+                i += 1
+                s = nxt
+
+        if not isinstance(s, IRAssign) or not isinstance(s.target, IRArrayAccess):
+            return None
+        access = s.target
+        if not isinstance(access.array, IRLocal) or access.array.name != bytes_var.name:
+            return None
+        if not self._is_shifted_index(access.index, idx_var, 2):
+            return None
+        values.append(elem_expr if elem_expr is not None else s.expr)
+        i += 1
+
+        if i >= len(stmts):
+            return None
+        s2 = stmts[i]
+        if not isinstance(s2, IRAssign) or not isinstance(s2.target, IRLocal) or s2.target.name != idx_var.name:
+            return None
+        if not isinstance(s2.expr, IRArithmetic) or s2.expr.op.value != "+":
+            return None
+        if not isinstance(s2.expr.left, IRLocal) or s2.expr.left.name != idx_var.name:
+            return None
+        if not isinstance(s2.expr.right, IRConst) or s2.expr.right.const_type != IRConst.ConstType.INT:
+            return None
+        if int(s2.expr.right.value.value if hasattr(s2.expr.right.value, "value") else s2.expr.right.value) != 1:
+            return None
+        return i + 1
+
     def _try_array_literal(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int]]:
         # bytes_var = alloc_bytes(...)
         if start >= len(stmts):
@@ -4687,71 +4862,84 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         if not self._is_alloc_bytes(stmt.expr):
             return None
 
-        # idx_var = 0
-        if start + 1 >= len(stmts):
-            return None
-        stmt2 = stmts[start + 1]
-        if not isinstance(stmt2, IRAssign) or not isinstance(stmt2.target, IRLocal):
-            return None
-        idx_var = stmt2.target
-        if not isinstance(stmt2.expr, IRConst) or stmt2.expr.const_type != IRConst.ConstType.INT:
-            return None
-        if int(stmt2.expr.value.value if hasattr(stmt2.expr.value, "value") else stmt2.expr.value) != 0:
-            return None
+        # DEBUG
 
         values: List[IRExpression] = []
-        i = start + 2
-        while i < len(stmts):
-            # Optional element temp load inserted by the compiler before some
-            # stores: elem_temp = expr; bytes_var[idx_var << 2] = elem_temp
-            elem_expr: Optional[IRExpression] = None
-            s = stmts[i]
+        i: Optional[int] = None
+        idx_var: Optional[IRLocal] = None
+
+        # Pattern 1: explicit `idx_var = 0` then a sequence of stores.
+        if start + 1 < len(stmts):
+            stmt2 = stmts[start + 1]
             if (
-                isinstance(s, IRAssign)
-                and isinstance(s.target, IRLocal)
-                and s.target.name.startswith("var")
-                and i + 1 < len(stmts)
+                isinstance(stmt2, IRAssign)
+                and isinstance(stmt2.target, IRLocal)
+                and isinstance(stmt2.expr, IRConst)
+                and stmt2.expr.const_type == IRConst.ConstType.INT
+                and int(stmt2.expr.value.value if hasattr(stmt2.expr.value, "value") else stmt2.expr.value) == 0
             ):
-                nxt = stmts[i + 1]
+                idx_var = stmt2.target
+                i = self._parse_store_and_increment(stmts, start + 2, bytes_var, idx_var, values)
+                while i is not None:
+                    nxt = self._parse_store_and_increment(stmts, i, bytes_var, idx_var, values)
+                    if nxt is None:
+                        break
+                    i = nxt
+                if i is None or not values:
+                    i = None
+
+        # DEBUG
+
+        # Pattern 2: first store uses a constant 0 index; the counter is inferred
+        # from the following increment (e.g. `bytes[0 << 2] = v0; idx++; ...`).
+        if i is None and start + 2 < len(stmts):
+            first_store = stmts[start + 1]
+            if (
+                isinstance(first_store, IRAssign)
+                and isinstance(first_store.target, IRArrayAccess)
+            ):
+                access = first_store.target
                 if (
-                    isinstance(nxt, IRAssign)
-                    and isinstance(nxt.target, IRArrayAccess)
-                    and nxt.expr == s.target
+                    isinstance(access.array, IRLocal)
+                    and access.array.name == bytes_var.name
+                    and isinstance(access.index, IRArithmetic)
+                    and access.index.op.value == "<<"
+                    and isinstance(access.index.left, IRConst)
+                    and access.index.left.const_type == IRConst.ConstType.INT
+                    and int(access.index.left.value.value if hasattr(access.index.left.value, "value") else access.index.left.value) == 0
+                    and isinstance(access.index.right, IRConst)
+                    and access.index.right.const_type == IRConst.ConstType.INT
+                    and int(access.index.right.value.value if hasattr(access.index.right.value, "value") else access.index.right.value) == 2
                 ):
-                    elem_expr = s.expr
-                    i += 1
-                    s = nxt
+                    values = [first_store.expr]
+                    inc_stmt = stmts[start + 2]
+                    if (
+                        isinstance(inc_stmt, IRAssign)
+                        and isinstance(inc_stmt.target, IRLocal)
+                        and isinstance(inc_stmt.expr, IRArithmetic)
+                        and inc_stmt.expr.op.value == "+"
+                        and isinstance(inc_stmt.expr.left, IRLocal)
+                        and isinstance(inc_stmt.expr.right, IRConst)
+                        and inc_stmt.expr.right.const_type == IRConst.ConstType.INT
+                        and int(inc_stmt.expr.right.value.value if hasattr(inc_stmt.expr.right.value, "value") else inc_stmt.expr.right.value) == 1
+                    ):
+                        idx_var = inc_stmt.target
+                        i = self._parse_store_and_increment(stmts, start + 3, bytes_var, idx_var, values)
+                        while i is not None:
+                            nxt = self._parse_store_and_increment(stmts, i, bytes_var, idx_var, values)
+                            if nxt is None:
+                                break
+                            i = nxt
+                        if i is None:
+                            values = []
 
-            # bytes_var[idx_var << 2] = value
-            if not isinstance(s, IRAssign) or not isinstance(s.target, IRArrayAccess):
-                break
-            access = s.target
-            if not isinstance(access.array, IRLocal) or access.array.name != bytes_var.name:
-                break
-            if not self._is_shifted_index(access.index, idx_var, 2):
-                break
-            values.append(elem_expr if elem_expr is not None else s.expr)
-            i += 1
-            # idx_var = idx_var + 1
-            if i >= len(stmts):
-                break
-            s2 = stmts[i]
-            if not isinstance(s2, IRAssign) or not isinstance(s2.target, IRLocal) or s2.target.name != idx_var.name:
-                break
-            if not isinstance(s2.expr, IRArithmetic) or s2.expr.op.value != "+":
-                break
-            if not isinstance(s2.expr.left, IRLocal) or s2.expr.left.name != idx_var.name:
-                break
-            if not isinstance(s2.expr.right, IRConst) or s2.expr.right.const_type != IRConst.ConstType.INT:
-                break
-            if int(s2.expr.right.value.value if hasattr(s2.expr.right.value, "value") else s2.expr.right.value) != 1:
-                break
-            i += 1
-
-        if not values:
+        if not values or idx_var is None or i is None:
             return None
 
-        # Allow an optional `idx_var = count` assignment before the allocI32 call.
+        # DEBUG
+
+        # Allow an optional `idx_var = count` assignment before the allocI32 call
+        # (only expected for the explicit-counter pattern).
         if i < len(stmts):
             opt = stmts[i]
             if (
@@ -4807,13 +4995,38 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         self, arr_local: IRLocal, stmts: List[IRStatement], end_idx: int
     ) -> bool:
         """Return False if `arr_local` is only used for constant-index reads after
-        the literal allocation."""
+        the literal allocation.
+
+        Array bounds-guard conditionals are also ignored: they will be rewritten
+        to guarded array accesses later and should not force literal recovery of
+        a low-level allocI32 pattern (which recompiles closer to the original
+        bytecode).
+        """
+
+        def _only_guard_fields(node: Optional[IRStatement]) -> bool:
+            if node is None:
+                return True
+            if node == arr_local:
+                return False
+            if (
+                isinstance(node, IRField)
+                and node.target == arr_local
+                and node.field_name in ("length", "bytes")
+            ):
+                return True
+            for child in node.get_children():
+                if not _only_guard_fields(child):
+                    return False
+            return True
+
         for stmt in stmts[end_idx + 1 :]:
             if self._local_in_stmt(stmt, arr_local):
                 if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRArrayAccess):
                     access = stmt.expr
                     if access.array == arr_local and isinstance(access.index, IRConst):
                         continue
+                if isinstance(stmt, IRConditional) and _only_guard_fields(stmt.condition):
+                    continue
                 return True
         return False
 
