@@ -900,6 +900,10 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
     # pre-declared at the top of the function to avoid Haxe block-scoping errors
     # (the variable would otherwise be undefined at the point of first *use*).
     local_types = _collect_locals(ir_func.block)
+    receiver_types = _virtual_receiver_static_types(ir_func, code)
+    for name, haxe_type in receiver_types.items():
+        if name in local_types:
+            local_types[name] = haxe_type
     catch_locals = _collect_catch_local_names(ir_func.block)
     # Variables used only as the value of an enum-detected switch (the enum index temp)
     # don't need to be declared at all — the switch renders `switch(c)` not `switch(var4)`.
@@ -1523,6 +1527,81 @@ def _method_overrides(method_name: str, ir_class: "IRClass", code: Bytecode) -> 
     except Exception:
         pass
     return False
+
+
+def _find_type_by_haxe_name(code: Bytecode, haxe_name: str) -> Optional[Type]:
+    for t in code.types:
+        if destaticify(disasm.type_name(code, t)) == haxe_name:
+            return t
+    return None
+
+
+def _base_class_for_virtual_method(func: "Function", code: Bytecode) -> Optional[str]:
+    """If `func` is an overridden virtual method, return the Haxe name of the
+    superclass that originally declared it."""
+    parts = _func_name_parts(func, code)
+    if not parts:
+        return None
+    class_name, method_name = parts
+    try:
+        typ = _find_type_by_haxe_name(code, class_name)
+        if typ is None:
+            return None
+        obj = typ.definition
+        if not isinstance(obj, Obj):
+            return None
+        if obj.is_static:
+            obj = obj.dynamic
+        if obj is None:
+            return None
+        super_idx = obj.super
+        while super_idx is not None and super_idx.value >= 0:
+            super_type = super_idx.resolve(code)
+            super_obj = super_type.definition
+            if not isinstance(super_obj, Obj):
+                break
+            check_obj = super_obj
+            if check_obj.is_static:
+                check_obj = check_obj.dynamic
+            if check_obj is not None:
+                for proto in check_obj.protos:
+                    if proto.name.resolve(code) == method_name:
+                        return destaticify(disasm.type_name(code, super_type))
+            super_idx = super_obj.super
+    except Exception:
+        pass
+    return None
+
+
+def _virtual_receiver_static_types(
+    ir_function: IRFunction, code: Bytecode
+) -> Dict[str, str]:
+    """Map receiver local names to the static superclass type implied by virtual
+    dispatch (e.g. myObject -> Base when myObject is used as a Base closure)."""
+    result: Dict[str, str] = {}
+    seen: Set[int] = set()
+
+    def visit(stmt: IRStatement) -> None:
+        if id(stmt) in seen:
+            return
+        seen.add(id(stmt))
+        if isinstance(stmt, IRConst) and isinstance(stmt.value, Function):
+            func = stmt.value
+            parts = _func_name_parts(func, code)
+            if parts is None:
+                return
+            class_name, _ = parts
+            base = _base_class_for_virtual_method(func, code)
+            if base is None:
+                return
+            receiver = _find_receiver_local(class_name, ir_function, code)
+            if receiver is not None:
+                result[receiver] = base
+        for child in stmt.get_children():
+            visit(child)
+
+    visit(ir_function.block)
+    return result
 
 
 def _collect_locals(root: IRStatement) -> Dict[str, str]:
