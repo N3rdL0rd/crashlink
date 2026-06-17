@@ -3,12 +3,13 @@ Functions to run tests, collect results, and produce run reports.
 """
 
 import datetime
+import html
 import os
 import re
 import subprocess
 import tempfile
 import traceback
-from difflib import SequenceMatcher
+from difflib import SequenceMatcher, unified_diff
 from typing import Any, Dict, List, Optional, Tuple
 from markupsafe import escape
 
@@ -343,6 +344,85 @@ def run_case(case: str, id: int) -> TestCase:
         opcode_comparison=opcode_comparison,
         layers=layers,
     )
+
+
+def _find_case_file(name: str) -> Optional[str]:
+    """Resolve a user-provided test case name to a .hx filename."""
+    hx_dir = os.path.join(os.path.dirname(__file__), "..", "tests", "haxe")
+    target = name.lower()
+    if not target.endswith(".hx"):
+        target += ".hx"
+    candidates: List[str] = []
+    for f in os.listdir(hx_dir):
+        if not f.endswith(".hx"):
+            continue
+        if f.lower() == target or file_to_name(f).lower() == name.lower():
+            candidates.append(f)
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
+def run_single_case(args: Any) -> None:
+    """Run a single test case by name and print results to the terminal."""
+    case_file = _find_case_file(args.name)
+    if case_file is None:
+        print(f"No test case matching '{args.name}' found.")
+        return
+
+    result = run_case(case_file, 0)
+
+    if args.verbose:
+        args.show_orig = True
+        args.show_decompiled = True
+        args.show_ir = True
+        args.no_diff = False
+
+    print(f"== {result.test_name} ({result.original.name}) ==")
+    if result.error:
+        print(f"Error: {html.unescape(result.error)}")
+        return
+
+    print(f"Failed: {result.failed}")
+
+    if args.show_orig:
+        print("\n--- Original ---")
+        print(html.unescape(result.original.content))
+
+    if args.show_decompiled:
+        print("\n--- Decompiled ---")
+        print(html.unescape(result.decompiled.content))
+
+    if args.show_ir:
+        print("\n--- IR ---")
+        print(html.unescape(result.ir.content))
+
+    if not args.no_recompile:
+        oc = result.opcode_comparison
+        if oc is None:
+            print("\nNo opcode comparison available.")
+            return
+        print(f"\nOpcode similarity: {oc.overall_similarity:.4f}")
+        if oc.recompile_error:
+            print(f"Recompile error: {oc.recompile_error}")
+        for m in oc.methods:
+            print(f"\n  {m.name}")
+            print(f"    original:   {m.original_count} ops")
+            print(f"    recompiled: {m.recompiled_count} ops")
+            print(f"    similarity: {m.similarity:.4f}")
+            if m.error:
+                print(f"    error:      {m.error}")
+            if not args.no_diff and m.orig_disasm and m.recomp_disasm:
+                diff = unified_diff(
+                    m.orig_disasm.splitlines(),
+                    m.recomp_disasm.splitlines(),
+                    fromfile="original",
+                    tofile="recompiled",
+                    lineterm="",
+                )
+                print("    diff:")
+                for line in diff:
+                    print(f"      {line}")
 
 
 def gen_id() -> str:
