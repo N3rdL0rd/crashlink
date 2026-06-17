@@ -5,7 +5,7 @@ Pseudocode generation routines to create a Haxe representation of the decompiled
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional, List, Set, Dict, Tuple
+from typing import Optional, List, Set, Dict, Tuple, cast
 
 from .core import Bytecode, Obj, Type, Function, Fun, Native, Enum, destaticify
 from . import disasm
@@ -93,7 +93,7 @@ def _is_expression_switch(
     return target, cases, default_expr
 
 
-def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function: IRFunction) -> str:
+def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function: Optional[IRFunction] = None) -> str:
     assert expr is not None, "Found empty statement!"
 
     if isinstance(expr, IRLocal):
@@ -103,7 +103,7 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         if isinstance(expr.value, Function):  # crashlink.core.Function
             func = expr.value
             # For function constants, use their partial name or findex
-            name = code.partial_func_name(func)
+            name: Optional[str] = code.partial_func_name(func)
             if not name or name == "<none>":
                 name = None
             is_std = _is_std_function(func, code)
@@ -327,7 +327,8 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         return f"{callee_str}({args_str})"
 
     elif isinstance(expr, IRUnliftedOpcode):
-        return f"/* UNLIFTED OPCODE: {expr.op.op} {disasm.pseudo_from_op(expr.op, 0, ir_function.func.regs, code, terse=True)} */"
+        regs = ir_function.func.regs if ir_function is not None else []
+        return f"/* UNLIFTED OPCODE: {expr.op.op} {disasm.pseudo_from_op(expr.op, 0, regs, code, terse=True)} */"
 
     elif isinstance(expr, IRNew):
         type_name = disasm.type_name(code, expr.get_type())
@@ -655,15 +656,15 @@ def _generate_statements(
             enum_value_str = value_str
             if isinstance(stmt.value, IREnumIndex):
                 enum_value_str = _expression_to_haxe(stmt.value.value, code, ir_function)
-                enum_type = stmt.value.value.get_type().definition
+                enum_type = cast(Optional[Enum], stmt.value.value.get_type().definition)
             elif isinstance(stmt.value.get_type().definition, Enum):
-                enum_type = stmt.value.get_type().definition
+                enum_type = cast(Optional[Enum], stmt.value.get_type().definition)
             else:
                 # Switch on an int that may be an enum index — detect from case blocks.
                 detected = _detect_enum_value_from_cases(stmt)
                 if detected is not None:
                     enum_value_str = _expression_to_haxe(detected, code, ir_function)
-                    enum_type = detected.get_type().definition
+                    enum_type = cast(Optional[Enum], detected.get_type().definition)
 
             expr_switch = _is_expression_switch(stmt)
             if expr_switch is not None:
@@ -1147,7 +1148,7 @@ def _find_assignment_recursive(local_name: str, stmt: IRStatement) -> Optional[I
     return None
 
 
-def _try_simplify_string_alloc(expr: IRExpression, code: Bytecode, ir_function: IRFunction) -> Optional[str]:
+def _try_simplify_string_alloc(expr: IRExpression, code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
     """
     HashLink compiles `string + int` as:
         String.__add__(left, String.__alloc__(std.itos(int, &int), int))
@@ -1173,6 +1174,8 @@ def _try_simplify_string_alloc(expr: IRExpression, code: Bytecode, ir_function: 
             int_expr = bytes_expr.args[0]
     elif isinstance(bytes_expr, IRLocal):
         # The itos result may have been inlined into a temporary local.
+        if ir_function is None:
+            return None
         defn = _find_assignment_recursive(bytes_expr.name, ir_function.block)
         if (
             defn is not None
@@ -1187,7 +1190,12 @@ def _try_simplify_string_alloc(expr: IRExpression, code: Bytecode, ir_function: 
 
     if int_expr is None:
         return None
-    if not (isinstance(expr.args[1], IRLocal) and expr.args[1].name == int_expr.name):
+    if not isinstance(int_expr, IRLocal):
+        return None
+    second_arg = expr.args[1]
+    if not isinstance(second_arg, IRLocal):
+        return None
+    if second_arg.name != int_expr.name:
         return None
     return _expression_to_haxe(int_expr, code, ir_function)
 
@@ -1295,7 +1303,7 @@ def _case_value_to_haxe(
 
 def _func_name_parts(func: "Function", code: Bytecode) -> Optional[Tuple[str, str]]:
     """Return (class_name, method_name) for a function named like 'Class.method'."""
-    name = code.partial_func_name(func)
+    name: Optional[str] = code.partial_func_name(func)
     if not name or name == "<none>":
         name = None
     if name and "." in name:
@@ -1318,7 +1326,7 @@ def _is_constructor_call(func: "Function", code: Bytecode) -> bool:
 
 
 def _rewrite_constructor_call(
-    call: IRCall, code: Bytecode, ir_function: IRFunction
+    call: IRCall, code: Bytecode, ir_function: Optional[IRFunction]
 ) -> Optional[str]:
     """Rewrite a call to a static __constructor__ into Haxe syntax.
 
@@ -1329,6 +1337,8 @@ def _rewrite_constructor_call(
         return None
     arg = call.args[0]
 
+    if not (isinstance(call.target, IRConst) and isinstance(call.target.value, Function)):
+        return None
     func = call.target.value
     parts = _func_name_parts(func, code)
     if not parts:
@@ -1340,7 +1350,7 @@ def _rewrite_constructor_call(
         # object; the Haxe `new` expression already includes the constructor.
         return _expression_to_haxe(arg, code, ir_function)
 
-    if isinstance(arg, IRLocal) and arg.name == "var0" and getattr(ir_function, "_is_constructor", False):
+    if isinstance(arg, IRLocal) and arg.name == "var0" and ir_function is not None and getattr(ir_function, "_is_constructor", False):
         # Inside a constructor the first local is the implicit `this`.
         # Calling the superclass constructor becomes `super()`.
         containing = getattr(ir_function, "_containing_class", None)
@@ -1561,7 +1571,7 @@ def _native_extern(natives: List[Native], code: Bytecode) -> str:
         try:
             fun_type = native.type.resolve(code)
             fun = fun_type.definition
-            arity = len(fun.args) if hasattr(fun, "args") else 1
+            arity = len(fun.args) if isinstance(fun, Fun) else 1
         except Exception:
             arity = 1
         params = ", ".join(f"arg{i}: Dynamic" for i in range(arity))
@@ -1792,8 +1802,8 @@ def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]
     for findex in sorted(anon_funcs):
         func = anon_funcs[findex]
         helper_ir = IRFunction(code, func)
-        helper_ir._containing_class = ir_class
-        helper_ir._force_static = True
+        setattr(helper_ir, "_containing_class", ir_class)
+        setattr(helper_ir, "_force_static", True)
         setattr(helper_ir, "_anon_name", f"__anon_{findex}")
         func_str = _generate_function_pseudo(helper_ir)
         for line in func_str.split("\n"):

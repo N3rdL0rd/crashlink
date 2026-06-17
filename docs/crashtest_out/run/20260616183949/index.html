@@ -564,7 +564,7 @@
                 crashlink v0.0.5
                 
                      &mdash; <b style="color:var(--yellow)">dirty</b>
-                    &mdash; <a href="https://github.com/N3rdL0rd/crashlink/commit/e1bf2b3ccf60ea6ffb819d298584bc4d7fd02681">main@e1bf2b3c</a>
+                    &mdash; <a href="https://github.com/N3rdL0rd/crashlink/commit/32f294407290a91d8f8b8b3c6cb0213ba2d83d7d">main@32f29440</a>
                 
             </small>
         </h1>
@@ -715,14 +715,14 @@
     <div class="run-summary">
         <div class="summary-stat">
             <div class="label">Decompile</div>
-            <div class="value" style="color: var(--yellow)">
-                30/34 passed
+            <div class="value" style="color: var(--green)">
+                34/34 passed
             </div>
         </div>
         
         <div class="summary-stat">
             <div class="label">Avg opcode similarity</div>
-            <div class="value">87.6%</div>
+            <div class="value">94.4%</div>
         </div>
         <div class="summary-stat">
             <div class="label">Recompile succeeded</div>
@@ -751,7 +751,7 @@
          id="0"
          data-name="Anonymous"
          data-length="332"
-         data-sim="90.1"
+         data-sim="92.9"
          data-failed="0"
          data-index="0">
         <div class="test-header pass">
@@ -763,7 +763,7 @@
                 
                     
                         <span class="badge badge-green">
-                            90.1% opcode match
+                            92.9% opcode match
                         </span>
                     
                 
@@ -800,7 +800,7 @@ class Anonymous {
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre class="line-numbers"><code class="language-haxe">class Anonymous {
-    public static function log(argument_name_cannot_be_confused_at_all, other_arg_name: Int, third_arg): Void {
+    public static function log(argument_name_cannot_be_confused_at_all: Dynamic, other_arg_name: Int, third_arg: Dynamic): Void {
         trace(argument_name_cannot_be_confused_at_all); // { fileName: &#39;Anonymous.hx&#39;, lineNumber: 10, className: &#39;Anonymous&#39;, methodName: &#39;log&#39; }
     }
 
@@ -849,10 +849,10 @@ class Anonymous {
                         
                         data-name="$Anonymous.main"
                         data-orig='"Int. r0. 3\nInt. r2. 4\nToDyn. r3. r0\nInt. r4. 5\nToDyn. r5. r4\nCall3. r1. $Anonymous.log. r3. r2. r5\nRet. r1"'
-                        data-recomp='"Int. r1. 3\nInt. r2. 4\nInt. r3. 5\nCall3. r0. $Anonymous.log. r1. r2. r3\nRet. r0"'
+                        data-recomp='"Int. r1. 3\nToDyn. r2. r1\nInt. r1. 4\nInt. r3. 5\nToDyn. r4. r3\nCall3. r0. $Anonymous.log. r2. r1. r4\nRet. r0"'
                         data-orig-count="7"
-                        data-recomp-count="5"
-                        data-sim="83.3"
+                        data-recomp-count="7"
+                        data-sim="85.7"
                         onclick="openDiff(this)"
                         
                     >
@@ -862,14 +862,14 @@ class Anonymous {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:83.3%; background:var(--yellow);"></div>
+                                        <div class="sim-bar-fill" style="width:85.7%; background:var(--yellow);"></div>
                                     </div>
-                                    <span class="sim-pct">83.3%</span>
+                                    <span class="sim-pct">85.7%</span>
                                 </div>
                             
                         </td>
                         <td>7</td>
-                        <td>5</td>
+                        <td>7</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -882,10 +882,10 @@ class Anonymous {
                         
                         data-name="$Anonymous.log"
                         data-orig='"GetGlobal. r5. global[haxe.$Log]\nField. r4. r5. 6\nNullCheck. r4\nNew. r6\nGetGlobal. r7. global[String]\nDynSet. r6. \u0027fileName\u0027. r7\nInt. r8. 10\nDynSet. r6. \u0027lineNumber\u0027. r8\nGetGlobal. r7. global[String]\nDynSet. r6. \u0027className\u0027. r7\nGetGlobal. r7. global[String]\nDynSet. r6. \u0027methodName\u0027. r7\nToVirtual. r9. r6\nCallClosure. r3. r4. [0, 9]\nRet. r3"'
-                        data-recomp='"GetGlobal. r5. global[haxe.$Log]\nField. r4. r5. 6\nNullCheck. r4\nToDyn. r7. r0\nNew. r8\nGetGlobal. r9. global[String]\nDynSet. r8. \u0027fileName\u0027. r9\nInt. r6. 3\nDynSet. r8. \u0027lineNumber\u0027. r6\nGetGlobal. r9. global[String]\nDynSet. r8. \u0027className\u0027. r9\nGetGlobal. r9. global[String]\nDynSet. r8. \u0027methodName\u0027. r9\nToVirtual. r10. r8\nCallClosure. r3. r4. [7, 10]\nRet. r3"'
+                        data-recomp='"GetGlobal. r5. global[haxe.$Log]\nField. r4. r5. 6\nNullCheck. r4\nNew. r6\nGetGlobal. r7. global[String]\nDynSet. r6. \u0027fileName\u0027. r7\nInt. r8. 3\nDynSet. r6. \u0027lineNumber\u0027. r8\nGetGlobal. r7. global[String]\nDynSet. r6. \u0027className\u0027. r7\nGetGlobal. r7. global[String]\nDynSet. r6. \u0027methodName\u0027. r7\nToVirtual. r9. r6\nCallClosure. r3. r4. [0, 9]\nRet. r3"'
                         data-orig-count="15"
-                        data-recomp-count="16"
-                        data-sim="96.8"
+                        data-recomp-count="15"
+                        data-sim="100.0"
                         onclick="openDiff(this)"
                         
                     >
@@ -895,14 +895,14 @@ class Anonymous {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:96.8%; background:var(--green);"></div>
+                                        <div class="sim-bar-fill" style="width:100.0%; background:var(--green);"></div>
                                     </div>
-                                    <span class="sim-pct">96.8%</span>
+                                    <span class="sim-pct">100.0%</span>
                                 </div>
                             
                         </td>
                         <td>15</td>
-                        <td>16</td>
+                        <td>15</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -923,7 +923,7 @@ class Anonymous {
          id="1"
          data-name="Arithmetic"
          data-length="832"
-         data-sim="82.9"
+         data-sim="92.7"
          data-failed="0"
          data-index="1">
         <div class="test-header pass">
@@ -934,8 +934,8 @@ class Anonymous {
             <div class="header-right">
                 
                     
-                        <span class="badge badge-yellow">
-                            82.9% opcode match
+                        <span class="badge badge-green">
+                            92.7% opcode match
                         </span>
                     
                 
@@ -986,17 +986,16 @@ class Anonymous {
                 <div class="panel-label">Decompiled</div>
                 <pre class="line-numbers"><code class="language-haxe">class Arithmetic {
     public static function main(): Void {
+        var bool_res: Bool = false;
         var third_var: Int = 3;
         var second_var: Int = 4;
         var test: String = &#34;test!!!&#34;;
         var res: Int = third_var + second_var;
         var res2: Int = third_var - second_var;
         var res3: Int = third_var * second_var;
-        var var8: Float = third_var;
-        var res4: Float = var8 / second_var;
+        var res4: Float = third_var / second_var;
         var res5: Int = third_var % second_var;
         var res6: Int = third_var &lt;&lt; second_var;
-        var bool_res: Bool = false;
         if (third_var &gt;= second_var) {
             bool_res = false;
         } else {
@@ -1018,8 +1017,7 @@ class Anonymous {
 	&lt;IRAssign: &lt;IRLocal: res I32&gt; = &lt;IRArithmetic: &lt;IRLocal: third_var I32&gt; + &lt;IRLocal: second_var I32&gt;&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: res2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: third_var I32&gt; - &lt;IRLocal: second_var I32&gt;&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: res3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: third_var I32&gt; * &lt;IRLocal: second_var I32&gt;&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var8 F64&gt; = &lt;IRCast: (F64)&lt;IRLocal: third_var I32&gt;&gt; (F64)&gt;,
-	&lt;IRAssign: &lt;IRLocal: res4 F64&gt; = &lt;IRArithmetic: &lt;IRLocal: var8 F64&gt; / &lt;IRCast: (F64)&lt;IRLocal: second_var I32&gt;&gt;&gt; (F64)&gt;,
+	&lt;IRAssign: &lt;IRLocal: res4 F64&gt; = &lt;IRArithmetic: &lt;IRCast: (F64)&lt;IRLocal: third_var I32&gt;&gt; / &lt;IRCast: (F64)&lt;IRLocal: second_var I32&gt;&gt;&gt; (F64)&gt;,
 	&lt;IRAssign: &lt;IRLocal: res5 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: third_var I32&gt; % &lt;IRLocal: second_var I32&gt;&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: res6 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: third_var I32&gt; &lt;&lt; &lt;IRLocal: second_var I32&gt;&gt; (I32)&gt;,
 	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: third_var I32&gt; &gt;= &lt;IRLocal: second_var I32&gt;&gt; then
@@ -1061,10 +1059,10 @@ class Anonymous {
                         
                         data-name="$Arithmetic.main"
                         data-orig='"Int. r0. 3\nInt. r2. 4\nGetGlobal. r3. global[String]\nAdd. r4. r0. r2\nSub. r5. r0. r2\nMul. r6. r0. r2\nToSFloat. r8. r0\nToSFloat. r9. r2\nSDiv. r8. r8. r9\nSMod. r7. r0. r2\nShl. r10. r0. r2\nJSLt. r0. r2. 2\nBool. r11. False\nJAlways. 1\nBool. r11. True\nJSLt. r0. r2. 2\nBool. r12. False\nJAlways. 1\nBool. r12. True\nRet. r1"'
-                        data-recomp='"Int. r0. 3\nInt. r2. 4\nGetGlobal. r3. global[String]\nAdd. r4. r0. r2\nSub. r5. r0. r2\nMul. r6. r0. r2\nToSFloat. r8. r0\nToSFloat. r10. r2\nSDiv. r9. r8. r10\nSMod. r7. r0. r2\nShl. r11. r0. r2\nBool. r12. False\nJSLt. r0. r2. 2\nBool. r13. False\nJAlways. 1\nBool. r13. True\nJSGte. r0. r2. 2\nBool. r13. False\nJAlways. 1\nBool. r13. True\nRet. r1"'
+                        data-recomp='"Bool. r0. False\nInt. r2. 3\nInt. r3. 4\nGetGlobal. r4. global[String]\nAdd. r5. r2. r3\nSub. r6. r2. r3\nMul. r7. r2. r3\nToSFloat. r9. r2\nToSFloat. r10. r3\nSDiv. r9. r9. r10\nSMod. r8. r2. r3\nShl. r11. r2. r3\nJSLt. r2. r3. 2\nBool. r12. False\nJAlways. 1\nBool. r12. True\nJSGte. r2. r3. 2\nBool. r12. False\nJAlways. 1\nBool. r12. True\nRet. r1"'
                         data-orig-count="20"
                         data-recomp-count="21"
-                        data-sim="82.9"
+                        data-sim="92.7"
                         onclick="openDiff(this)"
                         
                     >
@@ -1074,9 +1072,9 @@ class Anonymous {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:82.9%; background:var(--yellow);"></div>
+                                        <div class="sim-bar-fill" style="width:92.7%; background:var(--green);"></div>
                                     </div>
-                                    <span class="sim-pct">82.9%</span>
+                                    <span class="sim-pct">92.7%</span>
                                 </div>
                             
                         </td>
@@ -1102,7 +1100,7 @@ class Anonymous {
          id="2"
          data-name="Array Accezz"
          data-length="166"
-         data-sim="95.8"
+         data-sim="91.4"
          data-failed="0"
          data-index="2">
         <div class="test-header pass">
@@ -1114,7 +1112,7 @@ class Anonymous {
                 
                     
                         <span class="badge badge-green">
-                            95.8% opcode match
+                            91.4% opcode match
                         </span>
                     
                 
@@ -1155,9 +1153,13 @@ class Anonymous {
     }
 
     public static function main(): Void {
+        var b: Int = 0;
         var a: Array&lt;Int&gt; = ArrayAccezz.array();
-        var var2: Int = 0;
-        var b: Int = a[var2];
+        if (a.length &lt;= 0) {
+            b = 0;
+        } else {
+            b = a[b];
+        }
     }
 }</code></pre>
             </div>
@@ -1174,8 +1176,14 @@ class Anonymous {
 
 [
 	[&lt;IRAssign: &lt;IRLocal: a hl.types.ArrayBytes_Int&gt; = &lt;IRCall: &lt;IRConst: f@183 static $ArrayAccezz.array () -&gt; hl.types.ArrayBytes_Int (from ArrayAccezz.hx)&gt;()&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArrayAccess: &lt;IRLocal: a hl.types.ArrayBytes_Int&gt;[&lt;IRLocal: var2 I32&gt;]&gt; (Void)&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 0&gt; &gt;= &lt;IRField: &lt;IRLocal: a hl.types.ArrayBytes_Int&gt;.length&gt;&gt; then
+		[
+		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;]
+	]
+	else
+		[
+		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArrayAccess: &lt;IRField: &lt;IRLocal: a hl.types.ArrayBytes_Int&gt;.bytes&gt;[&lt;IRArithmetic: &lt;IRLocal: b I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt;]&gt; (I32)&gt;]
+	]&gt;,
 	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
@@ -1203,10 +1211,10 @@ class Anonymous {
                         
                         data-name="$ArrayAccezz.main"
                         data-orig='"Call0. r0. $ArrayAccezz.array\nNullCheck. r0\nInt. r2. 0\nField. r3. r0. 0\nJULt. r2. r3. 2\nInt. r2. 0\nJAlways. 4\nField. r4. r0. 1\nInt. r3. 2\nShl. r3. r2. r3\nGetMem. r2. r4. r3\nRet. r1"'
-                        data-recomp='"Call0. r0. $ArrayAccezz.array\nInt. r2. 0\nNullCheck. r0\nField. r4. r0. 0\nJULt. r2. r4. 2\nInt. r3. 0\nJAlways. 4\nField. r5. r0. 1\nInt. r4. 2\nShl. r4. r2. r4\nGetMem. r3. r5. r4\nRet. r1"'
+                        data-recomp='"Int. r0. 0\nCall0. r2. $ArrayAccezz.array\nNullCheck. r2\nField. r3. r2. 0\nInt. r4. 0\nJSLt. r4. r3. 2\nInt. r3. 0\nJAlways. 8\nField. r4. r2. 0\nJULt. r0. r4. 2\nInt. r3. 0\nJAlways. 4\nField. r5. r2. 1\nInt. r4. 2\nShl. r4. r0. r4\nGetMem. r3. r5. r4\nRet. r1"'
                         data-orig-count="12"
-                        data-recomp-count="12"
-                        data-sim="91.7"
+                        data-recomp-count="17"
+                        data-sim="82.8"
                         onclick="openDiff(this)"
                         
                     >
@@ -1216,14 +1224,14 @@ class Anonymous {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:91.7%; background:var(--green);"></div>
+                                        <div class="sim-bar-fill" style="width:82.8%; background:var(--yellow);"></div>
                                     </div>
-                                    <span class="sim-pct">91.7%</span>
+                                    <span class="sim-pct">82.8%</span>
                                 </div>
                             
                         </td>
                         <td>12</td>
-                        <td>12</td>
+                        <td>17</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -1277,7 +1285,7 @@ class Anonymous {
          id="3"
          data-name="Arrays"
          data-length="273"
-         data-sim="71.7"
+         data-sim="91.9"
          data-failed="0"
          data-index="3">
         <div class="test-header pass">
@@ -1288,8 +1296,8 @@ class Anonymous {
             <div class="header-right">
                 
                     
-                        <span class="badge badge-yellow">
-                            71.7% opcode match
+                        <span class="badge badge-green">
+                            91.9% opcode match
                         </span>
                     
                 
@@ -1332,6 +1340,7 @@ class Anonymous {
 }
 
 extern class StdFuncs {
+    static function __std_49_pop(arg0: Dynamic): Dynamic;
     static function __std_50_push(arg0: Dynamic, arg1: Dynamic): Dynamic;
     static function __std_252_anon(arg0: Dynamic): Dynamic;
     static function __std_253_alloc(arg0: Dynamic, arg1: Dynamic): Dynamic;
@@ -1339,21 +1348,20 @@ extern class StdFuncs {
 
 class Arrays {
     public static function main(): Void {
-        var var2: Int = 12;
-        var a: Array&lt;Int&gt; = [1, 2, 3];
-        var var15: Array&lt;Dynamic&gt; = [];
-        var b: Array&lt;Dynamic&gt; = StdFuncs.__std_253_alloc(var15, true);
-        var arr: Array&lt;Int&gt; = [1, 2, 3];
         var first: Int = 0;
+        var a: Array&lt;Int&gt; = [1, 2, 3];
         trace(a); // { fileName: &#39;Arrays.hx&#39;, lineNumber: 4, className: &#39;Arrays&#39;, methodName: &#39;main&#39; }
-        var2 = 0;
-        var15 = StdFuncs.__std_252_anon(Native.alloc_array(null, var2));
+        var var15: Array&lt;Dynamic&gt; = StdFuncs.__std_252_anon(Native.alloc_array(null, 0));
+        var b: Array&lt;Dynamic&gt; = StdFuncs.__std_253_alloc(var15, true);
         trace(b); // { fileName: &#39;Arrays.hx&#39;, lineNumber: 6, className: &#39;Arrays&#39;, methodName: &#39;main&#39; }
-        var2 = 12;
-        var2 = 4;
-        var2 = StdFuncs.__std_50_push(arr, var2);
-        var2 = 0;
-        first = arr[var2];
+        var arr: Array&lt;Int&gt; = [1, 2, 3];
+        var var2: Int = StdFuncs.__std_50_push(arr, 4);
+        StdFuncs.__std_49_pop(arr);
+        if (arr.length &lt;= 0) {
+            first = 0;
+        } else {
+            first = arr[first];
+        }
         trace(arr); // { fileName: &#39;Arrays.hx&#39;, lineNumber: 11, className: &#39;Arrays&#39;, methodName: &#39;main&#39; }
         trace(first); // { fileName: &#39;Arrays.hx&#39;, lineNumber: 12, className: &#39;Arrays&#39;, methodName: &#39;main&#39; }
     }
@@ -1364,19 +1372,22 @@ class Arrays {
                 <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Arrays.main ---
 
 [
-	[&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 12&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: a hl.types.ArrayBytes_Int&gt; = &lt;IRArrayLiteral: [&lt;IRConst: 1&gt;, &lt;IRConst: 2&gt;, &lt;IRConst: 3&gt;]&gt; (Dyn)&gt;,
+	[&lt;IRAssign: &lt;IRLocal: a hl.types.ArrayBytes_Int&gt; = &lt;IRArrayLiteral: [&lt;IRConst: 1&gt;, &lt;IRConst: 2&gt;, &lt;IRConst: 3&gt;]&gt; (Dyn)&gt;,
 	&lt;IRTrace: msg=&lt;IRLocal: a hl.types.ArrayBytes_Int&gt;, pos={ fileName: Arrays.hx, lineNumber: 4, className: Arrays, methodName: main }&gt;,
-	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var15 hl.types.ArrayObj&gt; = &lt;IRCall: &lt;IRConst: f@252 &lt;none&gt; (Array) -&gt; hl.types.ArrayObj (from /usr/share/haxe/std/hl/types/ArrayObj.hx)&gt;(&lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1baddb3560&gt;&gt;(&lt;IRConst: &lt;Type: 9 (Dyn)&gt;&gt;, &lt;IRLocal: var2 I32&gt;)&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var15 hl.types.ArrayObj&gt; = &lt;IRCall: &lt;IRConst: f@252 &lt;none&gt; (Array) -&gt; hl.types.ArrayObj (from /usr/share/haxe/std/hl/types/ArrayObj.hx)&gt;(&lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f3e627c75b0&gt;&gt;(&lt;IRConst: &lt;Type: 9 (Dyn)&gt;&gt;, &lt;IRConst: 0&gt;)&gt;)&gt; (Fun)&gt;,
 	&lt;IRAssign: &lt;IRLocal: b hl.types.ArrayDyn&gt; = &lt;IRCall: &lt;IRConst: f@253 static hl.types.$ArrayDyn.alloc (hl.types.ArrayBase, Ref) -&gt; hl.types.ArrayDyn (from /usr/share/haxe/std/hl/types/ArrayDyn.hx)&gt;(&lt;IRLocal: var15 hl.types.ArrayObj&gt;, &lt;IRRef: &amp;&lt;IRConst: True&gt;&gt;)&gt; (Fun)&gt;,
 	&lt;IRTrace: msg=&lt;IRLocal: b hl.types.ArrayDyn&gt;, pos={ fileName: Arrays.hx, lineNumber: 6, className: Arrays, methodName: main }&gt;,
-	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 12&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: arr hl.types.ArrayBytes_Int&gt; = &lt;IRArrayLiteral: [&lt;IRConst: 1&gt;, &lt;IRConst: 2&gt;, &lt;IRConst: 3&gt;]&gt; (Dyn)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 4&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRCall: &lt;IRConst: f@50 hl.types.ArrayBytes_Int.push (hl.types.ArrayBytes_Int, I32) -&gt; I32 (from /usr/share/haxe/std/hl/types/ArrayBytes.hx)&gt;(&lt;IRLocal: arr hl.types.ArrayBytes_Int&gt;, &lt;IRLocal: var2 I32&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: first I32&gt; = &lt;IRArrayAccess: &lt;IRLocal: arr hl.types.ArrayBytes_Int&gt;[&lt;IRLocal: var2 I32&gt;]&gt; (Void)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRCall: &lt;IRConst: f@50 hl.types.ArrayBytes_Int.push (hl.types.ArrayBytes_Int, I32) -&gt; I32 (from /usr/share/haxe/std/hl/types/ArrayBytes.hx)&gt;(&lt;IRLocal: arr hl.types.ArrayBytes_Int&gt;, &lt;IRConst: 4&gt;)&gt; (Fun)&gt;,
+	&lt;IRCall: &lt;IRConst: f@49 hl.types.ArrayBytes_Int.pop (hl.types.ArrayBytes_Int) -&gt; Null (from /usr/share/haxe/std/hl/types/ArrayBytes.hx)&gt;(&lt;IRLocal: arr hl.types.ArrayBytes_Int&gt;)&gt;,
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 0&gt; &gt;= &lt;IRField: &lt;IRLocal: arr hl.types.ArrayBytes_Int&gt;.length&gt;&gt; then
+		[
+		[&lt;IRAssign: &lt;IRLocal: first I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;]
+	]
+	else
+		[
+		[&lt;IRAssign: &lt;IRLocal: first I32&gt; = &lt;IRArrayAccess: &lt;IRField: &lt;IRLocal: arr hl.types.ArrayBytes_Int&gt;.bytes&gt;[&lt;IRArithmetic: &lt;IRLocal: first I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt;]&gt; (I32)&gt;]
+	]&gt;,
 	&lt;IRTrace: msg=&lt;IRLocal: arr hl.types.ArrayBytes_Int&gt;, pos={ fileName: Arrays.hx, lineNumber: 11, className: Arrays, methodName: main }&gt;,
 	&lt;IRTrace: msg=&lt;IRCast: (Dyn)&lt;IRLocal: first I32&gt;&gt;, pos={ fileName: Arrays.hx, lineNumber: 12, className: Arrays, methodName: main }&gt;,
 	&lt;IRReturn: None&gt;]
@@ -1406,10 +1417,10 @@ class Arrays {
                         
                         data-name="$Arrays.main"
                         data-orig='"Int. r2. 12\nCall1. r1. \u003cnone\u003e. r2\nInt. r2. 0\nInt. r3. 1\nInt. r4. 2\nShl. r4. r2. r4\nSetMem. r1. r4. r3\nIncr. r2\nInt. r3. 2\nInt. r4. 2\nShl. r4. r2. r4\nSetMem. r1. r4. r3\nIncr. r2\nInt. r3. 3\nInt. r4. 2\nShl. r4. r2. r4\nSetMem. r1. r4. r3\nIncr. r2\nInt. r2. 3\nCall2. r0. hl.types.$ArrayBase.allocI32. r1. r2\nGetGlobal. r7. global[haxe.$Log]\nField. r6. r7. 6\nNullCheck. r6\nNew. r9\nGetGlobal. r10. global[String]\nDynSet. r9. \u0027fileName\u0027. r10\nInt. r2. 4\nDynSet. r9. \u0027lineNumber\u0027. r2\nGetGlobal. r10. global[String]\nDynSet. r9. \u0027className\u0027. r10\nGetGlobal. r10. global[String]\nDynSet. r9. \u0027methodName\u0027. r10\nToVirtual. r11. r9\nCallClosure. r5. r6. [0, 11]\nType. r14. Dyn\nInt. r2. 0\nCall2. r13. \u003cnone\u003e. r14. r2\nCall1. r15. \u003cnone\u003e. r13\nBool. r16. True\nRef. r17. r16\nCall2. r12. hl.types.$ArrayDyn.alloc. r15. r17\nGetGlobal. r7. global[haxe.$Log]\nField. r6. r7. 6\nNullCheck. r6\nNew. r9\nGetGlobal. r10. global[String]\nDynSet. r9. \u0027fileName\u0027. r10\nInt. r2. 6\nDynSet. r9. \u0027lineNumber\u0027. r2\nGetGlobal. r10. global[String]\nDynSet. r9. \u0027className\u0027. r10\nGetGlobal. r10. global[String]\nDynSet. r9. \u0027methodName\u0027. r10\nToVirtual. r11. r9\nCallClosure. r5. r6. [12, 11]\nInt. r2. 12\nCall1. r1. \u003cnone\u003e. r2\nInt. r2. 0\nInt. r3. 1\nInt. r4. 2\nShl. r4. r2. r4\nSetMem. r1. r4. r3\nIncr. r2\nInt. r3. 2\nInt. r4. 2\nShl. r4. r2. r4\nSetMem. r1. r4. r3\nIncr. r2\nInt. r3. 3\nInt. r4. 2\nShl. r4. r2. r4\nSetMem. r1. r4. r3\nIncr. r2\nInt. r2. 3\nCall2. r8. hl.types.$ArrayBase.allocI32. r1. r2\nNullCheck. r8\nInt. r2. 4\nCall2. r2. hl.types.ArrayBytes_Int.push. r8. r2\nCall1. r18. hl.types.ArrayBytes_Int.pop. r8\nInt. r2. 0\nField. r3. r8. 0\nJULt. r2. r3. 2\nInt. r2. 0\nJAlways. 4\nField. r1. r8. 1\nInt. r3. 2\nShl. r3. r2. r3\nGetMem. r2. r1. r3\nGetGlobal. r7. global[haxe.$Log]\nField. r6. r7. 6\nNullCheck. r6\nNew. r9\nGetGlobal. r10. global[String]\nDynSet. r9. \u0027fileName\u0027. r10\nInt. r3. 11\nDynSet. r9. \u0027lineNumber\u0027. r3\nGetGlobal. r10. global[String]\nDynSet. r9. \u0027className\u0027. r10\nGetGlobal. r10. global[String]\nDynSet. r9. \u0027methodName\u0027. r10\nToVirtual. r11. r9\nCallClosure. r5. r6. [8, 11]\nGetGlobal. r7. global[haxe.$Log]\nField. r6. r7. 6\nNullCheck. r6\nToDyn. r19. r2\nNew. r9\nGetGlobal. r10. global[String]\nDynSet. r9. \u0027fileName\u0027. r10\nInt. r3. 12\nDynSet. r9. \u0027lineNumber\u0027. r3\nGetGlobal. r10. global[String]\nDynSet. r9. \u0027className\u0027. r10\nGetGlobal. r10. global[String]\nDynSet. r9. \u0027methodName\u0027. r10\nToVirtual. r11. r9\nCallClosure. r5. r6. [19, 11]\nRet. r5"'
-                        data-recomp='"Int. r0. 12\nInt. r4. 12\nCall1. r3. \u003cnone\u003e. r4\nInt. r4. 0\nInt. r5. 1\nInt. r6. 2\nShl. r6. r4. r6\nSetMem. r3. r6. r5\nIncr. r4\nInt. r5. 2\nInt. r6. 2\nShl. r6. r4. r6\nSetMem. r3. r6. r5\nIncr. r4\nInt. r5. 3\nInt. r6. 2\nShl. r6. r4. r6\nSetMem. r3. r6. r5\nIncr. r4\nInt. r4. 3\nCall2. r2. hl.types.$ArrayBase.allocI32. r3. r4\nType. r9. Dyn\nInt. r4. 0\nCall2. r8. \u003cnone\u003e. r9. r4\nCall1. r10. \u003cnone\u003e. r8\nBool. r11. True\nRef. r12. r11\nCall2. r7. hl.types.$ArrayDyn.alloc. r10. r12\nBool. r11. True\nToDyn. r13. r11\nCall2. r13. 252. r7. r13\nSafeCast. r14. r13\nInt. r4. 12\nCall1. r3. \u003cnone\u003e. r4\nInt. r4. 0\nInt. r5. 1\nInt. r6. 2\nShl. r6. r4. r6\nSetMem. r3. r6. r5\nIncr. r4\nInt. r5. 2\nInt. r6. 2\nShl. r6. r4. r6\nSetMem. r3. r6. r5\nIncr. r4\nInt. r5. 3\nInt. r6. 2\nShl. r6. r4. r6\nSetMem. r3. r6. r5\nIncr. r4\nInt. r4. 3\nCall2. r15. hl.types.$ArrayBase.allocI32. r3. r4\nInt. r4. 0\nGetGlobal. r17. global[haxe.$Log]\nField. r16. r17. 6\nNullCheck. r16\nNew. r18\nGetGlobal. r19. global[String]\nDynSet. r18. \u0027fileName\u0027. r19\nInt. r5. 19\nDynSet. r18. \u0027lineNumber\u0027. r5\nGetGlobal. r19. global[String]\nDynSet. r18. \u0027className\u0027. r19\nGetGlobal. r19. global[String]\nDynSet. r18. \u0027methodName\u0027. r19\nToVirtual. r20. r18\nCallClosure. r1. r16. [2, 20]\nInt. r5. 0\nNull. r13\nToDyn. r21. r5\nCall2. r13. 256. r13. r21\nCall1. r13. 255. r13\nSafeCast. r22. r13\nGetGlobal. r17. global[haxe.$Log]\nField. r16. r17. 6\nNullCheck. r16\nNew. r18\nGetGlobal. r19. global[String]\nDynSet. r18. \u0027fileName\u0027. r19\nInt. r5. 22\nDynSet. r18. \u0027lineNumber\u0027. r5\nGetGlobal. r19. global[String]\nDynSet. r18. \u0027className\u0027. r19\nGetGlobal. r19. global[String]\nDynSet. r18. \u0027methodName\u0027. r19\nToVirtual. r20. r18\nCallClosure. r1. r16. [14, 20]\nInt. r5. 12\nInt. r5. 4\nToDyn. r13. r5\nCall2. r13. 257. r15. r13\nSafeCast. r5. r13\nInt. r5. 0\nNullCheck. r15\nField. r6. r15. 0\nJULt. r5. r6. 2\nInt. r5. 0\nJAlways. 4\nField. r3. r15. 1\nInt. r6. 2\nShl. r6. r5. r6\nGetMem. r5. r3. r6\nMov. r4. r5\nGetGlobal. r17. global[haxe.$Log]\nField. r16. r17. 6\nNullCheck. r16\nNew. r18\nGetGlobal. r19. global[String]\nDynSet. r18. \u0027fileName\u0027. r19\nInt. r5. 28\nDynSet. r18. \u0027lineNumber\u0027. r5\nGetGlobal. r19. global[String]\nDynSet. r18. \u0027className\u0027. r19\nGetGlobal. r19. global[String]\nDynSet. r18. \u0027methodName\u0027. r19\nToVirtual. r20. r18\nCallClosure. r1. r16. [15, 20]\nGetGlobal. r17. global[haxe.$Log]\nField. r16. r17. 6\nNullCheck. r16\nToDyn. r13. r4\nNew. r18\nGetGlobal. r19. global[String]\nDynSet. r18. \u0027fileName\u0027. r19\nInt. r5. 29\nDynSet. r18. \u0027lineNumber\u0027. r5\nGetGlobal. r19. global[String]\nDynSet. r18. \u0027className\u0027. r19\nGetGlobal. r19. global[String]\nDynSet. r18. \u0027methodName\u0027. r19\nToVirtual. r20. r18\nCallClosure. r1. r16. [13, 20]\nRet. r1"'
+                        data-recomp='"Int. r0. 0\nInt. r4. 12\nCall1. r3. \u003cnone\u003e. r4\nInt. r4. 0\nInt. r5. 1\nInt. r6. 2\nShl. r6. r4. r6\nSetMem. r3. r6. r5\nIncr. r4\nInt. r5. 2\nInt. r6. 2\nShl. r6. r4. r6\nSetMem. r3. r6. r5\nIncr. r4\nInt. r5. 3\nInt. r6. 2\nShl. r6. r4. r6\nSetMem. r3. r6. r5\nIncr. r4\nInt. r4. 3\nCall2. r2. hl.types.$ArrayBase.allocI32. r3. r4\nGetGlobal. r8. global[haxe.$Log]\nField. r7. r8. 6\nNullCheck. r7\nNew. r10\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027fileName\u0027. r11\nInt. r4. 16\nDynSet. r10. \u0027lineNumber\u0027. r4\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027className\u0027. r11\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027methodName\u0027. r11\nToVirtual. r12. r10\nCallClosure. r1. r7. [2, 12]\nNull. r13\nInt. r4. 0\nToDyn. r14. r4\nCall2. r13. 217. r13. r14\nCall1. r13. 216. r13\nSafeCast. r15. r13\nBool. r17. True\nToDyn. r13. r17\nCall2. r13. 218. r15. r13\nSafeCast. r16. r13\nGetGlobal. r8. global[haxe.$Log]\nField. r7. r8. 6\nNullCheck. r7\nNew. r10\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027fileName\u0027. r11\nInt. r4. 19\nDynSet. r10. \u0027lineNumber\u0027. r4\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027className\u0027. r11\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027methodName\u0027. r11\nToVirtual. r12. r10\nCallClosure. r1. r7. [16, 12]\nInt. r4. 12\nCall1. r3. \u003cnone\u003e. r4\nInt. r4. 0\nInt. r5. 1\nInt. r6. 2\nShl. r6. r4. r6\nSetMem. r3. r6. r5\nIncr. r4\nInt. r5. 2\nInt. r6. 2\nShl. r6. r4. r6\nSetMem. r3. r6. r5\nIncr. r4\nInt. r5. 3\nInt. r6. 2\nShl. r6. r4. r6\nSetMem. r3. r6. r5\nIncr. r4\nInt. r4. 3\nCall2. r9. hl.types.$ArrayBase.allocI32. r3. r4\nInt. r4. 4\nToDyn. r13. r4\nCall2. r13. 219. r9. r13\nSafeCast. r4. r13\nCall1. r13. 220. r9\nNullCheck. r9\nField. r5. r9. 0\nInt. r6. 0\nJSLt. r6. r5. 3\nInt. r5. 0\nMov. r0. r5\nJAlways. 9\nField. r6. r9. 0\nJULt. r0. r6. 2\nInt. r5. 0\nJAlways. 4\nField. r3. r9. 1\nInt. r6. 2\nShl. r6. r0. r6\nGetMem. r5. r3. r6\nMov. r0. r5\nGetGlobal. r8. global[haxe.$Log]\nField. r7. r8. 6\nNullCheck. r7\nNew. r10\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027fileName\u0027. r11\nInt. r5. 28\nDynSet. r10. \u0027lineNumber\u0027. r5\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027className\u0027. r11\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027methodName\u0027. r11\nToVirtual. r12. r10\nCallClosure. r1. r7. [9, 12]\nGetGlobal. r8. global[haxe.$Log]\nField. r7. r8. 6\nNullCheck. r7\nToDyn. r13. r0\nNew. r10\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027fileName\u0027. r11\nInt. r5. 29\nDynSet. r10. \u0027lineNumber\u0027. r5\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027className\u0027. r11\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027methodName\u0027. r11\nToVirtual. r12. r10\nCallClosure. r1. r7. [13, 12]\nRet. r1"'
                         data-orig-count="118"
-                        data-recomp-count="133"
-                        data-sim="71.7"
+                        data-recomp-count="130"
+                        data-sim="91.9"
                         onclick="openDiff(this)"
                         
                     >
@@ -1419,14 +1430,14 @@ class Arrays {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:71.7%; background:var(--yellow);"></div>
+                                        <div class="sim-bar-fill" style="width:91.9%; background:var(--green);"></div>
                                     </div>
-                                    <span class="sim-pct">71.7%</span>
+                                    <span class="sim-pct">91.9%</span>
                                 </div>
                             
                         </td>
                         <td>118</td>
-                        <td>133</td>
+                        <td>130</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -1447,10 +1458,10 @@ class Arrays {
          id="4"
          data-name="Big Control Flow"
          data-length="1192"
-         data-sim="68.0"
-         data-failed="1"
+         data-sim="96.7"
+         data-failed="0"
          data-index="4">
-        <div class="test-header fail">
+        <div class="test-header pass">
             <h2>
                 <a href="#4"><i class="fa fa-link"></i></a>
                 Big Control Flow
@@ -1458,8 +1469,8 @@ class Arrays {
             <div class="header-right">
                 
                     
-                        <span class="badge badge-red">
-                            68.0% opcode match
+                        <span class="badge badge-green">
+                            96.7% opcode match
                         </span>
                     
                 
@@ -1545,33 +1556,25 @@ class Arrays {
                 <div class="panel-label">Decompiled</div>
                 <pre class="line-numbers"><code class="language-haxe">class BigControlFlow {
     public static function factorial(n: Int): Int {
-        var var1: Int = n * BigControlFlow.factorial(n - 1);
         if (n &lt;= 1) {
             return 1;
         }
+        var var1: Int = n * BigControlFlow.factorial(n - 1);
         return var1;
     }
 
     public static function main(): Void {
+        var var3: Int = 0;
+        var a: Float = 0.0;
         var x: Int = 10;
         var result: Float = 0.0;
-        var var4: Int = 5;
-        var var3: Int = 0;
-        var y: Float = 2.0;
-        var z: Int = 0;
-        var w: Int = 0;
-        var var10: Dynamic = null;
-        var a: Float = 0.0;
-        var var8: Int = BigControlFlow.factorial(5);
-        if (var4 &lt; x) {
-            var4 = 2;
-            var3 = x * var4;
+        if (x &gt; 5) {
+            var3 = x * 2;
         } else {
-            var4 = 2;
-            var3 = x + var4;
+            var3 = x + 2;
         }
         result = var3;
-        var3 = Std.int(y);
+        var y: Float = 2.0;
         result = switch (var3) {
             case 0: y + 10.0;
             case 1: y * 10.0;
@@ -1583,11 +1586,12 @@ class Arrays {
         result += 4.0;
         result += 6.0;
         result += 8.0;
+        var z: Int = 0;
         while (z &lt; 5) {
-            var4 = z + 3;
-            result += var4;
+            result += z + 3;
             z++;
         }
+        var w: Int = 0;
         do {
             result += w - 3;
             w++;
@@ -1599,21 +1603,22 @@ class Arrays {
             a = -1.0;
             result = a;
         }
+        var var8: Int = BigControlFlow.factorial(5);
         result += var8;
         var8 = 0 % 2;
-        if (0 == 0) {
+        if (0 % 2 == 0) {
             result += 0.0;
         } else {
             result -= 0.0;
         }
         var8 = 1 % 2;
-        if (1 == 0) {
+        if (1 % 2 == 0) {
             result += 5.0;
         } else {
             result -= 5.0;
         }
         var8 = 2 % 2;
-        if (2 == 0) {
+        if (2 % 2 == 0) {
             result += 10.0;
         } else {
             result -= 10.0;
@@ -1631,9 +1636,10 @@ class Arrays {
 		[&lt;IRReturn: &lt;IRConst: 1&gt;&gt;]
 	]
 	else
-		[]&gt;,
-	&lt;IRAssign: &lt;IRLocal: var1 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: n I32&gt; * &lt;IRCall: &lt;IRConst: f@23 static $BigControlFlow.factorial (I32) -&gt; I32 (from BigControlFlow.hx)&gt;(&lt;IRArithmetic: &lt;IRLocal: n I32&gt; - &lt;IRConst: 1&gt;&gt;)&gt;&gt; (I32)&gt;,
-	&lt;IRReturn: &lt;IRLocal: var1 I32&gt;&gt;]
+		[
+		[&lt;IRAssign: &lt;IRLocal: var1 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: n I32&gt; * &lt;IRCall: &lt;IRConst: f@23 static $BigControlFlow.factorial (I32) -&gt; I32 (from BigControlFlow.hx)&gt;(&lt;IRArithmetic: &lt;IRLocal: n I32&gt; - &lt;IRConst: 1&gt;&gt;)&gt;&gt; (I32)&gt;,
+		&lt;IRReturn: &lt;IRLocal: var1 I32&gt;&gt;]
+	]&gt;]
 ]
 
 // --- Static Method: $BigControlFlow.main ---
@@ -1641,20 +1647,16 @@ class Arrays {
 [
 	[&lt;IRAssign: &lt;IRLocal: x I32&gt; = &lt;IRConst: 10&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRConst: 0.0&gt; (F64)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRConst: 5&gt; (I32)&gt;,
-	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var4 I32&gt; &lt; &lt;IRLocal: x I32&gt;&gt; then
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 5&gt; &lt; &lt;IRLocal: x I32&gt;&gt; then
 		[
-		[&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRConst: 2&gt; (I32)&gt;,
-		&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: x I32&gt; * &lt;IRLocal: var4 I32&gt;&gt; (I32)&gt;]
+		[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: x I32&gt; * &lt;IRConst: 2&gt;&gt; (I32)&gt;]
 	]
 	else
 		[
-		[&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRConst: 2&gt; (I32)&gt;,
-		&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: x I32&gt; + &lt;IRLocal: var4 I32&gt;&gt; (I32)&gt;]
+		[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: x I32&gt; + &lt;IRConst: 2&gt;&gt; (I32)&gt;]
 	]&gt;,
 	&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRCast: (F64)&lt;IRLocal: var3 I32&gt;&gt; (F64)&gt;,
 	&lt;IRAssign: &lt;IRLocal: y F64&gt; = &lt;IRConst: 2.0&gt; (F64)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCast: (I32)&lt;IRLocal: y F64&gt;&gt; (I32)&gt;,
 	&lt;IRSwitch: &lt;IRLocal: var3 I32&gt;
 		&lt;IRConst: 0&gt;: [
 		[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: y F64&gt; + &lt;IRConst: 10.0&gt;&gt; (F64)&gt;]
@@ -1676,8 +1678,7 @@ class Arrays {
 	&lt;IRAssign: &lt;IRLocal: z I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
 	&lt;IRWhileLoop: while (&lt;IRBoolExpr: &lt;IRLocal: z I32&gt; &lt; &lt;IRConst: 5&gt;&gt;) {
 		[
-			[&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: z I32&gt; + &lt;IRConst: 3&gt;&gt; (I32)&gt;,
-			&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; + &lt;IRCast: (F64)&lt;IRLocal: var4 I32&gt;&gt;&gt; (F64)&gt;,
+			[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; + &lt;IRCast: (F64)&lt;IRArithmetic: &lt;IRLocal: z I32&gt; + &lt;IRConst: 3&gt;&gt;&gt;&gt; (F64)&gt;,
 			&lt;IRAssign: &lt;IRLocal: z I32&gt; = &lt;IRArithmetic: &lt;IRLocal: z I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
 		]
 	}&gt;,
@@ -1707,7 +1708,7 @@ class Arrays {
 	&lt;IRAssign: &lt;IRLocal: var8 I32&gt; = &lt;IRCall: &lt;IRConst: f@23 static $BigControlFlow.factorial (I32) -&gt; I32 (from BigControlFlow.hx)&gt;(&lt;IRConst: 5&gt;)&gt; (Fun)&gt;,
 	&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; + &lt;IRCast: (F64)&lt;IRLocal: var8 I32&gt;&gt;&gt; (F64)&gt;,
 	&lt;IRAssign: &lt;IRLocal: var8 I32&gt; = &lt;IRArithmetic: &lt;IRConst: 0&gt; % &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 0&gt; == &lt;IRConst: 0&gt;&gt; then
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRArithmetic: &lt;IRConst: 0&gt; % &lt;IRConst: 2&gt;&gt; == &lt;IRConst: 0&gt;&gt; then
 		[
 		[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; + &lt;IRConst: 0.0&gt;&gt; (F64)&gt;]
 	]
@@ -1716,7 +1717,7 @@ class Arrays {
 		[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; - &lt;IRConst: 0.0&gt;&gt; (F64)&gt;]
 	]&gt;,
 	&lt;IRAssign: &lt;IRLocal: var8 I32&gt; = &lt;IRArithmetic: &lt;IRConst: 1&gt; % &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 1&gt; == &lt;IRConst: 0&gt;&gt; then
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRArithmetic: &lt;IRConst: 1&gt; % &lt;IRConst: 2&gt;&gt; == &lt;IRConst: 0&gt;&gt; then
 		[
 		[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; + &lt;IRConst: 5.0&gt;&gt; (F64)&gt;]
 	]
@@ -1725,7 +1726,7 @@ class Arrays {
 		[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; - &lt;IRConst: 5.0&gt;&gt; (F64)&gt;]
 	]&gt;,
 	&lt;IRAssign: &lt;IRLocal: var8 I32&gt; = &lt;IRArithmetic: &lt;IRConst: 2&gt; % &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 2&gt; == &lt;IRConst: 0&gt;&gt; then
+	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRArithmetic: &lt;IRConst: 2&gt; % &lt;IRConst: 2&gt;&gt; == &lt;IRConst: 0&gt;&gt; then
 		[
 		[&lt;IRAssign: &lt;IRLocal: result F64&gt; = &lt;IRArithmetic: &lt;IRLocal: result F64&gt; + &lt;IRConst: 10.0&gt;&gt; (F64)&gt;]
 	]
@@ -1760,10 +1761,10 @@ class Arrays {
                         
                         data-name="$BigControlFlow.main"
                         data-orig='"Int. r0. 10\nFloat. r2. 0.0\nInt. r4. 5\nJSGte. r4. r0. 4\nInt. r4. 2\nMul. r3. r0. r4\nToSFloat. r5. r3\nJAlways. 3\nInt. r4. 2\nAdd. r3. r0. r4\nToSFloat. r5. r3\nFloat. r5. 2.0\nToInt. r3. r5\nSwitch. r3. [3, 6, 9]. 11\nFloat. r7. 10.0\nSDiv. r6. r5. r7\nJAlways. 8\nFloat. r7. 10.0\nAdd. r6. r5. r7\nJAlways. 5\nFloat. r7. 10.0\nMul. r6. r5. r7\nJAlways. 2\nFloat. r7. 10.0\nSub. r6. r5. r7\nFloat. r7. 0.0\nAdd. r6. r6. r7\nFloat. r7. 2.0\nAdd. r6. r6. r7\nFloat. r7. 4.0\nAdd. r6. r6. r7\nFloat. r7. 6.0\nAdd. r6. r6. r7\nFloat. r7. 8.0\nAdd. r6. r6. r7\nMov. r2. r6\nInt. r3. 0\nLabel\nInt. r8. 5\nJSGte. r3. r8. 7\nInt. r8. 3\nAdd. r4. r3. r8\nToSFloat. r7. r4\nAdd. r6. r2. r7\nMov. r2. r6\nIncr. r3\nJAlways. -10\nInt. r4. 0\nLabel\nInt. r9. 3\nSub. r8. r4. r9\nToSFloat. r7. r8\nAdd. r6. r2. r7\nMov. r2. r6\nIncr. r4\nInt. r9. 5\nJSGte. r4. r9. 1\nJAlways. -10\nTrap. r10. 5\nFloat. r6. 10.0\nFloat. r7. 0.0\nSDiv. r6. r6. r7\nEndTrap. r1\nJAlways. 3\nNull. r11\nFloat. r6. -1.0\nMov. r2. r6\nInt. r8. 5\nCall1. r8. $BigControlFlow.factorial. r8\nToSFloat. r7. r8\nAdd. r6. r2. r7\nInt. r8. 0\nInt. r9. 2\nSMod. r8. r8. r9\nInt. r9. 0\nJNotEq. r8. r9. 3\nFloat. r7. 0.0\nAdd. r6. r6. r7\nJAlways. 2\nFloat. r7. 0.0\nSub. r6. r6. r7\nInt. r8. 1\nInt. r9. 2\nSMod. r8. r8. r9\nInt. r9. 0\nJNotEq. r8. r9. 3\nFloat. r7. 5.0\nAdd. r6. r6. r7\nJAlways. 2\nFloat. r7. 5.0\nSub. r6. r6. r7\nInt. r8. 2\nInt. r9. 2\nSMod. r8. r8. r9\nInt. r9. 0\nJNotEq. r8. r9. 3\nFloat. r7. 10.0\nAdd. r6. r6. r7\nJAlways. 2\nFloat. r7. 10.0\nSub. r6. r6. r7\nRet. r1"'
-                        data-recomp='"Int. r0. 10\nFloat. r2. 0.0\nInt. r3. 5\nInt. r4. 0\nFloat. r5. 2.0\nInt. r6. 0\nInt. r7. 0\nNull. r8\nFloat. r9. 0.0\nInt. r10. 5\nCall1. r10. $BigControlFlow.factorial. r10\nJSGte. r3. r0. 4\nInt. r11. 2\nMov. r3. r11\nMul. r11. r0. r3\nJAlways. 3\nInt. r11. 2\nMov. r3. r11\nAdd. r11. r0. r3\nToSFloat. r13. r11\nToInt. r11. r5\nSwitch. r11. [3, 6, 9]. 11\nFloat. r14. 10.0\nSDiv. r13. r5. r14\nJAlways. 8\nFloat. r14. 10.0\nAdd. r13. r5. r14\nJAlways. 5\nFloat. r14. 10.0\nMul. r13. r5. r14\nJAlways. 2\nFloat. r14. 10.0\nSub. r13. r5. r14\nFloat. r14. 0.0\nAdd. r13. r13. r14\nFloat. r14. 2.0\nAdd. r13. r13. r14\nFloat. r14. 4.0\nAdd. r13. r13. r14\nFloat. r14. 6.0\nAdd. r13. r13. r14\nFloat. r14. 8.0\nAdd. r13. r13. r14\nMov. r2. r13\nLabel\nInt. r12. 5\nJSGte. r6. r12. 7\nInt. r12. 3\nAdd. r11. r6. r12\nToSFloat. r14. r11\nAdd. r13. r2. r14\nMov. r2. r13\nIncr. r6\nJAlways. -10\nLabel\nInt. r12. 3\nSub. r11. r7. r12\nToSFloat. r14. r11\nAdd. r13. r2. r14\nMov. r2. r13\nIncr. r7\nInt. r12. 5\nJSGte. r7. r12. 1\nJAlways. -10\nTrap. r15. 6\nFloat. r13. 10.0\nMov. r2. r13\nFloat. r14. 0.0\nSDiv. r13. r13. r14\nEndTrap. r1\nJAlways. 3\nNull. r16\nFloat. r13. -1.0\nMov. r2. r13\nToSFloat. r14. r10\nAdd. r13. r2. r14\nInt. r11. 0\nInt. r12. 2\nSMod. r11. r11. r12\nFloat. r14. 0.0\nAdd. r13. r13. r14\nInt. r11. 1\nInt. r12. 2\nSMod. r11. r11. r12\nFloat. r14. 5.0\nSub. r13. r13. r14\nInt. r11. 2\nInt. r12. 2\nSMod. r11. r11. r12\nFloat. r14. 10.0\nSub. r13. r13. r14\nRet. r1"'
+                        data-recomp='"Int. r0. 0\nFloat. r2. 0.0\nInt. r3. 10\nFloat. r4. 0.0\nInt. r6. 5\nJSGte. r6. r3. 3\nInt. r6. 2\nMul. r5. r3. r6\nJAlways. 2\nInt. r6. 2\nAdd. r5. r3. r6\nToSFloat. r7. r5\nFloat. r7. 2.0\nSwitch. r5. [3, 6, 9]. 11\nFloat. r9. 10.0\nSDiv. r8. r7. r9\nJAlways. 8\nFloat. r9. 10.0\nAdd. r8. r7. r9\nJAlways. 5\nFloat. r9. 10.0\nMul. r8. r7. r9\nJAlways. 2\nFloat. r9. 10.0\nSub. r8. r7. r9\nFloat. r9. 0.0\nAdd. r8. r8. r9\nFloat. r9. 2.0\nAdd. r8. r8. r9\nFloat. r9. 4.0\nAdd. r8. r8. r9\nFloat. r9. 6.0\nAdd. r8. r8. r9\nFloat. r9. 8.0\nAdd. r8. r8. r9\nMov. r4. r8\nInt. r5. 0\nLabel\nInt. r10. 5\nJSGte. r5. r10. 7\nInt. r10. 3\nAdd. r6. r5. r10\nToSFloat. r9. r6\nAdd. r8. r4. r9\nMov. r4. r8\nIncr. r5\nJAlways. -10\nInt. r6. 0\nLabel\nInt. r11. 3\nSub. r10. r6. r11\nToSFloat. r9. r10\nAdd. r8. r4. r9\nMov. r4. r8\nIncr. r6\nInt. r11. 5\nJSGte. r6. r11. 1\nJAlways. -10\nTrap. r12. 6\nFloat. r8. 10.0\nMov. r4. r8\nFloat. r9. 0.0\nSDiv. r8. r8. r9\nEndTrap. r1\nJAlways. 3\nNull. r13\nFloat. r8. -1.0\nMov. r4. r8\nInt. r10. 5\nCall1. r10. $BigControlFlow.factorial. r10\nToSFloat. r9. r10\nAdd. r8. r4. r9\nInt. r11. 0\nInt. r14. 2\nSMod. r11. r11. r14\nInt. r11. 0\nInt. r14. 2\nSMod. r11. r11. r14\nInt. r14. 0\nJNotEq. r11. r14. 3\nFloat. r9. 0.0\nAdd. r8. r8. r9\nJAlways. 2\nFloat. r9. 0.0\nSub. r8. r8. r9\nInt. r11. 1\nInt. r14. 2\nSMod. r11. r11. r14\nInt. r11. 1\nInt. r14. 2\nSMod. r11. r11. r14\nInt. r14. 0\nJNotEq. r11. r14. 3\nFloat. r9. 5.0\nAdd. r8. r8. r9\nJAlways. 2\nFloat. r9. 5.0\nSub. r8. r8. r9\nInt. r11. 2\nInt. r14. 2\nSMod. r11. r11. r14\nInt. r11. 2\nInt. r14. 2\nSMod. r11. r11. r14\nInt. r14. 0\nJNotEq. r11. r14. 3\nFloat. r9. 10.0\nAdd. r8. r8. r9\nJAlways. 2\nFloat. r9. 10.0\nSub. r8. r8. r9\nRet. r1"'
                         data-orig-count="102"
-                        data-recomp-count="92"
-                        data-sim="80.4"
+                        data-recomp-count="112"
+                        data-sim="93.5"
                         onclick="openDiff(this)"
                         
                     >
@@ -1773,14 +1774,14 @@ class Arrays {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:80.4%; background:var(--yellow);"></div>
+                                        <div class="sim-bar-fill" style="width:93.5%; background:var(--green);"></div>
                                     </div>
-                                    <span class="sim-pct">80.4%</span>
+                                    <span class="sim-pct">93.5%</span>
                                 </div>
                             
                         </td>
                         <td>102</td>
-                        <td>92</td>
+                        <td>112</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -1793,10 +1794,10 @@ class Arrays {
                         
                         data-name="$BigControlFlow.factorial"
                         data-orig='"Int. r2. 1\nJSLt. r2. r0. 2\nInt. r1. 1\nRet. r1\nInt. r3. 1\nSub. r2. r0. r3\nCall1. r2. $BigControlFlow.factorial. r2\nMul. r1. r0. r2\nRet. r1"'
-                        data-recomp='"Int. r3. 1\nSub. r2. r0. r3\nCall1. r2. $BigControlFlow.factorial. r2\nMul. r1. r0. r2\nInt. r3. 1\nJSLt. r3. r0. 2\nInt. r2. 1\nRet. r2\nRet. r1"'
+                        data-recomp='"Int. r2. 1\nJSLt. r2. r0. 2\nInt. r1. 1\nRet. r1\nInt. r3. 1\nSub. r2. r0. r3\nCall1. r2. $BigControlFlow.factorial. r2\nMul. r1. r0. r2\nRet. r1"'
                         data-orig-count="9"
                         data-recomp-count="9"
-                        data-sim="55.6"
+                        data-sim="100.0"
                         onclick="openDiff(this)"
                         
                     >
@@ -1806,9 +1807,9 @@ class Arrays {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:55.6%; background:var(--red);"></div>
+                                        <div class="sim-bar-fill" style="width:100.0%; background:var(--green);"></div>
                                     </div>
-                                    <span class="sim-pct">55.6%</span>
+                                    <span class="sim-pct">100.0%</span>
                                 </div>
                             
                         </td>
@@ -1834,7 +1835,7 @@ class Arrays {
          id="5"
          data-name="Branch"
          data-length="195"
-         data-sim="94.1"
+         data-sim="82.4"
          data-failed="0"
          data-index="5">
         <div class="test-header pass">
@@ -1845,8 +1846,8 @@ class Arrays {
             <div class="header-right">
                 
                     
-                        <span class="badge badge-green">
-                            94.1% opcode match
+                        <span class="badge badge-yellow">
+                            82.4% opcode match
                         </span>
                     
                 
@@ -1889,9 +1890,9 @@ class Arrays {
         if (a &gt; 1) {
             a = 1;
             a = 3;
-            return;
+        } else {
+            a = 2;
         }
-        a = 2;
     }
 }</code></pre>
             </div>
@@ -1904,12 +1905,12 @@ class Arrays {
 	&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 1&gt; &lt; &lt;IRLocal: a I32&gt;&gt; then
 		[
 		[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 1&gt; (I32)&gt;,
-		&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
-		&lt;IRReturn: None&gt;]
+		&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;]
 	]
 	else
-		[]&gt;,
-	&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 2&gt; (I32)&gt;,
+		[
+		[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 2&gt; (I32)&gt;]
+	]&gt;,
 	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
@@ -1937,10 +1938,10 @@ class Arrays {
                         
                         data-name="$Branch.main"
                         data-orig='"Int. r0. 0\nInt. r3. 1\nJSGte. r3. r0. 2\nInt. r2. 1\nJAlways. 2\nInt. r2. 2\nRet. r1\nInt. r2. 3\nRet. r1"'
-                        data-recomp='"Int. r0. 0\nInt. r3. 1\nJSGte. r3. r0. 3\nInt. r2. 1\nInt. r2. 3\nRet. r1\nInt. r2. 2\nRet. r1"'
+                        data-recomp='"Int. r0. 0\nInt. r3. 1\nJSGte. r3. r0. 3\nInt. r2. 1\nInt. r2. 3\nJAlways. 1\nInt. r2. 2\nRet. r1"'
                         data-orig-count="9"
                         data-recomp-count="8"
-                        data-sim="94.1"
+                        data-sim="82.4"
                         onclick="openDiff(this)"
                         
                     >
@@ -1950,9 +1951,9 @@ class Arrays {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:94.1%; background:var(--green);"></div>
+                                        <div class="sim-bar-fill" style="width:82.4%; background:var(--yellow);"></div>
                                     </div>
-                                    <span class="sim-pct">94.1%</span>
+                                    <span class="sim-pct">82.4%</span>
                                 </div>
                             
                         </td>
@@ -2026,8 +2027,8 @@ class Arrays {
                 <div class="panel-label">Decompiled</div>
                 <pre class="line-numbers"><code class="language-haxe">class BranchExpr {
     public static function main(): Void {
-        var a: Bool = true;
         var b: Int = 0;
+        var a: Bool = true;
         if (a) {
             b = 3;
         } else {
@@ -2077,7 +2078,7 @@ class Arrays {
                         
                         data-name="$BranchExpr.main"
                         data-orig='"Bool. r0. True\nJFalse. r0. 2\nInt. r2. 3\nJAlways. 1\nInt. r2. 2\nRet. r1"'
-                        data-recomp='"Bool. r0. True\nInt. r2. 0\nJFalse. r0. 2\nInt. r3. 3\nJAlways. 1\nInt. r3. 2\nRet. r1"'
+                        data-recomp='"Int. r0. 0\nBool. r2. True\nJFalse. r2. 2\nInt. r3. 3\nJAlways. 1\nInt. r3. 2\nRet. r1"'
                         data-orig-count="6"
                         data-recomp-count="7"
                         data-sim="92.3"
@@ -2180,8 +2181,8 @@ class Arrays {
                 <div class="panel-label">Decompiled</div>
                 <pre class="line-numbers"><code class="language-haxe">class BranchNested {
     public static function main(): Void {
-        var a: Int = 0;
         var cond: Bool = false;
+        var a: Int = 0;
         if (a &gt; 1) {
             a = 1;
             if (a == 10) {
@@ -2207,7 +2208,6 @@ class Arrays {
             a = 3;
         }
         return;
-        a = 16;
         a = 3;
     }
 }</code></pre>
@@ -2259,7 +2259,6 @@ class Arrays {
 		]&gt;,
 		&lt;IRReturn: None&gt;]
 	]&gt;,
-	&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 16&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
 	&lt;IRReturn: None&gt;]
 ]</code></pre>
@@ -2288,7 +2287,7 @@ class Arrays {
                         
                         data-name="$BranchNested.main"
                         data-orig='"Int. r0. 0\nInt. r3. 1\nJSGte. r3. r0. 15\nInt. r2. 1\nInt. r3. 10\nJNotEq. r2. r3. 2\nInt. r2. 42\nRet. r1\nInt. r2. 41\nInt. r2. 4\nInt. r3. 3\nJNotEq. r2. r3. 2\nBool. r4. False\nJAlways. 1\nBool. r4. True\nJFalse. r4. 1\nInt. r2. 16\nJAlways. 4\nInt. r3. 2\nJSLt. r3. r0. 2\nInt. r2. 2\nRet. r1\nInt. r2. 3\nRet. r1"'
-                        data-recomp='"Int. r0. 0\nBool. r2. False\nInt. r4. 1\nJSGte. r4. r0. 16\nInt. r3. 1\nInt. r4. 10\nJNotEq. r3. r4. 2\nInt. r3. 42\nJAlways. 10\nInt. r3. 41\nInt. r3. 4\nInt. r4. 3\nJNotEq. r3. r4. 2\nBool. r5. False\nJAlways. 1\nBool. r5. True\nJFalse. r5. 1\nInt. r3. 16\nInt. r3. 3\nRet. r1\nInt. r4. 2\nJSLt. r4. r0. 2\nInt. r3. 2\nJAlways. 1\nInt. r3. 3\nRet. r1"'
+                        data-recomp='"Bool. r0. False\nInt. r2. 0\nInt. r4. 1\nJSGte. r4. r2. 16\nInt. r3. 1\nInt. r4. 10\nJNotEq. r3. r4. 2\nInt. r3. 42\nJAlways. 10\nInt. r3. 41\nInt. r3. 4\nInt. r4. 3\nJNotEq. r3. r4. 2\nBool. r5. False\nJAlways. 1\nBool. r5. True\nJFalse. r5. 1\nInt. r3. 16\nInt. r3. 3\nRet. r1\nInt. r4. 2\nJSLt. r4. r2. 2\nInt. r3. 2\nJAlways. 1\nInt. r3. 3\nRet. r1"'
                         data-orig-count="24"
                         data-recomp-count="26"
                         data-sim="84.0"
@@ -2329,10 +2328,10 @@ class Arrays {
          id="8"
          data-name="Clazz"
          data-length="337"
-         data-sim="64.5"
-         data-failed="1"
+         data-sim="100.0"
+         data-failed="0"
          data-index="8">
-        <div class="test-header fail">
+        <div class="test-header pass">
             <h2>
                 <a href="#8"><i class="fa fa-link"></i></a>
                 Clazz
@@ -2340,8 +2339,8 @@ class Arrays {
             <div class="header-right">
                 
                     
-                        <span class="badge badge-red">
-                            64.5% opcode match
+                        <span class="badge badge-green">
+                            100.0% opcode match
                         </span>
                     
                 
@@ -2393,19 +2392,18 @@ class Parent {
     public var b: Int;
 
     public function new() {
-        // UNLIFTED OPCODE: this.field1 = reg1
-        return;
+        this.b = 10;
     }
 
     public static function main(): Void {
         var c: Clazz = new Clazz();
-        var var2: Int = 15;
+        c.b = 15;
         var a: Int = c.b;
-        c.b = var2;
+        c.method();
     }
 
     public function method(): Int {
-        // UNLIFTED OPCODE: this.field1 = reg1
+        this.b = 18;
         return 42;
     }
 }
@@ -2419,23 +2417,25 @@ class Parent {
                 <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Clazz.__constructor__ ---
 
 [
-	[&lt;IRUntranslatedOpcode: SetThis&gt;, &lt;IRReturn: None&gt;]
+	[&lt;IRAssign: &lt;IRField: &lt;IRLocal: this Clazz&gt;.b&gt; = &lt;IRConst: 10&gt; (I32)&gt;,
+	&lt;IRReturn: None&gt;]
 ]
 
 // --- Static Method: $Clazz.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: c Clazz&gt; = &lt;IRNew: new Clazz()&gt; (Clazz)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRConst: 15&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRField: &lt;IRLocal: c Clazz&gt;.b&gt; = &lt;IRLocal: var2 I32&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRField: &lt;IRLocal: c Clazz&gt;.b&gt; = &lt;IRConst: 15&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRField: &lt;IRLocal: c Clazz&gt;.b&gt; (I32)&gt;,
+	&lt;IRCall: &lt;IRConst: f@23 Clazz.method (Clazz) -&gt; I32 (from Clazz.hx)&gt;(&lt;IRLocal: c Clazz&gt;)&gt;,
 	&lt;IRReturn: None&gt;]
 ]
 
 // --- Instance Method: Clazz.method ---
 
 [
-	[&lt;IRUntranslatedOpcode: SetThis&gt;, &lt;IRReturn: &lt;IRConst: 42&gt;&gt;]
+	[&lt;IRAssign: &lt;IRField: &lt;IRLocal: this Clazz&gt;.b&gt; = &lt;IRConst: 18&gt; (I32)&gt;,
+	&lt;IRReturn: &lt;IRConst: 42&gt;&gt;]
 ]</code></pre>
             </div>
         </div>
@@ -2462,10 +2462,10 @@ class Parent {
                         
                         data-name="$Clazz.main"
                         data-orig='"New. r0\nCall1. r1. $Clazz.__constructor__. r0\nInt. r2. 15\nSetField. r0. 1. r2\nField. r2. r0. 1\nCall1. r3. Clazz.method. r0\nRet. r1"'
-                        data-recomp='"New. r0\nCall1. r1. $Clazz.__constructor__. r0\nInt. r2. 15\nField. r3. r0. 1\nSetField. r0. 1. r2\nRet. r1"'
+                        data-recomp='"New. r0\nCall1. r1. $Clazz.__constructor__. r0\nInt. r2. 15\nSetField. r0. 1. r2\nField. r2. r0. 1\nCall1. r3. Clazz.method. r0\nRet. r1"'
                         data-orig-count="7"
-                        data-recomp-count="6"
-                        data-sim="76.9"
+                        data-recomp-count="7"
+                        data-sim="100.0"
                         onclick="openDiff(this)"
                         
                     >
@@ -2475,14 +2475,14 @@ class Parent {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:76.9%; background:var(--yellow);"></div>
+                                        <div class="sim-bar-fill" style="width:100.0%; background:var(--green);"></div>
                                     </div>
-                                    <span class="sim-pct">76.9%</span>
+                                    <span class="sim-pct">100.0%</span>
                                 </div>
                             
                         </td>
                         <td>7</td>
-                        <td>6</td>
+                        <td>7</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -2495,10 +2495,10 @@ class Parent {
                         
                         data-name="$Clazz.__constructor__"
                         data-orig='"Int. r1. 10\nSetThis. 1. r1\nRet. r2"'
-                        data-recomp='"Ret. r1"'
+                        data-recomp='"Int. r1. 10\nSetThis. 1. r1\nRet. r2"'
                         data-orig-count="3"
-                        data-recomp-count="1"
-                        data-sim="50.0"
+                        data-recomp-count="3"
+                        data-sim="100.0"
                         onclick="openDiff(this)"
                         
                     >
@@ -2508,14 +2508,14 @@ class Parent {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:50.0%; background:var(--red);"></div>
+                                        <div class="sim-bar-fill" style="width:100.0%; background:var(--green);"></div>
                                     </div>
-                                    <span class="sim-pct">50.0%</span>
+                                    <span class="sim-pct">100.0%</span>
                                 </div>
                             
                         </td>
                         <td>3</td>
-                        <td>1</td>
+                        <td>3</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -2528,10 +2528,10 @@ class Parent {
                         
                         data-name="Clazz.method"
                         data-orig='"Int. r1. 18\nSetThis. 1. r1\nInt. r1. 42\nRet. r1"'
-                        data-recomp='"Int. r1. 42\nRet. r1"'
+                        data-recomp='"Int. r1. 18\nSetThis. 1. r1\nInt. r1. 42\nRet. r1"'
                         data-orig-count="4"
-                        data-recomp-count="2"
-                        data-sim="66.7"
+                        data-recomp-count="4"
+                        data-sim="100.0"
                         onclick="openDiff(this)"
                         
                     >
@@ -2541,14 +2541,14 @@ class Parent {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:66.7%; background:var(--red);"></div>
+                                        <div class="sim-bar-fill" style="width:100.0%; background:var(--green);"></div>
                                     </div>
-                                    <span class="sim-pct">66.7%</span>
+                                    <span class="sim-pct">100.0%</span>
                                 </div>
                             
                         </td>
                         <td>4</td>
-                        <td>2</td>
+                        <td>4</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -2759,7 +2759,6 @@ class Parent {
                 <div class="panel-label">Decompiled</div>
                 <pre class="line-numbers"><code class="language-haxe">class Constructor {
     public function new(b: Int, arg1: String) {
-        return;
     }
 
     public static function other(): Int {
@@ -3045,7 +3044,7 @@ class Parent {
          id="12"
          data-name="Enums"
          data-length="529"
-         data-sim="93.5"
+         data-sim="100.0"
          data-failed="0"
          data-index="12">
         <div class="test-header pass">
@@ -3057,7 +3056,7 @@ class Parent {
                 
                     
                         <span class="badge badge-green">
-                            93.5% opcode match
+                            100.0% opcode match
                         </span>
                     
                 
@@ -3106,12 +3105,7 @@ enum Color {
             </div>
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
-                <pre class="line-numbers"><code class="language-haxe">extern class Native {
-    static function itos(arg0: Dynamic, arg1: Dynamic): Dynamic;
-}
-
-extern class StdFuncs {
-    static function __std_16___alloc__(arg0: Dynamic, arg1: Dynamic): Dynamic;
+                <pre class="line-numbers"><code class="language-haxe">extern class StdFuncs {
     static function __std_20___add__(arg0: Dynamic, arg1: Dynamic): Dynamic;
 }
 
@@ -3126,12 +3120,7 @@ class Enums {
     public static function main(): Void {
         var a: Color = Red;
         var b: Color = Green;
-        var var4: Int = 255;
-        var var5: Int = 255;
-        var var6: Int = 0;
-        var c: Color = Rgb(var4, var5, var6);
-        var var9: String = &#34;&#34;;
-        var var15: hl.Bytes;
+        var c: Color = Rgb(255, 255, 0);
         switch (c) {
             case Red:
                 trace(&#34;red&#34;); // { fileName: &#39;Enums.hx&#39;, lineNumber: 8, className: &#39;Enums&#39;, methodName: &#39;main&#39; }
@@ -3140,10 +3129,7 @@ class Enums {
             case Blue:
                 trace(&#34;Color was blue&#34;); // { fileName: &#39;Enums.hx&#39;, lineNumber: 12, className: &#39;Enums&#39;, methodName: &#39;main&#39; }
             case Rgb(r, g, b):
-                var9 = &#34;Color had a red value of &#34;;
-                var15 = Native.itos(r, r);
-                var9 = (var9 + r);
-                trace(var9); // { fileName: &#39;Enums.hx&#39;, lineNumber: 14, className: &#39;Enums&#39;, methodName: &#39;main&#39; }
+                trace((&#34;Color had a red value of &#34; + r)); // { fileName: &#39;Enums.hx&#39;, lineNumber: 14, className: &#39;Enums&#39;, methodName: &#39;main&#39; }
         }
     }
 }</code></pre>
@@ -3155,28 +3141,22 @@ class Enums {
 [
 	[&lt;IRAssign: &lt;IRLocal: a Color&gt; = &lt;IREnumConstruct: Red()&gt; (Color)&gt;,
 	&lt;IRAssign: &lt;IRLocal: b Color&gt; = &lt;IREnumConstruct: Green()&gt; (Color)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRConst: 255&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var5 I32&gt; = &lt;IRConst: 255&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var6 I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: c Color&gt; = &lt;IREnumConstruct: Rgb(&lt;IRLocal: var4 I32&gt;, &lt;IRLocal: var5 I32&gt;, &lt;IRLocal: var6 I32&gt;)&gt; (Color)&gt;,
-	&lt;IRSwitch: &lt;IRLocal: c Color&gt;
-		&lt;IRConst: &#34;Red&#34;&gt;: [
+	&lt;IRAssign: &lt;IRLocal: c Color&gt; = &lt;IREnumConstruct: Rgb(&lt;IRConst: 255&gt;, &lt;IRConst: 255&gt;, &lt;IRConst: 0&gt;)&gt; (Color)&gt;,
+	&lt;IRSwitch: &lt;IRLocal: var4 I32&gt;
+		&lt;IRConst: 0&gt;: [
 		[&lt;IRTrace: msg=&lt;IRConst: &#34;red&#34;&gt;, pos={ fileName: Enums.hx, lineNumber: 8, className: Enums, methodName: main }&gt;]
 	]
-		&lt;IRConst: &#34;Green&#34;&gt;: [
+		&lt;IRConst: 1&gt;: [
 		[&lt;IRTrace: msg=&lt;IRConst: &#34;Color was green&#34;&gt;, pos={ fileName: Enums.hx, lineNumber: 10, className: Enums, methodName: main }&gt;]
 	]
-		&lt;IRConst: &#34;Blue&#34;&gt;: [
+		&lt;IRConst: 2&gt;: [
 		[&lt;IRTrace: msg=&lt;IRConst: &#34;Color was blue&#34;&gt;, pos={ fileName: Enums.hx, lineNumber: 12, className: Enums, methodName: main }&gt;]
 	]
-		&lt;IRConst: &#34;Rgb&#34;&gt;: [
+		&lt;IRConst: 3&gt;: [
 		[&lt;IRAssign: &lt;IRLocal: r I32&gt; = &lt;IREnumField: &lt;IRLocal: c Color&gt;.param0&gt; (I32)&gt;,
 		&lt;IRAssign: &lt;IRLocal: g I32&gt; = &lt;IREnumField: &lt;IRLocal: c Color&gt;.param1&gt; (I32)&gt;,
 		&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IREnumField: &lt;IRLocal: c Color&gt;.param2&gt; (I32)&gt;,
-		&lt;IRAssign: &lt;IRLocal: var9 String&gt; = &lt;IRConst: &#34;Color had a red value of &#34;&gt; (String)&gt;,
-		&lt;IRAssign: &lt;IRLocal: var15 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1bace7f600&gt;&gt;(&lt;IRLocal: r I32&gt;, &lt;IRRef: &amp;&lt;IRLocal: r I32&gt;&gt;)&gt; (Fun)&gt;,
-		&lt;IRAssign: &lt;IRLocal: var9 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var9 String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var15 Bytes&gt;, &lt;IRLocal: r I32&gt;)&gt;)&gt; (Fun)&gt;,
-		&lt;IRTrace: msg=&lt;IRLocal: var9 String&gt;, pos={ fileName: Enums.hx, lineNumber: 14, className: Enums, methodName: main }&gt;]
+		&lt;IRTrace: msg=&lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRConst: &#34;Color had a red value of &#34;&gt;, &lt;IRLocal: r I32&gt;)&gt;, pos={ fileName: Enums.hx, lineNumber: 14, className: Enums, methodName: main }&gt;]
 	]
 		default: []&gt;,
 	&lt;IRReturn: None&gt;]
@@ -3206,10 +3186,10 @@ class Enums {
                         
                         data-name="$Enums.main"
                         data-orig='"GetGlobal. r0. global[Color]\nGetGlobal. r2. global[Color]\nInt. r4. 255\nInt. r5. 255\nInt. r6. 0\nMakeEnum. r3. 3. [4, 5, 6]\nNullCheck. r3\nEnumIndex. r4. r3\nSwitch. r4. [1, 17, 33, 49]. 72\nJAlways. 71\nGetGlobal. r8. global[haxe.$Log]\nField. r7. r8. 6\nNullCheck. r7\nGetGlobal. r9. global[String]\nNew. r10\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027fileName\u0027. r11\nInt. r4. 8\nDynSet. r10. \u0027lineNumber\u0027. r4\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027className\u0027. r11\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027methodName\u0027. r11\nToVirtual. r12. r10\nCallClosure. r1. r7. [9, 12]\nJAlways. 55\nGetGlobal. r8. global[haxe.$Log]\nField. r7. r8. 6\nNullCheck. r7\nGetGlobal. r9. global[String]\nNew. r10\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027fileName\u0027. r11\nInt. r4. 10\nDynSet. r10. \u0027lineNumber\u0027. r4\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027className\u0027. r11\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027methodName\u0027. r11\nToVirtual. r12. r10\nCallClosure. r1. r7. [9, 12]\nJAlways. 39\nGetGlobal. r8. global[haxe.$Log]\nField. r7. r8. 6\nNullCheck. r7\nGetGlobal. r9. global[String]\nNew. r10\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027fileName\u0027. r11\nInt. r4. 12\nDynSet. r10. \u0027lineNumber\u0027. r4\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027className\u0027. r11\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027methodName\u0027. r11\nToVirtual. r12. r10\nCallClosure. r1. r7. [9, 12]\nJAlways. 23\nEnumField. r4. r3. 3. 0\nEnumField. r5. r3. 3. 1\nEnumField. r6. r3. 3. 2\nGetGlobal. r8. global[haxe.$Log]\nField. r7. r8. 6\nNullCheck. r7\nGetGlobal. r9. global[String]\nMov. r13. r4\nRef. r14. r13\nCall2. r15. \u003cnone\u003e. r13. r14\nCall2. r11. $String.__alloc__. r15. r13\nCall2. r9. $String.__add__. r9. r11\nNew. r10\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027fileName\u0027. r11\nInt. r13. 14\nDynSet. r10. \u0027lineNumber\u0027. r13\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027className\u0027. r11\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027methodName\u0027. r11\nToVirtual. r12. r10\nCallClosure. r1. r7. [9, 12]\nRet. r1"'
-                        data-recomp='"GetGlobal. r0. global[Color]\nGetGlobal. r2. global[Color]\nInt. r3. 255\nInt. r4. 255\nInt. r5. 0\nMakeEnum. r6. 3. [3, 4, 5]\nGetGlobal. r10. global[String]\nNullCheck. r6\nEnumIndex. r7. r6\nSwitch. r7. [1, 17, 33, 49]. 76\nJAlways. 75\nGetGlobal. r12. global[haxe.$Log]\nField. r11. r12. 6\nNullCheck. r11\nGetGlobal. r13. global[String]\nNew. r14\nGetGlobal. r15. global[String]\nDynSet. r14. \u0027fileName\u0027. r15\nInt. r7. 29\nDynSet. r14. \u0027lineNumber\u0027. r7\nGetGlobal. r15. global[String]\nDynSet. r14. \u0027className\u0027. r15\nGetGlobal. r15. global[String]\nDynSet. r14. \u0027methodName\u0027. r15\nToVirtual. r16. r14\nCallClosure. r1. r11. [13, 16]\nJAlways. 59\nGetGlobal. r12. global[haxe.$Log]\nField. r11. r12. 6\nNullCheck. r11\nGetGlobal. r13. global[String]\nNew. r14\nGetGlobal. r15. global[String]\nDynSet. r14. \u0027fileName\u0027. r15\nInt. r7. 31\nDynSet. r14. \u0027lineNumber\u0027. r7\nGetGlobal. r15. global[String]\nDynSet. r14. \u0027className\u0027. r15\nGetGlobal. r15. global[String]\nDynSet. r14. \u0027methodName\u0027. r15\nToVirtual. r16. r14\nCallClosure. r1. r11. [13, 16]\nJAlways. 43\nGetGlobal. r12. global[haxe.$Log]\nField. r11. r12. 6\nNullCheck. r11\nGetGlobal. r13. global[String]\nNew. r14\nGetGlobal. r15. global[String]\nDynSet. r14. \u0027fileName\u0027. r15\nInt. r7. 33\nDynSet. r14. \u0027lineNumber\u0027. r7\nGetGlobal. r15. global[String]\nDynSet. r14. \u0027className\u0027. r15\nGetGlobal. r15. global[String]\nDynSet. r14. \u0027methodName\u0027. r15\nToVirtual. r16. r14\nCallClosure. r1. r11. [13, 16]\nJAlways. 27\nEnumField. r7. r6. 3. 0\nEnumField. r8. r6. 3. 1\nEnumField. r9. r6. 3. 2\nGetGlobal. r13. global[String]\nToDyn. r17. r7\nToDyn. r19. r7\nCall2. r17. 255. r17. r19\nSafeCast. r20. r17\nMov. r18. r7\nRef. r21. r18\nCall2. r20. \u003cnone\u003e. r18. r21\nCall2. r15. $String.__alloc__. r20. r18\nCall2. r13. $String.__add__. r13. r15\nGetGlobal. r12. global[haxe.$Log]\nField. r11. r12. 6\nNullCheck. r11\nNew. r14\nGetGlobal. r15. global[String]\nDynSet. r14. \u0027fileName\u0027. r15\nInt. r18. 38\nDynSet. r14. \u0027lineNumber\u0027. r18\nGetGlobal. r15. global[String]\nDynSet. r14. \u0027className\u0027. r15\nGetGlobal. r15. global[String]\nDynSet. r14. \u0027methodName\u0027. r15\nToVirtual. r16. r14\nCallClosure. r1. r11. [13, 16]\nRet. r1"'
+                        data-recomp='"GetGlobal. r0. global[Color]\nGetGlobal. r2. global[Color]\nInt. r4. 255\nInt. r5. 255\nInt. r6. 0\nMakeEnum. r3. 3. [4, 5, 6]\nNullCheck. r3\nEnumIndex. r4. r3\nSwitch. r4. [1, 17, 33, 49]. 72\nJAlways. 71\nGetGlobal. r8. global[haxe.$Log]\nField. r7. r8. 6\nNullCheck. r7\nGetGlobal. r9. global[String]\nNew. r10\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027fileName\u0027. r11\nInt. r4. 19\nDynSet. r10. \u0027lineNumber\u0027. r4\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027className\u0027. r11\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027methodName\u0027. r11\nToVirtual. r12. r10\nCallClosure. r1. r7. [9, 12]\nJAlways. 55\nGetGlobal. r8. global[haxe.$Log]\nField. r7. r8. 6\nNullCheck. r7\nGetGlobal. r9. global[String]\nNew. r10\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027fileName\u0027. r11\nInt. r4. 21\nDynSet. r10. \u0027lineNumber\u0027. r4\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027className\u0027. r11\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027methodName\u0027. r11\nToVirtual. r12. r10\nCallClosure. r1. r7. [9, 12]\nJAlways. 39\nGetGlobal. r8. global[haxe.$Log]\nField. r7. r8. 6\nNullCheck. r7\nGetGlobal. r9. global[String]\nNew. r10\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027fileName\u0027. r11\nInt. r4. 23\nDynSet. r10. \u0027lineNumber\u0027. r4\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027className\u0027. r11\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027methodName\u0027. r11\nToVirtual. r12. r10\nCallClosure. r1. r7. [9, 12]\nJAlways. 23\nEnumField. r4. r3. 3. 0\nEnumField. r5. r3. 3. 1\nEnumField. r6. r3. 3. 2\nGetGlobal. r8. global[haxe.$Log]\nField. r7. r8. 6\nNullCheck. r7\nGetGlobal. r9. global[String]\nMov. r13. r4\nRef. r14. r13\nCall2. r15. \u003cnone\u003e. r13. r14\nCall2. r11. $String.__alloc__. r15. r13\nCall2. r9. $String.__add__. r9. r11\nNew. r10\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027fileName\u0027. r11\nInt. r13. 25\nDynSet. r10. \u0027lineNumber\u0027. r13\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027className\u0027. r11\nGetGlobal. r11. global[String]\nDynSet. r10. \u0027methodName\u0027. r11\nToVirtual. r12. r10\nCallClosure. r1. r7. [9, 12]\nRet. r1"'
                         data-orig-count="82"
-                        data-recomp-count="87"
-                        data-sim="93.5"
+                        data-recomp-count="82"
+                        data-sim="100.0"
                         onclick="openDiff(this)"
                         
                     >
@@ -3219,14 +3199,14 @@ class Enums {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:93.5%; background:var(--green);"></div>
+                                        <div class="sim-bar-fill" style="width:100.0%; background:var(--green);"></div>
                                     </div>
-                                    <span class="sim-pct">93.5%</span>
+                                    <span class="sim-pct">100.0%</span>
                                 </div>
                             
                         </td>
                         <td>82</td>
-                        <td>87</td>
+                        <td>82</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -4797,8 +4777,9 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
 				[&lt;IRContinue&gt;]
 			]
 			else
-				[]&gt;,
-			&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; + &lt;IRConst: 4&gt;&gt; (I32)&gt;]
+				[
+				[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; + &lt;IRConst: 4&gt;&gt; (I32)&gt;]
+			]&gt;]
 		]
 	}&gt;,
 	&lt;IRReturn: None&gt;]
@@ -4922,10 +4903,10 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
     }
 
     public static function main(): Void {
+        var i: Int = 0;
         var sum: Int = 0;
         var var2: Int = 0;
         var var3: Array&lt;Int&gt; = LoopForEach.items();
-        var i: Int = 0;
         while (var2 &lt; var3.length) {
             i = var3[var2];
             var2++;
@@ -4983,7 +4964,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                         
                         data-name="$LoopForEach.main"
                         data-orig='"Int. r0. 0\nInt. r2. 0\nCall0. r3. $LoopForEach.items\nLabel\nNullCheck. r3\nField. r5. r3. 0\nJSGte. r2. r5. 12\nField. r5. r3. 0\nJULt. r2. r5. 2\nInt. r4. 0\nJAlways. 4\nField. r6. r3. 1\nInt. r5. 2\nShl. r5. r2. r5\nGetMem. r4. r6. r5\nIncr. r2\nAdd. r5. r0. r4\nMov. r0. r5\nJAlways. -16\nRet. r1"'
-                        data-recomp='"Int. r0. 0\nInt. r2. 0\nCall0. r3. $LoopForEach.items\nInt. r4. 0\nLabel\nNullCheck. r3\nField. r6. r3. 0\nJSGte. r2. r6. 13\nField. r6. r3. 0\nJULt. r2. r6. 2\nInt. r5. 0\nJAlways. 4\nField. r7. r3. 1\nInt. r6. 2\nShl. r6. r2. r6\nGetMem. r5. r7. r6\nMov. r4. r5\nIncr. r2\nAdd. r5. r0. r4\nMov. r0. r5\nJAlways. -17\nRet. r1"'
+                        data-recomp='"Int. r0. 0\nInt. r2. 0\nInt. r3. 0\nCall0. r4. $LoopForEach.items\nLabel\nNullCheck. r4\nField. r6. r4. 0\nJSGte. r3. r6. 13\nField. r6. r4. 0\nJULt. r3. r6. 2\nInt. r5. 0\nJAlways. 4\nField. r7. r4. 1\nInt. r6. 2\nShl. r6. r3. r6\nGetMem. r5. r7. r6\nMov. r0. r5\nIncr. r3\nAdd. r5. r2. r0\nMov. r2. r5\nJAlways. -17\nRet. r1"'
                         data-orig-count="20"
                         data-recomp-count="22"
                         data-sim="95.2"
@@ -5198,7 +5179,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
          id="18"
          data-name="Loop Nested"
          data-length="497"
-         data-sim="82.1"
+         data-sim="85.2"
          data-failed="0"
          data-index="18">
         <div class="test-header pass">
@@ -5210,7 +5191,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 
                     
                         <span class="badge badge-yellow">
-                            82.1% opcode match
+                            85.2% opcode match
                         </span>
                     
                 
@@ -5260,16 +5241,11 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <div class="panel-label">Decompiled</div>
                 <pre class="line-numbers"><code class="language-haxe">class LoopNested {
     public static function main(): Void {
-        var b: Int = 69;
-        var var4: Int = 0;
-        var var3: Int = 0;
         var a: Int = 0;
+        var b: Int = 69;
         while (true) {
-            var4 = 2;
-            var3 = b * var4;
-            b = var3;
-            var4 = 1000;
-            if (var4 &lt; var3) {
+            b *= 2;
+            if (b * 2 &gt; 1000) {
                 break;
             }
             a = 0;
@@ -5294,36 +5270,34 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
 	[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 69&gt; (I32)&gt;,
 	&lt;IRWhileLoop: while (&lt;IRBoolExpr: &lt;IRConst: True&gt; is true&gt;) {
 		[
-			[&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRConst: 2&gt; (I32)&gt;,
-			&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; * &lt;IRLocal: var4 I32&gt;&gt; (I32)&gt;,
-			&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRLocal: var3 I32&gt; (I32)&gt;,
-			&lt;IRAssign: &lt;IRLocal: var4 I32&gt; = &lt;IRConst: 1000&gt; (I32)&gt;,
-			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var4 I32&gt; &lt; &lt;IRLocal: var3 I32&gt;&gt; then
+			[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; * &lt;IRConst: 2&gt;&gt; (I32)&gt;,
+			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 1000&gt; &lt; &lt;IRArithmetic: &lt;IRLocal: b I32&gt; * &lt;IRConst: 2&gt;&gt;&gt; then
 				[
 				[&lt;IRBreak&gt;]
 			]
 			else
-				[]&gt;,
-			&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
-			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 1&gt; &lt; &lt;IRLocal: a I32&gt;&gt; then
 				[
-				[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 1&gt; (I32)&gt;,
-				&lt;IRWhileLoop: while (&lt;IRBoolExpr: true&gt;) {
+				[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
+				&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 1&gt; &lt; &lt;IRLocal: a I32&gt;&gt; then
 					[
-						[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; * &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-						&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRLocal: a I32&gt; (I32)&gt;,
-						&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 1000&gt; &lt; &lt;IRLocal: a I32&gt;&gt; then
-							[
-							[&lt;IRBreak&gt;]
+					[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 1&gt; (I32)&gt;,
+					&lt;IRWhileLoop: while (&lt;IRBoolExpr: true&gt;) {
+						[
+							[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; * &lt;IRConst: 2&gt;&gt; (I32)&gt;,
+							&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRLocal: a I32&gt; (I32)&gt;,
+							&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 1000&gt; &lt; &lt;IRLocal: a I32&gt;&gt; then
+								[
+								[&lt;IRBreak&gt;]
+							]
+							else
+								[]&gt;]
 						]
-						else
-							[]&gt;]
-					]
-				}&gt;]
-			]
-			else
-				[
-				[&lt;IRBreak&gt;]
+					}&gt;]
+				]
+				else
+					[
+					[&lt;IRBreak&gt;]
+				]&gt;]
 			]&gt;]
 		]
 	}&gt;]
@@ -5353,10 +5327,10 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                         
                         data-name="$LoopNested.main"
                         data-orig='"Int. r0. 69\nLabel\nBool. r2. True\nJFalse. r2. 21\nInt. r4. 2\nMul. r3. r0. r4\nMov. r0. r3\nInt. r4. 1000\nJSGte. r4. r3. 1\nJAlways. 15\nInt. r3. 0\nInt. r5. 1\nJSGte. r5. r3. 2\nInt. r4. 1\nJAlways. 2\nInt. r4. 2\nRet. r1\nLabel\nInt. r5. 2\nMul. r4. r0. r5\nMov. r0. r4\nInt. r5. 1000\nJSLt. r5. r4. 1\nJAlways. -7\nJAlways. -24\nRet. r1"'
-                        data-recomp='"Int. r0. 69\nInt. r2. 0\nInt. r3. 0\nInt. r4. 0\nLabel\nBool. r5. True\nJFalse. r5. 22\nInt. r6. 2\nMov. r2. r6\nMul. r6. r0. r2\nMov. r3. r6\nMov. r0. r6\nInt. r6. 1000\nJSGte. r6. r3. 1\nJAlways. 14\nInt. r6. 0\nInt. r7. 1\nJSGte. r7. r6. 9\nInt. r6. 1\nLabel\nInt. r7. 2\nMul. r6. r0. r7\nMov. r0. r6\nInt. r7. 1000\nJSLt. r7. r6. 1\nJAlways. -7\nJAlways. 1\nJAlways. 1\nJAlways. -25\nRet. r1"'
+                        data-recomp='"Int. r0. 0\nInt. r2. 69\nLabel\nBool. r3. True\nJFalse. r3. 22\nInt. r5. 2\nMul. r4. r2. r5\nMov. r2. r4\nInt. r5. 2\nMul. r4. r4. r5\nInt. r5. 1000\nJSGte. r5. r4. 1\nJAlways. 14\nInt. r4. 0\nInt. r5. 1\nJSGte. r5. r4. 9\nInt. r4. 1\nLabel\nInt. r5. 2\nMul. r4. r2. r5\nMov. r2. r4\nInt. r5. 1000\nJSLt. r5. r4. 1\nJAlways. -7\nJAlways. 1\nJAlways. 1\nJAlways. -25\nRet. r1"'
                         data-orig-count="26"
-                        data-recomp-count="30"
-                        data-sim="82.1"
+                        data-recomp-count="28"
+                        data-sim="85.2"
                         onclick="openDiff(this)"
                         
                     >
@@ -5366,14 +5340,14 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:82.1%; background:var(--yellow);"></div>
+                                        <div class="sim-bar-fill" style="width:85.2%; background:var(--yellow);"></div>
                                     </div>
-                                    <span class="sim-pct">82.1%</span>
+                                    <span class="sim-pct">85.2%</span>
                                 </div>
                             
                         </td>
                         <td>26</td>
-                        <td>30</td>
+                        <td>28</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -5394,7 +5368,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
          id="19"
          data-name="Loop While"
          data-length="148"
-         data-sim="95.2"
+         data-sim="100.0"
          data-failed="0"
          data-index="19">
         <div class="test-header pass">
@@ -5406,7 +5380,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 
                     
                         <span class="badge badge-green">
-                            95.2% opcode match
+                            100.0% opcode match
                         </span>
                     
                 
@@ -5442,10 +5416,8 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <pre class="line-numbers"><code class="language-haxe">class LoopWhile {
     public static function main(): Void {
         var b: Int = 69;
-        var var2: Int = 0;
         while (b &gt; 5) {
-            var2 = b - 2;
-            b = var2;
+            b -= 2;
         }
         b = 999;
     }
@@ -5459,8 +5431,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
 	[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 69&gt; (I32)&gt;,
 	&lt;IRWhileLoop: while (&lt;IRBoolExpr: &lt;IRConst: 5&gt; &lt; &lt;IRLocal: b I32&gt;&gt;) {
 		[
-			[&lt;IRAssign: &lt;IRLocal: var2 I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; - &lt;IRConst: 2&gt;&gt; (I32)&gt;,
-			&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRLocal: var2 I32&gt; (I32)&gt;]
+			[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; - &lt;IRConst: 2&gt;&gt; (I32)&gt;]
 		]
 	}&gt;,
 	&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 999&gt; (I32)&gt;,
@@ -5491,10 +5462,10 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                         
                         data-name="$LoopWhile.main"
                         data-orig='"Int. r0. 69\nLabel\nInt. r3. 5\nJSGte. r3. r0. 4\nInt. r3. 2\nSub. r2. r0. r3\nMov. r0. r2\nJAlways. -7\nInt. r2. 999\nRet. r1"'
-                        data-recomp='"Int. r0. 69\nInt. r2. 0\nLabel\nInt. r4. 5\nJSGte. r4. r0. 4\nInt. r4. 2\nSub. r3. r0. r4\nMov. r0. r3\nJAlways. -7\nInt. r3. 999\nRet. r1"'
+                        data-recomp='"Int. r0. 69\nLabel\nInt. r3. 5\nJSGte. r3. r0. 4\nInt. r3. 2\nSub. r2. r0. r3\nMov. r0. r2\nJAlways. -7\nInt. r2. 999\nRet. r1"'
                         data-orig-count="10"
-                        data-recomp-count="11"
-                        data-sim="95.2"
+                        data-recomp-count="10"
+                        data-sim="100.0"
                         onclick="openDiff(this)"
                         
                     >
@@ -5504,14 +5475,14 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:95.2%; background:var(--green);"></div>
+                                        <div class="sim-bar-fill" style="width:100.0%; background:var(--green);"></div>
                                     </div>
-                                    <span class="sim-pct">95.2%</span>
+                                    <span class="sim-pct">100.0%</span>
                                 </div>
                             
                         </td>
                         <td>10</td>
-                        <td>11</td>
+                        <td>10</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -5583,7 +5554,6 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 <div class="panel-label">Decompiled</div>
                 <pre class="line-numbers"><code class="language-haxe">class Method {
     public function new() {
-        return;
     }
 
     public static function main(): Void {
@@ -5749,7 +5719,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
          id="21"
          data-name="Nested"
          data-length="347"
-         data-sim="95.5"
+         data-sim="100.0"
          data-failed="0"
          data-index="21">
         <div class="test-header pass">
@@ -5761,7 +5731,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 
                     
                         <span class="badge badge-green">
-                            95.5% opcode match
+                            100.0% opcode match
                         </span>
                     
                 
@@ -5813,8 +5783,6 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                         break;
                     }
                 }
-            } else {
-                continue;
             }
         }
     }
@@ -5839,16 +5807,12 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
 							[&lt;IRBreak&gt;]
 						]
 						else
-							[
-							[&lt;IRContinue&gt;]
-						]&gt;]
+							[]&gt;]
 					]
 				}&gt;]
 			]
 			else
-				[
-				[&lt;IRContinue&gt;]
-			]&gt;]
+				[]&gt;]
 		]
 	}&gt;,
 	&lt;IRReturn: None&gt;]
@@ -5878,10 +5842,10 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                         
                         data-name="$Nested.main"
                         data-orig='"Float. r0. 512.0\nLabel\nFloat. r3. 5.0\nJNotLt. r3. r0. 16\nFloat. r3. 2.0\nSDiv. r2. r0. r3\nMov. r0. r2\nFloat. r3. 10.0\nJNotLt. r2. r3. 10\nLabel\nFloat. r3. 100.0\nJNotLt. r0. r3. 7\nFloat. r3. 2.0\nMul. r2. r0. r3\nMov. r0. r2\nFloat. r3. 50.0\nJNotLt. r3. r2. 1\nJAlways. 1\nJAlways. -10\nJAlways. -19\nRet. r1"'
-                        data-recomp='"Float. r0. 512.0\nLabel\nFloat. r3. 5.0\nJNotLt. r3. r0. 18\nFloat. r3. 2.0\nSDiv. r2. r0. r3\nMov. r0. r2\nFloat. r3. 10.0\nJNotLt. r2. r3. 11\nLabel\nFloat. r3. 100.0\nJNotLt. r0. r3. 7\nFloat. r3. 2.0\nMul. r2. r0. r3\nMov. r0. r2\nFloat. r3. 50.0\nJNotLt. r3. r2. 1\nJAlways. 1\nJAlways. -10\nJAlways. 1\nJAlways. -20\nJAlways. -21\nRet. r1"'
+                        data-recomp='"Float. r0. 512.0\nLabel\nFloat. r3. 5.0\nJNotLt. r3. r0. 16\nFloat. r3. 2.0\nSDiv. r2. r0. r3\nMov. r0. r2\nFloat. r3. 10.0\nJNotLt. r2. r3. 10\nLabel\nFloat. r3. 100.0\nJNotLt. r0. r3. 7\nFloat. r3. 2.0\nMul. r2. r0. r3\nMov. r0. r2\nFloat. r3. 50.0\nJNotLt. r3. r2. 1\nJAlways. 1\nJAlways. -10\nJAlways. -19\nRet. r1"'
                         data-orig-count="21"
-                        data-recomp-count="23"
-                        data-sim="95.5"
+                        data-recomp-count="21"
+                        data-sim="100.0"
                         onclick="openDiff(this)"
                         
                     >
@@ -5891,14 +5855,14 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:95.5%; background:var(--green);"></div>
+                                        <div class="sim-bar-fill" style="width:100.0%; background:var(--green);"></div>
                                     </div>
-                                    <span class="sim-pct">95.5%</span>
+                                    <span class="sim-pct">100.0%</span>
                                 </div>
                             
                         </td>
                         <td>21</td>
-                        <td>23</td>
+                        <td>21</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -5919,7 +5883,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
          id="22"
          data-name="Patch Me"
          data-length="1474"
-         data-sim="99.1"
+         data-sim="99.4"
          data-failed="0"
          data-index="22">
         <div class="test-header pass">
@@ -5931,7 +5895,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
                 
                     
                         <span class="badge badge-green">
-                            99.1% opcode match
+                            99.4% opcode match
                         </span>
                     
                 
@@ -6014,7 +5978,7 @@ class PatchMe {
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
                 <pre class="line-numbers"><code class="language-haxe">class PatchMe {
-    public static function thing(val: Float, val2, msg: String, val3: TestClass): Void {
+    public static function thing(val: Float, val2: Dynamic, msg: String, val3: TestClass): Void {
         if (val == 2.0) {
             trace(msg); // { fileName: &#39;PatchMe.hx&#39;, lineNumber: 52, className: &#39;PatchMe&#39;, methodName: &#39;thing&#39; }
             trace(val3.test); // { fileName: &#39;PatchMe.hx&#39;, lineNumber: 53, className: &#39;PatchMe&#39;, methodName: &#39;thing&#39; }
@@ -6062,8 +6026,7 @@ class TestClass extends SuperTestClass {
     public var test: Int;
 
     public function new() {
-        // UNLIFTED OPCODE: this.field0 = reg1
-        return;
+        this.test = 5;
     }
 
     public override function do_a_thing(): Void {
@@ -6152,10 +6115,10 @@ class TestClass extends SuperTestClass {
                         
                         data-name="$PatchMe.main"
                         data-orig='"Call0. r0. $PatchMe.get_value\nFloat. r2. 2.0\nToDyn. r3. r2\nGetGlobal. r4. global[String]\nNew. r5\nCall1. r1. $TestClass.__constructor__. r5\nCall4. r1. $PatchMe.thing. r0. r3. r4. r5\nCall0. r1. $PatchMe.array_test\nGetGlobal. r7. global[haxe.$Log]\nField. r6. r7. 6\nNullCheck. r6\nGetGlobal. r9. global[$SuperTestClass]\nField. r8. r9. 5\nToDyn. r10. r8\nNew. r11\nGetGlobal. r4. global[String]\nDynSet. r11. \u0027fileName\u0027. r4\nInt. r8. 30\nDynSet. r11. \u0027lineNumber\u0027. r8\nGetGlobal. r4. global[String]\nDynSet. r11. \u0027className\u0027. r4\nGetGlobal. r4. global[String]\nDynSet. r11. \u0027methodName\u0027. r4\nToVirtual. r12. r11\nCallClosure. r1. r6. [10, 12]\nRet. r1"'
-                        data-recomp='"Call0. r0. $PatchMe.get_value\nFloat. r2. 2.0\nGetGlobal. r3. global[String]\nNew. r4\nCall1. r1. $TestClass.__constructor__. r4\nCall4. r1. $PatchMe.thing. r0. r2. r3. r4\nCall0. r1. $PatchMe.array_test\nGetGlobal. r6. global[haxe.$Log]\nField. r5. r6. 6\nNullCheck. r5\nGetGlobal. r8. global[$SuperTestClass]\nField. r7. r8. 5\nToDyn. r9. r7\nNew. r10\nGetGlobal. r3. global[String]\nDynSet. r10. \u0027fileName\u0027. r3\nInt. r7. 34\nDynSet. r10. \u0027lineNumber\u0027. r7\nGetGlobal. r3. global[String]\nDynSet. r10. \u0027className\u0027. r3\nGetGlobal. r3. global[String]\nDynSet. r10. \u0027methodName\u0027. r3\nToVirtual. r11. r10\nCallClosure. r1. r5. [9, 11]\nRet. r1"'
+                        data-recomp='"Call0. r0. $PatchMe.get_value\nFloat. r2. 2.0\nToDyn. r3. r2\nGetGlobal. r4. global[String]\nNew. r5\nCall1. r1. $TestClass.__constructor__. r5\nCall4. r1. $PatchMe.thing. r0. r3. r4. r5\nCall0. r1. $PatchMe.array_test\nGetGlobal. r7. global[haxe.$Log]\nField. r6. r7. 6\nNullCheck. r6\nGetGlobal. r9. global[$SuperTestClass]\nField. r8. r9. 5\nToDyn. r3. r8\nNew. r10\nGetGlobal. r4. global[String]\nDynSet. r10. \u0027fileName\u0027. r4\nInt. r8. 34\nDynSet. r10. \u0027lineNumber\u0027. r8\nGetGlobal. r4. global[String]\nDynSet. r10. \u0027className\u0027. r4\nGetGlobal. r4. global[String]\nDynSet. r10. \u0027methodName\u0027. r4\nToVirtual. r11. r10\nCallClosure. r1. r6. [3, 11]\nRet. r1"'
                         data-orig-count="26"
-                        data-recomp-count="25"
-                        data-sim="98.0"
+                        data-recomp-count="26"
+                        data-sim="100.0"
                         onclick="openDiff(this)"
                         
                     >
@@ -6165,14 +6128,14 @@ class TestClass extends SuperTestClass {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:98.0%; background:var(--green);"></div>
+                                        <div class="sim-bar-fill" style="width:100.0%; background:var(--green);"></div>
                                     </div>
-                                    <span class="sim-pct">98.0%</span>
+                                    <span class="sim-pct">100.0%</span>
                                 </div>
                             
                         </td>
                         <td>26</td>
-                        <td>25</td>
+                        <td>26</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -6483,10 +6446,10 @@ class Println {
          id="24"
          data-name="Random"
          data-length="512"
-         data-sim="50.8"
-         data-failed="1"
+         data-sim="92.0"
+         data-failed="0"
          data-index="24">
-        <div class="test-header fail">
+        <div class="test-header pass">
             <h2>
                 <a href="#24"><i class="fa fa-link"></i></a>
                 Random
@@ -6494,8 +6457,8 @@ class Println {
             <div class="header-right">
                 
                     
-                        <span class="badge badge-red">
-                            50.8% opcode match
+                        <span class="badge badge-green">
+                            92.0% opcode match
                         </span>
                     
                 
@@ -6533,13 +6496,7 @@ class Println {
             </div>
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
-                <pre class="line-numbers"><code class="language-haxe">extern class Native {
-    static function ftos(arg0: Dynamic, arg1: Dynamic): Dynamic;
-    static function itos(arg0: Dynamic, arg1: Dynamic): Dynamic;
-}
-
-extern class StdFuncs {
-    static function __std_16___alloc__(arg0: Dynamic, arg1: Dynamic): Dynamic;
+                <pre class="line-numbers"><code class="language-haxe">extern class StdFuncs {
     static function __std_20___add__(arg0: Dynamic, arg1: Dynamic): Dynamic;
     static function __std_27_random(): Dynamic;
     static function __std_29_random(arg0: Dynamic): Dynamic;
@@ -6547,31 +6504,20 @@ extern class StdFuncs {
 
 class Random {
     public static function main(): Void {
-        var var0: Int = 10;
-        var randomNumber: Int = StdFuncs.__std_29_random(var0);
-        var var4: String = &#34;A random number between 0 and 9: &#34;;
-        var var5: Int = randomNumber;
-        var var7: hl.Bytes = Native.itos(var5, var5);
+        var randomNumber: Int = StdFuncs.__std_29_random(10);
+        trace((&#34;A random number between 0 and 9: &#34; + randomNumber)); // { fileName: &#39;Random.hx&#39;, lineNumber: 4, className: &#39;Random&#39;, methodName: &#39;main&#39; }
         var min: Int = 1;
         var max: Int = 100;
-        var rangedRandomNumber: Int = min + StdFuncs.__std_29_random(max - min);
-        var randomFloat: Float = StdFuncs.__std_27_random();
-        var4 = (var4 + var5);
-        trace(var4); // { fileName: &#39;Random.hx&#39;, lineNumber: 4, className: &#39;Random&#39;, methodName: &#39;main&#39; }
-        var4 = &#34;A random number between &#34;;
-        var7 = Native.itos(min, min);
-        var4 = (var4 + StdFuncs.__std_16___alloc__(var7, min));
+        var rangedRandomNumber: Int = min + StdFuncs.__std_29_random(max - min + 1);
+        var var4: String = &#34;A random number between &#34;;
+        var4 = (var4 + min);
         var4 = (var4 + &#34; and &#34;);
-        var7 = Native.itos(max, max);
-        var4 = (var4 + StdFuncs.__std_16___alloc__(var7, max));
+        var4 = (var4 + max);
         var4 = (var4 + &#34;: &#34;);
-        var7 = Native.itos(rangedRandomNumber, rangedRandomNumber);
-        var4 = (var4 + StdFuncs.__std_16___alloc__(var7, rangedRandomNumber));
+        var4 = (var4 + rangedRandomNumber);
         trace(var4); // { fileName: &#39;Random.hx&#39;, lineNumber: 9, className: &#39;Random&#39;, methodName: &#39;main&#39; }
-        var4 = &#34;A random float between 0 and 1: &#34;;
-        var7 = Native.ftos(randomFloat, rangedRandomNumber);
-        var4 = (var4 + StdFuncs.__std_16___alloc__(var7, rangedRandomNumber));
-        trace(var4); // { fileName: &#39;Random.hx&#39;, lineNumber: 12, className: &#39;Random&#39;, methodName: &#39;main&#39; }
+        var randomFloat: Float = StdFuncs.__std_27_random();
+        trace((&#34;A random float between 0 and 1: &#34; + randomFloat)); // { fileName: &#39;Random.hx&#39;, lineNumber: 12, className: &#39;Random&#39;, methodName: &#39;main&#39; }
     }
 }</code></pre>
             </div>
@@ -6580,31 +6526,20 @@ class Random {
                 <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Random.main ---
 
 [
-	[&lt;IRAssign: &lt;IRLocal: var0 I32&gt; = &lt;IRConst: 10&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: randomNumber I32&gt; = &lt;IRCall: &lt;IRConst: f@29 static $Std.random (I32) -&gt; I32 (from /usr/share/haxe/std/hl/_std/Std.hx)&gt;(&lt;IRLocal: var0 I32&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRConst: &#34;A random number between 0 and 9: &#34;&gt; (String)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var5 I32&gt; = &lt;IRLocal: randomNumber I32&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var7 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1bad8d0b80&gt;&gt;(&lt;IRLocal: var5 I32&gt;, &lt;IRRef: &amp;&lt;IRLocal: var5 I32&gt;&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var7 Bytes&gt;, &lt;IRLocal: var5 I32&gt;)&gt;)&gt; (Fun)&gt;,
-	&lt;IRTrace: msg=&lt;IRLocal: var4 String&gt;, pos={ fileName: Random.hx, lineNumber: 4, className: Random, methodName: main }&gt;,
+	[&lt;IRAssign: &lt;IRLocal: randomNumber I32&gt; = &lt;IRCall: &lt;IRConst: f@29 static $Std.random (I32) -&gt; I32 (from /usr/share/haxe/std/hl/_std/Std.hx)&gt;(&lt;IRConst: 10&gt;)&gt; (Fun)&gt;,
+	&lt;IRTrace: msg=&lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRConst: &#34;A random number between 0 and 9: &#34;&gt;, &lt;IRLocal: randomNumber I32&gt;)&gt;, pos={ fileName: Random.hx, lineNumber: 4, className: Random, methodName: main }&gt;,
 	&lt;IRAssign: &lt;IRLocal: min I32&gt; = &lt;IRConst: 1&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: max I32&gt; = &lt;IRConst: 100&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: rangedRandomNumber I32&gt; = &lt;IRArithmetic: &lt;IRLocal: min I32&gt; + &lt;IRCall: &lt;IRConst: f@29 static $Std.random (I32) -&gt; I32 (from /usr/share/haxe/std/hl/_std/Std.hx)&gt;(&lt;IRArithmetic: &lt;IRLocal: max I32&gt; - &lt;IRLocal: min I32&gt;&gt;)&gt;&gt; (I32)&gt;,
+	&lt;IRAssign: &lt;IRLocal: rangedRandomNumber I32&gt; = &lt;IRArithmetic: &lt;IRLocal: min I32&gt; + &lt;IRCall: &lt;IRConst: f@29 static $Std.random (I32) -&gt; I32 (from /usr/share/haxe/std/hl/_std/Std.hx)&gt;(&lt;IRArithmetic: &lt;IRArithmetic: &lt;IRLocal: max I32&gt; - &lt;IRLocal: min I32&gt;&gt; + &lt;IRConst: 1&gt;&gt;)&gt;&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRConst: &#34;A random number between &#34;&gt; (String)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var7 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1bad8d0b80&gt;&gt;(&lt;IRLocal: min I32&gt;, &lt;IRRef: &amp;&lt;IRLocal: min I32&gt;&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var7 Bytes&gt;, &lt;IRLocal: min I32&gt;)&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRLocal: min I32&gt;)&gt; (Fun)&gt;,
 	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRConst: &#34; and &#34;&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var7 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1bad8d0b80&gt;&gt;(&lt;IRLocal: max I32&gt;, &lt;IRRef: &amp;&lt;IRLocal: max I32&gt;&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var7 Bytes&gt;, &lt;IRLocal: max I32&gt;)&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRLocal: max I32&gt;)&gt; (Fun)&gt;,
 	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRConst: &#34;: &#34;&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var7 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1bad8d0b80&gt;&gt;(&lt;IRLocal: rangedRandomNumber I32&gt;, &lt;IRRef: &amp;&lt;IRLocal: rangedRandomNumber I32&gt;&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var7 Bytes&gt;, &lt;IRLocal: rangedRandomNumber I32&gt;)&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRLocal: rangedRandomNumber I32&gt;)&gt; (Fun)&gt;,
 	&lt;IRTrace: msg=&lt;IRLocal: var4 String&gt;, pos={ fileName: Random.hx, lineNumber: 9, className: Random, methodName: main }&gt;,
 	&lt;IRAssign: &lt;IRLocal: randomFloat F64&gt; = &lt;IRCall: &lt;IRConst: f@27 static $Math.random () -&gt; F64 (from /usr/share/haxe/std/hl/_std/Math.hx)&gt;()&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRConst: &#34;A random float between 0 and 1: &#34;&gt; (String)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var7 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1bad8d0bd0&gt;&gt;(&lt;IRLocal: randomFloat F64&gt;, &lt;IRRef: &amp;&lt;IRLocal: rangedRandomNumber I32&gt;&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var7 Bytes&gt;, &lt;IRLocal: rangedRandomNumber I32&gt;)&gt;)&gt; (Fun)&gt;,
-	&lt;IRTrace: msg=&lt;IRLocal: var4 String&gt;, pos={ fileName: Random.hx, lineNumber: 12, className: Random, methodName: main }&gt;,
+	&lt;IRTrace: msg=&lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRConst: &#34;A random float between 0 and 1: &#34;&gt;, &lt;IRLocal: randomFloat F64&gt;)&gt;, pos={ fileName: Random.hx, lineNumber: 12, className: Random, methodName: main }&gt;,
 	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
@@ -6632,10 +6567,10 @@ class Random {
                         
                         data-name="$Random.main"
                         data-orig='"Int. r0. 10\nCall1. r0. $Std.random. r0\nGetGlobal. r3. global[haxe.$Log]\nField. r2. r3. 6\nNullCheck. r2\nGetGlobal. r4. global[String]\nMov. r5. r0\nRef. r6. r5\nCall2. r7. \u003cnone\u003e. r5. r6\nCall2. r8. $String.__alloc__. r7. r5\nCall2. r4. $String.__add__. r4. r8\nNew. r9\nGetGlobal. r8. global[String]\nDynSet. r9. \u0027fileName\u0027. r8\nInt. r5. 4\nDynSet. r9. \u0027lineNumber\u0027. r5\nGetGlobal. r8. global[String]\nDynSet. r9. \u0027className\u0027. r8\nGetGlobal. r8. global[String]\nDynSet. r9. \u0027methodName\u0027. r8\nToVirtual. r10. r9\nCallClosure. r1. r2. [4, 10]\nInt. r5. 1\nInt. r11. 100\nSub. r13. r11. r5\nInt. r14. 1\nAdd. r13. r13. r14\nCall1. r13. $Std.random. r13\nAdd. r12. r5. r13\nGetGlobal. r3. global[haxe.$Log]\nField. r2. r3. 6\nNullCheck. r2\nGetGlobal. r4. global[String]\nMov. r13. r5\nRef. r6. r13\nCall2. r7. \u003cnone\u003e. r13. r6\nCall2. r8. $String.__alloc__. r7. r13\nCall2. r4. $String.__add__. r4. r8\nGetGlobal. r8. global[String]\nCall2. r4. $String.__add__. r4. r8\nMov. r13. r11\nRef. r6. r13\nCall2. r7. \u003cnone\u003e. r13. r6\nCall2. r8. $String.__alloc__. r7. r13\nCall2. r4. $String.__add__. r4. r8\nGetGlobal. r8. global[String]\nCall2. r4. $String.__add__. r4. r8\nMov. r13. r12\nRef. r6. r13\nCall2. r7. \u003cnone\u003e. r13. r6\nCall2. r8. $String.__alloc__. r7. r13\nCall2. r4. $String.__add__. r4. r8\nNew. r9\nGetGlobal. r8. global[String]\nDynSet. r9. \u0027fileName\u0027. r8\nInt. r13. 9\nDynSet. r9. \u0027lineNumber\u0027. r13\nGetGlobal. r8. global[String]\nDynSet. r9. \u0027className\u0027. r8\nGetGlobal. r8. global[String]\nDynSet. r9. \u0027methodName\u0027. r8\nToVirtual. r10. r9\nCallClosure. r1. r2. [4, 10]\nCall0. r15. $Math.random\nGetGlobal. r3. global[haxe.$Log]\nField. r2. r3. 6\nNullCheck. r2\nGetGlobal. r4. global[String]\nRef. r6. r13\nCall2. r7. \u003cnone\u003e. r15. r6\nCall2. r8. $String.__alloc__. r7. r13\nCall2. r4. $String.__add__. r4. r8\nNew. r9\nGetGlobal. r8. global[String]\nDynSet. r9. \u0027fileName\u0027. r8\nInt. r13. 12\nDynSet. r9. \u0027lineNumber\u0027. r13\nGetGlobal. r8. global[String]\nDynSet. r9. \u0027className\u0027. r8\nGetGlobal. r8. global[String]\nDynSet. r9. \u0027methodName\u0027. r8\nToVirtual. r10. r9\nCallClosure. r1. r2. [4, 10]\nRet. r1"'
-                        data-recomp='"Int. r0. 10\nToDyn. r2. r0\nCall1. r2. 28. r2\nSafeCast. r3. r2\nGetGlobal. r4. global[String]\nToDyn. r2. r3\nToDyn. r6. r3\nCall2. r2. 29. r2. r6\nSafeCast. r7. r2\nInt. r5. 1\nInt. r8. 100\nToDyn. r2. r5\nSub. r9. r8. r5\nToDyn. r6. r9\nCall1. r6. 28. r6\nCall2. r2. $Std.__add__. r2. r6\nSafeCast. r9. r2\nCall0. r2. 31\nSafeCast. r11. r2\nMov. r10. r3\nRef. r13. r10\nCall2. r14. \u003cnone\u003e. r10. r13\nCall2. r15. $String.__alloc__. r14. r10\nCall2. r12. $String.__add__. r4. r15\nGetGlobal. r17. global[haxe.$Log]\nField. r16. r17. 6\nNullCheck. r16\nNew. r18\nGetGlobal. r15. global[String]\nDynSet. r18. \u0027fileName\u0027. r15\nInt. r10. 25\nDynSet. r18. \u0027lineNumber\u0027. r10\nGetGlobal. r15. global[String]\nDynSet. r18. \u0027className\u0027. r15\nGetGlobal. r15. global[String]\nDynSet. r18. \u0027methodName\u0027. r15\nToVirtual. r19. r18\nCallClosure. r1. r16. [12, 19]\nGetGlobal. r12. global[String]\nToDyn. r2. r5\nToDyn. r6. r5\nCall2. r2. 29. r2. r6\nSafeCast. r14. r2\nToDyn. r2. r14\nToDyn. r6. r5\nCall2. r2. 226. r2. r6\nCall1. r15. $Std.string. r2\nCall2. r12. $String.__add__. r12. r15\nGetGlobal. r15. global[String]\nCall2. r12. $String.__add__. r12. r15\nToDyn. r2. r8\nToDyn. r6. r8\nCall2. r2. 29. r2. r6\nSafeCast. r14. r2\nToDyn. r2. r14\nToDyn. r6. r8\nCall2. r2. 226. r2. r6\nCall1. r15. $Std.string. r2\nCall2. r12. $String.__add__. r12. r15\nGetGlobal. r15. global[String]\nCall2. r12. $String.__add__. r12. r15\nToDyn. r2. r9\nToDyn. r6. r9\nCall2. r2. 29. r2. r6\nSafeCast. r14. r2\nToDyn. r2. r14\nToDyn. r6. r9\nCall2. r2. 226. r2. r6\nCall1. r15. $Std.string. r2\nCall2. r12. $String.__add__. r12. r15\nGetGlobal. r17. global[haxe.$Log]\nField. r16. r17. 6\nNullCheck. r16\nNew. r18\nGetGlobal. r15. global[String]\nDynSet. r18. \u0027fileName\u0027. r15\nInt. r10. 35\nDynSet. r18. \u0027lineNumber\u0027. r10\nGetGlobal. r15. global[String]\nDynSet. r18. \u0027className\u0027. r15\nGetGlobal. r15. global[String]\nDynSet. r18. \u0027methodName\u0027. r15\nToVirtual. r19. r18\nCallClosure. r1. r16. [12, 19]\nGetGlobal. r12. global[String]\nToDyn. r2. r11\nToDyn. r6. r9\nCall2. r2. 227. r2. r6\nSafeCast. r14. r2\nToDyn. r2. r14\nToDyn. r6. r9\nCall2. r2. 226. r2. r6\nCall1. r15. $Std.string. r2\nCall2. r12. $String.__add__. r12. r15\nGetGlobal. r17. global[haxe.$Log]\nField. r16. r17. 6\nNullCheck. r16\nNew. r18\nGetGlobal. r15. global[String]\nDynSet. r18. \u0027fileName\u0027. r15\nInt. r10. 39\nDynSet. r18. \u0027lineNumber\u0027. r10\nGetGlobal. r15. global[String]\nDynSet. r18. \u0027className\u0027. r15\nGetGlobal. r15. global[String]\nDynSet. r18. \u0027methodName\u0027. r15\nToVirtual. r19. r18\nCallClosure. r1. r16. [12, 19]\nRet. r1"'
+                        data-recomp='"Int. r1. 10\nToDyn. r0. r1\nCall1. r0. 28. r0\nSafeCast. r1. r0\nGetGlobal. r4. global[haxe.$Log]\nField. r3. r4. 6\nNullCheck. r3\nGetGlobal. r5. global[String]\nMov. r6. r1\nRef. r7. r6\nCall2. r8. \u003cnone\u003e. r6. r7\nCall2. r9. $String.__alloc__. r8. r6\nCall2. r5. $String.__add__. r5. r9\nNew. r10\nGetGlobal. r9. global[String]\nDynSet. r10. \u0027fileName\u0027. r9\nInt. r6. 10\nDynSet. r10. \u0027lineNumber\u0027. r6\nGetGlobal. r9. global[String]\nDynSet. r10. \u0027className\u0027. r9\nGetGlobal. r9. global[String]\nDynSet. r10. \u0027methodName\u0027. r9\nToVirtual. r11. r10\nCallClosure. r2. r3. [5, 11]\nInt. r6. 1\nInt. r12. 100\nToDyn. r0. r6\nSub. r13. r12. r6\nInt. r15. 1\nAdd. r13. r13. r15\nToDyn. r14. r13\nCall1. r14. 28. r14\nCall2. r0. $Std.__add__. r0. r14\nSafeCast. r13. r0\nGetGlobal. r5. global[String]\nMov. r15. r6\nRef. r7. r15\nCall2. r8. \u003cnone\u003e. r15. r7\nCall2. r16. $String.__alloc__. r8. r15\nCall2. r9. $String.__add__. r5. r16\nGetGlobal. r16. global[String]\nCall2. r9. $String.__add__. r9. r16\nMov. r15. r12\nRef. r7. r15\nCall2. r8. \u003cnone\u003e. r15. r7\nCall2. r16. $String.__alloc__. r8. r15\nCall2. r9. $String.__add__. r9. r16\nGetGlobal. r16. global[String]\nCall2. r9. $String.__add__. r9. r16\nMov. r15. r13\nRef. r7. r15\nCall2. r8. \u003cnone\u003e. r15. r7\nCall2. r16. $String.__alloc__. r8. r15\nCall2. r9. $String.__add__. r9. r16\nGetGlobal. r4. global[haxe.$Log]\nField. r3. r4. 6\nNullCheck. r3\nNew. r10\nGetGlobal. r16. global[String]\nDynSet. r10. \u0027fileName\u0027. r16\nInt. r15. 20\nDynSet. r10. \u0027lineNumber\u0027. r15\nGetGlobal. r16. global[String]\nDynSet. r10. \u0027className\u0027. r16\nGetGlobal. r16. global[String]\nDynSet. r10. \u0027methodName\u0027. r16\nToVirtual. r11. r10\nCallClosure. r2. r3. [9, 11]\nCall0. r0. 223\nSafeCast. r17. r0\nGetGlobal. r4. global[haxe.$Log]\nField. r3. r4. 6\nNullCheck. r3\nGetGlobal. r9. global[String]\nRef. r7. r15\nCall2. r8. \u003cnone\u003e. r17. r7\nCall2. r16. $String.__alloc__. r8. r15\nCall2. r9. $String.__add__. r9. r16\nNew. r10\nGetGlobal. r16. global[String]\nDynSet. r10. \u0027fileName\u0027. r16\nInt. r15. 22\nDynSet. r10. \u0027lineNumber\u0027. r15\nGetGlobal. r16. global[String]\nDynSet. r10. \u0027className\u0027. r16\nGetGlobal. r16. global[String]\nDynSet. r10. \u0027methodName\u0027. r16\nToVirtual. r11. r10\nCallClosure. r2. r3. [9, 11]\nRet. r2"'
                         data-orig-count="84"
-                        data-recomp-count="109"
-                        data-sim="50.8"
+                        data-recomp-count="90"
+                        data-sim="92.0"
                         onclick="openDiff(this)"
                         
                     >
@@ -6645,14 +6580,14 @@ class Random {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:50.8%; background:var(--red);"></div>
+                                        <div class="sim-bar-fill" style="width:92.0%; background:var(--green);"></div>
                                     </div>
-                                    <span class="sim-pct">50.8%</span>
+                                    <span class="sim-pct">92.0%</span>
                                 </div>
                             
                         </td>
                         <td>84</td>
-                        <td>109</td>
+                        <td>90</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -6673,7 +6608,7 @@ class Random {
          id="25"
          data-name="Simple If"
          data-length="288"
-         data-sim="90.0"
+         data-sim="95.0"
          data-failed="0"
          data-index="25">
         <div class="test-header pass">
@@ -6685,7 +6620,7 @@ class Random {
                 
                     
                         <span class="badge badge-green">
-                            90.0% opcode match
+                            95.0% opcode match
                         </span>
                     
                 
@@ -6729,13 +6664,13 @@ class Random {
                 <pre class="line-numbers"><code class="language-haxe">class SimpleIf {
     public static function main(): Void {
         var a: Int = 500;
-        var b: Int = 999;
         if (a &gt; 400) {
             SimpleIf.call();
             SimpleIf.call();
         }
         SimpleIf.call();
         a = 300;
+        var b: Int = 999;
     }
 
     public static function call(): Void {
@@ -6824,10 +6759,10 @@ class Random {
                         
                         data-name="$SimpleIf.main"
                         data-orig='"Int. r0. 500\nInt. r3. 400\nJSGte. r3. r0. 4\nCall0. r1. $SimpleIf.call\nCall0. r1. $SimpleIf.call\nCall0. r1. $SimpleIf.call\nJAlways. 1\nCall0. r1. $SimpleIf.call\nInt. r2. 300\nInt. r2. 999\nRet. r1"'
-                        data-recomp='"Int. r0. 500\nInt. r2. 999\nInt. r4. 400\nJSGte. r4. r0. 2\nCall0. r1. $SimpleIf.call\nCall0. r1. $SimpleIf.call\nCall0. r1. $SimpleIf.call\nInt. r3. 300\nRet. r1"'
+                        data-recomp='"Int. r0. 500\nInt. r3. 400\nJSGte. r3. r0. 2\nCall0. r1. $SimpleIf.call\nCall0. r1. $SimpleIf.call\nCall0. r1. $SimpleIf.call\nInt. r2. 300\nInt. r2. 999\nRet. r1"'
                         data-orig-count="11"
                         data-recomp-count="9"
-                        data-sim="80.0"
+                        data-sim="90.0"
                         onclick="openDiff(this)"
                         
                     >
@@ -6837,9 +6772,9 @@ class Random {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:80.0%; background:var(--yellow);"></div>
+                                        <div class="sim-bar-fill" style="width:90.0%; background:var(--green);"></div>
                                     </div>
-                                    <span class="sim-pct">80.0%</span>
+                                    <span class="sim-pct">90.0%</span>
                                 </div>
                             
                         </td>
@@ -6865,7 +6800,7 @@ class Random {
          id="26"
          data-name="String Concat"
          data-length="168"
-         data-sim="71.4"
+         data-sim="100.0"
          data-failed="0"
          data-index="26">
         <div class="test-header pass">
@@ -6876,8 +6811,8 @@ class Random {
             <div class="header-right">
                 
                     
-                        <span class="badge badge-yellow">
-                            71.4% opcode match
+                        <span class="badge badge-green">
+                            100.0% opcode match
                         </span>
                     
                 
@@ -6908,26 +6843,15 @@ class Random {
             </div>
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
-                <pre class="line-numbers"><code class="language-haxe">extern class Native {
-    static function itos(arg0: Dynamic, arg1: Dynamic): Dynamic;
-}
-
-extern class StdFuncs {
-    static function __std_16___alloc__(arg0: Dynamic, arg1: Dynamic): Dynamic;
+                <pre class="line-numbers"><code class="language-haxe">extern class StdFuncs {
     static function __std_20___add__(arg0: Dynamic, arg1: Dynamic): Dynamic;
 }
 
 class StringConcat {
     public static function main(): Void {
-        var var0: String = &#34;hello&#34;;
-        var var1: String = &#34;world&#34;;
-        var a: String = &#34;&#34;;
+        var a: String = (&#34;hello&#34; + &#34;world&#34;);
         var c: Int = 3;
-        var var6: hl.Bytes = Native.itos(c, c);
-        var b: String = &#34;&#34;;
-        a = (var0 + var1);
-        var1 = &#34;number : &#34;;
-        b = (var1 + c);
+        var b: String = (&#34;number : &#34; + c);
     }
 }</code></pre>
             </div>
@@ -6936,13 +6860,9 @@ class StringConcat {
                 <pre class="line-numbers"><code class="language-txt">// --- Static Method: $StringConcat.main ---
 
 [
-	[&lt;IRAssign: &lt;IRLocal: var0 String&gt; = &lt;IRConst: &#34;hello&#34;&gt; (String)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var1 String&gt; = &lt;IRConst: &#34;world&#34;&gt; (String)&gt;,
-	&lt;IRAssign: &lt;IRLocal: a String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var0 String&gt;, &lt;IRLocal: var1 String&gt;)&gt; (Fun)&gt;,
+	[&lt;IRAssign: &lt;IRLocal: a String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRConst: &#34;hello&#34;&gt;, &lt;IRConst: &#34;world&#34;&gt;)&gt; (Fun)&gt;,
 	&lt;IRAssign: &lt;IRLocal: c I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var1 String&gt; = &lt;IRConst: &#34;number : &#34;&gt; (String)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var6 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1bad402110&gt;&gt;(&lt;IRLocal: c I32&gt;, &lt;IRRef: &amp;&lt;IRLocal: c I32&gt;&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: b String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var1 String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var6 Bytes&gt;, &lt;IRLocal: c I32&gt;)&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: b String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRConst: &#34;number : &#34;&gt;, &lt;IRLocal: c I32&gt;)&gt; (Fun)&gt;,
 	&lt;IRReturn: None&gt;]
 ]</code></pre>
             </div>
@@ -6970,10 +6890,10 @@ class StringConcat {
                         
                         data-name="$StringConcat.main"
                         data-orig='"GetGlobal. r0. global[String]\nGetGlobal. r1. global[String]\nCall2. r0. $String.__add__. r0. r1\nInt. r3. 3\nGetGlobal. r1. global[String]\nMov. r4. r3\nRef. r5. r4\nCall2. r6. \u003cnone\u003e. r4. r5\nCall2. r7. $String.__alloc__. r6. r4\nCall2. r1. $String.__add__. r1. r7\nRet. r2"'
-                        data-recomp='"GetGlobal. r0. global[String]\nGetGlobal. r2. global[String]\nGetGlobal. r3. global[String]\nInt. r4. 3\nToDyn. r5. r4\nToDyn. r7. r4\nCall2. r5. 241. r5. r7\nSafeCast. r8. r5\nGetGlobal. r9. global[String]\nCall2. r10. $String.__add__. r0. r2\nGetGlobal. r10. global[String]\nMov. r6. r4\nRef. r12. r6\nCall2. r13. \u003cnone\u003e. r6. r12\nCall2. r11. $String.__alloc__. r13. r6\nCall2. r10. $String.__add__. r10. r11\nRet. r1"'
+                        data-recomp='"GetGlobal. r0. global[String]\nGetGlobal. r1. global[String]\nCall2. r0. $String.__add__. r0. r1\nInt. r3. 3\nGetGlobal. r1. global[String]\nMov. r4. r3\nRef. r5. r4\nCall2. r6. \u003cnone\u003e. r4. r5\nCall2. r7. $String.__alloc__. r6. r4\nCall2. r1. $String.__add__. r1. r7\nRet. r2"'
                         data-orig-count="11"
-                        data-recomp-count="17"
-                        data-sim="71.4"
+                        data-recomp-count="11"
+                        data-sim="100.0"
                         onclick="openDiff(this)"
                         
                     >
@@ -6983,14 +6903,14 @@ class StringConcat {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:71.4%; background:var(--yellow);"></div>
+                                        <div class="sim-bar-fill" style="width:100.0%; background:var(--green);"></div>
                                     </div>
-                                    <span class="sim-pct">71.4%</span>
+                                    <span class="sim-pct">100.0%</span>
                                 </div>
                             
                         </td>
                         <td>11</td>
-                        <td>17</td>
+                        <td>11</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -7011,7 +6931,7 @@ class StringConcat {
          id="27"
          data-name="String Interp"
          data-length="158"
-         data-sim="77.3"
+         data-sim="83.3"
          data-failed="0"
          data-index="27">
         <div class="test-header pass">
@@ -7023,7 +6943,7 @@ class StringConcat {
                 
                     
                         <span class="badge badge-yellow">
-                            77.3% opcode match
+                            83.3% opcode match
                         </span>
                     
                 
@@ -7054,12 +6974,7 @@ class StringConcat {
             </div>
             <div class="code-panel">
                 <div class="panel-label">Decompiled</div>
-                <pre class="line-numbers"><code class="language-haxe">extern class Native {
-    static function itos(arg0: Dynamic, arg1: Dynamic): Dynamic;
-}
-
-extern class StdFuncs {
-    static function __std_16___alloc__(arg0: Dynamic, arg1: Dynamic): Dynamic;
+                <pre class="line-numbers"><code class="language-haxe">extern class StdFuncs {
     static function __std_20___add__(arg0: Dynamic, arg1: Dynamic): Dynamic;
 }
 
@@ -7068,11 +6983,9 @@ class StringInterp {
         var a: Int = 42;
         var b: Dynamic = a + 1;
         var var4: String = &#34;the number is &#34;;
-        var var6: hl.Bytes = Native.itos(a, a);
         var4 = (var4 + a);
         var4 = (var4 + &#34;, a + 1 = &#34;);
-        var6 = Native.itos(b, b);
-        var4 = (var4 + StdFuncs.__std_16___alloc__(var6, b));
+        var4 = (var4 + b);
         b = (var4 + &#34; !&#34;);
     }
 }</code></pre>
@@ -7085,11 +6998,9 @@ class StringInterp {
 	[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 42&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;,
 	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRConst: &#34;the number is &#34;&gt; (String)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var6 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1badf61120&gt;&gt;(&lt;IRLocal: a I32&gt;, &lt;IRRef: &amp;&lt;IRLocal: a I32&gt;&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var6 Bytes&gt;, &lt;IRLocal: a I32&gt;)&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRLocal: a I32&gt;)&gt; (Fun)&gt;,
 	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRConst: &#34;, a + 1 = &#34;&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var6 Bytes&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1badf61120&gt;&gt;(&lt;IRLocal: b I32&gt;, &lt;IRRef: &amp;&lt;IRLocal: b I32&gt;&gt;)&gt; (Fun)&gt;,
-	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRCall: &lt;IRConst: f@16 static $String.__alloc__ (Bytes, I32) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var6 Bytes&gt;, &lt;IRLocal: b I32&gt;)&gt;)&gt; (Fun)&gt;,
+	&lt;IRAssign: &lt;IRLocal: var4 String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRLocal: b I32&gt;)&gt; (Fun)&gt;,
 	&lt;IRAssign: &lt;IRLocal: b String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRLocal: var4 String&gt;, &lt;IRConst: &#34; !&#34;&gt;)&gt; (Fun)&gt;,
 	&lt;IRReturn: None&gt;]
 ]</code></pre>
@@ -7118,10 +7029,10 @@ class StringInterp {
                         
                         data-name="$StringInterp.main"
                         data-orig='"Int. r0. 42\nInt. r3. 1\nAdd. r2. r0. r3\nGetGlobal. r4. global[String]\nMov. r3. r0\nRef. r5. r3\nCall2. r6. \u003cnone\u003e. r3. r5\nCall2. r7. $String.__alloc__. r6. r3\nCall2. r4. $String.__add__. r4. r7\nGetGlobal. r7. global[String]\nCall2. r4. $String.__add__. r4. r7\nMov. r3. r2\nRef. r5. r3\nCall2. r6. \u003cnone\u003e. r3. r5\nCall2. r7. $String.__alloc__. r6. r3\nCall2. r4. $String.__add__. r4. r7\nGetGlobal. r7. global[String]\nCall2. r4. $String.__add__. r4. r7\nRet. r1"'
-                        data-recomp='"Int. r0. 42\nInt. r3. 1\nAdd. r2. r0. r3\nToDyn. r4. r2\nGetGlobal. r5. global[String]\nToDyn. r6. r0\nToDyn. r7. r0\nCall2. r6. 241. r6. r7\nSafeCast. r8. r6\nMov. r2. r0\nRef. r10. r2\nCall2. r11. \u003cnone\u003e. r2. r10\nCall2. r12. $String.__alloc__. r11. r2\nCall2. r9. $String.__add__. r5. r12\nGetGlobal. r12. global[String]\nCall2. r9. $String.__add__. r9. r12\nCall2. r6. 241. r4. r4\nSafeCast. r11. r6\nToDyn. r6. r11\nCall2. r6. 242. r6. r4\nCall1. r12. $Std.string. r6\nCall2. r9. $String.__add__. r9. r12\nGetGlobal. r12. global[String]\nCall2. r9. $String.__add__. r9. r12\nRet. r1"'
+                        data-recomp='"Int. r0. 42\nInt. r3. 1\nAdd. r2. r0. r3\nToDyn. r4. r2\nGetGlobal. r5. global[String]\nMov. r2. r0\nRef. r7. r2\nCall2. r8. \u003cnone\u003e. r2. r7\nCall2. r9. $String.__alloc__. r8. r2\nCall2. r6. $String.__add__. r5. r9\nGetGlobal. r9. global[String]\nCall2. r6. $String.__add__. r6. r9\nCall1. r9. $Std.string. r4\nCall2. r6. $String.__add__. r6. r9\nGetGlobal. r9. global[String]\nCall2. r6. $String.__add__. r6. r9\nRet. r1"'
                         data-orig-count="19"
-                        data-recomp-count="25"
-                        data-sim="77.3"
+                        data-recomp-count="17"
+                        data-sim="83.3"
                         onclick="openDiff(this)"
                         
                     >
@@ -7131,14 +7042,14 @@ class StringInterp {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:77.3%; background:var(--yellow);"></div>
+                                        <div class="sim-bar-fill" style="width:83.3%; background:var(--yellow);"></div>
                                     </div>
-                                    <span class="sim-pct">77.3%</span>
+                                    <span class="sim-pct">83.3%</span>
                                 </div>
                             
                         </td>
                         <td>19</td>
-                        <td>25</td>
+                        <td>17</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -7207,8 +7118,8 @@ class StringInterp {
                 <div class="panel-label">Decompiled</div>
                 <pre class="line-numbers"><code class="language-haxe">class Switch {
     public static function main(): Void {
-        var a: Int = 3;
         var b: Int = 0;
+        var a: Int = 3;
         b = switch (a) {
             case 0: a * 2;
             case 3: a - 1;
@@ -7260,7 +7171,7 @@ class StringInterp {
                         
                         data-name="$Switch.main"
                         data-orig='"Int. r0. 3\nSwitch. r0. [3, 0, 0, 6]. 8\nInt. r3. 2\nShl. r2. r0. r3\nJAlways. 5\nInt. r3. 2\nMul. r2. r0. r3\nJAlways. 2\nInt. r3. 1\nSub. r2. r0. r3\nRet. r1"'
-                        data-recomp='"Int. r0. 3\nInt. r2. 0\nSwitch. r0. [3, 0, 0, 6]. 8\nInt. r4. 2\nShl. r3. r0. r4\nJAlways. 5\nInt. r4. 2\nMul. r3. r0. r4\nJAlways. 2\nInt. r4. 1\nSub. r3. r0. r4\nRet. r1"'
+                        data-recomp='"Int. r0. 0\nInt. r2. 3\nSwitch. r2. [3, 0, 0, 6]. 8\nInt. r4. 2\nShl. r3. r2. r4\nJAlways. 5\nInt. r4. 2\nMul. r3. r2. r4\nJAlways. 2\nInt. r4. 1\nSub. r3. r2. r4\nRet. r1"'
                         data-orig-count="11"
                         data-recomp-count="12"
                         data-sim="95.7"
@@ -7301,10 +7212,10 @@ class StringInterp {
          id="29"
          data-name="Switch Big"
          data-length="583"
-         data-sim="43.1"
-         data-failed="1"
+         data-sim="73.3"
+         data-failed="0"
          data-index="29">
-        <div class="test-header fail">
+        <div class="test-header pass">
             <h2>
                 <a href="#29"><i class="fa fa-link"></i></a>
                 Switch Big
@@ -7312,8 +7223,8 @@ class StringInterp {
             <div class="header-right">
                 
                     
-                        <span class="badge badge-red">
-                            43.1% opcode match
+                        <span class="badge badge-yellow">
+                            73.3% opcode match
                         </span>
                     
                 
@@ -7368,16 +7279,15 @@ class StringInterp {
 
 class SwitchBig {
     public static function main(): Void {
-        var a: Int = 3;
         var b: Int = 0;
         var var3: Int = 0;
-        var c: String = &#34;&#34;;
+        var a: Int = 3;
         b = switch (a) {
             case 0: a * 2;
             case 3: a - 1;
             default: a &lt;&lt; 2;
         }
-        switch (var3) {
+        switch (b) {
             case 0:
                 b++;
             case 1:
@@ -7389,56 +7299,10 @@ class SwitchBig {
             if (a == -1) {
                 b++;
             }
-            c = &#34;hello&#34;;
-            if (c != null) {
-                var3 = c.length;
-                if (var3 == 5) {
-                    var3 = Native.string_compare(c, &#34;hello&#34;, var3);
-                    if (var3 != 0) {
-                        if (c != null) {
-                            var3 = c.length;
-                            if (var3 == 5) {
-                                var3 = Native.string_compare(c, &#34;world&#34;, var3);
-                                if (var3 == 0) {
-                                    a++;
-                                }
-                                return;
-                            }
-                            return;
-                        }
-                        return;
-                    }
-                    a++;
-                    return;
-                }
-                if (c != null) {
-                    var3 = c.length;
-                    if (var3 == 5) {
-                        var3 = Native.string_compare(c, &#34;world&#34;, var3);
-                        if (var3 == 0) {
-                            a++;
-                        }
-                        return;
-                    }
-                    return;
-                }
-                return;
-            }
-            if (c != null) {
-                var3 = c.length;
-                if (var3 == 5) {
-                    var3 = Native.string_compare(c, &#34;world&#34;, var3);
-                    if (var3 == 0) {
-                        a++;
-                    }
-                    return;
-                }
-                return;
-            }
-            return;
+        } else {
+            b++;
         }
-        b++;
-        c = &#34;hello&#34;;
+        var c: String = &#34;hello&#34;;
         if (c != null) {
             var3 = c.length;
             if (var3 == 5) {
@@ -7451,27 +7315,13 @@ class SwitchBig {
                             if (var3 == 0) {
                                 a++;
                             }
-                            return;
                         }
-                        return;
                     }
-                    return;
-                }
-                a++;
-                return;
-            }
-            if (c != null) {
-                var3 = c.length;
-                if (var3 == 5) {
-                    var3 = Native.string_compare(c, &#34;world&#34;, var3);
-                    if (var3 == 0) {
-                        a++;
-                    }
-                    return;
+                } else {
+                    a++;
                 }
                 return;
             }
-            return;
         }
         if (c != null) {
             var3 = c.length;
@@ -7480,9 +7330,7 @@ class SwitchBig {
                 if (var3 == 0) {
                     a++;
                 }
-                return;
             }
-            return;
         }
     }
 }</code></pre>
@@ -7503,7 +7351,7 @@ class SwitchBig {
 		default: [
 		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; &lt;&lt; &lt;IRConst: 2&gt;&gt; (I32)&gt;]
 	]&gt;,
-	&lt;IRSwitch: &lt;IRLocal: var3 I32&gt;
+	&lt;IRSwitch: &lt;IRLocal: b I32&gt;
 		&lt;IRConst: 0&gt;: [
 		[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
 	]
@@ -7521,91 +7369,7 @@ class SwitchBig {
 		else
 			[
 			[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRArithmetic: &lt;IRLocal: b I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
-		]&gt;,
-		&lt;IRAssign: &lt;IRLocal: c String&gt; = &lt;IRConst: &#34;hello&#34;&gt; (String)&gt;,
-		&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: c String&gt; is not null&gt; then
-			[
-			[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRField: &lt;IRLocal: c String&gt;.length&gt; (I32)&gt;,
-			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; == &lt;IRConst: 5&gt;&gt; then
-				[
-				[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1badf61300&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: hello&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
-				&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; != &lt;IRConst: 0&gt;&gt; then
-					[
-					[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: c String&gt; is not null&gt; then
-						[
-						[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRField: &lt;IRLocal: c String&gt;.length&gt; (I32)&gt;,
-						&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; == &lt;IRConst: 5&gt;&gt; then
-							[
-							[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1badf61300&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: world&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
-							&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; != &lt;IRConst: 0&gt;&gt; then
-								[]
-							else
-								[
-								[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
-							]&gt;,
-							&lt;IRReturn: None&gt;]
-						]
-						else
-							[]&gt;,
-						&lt;IRReturn: None&gt;]
-					]
-					else
-						[]&gt;,
-					&lt;IRReturn: None&gt;]
-				]
-				else
-					[
-					[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
-				]&gt;,
-				&lt;IRReturn: None&gt;]
-			]
-			else
-				[]&gt;,
-			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: c String&gt; is not null&gt; then
-				[
-				[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRField: &lt;IRLocal: c String&gt;.length&gt; (I32)&gt;,
-				&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; == &lt;IRConst: 5&gt;&gt; then
-					[
-					[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1badf61300&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: world&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
-					&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; != &lt;IRConst: 0&gt;&gt; then
-						[]
-					else
-						[
-						[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
-					]&gt;,
-					&lt;IRReturn: None&gt;]
-				]
-				else
-					[]&gt;,
-				&lt;IRReturn: None&gt;]
-			]
-			else
-				[]&gt;,
-			&lt;IRReturn: None&gt;]
-		]
-		else
-			[]&gt;,
-		&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: c String&gt; is not null&gt; then
-			[
-			[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRField: &lt;IRLocal: c String&gt;.length&gt; (I32)&gt;,
-			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; == &lt;IRConst: 5&gt;&gt; then
-				[
-				[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1badf61300&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: world&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
-				&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; != &lt;IRConst: 0&gt;&gt; then
-					[]
-				else
-					[
-					[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
-				]&gt;,
-				&lt;IRReturn: None&gt;]
-			]
-			else
-				[]&gt;,
-			&lt;IRReturn: None&gt;]
-		]
-		else
-			[]&gt;,
-		&lt;IRReturn: None&gt;]
+		]&gt;]
 	]
 	else
 		[
@@ -7617,7 +7381,7 @@ class SwitchBig {
 		[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRField: &lt;IRLocal: c String&gt;.length&gt; (I32)&gt;,
 		&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; == &lt;IRConst: 5&gt;&gt; then
 			[
-			[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1badf61300&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: hello&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
+			[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f3e61c226b0&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: hello&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
 			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; != &lt;IRConst: 0&gt;&gt; then
 				[
 				[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: c String&gt; is not null&gt; then
@@ -7625,22 +7389,19 @@ class SwitchBig {
 					[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRField: &lt;IRLocal: c String&gt;.length&gt; (I32)&gt;,
 					&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; == &lt;IRConst: 5&gt;&gt; then
 						[
-						[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1badf61300&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: world&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
+						[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f3e61c226b0&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: world&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
 						&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; != &lt;IRConst: 0&gt;&gt; then
 							[]
 						else
 							[
 							[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
-						]&gt;,
-						&lt;IRReturn: None&gt;]
+						]&gt;]
 					]
 					else
-						[]&gt;,
-					&lt;IRReturn: None&gt;]
+						[]&gt;]
 				]
 				else
-					[]&gt;,
-				&lt;IRReturn: None&gt;]
+					[]&gt;]
 			]
 			else
 				[
@@ -7649,28 +7410,7 @@ class SwitchBig {
 			&lt;IRReturn: None&gt;]
 		]
 		else
-			[]&gt;,
-		&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: c String&gt; is not null&gt; then
-			[
-			[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRField: &lt;IRLocal: c String&gt;.length&gt; (I32)&gt;,
-			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; == &lt;IRConst: 5&gt;&gt; then
-				[
-				[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1badf61300&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: world&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
-				&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; != &lt;IRConst: 0&gt;&gt; then
-					[]
-				else
-					[
-					[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
-				]&gt;,
-				&lt;IRReturn: None&gt;]
-			]
-			else
-				[]&gt;,
-			&lt;IRReturn: None&gt;]
-		]
-		else
-			[]&gt;,
-		&lt;IRReturn: None&gt;]
+			[]&gt;]
 	]
 	else
 		[]&gt;,
@@ -7679,18 +7419,16 @@ class SwitchBig {
 		[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRField: &lt;IRLocal: c String&gt;.length&gt; (I32)&gt;,
 		&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; == &lt;IRConst: 5&gt;&gt; then
 			[
-			[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f1badf61300&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: world&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
+			[&lt;IRAssign: &lt;IRLocal: var3 I32&gt; = &lt;IRCall: &lt;IRConst: &lt;crashlink.core.Native object at 0x7f3e61c226b0&gt;&gt;(&lt;IRField: &lt;IRLocal: c String&gt;.bytes&gt;, &lt;IRConst: world&gt;, &lt;IRLocal: var3 I32&gt;)&gt; (Fun)&gt;,
 			&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: var3 I32&gt; != &lt;IRConst: 0&gt;&gt; then
 				[]
 			else
 				[
 				[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRArithmetic: &lt;IRLocal: a I32&gt; + &lt;IRConst: 1&gt;&gt; (I32)&gt;]
-			]&gt;,
-			&lt;IRReturn: None&gt;]
+			]&gt;]
 		]
 		else
-			[]&gt;,
-		&lt;IRReturn: None&gt;]
+			[]&gt;]
 	]
 	else
 		[]&gt;,
@@ -7721,10 +7459,10 @@ class SwitchBig {
                         
                         data-name="$SwitchBig.main"
                         data-orig='"Int. r0. 3\nSwitch. r0. [4, 0, 0, 8]. 11\nInt. r4. 2\nShl. r3. r0. r4\nMov. r2. r3\nJAlways. 7\nInt. r4. 2\nMul. r3. r0. r4\nMov. r2. r3\nJAlways. 3\nInt. r4. 1\nSub. r3. r0. r4\nMov. r2. r3\nSwitch. r3. [1, 3, 5]. 6\nJAlways. 5\nIncr. r2\nJAlways. 3\nIncr. r2\nJAlways. 1\nIncr. r2\nInt. r4. 4294967291\nJEq. r4. r0. 3\nInt. r4. 4294967295\nJEq. r4. r0. 3\nJAlways. 3\nIncr. r2\nJAlways. 1\nIncr. r2\nGetGlobal. r5. global[String]\nJNull. r5. 8\nField. r3. r5. 1\nInt. r4. 5\nJNotEq. r3. r4. 5\nField. r6. r5. 0\nString. r7. \u0027hello\u0027\nCall3. r3. \u003cnone\u003e. r6. r7. r3\nInt. r4. 0\nJEq. r3. r4. 10\nJNull. r5. 8\nField. r3. r5. 1\nInt. r4. 5\nJNotEq. r3. r4. 5\nField. r6. r5. 0\nString. r7. \u0027world\u0027\nCall3. r3. \u003cnone\u003e. r6. r7. r3\nInt. r4. 0\nJEq. r3. r4. 3\nJAlways. 3\nIncr. r0\nJAlways. 1\nIncr. r0\nRet. r1"'
-                        data-recomp='"Int. r0. 3\nInt. r2. 0\nInt. r3. 0\nGetGlobal. r4. global[String]\nSwitch. r0. [4, 0, 0, 8]. 11\nInt. r6. 2\nShl. r5. r0. r6\nMov. r2. r5\nJAlways. 7\nInt. r6. 2\nMul. r5. r0. r6\nMov. r2. r5\nJAlways. 3\nInt. r6. 1\nSub. r5. r0. r6\nMov. r2. r5\nSwitch. r3. [1, 3, 5]. 6\nJAlways. 5\nIncr. r2\nJAlways. 3\nIncr. r2\nJAlways. 1\nIncr. r2\nInt. r6. 4294967291\nJEq. r0. r6. 60\nInt. r6. 4294967295\nJNotEq. r0. r6. 1\nIncr. r2\nGetGlobal. r7. global[String]\nJNull. r7. 40\nNullCheck. r7\nField. r5. r7. 1\nInt. r6. 5\nJNotEq. r5. r6. 22\nGetGlobal. r9. global[String]\nToDyn. r8. r5\nCall3. r8. 241. r7. r9. r8\nSafeCast. r5. r8\nInt. r6. 0\nJEq. r5. r6. 14\nJNull. r7. 12\nField. r5. r7. 1\nInt. r6. 5\nJNotEq. r5. r6. 8\nGetGlobal. r9. global[String]\nToDyn. r8. r5\nCall3. r8. 241. r7. r9. r8\nSafeCast. r5. r8\nInt. r6. 0\nJNotEq. r5. r6. 1\nIncr. r0\nRet. r1\nRet. r1\nRet. r1\nIncr. r0\nRet. r1\nJNull. r7. 12\nField. r5. r7. 1\nInt. r6. 5\nJNotEq. r5. r6. 8\nGetGlobal. r9. global[String]\nToDyn. r8. r5\nCall3. r8. 241. r7. r9. r8\nSafeCast. r5. r8\nInt. r6. 0\nJNotEq. r5. r6. 1\nIncr. r0\nRet. r1\nRet. r1\nRet. r1\nJNull. r7. 13\nNullCheck. r7\nField. r5. r7. 1\nInt. r6. 5\nJNotEq. r5. r6. 8\nGetGlobal. r9. global[String]\nToDyn. r8. r5\nCall3. r8. 241. r7. r9. r8\nSafeCast. r5. r8\nInt. r6. 0\nJNotEq. r5. r6. 1\nIncr. r0\nRet. r1\nRet. r1\nRet. r1\nIncr. r2\nGetGlobal. r7. global[String]\nJNull. r7. 40\nNullCheck. r7\nField. r5. r7. 1\nInt. r6. 5\nJNotEq. r5. r6. 22\nGetGlobal. r9. global[String]\nToDyn. r8. r5\nCall3. r8. 241. r7. r9. r8\nSafeCast. r5. r8\nInt. r6. 0\nJEq. r5. r6. 14\nJNull. r7. 12\nField. r5. r7. 1\nInt. r6. 5\nJNotEq. r5. r6. 8\nGetGlobal. r9. global[String]\nToDyn. r8. r5\nCall3. r8. 241. r7. r9. r8\nSafeCast. r5. r8\nInt. r6. 0\nJNotEq. r5. r6. 1\nIncr. r0\nRet. r1\nRet. r1\nRet. r1\nIncr. r0\nRet. r1\nJNull. r7. 12\nField. r5. r7. 1\nInt. r6. 5\nJNotEq. r5. r6. 8\nGetGlobal. r9. global[String]\nToDyn. r8. r5\nCall3. r8. 241. r7. r9. r8\nSafeCast. r5. r8\nInt. r6. 0\nJNotEq. r5. r6. 1\nIncr. r0\nRet. r1\nRet. r1\nRet. r1\nJNull. r7. 13\nNullCheck. r7\nField. r5. r7. 1\nInt. r6. 5\nJNotEq. r5. r6. 8\nGetGlobal. r9. global[String]\nToDyn. r8. r5\nCall3. r8. 241. r7. r9. r8\nSafeCast. r5. r8\nInt. r6. 0\nJNotEq. r5. r6. 1\nIncr. r0\nRet. r1\nRet. r1\nRet. r1"'
+                        data-recomp='"Int. r0. 0\nInt. r2. 0\nInt. r3. 3\nSwitch. r3. [4, 0, 0, 8]. 11\nInt. r5. 2\nShl. r4. r3. r5\nMov. r0. r4\nJAlways. 7\nInt. r5. 2\nMul. r4. r3. r5\nMov. r0. r4\nJAlways. 3\nInt. r5. 1\nSub. r4. r3. r5\nMov. r0. r4\nSwitch. r4. [1, 3, 5]. 6\nJAlways. 5\nIncr. r0\nJAlways. 3\nIncr. r0\nJAlways. 1\nIncr. r0\nInt. r5. 4294967291\nJEq. r3. r5. 4\nInt. r5. 4294967295\nJNotEq. r3. r5. 1\nIncr. r0\nJAlways. 1\nIncr. r0\nGetGlobal. r6. global[String]\nJNull. r6. 24\nNullCheck. r6\nField. r4. r6. 1\nInt. r5. 5\nJNotEq. r4. r5. 20\nGetGlobal. r8. global[String]\nToDyn. r7. r4\nCall3. r7. 241. r6. r8. r7\nSafeCast. r4. r7\nInt. r5. 0\nJEq. r4. r5. 12\nJNull. r6. 10\nField. r4. r6. 1\nInt. r5. 5\nJNotEq. r4. r5. 7\nGetGlobal. r8. global[String]\nToDyn. r7. r4\nCall3. r7. 241. r6. r8. r7\nSafeCast. r4. r7\nInt. r5. 0\nJNotEq. r4. r5. 1\nIncr. r3\nJAlways. 1\nIncr. r3\nRet. r1\nJNull. r6. 11\nNullCheck. r6\nField. r4. r6. 1\nInt. r5. 5\nJNotEq. r4. r5. 7\nGetGlobal. r8. global[String]\nToDyn. r7. r4\nCall3. r7. 241. r6. r8. r7\nSafeCast. r4. r7\nInt. r5. 0\nJNotEq. r4. r5. 1\nIncr. r3\nRet. r1"'
                         data-orig-count="52"
-                        data-recomp-count="143"
-                        data-sim="43.1"
+                        data-recomp-count="68"
+                        data-sim="73.3"
                         onclick="openDiff(this)"
                         
                     >
@@ -7734,14 +7472,14 @@ class SwitchBig {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:43.1%; background:var(--red);"></div>
+                                        <div class="sim-bar-fill" style="width:73.3%; background:var(--yellow);"></div>
                                     </div>
-                                    <span class="sim-pct">43.1%</span>
+                                    <span class="sim-pct">73.3%</span>
                                 </div>
                             
                         </td>
                         <td>52</td>
-                        <td>143</td>
+                        <td>68</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -8019,7 +7757,7 @@ class SwitchBig {
          id="32"
          data-name="Try Catch"
          data-length="145"
-         data-sim="75.0"
+         data-sim="92.3"
          data-failed="0"
          data-index="32">
         <div class="test-header pass">
@@ -8030,8 +7768,8 @@ class SwitchBig {
             <div class="header-right">
                 
                     
-                        <span class="badge badge-yellow">
-                            75.0% opcode match
+                        <span class="badge badge-green">
+                            92.3% opcode match
                         </span>
                     
                 
@@ -8066,13 +7804,10 @@ class SwitchBig {
                 <div class="panel-label">Decompiled</div>
                 <pre class="line-numbers"><code class="language-haxe">class TryCatch {
     public static function main(): Void {
-        var var0: Dynamic = null;
-        var a: Int = 0;
-        var b: Int = 0;
         try {
-            a = 0;
+            var a: Int = 0;
         } catch (e:Dynamic) {
-            b = 3;
+            var b: Int = 3;
         }
     }
 }</code></pre>
@@ -8117,10 +7852,10 @@ class SwitchBig {
                         
                         data-name="$TryCatch.main"
                         data-orig='"Trap. r0. 3\nInt. r2. 0\nEndTrap. r1\nJAlways. 1\nInt. r2. 3\nRet. r1"'
-                        data-recomp='"Null. r0\nInt. r2. 0\nInt. r3. 0\nTrap. r4. 3\nInt. r5. 0\nEndTrap. r1\nJAlways. 2\nNull. r6\nInt. r5. 3\nRet. r1"'
+                        data-recomp='"Trap. r0. 3\nInt. r2. 0\nEndTrap. r1\nJAlways. 2\nNull. r3\nInt. r2. 3\nRet. r1"'
                         data-orig-count="6"
-                        data-recomp-count="10"
-                        data-sim="75.0"
+                        data-recomp-count="7"
+                        data-sim="92.3"
                         onclick="openDiff(this)"
                         
                     >
@@ -8130,14 +7865,14 @@ class SwitchBig {
                                 
                                 <div class="sim-bar-wrap">
                                     <div class="sim-bar">
-                                        <div class="sim-bar-fill" style="width:75.0%; background:var(--yellow);"></div>
+                                        <div class="sim-bar-fill" style="width:92.3%; background:var(--green);"></div>
                                     </div>
-                                    <span class="sim-pct">75.0%</span>
+                                    <span class="sim-pct">92.3%</span>
                                 </div>
                             
                         </td>
                         <td>6</td>
-                        <td>10</td>
+                        <td>7</td>
                         <td>
                             
                             <span class="diff-hint"><i class="fas fa-code-compare"></i> diff</span>
@@ -8239,9 +7974,7 @@ class VirtualClosure {
 
 class Child extends Base {
     public function new() {
-        var var0: Child;
         super();
-        return;
     }
 
     public override function sayHello(): Void {
@@ -8251,7 +7984,6 @@ class Child extends Base {
 
 class Base {
     public function new() {
-        return;
     }
 
     public function sayHello(): Void {

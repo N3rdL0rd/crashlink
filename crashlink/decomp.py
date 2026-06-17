@@ -2109,6 +2109,42 @@ class IRCommonBlockMerger(TraversingIROptimizer):
             block.statements = new_statements
 
 
+class IRRedundantContinueEliminator(TraversingIROptimizer):
+    """
+    Removes redundant `else { continue; }` blocks that are the last statement
+    of a loop body. After the if-block, control naturally falls through to the
+    end of the loop body, which is equivalent to continuing the loop, so the
+    explicit else-continue is just noise.
+    """
+
+    def __init__(self, function: "IRFunction") -> None:
+        super().__init__(function)
+        self._loop_depth = 0
+
+    def before_visit_statement(self, statement: IRStatement) -> None:
+        if isinstance(statement, (IRWhileLoop, IRPrimitiveLoop)):
+            self._loop_depth += 1
+
+    def after_visit_statement(self, statement: IRStatement) -> None:
+        if isinstance(statement, (IRWhileLoop, IRPrimitiveLoop)):
+            self._loop_depth -= 1
+
+    def visit_block(self, block: IRBlock) -> None:
+        if self._loop_depth == 0 or not block.statements:
+            super().visit_block(block)
+            return
+
+        last = block.statements[-1]
+        if isinstance(last, IRConditional) and last.false_block is not None:
+            false_stmts = [s for s in last.false_block.statements if not isinstance(s, IRReturn)]
+            if len(false_stmts) == 1 and isinstance(false_stmts[0], IRContinue):
+                dbg_print("IRRedundantContinueEliminator: removing trailing else { continue; }")
+                last.false_block = IRBlock(self.func.code)
+                last.false_block.statements = []
+
+        super().visit_block(block)
+
+
 class IRVoidAssignOptimizer(TraversingIROptimizer):
     """
     Removes assignments to IRLocals of type Void, keeping the expression
@@ -2593,6 +2629,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                                     and later_stmt.target == temp_local
                                 ):
                                     break
+                                sub: IRExpression
                                 if copy_target is not None:
                                     sub = copy_target
                                 elif (
@@ -2845,7 +2882,10 @@ class IRCopyPropOptimizer(TraversingIROptimizer):
         elif isinstance(expr, IRField):
             expr.target, changed = self._replace_local_in_expr(expr.target, target, replacement)
             made_change = made_change or changed
-        elif isinstance(expr, (IRCast, IREnumIndex, IREnumField)):
+        elif isinstance(expr, IRCast):
+            expr.expr, changed = self._replace_local_in_expr(expr.expr, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(expr, (IREnumIndex, IREnumField)):
             expr.value, changed = self._replace_local_in_expr(expr.value, target, replacement)
             made_change = made_change or changed
         elif isinstance(expr, IRArrayAccess):
@@ -3269,6 +3309,211 @@ class IRTraceOptimizer(TraversingIROptimizer):
                 i += 1
 
             block.statements = new_statements
+
+
+class IRStringConcatFolder(TraversingIROptimizer):
+    """
+    Folds chained string-concat temporaries into a single inline expression.
+
+    HashLink often lowers `trace("..." + x)` to:
+        temp = "...";
+        temp = String.__add__(temp, x);
+        trace(temp);
+
+    After dead-temp cleanup the first two assignments become adjacent.  This
+    pass collapses them into `trace(String.__add__("...", x))`, which the
+    pseudocode printer then renders as `trace("..." + x)`.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements: List[IRStatement] = []
+        i = 0
+        n = len(block.statements)
+        while i < n:
+            stmt = block.statements[i]
+            fold = self._try_fold_concat_temp(block.statements, i)
+            if fold is not None:
+                trace_stmt, removed_indices = fold
+                new_statements.append(trace_stmt)
+                # Skip the consumed statements; removed_indices are absolute
+                # positions in the original list.
+                i = max(i + 1, max(removed_indices) + 1)
+                continue
+            new_statements.append(stmt)
+            i += 1
+        block.statements = new_statements
+
+    def _try_fold_concat_temp(
+        self, statements: List[IRStatement], start: int
+    ) -> Optional[Tuple[IRTrace, List[int]]]:
+        # Look for: temp = const_string; temp = String.__add__(temp, rhs); trace(temp)
+        if start + 2 >= len(statements):
+            return None
+
+        first = statements[start]
+        if not (
+            isinstance(first, IRAssign)
+            and isinstance(first.target, IRLocal)
+            and isinstance(first.expr, IRConst)
+            and isinstance(first.expr.value, str)
+        ):
+            return None
+
+        temp = first.target
+        const_expr = first.expr
+
+        # Find the next statement that assigns to temp.
+        concat_idx: Optional[int] = None
+        for j in range(start + 1, len(statements)):
+            stmt = statements[j]
+            # The next assignment to temp is the candidate concat.  Check it
+            # before treating its read of temp as a blocking use.
+            if isinstance(stmt, IRAssign) and stmt.target == temp:
+                if self._is_string_add_with_temp(stmt.expr, temp):
+                    concat_idx = j
+                break
+            if self._statement_reads_local(stmt, temp):
+                # temp is used before the next assignment; cannot fold safely.
+                return None
+        if concat_idx is None:
+            return None
+
+        concat_stmt = cast(IRAssign, statements[concat_idx])
+        add_call = cast(IRCall, concat_stmt.expr)
+        rhs = add_call.args[1]
+
+        # Find the single trace use of temp after the concat assignment.
+        trace_idx: Optional[int] = None
+        for k in range(concat_idx + 1, len(statements)):
+            stmt = statements[k]
+            if self._statement_assigns_local(stmt, temp):
+                break
+            if self._statement_reads_local(stmt, temp):
+                if trace_idx is not None:
+                    # More than one read; keep the assignment.
+                    return None
+                if isinstance(stmt, IRTrace) and stmt.msg == temp:
+                    trace_idx = k
+                else:
+                    return None
+
+        if trace_idx is None:
+            return None
+
+        trace_stmt = cast(IRTrace, statements[trace_idx])
+        new_call = IRCall(
+            code=self.func.code,
+            call_type=add_call.call_type,
+            target=add_call.target,
+            args=[const_expr, rhs],
+        )
+        new_trace = IRTrace(
+            code=self.func.code,
+            msg=new_call,
+            pos_info=trace_stmt.pos_info,
+        )
+        return new_trace, [start, concat_idx, trace_idx]
+
+    def _is_string_add_with_temp(self, expr: IRExpression, temp: IRLocal) -> bool:
+        if not isinstance(expr, IRCall):
+            return False
+        if not (isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function)):
+            return False
+        if self.func.code.partial_func_name(expr.target.value) != "__add__":
+            return False
+        if len(expr.args) != 2:
+            return False
+        if expr.args[0] != temp:
+            return False
+        # The right-hand side must not reference temp, otherwise removing the
+        # first assignment would leave that read undefined.
+        if self._expr_contains_local(expr.args[1], temp):
+            return False
+        return True
+
+    def _statement_assigns_local(self, stmt: IRStatement, local: IRLocal) -> bool:
+        if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target == local:
+            return True
+        for child in stmt.get_children():
+            if isinstance(child, IRBlock):
+                if any(self._statement_assigns_local(s, local) for s in child.statements):
+                    return True
+            elif self._statement_assigns_local(child, local):
+                return True
+        return False
+
+    def _statement_reads_local(self, stmt: IRStatement, local: IRLocal) -> bool:
+        if isinstance(stmt, IRAssign):
+            if isinstance(stmt.target, IRExpression) and self._expr_contains_local(stmt.target, local):
+                return True
+            if stmt.expr is not None and self._expr_contains_local(stmt.expr, local):
+                return True
+        elif isinstance(stmt, IRReturn):
+            if stmt.value is not None and self._expr_contains_local(stmt.value, local):
+                return True
+        elif isinstance(stmt, IRCall):
+            if stmt.target is not None and self._expr_contains_local(stmt.target, local):
+                return True
+            for arg in stmt.args:
+                if self._expr_contains_local(arg, local):
+                    return True
+        elif isinstance(stmt, IRTrace):
+            if self._expr_contains_local(stmt.msg, local):
+                return True
+        elif isinstance(stmt, IRConditional):
+            if self._expr_contains_local(stmt.condition, local):
+                return True
+        elif isinstance(stmt, IRWhileLoop):
+            if self._expr_contains_local(stmt.condition, local):
+                return True
+        elif isinstance(stmt, IRPrimitiveLoop):
+            if self._statement_reads_local(stmt.condition, local):
+                return True
+        elif isinstance(stmt, IRSwitch):
+            if self._expr_contains_local(stmt.value, local):
+                return True
+        return False
+
+    def _expr_contains_local(self, expr: IRExpression, local: IRLocal) -> bool:
+        if expr == local:
+            return True
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            if expr.left is not None and self._expr_contains_local(expr.left, local):
+                return True
+            if expr.right is not None and self._expr_contains_local(expr.right, local):
+                return True
+        elif isinstance(expr, IRCall):
+            if expr.target is not None and self._expr_contains_local(expr.target, local):
+                return True
+            for arg in expr.args:
+                if self._expr_contains_local(arg, local):
+                    return True
+        elif isinstance(expr, IRField):
+            if self._expr_contains_local(expr.target, local):
+                return True
+        elif isinstance(expr, IRCast):
+            if self._expr_contains_local(expr.expr, local):
+                return True
+        elif isinstance(expr, IRArrayAccess):
+            if self._expr_contains_local(expr.array, local):
+                return True
+            if self._expr_contains_local(expr.index, local):
+                return True
+        elif isinstance(expr, IRRef):
+            if self._expr_contains_local(expr.target, local):
+                return True
+        elif isinstance(expr, IREnumConstruct):
+            for arg in expr.args:
+                if self._expr_contains_local(arg, local):
+                    return True
+        elif isinstance(expr, (IREnumIndex, IREnumField)):
+            if self._expr_contains_local(expr.value, local):
+                return True
+        elif isinstance(expr, IRNew):
+            for arg in expr.constructor_args:
+                if self._expr_contains_local(arg, local):
+                    return True
+        return False
 
 
 class IREnumSwitchOptimizer(TraversingIROptimizer):
@@ -3922,6 +4167,7 @@ class IRFunction:
         func: Function,
         do_optimize: bool = True,
         no_lift: bool = False,
+        capture_layers: bool = False,
     ) -> None:
         self.func = func
         self.cfg = CFGraph(func)
@@ -3931,6 +4177,10 @@ class IRFunction:
         self.ops = func.ops
         self.locals: List[IRLocal] = []
         self.block: IRBlock
+        self.capture_layers = capture_layers
+        self.opcodes: str = ""
+        self.cfg_data: Dict[str, List[Dict[str, Any]]] = {"nodes": [], "edges": []}
+        self.layer_snapshots: List[Tuple[str, str]] = []
         self._lift(no_lift=no_lift)
         if do_optimize:
             self.optimizers: List[IROptimizer] = [
@@ -3943,6 +4193,7 @@ class IRFunction:
                 IRLoopConditionOptimizer(self),
                 IRSelfAssignOptimizer(self),
                 IRCommonBlockMerger(self),
+                IRRedundantContinueEliminator(self),
                 IRCopyPropOptimizer(self),
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRTempAssignmentInliner(self, aggressive=True),
@@ -3953,6 +4204,7 @@ class IRFunction:
                 IRDeadCodeEliminator(self),
                 IRSelfAssignOptimizer(self),
                 IRTraceOptimizer(self),
+                IRStringConcatFolder(self),
                 IREnumSwitchOptimizer(self),
                 IRBlockFlattener(self),
             ]
@@ -4025,12 +4277,76 @@ class IRFunction:
             dbg_print(disasm.func(self.code, self.func))
             dbg_print(f"----- LLIL -----")
             dbg_print(self.block.pprint())
+        if self.capture_layers:
+            self.opcodes = disasm.func(self.code, self.func)
+            self.cfg_data = self._cfg_to_dict()
+            self.layer_snapshots.append(("LLIR", self.block.pprint()))
         for o in self.optimizers:
             if DEBUG:
                 dbg_print(f"----- {o.__class__.__name__} -----")
             o.optimize()
             if DEBUG:
                 dbg_print(self.block.pprint())
+            if self.capture_layers:
+                self.layer_snapshots.append((o.__class__.__name__, self.block.pprint()))
+
+    def _cfg_to_dict(self) -> Dict[str, Any]:
+        """Serialize the control-flow graph to a JSON-friendly structure."""
+        node_ids = {id(node): i for i, node in enumerate(self.cfg.nodes)}
+        nodes: List[Dict[str, Any]] = []
+        for i, node in enumerate(self.cfg.nodes):
+            label_lines = []
+            for op in node.ops:
+                parts = [op.op or "?"] + [str(v) for v in op.df.values()]
+                label_lines.append(". ".join(parts))
+            nodes.append(
+                {
+                    "id": i,
+                    "label": f"BB{i}",
+                    "ops": label_lines,
+                    "base_offset": node.base_offset,
+                    "is_entry": node is self.cfg.entry,
+                }
+            )
+        edges: List[Dict[str, Any]] = []
+        for node in self.cfg.nodes:
+            src = node_ids[id(node)]
+            for target, edge_type in node.branches:
+                dst = node_ids.get(id(target))
+                if dst is not None:
+                    edges.append({"from": src, "to": dst, "type": edge_type})
+        return {"nodes": nodes, "edges": edges, "dot": self._cfg_to_dot(node_ids)}
+
+    def _cfg_to_dot(self, node_ids: Dict[int, int]) -> str:
+        """Produce a Graphviz DOT representation of the CFG."""
+
+        def _escape(s: str) -> str:
+            return s.replace("\\", "\\\\").replace('"', '\\"')
+
+        lines = [
+            "digraph CFG {",
+            "  rankdir=TB;",
+            '  node [shape=box, fontname="monospace", style="rounded,filled", fillcolor="#313244", fontcolor="#cdd6f4", color="#585b70"];',
+            '  edge [fontname="monospace", color="#6c7086", fontcolor="#a6adc8"];',
+        ]
+        for i, node in enumerate(self.cfg.nodes):
+            op_lines = []
+            for op in node.ops:
+                parts = [op.op or "?"] + [str(v) for v in op.df.values()]
+                op_lines.append(_escape(". ".join(parts)))
+            label = _escape(f"BB{i}") + "\\n" + "\\n".join(op_lines)
+            attrs = f'label="{label}"'
+            if node is self.cfg.entry:
+                attrs += ', fillcolor="#a6e3a1", fontcolor="#11111b"'
+            lines.append(f"  {i} [{attrs}];")
+        for node in self.cfg.nodes:
+            src = node_ids[id(node)]
+            for target, edge_type in node.branches:
+                dst = node_ids.get(id(target))
+                if dst is not None:
+                    lines.append(f'  {src} -> {dst} [label="{_escape(edge_type)}"];')
+        lines.append("}")
+        return "\n".join(lines)
 
     def _name_locals(self) -> None:
         """Name locals based on debug info"""
@@ -4177,6 +4493,7 @@ class IRFunction:
             elif op.op == "GetGlobal":
                 global_idx = op.df["global"].value
                 enum_const = self._enum_global_map.get(global_idx)
+                expr: IRExpression
                 if enum_const is not None:
                     construct_name, enum_type_idx = enum_const
                     expr = IREnumConstruct(self.code, construct_name, [], enum_type_idx)
@@ -4691,8 +5008,9 @@ class IRClass:
     Intermediate representation of a class.
     """
 
-    def __init__(self, code: Bytecode, obj: Obj) -> None:
+    def __init__(self, code: Bytecode, obj: Obj, capture_layers: bool = False) -> None:
         self.code = code
+        self.capture_layers = capture_layers
         self.dynamic: Optional[Obj] = None
         self.static: Optional[Obj] = None
         if obj.is_static:
@@ -4731,13 +5049,13 @@ class IRClass:
         for proto in obj.protos:
             fn = proto.findex.resolve(self.code)
             assert isinstance(fn, Function), "Native protos aren't supported! Not even sure if this is possible tbh"
-            res.append(IRFunction(self.code, fn))
+            res.append(IRFunction(self.code, fn, capture_layers=self.capture_layers))
         for binding in obj.bindings:
             fn = binding.findex.resolve(self.code)
             assert isinstance(fn, Function), "Native bindings aren't supported! Not even sure if this is possible tbh"
             # Avoid adding duplicates if a proto is also bound
             if fn not in [r.func for r in res]:
-                res.append(IRFunction(self.code, fn))
+                res.append(IRFunction(self.code, fn, capture_layers=self.capture_layers))
         return res
 
     def gather_fields(self, obj: Obj) -> List[Tuple[str, Type]]:
