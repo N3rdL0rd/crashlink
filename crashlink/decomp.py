@@ -2667,27 +2667,27 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                                 and self._is_user_local(next_stmt.target)
                             ):
                                 copy_target = next_stmt.target
-                            for later_stmt in statements[i + 2 :]:
-                                if (
-                                    isinstance(later_stmt, IRAssign)
-                                    and isinstance(later_stmt.target, IRLocal)
-                                    and later_stmt.target == temp_local
-                                ):
-                                    break
-                                sub: IRExpression
-                                if copy_target is not None:
-                                    sub = copy_target
-                                elif (
-                                    isinstance(next_stmt, IRAssign)
-                                    and isinstance(next_stmt.target, IRLocal)
-                                    and next_stmt.target == temp_local
-                                ):
-                                    sub = next_stmt.expr
-                                else:
-                                    sub = expr_to_inline
-                                self._substitute_shallow(later_stmt, temp_local, sub)
-                            i += 2
-                            inlined = True
+                            if self._is_local_redefined(temp_local, [next_stmt]):
+                                i += 2
+                                inlined = True
+                            else:
+                                for later_stmt in statements[i + 2 :]:
+                                    if self._is_local_redefined(temp_local, [later_stmt]):
+                                        break
+                                    sub: IRExpression
+                                    if copy_target is not None:
+                                        sub = copy_target
+                                    elif (
+                                        isinstance(next_stmt, IRAssign)
+                                        and isinstance(next_stmt.target, IRLocal)
+                                        and next_stmt.target == temp_local
+                                    ):
+                                        sub = next_stmt.expr
+                                    else:
+                                        sub = expr_to_inline
+                                    self._substitute_shallow(later_stmt, temp_local, sub)
+                                i += 2
+                                inlined = True
 
             if not inlined:
                 new_statements.append(current_stmt)
@@ -4606,8 +4606,27 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         values: List[IRExpression] = []
         i = start + 2
         while i < len(stmts):
-            # bytes_var[idx_var << 2] = value
+            # Optional element temp load inserted by the compiler before some
+            # stores: elem_temp = expr; bytes_var[idx_var << 2] = elem_temp
+            elem_expr: Optional[IRExpression] = None
             s = stmts[i]
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRLocal)
+                and s.target.name.startswith("var")
+                and i + 1 < len(stmts)
+            ):
+                nxt = stmts[i + 1]
+                if (
+                    isinstance(nxt, IRAssign)
+                    and isinstance(nxt.target, IRArrayAccess)
+                    and nxt.expr == s.target
+                ):
+                    elem_expr = s.expr
+                    i += 1
+                    s = nxt
+
+            # bytes_var[idx_var << 2] = value
             if not isinstance(s, IRAssign) or not isinstance(s.target, IRArrayAccess):
                 break
             access = s.target
@@ -4615,7 +4634,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                 break
             if not self._is_shifted_index(access.index, idx_var, 2):
                 break
-            values.append(s.expr)
+            values.append(elem_expr if elem_expr is not None else s.expr)
             i += 1
             # idx_var = idx_var + 1
             if i >= len(stmts):
