@@ -4,8 +4,9 @@ Pseudocode generation routines to create a Haxe representation of the decompiled
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
-from typing import Optional, List, Set, Dict, Tuple, Union, cast
+from typing import Optional, List, Set, Dict, Tuple, Union, cast, Any
 
 from .core import Bytecode, Obj, Type, Function, Fun, Native, Enum, destaticify
 from . import disasm
@@ -276,13 +277,11 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         if expr.target is not None and isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function):
             func = expr.target.value
             partial = code.partial_func_name(func)
-            # Rewrite String.__add__ to Haxe's + operator.
+            # Rewrite String.__add__ to Haxe's + operator (or interpolation).
             if _is_std_function(func, code) and partial == "__add__" and len(expr.args) == 2:
-                left = _expression_to_haxe(expr.args[0], code, ir_function)
-                right_simple = _try_simplify_string_alloc(expr.args[1], code, ir_function)
-                if right_simple is None:
-                    right_simple = _expression_to_haxe(expr.args[1], code, ir_function)
-                return f"({left} + {right_simple})"
+                rendered = _render_string_concat(expr, code, ir_function)
+                if rendered is not None:
+                    return rendered
             # Replace String.__alloc__(itos(x, &x), x) with just x.
             alloc_simple = _try_simplify_string_alloc(expr, code, ir_function)
             if alloc_simple is not None:
@@ -1380,6 +1379,101 @@ def _find_assignment_recursive(local_name: str, stmt: IRStatement) -> Optional[I
         if found is not None:
             return found
     return None
+
+
+def _flatten_string_concat(
+    expr: IRExpression, code: Bytecode
+) -> Optional[List[IRExpression]]:
+    """Flatten a nested chain of String.__add__ calls into an ordered operand list.
+
+    `(((a + b) + c) + d)` is stored as nested two-arg __add__ calls; return
+    `[a, b, c, d]`. Returns None if `expr` is not a String.__add__ call.
+    """
+    if not (
+        isinstance(expr, IRCall)
+        and isinstance(expr.target, IRConst)
+        and isinstance(expr.target.value, Function)
+        and _is_std_function(expr.target.value, code)
+        and code.partial_func_name(expr.target.value) == "__add__"
+        and len(expr.args) == 2
+    ):
+        return None
+    operands: List[IRExpression] = []
+    left, right = expr.args[0], expr.args[1]
+    left_flat = _flatten_string_concat(left, code)
+    if left_flat is not None:
+        operands.extend(left_flat)
+    else:
+        operands.append(left)
+    right_flat = _flatten_string_concat(right, code)
+    if right_flat is not None:
+        operands.extend(right_flat)
+    else:
+        operands.append(right)
+    return operands
+
+
+_INTERP_SAFE_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _render_string_concat(
+    expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction]
+) -> Optional[str]:
+    """Render a String.__add__ chain as Haxe.
+
+    Dense chains (with several interpolated values) become single-quote string
+    interpolation; otherwise a flat `a + b + c` without redundant parentheses.
+    """
+    operands = _flatten_string_concat(expr, code)
+    if operands is None or len(operands) < 2:
+        return None
+
+    # Classify each operand as a string literal or a value to interpolate.
+    parts: List[Tuple[str, Any]] = []  # (kind, payload); kind in {"lit", "val"}
+    interp_count = 0
+    for operand in operands:
+        if isinstance(operand, IRConst) and isinstance(operand.value, str):
+            parts.append(("lit", operand.value))
+        else:
+            simple = _try_simplify_string_alloc(operand, code, ir_function)
+            if simple is None:
+                simple = _expression_to_haxe(operand, code, ir_function)
+            parts.append(("val", (operand, simple)))
+            interp_count += 1
+
+    # Use interpolation only for dense chains (multiple interpolated values),
+    # and only when there is at least one literal to host the interpolation.
+    has_literal = any(kind == "lit" for kind, _ in parts)
+    if interp_count >= 2 and has_literal:
+        return _render_interpolated(parts)
+
+    # Otherwise: flat `a + b + c`, no redundant wrapping parentheses.
+    rendered = []
+    for kind, payload in parts:
+        if kind == "lit":
+            rendered.append('"' + payload.replace('"', '\\"') + '"')
+        else:
+            rendered.append(payload[1])
+    return " + ".join(rendered)
+
+
+def _render_interpolated(parts: List[Tuple[str, Any]]) -> str:
+    """Build a single-quoted Haxe interpolation string from classified parts."""
+    out = ["'"]
+    for kind, payload in parts:
+        if kind == "lit":
+            text = payload
+            # Escape for single-quoted interpolation context.
+            text = text.replace("\\", "\\\\").replace("'", "\\'").replace("$", "$$")
+            out.append(text)
+        else:
+            operand, simple = payload
+            if isinstance(operand, IRLocal) and _INTERP_SAFE_IDENT.match(simple):
+                out.append(f"${simple}")
+            else:
+                out.append("${" + simple + "}")
+    out.append("'")
+    return "".join(out)
 
 
 def _try_simplify_string_alloc(expr: IRExpression, code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
