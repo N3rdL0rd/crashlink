@@ -604,13 +604,18 @@ class IRExpression(IRStatement, ABC):
 
 
 class IRLocal(IRExpression):
-    def __init__(self, name: str, type: tIndex, code: Bytecode):
+    def __init__(self, name: str, type: tIndex, code: Bytecode, reg_idx: Optional[int] = None):
         super().__init__(code)
         self.name = name
         self.type = type
+        self.reg_idx = reg_idx
 
     def get_type(self) -> Type:
         return self.type.resolve(self.code)
+
+    def same_register(self, other: "IRLocal") -> bool:
+        """Return True if this local and `other` originate from the same VM register."""
+        return self.reg_idx is not None and other.reg_idx is not None and self.reg_idx == other.reg_idx
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, IRLocal):
@@ -620,6 +625,9 @@ class IRLocal(IRExpression):
             and self.type.resolve(self.code) is other.type.resolve(other.code)
             and self.code is other.code
         )
+
+    def __hash__(self) -> int:
+        return hash((self.name, id(self.type.resolve(self.code)), id(self.code)))
 
     def __repr__(self) -> str:
         return f"<IRLocal: {self.name} {disasm.type_name(self.code, self.type.resolve(self.code))}>"
@@ -4806,7 +4814,7 @@ class IRFunction:
     def _lift(self, no_lift: bool = False) -> None:
         """Lift function to IR"""
         for i, reg in enumerate(self.func.regs):
-            self.locals.append(IRLocal(f"var{i}", reg, code=self.code))
+            self.locals.append(IRLocal(f"var{i}", reg, code=self.code, reg_idx=i))
         self._build_assign_map()
         self._name_locals()
         if not no_lift:
@@ -4849,7 +4857,8 @@ class IRFunction:
     def _split_local(self, reg_idx: int, name: str) -> IRLocal:
         """Create a new IRLocal for a register with a specific name (SSA-esque split)."""
         reg_type = self.func.regs[reg_idx]
-        new_local = IRLocal(name, reg_type, code=self.code)
+        current = self.locals[reg_idx]
+        new_local = IRLocal(name, reg_type, code=self.code, reg_idx=reg_idx)
         self.locals[reg_idx] = new_local
         return new_local
 
