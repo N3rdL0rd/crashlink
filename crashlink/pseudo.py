@@ -985,7 +985,13 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
         if inner_stmt is not None:
             inline_declarations[inner_stmt] = (local_name, type_str)
             continue
-        # No unconditional first assignment found — pre-declare with default value.
+        # No unconditional first assignment found — pre-declare at function level.
+        # If the variable is definitely assigned (in every branch of the first
+        # compound statement that mentions it) before any read, omit the default
+        # initializer: the synthetic `= 0` would emit a spurious extra opcode.
+        if _is_definitely_assigned_before_use(local_name, ir_func.block):
+            output_lines.append(f"    var {local_name}: {type_str};")
+            continue
         default_init = {
             "Int": "0",
             "Float": "0.0",
@@ -1093,6 +1099,75 @@ def _switch_defines_local(switch_stmt: IRSwitch, local_name: str) -> Optional[IR
     if local_name in sources:
         return None
     return target
+
+
+def _is_definitely_assigned_before_use(local_name: str, block: IRBlock) -> bool:
+    """Return True if, at the point `local_name` first appears in `block`, it is
+    definitely assigned in every branch before being read.
+
+    Used to decide whether a pre-declared variable can omit its synthetic
+    default initializer. Conservative: only recognises the case where the first
+    top-level statement mentioning the local is an IRConditional (with both
+    branches present) or IRSwitch (with a default), and each branch assigns the
+    local before any read of it.
+    """
+    for stmt in block.statements:
+        if not _contains_local_name(local_name, stmt) and _find_assignment_recursive(local_name, stmt) is None:
+            continue
+        # First statement that touches the local.
+        if isinstance(stmt, IRConditional):
+            branches = [stmt.true_block, stmt.false_block]
+            if any(b is None for b in branches):
+                return False
+            # The condition itself must not read the local before assignment.
+            if _contains_local_name(local_name, stmt.condition):
+                return False
+            return all(_assigns_before_read(local_name, b) for b in branches)
+        if isinstance(stmt, IRSwitch):
+            if _contains_local_name(local_name, stmt.value):
+                return False
+            branches = list(stmt.cases.values())
+            if stmt.default is None:
+                return False
+            branches.append(stmt.default)
+            return all(_assigns_before_read(local_name, b) for b in branches)
+        return False
+    return False
+
+
+def _assigns_before_read(local_name: str, block: Optional[IRBlock]) -> bool:
+    """Return True if `block` assigns `local_name` before any read of it.
+
+    Recurses into nested conditionals/switches only when the construct itself
+    definitely assigns before use; otherwise conservatively returns False.
+    """
+    if block is None:
+        return False
+    for stmt in block.statements:
+        if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target.name == local_name:
+            # A read in the RHS still counts as use-before-full-assignment.
+            return not _contains_local_name(local_name, stmt.expr)
+        if _contains_local_name(local_name, stmt) or _find_assignment_recursive(local_name, stmt) is not None:
+            if isinstance(stmt, (IRConditional, IRSwitch)):
+                return _branch_definitely_assigns(local_name, stmt)
+            return False
+    return False
+
+
+def _branch_definitely_assigns(local_name: str, stmt: IRStatement) -> bool:
+    """Whether a nested conditional/switch definitely assigns the local first."""
+    if isinstance(stmt, IRConditional):
+        if stmt.false_block is None or _contains_local_name(local_name, stmt.condition):
+            return False
+        return _assigns_before_read(local_name, stmt.true_block) and _assigns_before_read(
+            local_name, stmt.false_block
+        )
+    if isinstance(stmt, IRSwitch):
+        if stmt.default is None or _contains_local_name(local_name, stmt.value):
+            return False
+        branches = list(stmt.cases.values()) + [stmt.default]
+        return all(_assigns_before_read(local_name, b) for b in branches)
+    return False
 
 
 def _find_defining_assignment(local_name: str, block: IRBlock) -> Optional[Union[IRAssign, IRSwitch]]:
