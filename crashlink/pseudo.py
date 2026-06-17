@@ -239,6 +239,21 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         ):
             arr_str = _expression_to_haxe(expr.array.target, code, ir_function)
             idx_str = _expression_to_haxe(expr.index.left, code, ir_function)
+        # Raw hl.Bytes temporaries that feed ArrayBase.alloc* are upgraded to
+        # hl.BytesAccess<T>; render `bytes[idx << 2]` as `bytes[idx]`.
+        elif (
+            isinstance(expr.array, IRLocal)
+            and disasm.type_to_haxe(disasm.type_name(code, expr.array.get_type())).startswith("hl.BytesAccess")
+            and isinstance(expr.index, IRArithmetic)
+            and expr.index.op.value == "<<"
+            and isinstance(expr.index.right, IRConst)
+            and int(
+                expr.index.right.value.value if hasattr(expr.index.right.value, "value") else expr.index.right.value
+            )
+            == 2
+        ):
+            arr_str = expr.array.name
+            idx_str = _expression_to_haxe(expr.index.left, code, ir_function)
         return f"{arr_str}[{idx_str}]"
 
     elif isinstance(expr, IRArrayLiteral):
@@ -280,6 +295,25 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
             alloc_simple = _try_simplify_string_alloc(expr, code, ir_function)
             if alloc_simple is not None:
                 return alloc_simple
+
+        # HashLink emits array push/pop as static calls on the internal array
+        # implementation classes. Render them as the instance methods Haxe expects.
+        if (
+            expr.target is not None
+            and isinstance(expr.target, IRConst)
+            and isinstance(expr.target.value, Function)
+            and _is_std_function(expr.target.value, code)
+            and expr.args
+        ):
+            partial = code.partial_func_name(expr.target.value)
+            if partial in ("push", "pop"):
+                instance = _try_instance_method_call(expr.target.value, expr.args[0], code)
+                if instance is not None:
+                    rest = expr.args[1:] if partial == "push" else []
+                    args_str = ", ".join(
+                        _expression_to_haxe(arg, code, ir_function) for arg in rest
+                    )
+                    return f"{instance}({args_str})"
 
         if expr.call_type == IRCall.CallType.THIS and expr.target is None:
             callee_str = "this.unknownMethod"
@@ -331,6 +365,18 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
             raise ValueError(f"IRCall missing target or unhandled type: {expr.call_type}")
 
         args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in expr.args)
+        # HashLink's internal ArrayBase.alloc* helpers return ArrayBytes_* types
+        # that are not directly assignable to Array<T> locals. Insert a cast so
+        # the decompiled output recompiles without changing the underlying call.
+        call_name = ""
+        if (
+            expr.target is not None
+            and isinstance(expr.target, IRConst)
+            and isinstance(expr.target.value, Function)
+        ):
+            call_name = code.full_func_name(expr.target.value) or code.partial_func_name(expr.target.value) or ""
+        if "ArrayBase.alloc" in call_name:
+            return f"cast {callee_str}({args_str})"
         return f"{callee_str}({args_str})"
 
     elif isinstance(expr, IRUnliftedOpcode):
@@ -434,6 +480,10 @@ def _generate_statements(
             # Emit as `var name: type = value;` at its natural position.
             local_name, type_str = inline_declarations[stmt]
             value_str = _expression_to_haxe(stmt.expr, code, ir_function)
+            # A raw native alloc_bytes returns Dynamic; cast it when assigning to
+            # a typed BytesAccess local.
+            if type_str.startswith("hl.BytesAccess") and not value_str.startswith("cast "):
+                value_str = f"cast {value_str}"
             output_lines.append(f"{indent}var {local_name}: {type_str} = {value_str};")
             declared_vars_in_scope.add(local_name)
 
@@ -1644,6 +1694,39 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
             visit(child)
 
     visit(root)
+
+    # Upgrade raw hl.Bytes temporaries that feed ArrayBase.alloc* calls to
+    # hl.BytesAccess<T>. This lets the decompiled byte-manipulation pattern
+    # recompile as typed array-access stores.
+    def _alloc_element_type(func_name: str) -> str:
+        if "allocF64" in func_name:
+            return "Float"
+        if "allocF32" in func_name:
+            return "Single"
+        if "allocUI16" in func_name:
+            return "Int"
+        if "allocI32" in func_name:
+            return "Int"
+        return "Int"
+
+    def _upgrade_bytes(stmt: IRStatement) -> None:
+        if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRCall):
+            call = stmt.expr
+            if (
+                call.target is not None
+                and isinstance(call.target, IRConst)
+                and isinstance(call.target.value, Function)
+            ):
+                func = call.target.value
+                name = root.code.full_func_name(func) or root.code.partial_func_name(func) or ""
+                if "ArrayBase.alloc" in name and call.args:
+                    first_arg = call.args[0]
+                    if isinstance(first_arg, IRLocal) and locals.get(first_arg.name) == "hl.Bytes":
+                        locals[first_arg.name] = f"hl.BytesAccess<{_alloc_element_type(name)}>"
+        for child in stmt.get_children():
+            _upgrade_bytes(child)
+
+    _upgrade_bytes(root)
     return locals
 
 
