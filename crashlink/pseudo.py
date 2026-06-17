@@ -1881,7 +1881,7 @@ def _collect_function_externs(root: IRStatement, code: Bytecode) -> Dict[int, Tu
         seen.add(id(stmt))
         if isinstance(stmt, IRCall) and isinstance(stmt.target, IRConst) and isinstance(stmt.target.value, Function):
             func = stmt.target.value
-            if is_std_func(func):
+            if is_std_func(func) and _call_renders_as_std_stub(func, stmt, code):
                 name = _std_func_name(func, code)
                 arity = len(stmt.args)
                 if func.findex.value in externs:
@@ -1893,6 +1893,27 @@ def _collect_function_externs(root: IRStatement, code: Bytecode) -> Dict[int, Tu
 
     visit(root)
     return externs
+
+
+def _call_renders_as_std_stub(func: "Function", call: "IRCall", code: Bytecode) -> bool:
+    """Return True if this std call actually renders as a `StdFuncs.` stub.
+
+    Calls that resolve to a Haxe-qualified name (Std.random, Math.random, ...)
+    or that get folded away (String.__add__ -> `+`, String.__alloc__ -> the
+    interpolated value) do not need an extern declaration.
+    """
+    # Resolves to a real Haxe name, e.g. Std.random / Math.random.
+    if _std_call_name(func, code) is not None:
+        return False
+    partial = code.partial_func_name(func)
+    # String.__add__(a, b) is rendered with the `+` operator.
+    if partial == "__add__" and len(call.args) == 2:
+        return False
+    # String.__alloc__(itos(x, &x), x) collapses to just `x` when the pattern
+    # matches. If it does not simplify, it still renders as a stub.
+    if partial == "__alloc__" and _try_simplify_string_alloc(call, code, None) is not None:
+        return False
+    return True
 
 
 def _function_extern(externs: Dict[int, Tuple[str, int]], code: Bytecode) -> str:
