@@ -280,13 +280,10 @@ class fIndex(ResolvableVarInt):
     __slots__ = ()
 
     def resolve(self, code: "Bytecode") -> "Function|Native":
-        for function in code.functions:
-            if function.findex.value == self.value:
-                return function
-        for native in code.natives:
-            if native.findex.value == self.value:
-                return native
-        raise MalformedBytecode(f"Function index {self.value} not found.")
+        found = code.get_findex_map().get(self.value)
+        if found is None:
+            raise MalformedBytecode(f"Function index {self.value} not found.")
+        return found
 
 
 class tIndex(ResolvableVarInt):
@@ -1865,8 +1862,28 @@ class Bytecode(Serialisable):
 
         self.section_offsets: Dict[str, int] = {}
         self.cached_all: List[Type] | None = None
+        self._findex_map: Dict[int, "Function | Native"] | None = None
 
         self.virtuals_built = False
+
+    def invalidate_findex_cache(self) -> None:
+        """
+        Invalidates the lazily-built findex -> Function|Native map. Call this after mutating
+        `self.functions` or `self.natives` outside of normal deserialisation.
+        """
+        self._findex_map = None
+
+    def get_findex_map(self) -> Dict[int, "Function | Native"]:
+        """
+        Returns a lazily-built map of fIndex value -> Function|Native, for fast resolution.
+        """
+        if self._findex_map is None:
+            self._findex_map = {}
+            for function in self.functions:
+                self._findex_map[function.findex.value] = function
+            for native in self.natives:
+                self._findex_map[native.findex.value] = native
+        return self._findex_map
 
     def _build_virtual_tables(self) -> None:
         """
@@ -2243,13 +2260,9 @@ class Bytecode(Serialisable):
         """
         Shorthand to to get a Function or a Native by its fIndex.
         """
-        for f in self.functions:
-            if f.findex.value == findex:
-                return f
-        if native:
-            for n in self.natives:
-                if n.findex.value == findex:
-                    return n
+        found = self.get_findex_map().get(findex)
+        if found is not None and (native or isinstance(found, Function)):
+            return found
         raise ValueError(f"Function {findex} not found!")
 
     def t(self, tindex: int) -> Type:

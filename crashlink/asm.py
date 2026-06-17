@@ -248,6 +248,7 @@ class AsmFile:
             obj.name = _name
             obj.type = _typ
             code.natives.append(obj)
+            code.invalidate_findex_cache()
 
     def _opcode(self, val: str) -> Opcode:
         def remove_commas_outside_quotes(text: str) -> str:
@@ -324,6 +325,7 @@ class AsmFile:
                 func.has_debug = False
                 func.version = code.version.value
                 code.functions.append(func)
+                code.invalidate_findex_cache()
 
     def _add_strings(self, code: Bytecode) -> None:
         for s in self.strings:

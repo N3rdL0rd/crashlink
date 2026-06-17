@@ -6574,6 +6574,15 @@ class IRFunction:
                 elif terminal_right and not terminal_left and jump_target in self.cfg.immediate_post_dominators:
                     convergence_node = self.cfg.immediate_post_dominators[jump_target]
 
+            # If no convergence point could be determined at all, never let a branch
+            # explore past the boundary the *enclosing* call already established. Without
+            # this, a live branch recurses with stop_at=None and re-walks the entire rest
+            # of the function independently of the outer continuation, which re-walks the
+            # same nodes again - doubling work at every such conditional and blowing up
+            # exponentially for long chains of terminal-vs-live branches.
+            if convergence_node is None:
+                convergence_node = stop_at
+
             if then_block_ir is None:
                 then_block_ir = self._lift_block(
                     fall_through, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
