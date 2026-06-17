@@ -494,7 +494,19 @@
             flex-shrink: 0;
             background: var(--crust);
             overflow-x: auto;
+            scrollbar-width: none;
         }
+        .layers-view-tabs::-webkit-scrollbar { display: none; }
+        .layers-hide-unchanged {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.78rem;
+            color: var(--subtext);
+            white-space: nowrap;
+            cursor: pointer;
+        }
+        .layers-hide-unchanged input { cursor: pointer; }
         .layers-tab {
             padding: 0.45rem 0.9rem;
             font-size: 0.82rem;
@@ -529,9 +541,17 @@
             overflow: auto;
         }
         .layers-cfg-wrap svg {
-            width: 100%;
-            height: 100%;
             display: block;
+            max-width: 100%;
+            height: auto;
+        }
+        .layers-cfg-wrap.layers-cfg-error {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--subtext);
+            font-size: 0.85rem;
+            padding: 1rem;
         }
         .layers-nav {
             background: var(--surface1);
@@ -548,12 +568,23 @@
         }
         .layers-nav:hover { background: var(--surface2); }
         .layers-nav:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* Gentle IR syntax highlighting — kept low-contrast/desaturated next to
+           the haxe panels so the IR view doesn't fight for attention. */
+        .token.ir-node    { color: var(--blue); }
+        .token.ir-type    { color: var(--sapphire); font-style: italic; }
+        .token.ir-keyword { color: var(--mauve); }
+        .token.ir-field   { color: var(--peach); }
+        code[class*="language-ir"] .token.comment   { color: var(--overlay0); }
+        code[class*="language-ir"] .token.string    { color: var(--green); }
+        code[class*="language-ir"] .token.number    { color: var(--peach); }
+        code[class*="language-ir"] .token.operator,
+        code[class*="language-ir"] .token.punctuation { color: var(--subtext); }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism-tomorrow.min.css" rel="stylesheet" />
     <link href="https://prismjs.catppuccin.com/mocha.css" rel="stylesheet" />
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/line-numbers/prism-line-numbers.min.css" rel="stylesheet" />
-    <script src="https://unpkg.com/@viz-js/viz@3/lib/viz-standalone.js"></script>
 </head>
 <body class="line-numbers">
     <div class="site-header">
@@ -666,7 +697,7 @@
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">{{ case.ir.content }}</code></pre>
+                <pre class="line-numbers"><code class="language-ir">{{ case.ir.content }}</code></pre>
             </div>
         </div>
 
@@ -755,6 +786,10 @@
                 <button class="layers-nav" id="layers-prev" title="Previous layer"><i class="fas fa-chevron-left"></i></button>
                 <select id="layers-method-select"></select>
                 <span class="layers-method-meta" id="layers-method-meta"></span>
+                <label class="layers-hide-unchanged">
+                    <input type="checkbox" id="layers-hide-unchanged-toggle">
+                    Hide unchanged steps
+                </label>
                 <button class="layers-nav" id="layers-next" title="Next layer"><i class="fas fa-chevron-right"></i></button>
                 <button class="diff-modal-close" onclick="closeLayers()">&times;</button>
             </div>
@@ -774,6 +809,21 @@
     {% for case in cases %}{% if case.layers %}
     window.caseLayers[{{ case.test_id }}] = {{ case.layers | tojson }};
     {% endif %}{% endfor %}
+
+    Prism.languages.ir = {
+        'comment': /\/\/.*/,
+        'string': {
+            pattern: /"(?:\\.|[^"\\])*"/,
+            greedy: true
+        },
+        'ir-field': /\b(?:fileName|lineNumber|className|methodName|from)\b/,
+        'ir-keyword': /\b(?:if|then|else|while|try|catch|new|indexof|cond|body)\b/,
+        'ir-type': /\b(?:I8|I16|I32|I64|F32|F64|Bool|Bytes|Void|Dyn|DynObj|String|Fun|Array|Type|Obj|Virtual|Enum|Null|Method|Ref|Packed|Abstract|none)\b/,
+        'ir-node': /\bIR[A-Za-z]+\b/,
+        'number': /\b\d+(?:\.\d+)?\b/,
+        'operator': /->|>=|<=|==|!=|&&|\|\||[=&+\-*/%]/,
+        'punctuation': /[<>:,.\[\]{}()]/
+    };
 
     document.addEventListener('DOMContentLoaded', () => {
         Prism.highlightAll();
@@ -1030,6 +1080,17 @@
     let _currentLayers = null;
     let _currentLayersMethod = null;
     let _currentLayersTab = 'opcodes';
+    let _hideUnchangedSteps = false;
+
+    function visibleStepIndices(method) {
+        const indices = [];
+        method.steps.forEach((s, i) => {
+            if (i === 0 || !_hideUnchangedSteps || s.ir !== method.steps[i - 1].ir) {
+                indices.push(i);
+            }
+        });
+        return indices;
+    }
 
     function openLayers(testId) {
         const layers = window.caseLayers[testId];
@@ -1049,6 +1110,13 @@
             renderLayers();
         };
 
+        const hideToggle = document.getElementById('layers-hide-unchanged-toggle');
+        hideToggle.checked = _hideUnchangedSteps;
+        hideToggle.onchange = () => {
+            _hideUnchangedSteps = hideToggle.checked;
+            renderLayers();
+        };
+
         renderLayers();
         document.getElementById('layers-modal').classList.add('open');
         document.body.style.overflow = 'hidden';
@@ -1065,7 +1133,7 @@
         if (!_currentLayers || !_currentLayersMethod) return [];
         const method = _currentLayers[_currentLayersMethod];
         const order = ['opcodes', 'cfg'];
-        method.steps.forEach((_, i) => order.push(`step-${i}`));
+        visibleStepIndices(method).forEach(i => order.push(`step-${i}`));
         order.push('pseudo');
         return order;
     }
@@ -1107,8 +1175,8 @@
             { key: 'opcodes', label: 'Opcodes' },
             { key: 'cfg', label: 'CFG' },
         ];
-        method.steps.forEach((s, i) => {
-            tabDefs.push({ key: `step-${i}`, label: s.name });
+        visibleStepIndices(method).forEach(i => {
+            tabDefs.push({ key: `step-${i}`, label: method.steps[i].name });
         });
         tabDefs.push({ key: 'pseudo', label: 'Pseudo' });
 
@@ -1128,14 +1196,15 @@
         if (_currentLayersTab === 'opcodes') {
             bodyEl.innerHTML = `<pre class="line-numbers"><code class="language-txt">${esc(method.opcodes)}</code></pre>`;
         } else if (_currentLayersTab === 'cfg') {
-            bodyEl.innerHTML = '<div id="layers-cfg" class="layers-cfg-wrap"></div>';
-            renderLayersDOT(method.cfg.dot);
+            bodyEl.innerHTML = method.cfg.svg
+                ? `<div class="layers-cfg-wrap">${method.cfg.svg}</div>`
+                : '<div class="layers-cfg-wrap layers-cfg-error">Graphviz not available — install graphviz to render the CFG.</div>';
         } else if (_currentLayersTab === 'pseudo') {
             bodyEl.innerHTML = `<pre class="line-numbers"><code class="language-haxe">${esc(method.pseudo)}</code></pre>`;
         } else if (_currentLayersTab.startsWith('step-')) {
             const idx = parseInt(_currentLayersTab.split('-')[1], 10);
             const step = method.steps[idx];
-            bodyEl.innerHTML = `<pre class="line-numbers"><code class="language-txt">${esc(step ? step.ir : '')}</code></pre>`;
+            bodyEl.innerHTML = `<pre class="line-numbers"><code class="language-ir">${esc(step ? step.ir : '')}</code></pre>`;
         }
         Prism.highlightAllUnder(bodyEl);
         updateLayersNav();
@@ -1144,19 +1213,6 @@
     function switchLayersTab(key) {
         _currentLayersTab = key;
         renderLayers();
-    }
-
-    function renderLayersDOT(dot) {
-        const container = document.getElementById('layers-cfg');
-        if (!container || typeof Viz === 'undefined') return;
-        Viz.instance().then(viz => {
-            if (!container) return;
-            const svg = viz.renderSVGElement(dot);
-            svg.style.width = '100%';
-            svg.style.height = '100%';
-            container.innerHTML = '';
-            container.appendChild(svg);
-        });
     }
 
     document.addEventListener('keydown', e => {

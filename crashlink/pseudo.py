@@ -5,7 +5,7 @@ Pseudocode generation routines to create a Haxe representation of the decompiled
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional, List, Set, Dict, Tuple, cast
+from typing import Optional, List, Set, Dict, Tuple, Union, cast
 
 from .core import Bytecode, Obj, Type, Function, Fun, Native, Enum, destaticify
 from . import disasm
@@ -669,7 +669,14 @@ def _generate_statements(
             expr_switch = _is_expression_switch(stmt)
             if expr_switch is not None:
                 target, case_exprs, default_expr = expr_switch
-                output_lines.append(f"{indent}{target.name} = switch ({enum_value_str}) {{")
+                if stmt in inline_declarations:
+                    local_name, type_str = inline_declarations[stmt]
+                    output_lines.append(
+                        f"{indent}var {local_name}: {type_str} = switch ({enum_value_str}) {{"
+                    )
+                    declared_vars_in_scope.add(local_name)
+                else:
+                    output_lines.append(f"{indent}{target.name} = switch ({enum_value_str}) {{")
                 for case_value, case_block in stmt.cases.items():
                     case_str = _case_value_to_haxe(
                         case_value, enum_type, code, ir_function
@@ -962,9 +969,28 @@ def _collect_catch_local_names(block: IRBlock) -> Set[str]:
     return names
 
 
-def _find_defining_assignment(local_name: str, block: IRBlock) -> Optional[IRAssign]:
-    """Return the top-level assignment that defines a local if it happens
-    unconditionally before any read of that local.
+def _switch_defines_local(switch_stmt: IRSwitch, local_name: str) -> Optional[IRLocal]:
+    """Return the target local if `switch_stmt` is an expression switch that
+    unconditionally assigns to `local_name` in every branch."""
+    expr_switch = _is_expression_switch(switch_stmt)
+    if expr_switch is None:
+        return None
+    target, case_exprs, default_expr = expr_switch
+    if target.name != local_name:
+        return None
+    sources: Set[str] = set()
+    for expr in case_exprs.values():
+        sources.update(_collect_local_names(expr))
+    if default_expr is not None:
+        sources.update(_collect_local_names(default_expr))
+    if local_name in sources:
+        return None
+    return target
+
+
+def _find_defining_assignment(local_name: str, block: IRBlock) -> Optional[Union[IRAssign, IRSwitch]]:
+    """Return the top-level assignment (or expression switch) that defines a local
+    if it happens unconditionally before any read of that local.
 
     The assignment is only folded into the declaration if none of the locals
     it reads are reassigned elsewhere in the block.  Hoisting the assignment
@@ -980,12 +1006,29 @@ def _find_defining_assignment(local_name: str, block: IRBlock) -> Optional[IRAss
                     if _has_multiple_assignments(used_name, block):
                         return None
                 return stmt
+        elif isinstance(stmt, IRSwitch):
+            target = _switch_defines_local(stmt, local_name)
+            if target is not None:
+                expr_switch = _is_expression_switch(stmt)
+                assert expr_switch is not None
+                _, case_exprs, default_expr = expr_switch
+                sources: Set[str] = set()
+                for expr in case_exprs.values():
+                    sources.update(_collect_local_names(expr))
+                if default_expr is not None:
+                    sources.update(_collect_local_names(default_expr))
+                if local_name in sources:
+                    return None
+                for used_name in sources:
+                    if _has_multiple_assignments(used_name, block):
+                        return None
+                return stmt
         if _contains_local_name(local_name, stmt):
             return None
     return None
 
 
-def _find_inner_defining_assignment(local_name: str, block: IRBlock) -> Optional[IRAssign]:
+def _find_inner_defining_assignment(local_name: str, block: IRBlock) -> Optional[Union[IRAssign, IRSwitch]]:
     """If `local_name` is only used inside a single sub-block of a single top-level
     compound statement, return the first assignment to it in that sub-block.
 

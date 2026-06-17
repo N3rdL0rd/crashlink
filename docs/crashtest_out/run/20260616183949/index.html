@@ -494,7 +494,19 @@
             flex-shrink: 0;
             background: var(--crust);
             overflow-x: auto;
+            scrollbar-width: none;
         }
+        .layers-view-tabs::-webkit-scrollbar { display: none; }
+        .layers-hide-unchanged {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.78rem;
+            color: var(--subtext);
+            white-space: nowrap;
+            cursor: pointer;
+        }
+        .layers-hide-unchanged input { cursor: pointer; }
         .layers-tab {
             padding: 0.45rem 0.9rem;
             font-size: 0.82rem;
@@ -529,9 +541,17 @@
             overflow: auto;
         }
         .layers-cfg-wrap svg {
-            width: 100%;
-            height: 100%;
             display: block;
+            max-width: 100%;
+            height: auto;
+        }
+        .layers-cfg-wrap.layers-cfg-error {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--subtext);
+            font-size: 0.85rem;
+            padding: 1rem;
         }
         .layers-nav {
             background: var(--surface1);
@@ -548,12 +568,23 @@
         }
         .layers-nav:hover { background: var(--surface2); }
         .layers-nav:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* Gentle IR syntax highlighting — kept low-contrast/desaturated next to
+           the haxe panels so the IR view doesn't fight for attention. */
+        .token.ir-node    { color: var(--blue); }
+        .token.ir-type    { color: var(--sapphire); font-style: italic; }
+        .token.ir-keyword { color: var(--mauve); }
+        .token.ir-field   { color: var(--peach); }
+        code[class*="language-ir"] .token.comment   { color: var(--overlay0); }
+        code[class*="language-ir"] .token.string    { color: var(--green); }
+        code[class*="language-ir"] .token.number    { color: var(--peach); }
+        code[class*="language-ir"] .token.operator,
+        code[class*="language-ir"] .token.punctuation { color: var(--subtext); }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism-tomorrow.min.css" rel="stylesheet" />
     <link href="https://prismjs.catppuccin.com/mocha.css" rel="stylesheet" />
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/line-numbers/prism-line-numbers.min.css" rel="stylesheet" />
-    <script src="https://unpkg.com/@viz-js/viz@3/lib/viz-standalone.js"></script>
 </head>
 <body class="line-numbers">
     <div class="site-header">
@@ -811,7 +842,7 @@ class Anonymous {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Anonymous.log ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $Anonymous.log ---
 
 [
 	[&lt;IRTrace: msg=&lt;IRLocal: argument_name_cannot_be_confused_at_all Dyn&gt;, pos={ fileName: Anonymous.hx, lineNumber: 10, className: Anonymous, methodName: log }&gt;,
@@ -1008,7 +1039,7 @@ class Anonymous {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Arithmetic.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $Arithmetic.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: third_var I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
@@ -1165,7 +1196,7 @@ class Anonymous {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $ArrayAccezz.array ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $ArrayAccezz.array ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: var0 hl.types.ArrayBytes_Int&gt; = &lt;IRArrayLiteral: [&lt;IRConst: 1&gt;, &lt;IRConst: 2&gt;, &lt;IRConst: 3&gt;]&gt; (Dyn)&gt;,
@@ -1369,7 +1400,7 @@ class Arrays {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Arrays.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $Arrays.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: a hl.types.ArrayBytes_Int&gt; = &lt;IRArrayLiteral: [&lt;IRConst: 1&gt;, &lt;IRConst: 2&gt;, &lt;IRConst: 3&gt;]&gt; (Dyn)&gt;,
@@ -1628,7 +1659,7 @@ class Arrays {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $BigControlFlow.factorial ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $BigControlFlow.factorial ---
 
 [
 	[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRConst: 1&gt; &gt;= &lt;IRLocal: n I32&gt;&gt; then
@@ -1898,7 +1929,7 @@ class Arrays {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Branch.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $Branch.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
@@ -2039,7 +2070,7 @@ class Arrays {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $BranchExpr.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $BranchExpr.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: a Bool&gt; = &lt;IRConst: True&gt; (Bool)&gt;,
@@ -2214,7 +2245,7 @@ class Arrays {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $BranchNested.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $BranchNested.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 0&gt; (I32)&gt;,
@@ -2414,7 +2445,7 @@ class Parent {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Clazz.__constructor__ ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $Clazz.__constructor__ ---
 
 [
 	[&lt;IRAssign: &lt;IRField: &lt;IRLocal: this Clazz&gt;.b&gt; = &lt;IRConst: 10&gt; (I32)&gt;,
@@ -2630,7 +2661,7 @@ class Parent {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Closure.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $Closure.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: fun Fun&gt; = &lt;IRConst: f@23 &lt;none&gt; () -&gt; String (from Closure.hx)&gt; (Fun)&gt;,
@@ -2774,7 +2805,7 @@ class Parent {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Constructor.__constructor__ ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $Constructor.__constructor__ ---
 
 [
 	[&lt;IRReturn: None&gt;]
@@ -2973,7 +3004,7 @@ class Parent {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Empty.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $Empty.main ---
 
 [
 	[&lt;IRReturn: None&gt;]
@@ -3136,7 +3167,7 @@ class Enums {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Enums.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $Enums.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: a Color&gt; = &lt;IREnumConstruct: Red()&gt; (Color)&gt;,
@@ -3331,7 +3362,7 @@ class Enums {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $If.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $If.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 500&gt; (I32)&gt;,
@@ -4288,7 +4319,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $LongString.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $LongString.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: longString String&gt; = &lt;IRConst: &#34;Lorem ipsum dolor sit amet, consectetur adipiscing elit. In ut ultricies sapien. Proin nec magna iaculis, eleifend magna a, eleifend elit. Fusce a sodales dolor. Donec sit amet auctor turpis. Curabitur hendrerit vel lacus eu ornare. Pellentesque sed imperdiet lorem. Curabitur libero purus, laoreet a dolor mattis, tincidunt dapibus orci. Vivamus ultrices aliquet volutpat. Morbi consequat tortor sem, ac suscipit est pretium ultricies. Vivamus sed ligula ante.
@@ -4766,7 +4797,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $LoopContinue.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $LoopContinue.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 69&gt; (I32)&gt;,
@@ -4917,7 +4948,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $LoopForEach.items ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $LoopForEach.items ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: var0 hl.types.ArrayBytes_Int&gt; = &lt;IRArrayLiteral: [&lt;IRConst: 1&gt;, &lt;IRConst: 2&gt;, &lt;IRConst: 3&gt;]&gt; (Dyn)&gt;,
@@ -5096,7 +5127,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $LoopInfinite.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $LoopInfinite.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 69&gt; (I32)&gt;,
@@ -5264,7 +5295,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $LoopNested.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $LoopNested.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 69&gt; (I32)&gt;,
@@ -5425,7 +5456,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $LoopWhile.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $LoopWhile.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 69&gt; (I32)&gt;,
@@ -5568,7 +5599,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Method.__constructor__ ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $Method.__constructor__ ---
 
 [
 	[&lt;IRReturn: None&gt;]
@@ -5790,7 +5821,7 @@ Maecenas ac sagittis felis. Donec justo lorem, luctus sed maximus vel, scelerisq
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Nested.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $Nested.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: b F64&gt; = &lt;IRConst: 512.0&gt; (F64)&gt;,
@@ -6036,7 +6067,7 @@ class TestClass extends SuperTestClass {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $PatchMe.thing ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $PatchMe.thing ---
 
 [
 	[&lt;IRConditional: if &lt;IRBoolExpr: &lt;IRLocal: val F64&gt; == &lt;IRConst: 2.0&gt;&gt; then
@@ -6374,7 +6405,7 @@ class Println {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Println.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $Println.main ---
 
 [
 	[&lt;IRCall: &lt;IRConst: f@28 static $Sys.println (Dyn) -&gt; Void (from /usr/share/haxe/std/hl/_std/Sys.hx)&gt;(&lt;IRConst: &#34;Hello, println!&#34;&gt;)&gt;,
@@ -6523,7 +6554,7 @@ class Random {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Random.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $Random.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: randomNumber I32&gt; = &lt;IRCall: &lt;IRConst: f@29 static $Std.random (I32) -&gt; I32 (from /usr/share/haxe/std/hl/_std/Std.hx)&gt;(&lt;IRConst: 10&gt;)&gt; (Fun)&gt;,
@@ -6679,7 +6710,7 @@ class Random {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $SimpleIf.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $SimpleIf.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 500&gt; (I32)&gt;,
@@ -6857,7 +6888,7 @@ class StringConcat {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $StringConcat.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $StringConcat.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: a String&gt; = &lt;IRCall: &lt;IRConst: f@20 static $String.__add__ (String, String) -&gt; String (from /usr/share/haxe/std/hl/_std/String.hx)&gt;(&lt;IRConst: &#34;hello&#34;&gt;, &lt;IRConst: &#34;world&#34;&gt;)&gt; (Fun)&gt;,
@@ -6992,7 +7023,7 @@ class StringInterp {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $StringInterp.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $StringInterp.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 42&gt; (I32)&gt;,
@@ -7130,7 +7161,7 @@ class StringInterp {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Switch.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $Switch.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
@@ -7337,7 +7368,7 @@ class SwitchBig {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $SwitchBig.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $SwitchBig.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: a I32&gt; = &lt;IRConst: 3&gt; (I32)&gt;,
@@ -7555,7 +7586,7 @@ class SwitchBig {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Tiny.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $Tiny.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: b I32&gt; = &lt;IRConst: 10&gt; (I32)&gt;,
@@ -7684,7 +7715,7 @@ class SwitchBig {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $Trace.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $Trace.main ---
 
 [
 	[&lt;IRTrace: msg=&lt;IRConst: &#34;Hello&#34;&gt;, pos={ fileName: Trace.hx, lineNumber: 3, className: Trace, methodName: main }&gt;,
@@ -7814,7 +7845,7 @@ class SwitchBig {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $TryCatch.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $TryCatch.main ---
 
 [
 	[&lt;IRTryCatch: try
@@ -7993,7 +8024,7 @@ class Base {
             </div>
             <div class="code-panel ir-panel" style="display:none;">
                 <div class="panel-label">IR</div>
-                <pre class="line-numbers"><code class="language-txt">// --- Static Method: $VirtualClosure.main ---
+                <pre class="line-numbers"><code class="language-ir">// --- Static Method: $VirtualClosure.main ---
 
 [
 	[&lt;IRAssign: &lt;IRLocal: myObject Child&gt; = &lt;IRNew: new Child()&gt; (Child)&gt;,
@@ -8085,6 +8116,10 @@ class Base {
                 <button class="layers-nav" id="layers-prev" title="Previous layer"><i class="fas fa-chevron-left"></i></button>
                 <select id="layers-method-select"></select>
                 <span class="layers-method-meta" id="layers-method-meta"></span>
+                <label class="layers-hide-unchanged">
+                    <input type="checkbox" id="layers-hide-unchanged-toggle">
+                    Hide unchanged steps
+                </label>
                 <button class="layers-nav" id="layers-next" title="Next layer"><i class="fas fa-chevron-right"></i></button>
                 <button class="diff-modal-close" onclick="closeLayers()">&times;</button>
             </div>
@@ -8102,6 +8137,21 @@ class Base {
 
     window.caseLayers = {};
     
+
+    Prism.languages.ir = {
+        'comment': /\/\/.*/,
+        'string': {
+            pattern: /"(?:\\.|[^"\\])*"/,
+            greedy: true
+        },
+        'ir-field': /\b(?:fileName|lineNumber|className|methodName|from)\b/,
+        'ir-keyword': /\b(?:if|then|else|while|try|catch|new|indexof|cond|body)\b/,
+        'ir-type': /\b(?:I8|I16|I32|I64|F32|F64|Bool|Bytes|Void|Dyn|DynObj|String|Fun|Array|Type|Obj|Virtual|Enum|Null|Method|Ref|Packed|Abstract|none)\b/,
+        'ir-node': /\bIR[A-Za-z]+\b/,
+        'number': /\b\d+(?:\.\d+)?\b/,
+        'operator': /->|>=|<=|==|!=|&&|\|\||[=&+\-*/%]/,
+        'punctuation': /[<>:,.\[\]{}()]/
+    };
 
     document.addEventListener('DOMContentLoaded', () => {
         Prism.highlightAll();
@@ -8358,6 +8408,17 @@ class Base {
     let _currentLayers = null;
     let _currentLayersMethod = null;
     let _currentLayersTab = 'opcodes';
+    let _hideUnchangedSteps = false;
+
+    function visibleStepIndices(method) {
+        const indices = [];
+        method.steps.forEach((s, i) => {
+            if (i === 0 || !_hideUnchangedSteps || s.ir !== method.steps[i - 1].ir) {
+                indices.push(i);
+            }
+        });
+        return indices;
+    }
 
     function openLayers(testId) {
         const layers = window.caseLayers[testId];
@@ -8377,6 +8438,13 @@ class Base {
             renderLayers();
         };
 
+        const hideToggle = document.getElementById('layers-hide-unchanged-toggle');
+        hideToggle.checked = _hideUnchangedSteps;
+        hideToggle.onchange = () => {
+            _hideUnchangedSteps = hideToggle.checked;
+            renderLayers();
+        };
+
         renderLayers();
         document.getElementById('layers-modal').classList.add('open');
         document.body.style.overflow = 'hidden';
@@ -8393,7 +8461,7 @@ class Base {
         if (!_currentLayers || !_currentLayersMethod) return [];
         const method = _currentLayers[_currentLayersMethod];
         const order = ['opcodes', 'cfg'];
-        method.steps.forEach((_, i) => order.push(`step-${i}`));
+        visibleStepIndices(method).forEach(i => order.push(`step-${i}`));
         order.push('pseudo');
         return order;
     }
@@ -8435,8 +8503,8 @@ class Base {
             { key: 'opcodes', label: 'Opcodes' },
             { key: 'cfg', label: 'CFG' },
         ];
-        method.steps.forEach((s, i) => {
-            tabDefs.push({ key: `step-${i}`, label: s.name });
+        visibleStepIndices(method).forEach(i => {
+            tabDefs.push({ key: `step-${i}`, label: method.steps[i].name });
         });
         tabDefs.push({ key: 'pseudo', label: 'Pseudo' });
 
@@ -8456,14 +8524,15 @@ class Base {
         if (_currentLayersTab === 'opcodes') {
             bodyEl.innerHTML = `<pre class="line-numbers"><code class="language-txt">${esc(method.opcodes)}</code></pre>`;
         } else if (_currentLayersTab === 'cfg') {
-            bodyEl.innerHTML = '<div id="layers-cfg" class="layers-cfg-wrap"></div>';
-            renderLayersDOT(method.cfg.dot);
+            bodyEl.innerHTML = method.cfg.svg
+                ? `<div class="layers-cfg-wrap">${method.cfg.svg}</div>`
+                : '<div class="layers-cfg-wrap layers-cfg-error">Graphviz not available — install graphviz to render the CFG.</div>';
         } else if (_currentLayersTab === 'pseudo') {
             bodyEl.innerHTML = `<pre class="line-numbers"><code class="language-haxe">${esc(method.pseudo)}</code></pre>`;
         } else if (_currentLayersTab.startsWith('step-')) {
             const idx = parseInt(_currentLayersTab.split('-')[1], 10);
             const step = method.steps[idx];
-            bodyEl.innerHTML = `<pre class="line-numbers"><code class="language-txt">${esc(step ? step.ir : '')}</code></pre>`;
+            bodyEl.innerHTML = `<pre class="line-numbers"><code class="language-ir">${esc(step ? step.ir : '')}</code></pre>`;
         }
         Prism.highlightAllUnder(bodyEl);
         updateLayersNav();
@@ -8472,19 +8541,6 @@ class Base {
     function switchLayersTab(key) {
         _currentLayersTab = key;
         renderLayers();
-    }
-
-    function renderLayersDOT(dot) {
-        const container = document.getElementById('layers-cfg');
-        if (!container || typeof Viz === 'undefined') return;
-        Viz.instance().then(viz => {
-            if (!container) return;
-            const svg = viz.renderSVGElement(dot);
-            svg.style.width = '100%';
-            svg.style.height = '100%';
-            container.innerHTML = '';
-            container.appendChild(svg);
-        });
     }
 
     document.addEventListener('keydown', e => {
