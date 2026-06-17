@@ -5138,10 +5138,17 @@ class IRFunction:
     def _split_local(self, reg_idx: int, name: str) -> IRLocal:
         """Create a new IRLocal for a register with a specific name (SSA-esque split)."""
         reg_type = self.func.regs[reg_idx]
-        # Avoid name collisions with a different register's current local.
+        new_type = reg_type.resolve(self.code)
+        # Avoid name collisions only with a different register of a different
+        # type.  Same-type duplicates are usually the same source variable split
+        # across registers.
         base_name = name
         suffix = 1
-        existing_names = {loc.name for i, loc in enumerate(self.locals) if i != reg_idx}
+        existing_names = {
+            loc.name
+            for i, loc in enumerate(self.locals)
+            if i != reg_idx and loc.get_type() != new_type
+        }
         while name in existing_names:
             name = f"{base_name}{suffix}"
             suffix += 1
@@ -5311,14 +5318,27 @@ class IRFunction:
                 typ = self.func.regs[r]
                 typ_key = id(typ.resolve(self.code))
                 typed_regs.setdefault(typ_key, []).append(r)
+            # Only rename when the same debug name is used for variables with
+            # different types.  Same-type duplicates are usually just different
+            # registers for a single source variable.
             if len(typed_regs) <= 1:
                 continue
-            # Keep the earliest-appearing register's name; rename the rest.
             ordered = sorted(regs, key=lambda r: self._reg_first_assign.get(r, float("inf")))
-            suffix_counter = 1
-            for r in ordered[1:]:
-                self.locals[r].name = f"{name}{suffix_counter}"
-                suffix_counter += 1
+            by_type: Dict[int, List[int]] = {}
+            for r in ordered:
+                typ = self.func.regs[r]
+                typ_key = id(typ.resolve(self.code))
+                by_type.setdefault(typ_key, []).append(r)
+            # Keep the earliest register of the first-seen type as the base name;
+            # rename duplicates of other types.
+            kept = set()
+            for r in ordered:
+                typ_key = id(self.func.regs[r].resolve(self.code))
+                if typ_key not in kept:
+                    kept.add(typ_key)
+                else:
+                    self.locals[r].name = f"{name}{len(kept)}"
+                    kept.add(typ_key)
 
         # Register 0 is `this` in instance methods and constructors.
         # Detect by either: full name has no leading `$` (instance method), or
@@ -5792,8 +5812,10 @@ class IRFunction:
         # --- Base Cases for Recursion Termination ---
         if node is None or node == stop_at or node in visited:
             return IRBlock(self.code)
-        if loop_ctx and node not in loop_ctx.nodes:
-            return IRBlock(self.code)
+        if loop_ctx and node not in loop_ctx.nodes and node.branches:
+            block = IRBlock(self.code)
+            block.statements.append(IRBreak(self.code))
+            return block
         if node in self.cfg.loops and (loop_ctx is None or node != loop_ctx.header):
             return self._lift_loop(node, visited, stop_at, loop_ctx)
         visited.add(node)
@@ -5834,6 +5856,17 @@ class IRFunction:
                     branch_block.statements.append(IRContinue(self.code))
                     return branch_block
                 if loop_ctx and target not in loop_ctx.nodes:
+                    # A return inside a loop is not a loop break; let the normal
+                    # Ret handler lift it as an IRReturn.  The exception is the
+                    # loop's own exit node, which post-dominates the header and
+                    # therefore represents leaving the loop normally.
+                    if (
+                        not target.branches
+                        and target.ops
+                        and target.ops[-1].op == "Ret"
+                        and loop_ctx.header not in self.cfg.post_dominators.get(target, set())
+                    ):
+                        return None
                     branch_block = IRBlock(self.code)
                     branch_block.statements.append(IRBreak(self.code))
                     return branch_block
