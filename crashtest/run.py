@@ -56,6 +56,28 @@ def _fmt_operand(val: object, code: Bytecode) -> str:
     return str(val)
 
 
+def _render_cfg_svg(dot: str) -> Optional[str]:
+    """
+    Render a DOT graph to inline SVG using the same `dot -Tsvg` invocation as
+    the `cfg` CLI command, so the web report gets pixel-identical styling
+    without relying on a client-side renderer (and its CSS).
+    """
+    try:
+        result = subprocess.run(
+            ["dot", "-Tsvg"],
+            input=dot.encode(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return None
+    svg = result.stdout.decode()
+    # Drop the XML prolog/DOCTYPE so the SVG can be embedded directly in the page.
+    svg_start = svg.find("<svg")
+    return svg[svg_start:] if svg_start != -1 else svg
+
+
 def to_asm_resolved(func: Function, code: Bytecode) -> str:
     """Like to_asm but resolves constant-pool indices to their actual values."""
     lines = []
@@ -259,9 +281,11 @@ def run_case(case: str, id: int) -> TestCase:
                 func_name = original_code.full_func_name(static_method.func)
                 ir_parts.append(f"// --- Static Method: {func_name} ---")
                 ir_parts.append(str(static_method.block))
+                cfg_data = static_method.cfg_data
+                cfg_data["svg"] = _render_cfg_svg(cfg_data["dot"])
                 layers[func_name] = {
                     "opcodes": static_method.opcodes,
-                    "cfg": static_method.cfg_data,
+                    "cfg": cfg_data,
                     "steps": [{"name": n, "ir": ir} for n, ir in static_method.layer_snapshots],
                     "pseudo": pseudo(static_method),
                 }
@@ -270,9 +294,11 @@ def run_case(case: str, id: int) -> TestCase:
                 func_name = original_code.full_func_name(method.func)
                 ir_parts.append(f"// --- Instance Method: {func_name} ---")
                 ir_parts.append(str(method.block))
+                cfg_data = method.cfg_data
+                cfg_data["svg"] = _render_cfg_svg(cfg_data["dot"])
                 layers[func_name] = {
                     "opcodes": method.opcodes,
-                    "cfg": method.cfg_data,
+                    "cfg": cfg_data,
                     "steps": [{"name": n, "ir": ir} for n, ir in method.layer_snapshots],
                     "pseudo": pseudo(method),
                 }

@@ -4,6 +4,7 @@ Decompilation, IR and control flow graph generation
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum as _Enum  # Enum is already defined in crashlink.core
@@ -31,6 +32,13 @@ from .core import (
 from .errors import DecompError
 from .globals import DEBUG, dbg_print
 from .opcodes import arithmetic, conditionals, terminal, simple_calls
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(s: str) -> str:
+    """Remove ANSI color codes, e.g. from IRBlock.pprint(), for non-terminal output."""
+    return _ANSI_ESCAPE_RE.sub("", s)
 
 
 def _get_type_in_code(code: Bytecode, name: str) -> Type:
@@ -3516,6 +3524,316 @@ class IRStringConcatFolder(TraversingIROptimizer):
         return False
 
 
+def _int_const_value(c: IRConst) -> Optional[int]:
+    """Return the integer value of an IRConst INT, handling intRef objects."""
+    if c.const_type != IRConst.ConstType.INT:
+        return None
+    val = c.value.value if hasattr(c.value, "value") else c.value
+    return int(val)
+
+
+def _signed_i32(val: int) -> int:
+    """Convert an unsigned 32-bit constant back to signed when needed."""
+    if val >= 0x80000000:
+        return val - 0x100000000
+    return val
+
+
+class IRIntSwitchOptimizer(TraversingIROptimizer):
+    """
+    Recover IRSwitch statements from lowered chains of integer equality/inequality
+    conditionals. HashLink compiles sparse or negative integer switches as nested
+    `if (x != c1) { if (x == c2) ... } else { ... }` patterns; this pass raises them
+    back into a switch.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        made_change = True
+        while made_change:
+            made_change = False
+            new_statements: List[IRStatement] = []
+            i = 0
+            while i < len(block.statements):
+                stmt = block.statements[i]
+                switch = self._try_int_switch(stmt)
+                if switch is not None:
+                    new_statements.append(switch)
+                    i += 1
+                    made_change = True
+                    continue
+                new_statements.append(stmt)
+                i += 1
+            block.statements = new_statements
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
+    def _try_int_switch(self, stmt: IRStatement) -> Optional[IRSwitch]:
+        if not isinstance(stmt, IRConditional):
+            return None
+        cases: Dict[IRConst, IRBlock] = {}
+        default: Optional[IRBlock] = None
+        local: Optional[IRLocal] = None
+        current: Optional[IRStatement] = stmt
+        while isinstance(current, IRConditional):
+            cond = current.condition
+            if not isinstance(cond, IRBoolExpr) or cond.op not in (
+                IRBoolExpr.CompareType.EQ,
+                IRBoolExpr.CompareType.NEQ,
+            ):
+                return None
+            left, right = cond.left, cond.right
+            if (
+                isinstance(left, IRLocal)
+                and isinstance(right, IRConst)
+                and right.const_type == IRConst.ConstType.INT
+            ):
+                cand_local, cand_const = left, right
+            elif (
+                isinstance(right, IRLocal)
+                and isinstance(left, IRConst)
+                and left.const_type == IRConst.ConstType.INT
+            ):
+                cand_local, cand_const = right, left
+            else:
+                return None
+            if local is None:
+                local = cand_local
+            elif local.name != cand_local.name:
+                return None
+            val = _int_const_value(cand_const)
+            if val is None:
+                return None
+            val = _signed_i32(val)
+            if cond.op == IRBoolExpr.CompareType.NEQ:
+                rest = current.true_block
+                case_body = current.false_block
+            else:
+                rest = current.false_block
+                case_body = current.true_block
+            case_const = IRConst(self.func.code, IRConst.ConstType.INT, value=val)
+            if any(_int_const_value(k) == val for k in cases):
+                return None
+            cases[case_const] = case_body
+            rest_stmts = rest.statements
+            if len(rest_stmts) == 1 and isinstance(rest_stmts[0], IRConditional):
+                current = rest_stmts[0]
+                continue
+            default = rest
+            break
+        if local is None or len(cases) < 2:
+            return None
+        if default is None:
+            default = IRBlock(self.func.code)
+        return IRSwitch(self.func.code, local, cases, default)
+
+
+class IRStringSwitchOptimizer(TraversingIROptimizer):
+    """
+    Recover IRSwitch statements from HashLink's string-switch lowering.
+
+    HashLink compiles `switch (s) { case "foo": ...; case "bar": ...; }` into a
+    chain of null checks, length checks, and std.string_compare calls. This pass
+    recognises that pattern and raises it back into an IRSwitch on the original
+    string local.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        made_change = True
+        while made_change:
+            made_change = False
+            new_statements: List[IRStatement] = []
+            i = 0
+            while i < len(block.statements):
+                stmt = block.statements[i]
+                parsed = self._try_string_switch(stmt)
+                if parsed is not None:
+                    switch, tail = parsed
+                    new_statements.append(switch)
+                    new_statements.extend(tail)
+                    i += 1
+                    made_change = True
+                    continue
+                new_statements.append(stmt)
+                i += 1
+            block.statements = new_statements
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
+    def _try_string_switch(
+        self, stmt: IRStatement
+    ) -> Optional[Tuple[IRSwitch, List[IRStatement]]]:
+        if not isinstance(stmt, IRConditional):
+            return None
+        s_local = self._match_null_check(stmt.condition)
+        if s_local is None:
+            return None
+        guard = self._find_length_guard(stmt.true_block, s_local)
+        if guard is None:
+            return None
+        len_cond, temp_local = guard
+        parsed = self._parse_compare_chain(
+            len_cond.true_block, s_local, temp_local, collect_tail=True
+        )
+        if parsed is None:
+            return None
+        cases, default, tail = parsed
+        if not default.statements:
+            default = stmt.false_block
+        return IRSwitch(self.func.code, s_local, cases, default), tail
+
+    def _match_null_check(self, cond: IRExpression) -> Optional[IRLocal]:
+        if (
+            isinstance(cond, IRBoolExpr)
+            and cond.op == IRBoolExpr.CompareType.NOT_NULL
+            and isinstance(cond.left, IRLocal)
+        ):
+            return cond.left
+        if isinstance(cond, IRBoolExpr) and cond.op == IRBoolExpr.CompareType.NEQ:
+            if (
+                isinstance(cond.left, IRLocal)
+                and isinstance(cond.right, IRConst)
+                and cond.right.const_type == IRConst.ConstType.NULL
+            ):
+                return cond.left
+            if (
+                isinstance(cond.right, IRLocal)
+                and isinstance(cond.left, IRConst)
+                and cond.left.const_type == IRConst.ConstType.NULL
+            ):
+                return cond.right
+        return None
+
+    def _find_length_guard(
+        self, block: IRBlock, s_local: IRLocal
+    ) -> Optional[Tuple[IRConditional, IRLocal]]:
+        if not block.statements:
+            return None
+        temp_local: Optional[IRLocal] = None
+        for stmt in block.statements:
+            if (
+                isinstance(stmt, IRAssign)
+                and isinstance(stmt.target, IRLocal)
+                and isinstance(stmt.expr, IRField)
+                and stmt.expr.field_name == "length"
+                and stmt.expr.target == s_local
+            ):
+                temp_local = stmt.target
+            elif isinstance(stmt, IRConditional) and temp_local is not None:
+                cond = stmt.condition
+                if isinstance(cond, IRBoolExpr) and cond.op == IRBoolExpr.CompareType.EQ:
+                    if (
+                        cond.left == temp_local
+                        and isinstance(cond.right, IRConst)
+                        and cond.right.const_type == IRConst.ConstType.INT
+                    ):
+                        return stmt, temp_local
+                    if (
+                        cond.right == temp_local
+                        and isinstance(cond.left, IRConst)
+                        and cond.left.const_type == IRConst.ConstType.INT
+                    ):
+                        return stmt, temp_local
+        return None
+
+    def _parse_compare_chain(
+        self,
+        block: IRBlock,
+        s_local: IRLocal,
+        temp_local: IRLocal,
+        collect_tail: bool = False,
+    ) -> Optional[Tuple[Dict[IRConst, IRBlock], IRBlock, List[IRStatement]]]:
+        if not block.statements:
+            return None
+        compare_idx: Optional[int] = None
+        for idx in range(len(block.statements) - 1, -1, -1):
+            if isinstance(block.statements[idx], IRConditional):
+                compare_idx = idx
+                break
+        if compare_idx is None or compare_idx == 0:
+            return None
+        compare_cond = cast(IRConditional, block.statements[compare_idx])
+        tail = list(block.statements[compare_idx + 1 :]) if collect_tail else []
+        assign = block.statements[compare_idx - 1]
+        if not isinstance(assign, IRAssign) or assign.target != temp_local:
+            return None
+        call = assign.expr
+        if not isinstance(call, IRCall):
+            return None
+        if not (
+            isinstance(call.target, IRConst)
+            and isinstance(call.target.value, Native)
+        ):
+            return None
+        native = call.target.value
+        if native.name.resolve(self.func.code) != "string_compare":
+            return None
+        if len(call.args) != 3:
+            return None
+        bytes_arg = call.args[0]
+        if not (
+            isinstance(bytes_arg, IRField)
+            and bytes_arg.field_name == "bytes"
+            and bytes_arg.target == s_local
+        ):
+            return None
+        const_arg = call.args[1]
+        if (
+            not isinstance(const_arg, IRConst)
+            or const_arg.const_type != IRConst.ConstType.STRING
+        ):
+            return None
+        if call.args[2] != temp_local:
+            return None
+        cond = compare_cond.condition
+        zero_side: Optional[IRExpression] = None
+        if (
+            isinstance(cond, IRBoolExpr)
+            and cond.op == IRBoolExpr.CompareType.NEQ
+        ):
+            if cond.left == temp_local:
+                zero_side = cond.right
+            elif cond.right == temp_local:
+                zero_side = cond.left
+        elif (
+            isinstance(cond, IRBoolExpr)
+            and cond.op == IRBoolExpr.CompareType.EQ
+        ):
+            if cond.left == temp_local:
+                zero_side = cond.right
+            elif cond.right == temp_local:
+                zero_side = cond.left
+        if not isinstance(zero_side, IRConst) or zero_side.const_type != IRConst.ConstType.INT:
+            return None
+        if _int_const_value(zero_side) != 0:
+            return None
+        if not isinstance(cond, IRBoolExpr):
+            return None
+        if cond.op == IRBoolExpr.CompareType.NEQ:
+            case_body = compare_cond.false_block
+            rest = compare_cond.true_block
+        else:
+            case_body = compare_cond.true_block
+            rest = compare_cond.false_block
+        cases: Dict[IRConst, IRBlock] = {
+            IRConst(self.func.code, IRConst.ConstType.GLOBAL_STRING, value=const_arg.value): case_body
+        }
+        if len(rest.statements) == 1 and isinstance(rest.statements[0], IRConditional):
+            inner = self._try_string_switch(rest.statements[0])
+            if inner is not None:
+                inner_switch, inner_tail = inner
+                cases.update(inner_switch.cases)
+                default = inner_switch.default
+                if not tail and collect_tail:
+                    tail = inner_tail
+                return cases, default, tail
+        default = rest
+        return cases, default, tail
+
+
 class IREnumSwitchOptimizer(TraversingIROptimizer):
     """
     Transform switches on enum indices into switches on the enum value itself,
@@ -4205,7 +4523,11 @@ class IRFunction:
                 IRSelfAssignOptimizer(self),
                 IRTraceOptimizer(self),
                 IRStringConcatFolder(self),
+                IRIntSwitchOptimizer(self),
+                IRStringSwitchOptimizer(self),
                 IREnumSwitchOptimizer(self),
+                IRDeadTempEliminator(self),
+                IRDeadCodeEliminator(self),
                 IRBlockFlattener(self),
             ]
             self._optimize()
@@ -4280,7 +4602,7 @@ class IRFunction:
         if self.capture_layers:
             self.opcodes = disasm.func(self.code, self.func)
             self.cfg_data = self._cfg_to_dict()
-            self.layer_snapshots.append(("LLIR", self.block.pprint()))
+            self.layer_snapshots.append(("LLIR", _strip_ansi(self.block.pprint())))
         for o in self.optimizers:
             if DEBUG:
                 dbg_print(f"----- {o.__class__.__name__} -----")
@@ -4288,7 +4610,7 @@ class IRFunction:
             if DEBUG:
                 dbg_print(self.block.pprint())
             if self.capture_layers:
-                self.layer_snapshots.append((o.__class__.__name__, self.block.pprint()))
+                self.layer_snapshots.append((o.__class__.__name__, _strip_ansi(self.block.pprint())))
 
     def _cfg_to_dict(self) -> Dict[str, Any]:
         """Serialize the control-flow graph to a JSON-friendly structure."""
@@ -4318,33 +4640,57 @@ class IRFunction:
         return {"nodes": nodes, "edges": edges, "dot": self._cfg_to_dot(node_ids)}
 
     def _cfg_to_dot(self, node_ids: Dict[int, int]) -> str:
-        """Produce a Graphviz DOT representation of the CFG."""
+        """Produce a Graphviz DOT representation of the CFG.
+
+        Mirrors the entry/return node coloring and per-branch-type edge
+        coloring conventions of CFGraph.graph()/style_node(), just remapped
+        onto the Catppuccin Mocha palette used by the crashtest site.
+        """
 
         def _escape(s: str) -> str:
             return s.replace("\\", "\\\\").replace('"', '\\"')
 
+        def _node_fill(node: CFNode) -> str:
+            if node is self.cfg.entry:
+                return '"#a6e3a1", fontcolor="#11111b"'  # green, like style_node's entry
+            if any(op.op == "Ret" for op in node.ops):
+                return '"#94e2d5", fontcolor="#11111b"'  # teal, like style_node's return blocks
+            return '"#313244", fontcolor="#cdd6f4"'
+
+        def _edge_style(edge_type: str) -> str:
+            if edge_type == "true":
+                return 'color="#a6e3a1", fontcolor="#a6e3a1", label="true"'
+            if edge_type == "false":
+                return 'color="#f38ba8", fontcolor="#f38ba8", label="false"'
+            if edge_type.startswith("switch: "):
+                case = edge_type.split("switch: ")[1].strip()
+                color = "#f38ba8" if case == "default" else "#cba6f7"
+                return f'color="{color}", fontcolor="{color}", label="{_escape(case)}"'
+            if edge_type == "trap":
+                return 'color="#f9e2af", fontcolor="#f9e2af", label="trap"'
+            return 'color="#89b4fa"'
+
         lines = [
             "digraph CFG {",
             "  rankdir=TB;",
-            '  node [shape=box, fontname="monospace", style="rounded,filled", fillcolor="#313244", fontcolor="#cdd6f4", color="#585b70"];',
-            '  edge [fontname="monospace", color="#6c7086", fontcolor="#a6adc8"];',
+            "  nodesep=0.4;",
+            "  ranksep=0.5;",
+            '  node [shape=box, fontname="monospace", fontsize=11, margin="0.15,0.1", style="rounded,filled", fillcolor="#313244", fontcolor="#cdd6f4", color="#585b70"];',
+            '  edge [fontname="monospace", fontsize=9, color="#6c7086", fontcolor="#a6adc8"];',
         ]
         for i, node in enumerate(self.cfg.nodes):
             op_lines = []
             for op in node.ops:
                 parts = [op.op or "?"] + [str(v) for v in op.df.values()]
                 op_lines.append(_escape(". ".join(parts)))
-            label = _escape(f"BB{i}") + "\\n" + "\\n".join(op_lines)
-            attrs = f'label="{label}"'
-            if node is self.cfg.entry:
-                attrs += ', fillcolor="#a6e3a1", fontcolor="#11111b"'
-            lines.append(f"  {i} [{attrs}];")
+            label = _escape(f"BB{i}") + "\\l" + "\\l".join(op_lines) + "\\l"
+            lines.append(f'  {i} [label="{label}", fillcolor={_node_fill(node)}];')
         for node in self.cfg.nodes:
             src = node_ids[id(node)]
             for target, edge_type in node.branches:
                 dst = node_ids.get(id(target))
                 if dst is not None:
-                    lines.append(f'  {src} -> {dst} [label="{_escape(edge_type)}"];')
+                    lines.append(f"  {src} -> {dst} [{_edge_style(edge_type)}];")
         lines.append("}")
         return "\n".join(lines)
 
