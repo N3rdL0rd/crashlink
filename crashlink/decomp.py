@@ -41,11 +41,20 @@ def _strip_ansi(s: str) -> str:
     return _ANSI_ESCAPE_RE.sub("", s)
 
 
+_type_by_name_cache: Dict[int, Dict[str, Type]] = {}
+
+
 def _get_type_in_code(code: Bytecode, name: str) -> Type:
-    for type in code.types:
-        if disasm.type_name(code, type) == name:
-            return type
-    raise DecompError(f"Type {name} not found in code")
+    by_name = _type_by_name_cache.get(id(code))
+    if by_name is None:
+        by_name = {}
+        for type in code.types:
+            by_name.setdefault(disasm.type_name(code, type), type)
+        _type_by_name_cache[id(code)] = by_name
+    found = by_name.get(name)
+    if found is None:
+        raise DecompError(f"Type {name} not found in code")
+    return found
 
 
 class CFNode:
@@ -730,10 +739,7 @@ class IRCall(IRExpression):
     def get_type(self) -> Type:
         # for now, assume closure calls return dynamic type
         if self.call_type == IRCall.CallType.CLOSURE:
-            for type in self.code.types:
-                if disasm.type_name(self.code, type) == "Dyn":
-                    return type
-            raise DecompError("Dyn type not found in code")
+            return _get_type_in_code(self.code, "Dyn")
         if self.call_type == IRCall.CallType.THIS or self.target is None:
             return _get_type_in_code(self.code, "Obj")
         return self.target.get_type()
@@ -781,10 +787,7 @@ class IRBoolExpr(IRExpression):
 
     def get_type(self) -> Type:
         # Boolean expressions always return bool type
-        for type in self.code.types:
-            if disasm.type_name(self.code, type) == "Bool":
-                return type
-        raise DecompError("Bool type not found in code")
+        return _get_type_in_code(self.code, "Bool")
 
     def invert(self) -> None:
         if self.op == IRBoolExpr.CompareType.NOT:
@@ -1446,6 +1449,7 @@ class TraversingIROptimizer(IROptimizer):
     def optimize(self) -> None:
         """Start the optimization by traversing the root IR block."""
         if hasattr(self.func, "block"):
+            self._visited_ids: Set[int] = set()
             self.visit(self.func.block)
 
     def visit(self, statement: IRStatement) -> None:
@@ -1457,7 +1461,19 @@ class TraversingIROptimizer(IROptimizer):
         2. Handle specific statement type with visit_X methods
         3. Visit all children recursively
         4. Call after_visit_statement for the current statement
+
+        IRFunction._lift_block memoizes shared continuation points, so the same
+        IRBlock/IRStatement object can be reachable from multiple parents (a DAG,
+        not a tree). Skip a node already visited in this pass: it denotes the
+        exact same content, so revisiting would just redundantly (but harmlessly,
+        since mutating it once already applies everywhere it's referenced) re-walk
+        an already-processed subtree, which is exponential for deeply nested,
+        heavily-converging control flow.
         """
+        if id(statement) in self._visited_ids:
+            return
+        self._visited_ids.add(id(statement))
+
         self.before_visit_statement(statement)
 
         if isinstance(statement, IRBlock):
@@ -2132,6 +2148,12 @@ class IRCommonBlockMerger(TraversingIROptimizer):
                 # Compare statements from the end of each block
                 t_idx, f_idx = len(true_stmts) - 1, len(false_stmts) - 1
                 while t_idx >= 0 and f_idx >= 0:
+                    # Cheap type check first: a mismatch here means the repr()s can never
+                    # be equal, so we skip fully rendering large nested subtrees (e.g. a
+                    # branch ending in a deeply nested IRConditional from a cascading
+                    # if/elif chain) just to find out they differ.
+                    if type(true_stmts[t_idx]) is not type(false_stmts[f_idx]):
+                        break
                     # Using repr for structural comparison. This is a practical heuristic.
                     # A more advanced system might use a deep structural equality check.
                     if repr(true_stmts[t_idx]) == repr(false_stmts[f_idx]):
@@ -2288,7 +2310,9 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
         For itos, HashLink uses the same variable as both value and ref storage.
         For ftos, a separate int variable stores the byte count.
         """
-        if not (isinstance(expr, IRCall) and isinstance(expr.target, IRConst) and isinstance(expr.target.value, Native)):
+        if not (
+            isinstance(expr, IRCall) and isinstance(expr.target, IRConst) and isinstance(expr.target.value, Native)
+        ):
             return None
         func_name = expr.target.value.name.resolve(self.func.code)
         if func_name not in ("itos", "ftos"):
@@ -2856,7 +2880,11 @@ class IRCopyPropOptimizer(TraversingIROptimizer):
                 if block is not None:
                     idx = block.statements.index(stmt)
                     for later in block.statements[idx + 1 :]:
-                        if isinstance(later, IRAssign) and isinstance(later.target, IRLocal) and later.target == temp_local:
+                        if (
+                            isinstance(later, IRAssign)
+                            and isinstance(later.target, IRLocal)
+                            and later.target == temp_local
+                        ):
                             break
                         self._replace_local_shallow(later, temp_local, user_local)
             return None
@@ -2883,8 +2911,10 @@ class IRCopyPropOptimizer(TraversingIROptimizer):
                 for later in block.statements[idx + 1 :]:
                     # Stop once either name is reassigned: after that point the
                     # two are no longer guaranteed equal.
-                    if isinstance(later, IRAssign) and isinstance(later.target, IRLocal) and (
-                        later.target == temp_local or later.target == user_local
+                    if (
+                        isinstance(later, IRAssign)
+                        and isinstance(later.target, IRLocal)
+                        and (later.target == temp_local or later.target == user_local)
                     ):
                         break
                     self._replace_local_shallow(later, temp_local, user_local)
@@ -3103,7 +3133,7 @@ class IRDeadTempEliminator(IROptimizer):
         # Preserve names like `b1` that were generated to disambiguate two
         # user-named locals with different types.
         for name in user_names:
-            if local.name.startswith(name) and local.name[len(name):].isdigit():
+            if local.name.startswith(name) and local.name[len(name) :].isdigit():
                 return True
         if local.name.startswith("var"):
             try:
@@ -3129,7 +3159,7 @@ class IRDeadTempEliminator(IROptimizer):
         if local.name in user_names:
             return False
         for name in user_names:
-            if local.name.startswith(name) and local.name[len(name):].isdigit():
+            if local.name.startswith(name) and local.name[len(name) :].isdigit():
                 return False
         # Only reached for `varN` names kept alive solely by register reuse.
         return bool(re.fullmatch(r"var\d+", local.name))
@@ -3517,9 +3547,7 @@ class IRStringConcatFolder(TraversingIROptimizer):
                 i += 1
             block.statements = new_statements
 
-    def _try_fold_concat_temp(
-        self, statements: List[IRStatement], start: int
-    ) -> Optional[Tuple[IRStatement, int]]:
+    def _try_fold_concat_temp(self, statements: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int]]:
         # Look for: temp = init_string_expr;
         #           temp = String.__add__(temp, rhs1);
         #           temp = String.__add__(temp, rhs2);
@@ -3529,11 +3557,7 @@ class IRStringConcatFolder(TraversingIROptimizer):
             return None
 
         first = statements[start]
-        if not (
-            isinstance(first, IRAssign)
-            and isinstance(first.target, IRLocal)
-            and self._is_string_expr(first.expr)
-        ):
+        if not (isinstance(first, IRAssign) and isinstance(first.target, IRLocal) and self._is_string_expr(first.expr)):
             return None
 
         temp = first.target
@@ -3574,10 +3598,7 @@ class IRStringConcatFolder(TraversingIROptimizer):
                     use_idx = j
                 elif isinstance(stmt, IRAssign) and stmt.expr == temp:
                     use_idx = j
-                elif (
-                    isinstance(stmt, IRAssign)
-                    and self._is_string_add_with_temp(stmt.expr, temp)
-                ):
+                elif isinstance(stmt, IRAssign) and self._is_string_add_with_temp(stmt.expr, temp):
                     use_idx = j
                     folded_expr_for_use = self._fold_concat(parts + [cast(IRCall, stmt.expr).args[1]])
                 else:
@@ -3833,17 +3854,9 @@ class IRIntSwitchOptimizer(TraversingIROptimizer):
             ):
                 return None
             left, right = cond.left, cond.right
-            if (
-                isinstance(left, IRLocal)
-                and isinstance(right, IRConst)
-                and right.const_type == IRConst.ConstType.INT
-            ):
+            if isinstance(left, IRLocal) and isinstance(right, IRConst) and right.const_type == IRConst.ConstType.INT:
                 cand_local, cand_const = left, right
-            elif (
-                isinstance(right, IRLocal)
-                and isinstance(left, IRConst)
-                and left.const_type == IRConst.ConstType.INT
-            ):
+            elif isinstance(right, IRLocal) and isinstance(left, IRConst) and left.const_type == IRConst.ConstType.INT:
                 cand_local, cand_const = right, left
             else:
                 return None
@@ -3899,9 +3912,34 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
                 parsed = self._try_string_switch(stmt)
                 if parsed is not None:
                     switch, tail = parsed
+                    i += 1
+                    # The lifter flattens a conditional's "no match" continuation
+                    # into the *sibling* statements of the enclosing block rather
+                    # than nesting it as `default` (see IRFunction._lift_block's
+                    # convergence handling). So the next case in the chain often
+                    # shows up here as the following top-level statement instead
+                    # of inside this switch's default block. Fold any such
+                    # siblings into this switch until the chain runs out.
+                    while not tail and not switch.default.statements and i < len(block.statements):
+                        next_parsed = self._try_string_switch(block.statements[i])
+                        if next_parsed is None:
+                            break
+                        next_switch, next_tail = next_parsed
+                        if repr(next_switch.value) != repr(switch.value):
+                            break
+                        switch.cases.update(next_switch.cases)
+                        switch.default = next_switch.default
+                        tail = next_tail
+                        i += 1
+                    # Whatever's left once the chain stops matching is exactly
+                    # what runs when no case matched - that's the default body.
+                    if not tail and not switch.default.statements and i < len(block.statements):
+                        fallthrough = IRBlock(self.func.code)
+                        fallthrough.statements = block.statements[i:]
+                        switch.default = fallthrough
+                        i = len(block.statements)
                     new_statements.append(switch)
                     new_statements.extend(tail)
-                    i += 1
                     made_change = True
                     continue
                 new_statements.append(stmt)
@@ -3912,9 +3950,7 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
 
-    def _try_string_switch(
-        self, stmt: IRStatement
-    ) -> Optional[Tuple[IRSwitch, List[IRStatement]]]:
+    def _try_string_switch(self, stmt: IRStatement) -> Optional[Tuple[IRSwitch, List[IRStatement]]]:
         if not isinstance(stmt, IRConditional):
             return None
         s_local = self._match_null_check(stmt.condition)
@@ -3924,9 +3960,7 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
         if guard is None:
             return None
         len_cond, temp_local = guard
-        parsed = self._parse_compare_chain(
-            len_cond.true_block, s_local, temp_local, collect_tail=True
-        )
+        parsed = self._parse_compare_chain(len_cond.true_block, s_local, temp_local, collect_tail=True)
         if parsed is None:
             return None
         cases, default, tail = parsed
@@ -3956,9 +3990,7 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
                 return cond.right
         return None
 
-    def _find_length_guard(
-        self, block: IRBlock, s_local: IRLocal
-    ) -> Optional[Tuple[IRConditional, IRLocal]]:
+    def _find_length_guard(self, block: IRBlock, s_local: IRLocal) -> Optional[Tuple[IRConditional, IRLocal]]:
         if not block.statements:
             return None
         temp_local: Optional[IRLocal] = None
@@ -4012,10 +4044,7 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
         call = assign.expr
         if not isinstance(call, IRCall):
             return None
-        if not (
-            isinstance(call.target, IRConst)
-            and isinstance(call.target.value, Native)
-        ):
+        if not (isinstance(call.target, IRConst) and isinstance(call.target.value, Native)):
             return None
         native = call.target.value
         if native.name.resolve(self.func.code) != "string_compare":
@@ -4023,34 +4052,21 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
         if len(call.args) != 3:
             return None
         bytes_arg = call.args[0]
-        if not (
-            isinstance(bytes_arg, IRField)
-            and bytes_arg.field_name == "bytes"
-            and bytes_arg.target == s_local
-        ):
+        if not (isinstance(bytes_arg, IRField) and bytes_arg.field_name == "bytes" and bytes_arg.target == s_local):
             return None
         const_arg = call.args[1]
-        if (
-            not isinstance(const_arg, IRConst)
-            or const_arg.const_type != IRConst.ConstType.STRING
-        ):
+        if not isinstance(const_arg, IRConst) or const_arg.const_type != IRConst.ConstType.STRING:
             return None
         if call.args[2] != temp_local:
             return None
         cond = compare_cond.condition
         zero_side: Optional[IRExpression] = None
-        if (
-            isinstance(cond, IRBoolExpr)
-            and cond.op == IRBoolExpr.CompareType.NEQ
-        ):
+        if isinstance(cond, IRBoolExpr) and cond.op == IRBoolExpr.CompareType.NEQ:
             if cond.left == temp_local:
                 zero_side = cond.right
             elif cond.right == temp_local:
                 zero_side = cond.left
-        elif (
-            isinstance(cond, IRBoolExpr)
-            and cond.op == IRBoolExpr.CompareType.EQ
-        ):
+        elif isinstance(cond, IRBoolExpr) and cond.op == IRBoolExpr.CompareType.EQ:
             if cond.left == temp_local:
                 zero_side = cond.right
             elif cond.right == temp_local:
@@ -4116,9 +4132,7 @@ class IRLoopRerollOptimizer(TraversingIROptimizer):
             i += 1
         block.statements = new_statements
 
-    def _try_reroll(
-        self, stmts: List[IRStatement], start: int
-    ) -> Optional[Tuple[IRForEachLoop, int]]:
+    def _try_reroll(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRForEachLoop, int]]:
         header = self._header_assign(stmts[start])
         if header is None:
             return None
@@ -4161,8 +4175,7 @@ class IRLoopRerollOptimizer(TraversingIROptimizer):
             return None
 
         values: List[IRExpression] = [
-            IRConst(self.func.code, IRConst.ConstType.INT, value=start_value + k)
-            for k in range(len(headers))
+            IRConst(self.func.code, IRConst.ConstType.INT, value=start_value + k) for k in range(len(headers))
         ]
         array_literal = IRArrayLiteral(self.func.code, values)
         new_body = IRBlock(self.func.code)
@@ -4189,9 +4202,7 @@ class IRLoopRerollOptimizer(TraversingIROptimizer):
             return False
         return header[0] == elem and header[1] == value
 
-    def _find_next_header(
-        self, stmts: List[IRStatement], start: int, elem: IRLocal, value: int
-    ) -> Optional[int]:
+    def _find_next_header(self, stmts: List[IRStatement], start: int, elem: IRLocal, value: int) -> Optional[int]:
         for i in range(start, len(stmts)):
             if self._is_header(stmts[i], elem, value):
                 return i
@@ -4213,7 +4224,14 @@ class IRLoopRerollOptimizer(TraversingIROptimizer):
                     ):
                         uses_elem = True
             elif isinstance(stmt, (IRTrace, IRCall, IRReturn)):
-                if self._expr_reads_local(stmt.msg if isinstance(stmt, IRTrace) else stmt.value if isinstance(stmt, IRReturn) else stmt.target, elem):
+                if self._expr_reads_local(
+                    stmt.msg
+                    if isinstance(stmt, IRTrace)
+                    else stmt.value
+                    if isinstance(stmt, IRReturn)
+                    else stmt.target,
+                    elem,
+                ):
                     uses_elem = True
                 for arg in getattr(stmt, "args", []):
                     if self._expr_reads_local(arg, elem):
@@ -4257,11 +4275,7 @@ class IRLoopRerollOptimizer(TraversingIROptimizer):
         if isinstance(a, IRLocal):
             return a == b
         if isinstance(a, (IRArithmetic, IRBoolExpr)):
-            return (
-                a.op == b.op
-                and self._exprs_equal(a.left, b.left)
-                and self._exprs_equal(a.right, b.right)
-            )
+            return a.op == b.op and self._exprs_equal(a.left, b.left) and self._exprs_equal(a.right, b.right)
         if isinstance(a, IRArrayAccess):
             return self._exprs_equal(a.array, b.array) and self._exprs_equal(a.index, b.index)
         if isinstance(a, IRField):
@@ -4278,10 +4292,7 @@ class IRLoopRerollOptimizer(TraversingIROptimizer):
             return (
                 a.alloc_type_idx == b.alloc_type_idx
                 and len(a.constructor_args) == len(b.constructor_args)
-                and all(
-                    self._exprs_equal(x, y)
-                    for x, y in zip(a.constructor_args, b.constructor_args)
-                )
+                and all(self._exprs_equal(x, y) for x, y in zip(a.constructor_args, b.constructor_args))
             )
         if isinstance(a, IRRef):
             return self._exprs_equal(a.target, b.target)
@@ -4379,7 +4390,9 @@ class IRForEachLoopOptimizer(TraversingIROptimizer):
             if self._expr_reads_local(stmt.expr, local):
                 return True
             if isinstance(stmt.target, IRArrayAccess):
-                return self._expr_reads_local(stmt.target.array, local) or self._expr_reads_local(stmt.target.index, local)
+                return self._expr_reads_local(stmt.target.array, local) or self._expr_reads_local(
+                    stmt.target.index, local
+                )
             return False
         if isinstance(stmt, IRReturn):
             return stmt.value is not None and self._expr_reads_local(stmt.value, local)
@@ -4614,7 +4627,9 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
             # Create a new IRConst for the constructor name. We repurpose the
             # existing IRConst by changing its value to the constructor name
             # string, but create a fresh one to avoid side effects.
-            new_case_val = IRConst(self.func.code, IRConst.ConstType.GLOBAL_STRING, value=construct.name.resolve(self.func.code))
+            new_case_val = IRConst(
+                self.func.code, IRConst.ConstType.GLOBAL_STRING, value=construct.name.resolve(self.func.code)
+            )
             new_cases[new_case_val] = case_block
 
         new_switch = IRSwitch(self.func.code, enum_value, new_cases, next_stmt.default)
@@ -4905,17 +4920,11 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             ret_name = ""
         return "ArrayObj" in ret_name or "Array" in ret_name
 
-    def _find_anon_call(
-        self, node: Optional[IRStatement], arr_local: IRLocal
-    ) -> Optional[IRCall]:
+    def _find_anon_call(self, node: Optional[IRStatement], arr_local: IRLocal) -> Optional[IRCall]:
         if node is None:
             return None
         if isinstance(node, IRCall) and self._is_arrayobj_anon(node):
-            if (
-                node.args
-                and isinstance(node.args[0], IRLocal)
-                and node.args[0].name == arr_local.name
-            ):
+            if node.args and isinstance(node.args[0], IRLocal) and node.args[0].name == arr_local.name:
                 return node
         # Many expression classes have incomplete get_children(); recurse into the
         # known attributes we care about here.
@@ -4968,9 +4977,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                     return found
         return None
 
-    def _try_array_obj_literal(
-        self, stmts: List[IRStatement], start: int
-    ) -> Optional[Tuple[IRStatement, int]]:
+    def _try_array_obj_literal(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int]]:
         # Pattern:
         #   arr = alloc_array(type, size)
         #   [elem = expr;] arr[i] = elem
@@ -4996,11 +5003,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             #   var9 = new TestClass();
             #   arr[0] = var9;
             s1 = stmts[i]
-            if (
-                isinstance(s1, IRAssign)
-                and isinstance(s1.target, IRLocal)
-                and i + 1 < len(stmts)
-            ):
+            if isinstance(s1, IRAssign) and isinstance(s1.target, IRLocal) and i + 1 < len(stmts):
                 s2 = stmts[i + 1]
                 if (
                     isinstance(s2, IRAssign)
@@ -5032,11 +5035,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                 break
             store_access = cast(IRArrayAccess, store_stmt.target)
             idx_const = cast(IRConst, store_access.index)
-            idx = int(
-                idx_const.value.value
-                if hasattr(idx_const.value, "value")
-                else idx_const.value
-            )
+            idx = int(idx_const.value.value if hasattr(idx_const.value, "value") else idx_const.value)
             if idx != len(values):
                 break
             values.append(elem_expr)
@@ -5067,8 +5066,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         if int(size_arg.value.value if hasattr(size_arg.value, "value") else size_arg.value) != 0:
             return False
         if isinstance(type_arg, IRConst) and (
-            type_arg.const_type == IRConst.ConstType.NULL
-            or isinstance(type_arg.value, Type)
+            type_arg.const_type == IRConst.ConstType.NULL or isinstance(type_arg.value, Type)
         ):
             return True
         return False
@@ -5092,9 +5090,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             return False
         return name.endswith("ArrayDyn.alloc")
 
-    def _try_empty_array_dyn(
-        self, stmts: List[IRStatement], start: int
-    ) -> Optional[Tuple[IRStatement, int]]:
+    def _try_empty_array_dyn(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int]]:
         # Pattern:
         #   temp = ArrayObj.anon(alloc_array(null, 0))
         #   target = ArrayDyn.alloc(temp, true)
@@ -5179,11 +5175,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             and i + 1 < len(stmts)
         ):
             nxt = stmts[i + 1]
-            if (
-                isinstance(nxt, IRAssign)
-                and isinstance(nxt.target, IRArrayAccess)
-                and nxt.expr == s.target
-            ):
+            if isinstance(nxt, IRAssign) and isinstance(nxt.target, IRArrayAccess) and nxt.expr == s.target:
                 elem_expr = s.expr
                 i += 1
                 s = nxt
@@ -5258,10 +5250,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         # from the following increment (e.g. `bytes[0 << n] = v0; idx++; ...`).
         if i is None and shift is None and start + 2 < len(stmts):
             first_store = stmts[start + 1]
-            if (
-                isinstance(first_store, IRAssign)
-                and isinstance(first_store.target, IRArrayAccess)
-            ):
+            if isinstance(first_store, IRAssign) and isinstance(first_store.target, IRArrayAccess):
                 access = first_store.target
                 if (
                     isinstance(access.array, IRLocal)
@@ -5270,7 +5259,12 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                     and access.index.op.value == "<<"
                     and isinstance(access.index.left, IRConst)
                     and access.index.left.const_type == IRConst.ConstType.INT
-                    and int(access.index.left.value.value if hasattr(access.index.left.value, "value") else access.index.left.value) == 0
+                    and int(
+                        access.index.left.value.value
+                        if hasattr(access.index.left.value, "value")
+                        else access.index.left.value
+                    )
+                    == 0
                     and isinstance(access.index.right, IRConst)
                     and access.index.right.const_type == IRConst.ConstType.INT
                 ):
@@ -5289,7 +5283,12 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                         and isinstance(inc_stmt.expr.left, IRLocal)
                         and isinstance(inc_stmt.expr.right, IRConst)
                         and inc_stmt.expr.right.const_type == IRConst.ConstType.INT
-                        and int(inc_stmt.expr.right.value.value if hasattr(inc_stmt.expr.right.value, "value") else inc_stmt.expr.right.value) == 1
+                        and int(
+                            inc_stmt.expr.right.value.value
+                            if hasattr(inc_stmt.expr.right.value, "value")
+                            else inc_stmt.expr.right.value
+                        )
+                        == 1
                     ):
                         idx_var = inc_stmt.target
                         parsed = self._parse_store_and_increment(stmts, start + 3, bytes_var, idx_var, values, shift)
@@ -5350,9 +5349,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         # Haxe compiler will often constant-fold the whole array away.  Keep the
         # low-level allocation in that case so the recompiled bytecode stays close
         # to the original.
-        if return_target is not None and not self._array_literal_is_worth_recovering(
-            return_target, stmts, i
-        ):
+        if return_target is not None and not self._array_literal_is_worth_recovering(return_target, stmts, i):
             return None
 
         if return_target is not None:
@@ -5362,9 +5359,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             new_return = IRReturn(self.func.code, literal)
             return new_return, i - start + 1
 
-    def _array_literal_is_worth_recovering(
-        self, arr_local: IRLocal, stmts: List[IRStatement], end_idx: int
-    ) -> bool:
+    def _array_literal_is_worth_recovering(self, arr_local: IRLocal, stmts: List[IRStatement], end_idx: int) -> bool:
         """Return True if `arr_local` is used for anything other than a bounds
         guard after the literal allocation.
 
@@ -5378,11 +5373,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                 return True
             if node == arr_local:
                 return False
-            if (
-                isinstance(node, IRField)
-                and node.target == arr_local
-                and node.field_name in ("length", "bytes")
-            ):
+            if isinstance(node, IRField) and node.target == arr_local and node.field_name in ("length", "bytes"):
                 return True
             for child in node.get_children():
                 if not _only_guard_fields(child):
@@ -5505,9 +5496,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                 const_idx = None
 
         if const_idx is not None:
-            index_expr: IRExpression = IRConst(
-                self.func.code, IRConst.ConstType.INT, value=const_idx
-            )
+            index_expr: IRExpression = IRConst(self.func.code, IRConst.ConstType.INT, value=const_idx)
         else:
             assert idx_var is not None
             index_expr = idx_var
@@ -5541,9 +5530,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
     def _is_compiler_temp(self, local: IRLocal) -> bool:
         return bool(re.fullmatch(r"var\d+", local.name))
 
-    def _const_loaded_for_local(
-        self, stmts: List[IRStatement], start: int, local: IRLocal
-    ) -> Optional[int]:
+    def _const_loaded_for_local(self, stmts: List[IRStatement], start: int, local: IRLocal) -> Optional[int]:
         """Scan the few statements before `start` for `local_reg = const`."""
         for j in range(start - 1, max(-1, start - 5), -1):
             prev = stmts[j]
@@ -5554,9 +5541,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                     return None
         return None
 
-    def _try_array_dyn_literal(
-        self, stmts: List[IRStatement], start: int
-    ) -> Optional[Tuple[IRStatement, int]]:
+    def _try_array_dyn_literal(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int]]:
         """Rewrite `target = ArrayDyn.alloc([...], true)` to `target = [...]`.
 
         The ArrayObj.anon + ArrayDyn.alloc pair is already lowered to a typed
@@ -5713,6 +5698,7 @@ class IRFunction:
         self.opcodes: str = ""
         self.cfg_data: Dict[str, List[Dict[str, Any]]] = {"nodes": [], "edges": []}
         self.layer_snapshots: List[Tuple[str, str]] = []
+        self._lift_cache: Dict[Tuple[Optional["CFNode"], Optional["CFNode"], int], IRBlock] = {}
         self._lift(no_lift=no_lift)
         if do_optimize:
             self.optimizers: List[IROptimizer] = [
@@ -5801,11 +5787,7 @@ class IRFunction:
         # across registers.
         base_name = name
         suffix = 1
-        existing_names = {
-            loc.name
-            for i, loc in enumerate(self.locals)
-            if i != reg_idx and loc.get_type() != new_type
-        }
+        existing_names = {loc.name for i, loc in enumerate(self.locals) if i != reg_idx and loc.get_type() != new_type}
         while name in existing_names:
             name = f"{base_name}{suffix}"
             suffix += 1
@@ -6041,6 +6023,29 @@ class IRFunction:
         nodes: Set[CFNode]
         exit_node: Optional[CFNode]
 
+    def _resolve_method_field(self, obj_local: "IRLocal", obj_type: Type, field_idx: int) -> Optional["IRField"]:
+        """Build the `obj.method` IRField targeted by a CallMethod/CallThis/
+        InstanceClosure `field` operand.
+
+        For an ``Obj`` the operand indexes the virtual method table, so the
+        proto is looked up by ``pindex`` across the class hierarchy. For a
+        ``Virtual`` it indexes the (method-typed) data fields directly. Returns
+        ``None`` when the target cannot be resolved.
+        """
+        defn = obj_type.definition
+        if isinstance(defn, Obj):
+            proto = self.code.proto_by_pindex(defn, field_idx)
+            if proto is None:
+                return None
+            fun = proto.findex.resolve(self.code)
+            return IRField(self.code, obj_local, proto.name.resolve(self.code), fun.type)
+        if isinstance(defn, Virtual):
+            if field_idx >= len(defn.fields):
+                return None
+            field_core = defn.fields[field_idx]
+            return IRField(self.code, obj_local, field_core.name.resolve(self.code), field_core.type)
+        return None
+
     def _lift_ops_into_block(self, block: IRBlock, ops: List[Opcode]) -> None:
         for op in ops:
             op_idx = self._op_id_to_idx.get(id(op))
@@ -6100,6 +6105,28 @@ class IRFunction:
                     block.statements.append(call_expr)
                 else:
                     block.statements.append(IRAssign(self.code, dst, call_expr))
+            elif op.op in ("CallMethod", "CallThis"):
+                dst = self.locals[op.df["dst"].value]
+                arg_regs = op.df["args"].value
+                if op.op == "CallThis":
+                    obj_local = source_locals[0]
+                    obj_type = self.code.types[self.func.regs[0].value]
+                    method_args = [source_locals[arg.value] for arg in arg_regs]
+                else:
+                    obj_local = source_locals[arg_regs[0].value]
+                    obj_type = obj_local.get_type()
+                    method_args = [source_locals[arg.value] for arg in arg_regs[1:]]
+                field_expr = self._resolve_method_field(obj_local, obj_type, op.df["field"].value)
+                if field_expr is not None:
+                    call_expr = IRCall(self.code, IRCall.CallType.METHOD, field_expr, method_args)
+                    if dst.get_type().kind.value == Type.Kind.VOID.value:
+                        block.statements.append(call_expr)
+                    else:
+                        block.statements.append(IRAssign(self.code, dst, call_expr))
+                elif dst.get_type().kind.value == Type.Kind.VOID.value:
+                    block.statements.append(IRUnliftedOpcode(self.code, op))
+                else:
+                    block.statements.append(IRAssign(self.code, dst, IRUnliftedOpcode(self.code, op)))
             elif op.op == "Mov":
                 block.statements.append(
                     IRAssign(self.code, self.locals[op.df["dst"].value], source_locals[op.df["src"].value])
@@ -6172,6 +6199,22 @@ class IRFunction:
                 src_local = source_locals[op.df["src"].value]
                 cast_expr = IRCast(self.code, self.func.regs[op.df["dst"].value], src_local)
                 block.statements.append(IRAssign(self.code, dst_local, cast_expr))
+            elif op.op in ("SafeCast", "UnsafeCast"):
+                dst_local = self.locals[op.df["dst"].value]
+                src_local = source_locals[op.df["src"].value]
+                cast_expr = IRCast(self.code, self.func.regs[op.df["dst"].value], src_local)
+                block.statements.append(IRAssign(self.code, dst_local, cast_expr))
+            elif op.op == "GetArray":
+                dst_local = self.locals[op.df["dst"].value]
+                arr_local = source_locals[op.df["array"].value]
+                idx_local = source_locals[op.df["index"].value]
+                block.statements.append(
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df["dst"].value]),
+                    )
+                )
             elif op.op == "Incr":
                 dst_local = self.locals[op.df["dst"].value]
                 old_local = source_locals[op.df["dst"].value]
@@ -6238,7 +6281,9 @@ class IRFunction:
                 arr_local = source_locals[op.df["array"].value]
                 idx_local = source_locals[op.df["index"].value]
                 src_local = source_locals[op.df["src"].value]
-                block.statements.append(IRAssign(self.code, IRArrayAccess(self.code, arr_local, idx_local, src_local.get_type()), src_local))
+                block.statements.append(
+                    IRAssign(self.code, IRArrayAccess(self.code, arr_local, idx_local, src_local.get_type()), src_local)
+                )
             elif op.op == "DynSet":
                 obj_local = source_locals[op.df["obj"].value]
                 src_local = source_locals[op.df["src"].value]
@@ -6264,10 +6309,24 @@ class IRFunction:
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = source_locals[op.df["src"].value]
                 block.statements.append(IRAssign(self.code, dst_local, IRRef(self.code, src_local)))
+            elif op.op == "Unref":
+                # References are modelled transparently (IRRef renders as its
+                # inner expression), so dereferencing one is just a copy of the
+                # underlying value.
+                dst_local = self.locals[op.df["dst"].value]
+                src_local = source_locals[op.df["src"].value]
+                block.statements.append(IRAssign(self.code, dst_local, src_local))
             elif op.op == "StaticClosure":
                 dst_local = self.locals[op.df["dst"].value]
                 fun_const = IRConst(self.code, IRConst.ConstType.FUN, idx=op.df["fun"])
                 block.statements.append(IRAssign(self.code, dst_local, fun_const))
+            elif op.op == "InstanceClosure":
+                dst_local = self.locals[op.df["dst"].value]
+                obj_local = source_locals[op.df["obj"].value]
+                fun = op.df["fun"].resolve(self.code)
+                method_name = self.code.partial_func_name(fun)
+                field_expr = IRField(self.code, obj_local, method_name, self.func.regs[op.df["dst"].value])
+                block.statements.append(IRAssign(self.code, dst_local, field_expr))
             elif op.op == "VirtualClosure":
                 dst_local = self.locals[op.df["dst"].value]
                 obj_local = source_locals[op.df["obj"].value]
@@ -6372,9 +6431,7 @@ class IRFunction:
 
         return min(common_nodes, key=lambda node: (left_distances[node] + right_distances[node], node.base_offset))
 
-    def _is_terminal_branch_node(
-        self, node: Optional[CFNode], loop_ctx: Optional[_LoopContext]
-    ) -> bool:
+    def _is_terminal_branch_node(self, node: Optional[CFNode], loop_ctx: Optional[_LoopContext]) -> bool:
         """Return True if a branch target has no live successors within the current region."""
         if node is None:
             return True
@@ -6463,6 +6520,54 @@ class IRFunction:
             left = self.locals[op.df[reg_key].value]
         return IRBoolExpr(self.code, cond, left, right)
 
+    def _clone_ir(self, block: IRBlock) -> IRBlock:
+        """
+        Clones a cached IRBlock so a memoized `_lift_block` result can be reused without
+        making the same object reachable from multiple parents. `self.code` (the whole
+        Bytecode) and `self.locals` (the register->IRLocal identities used throughout
+        the function) are shared rather than duplicated; everything else in the
+        statement/expression tree is copied. Hand-rolled instead of `copy.deepcopy`:
+        deepcopy's generic `__reduce_ex__`/pickling-protocol dispatch is much slower
+        than just walking `__dict__`, and this runs once per cache hit.
+        """
+        memo: Dict[int, Any] = {id(self.code): self.code}
+        for local in self.locals:
+            memo[id(local)] = local
+        return cast(IRBlock, self._clone_value(block, memo))
+
+    def _clone_value(self, value: Any, memo: Dict[int, Any]) -> Any:
+        if value is None or isinstance(value, (int, float, str, bool, bytes, _Enum)):
+            return value
+        vid = id(value)
+        if vid in memo:
+            return memo[vid]
+        if isinstance(value, list):
+            new_list: List[Any] = []
+            memo[vid] = new_list
+            new_list.extend(self._clone_value(v, memo) for v in value)
+            return new_list
+        if isinstance(value, tuple):
+            return tuple(self._clone_value(v, memo) for v in value)
+        if isinstance(value, dict):
+            new_dict: Dict[Any, Any] = {}
+            memo[vid] = new_dict
+            for k, v in value.items():
+                new_dict[self._clone_value(k, memo)] = self._clone_value(v, memo)
+            return new_dict
+        if isinstance(value, set):
+            new_set: Set[Any] = set()
+            memo[vid] = new_set
+            new_set.update(self._clone_value(v, memo) for v in value)
+            return new_set
+        if not hasattr(value, "__dict__"):
+            # Unknown leaf type (e.g. a Bytecode/Function/Type reference) - share it.
+            return value
+        new_obj = object.__new__(type(value))
+        memo[vid] = new_obj
+        for k, v in vars(value).items():
+            setattr(new_obj, k, self._clone_value(v, memo))
+        return new_obj
+
     def _lift_block(
         self,
         node: Optional[CFNode],
@@ -6491,6 +6596,27 @@ class IRFunction:
             return block
         if node in self.cfg.loops and (loop_ctx is None or node != loop_ctx.header):
             return self._lift_loop(node, visited, stop_at, loop_ctx)
+
+        # Memoize on (node, stop_at, loop_ctx): without this, CFGs where many branches
+        # funnel into a small set of shared continuation points cause the same
+        # (node, stop_at) region to be re-lifted independently from every branch that
+        # reaches it, which is exponential in the nesting depth of the function. Since
+        # loops are handled separately above, everything reachable here is acyclic, so
+        # the *logical content* for an identical (node, stop_at, loop_ctx) request never
+        # depends on which ancestor path got there. We still hand back a fresh clone
+        # rather than the cached object itself: returning the same instance would make
+        # the IR a real DAG, and nothing downstream (repr(), pprint(), the optimizer
+        # passes' generic statement walk) expects a node to be reachable from multiple
+        # parents, so they would re-render/re-process the shared subtree once per
+        # reference path - the same exponential blowup we're trying to avoid, just
+        # moved into every later consumer instead of the lifter.
+        # _LoopContext is a non-frozen @dataclass, so it's unhashable; key on identity instead.
+        cache_key = (node, stop_at, id(loop_ctx))
+        cached = self._lift_cache.get(cache_key)
+        if cached is not None:
+            visited.add(node)
+            return self._clone_ir(cached)
+
         visited.add(node)
 
         block = IRBlock(self.code)
@@ -6677,6 +6803,7 @@ class IRFunction:
                     next_block_ir = self._lift_block(successor_node, visited, stop_at, loop_ctx=loop_ctx)
                     block.statements.extend(next_block_ir.statements)
 
+        self._lift_cache[cache_key] = block
         return block
 
     def print(self) -> None:

@@ -1863,6 +1863,10 @@ class Bytecode(Serialisable):
         self.section_offsets: Dict[str, int] = {}
         self.cached_all: List[Type] | None = None
         self._findex_map: Dict[int, "Function | Native"] | None = None
+        self._proto_map: Dict[int, "Proto"] | None = None
+        self._field_map: Dict[int, "Field"] | None = None
+        self._proto_owner_map: Dict[int, "Obj"] | None = None
+        self._field_owner_map: Dict[int, "Obj"] | None = None
 
         self.virtuals_built = False
 
@@ -1872,6 +1876,56 @@ class Bytecode(Serialisable):
         `self.functions` or `self.natives` outside of normal deserialisation.
         """
         self._findex_map = None
+
+    def invalidate_proto_field_cache(self) -> None:
+        """
+        Invalidates the lazily-built findex -> Proto/Field maps. Call this after mutating
+        `self.types` (or a type's `protos`/`bindings`) outside of normal deserialisation.
+        """
+        self._proto_map = None
+        self._field_map = None
+        self._proto_owner_map = None
+        self._field_owner_map = None
+
+    def _build_proto_field_maps(self) -> None:
+        proto_map: Dict[int, "Proto"] = {}
+        field_map: Dict[int, "Field"] = {}
+        proto_owner_map: Dict[int, "Obj"] = {}
+        field_owner_map: Dict[int, "Obj"] = {}
+        for typ in self.types:
+            if isinstance(typ.definition, Obj):
+                definition = typ.definition
+                for proto in definition.protos:
+                    proto_map[proto.findex.value] = proto
+                    proto_owner_map[proto.findex.value] = definition
+                fields = definition.resolve_fields(self)
+                for binding in definition.bindings:
+                    field_map[binding.findex.value] = fields[binding.field.value]
+                    field_owner_map[binding.findex.value] = definition
+        self._proto_map = proto_map
+        self._field_map = field_map
+        self._proto_owner_map = proto_owner_map
+        self._field_owner_map = field_owner_map
+
+    def get_proto_map(self) -> Dict[int, "Proto"]:
+        """
+        Returns a lazily-built map of fIndex value -> Proto, for fast resolution of which
+        Obj type/method a standalone function index belongs to.
+        """
+        if self._proto_map is None:
+            self._build_proto_field_maps()
+        assert self._proto_map is not None
+        return self._proto_map
+
+    def get_field_map(self) -> Dict[int, "Field"]:
+        """
+        Returns a lazily-built map of fIndex value -> Field, for fast resolution of which
+        Obj type/field a standalone function index is bound to.
+        """
+        if self._field_map is None:
+            self._build_proto_field_maps()
+        assert self._field_map is not None
+        return self._field_map
 
     def get_findex_map(self) -> Dict[int, "Function | Native"]:
         """
@@ -2545,6 +2599,7 @@ class Bytecode(Serialisable):
         Adds a type and returns its tIndex.
         """
         self.types.append(typ)
+        self.invalidate_proto_field_cache()
         return tIndex(len(self.types) - 1)
 
     def gather_types(self) -> List[Type]:
@@ -2654,53 +2709,55 @@ class Bytecode(Serialisable):
         """
         Gets the field for a standalone function index.
         """
-        for type in self.types:
-            if isinstance(type.definition, Obj):
-                definition: Obj = type.definition
-                fields = definition.resolve_fields(self)
-                for binding in definition.bindings:  # binding binds a field to a function
-                    if binding.findex.value == idx:
-                        return fields[binding.field.value]
-        return None
+        return self.get_field_map().get(idx)
 
     def get_proto_for(self, idx: int) -> Optional[Proto]:
         """
         Gets the proto for a standalone function index.
         """
-        for type in self.types:
-            if isinstance(type.definition, Obj):
-                definition: Obj = type.definition
-                for proto in definition.protos:
-                    if proto.findex.value == idx:
-                        return proto
+        return self.get_proto_map().get(idx)
+
+    def proto_by_pindex(self, obj: "Obj", pindex: int) -> Optional[Proto]:
+        """
+        Resolves a method proto by its virtual-table index (``pindex``) across a
+        class hierarchy. CallMethod/CallThis/InstanceClosure address methods by
+        this index rather than by data-field index, so the proto must be looked
+        up by walking from the most-derived class up through its superclasses
+        (the most-derived override wins).
+        """
+        current: Optional[Obj] = obj
+        visited: set = set()
+        while current is not None and id(current) not in visited:
+            visited.add(id(current))
+            for proto in current.protos:
+                if proto.pindex.value == pindex:
+                    return proto
+            if current.super is None or current.super.value < 0:
+                break
+            super_def = current.super.resolve(self).definition
+            current = super_def if isinstance(super_def, Obj) else None
         return None
 
     def full_func_name(self, func: Function | Native) -> str:
         """
         Generates a human-readable name for a function or native.
         """
-        proto = self.get_proto_for(func.findex.value)
+        idx = func.findex.value
+        proto = self.get_proto_map().get(idx)
         if proto:
             name = proto.name.resolve(self)
-            for type in self.types:
-                if isinstance(type.definition, Obj):
-                    obj_def: Obj = type.definition
-                    for fun in obj_def.protos:
-                        if fun.findex.value == func.findex.value:
-                            return f"{obj_def.name.resolve(self)}.{name}"
-        else:
-            name = "<none>"
-            field = self.get_field_for(func.findex.value)
-            if field:
-                name = field.name.resolve(self)
-                for type in self.types:
-                    if isinstance(type.definition, Obj):
-                        _obj_def: Obj = type.definition
-                        fields = _obj_def.resolve_fields(self)
-                        for binding in _obj_def.bindings:
-                            if binding.findex.value == func.findex.value:
-                                return f"{_obj_def.name.resolve(self)}.{name}"
-        return name
+            owner = self._proto_owner_map.get(idx) if self._proto_owner_map else None
+            if owner:
+                return f"{owner.name.resolve(self)}.{name}"
+            return name
+        field = self.get_field_map().get(idx)
+        if field:
+            name = field.name.resolve(self)
+            owner = self._field_owner_map.get(idx) if self._field_owner_map else None
+            if owner:
+                return f"{owner.name.resolve(self)}.{name}"
+            return name
+        return "<none>"
 
     def partial_func_name(self, func: Function | Native) -> str:
         """

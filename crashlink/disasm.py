@@ -149,15 +149,25 @@ def is_static(code: Bytecode, func: Function) -> bool:
     Checks if a function is static.
     """
     # bindings are static functions, protos are dynamic
-    for type in code.types:
-        if type.kind.value == Type.TYPEDEFS.index(Obj):
-            if not isinstance(type.definition, Obj):
-                raise TypeError(f"Expected Obj, got {type.definition}")
-            definition: Obj = type.definition
-            for binding in definition.bindings:
-                if binding.findex.value == func.findex.value:
-                    return True
-    return False
+    return func.findex.value in code.get_field_map()
+
+
+def _method_name_for_field(code: Bytecode, obj_type: "Type", field_idx: int) -> str:
+    """Resolve the method name addressed by a CallMethod/CallThis `field` operand.
+
+    On an ``Obj`` the operand indexes the virtual method table (by proto
+    ``pindex``), not the data fields; on a ``Virtual`` it indexes the
+    method-typed data fields directly. Falls back to ``field<n>`` when the
+    target cannot be resolved.
+    """
+    defn = obj_type.definition
+    if isinstance(defn, Obj):
+        proto = code.proto_by_pindex(defn, field_idx)
+        if proto is not None:
+            return proto.name.resolve(code)
+    elif isinstance(defn, Virtual) and field_idx < len(defn.fields):
+        return defn.fields[field_idx].name.resolve(code)
+    return f"field{field_idx}"
 
 
 def pseudo_from_op(
@@ -287,6 +297,10 @@ def pseudo_from_op(
             return f"reg{op.df['dst']} = Virtual(reg{op.df['src']})"
         case "Ref":
             return f"reg{op.df['dst']} = &reg{op.df['src']}"
+        case "Unref":
+            return f"reg{op.df['dst']} = *reg{op.df['src']}"
+        case "GetArray":
+            return f"reg{op.df['dst']} = reg{op.df['array']}[reg{op.df['index']}]"
         case "SetMem":
             return f"reg{op.df['bytes']}[reg{op.df['index']}] = reg{op.df['src']}"
         case "GetMem":
@@ -318,13 +332,19 @@ def pseudo_from_op(
         case "CallN":
             return f"reg{op.df['dst']} = f@{op.df['fun']}({', '.join([f'reg{arg}' for arg in op.df['args'].value])})"
         case "CallThis":
+            args = ", ".join([f"reg{arg}" for arg in op.df["args"].value])
             if not func:
-                return f"reg{op.df['dst']} = this.field{op.df['field']}({', '.join([f'reg{arg}' for arg in op.df['args'].value])})"
-            obj = func.regs[0].resolve(code)
-            assert isinstance(obj.definition, Obj), "reg0 should be an Obj of the type of this (is this static?)"
-            fields = obj.definition.resolve_fields(code)
-            field = fields[op.df["field"].value]
-            return f"reg{op.df['dst']} = this.{field.name.resolve(code)}({', '.join([f'reg{arg}' for arg in op.df['args'].value])})"
+                return f"reg{op.df['dst']} = this.field{op.df['field']}({args})"
+            method = _method_name_for_field(code, func.regs[0].resolve(code), op.df["field"].value)
+            return f"reg{op.df['dst']} = this.{method}({args})"
+        case "CallMethod":
+            method_args = op.df["args"].value
+            obj_reg = method_args[0].value if method_args else None
+            rest = ", ".join([f"reg{arg}" for arg in method_args[1:]])
+            if func is not None and obj_reg is not None:
+                method = _method_name_for_field(code, func.regs[obj_reg].resolve(code), op.df["field"].value)
+                return f"reg{op.df['dst']} = reg{obj_reg}.{method}({rest})"
+            return f"reg{op.df['dst']} = reg{obj_reg}.field{op.df['field']}({rest})"
 
         # Error Handling
         case "NullCheck":

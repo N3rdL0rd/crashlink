@@ -148,6 +148,7 @@ class AsmFile:
                 typ.kind.value = def_to_kind[typedef]
                 typ.definition = m_def
                 code.types.append(typ)
+                code.invalidate_proto_field_cache()
             elif parts[0] == "Fun":
                 print("Adding Fun...")
                 fun = Fun()
@@ -167,6 +168,7 @@ class AsmFile:
                 typ.kind.value = 10  # Fun
                 typ.definition = m_def  # pyright: ignore[reportPossiblyUnboundVariable]
                 code.types.append(typ)
+                code.invalidate_proto_field_cache()
 
     def _parse_ref(self, val: str) -> ResolvableVarInt:
         if val[1] != "@":
