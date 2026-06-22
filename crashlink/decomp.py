@@ -729,6 +729,23 @@ class IRNeg(IRExpression):
         return f"<IRNeg: -{self.expr}>"
 
 
+class IRNot(IRExpression):
+    """Represents boolean negation, e.g. `!x` (lifted from the `Not` opcode)."""
+
+    def __init__(self, code: Bytecode, expr: IRExpression):
+        super().__init__(code)
+        self.expr = expr
+
+    def get_type(self) -> Type:
+        return self.expr.get_type()
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.expr]
+
+    def __repr__(self) -> str:
+        return f"<IRNot: !{self.expr}>"
+
+
 class IRAssign(IRStatement):
     """Assignment of an expression result to a target (local variable, field, etc.)"""
 
@@ -6375,6 +6392,10 @@ class IRFunction:
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = source_locals[op.df["src"].value]
                 block.statements.append(IRAssign(self.code, dst_local, IRNeg(self.code, src_local)))
+            elif op.op == "Not":
+                dst_local = self.locals[op.df["dst"].value]
+                src_local = source_locals[op.df["src"].value]
+                block.statements.append(IRAssign(self.code, dst_local, IRNot(self.code, src_local)))
             elif op.op == "GetMem":
                 dst_local = self.locals[op.df["dst"].value]
                 arr_local = source_locals[op.df["bytes"].value]

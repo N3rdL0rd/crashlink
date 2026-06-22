@@ -26,6 +26,7 @@ from .decomp import (
     IRConst,
     IRArithmetic,
     IRNeg,
+    IRNot,
     IRBoolExpr,
     IRCall,
     IRConditional,
@@ -164,6 +165,12 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         if isinstance(expr.expr, IRArithmetic):
             inner = f"({inner})"
         return f"-{inner}"
+
+    elif isinstance(expr, IRNot):
+        inner = _expression_to_haxe(expr.expr, code, ir_function)
+        if isinstance(expr.expr, (IRArithmetic, IRBoolExpr)):
+            inner = f"({inner})"
+        return f"!{inner}"
 
     elif isinstance(expr, IRBoolExpr):
         op_map = {
@@ -1316,6 +1323,8 @@ def _contains_local_name(local_name: str, stmt: IRStatement) -> bool:
     if isinstance(stmt, IRCast):
         return _contains_local_name(local_name, stmt.expr)
     if isinstance(stmt, IRNeg):
+        return _contains_local_name(local_name, stmt.expr)
+    if isinstance(stmt, IRNot):
         return _contains_local_name(local_name, stmt.expr)
     if isinstance(stmt, IRRef):
         return _contains_local_name(local_name, stmt.target)
