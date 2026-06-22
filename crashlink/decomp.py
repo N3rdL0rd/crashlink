@@ -41,6 +41,8 @@ def _strip_ansi(s: str) -> str:
     return _ANSI_ESCAPE_RE.sub("", s)
 
 
+_repr_rendered_blocks: Optional[Set[int]] = None
+
 _type_by_name_cache: Dict[int, Dict[str, Type]] = {}
 
 
@@ -569,6 +571,7 @@ class IRBlock(IRStatement):
         self.statements: List[IRStatement] = []
 
     def pprint(self) -> str:
+        global _repr_rendered_blocks
         colors = [36, 31, 32, 33, 34, 35]
 
         depth = id(self) % len(colors)
@@ -577,16 +580,37 @@ class IRBlock(IRStatement):
         if not self.statements:
             return f"\033[{color}m[\033[0m\033[{color}m]\033[0m"
 
-        # uniform indentation
-        statements = pformat(self.statements, indent=0).replace("\n", "\n\t")
+        top = _repr_rendered_blocks is None
+        if top:
+            _repr_rendered_blocks = set()
+        try:
+            if id(self) in _repr_rendered_blocks:  # type: ignore[operator]
+                return f"\033[{color}m[...]\033[0m"
+            _repr_rendered_blocks.add(id(self))  # type: ignore[union-attr]
+            # uniform indentation
+            statements = pformat(self.statements, indent=0).replace("\n", "\n\t")
+        finally:
+            if top:
+                _repr_rendered_blocks = None
 
         return f"\033[{color}m[\033[0m\n\t{statements}\n\033[{color}m]\033[0m"
 
     def __repr__(self) -> str:
+        global _repr_rendered_blocks
         if not self.statements:
             return "[]"
 
-        statements = pformat(self.statements, indent=0).replace("\n", "\n\t")
+        top = _repr_rendered_blocks is None
+        if top:
+            _repr_rendered_blocks = set()
+        try:
+            if id(self) in _repr_rendered_blocks:  # type: ignore[operator]
+                return "[...]"
+            _repr_rendered_blocks.add(id(self))  # type: ignore[union-attr]
+            statements = pformat(self.statements, indent=0).replace("\n", "\n\t")
+        finally:
+            if top:
+                _repr_rendered_blocks = None
 
         return "[\n\t" + statements + "\n]"
 
@@ -686,6 +710,23 @@ class IRArithmetic(IRExpression):
 
     def __repr__(self) -> str:
         return f"<IRArithmetic: {self.left} {self.op.value} {self.right}>"
+
+
+class IRNeg(IRExpression):
+    """Represents numeric negation, e.g. `-x` (lifted from the `Neg` opcode)."""
+
+    def __init__(self, code: Bytecode, expr: IRExpression):
+        super().__init__(code)
+        self.expr = expr
+
+    def get_type(self) -> Type:
+        return self.expr.get_type()
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.expr]
+
+    def __repr__(self) -> str:
+        return f"<IRNeg: -{self.expr}>"
 
 
 class IRAssign(IRStatement):
@@ -1771,9 +1812,10 @@ class IRConditionInliner(TraversingIROptimizer):
                             assign_next_stmt.expr, assigned_local, expr_to_inline
                         )
                         if modified_rhs_expr:
-                            dbg_print(
-                                f"IRCondInliner: Inlining {expr_to_inline} into IRAssign RHS for {assigned_local}"
-                            )
+                            if DEBUG:
+                                dbg_print(
+                                    f"IRCondInliner: Inlining {expr_to_inline} into IRAssign RHS for {assigned_local}"
+                                )
                             assign_next_stmt.expr = modified_rhs_expr
                             new_statements.append(assign_next_stmt)
                             i += 2
@@ -2066,7 +2108,8 @@ class IRSelfAssignOptimizer(TraversingIROptimizer):
         for stmt in block.statements:
             if isinstance(stmt, IRAssign):
                 if isinstance(stmt.target, IRLocal) and stmt.target == stmt.expr:
-                    dbg_print(f"IRSelfAssignOptimizer: Removing redundant assignment: {stmt}")
+                    if DEBUG:
+                        dbg_print(f"IRSelfAssignOptimizer: Removing redundant assignment: {stmt}")
                     continue
             new_statements.append(stmt)
 
@@ -2104,6 +2147,54 @@ class IRBlockFlattener(TraversingIROptimizer):
             dbg_print(
                 f"IRBlockFlattener: Processed block. Original item count: {len(original_statements)}, New item count: {len(new_statements)}"
             )
+
+
+def _ir_structurally_equal(a: Any, b: Any, memo: Optional[Set[Tuple[int, int]]] = None) -> bool:
+    """Deep structural equality for IR nodes that is safe and fast on the IR DAG.
+
+    The IR shares continuation blocks between parents (it is a DAG, not a tree),
+    so rendering nodes with ``repr()`` to compare them is exponential — pprint
+    re-expands every shared subtree. This walks both trees in lockstep instead,
+    memoizing visited ``(id(a), id(b))`` pairs so each shared node pair is only
+    compared once, which keeps the comparison linear and also tolerates cycles.
+    """
+    if a is b:
+        return True
+    if type(a) is not type(b):
+        return False
+
+    if memo is None:
+        memo = set()
+    key = (id(a), id(b))
+    if key in memo:
+        return True
+    memo.add(key)
+
+    if isinstance(a, (IRStatement, IRExpression)):
+        a_fields = vars(a)
+        b_fields = vars(b)
+        if a_fields.keys() != b_fields.keys():
+            return False
+        for name, av in a_fields.items():
+            # `code` is the shared Bytecode; comparing it adds nothing and would
+            # recurse into the whole program.
+            if name == "code":
+                continue
+            if not _ir_structurally_equal(av, b_fields[name], memo):
+                return False
+        return True
+
+    if isinstance(a, (list, tuple)):
+        if len(a) != len(b):
+            return False
+        return all(_ir_structurally_equal(x, y, memo) for x, y in zip(a, b))
+
+    # ResolvableVarInt and friends carry a plain `.value`; compare it directly to
+    # avoid depending on their __eq__ (which may need a Bytecode context).
+    if hasattr(a, "value") and not isinstance(a, (str, int, float, bytes, bool)):
+        return bool(a.value == b.value)
+
+    return bool(a == b)
 
 
 class IRCommonBlockMerger(TraversingIROptimizer):
@@ -2154,9 +2245,11 @@ class IRCommonBlockMerger(TraversingIROptimizer):
                     # if/elif chain) just to find out they differ.
                     if type(true_stmts[t_idx]) is not type(false_stmts[f_idx]):
                         break
-                    # Using repr for structural comparison. This is a practical heuristic.
-                    # A more advanced system might use a deep structural equality check.
-                    if repr(true_stmts[t_idx]) == repr(false_stmts[f_idx]):
+                    # Structural comparison without rendering: repr()/pformat on
+                    # the IR DAG re-expands shared continuation blocks and is
+                    # exponential for branchy code. _ir_structurally_equal walks
+                    # the pair in lockstep with memoization instead.
+                    if _ir_structurally_equal(true_stmts[t_idx], false_stmts[f_idx]):
                         # Prepend to keep the order correct
                         common_suffix.insert(0, true_stmts[t_idx])
                         t_idx -= 1
@@ -2237,7 +2330,8 @@ class IRVoidAssignOptimizer(TraversingIROptimizer):
                 if isinstance(target, IRLocal):
                     target_type_resolved = target.type.resolve(self.func.code)
                     if target_type_resolved.kind.value == Type.Kind.VOID.value:
-                        dbg_print(f"IRVoidAssignOptimizer: Removing void assignment: {stmt} (target: {target.name})")
+                        if DEBUG:
+                            dbg_print(f"IRVoidAssignOptimizer: Removing void assignment: {stmt} (target: {target.name})")
 
                         expr_being_kept = stmt.expr
                         new_statements.append(expr_being_kept)
@@ -2548,11 +2642,22 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 return True
         return False
 
-    def _substitute_in_statement(self, stmt: IRStatement, target: IRLocal, replacement: IRExpression) -> bool:
+    def _substitute_in_statement(
+        self, stmt: IRStatement, target: IRLocal, replacement: IRExpression, _visited: Optional[Set[int]] = None
+    ) -> bool:
         """
         Recursively traverses a statement to perform substitutions.
         Returns True if a substitution was made, False otherwise.
         """
+        # The lifted IR is a DAG (shared continuation blocks). Mutating a shared
+        # node once applies along every path that references it, so prune already
+        # visited nodes to avoid exponential re-walks of converging control flow.
+        if _visited is None:
+            _visited = set()
+        if id(stmt) in _visited:
+            return False
+        _visited.add(id(stmt))
+
         made_change = False
 
         if isinstance(stmt, IRAssign):
@@ -2572,7 +2677,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
 
         for child in stmt.get_children():
             if child is not stmt:
-                if self._substitute_in_statement(child, target, replacement):
+                if self._substitute_in_statement(child, target, replacement, _visited):
                     made_change = True
 
         return made_change
@@ -2604,12 +2709,24 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
 
     def _is_local_redefined(self, local_to_check: IRLocal, statements: List[IRStatement]) -> bool:
         """Checks if a local is the target of an assignment in a list of statements."""
+        return self._is_local_redefined_walk(local_to_check, statements, set())
+
+    def _is_local_redefined_walk(
+        self, local_to_check: IRLocal, statements: List[IRStatement], visited: Set[int]
+    ) -> bool:
+        # The lifted IR is a DAG: shared continuation blocks are reachable from
+        # many parents, so prune already-scanned nodes. Whether a local is
+        # redefined inside a subtree is path-independent, so visiting it once is
+        # correct and avoids exponential re-walks of converging control flow.
         for stmt in statements:
+            if id(stmt) in visited:
+                continue
+            visited.add(id(stmt))
             if isinstance(stmt, IRAssign) and stmt.target == local_to_check:
                 return True
             for child in stmt.get_children():
                 child_stmts = child.statements if isinstance(child, IRBlock) else [child]
-                if self._is_local_redefined(local_to_check, child_stmts):
+                if self._is_local_redefined_walk(local_to_check, child_stmts, visited):
                     return True
         return False
 
@@ -2779,6 +2896,11 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
 
         block.statements = new_statements
 
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
     def _visit_block_aggressive(self, block: IRBlock) -> None:
         """Inlines safe expressions everywhere they are used, until no more changes can be made."""
         made_change_in_pass = True
@@ -2858,25 +2980,19 @@ class IRCopyPropOptimizer(TraversingIROptimizer):
     def visit_block(self, block: IRBlock) -> None:
         new_statements: List[IRStatement] = []
         for stmt in block.statements:
-            replacement = self._propagate(stmt)
+            replacement = self._propagate(stmt, block)
             if replacement is not None:
                 new_statements.append(replacement)
             else:
                 new_statements.append(stmt)
         block.statements = new_statements
 
-        for stmt in block.statements:
-            for child in stmt.get_children():
-                if isinstance(child, IRBlock):
-                    self.visit_block(child)
-
-    def _propagate(self, stmt: IRStatement) -> Optional[IRStatement]:
+    def _propagate(self, stmt: IRStatement, block: IRBlock) -> Optional[IRStatement]:
         # Branch-level copy propagation for switch/conditional merge temps.
         if isinstance(stmt, (IRConditional, IRSwitch)):
             copy = self._common_copy(stmt)
             if copy is not None:
                 temp_local, user_local = copy
-                block = self._find_parent_block(stmt)
                 if block is not None:
                     idx = block.statements.index(stmt)
                     for later in block.statements[idx + 1 :]:
@@ -2905,7 +3021,6 @@ class IRCopyPropOptimizer(TraversingIROptimizer):
         ):
             user_local = stmt.target
             temp_local = stmt.expr
-            block = self._find_parent_block(stmt)
             if block is not None:
                 idx = block.statements.index(stmt)
                 for later in block.statements[idx + 1 :]:
@@ -2924,21 +3039,6 @@ class IRCopyPropOptimizer(TraversingIROptimizer):
     def _is_synthetic_temp(local: IRLocal) -> bool:
         """Return True for compiler-generated `varN` temporaries (no debug name)."""
         return bool(re.fullmatch(r"var\d+", local.name))
-
-    def _find_parent_block(self, stmt: IRStatement) -> Optional[IRBlock]:
-        # Traversal state is not kept, so search from the root block.
-        return self._search_block(self.func.block, stmt)
-
-    def _search_block(self, block: IRBlock, target: IRStatement) -> Optional[IRBlock]:
-        if target in block.statements:
-            return block
-        for stmt in block.statements:
-            for child in stmt.get_children():
-                if isinstance(child, IRBlock):
-                    result = self._search_block(child, target)
-                    if result is not None:
-                        return result
-        return None
 
     def _common_copy(self, stmt: IRStatement) -> Optional[Tuple[IRLocal, IRLocal]]:
         """Return (temp_local, user_local) if all branches end with user_local = temp_local."""
@@ -3164,13 +3264,20 @@ class IRDeadTempEliminator(IROptimizer):
         # Only reached for `varN` names kept alive solely by register reuse.
         return bool(re.fullmatch(r"var\d+", local.name))
 
-    def _collect_all_used_names(self, block: IRBlock) -> Set[str]:
+    def _collect_all_used_names(self, block: IRBlock, _visited: Optional[Set[int]] = None) -> Set[str]:
+        # DAG-aware: shared continuation blocks are reachable from many parents,
+        # so prune already-visited blocks to avoid exponential re-walks.
+        if _visited is None:
+            _visited = set()
         used: Set[str] = set()
+        if id(block) in _visited:
+            return used
+        _visited.add(id(block))
         for stmt in block.statements:
             self._collect_used_in_stmt(stmt, used)
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
-                    used.update(self._collect_all_used_names(child))
+                    used.update(self._collect_all_used_names(child, _visited))
         return used
 
     def _collect_used_in_stmt(self, stmt: IRStatement, used: Set[str]) -> None:
@@ -3241,7 +3348,15 @@ class IRDeadTempEliminator(IROptimizer):
         user_names: Set[str],
         user_regs: Set[int],
         globally_used: Set[str],
+        _visited: Optional[Set[int]] = None,
     ) -> None:
+        # DAG-aware: prune already-processed shared blocks. Removing a dead temp
+        # in a shared block once applies to every path that references it.
+        if _visited is None:
+            _visited = set()
+        if id(block) in _visited:
+            return
+        _visited.add(id(block))
         new_stmts: List[IRStatement] = []
         for stmt in block.statements:
             if (
@@ -3267,7 +3382,7 @@ class IRDeadTempEliminator(IROptimizer):
         for stmt in block.statements:
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
-                    self._remove_dead(child, user_names, user_regs, globally_used)
+                    self._remove_dead(child, user_names, user_regs, globally_used, _visited)
 
 
 class IRDeadCodeEliminator(TraversingIROptimizer):
@@ -3287,7 +3402,6 @@ class IRDeadCodeEliminator(TraversingIROptimizer):
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
-
 
 class IRConstructorFolder(TraversingIROptimizer):
     """Folds `new X; __constructor__(x, args...)` into `new X(args...)`."""
@@ -3387,7 +3501,8 @@ class IRTraceOptimizer(TraversingIROptimizer):
             i = 0
             while i < len(block.statements):
                 stmt = block.statements[i]
-                dbg_print(f"[TraceOpt] Analyzing statement {i}: {stmt}")
+                if DEBUG:
+                    dbg_print(f"[TraceOpt] Analyzing statement {i}: {stmt}")
 
                 temp_local = None
                 start_idx = i
@@ -3437,7 +3552,8 @@ class IRTraceOptimizer(TraversingIROptimizer):
                                 continue
                             elif isinstance(next_stmt.expr, IRLocal):
                                 pos_info[field_name] = next_stmt.expr
-                                dbg_print(f"[TraceOpt]  -> Collected local field: {field_name} = {next_stmt.expr}")
+                                if DEBUG:
+                                    dbg_print(f"[TraceOpt]  -> Collected local field: {field_name} = {next_stmt.expr}")
                                 j += 1
                                 continue
                     elif isinstance(next_stmt, IRAssign) and isinstance(next_stmt.target, IRLocal):
@@ -3447,7 +3563,8 @@ class IRTraceOptimizer(TraversingIROptimizer):
 
                 if j < len(block.statements):
                     call_stmt = block.statements[j]
-                    dbg_print(f"[TraceOpt] Checking statement {j} as potential trace call: {call_stmt}")
+                    if DEBUG:
+                        dbg_print(f"[TraceOpt] Checking statement {j} as potential trace call: {call_stmt}")
 
                     is_valid_trace_call = False
                     if isinstance(call_stmt, IRCall) and len(call_stmt.args) == 2:
@@ -4399,7 +4516,7 @@ class IRForEachLoopOptimizer(TraversingIROptimizer):
         if isinstance(stmt, IRCall):
             if stmt.target is not None and self._expr_reads_local(stmt.target, local):
                 return True
-            return any(self._expr_reads_local(arg, local) for arg in expr.args)
+            return any(self._expr_reads_local(arg, local) for arg in stmt.args)
         if isinstance(stmt, IRConditional):
             if self._expr_reads_local(stmt.condition, local):
                 return True
@@ -4750,8 +4867,12 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         and UI16 (shift 1) arrays all recover correctly.
         """
         result: List[Tuple[IRArrayAccess, IRExpression]] = []
+        seen: Set[int] = set()
 
         def visit(node: IRStatement) -> None:
+            if id(node) in seen:
+                return
+            seen.add(id(node))
             if isinstance(node, IRArrayAccess):
                 if (
                     isinstance(node.array, IRLocal)
@@ -4768,10 +4889,15 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         return result
 
     def _replace_temp_accesses(
-        self, stmt: IRStatement, replacements: List[Tuple[IRArrayAccess, IRExpression]]
+        self, stmt: IRStatement, replacements: List[Tuple[IRArrayAccess, IRExpression]], _seen: Optional[Set[int]] = None
     ) -> IRStatement:
         if not replacements:
             return stmt
+        if _seen is None:
+            _seen = set()
+        if id(stmt) in _seen:
+            return stmt
+        _seen.add(id(stmt))
         old, new = replacements[0]
         if stmt is old:
             return new
@@ -4781,7 +4907,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                 self._replace_child(stmt, child, new)
                 return stmt
             else:
-                replaced = self._replace_temp_accesses(child, replacements)
+                replaced = self._replace_temp_accesses(child, replacements, _seen)
                 if replaced is not child:
                     self._replace_child(stmt, child, replaced)
                     return stmt
@@ -6245,6 +6371,10 @@ class IRFunction:
                         ),
                     )
                 )
+            elif op.op == "Neg":
+                dst_local = self.locals[op.df["dst"].value]
+                src_local = source_locals[op.df["src"].value]
+                block.statements.append(IRAssign(self.code, dst_local, IRNeg(self.code, src_local)))
             elif op.op == "GetMem":
                 dst_local = self.locals[op.df["dst"].value]
                 arr_local = source_locals[op.df["bytes"].value]

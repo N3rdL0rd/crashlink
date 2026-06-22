@@ -25,6 +25,7 @@ from .decomp import (
     IRLocal,
     IRConst,
     IRArithmetic,
+    IRNeg,
     IRBoolExpr,
     IRCall,
     IRConditional,
@@ -157,6 +158,12 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         # e.g., if expr.op.value in ["*", "/"] and (isinstance(expr.left, IRArithmetic) or isinstance(expr.right, IRArithmetic)):
         # For pseudocode, direct representation is often fine.
         return f"{left} {expr.op.value} {right}"
+
+    elif isinstance(expr, IRNeg):
+        inner = _expression_to_haxe(expr.expr, code, ir_function)
+        if isinstance(expr.expr, IRArithmetic):
+            inner = f"({inner})"
+        return f"-{inner}"
 
     elif isinstance(expr, IRBoolExpr):
         op_map = {
@@ -1308,6 +1315,8 @@ def _contains_local_name(local_name: str, stmt: IRStatement) -> bool:
         return _contains_local_name(local_name, stmt.array) or _contains_local_name(local_name, stmt.index)
     if isinstance(stmt, IRCast):
         return _contains_local_name(local_name, stmt.expr)
+    if isinstance(stmt, IRNeg):
+        return _contains_local_name(local_name, stmt.expr)
     if isinstance(stmt, IRRef):
         return _contains_local_name(local_name, stmt.target)
     if isinstance(stmt, IREnumConstruct):
@@ -1888,7 +1897,12 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
             return "Int"
         return "Int"
 
+    seen_upgrade: Set[int] = set()
+
     def _upgrade_bytes(stmt: IRStatement) -> None:
+        if id(stmt) in seen_upgrade:
+            return
+        seen_upgrade.add(id(stmt))
         if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRCall):
             call = stmt.expr
             if (
