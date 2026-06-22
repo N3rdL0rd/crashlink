@@ -358,15 +358,7 @@ Returns Dict[relative_path, content]. Dynamic/static pairs are merged into one p
     Checks if a function is static.
     &#34;&#34;&#34;
     # bindings are static functions, protos are dynamic
-    for type in code.types:
-        if type.kind.value == Type.TYPEDEFS.index(Obj):
-            if not isinstance(type.definition, Obj):
-                raise TypeError(f&#34;Expected Obj, got {type.definition}&#34;)
-            definition: Obj = type.definition
-            for binding in definition.bindings:
-                if binding.findex.value == func.findex.value:
-                    return True
-    return False</code></pre>
+    return func.findex.value in code.get_field_map()</code></pre>
 </details>
 <div class="desc"><p>Checks if a function is static.</p></div>
 </dd>
@@ -548,6 +540,10 @@ Returns Dict[relative_path, content]. Dynamic/static pairs are merged into one p
             return f&#34;reg{op.df[&#39;dst&#39;]} = Virtual(reg{op.df[&#39;src&#39;]})&#34;
         case &#34;Ref&#34;:
             return f&#34;reg{op.df[&#39;dst&#39;]} = &amp;reg{op.df[&#39;src&#39;]}&#34;
+        case &#34;Unref&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = *reg{op.df[&#39;src&#39;]}&#34;
+        case &#34;GetArray&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;array&#39;]}[reg{op.df[&#39;index&#39;]}]&#34;
         case &#34;SetMem&#34;:
             return f&#34;reg{op.df[&#39;bytes&#39;]}[reg{op.df[&#39;index&#39;]}] = reg{op.df[&#39;src&#39;]}&#34;
         case &#34;GetMem&#34;:
@@ -579,13 +575,19 @@ Returns Dict[relative_path, content]. Dynamic/static pairs are merged into one p
         case &#34;CallN&#34;:
             return f&#34;reg{op.df[&#39;dst&#39;]} = f@{op.df[&#39;fun&#39;]}({&#39;, &#39;.join([f&#39;reg{arg}&#39; for arg in op.df[&#39;args&#39;].value])})&#34;
         case &#34;CallThis&#34;:
+            args = &#34;, &#34;.join([f&#34;reg{arg}&#34; for arg in op.df[&#34;args&#34;].value])
             if not func:
-                return f&#34;reg{op.df[&#39;dst&#39;]} = this.field{op.df[&#39;field&#39;]}({&#39;, &#39;.join([f&#39;reg{arg}&#39; for arg in op.df[&#39;args&#39;].value])})&#34;
-            obj = func.regs[0].resolve(code)
-            assert isinstance(obj.definition, Obj), &#34;reg0 should be an Obj of the type of this (is this static?)&#34;
-            fields = obj.definition.resolve_fields(code)
-            field = fields[op.df[&#34;field&#34;].value]
-            return f&#34;reg{op.df[&#39;dst&#39;]} = this.{field.name.resolve(code)}({&#39;, &#39;.join([f&#39;reg{arg}&#39; for arg in op.df[&#39;args&#39;].value])})&#34;
+                return f&#34;reg{op.df[&#39;dst&#39;]} = this.field{op.df[&#39;field&#39;]}({args})&#34;
+            method = _method_name_for_field(code, func.regs[0].resolve(code), op.df[&#34;field&#34;].value)
+            return f&#34;reg{op.df[&#39;dst&#39;]} = this.{method}({args})&#34;
+        case &#34;CallMethod&#34;:
+            method_args = op.df[&#34;args&#34;].value
+            obj_reg = method_args[0].value if method_args else None
+            rest = &#34;, &#34;.join([f&#34;reg{arg}&#34; for arg in method_args[1:]])
+            if func is not None and obj_reg is not None:
+                method = _method_name_for_field(code, func.regs[obj_reg].resolve(code), op.df[&#34;field&#34;].value)
+                return f&#34;reg{op.df[&#39;dst&#39;]} = reg{obj_reg}.{method}({rest})&#34;
+            return f&#34;reg{op.df[&#39;dst&#39;]} = reg{obj_reg}.field{op.df[&#39;field&#39;]}({rest})&#34;
 
         # Error Handling
         case &#34;NullCheck&#34;:
@@ -733,11 +735,32 @@ Ret. 1
     mapping = {
         &#34;I32&#34;: &#34;Int&#34;,
         &#34;F64&#34;: &#34;Float&#34;,
+        &#34;F32&#34;: &#34;Single&#34;,
+        &#34;U16&#34;: &#34;hl.UI16&#34;,
+        &#34;UI16&#34;: &#34;hl.UI16&#34;,
         &#34;Bytes&#34;: &#34;hl.Bytes&#34;,
         &#34;Dyn&#34;: &#34;Dynamic&#34;,
         &#34;DynObj&#34;: &#34;Dynamic&#34;,
-        &#34;Fun&#34;: &#34;Function&#34;,
+        &#34;Fun&#34;: &#34;Dynamic&#34;,
     }
+    if type.startswith(&#34;hl.types.ArrayBytes_&#34;):
+        suffix = type[len(&#34;hl.types.ArrayBytes_&#34;) :]
+        element_map = {
+            &#34;Int&#34;: &#34;Int&#34;,
+            &#34;Float&#34;: &#34;Float&#34;,
+            &#34;Bool&#34;: &#34;Bool&#34;,
+            &#34;hl_F32&#34;: &#34;Single&#34;,
+            &#34;hl_UI16&#34;: &#34;hl.UI16&#34;,
+        }
+        return f&#34;Array&lt;{element_map.get(suffix, &#39;Dynamic&#39;)}&gt;&#34;
+    if type in (&#34;hl.types.ArrayObj&#34;, &#34;hl.types.ArrayDyn&#34;):
+        return &#34;Array&lt;Dynamic&gt;&#34;
+    if type == &#34;Array&#34;:
+        return &#34;Array&lt;Dynamic&gt;&#34;
+    if type in (&#34;Function&#34;, &#34;Native&#34;):
+        return &#34;Dynamic&#34;
+    if type == &#34;Null&#34;:
+        return &#34;Dynamic&#34;
     return destaticify(mapping.get(type, type))</code></pre>
 </details>
 <div class="desc"><p>Maps internal HashLink type names to Haxe type names.</p></div>

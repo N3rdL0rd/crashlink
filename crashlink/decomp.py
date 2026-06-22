@@ -2348,7 +2348,9 @@ class IRVoidAssignOptimizer(TraversingIROptimizer):
                     target_type_resolved = target.type.resolve(self.func.code)
                     if target_type_resolved.kind.value == Type.Kind.VOID.value:
                         if DEBUG:
-                            dbg_print(f"IRVoidAssignOptimizer: Removing void assignment: {stmt} (target: {target.name})")
+                            dbg_print(
+                                f"IRVoidAssignOptimizer: Removing void assignment: {stmt} (target: {target.name})"
+                            )
 
                         expr_being_kept = stmt.expr
                         new_statements.append(expr_being_kept)
@@ -3419,6 +3421,7 @@ class IRDeadCodeEliminator(TraversingIROptimizer):
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
+
 
 class IRConstructorFolder(TraversingIROptimizer):
     """Folds `new X; __constructor__(x, args...)` into `new X(args...)`."""
@@ -4879,7 +4882,10 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         return result
 
     def _replace_temp_accesses(
-        self, stmt: IRStatement, replacements: List[Tuple[IRArrayAccess, IRExpression]], _seen: Optional[Set[int]] = None
+        self,
+        stmt: IRStatement,
+        replacements: List[Tuple[IRArrayAccess, IRExpression]],
+        _seen: Optional[Set[int]] = None,
     ) -> IRStatement:
         if not replacements:
             return stmt
@@ -5465,10 +5471,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         # Haxe compiler will often constant-fold the whole array away.  Keep the
         # low-level allocation in that case so the recompiled bytecode stays close
         # to the original.
-        if (
-            isinstance(return_target, IRLocal)
-            and not self._array_literal_is_worth_recovering(return_target, stmts, i)
-        ):
+        if isinstance(return_target, IRLocal) and not self._array_literal_is_worth_recovering(return_target, stmts, i):
             return None
 
         if return_target is not None:

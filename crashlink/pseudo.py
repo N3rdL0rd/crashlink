@@ -315,9 +315,7 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
                 instance = _try_instance_method_call(expr.target.value, expr.args[0], code)
                 if instance is not None:
                     rest = expr.args[1:] if partial == "push" else []
-                    args_str = ", ".join(
-                        _expression_to_haxe(arg, code, ir_function) for arg in rest
-                    )
+                    args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in rest)
                     return f"{instance}({args_str})"
 
         if expr.call_type == IRCall.CallType.THIS and expr.target is None:
@@ -347,9 +345,7 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
                 instance_method = _try_instance_method_call(expr.target.value, expr.args[0], code)
                 if instance_method:
                     callee_str = instance_method
-                    args_str = ", ".join(
-                        _expression_to_haxe(arg, code, ir_function) for arg in expr.args[1:]
-                    )
+                    args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in expr.args[1:])
                     return f"{callee_str}({args_str})"
 
             callee_str = _expression_to_haxe(expr.target, code, ir_function)
@@ -374,22 +370,14 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         # that are not directly assignable to Array<T> locals. Insert a cast so
         # the decompiled output recompiles without changing the underlying call.
         call_name = ""
-        if (
-            expr.target is not None
-            and isinstance(expr.target, IRConst)
-            and isinstance(expr.target.value, Function)
-        ):
+        if expr.target is not None and isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function):
             call_name = code.full_func_name(expr.target.value) or code.partial_func_name(expr.target.value) or ""
         if "ArrayBase.alloc" in call_name:
             return f"cast {callee_str}({args_str})"
         # Mixed-type dynamic array literals lower to ArrayDyn.alloc([...], true).
         # Rendering the wrapper as the literal itself lets Haxe infer the target
         # as Array<Dynamic> and recompile.
-        if (
-            call_name.endswith("ArrayDyn.alloc")
-            and len(expr.args) == 2
-            and isinstance(expr.args[0], IRArrayLiteral)
-        ):
+        if call_name.endswith("ArrayDyn.alloc") and len(expr.args) == 2 and isinstance(expr.args[0], IRArrayLiteral):
             return f"({_expression_to_haxe(expr.args[0], code, ir_function)} : Array<Dynamic>)"
         return f"{callee_str}({args_str})"
 
@@ -597,7 +585,11 @@ def _generate_statements(
                 output_lines.append(f"{indent}if ({inv_cond}) {{")
                 output_lines.extend(
                     _generate_statements(
-                        false_stmts, code, ir_function, indent_level + 1, declared_vars_in_scope.copy(),
+                        false_stmts,
+                        code,
+                        ir_function,
+                        indent_level + 1,
+                        declared_vars_in_scope.copy(),
                         inline_declarations=inline_declarations,
                     )
                 )
@@ -608,7 +600,11 @@ def _generate_statements(
                 output_lines.append(f"{indent}if ({cond_str}) {{")
                 output_lines.extend(
                     _generate_statements(
-                        true_stmts, code, ir_function, indent_level + 1, declared_vars_in_scope.copy(),
+                        true_stmts,
+                        code,
+                        ir_function,
+                        indent_level + 1,
+                        declared_vars_in_scope.copy(),
                         inline_declarations=inline_declarations,
                     )
                 )
@@ -618,7 +614,11 @@ def _generate_statements(
                     output_lines.append(f"{indent}}} else {{")
                     output_lines.extend(
                         _generate_statements(
-                            false_stmts, code, ir_function, indent_level + 1, declared_vars_in_scope.copy(),
+                            false_stmts,
+                            code,
+                            ir_function,
+                            indent_level + 1,
+                            declared_vars_in_scope.copy(),
                             inline_declarations=inline_declarations,
                         )
                     )
@@ -628,7 +628,11 @@ def _generate_statements(
                     # Render former else block as plain statements (no else keyword needed)
                     output_lines.extend(
                         _generate_statements(
-                            false_stmts, code, ir_function, indent_level, declared_vars_in_scope.copy(),
+                            false_stmts,
+                            code,
+                            ir_function,
+                            indent_level,
+                            declared_vars_in_scope.copy(),
                             inline_declarations=inline_declarations,
                         )
                     )
@@ -758,16 +762,12 @@ def _generate_statements(
                 target, case_exprs, default_expr = expr_switch
                 if stmt in inline_declarations:
                     local_name, type_str = inline_declarations[stmt]
-                    output_lines.append(
-                        f"{indent}var {local_name}: {type_str} = switch ({enum_value_str}) {{"
-                    )
+                    output_lines.append(f"{indent}var {local_name}: {type_str} = switch ({enum_value_str}) {{")
                     declared_vars_in_scope.add(local_name)
                 else:
                     output_lines.append(f"{indent}{target.name} = switch ({enum_value_str}) {{")
                 for case_value, case_block in stmt.cases.items():
-                    case_str = _case_value_to_haxe(
-                        case_value, enum_type, code, ir_function
-                    )
+                    case_str = _case_value_to_haxe(case_value, enum_type, code, ir_function)
                     expr_str = _expression_to_haxe(case_exprs[case_value], code, ir_function)
                     output_lines.append(f"{indent}    case {case_str}: {expr_str};")
                 if default_expr is not None:
@@ -788,11 +788,9 @@ def _generate_statements(
                 switch_value_expr = stmt.value
             for case_value, case_block in stmt.cases.items():
                 param_names = _enum_case_params(case_block, switch_value_expr)
-                case_str = _case_value_to_haxe(
-                    case_value, enum_type, code, ir_function, param_names
-                )
+                case_str = _case_value_to_haxe(case_value, enum_type, code, ir_function, param_names)
                 output_lines.append(f"{indent}    case {case_str}:")
-                case_statements = case_block.statements[len(param_names) if param_names else 0:]
+                case_statements = case_block.statements[len(param_names) if param_names else 0 :]
                 output_lines.extend(
                     _generate_statements(
                         case_statements,
@@ -936,9 +934,7 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
                 if debug_idx < len(arg_assigns):
                     param_name = arg_assigns[debug_idx][0].resolve(code)
 
-            param_type_decl = (
-                f": {arg_haxe_type_name}" if arg_haxe_type_name else ""
-            )
+            param_type_decl = f": {arg_haxe_type_name}" if arg_haxe_type_name else ""
             params_str_list.append(f"{param_name}{param_type_decl}")
 
         ret_core_type = core_fun_type_def.ret.resolve(code)
@@ -1018,7 +1014,11 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
         output_lines.append(f"    var {local_name}: {type_str}{init};")
 
     body_lines = _generate_statements(
-        ir_func.block.statements, code, ir_func, base_indent + 1, initial_declared_vars,
+        ir_func.block.statements,
+        code,
+        ir_func,
+        base_indent + 1,
+        initial_declared_vars,
         inline_declarations=inline_declarations,
     )
     # Suppress trailing bare `return;` for Void functions and constructors — it's implicit.
@@ -1172,9 +1172,7 @@ def _branch_definitely_assigns(local_name: str, stmt: IRStatement) -> bool:
     if isinstance(stmt, IRConditional):
         if stmt.false_block is None or _contains_local_name(local_name, stmt.condition):
             return False
-        return _assigns_before_read(local_name, stmt.true_block) and _assigns_before_read(
-            local_name, stmt.false_block
-        )
+        return _assigns_before_read(local_name, stmt.true_block) and _assigns_before_read(local_name, stmt.false_block)
     if isinstance(stmt, IRSwitch):
         if stmt.default is None or _contains_local_name(local_name, stmt.value):
             return False
@@ -1236,22 +1234,28 @@ def _find_inner_defining_assignment(local_name: str, block: IRBlock) -> Optional
     compound_types = (IRTryCatch, IRConditional, IRSwitch, IRWhileLoop, IRPrimitiveLoop)
     compound_stmts = [s for s in block.statements if isinstance(s, compound_types)]
     non_compound = [s for s in block.statements if not isinstance(s, compound_types)]
-    if any(_contains_local_name(local_name, s) or _find_assignment_recursive(local_name, s) is not None
-           for s in non_compound):
+    if any(
+        _contains_local_name(local_name, s) or _find_assignment_recursive(local_name, s) is not None
+        for s in non_compound
+    ):
         return None
     # Must appear in exactly one compound statement.
-    containing = [s for s in compound_stmts
-                  if _find_assignment_recursive(local_name, s) is not None
-                  or _contains_local_name(local_name, s)]
+    containing = [
+        s
+        for s in compound_stmts
+        if _find_assignment_recursive(local_name, s) is not None or _contains_local_name(local_name, s)
+    ]
     if len(containing) != 1:
         return None
     stmt = containing[0]
 
     if isinstance(stmt, IRTryCatch):
-        in_try = (_find_assignment_recursive(local_name, stmt.try_block) is not None
-                  or _contains_local_name(local_name, stmt.try_block))
-        in_catch = (_find_assignment_recursive(local_name, stmt.catch_block) is not None
-                    or _contains_local_name(local_name, stmt.catch_block))
+        in_try = _find_assignment_recursive(local_name, stmt.try_block) is not None or _contains_local_name(
+            local_name, stmt.try_block
+        )
+        in_catch = _find_assignment_recursive(local_name, stmt.catch_block) is not None or _contains_local_name(
+            local_name, stmt.catch_block
+        )
         if in_try and not in_catch:
             # Use _find_defining_assignment on the sub-block to ensure it's safe.
             return _find_defining_assignment(local_name, stmt.try_block)
@@ -1261,12 +1265,14 @@ def _find_inner_defining_assignment(local_name: str, block: IRBlock) -> Optional
     elif isinstance(stmt, IRConditional):
         true_block = stmt.true_block
         false_block = stmt.false_block
-        in_true = (true_block is not None
-                   and (_find_assignment_recursive(local_name, true_block) is not None
-                        or _contains_local_name(local_name, true_block)))
-        in_false = (false_block is not None
-                    and (_find_assignment_recursive(local_name, false_block) is not None
-                         or _contains_local_name(local_name, false_block)))
+        in_true = true_block is not None and (
+            _find_assignment_recursive(local_name, true_block) is not None
+            or _contains_local_name(local_name, true_block)
+        )
+        in_false = false_block is not None and (
+            _find_assignment_recursive(local_name, false_block) is not None
+            or _contains_local_name(local_name, false_block)
+        )
         if in_true and not in_false:
             return _find_defining_assignment(local_name, true_block)
         if in_false and not in_true:
@@ -1275,13 +1281,16 @@ def _find_inner_defining_assignment(local_name: str, block: IRBlock) -> Optional
     elif isinstance(stmt, IRSwitch):
         candidate_block: Optional[IRBlock] = None
         for case_block in stmt.cases.values():
-            if (_find_assignment_recursive(local_name, case_block) is not None
-                    or _contains_local_name(local_name, case_block)):
+            if _find_assignment_recursive(local_name, case_block) is not None or _contains_local_name(
+                local_name, case_block
+            ):
                 if candidate_block is not None:
                     return None
                 candidate_block = case_block
-        if stmt.default and (_find_assignment_recursive(local_name, stmt.default) is not None
-                             or _contains_local_name(local_name, stmt.default)):
+        if stmt.default and (
+            _find_assignment_recursive(local_name, stmt.default) is not None
+            or _contains_local_name(local_name, stmt.default)
+        ):
             if candidate_block is not None:
                 return None
             candidate_block = stmt.default
@@ -1308,9 +1317,8 @@ def _contains_local_name(local_name: str, stmt: IRStatement) -> bool:
     if isinstance(stmt, IRArithmetic):
         return _contains_local_name(local_name, stmt.left) or _contains_local_name(local_name, stmt.right)
     if isinstance(stmt, IRBoolExpr):
-        return (
-            (stmt.left is not None and _contains_local_name(local_name, stmt.left))
-            or (stmt.right is not None and _contains_local_name(local_name, stmt.right))
+        return (stmt.left is not None and _contains_local_name(local_name, stmt.left)) or (
+            stmt.right is not None and _contains_local_name(local_name, stmt.right)
         )
     if isinstance(stmt, IRCall):
         if stmt.target is not None and _contains_local_name(local_name, stmt.target):
@@ -1399,9 +1407,7 @@ def _find_assignment_recursive(local_name: str, stmt: IRStatement) -> Optional[I
     return None
 
 
-def _flatten_string_concat(
-    expr: IRExpression, code: Bytecode
-) -> Optional[List[IRExpression]]:
+def _flatten_string_concat(expr: IRExpression, code: Bytecode) -> Optional[List[IRExpression]]:
     """Flatten a nested chain of String.__add__ calls into an ordered operand list.
 
     `(((a + b) + c) + d)` is stored as nested two-arg __add__ calls; return
@@ -1434,9 +1440,7 @@ def _flatten_string_concat(
 _INTERP_SAFE_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-def _render_string_concat(
-    expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction]
-) -> Optional[str]:
+def _render_string_concat(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
     """Render a String.__add__ chain as Haxe.
 
     Dense chains (with several interpolated values) become single-quote string
@@ -1514,9 +1518,17 @@ def _try_simplify_string_alloc(expr: IRExpression, code: Bytecode, ir_function: 
     int_expr: Optional[IRExpression] = None
     bytes_expr = expr.args[0]
 
-    if isinstance(bytes_expr, IRCall) and isinstance(bytes_expr.target, IRConst) and isinstance(bytes_expr.target.value, Native):
+    if (
+        isinstance(bytes_expr, IRCall)
+        and isinstance(bytes_expr.target, IRConst)
+        and isinstance(bytes_expr.target.value, Native)
+    ):
         native = bytes_expr.target.value
-        if native.name.resolve(code) == "itos" and len(bytes_expr.args) >= 1 and isinstance(bytes_expr.args[0], IRLocal):
+        if (
+            native.name.resolve(code) == "itos"
+            and len(bytes_expr.args) >= 1
+            and isinstance(bytes_expr.args[0], IRLocal)
+        ):
             int_expr = bytes_expr.args[0]
     elif isinstance(bytes_expr, IRLocal):
         # The itos result may have been inlined into a temporary local.
@@ -1637,8 +1649,10 @@ def _case_value_to_haxe(
         if idx < len(enum_type.constructs):
             construct = enum_type.constructs[idx]
             name = construct.name.resolve(code)
-            params = param_names if param_names else (
-                [f"arg{i}" for i in range(len(construct.params))] if construct.params else []
+            params = (
+                param_names
+                if param_names
+                else ([f"arg{i}" for i in range(len(construct.params))] if construct.params else [])
             )
             if params:
                 return f"{name}({', '.join(params)})"
@@ -1671,9 +1685,7 @@ def _is_constructor_call(func: "Function", code: Bytecode) -> bool:
     return parts[1] == "__constructor__"
 
 
-def _rewrite_constructor_call(
-    call: IRCall, code: Bytecode, ir_function: Optional[IRFunction]
-) -> Optional[str]:
+def _rewrite_constructor_call(call: IRCall, code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
     """Rewrite a call to a static __constructor__ into Haxe syntax.
 
     - `__constructor__(new X())` -> `new X()`
@@ -1696,7 +1708,12 @@ def _rewrite_constructor_call(
         # object; the Haxe `new` expression already includes the constructor.
         return _expression_to_haxe(arg, code, ir_function)
 
-    if isinstance(arg, IRLocal) and arg.name == "var0" and ir_function is not None and getattr(ir_function, "_is_constructor", False):
+    if (
+        isinstance(arg, IRLocal)
+        and arg.name == "var0"
+        and ir_function is not None
+        and getattr(ir_function, "_is_constructor", False)
+    ):
         # Inside a constructor the first local is the implicit `this`.
         # Calling the superclass constructor becomes `super()`.
         containing = getattr(ir_function, "_containing_class", None)
@@ -1713,9 +1730,7 @@ def _rewrite_constructor_call(
     return None
 
 
-def _try_instance_method_call(
-    func: "Function", first_arg: IRExpression, code: Bytecode
-) -> Optional[str]:
+def _try_instance_method_call(func: "Function", first_arg: IRExpression, code: Bytecode) -> Optional[str]:
     """If func is an instance method and first_arg is the `this` argument,
     return Haxe syntax `expr.methodName` for the call target."""
     parts = _func_name_parts(func, code)
@@ -1820,9 +1835,7 @@ def _base_class_for_virtual_method(func: "Function", code: Bytecode) -> Optional
     return None
 
 
-def _virtual_receiver_static_types(
-    ir_function: IRFunction, code: Bytecode
-) -> Dict[str, str]:
+def _virtual_receiver_static_types(ir_function: IRFunction, code: Bytecode) -> Dict[str, str]:
     """Map receiver local names to the static superclass type implied by virtual
     dispatch (e.g. myObject -> Base when myObject is used as a Base closure)."""
     result: Dict[str, str] = {}
@@ -1914,11 +1927,7 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
         seen_upgrade.add(id(stmt))
         if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRCall):
             call = stmt.expr
-            if (
-                call.target is not None
-                and isinstance(call.target, IRConst)
-                and isinstance(call.target.value, Function)
-            ):
+            if call.target is not None and isinstance(call.target, IRConst) and isinstance(call.target.value, Function):
                 func = call.target.value
                 name = root.code.full_func_name(func) or root.code.partial_func_name(func) or ""
                 if "ArrayBase.alloc" in name and call.args:

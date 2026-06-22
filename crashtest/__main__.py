@@ -18,10 +18,16 @@ def main() -> None:
     run_parser = subparsers.add_parser("run", help="Run one or all test cases")
     run_parser.add_argument("name", nargs="?", help="Test case name (file name or display name); omit to run all")
     run_parser.add_argument("--show-orig", "-o", action="store_true", help="Print the original Haxe source")
-    run_parser.add_argument("--show-decompiled", "-d", action="store_true", default=True, help="Print decompiled output")
-    run_parser.add_argument("--no-decompiled", action="store_false", dest="show_decompiled", help="Hide decompiled output")
+    run_parser.add_argument(
+        "--show-decompiled", "-d", action="store_true", default=True, help="Print decompiled output"
+    )
+    run_parser.add_argument(
+        "--no-decompiled", action="store_false", dest="show_decompiled", help="Hide decompiled output"
+    )
     run_parser.add_argument("--show-ir", "-i", action="store_true", help="Print the lifted IR")
-    run_parser.add_argument("--no-recompile", "-n", action="store_true", help="Skip recompilation and opcode comparison")
+    run_parser.add_argument(
+        "--no-recompile", "-n", action="store_true", help="Skip recompilation and opcode comparison"
+    )
     run_parser.add_argument("--no-diff", action="store_true", help="Skip opcode diff output")
     run_parser.add_argument("--verbose", "-v", action="store_true", help="Show all available details")
 

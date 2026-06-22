@@ -165,6 +165,178 @@ class GitInfo:
 </dd>
 </dl>
 </dd>
+<dt id="crashtest.models.MethodComparison"><code class="flex name class">
+<span>class <span class="ident">MethodComparison</span></span>
+<span>(</span><span>name: str,<br>similarity: float,<br>original_count: int,<br>recompiled_count: int,<br>orig_disasm: str = '',<br>recomp_disasm: str = '',<br>error: str | None = None)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dataclass
+class MethodComparison:
+    &#34;&#34;&#34;Opcode-level comparison result for a single method.&#34;&#34;&#34;
+
+    name: str
+    similarity: float
+    original_count: int
+    recompiled_count: int
+    orig_disasm: str = &#34;&#34;
+    recomp_disasm: str = &#34;&#34;
+    error: Optional[str] = None
+
+    def to_json(self) -&gt; dict:
+        return asdict(self)
+
+    @classmethod
+    def from_json(cls, data: dict) -&gt; &#34;MethodComparison&#34;:
+        return cls(
+            name=data[&#34;name&#34;],
+            similarity=data[&#34;similarity&#34;],
+            original_count=data[&#34;original_count&#34;],
+            recompiled_count=data[&#34;recompiled_count&#34;],
+            orig_disasm=data.get(&#34;orig_disasm&#34;, &#34;&#34;),
+            recomp_disasm=data.get(&#34;recomp_disasm&#34;, &#34;&#34;),
+            error=data.get(&#34;error&#34;),
+        )</code></pre>
+</details>
+<div class="desc"><p>Opcode-level comparison result for a single method.</p></div>
+<h3>Static methods</h3>
+<dl>
+<dt id="crashtest.models.MethodComparison.from_json"><code class="name flex">
+<span>def <span class="ident">from_json</span></span>(<span>data: dict) ‑> <a title="crashtest.models.MethodComparison" href="#crashtest.models.MethodComparison">MethodComparison</a></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashtest.models.MethodComparison.error"><code class="name">var <span class="ident">error</span> : str | None</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.MethodComparison.name"><code class="name">var <span class="ident">name</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.MethodComparison.orig_disasm"><code class="name">var <span class="ident">orig_disasm</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.MethodComparison.original_count"><code class="name">var <span class="ident">original_count</span> : int</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.MethodComparison.recomp_disasm"><code class="name">var <span class="ident">recomp_disasm</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.MethodComparison.recompiled_count"><code class="name">var <span class="ident">recompiled_count</span> : int</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.MethodComparison.similarity"><code class="name">var <span class="ident">similarity</span> : float</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashtest.models.MethodComparison.to_json"><code class="name flex">
+<span>def <span class="ident">to_json</span></span>(<span>self) ‑> dict</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def to_json(self) -&gt; dict:
+    return asdict(self)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashtest.models.OpcodeComparison"><code class="flex name class">
+<span>class <span class="ident">OpcodeComparison</span></span>
+<span>(</span><span>overall_similarity: float,<br>methods: List[<a title="crashtest.models.MethodComparison" href="#crashtest.models.MethodComparison">MethodComparison</a>] = &lt;factory&gt;,<br>recompile_error: str | None = None)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dataclass
+class OpcodeComparison:
+    &#34;&#34;&#34;Opcode-level comparison between original and recompiled bytecode.&#34;&#34;&#34;
+
+    overall_similarity: float
+    methods: List[MethodComparison] = field(default_factory=list)
+    recompile_error: Optional[str] = None
+
+    def to_json(self) -&gt; dict:
+        return {
+            &#34;overall_similarity&#34;: self.overall_similarity,
+            &#34;methods&#34;: [m.to_json() for m in self.methods],
+            &#34;recompile_error&#34;: self.recompile_error,
+        }
+
+    @classmethod
+    def from_json(cls, data: dict) -&gt; &#34;OpcodeComparison&#34;:
+        return cls(
+            overall_similarity=data[&#34;overall_similarity&#34;],
+            methods=[MethodComparison.from_json(m) for m in data.get(&#34;methods&#34;, [])],
+            recompile_error=data.get(&#34;recompile_error&#34;),
+        )</code></pre>
+</details>
+<div class="desc"><p>Opcode-level comparison between original and recompiled bytecode.</p></div>
+<h3>Static methods</h3>
+<dl>
+<dt id="crashtest.models.OpcodeComparison.from_json"><code class="name flex">
+<span>def <span class="ident">from_json</span></span>(<span>data: dict) ‑> <a title="crashtest.models.OpcodeComparison" href="#crashtest.models.OpcodeComparison">OpcodeComparison</a></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashtest.models.OpcodeComparison.methods"><code class="name">var <span class="ident">methods</span> : List[<a title="crashtest.models.MethodComparison" href="#crashtest.models.MethodComparison">MethodComparison</a>]</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.OpcodeComparison.overall_similarity"><code class="name">var <span class="ident">overall_similarity</span> : float</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.OpcodeComparison.recompile_error"><code class="name">var <span class="ident">recompile_error</span> : str | None</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashtest.models.OpcodeComparison.to_json"><code class="name flex">
+<span>def <span class="ident">to_json</span></span>(<span>self) ‑> dict</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def to_json(self) -&gt; dict:
+    return {
+        &#34;overall_similarity&#34;: self.overall_similarity,
+        &#34;methods&#34;: [m.to_json() for m in self.methods],
+        &#34;recompile_error&#34;: self.recompile_error,
+    }</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
 <dt id="crashtest.models.Run"><code class="flex name class">
 <span>class <span class="ident">Run</span></span>
 <span>(</span><span>git: <a title="crashtest.models.GitInfo" href="#crashtest.models.GitInfo">GitInfo</a>,<br>context: <a title="crashtest.models.TestContext" href="#crashtest.models.TestContext">TestContext</a>,<br>cases: List[<a title="crashtest.models.TestCase" href="#crashtest.models.TestCase">TestCase</a>],<br>id: str,<br>timestamp: str,<br>status: str,<br>status_color: str = '#a6e3a1')</span>
@@ -187,6 +359,16 @@ class Run:
     timestamp: str
     status: str
     status_color: str = &#34;#a6e3a1&#34;
+
+    def avg_similarity(self) -&gt; Optional[float]:
+        scores = [
+            c.opcode_comparison.overall_similarity
+            for c in self.cases
+            if c.opcode_comparison and c.opcode_comparison.overall_similarity &gt;= 0
+        ]
+        if not scores:
+            return None
+        return sum(scores) / len(scores)
 
     def to_json(self) -&gt; dict:
         return {
@@ -254,6 +436,26 @@ class Run:
 </dl>
 <h3>Methods</h3>
 <dl>
+<dt id="crashtest.models.Run.avg_similarity"><code class="name flex">
+<span>def <span class="ident">avg_similarity</span></span>(<span>self) ‑> float | None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def avg_similarity(self) -&gt; Optional[float]:
+    scores = [
+        c.opcode_comparison.overall_similarity
+        for c in self.cases
+        if c.opcode_comparison and c.opcode_comparison.overall_similarity &gt;= 0
+    ]
+    if not scores:
+        return None
+    return sum(scores) / len(scores)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
 <dt id="crashtest.models.Run.to_json"><code class="name flex">
 <span>def <span class="ident">to_json</span></span>(<span>self) ‑> dict</span>
 </code></dt>
@@ -279,7 +481,7 @@ class Run:
 </dd>
 <dt id="crashtest.models.TestCase"><code class="flex name class">
 <span>class <span class="ident">TestCase</span></span>
-<span>(</span><span>original: <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a>,<br>decompiled: <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a>,<br>ir: <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a>,<br>test_id: int,<br>failed: bool,<br>test_name: str | None = None,<br>error: str | None = None)</span>
+<span>(</span><span>original: <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a>,<br>decompiled: <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a>,<br>ir: <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a>,<br>test_id: int,<br>failed: bool,<br>test_name: str | None = None,<br>error: str | None = None,<br>opcode_comparison: <a title="crashtest.models.OpcodeComparison" href="#crashtest.models.OpcodeComparison">OpcodeComparison</a> | None = None,<br>layers: Dict[str, Any] | None = None)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -299,6 +501,8 @@ class TestCase:
     failed: bool
     test_name: Optional[str] = None
     error: Optional[str] = None
+    opcode_comparison: Optional[OpcodeComparison] = None
+    layers: Optional[Dict[str, Any]] = None
 
     def to_json(self) -&gt; dict:
         return {
@@ -309,10 +513,13 @@ class TestCase:
             &#34;test_name&#34;: self.test_name,
             &#34;failed&#34;: self.failed,
             &#34;error&#34;: self.error,
+            &#34;opcode_comparison&#34;: self.opcode_comparison.to_json() if self.opcode_comparison else None,
+            &#34;layers&#34;: self.layers,
         }
 
     @classmethod
     def from_json(cls, data: dict) -&gt; &#34;TestCase&#34;:
+        oc_data = data.get(&#34;opcode_comparison&#34;)
         return cls(
             original=TestFile.from_json(data[&#34;original&#34;]),
             decompiled=TestFile.from_json(data[&#34;decompiled&#34;]),
@@ -320,7 +527,9 @@ class TestCase:
             test_id=data[&#34;test_id&#34;],
             test_name=data[&#34;test_name&#34;],
             failed=data[&#34;failed&#34;],
-            error=data[&#34;error&#34;] if data[&#34;error&#34;] else None,
+            error=data[&#34;error&#34;] if data.get(&#34;error&#34;) else None,
+            opcode_comparison=OpcodeComparison.from_json(oc_data) if oc_data else None,
+            layers=data.get(&#34;layers&#34;),
         )</code></pre>
 </details>
 <div class="desc"><p>Represents a test case.</p></div>
@@ -348,6 +557,14 @@ class TestCase:
 <div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 <dt id="crashtest.models.TestCase.ir"><code class="name">var <span class="ident">ir</span> : <a title="crashtest.models.TestFile" href="#crashtest.models.TestFile">TestFile</a></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.TestCase.layers"><code class="name">var <span class="ident">layers</span> : Dict[str, Any] | None</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.TestCase.opcode_comparison"><code class="name">var <span class="ident">opcode_comparison</span> : <a title="crashtest.models.OpcodeComparison" href="#crashtest.models.OpcodeComparison">OpcodeComparison</a> | None</code></dt>
 <dd>
 <div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
@@ -383,6 +600,8 @@ class TestCase:
         &#34;test_name&#34;: self.test_name,
         &#34;failed&#34;: self.failed,
         &#34;error&#34;: self.error,
+        &#34;opcode_comparison&#34;: self.opcode_comparison.to_json() if self.opcode_comparison else None,
+        &#34;layers&#34;: self.layers,
     }</code></pre>
 </details>
 <div class="desc"></div>
@@ -544,8 +763,33 @@ class TestFile:
 </ul>
 </li>
 <li>
+<h4><code><a title="crashtest.models.MethodComparison" href="#crashtest.models.MethodComparison">MethodComparison</a></code></h4>
+<ul class="two-column">
+<li><code><a title="crashtest.models.MethodComparison.error" href="#crashtest.models.MethodComparison.error">error</a></code></li>
+<li><code><a title="crashtest.models.MethodComparison.from_json" href="#crashtest.models.MethodComparison.from_json">from_json</a></code></li>
+<li><code><a title="crashtest.models.MethodComparison.name" href="#crashtest.models.MethodComparison.name">name</a></code></li>
+<li><code><a title="crashtest.models.MethodComparison.orig_disasm" href="#crashtest.models.MethodComparison.orig_disasm">orig_disasm</a></code></li>
+<li><code><a title="crashtest.models.MethodComparison.original_count" href="#crashtest.models.MethodComparison.original_count">original_count</a></code></li>
+<li><code><a title="crashtest.models.MethodComparison.recomp_disasm" href="#crashtest.models.MethodComparison.recomp_disasm">recomp_disasm</a></code></li>
+<li><code><a title="crashtest.models.MethodComparison.recompiled_count" href="#crashtest.models.MethodComparison.recompiled_count">recompiled_count</a></code></li>
+<li><code><a title="crashtest.models.MethodComparison.similarity" href="#crashtest.models.MethodComparison.similarity">similarity</a></code></li>
+<li><code><a title="crashtest.models.MethodComparison.to_json" href="#crashtest.models.MethodComparison.to_json">to_json</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashtest.models.OpcodeComparison" href="#crashtest.models.OpcodeComparison">OpcodeComparison</a></code></h4>
+<ul class="">
+<li><code><a title="crashtest.models.OpcodeComparison.from_json" href="#crashtest.models.OpcodeComparison.from_json">from_json</a></code></li>
+<li><code><a title="crashtest.models.OpcodeComparison.methods" href="#crashtest.models.OpcodeComparison.methods">methods</a></code></li>
+<li><code><a title="crashtest.models.OpcodeComparison.overall_similarity" href="#crashtest.models.OpcodeComparison.overall_similarity">overall_similarity</a></code></li>
+<li><code><a title="crashtest.models.OpcodeComparison.recompile_error" href="#crashtest.models.OpcodeComparison.recompile_error">recompile_error</a></code></li>
+<li><code><a title="crashtest.models.OpcodeComparison.to_json" href="#crashtest.models.OpcodeComparison.to_json">to_json</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="crashtest.models.Run" href="#crashtest.models.Run">Run</a></code></h4>
 <ul class="two-column">
+<li><code><a title="crashtest.models.Run.avg_similarity" href="#crashtest.models.Run.avg_similarity">avg_similarity</a></code></li>
 <li><code><a title="crashtest.models.Run.cases" href="#crashtest.models.Run.cases">cases</a></code></li>
 <li><code><a title="crashtest.models.Run.context" href="#crashtest.models.Run.context">context</a></code></li>
 <li><code><a title="crashtest.models.Run.from_json" href="#crashtest.models.Run.from_json">from_json</a></code></li>
@@ -565,6 +809,8 @@ class TestFile:
 <li><code><a title="crashtest.models.TestCase.failed" href="#crashtest.models.TestCase.failed">failed</a></code></li>
 <li><code><a title="crashtest.models.TestCase.from_json" href="#crashtest.models.TestCase.from_json">from_json</a></code></li>
 <li><code><a title="crashtest.models.TestCase.ir" href="#crashtest.models.TestCase.ir">ir</a></code></li>
+<li><code><a title="crashtest.models.TestCase.layers" href="#crashtest.models.TestCase.layers">layers</a></code></li>
+<li><code><a title="crashtest.models.TestCase.opcode_comparison" href="#crashtest.models.TestCase.opcode_comparison">opcode_comparison</a></code></li>
 <li><code><a title="crashtest.models.TestCase.original" href="#crashtest.models.TestCase.original">original</a></code></li>
 <li><code><a title="crashtest.models.TestCase.test_id" href="#crashtest.models.TestCase.test_id">test_id</a></code></li>
 <li><code><a title="crashtest.models.TestCase.test_name" href="#crashtest.models.TestCase.test_name">test_name</a></code></li>

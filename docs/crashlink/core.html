@@ -400,8 +400,82 @@ you.</p>
 
         self.section_offsets: Dict[str, int] = {}
         self.cached_all: List[Type] | None = None
+        self._findex_map: Dict[int, &#34;Function | Native&#34;] | None = None
+        self._proto_map: Dict[int, &#34;Proto&#34;] | None = None
+        self._field_map: Dict[int, &#34;Field&#34;] | None = None
+        self._proto_owner_map: Dict[int, &#34;Obj&#34;] | None = None
+        self._field_owner_map: Dict[int, &#34;Obj&#34;] | None = None
 
         self.virtuals_built = False
+
+    def invalidate_findex_cache(self) -&gt; None:
+        &#34;&#34;&#34;
+        Invalidates the lazily-built findex -&gt; Function|Native map. Call this after mutating
+        `self.functions` or `self.natives` outside of normal deserialisation.
+        &#34;&#34;&#34;
+        self._findex_map = None
+
+    def invalidate_proto_field_cache(self) -&gt; None:
+        &#34;&#34;&#34;
+        Invalidates the lazily-built findex -&gt; Proto/Field maps. Call this after mutating
+        `self.types` (or a type&#39;s `protos`/`bindings`) outside of normal deserialisation.
+        &#34;&#34;&#34;
+        self._proto_map = None
+        self._field_map = None
+        self._proto_owner_map = None
+        self._field_owner_map = None
+
+    def _build_proto_field_maps(self) -&gt; None:
+        proto_map: Dict[int, &#34;Proto&#34;] = {}
+        field_map: Dict[int, &#34;Field&#34;] = {}
+        proto_owner_map: Dict[int, &#34;Obj&#34;] = {}
+        field_owner_map: Dict[int, &#34;Obj&#34;] = {}
+        for typ in self.types:
+            if isinstance(typ.definition, Obj):
+                definition = typ.definition
+                for proto in definition.protos:
+                    proto_map[proto.findex.value] = proto
+                    proto_owner_map[proto.findex.value] = definition
+                fields = definition.resolve_fields(self)
+                for binding in definition.bindings:
+                    field_map[binding.findex.value] = fields[binding.field.value]
+                    field_owner_map[binding.findex.value] = definition
+        self._proto_map = proto_map
+        self._field_map = field_map
+        self._proto_owner_map = proto_owner_map
+        self._field_owner_map = field_owner_map
+
+    def get_proto_map(self) -&gt; Dict[int, &#34;Proto&#34;]:
+        &#34;&#34;&#34;
+        Returns a lazily-built map of fIndex value -&gt; Proto, for fast resolution of which
+        Obj type/method a standalone function index belongs to.
+        &#34;&#34;&#34;
+        if self._proto_map is None:
+            self._build_proto_field_maps()
+        assert self._proto_map is not None
+        return self._proto_map
+
+    def get_field_map(self) -&gt; Dict[int, &#34;Field&#34;]:
+        &#34;&#34;&#34;
+        Returns a lazily-built map of fIndex value -&gt; Field, for fast resolution of which
+        Obj type/field a standalone function index is bound to.
+        &#34;&#34;&#34;
+        if self._field_map is None:
+            self._build_proto_field_maps()
+        assert self._field_map is not None
+        return self._field_map
+
+    def get_findex_map(self) -&gt; Dict[int, &#34;Function | Native&#34;]:
+        &#34;&#34;&#34;
+        Returns a lazily-built map of fIndex value -&gt; Function|Native, for fast resolution.
+        &#34;&#34;&#34;
+        if self._findex_map is None:
+            self._findex_map = {}
+            for function in self.functions:
+                self._findex_map[function.findex.value] = function
+            for native in self.natives:
+                self._findex_map[native.findex.value] = native
+        return self._findex_map
 
     def _build_virtual_tables(self) -&gt; None:
         &#34;&#34;&#34;
@@ -778,13 +852,9 @@ you.</p>
         &#34;&#34;&#34;
         Shorthand to to get a Function or a Native by its fIndex.
         &#34;&#34;&#34;
-        for f in self.functions:
-            if f.findex.value == findex:
-                return f
-        if native:
-            for n in self.natives:
-                if n.findex.value == findex:
-                    return n
+        found = self.get_findex_map().get(findex)
+        if found is not None and (native or isinstance(found, Function)):
+            return found
         raise ValueError(f&#34;Function {findex} not found!&#34;)
 
     def t(self, tindex: int) -&gt; Type:
@@ -1067,6 +1137,7 @@ you.</p>
         Adds a type and returns its tIndex.
         &#34;&#34;&#34;
         self.types.append(typ)
+        self.invalidate_proto_field_cache()
         return tIndex(len(self.types) - 1)
 
     def gather_types(self) -&gt; List[Type]:
@@ -1176,53 +1247,55 @@ you.</p>
         &#34;&#34;&#34;
         Gets the field for a standalone function index.
         &#34;&#34;&#34;
-        for type in self.types:
-            if isinstance(type.definition, Obj):
-                definition: Obj = type.definition
-                fields = definition.resolve_fields(self)
-                for binding in definition.bindings:  # binding binds a field to a function
-                    if binding.findex.value == idx:
-                        return fields[binding.field.value]
-        return None
+        return self.get_field_map().get(idx)
 
     def get_proto_for(self, idx: int) -&gt; Optional[Proto]:
         &#34;&#34;&#34;
         Gets the proto for a standalone function index.
         &#34;&#34;&#34;
-        for type in self.types:
-            if isinstance(type.definition, Obj):
-                definition: Obj = type.definition
-                for proto in definition.protos:
-                    if proto.findex.value == idx:
-                        return proto
+        return self.get_proto_map().get(idx)
+
+    def proto_by_pindex(self, obj: &#34;Obj&#34;, pindex: int) -&gt; Optional[Proto]:
+        &#34;&#34;&#34;
+        Resolves a method proto by its virtual-table index (``pindex``) across a
+        class hierarchy. CallMethod/CallThis/InstanceClosure address methods by
+        this index rather than by data-field index, so the proto must be looked
+        up by walking from the most-derived class up through its superclasses
+        (the most-derived override wins).
+        &#34;&#34;&#34;
+        current: Optional[Obj] = obj
+        visited: set[int] = set()
+        while current is not None and id(current) not in visited:
+            visited.add(id(current))
+            for proto in current.protos:
+                if proto.pindex.value == pindex:
+                    return proto
+            if current.super is None or current.super.value &lt; 0:
+                break
+            super_def = current.super.resolve(self).definition
+            current = super_def if isinstance(super_def, Obj) else None
         return None
 
     def full_func_name(self, func: Function | Native) -&gt; str:
         &#34;&#34;&#34;
         Generates a human-readable name for a function or native.
         &#34;&#34;&#34;
-        proto = self.get_proto_for(func.findex.value)
+        idx = func.findex.value
+        proto = self.get_proto_map().get(idx)
         if proto:
             name = proto.name.resolve(self)
-            for type in self.types:
-                if isinstance(type.definition, Obj):
-                    obj_def: Obj = type.definition
-                    for fun in obj_def.protos:
-                        if fun.findex.value == func.findex.value:
-                            return f&#34;{obj_def.name.resolve(self)}.{name}&#34;
-        else:
-            name = &#34;&lt;none&gt;&#34;
-            field = self.get_field_for(func.findex.value)
-            if field:
-                name = field.name.resolve(self)
-                for type in self.types:
-                    if isinstance(type.definition, Obj):
-                        _obj_def: Obj = type.definition
-                        fields = _obj_def.resolve_fields(self)
-                        for binding in _obj_def.bindings:
-                            if binding.findex.value == func.findex.value:
-                                return f&#34;{_obj_def.name.resolve(self)}.{name}&#34;
-        return name
+            owner = self._proto_owner_map.get(idx) if self._proto_owner_map else None
+            if owner:
+                return f&#34;{owner.name.resolve(self)}.{name}&#34;
+            return name
+        field = self.get_field_map().get(idx)
+        if field:
+            name = field.name.resolve(self)
+            owner = self._field_owner_map.get(idx) if self._field_owner_map else None
+            if owner:
+                return f&#34;{owner.name.resolve(self)}.{name}&#34;
+            return name
+        return &#34;&lt;none&gt;&#34;
 
     def partial_func_name(self, func: Function | Native) -&gt; str:
         &#34;&#34;&#34;
@@ -1322,6 +1395,7 @@ you.</p>
     Adds a type and returns its tIndex.
     &#34;&#34;&#34;
     self.types.append(typ)
+    self.invalidate_proto_field_cache()
     return tIndex(len(self.types) - 1)</code></pre>
 </details>
 <div class="desc"><p>Adds a type and returns its tIndex.</p></div>
@@ -1551,13 +1625,9 @@ you.</p>
     &#34;&#34;&#34;
     Shorthand to to get a Function or a Native by its fIndex.
     &#34;&#34;&#34;
-    for f in self.functions:
-        if f.findex.value == findex:
-            return f
-    if native:
-        for n in self.natives:
-            if n.findex.value == findex:
-                return n
+    found = self.get_findex_map().get(findex)
+    if found is not None and (native or isinstance(found, Function)):
+        return found
     raise ValueError(f&#34;Function {findex} not found!&#34;)</code></pre>
 </details>
 <div class="desc"><p>Shorthand to to get a Function or a Native by its fIndex.</p></div>
@@ -1574,28 +1644,22 @@ you.</p>
     &#34;&#34;&#34;
     Generates a human-readable name for a function or native.
     &#34;&#34;&#34;
-    proto = self.get_proto_for(func.findex.value)
+    idx = func.findex.value
+    proto = self.get_proto_map().get(idx)
     if proto:
         name = proto.name.resolve(self)
-        for type in self.types:
-            if isinstance(type.definition, Obj):
-                obj_def: Obj = type.definition
-                for fun in obj_def.protos:
-                    if fun.findex.value == func.findex.value:
-                        return f&#34;{obj_def.name.resolve(self)}.{name}&#34;
-    else:
-        name = &#34;&lt;none&gt;&#34;
-        field = self.get_field_for(func.findex.value)
-        if field:
-            name = field.name.resolve(self)
-            for type in self.types:
-                if isinstance(type.definition, Obj):
-                    _obj_def: Obj = type.definition
-                    fields = _obj_def.resolve_fields(self)
-                    for binding in _obj_def.bindings:
-                        if binding.findex.value == func.findex.value:
-                            return f&#34;{_obj_def.name.resolve(self)}.{name}&#34;
-    return name</code></pre>
+        owner = self._proto_owner_map.get(idx) if self._proto_owner_map else None
+        if owner:
+            return f&#34;{owner.name.resolve(self)}.{name}&#34;
+        return name
+    field = self.get_field_map().get(idx)
+    if field:
+        name = field.name.resolve(self)
+        owner = self._field_owner_map.get(idx) if self._field_owner_map else None
+        if owner:
+            return f&#34;{owner.name.resolve(self)}.{name}&#34;
+        return name
+    return &#34;&lt;none&gt;&#34;</code></pre>
 </details>
 <div class="desc"><p>Generates a human-readable name for a function or native.</p></div>
 </dd>
@@ -1747,16 +1811,52 @@ and recursively explores all types contained within them.</p></div>
     &#34;&#34;&#34;
     Gets the field for a standalone function index.
     &#34;&#34;&#34;
-    for type in self.types:
-        if isinstance(type.definition, Obj):
-            definition: Obj = type.definition
-            fields = definition.resolve_fields(self)
-            for binding in definition.bindings:  # binding binds a field to a function
-                if binding.findex.value == idx:
-                    return fields[binding.field.value]
-    return None</code></pre>
+    return self.get_field_map().get(idx)</code></pre>
 </details>
 <div class="desc"><p>Gets the field for a standalone function index.</p></div>
+</dd>
+<dt id="crashlink.core.Bytecode.get_field_map"><code class="name flex">
+<span>def <span class="ident">get_field_map</span></span>(<span>self) ‑> Dict[int, <a title="crashlink.core.Field" href="#crashlink.core.Field">Field</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_field_map(self) -&gt; Dict[int, &#34;Field&#34;]:
+    &#34;&#34;&#34;
+    Returns a lazily-built map of fIndex value -&gt; Field, for fast resolution of which
+    Obj type/field a standalone function index is bound to.
+    &#34;&#34;&#34;
+    if self._field_map is None:
+        self._build_proto_field_maps()
+    assert self._field_map is not None
+    return self._field_map</code></pre>
+</details>
+<div class="desc"><p>Returns a lazily-built map of fIndex value -&gt; Field, for fast resolution of which
+Obj type/field a standalone function index is bound to.</p></div>
+</dd>
+<dt id="crashlink.core.Bytecode.get_findex_map"><code class="name flex">
+<span>def <span class="ident">get_findex_map</span></span>(<span>self) ‑> Dict[int, <a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a> | <a title="crashlink.core.Native" href="#crashlink.core.Native">Native</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_findex_map(self) -&gt; Dict[int, &#34;Function | Native&#34;]:
+    &#34;&#34;&#34;
+    Returns a lazily-built map of fIndex value -&gt; Function|Native, for fast resolution.
+    &#34;&#34;&#34;
+    if self._findex_map is None:
+        self._findex_map = {}
+        for function in self.functions:
+            self._findex_map[function.findex.value] = function
+        for native in self.natives:
+            self._findex_map[native.findex.value] = native
+    return self._findex_map</code></pre>
+</details>
+<div class="desc"><p>Returns a lazily-built map of fIndex value -&gt; Function|Native, for fast resolution.</p></div>
 </dd>
 <dt id="crashlink.core.Bytecode.get_proto_for"><code class="name flex">
 <span>def <span class="ident">get_proto_for</span></span>(<span>self, idx: int) ‑> <a title="crashlink.core.Proto" href="#crashlink.core.Proto">Proto</a> | None</span>
@@ -1770,15 +1870,30 @@ and recursively explores all types contained within them.</p></div>
     &#34;&#34;&#34;
     Gets the proto for a standalone function index.
     &#34;&#34;&#34;
-    for type in self.types:
-        if isinstance(type.definition, Obj):
-            definition: Obj = type.definition
-            for proto in definition.protos:
-                if proto.findex.value == idx:
-                    return proto
-    return None</code></pre>
+    return self.get_proto_map().get(idx)</code></pre>
 </details>
 <div class="desc"><p>Gets the proto for a standalone function index.</p></div>
+</dd>
+<dt id="crashlink.core.Bytecode.get_proto_map"><code class="name flex">
+<span>def <span class="ident">get_proto_map</span></span>(<span>self) ‑> Dict[int, <a title="crashlink.core.Proto" href="#crashlink.core.Proto">Proto</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_proto_map(self) -&gt; Dict[int, &#34;Proto&#34;]:
+    &#34;&#34;&#34;
+    Returns a lazily-built map of fIndex value -&gt; Proto, for fast resolution of which
+    Obj type/method a standalone function index belongs to.
+    &#34;&#34;&#34;
+    if self._proto_map is None:
+        self._build_proto_field_maps()
+    assert self._proto_map is not None
+    return self._proto_map</code></pre>
+</details>
+<div class="desc"><p>Returns a lazily-built map of fIndex value -&gt; Proto, for fast resolution of which
+Obj type/method a standalone function index belongs to.</p></div>
 </dd>
 <dt id="crashlink.core.Bytecode.get_test_main"><code class="name flex">
 <span>def <span class="ident">get_test_main</span></span>(<span>self) ‑> <a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a></span>
@@ -1856,6 +1971,45 @@ and recursively explores all types contained within them.</p></div>
     self.initialized_globals = final</code></pre>
 </details>
 <div class="desc"><p>Internal method to initialize global instances of objects.</p></div>
+</dd>
+<dt id="crashlink.core.Bytecode.invalidate_findex_cache"><code class="name flex">
+<span>def <span class="ident">invalidate_findex_cache</span></span>(<span>self) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def invalidate_findex_cache(self) -&gt; None:
+    &#34;&#34;&#34;
+    Invalidates the lazily-built findex -&gt; Function|Native map. Call this after mutating
+    `self.functions` or `self.natives` outside of normal deserialisation.
+    &#34;&#34;&#34;
+    self._findex_map = None</code></pre>
+</details>
+<div class="desc"><p>Invalidates the lazily-built findex -&gt; Function|Native map. Call this after mutating
+<code>self.functions</code> or <code>self.natives</code> outside of normal deserialisation.</p></div>
+</dd>
+<dt id="crashlink.core.Bytecode.invalidate_proto_field_cache"><code class="name flex">
+<span>def <span class="ident">invalidate_proto_field_cache</span></span>(<span>self) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def invalidate_proto_field_cache(self) -&gt; None:
+    &#34;&#34;&#34;
+    Invalidates the lazily-built findex -&gt; Proto/Field maps. Call this after mutating
+    `self.types` (or a type&#39;s `protos`/`bindings`) outside of normal deserialisation.
+    &#34;&#34;&#34;
+    self._proto_map = None
+    self._field_map = None
+    self._proto_owner_map = None
+    self._field_owner_map = None</code></pre>
+</details>
+<div class="desc"><p>Invalidates the lazily-built findex -&gt; Proto/Field maps. Call this after mutating
+<code>self.types</code> (or a type's <code>protos</code>/<code>bindings</code>) outside of normal deserialisation.</p></div>
 </dd>
 <dt id="crashlink.core.Bytecode.is_ok"><code class="name flex">
 <span>def <span class="ident">is_ok</span></span>(<span>self) ‑> bool</span>
@@ -2026,6 +2180,41 @@ and recursively explores all types contained within them.</p></div>
     return &#34;&lt;none&gt;&#34;</code></pre>
 </details>
 <div class="desc"><p>Generates a human-readable name for a function or native. Does not qualify the name with the object it belongs to.</p></div>
+</dd>
+<dt id="crashlink.core.Bytecode.proto_by_pindex"><code class="name flex">
+<span>def <span class="ident">proto_by_pindex</span></span>(<span>self,<br>obj: "'<a title="crashlink.core.Obj" href="#crashlink.core.Obj">Obj</a>'",<br>pindex: int) ‑> <a title="crashlink.core.Proto" href="#crashlink.core.Proto">Proto</a> | None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def proto_by_pindex(self, obj: &#34;Obj&#34;, pindex: int) -&gt; Optional[Proto]:
+    &#34;&#34;&#34;
+    Resolves a method proto by its virtual-table index (``pindex``) across a
+    class hierarchy. CallMethod/CallThis/InstanceClosure address methods by
+    this index rather than by data-field index, so the proto must be looked
+    up by walking from the most-derived class up through its superclasses
+    (the most-derived override wins).
+    &#34;&#34;&#34;
+    current: Optional[Obj] = obj
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        for proto in current.protos:
+            if proto.pindex.value == pindex:
+                return proto
+        if current.super is None or current.super.value &lt; 0:
+            break
+        super_def = current.super.resolve(self).definition
+        current = super_def if isinstance(super_def, Obj) else None
+    return None</code></pre>
+</details>
+<div class="desc"><p>Resolves a method proto by its virtual-table index (<code>pindex</code>) across a
+class hierarchy. CallMethod/CallThis/InstanceClosure address methods by
+this index rather than by data-field index, so the proto must be looked
+up by walking from the most-derived class up through its superclasses
+(the most-derived override wins).</p></div>
 </dd>
 <dt id="crashlink.core.Bytecode.repair"><code class="name flex">
 <span>def <span class="ident">repair</span></span>(<span>self) ‑> None</span>
@@ -12361,13 +12550,10 @@ attributes &ndash; see the documentation for details.</p></div>
     __slots__ = ()
 
     def resolve(self, code: &#34;Bytecode&#34;) -&gt; &#34;Function|Native&#34;:
-        for function in code.functions:
-            if function.findex.value == self.value:
-                return function
-        for native in code.natives:
-            if native.findex.value == self.value:
-                return native
-        raise MalformedBytecode(f&#34;Function index {self.value} not found.&#34;)</code></pre>
+        found = code.get_findex_map().get(self.value)
+        if found is None:
+            raise MalformedBytecode(f&#34;Function index {self.value} not found.&#34;)
+        return found</code></pre>
 </details>
 <div class="desc"><p>Abstract class based on VarInt to represent a distinct function index instead of just an arbitrary number.</p></div>
 <h3>Ancestors</h3>
@@ -12893,7 +13079,7 @@ attributes &ndash; see the documentation for details.</p></div>
 </li>
 <li>
 <h4><code><a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></code></h4>
-<ul class="two-column">
+<ul class="">
 <li><code><a title="crashlink.core.Bytecode.add_i32" href="#crashlink.core.Bytecode.add_i32">add_i32</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.add_string" href="#crashlink.core.Bytecode.add_string">add_string</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.add_type" href="#crashlink.core.Bytecode.add_type">add_type</a></code></li>
@@ -12908,14 +13094,20 @@ attributes &ndash; see the documentation for details.</p></div>
 <li><code><a title="crashlink.core.Bytecode.g" href="#crashlink.core.Bytecode.g">g</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.gather_types" href="#crashlink.core.Bytecode.gather_types">gather_types</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.get_field_for" href="#crashlink.core.Bytecode.get_field_for">get_field_for</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.get_field_map" href="#crashlink.core.Bytecode.get_field_map">get_field_map</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.get_findex_map" href="#crashlink.core.Bytecode.get_findex_map">get_findex_map</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.get_proto_for" href="#crashlink.core.Bytecode.get_proto_for">get_proto_for</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.get_proto_map" href="#crashlink.core.Bytecode.get_proto_map">get_proto_map</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.get_test_main" href="#crashlink.core.Bytecode.get_test_main">get_test_main</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.get_test_obj" href="#crashlink.core.Bytecode.get_test_obj">get_test_obj</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.init_globals" href="#crashlink.core.Bytecode.init_globals">init_globals</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.invalidate_findex_cache" href="#crashlink.core.Bytecode.invalidate_findex_cache">invalidate_findex_cache</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.invalidate_proto_field_cache" href="#crashlink.core.Bytecode.invalidate_proto_field_cache">invalidate_proto_field_cache</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.is_ok" href="#crashlink.core.Bytecode.is_ok">is_ok</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.map_statics" href="#crashlink.core.Bytecode.map_statics">map_statics</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.next_free_findex" href="#crashlink.core.Bytecode.next_free_findex">next_free_findex</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.partial_func_name" href="#crashlink.core.Bytecode.partial_func_name">partial_func_name</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.proto_by_pindex" href="#crashlink.core.Bytecode.proto_by_pindex">proto_by_pindex</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.repair" href="#crashlink.core.Bytecode.repair">repair</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.section_at" href="#crashlink.core.Bytecode.section_at">section_at</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.serialise" href="#crashlink.core.Bytecode.serialise">serialise</a></code></li>

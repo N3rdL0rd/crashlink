@@ -375,6 +375,11 @@ el.replaceWith(d);
         Computes post-dominators by running the dominator algorithm on the
         reversed graph. Handles multiple exit points by creating a virtual exit.
         A node &#39;p&#39; post-dominates &#39;n&#39; if all paths from &#39;n&#39; to exit pass through &#39;p&#39;.
+
+        In the reversed graph G&#39;, edges are reversed: u→v in G becomes v→u in G&#39;.
+        The virtual EXIT is the start of G&#39;. For the dominator algorithm on G&#39;:
+            preds_G&#39;(n) = successors_G(n)
+        Exit nodes (no successors in G) connect only to VIRTUAL_EXIT in G&#39;.
         &#34;&#34;&#34;
         all_nodes = self.nodes
         exit_nodes = [n for n in all_nodes if not n.branches]
@@ -384,25 +389,23 @@ el.replaceWith(d);
             self.post_dominators = {}
             return
 
-        # Reverse the graph edges
-        reversed_successors = {n: self.predecessors.get(n, []) for n in all_nodes}
-
-        # Use a virtual exit node to handle multiple exits gracefully
+        # Use a virtual exit node to unify all original exit nodes.
         VIRTUAL_EXIT = CFNode([])
-        reversed_successors[VIRTUAL_EXIT] = exit_nodes
         nodes_for_pd_analysis = all_nodes + [VIRTUAL_EXIT]
 
-        # Run the iterative dominator algorithm on the reversed graph
+        # Run the iterative dominator algorithm on the reversed graph.
         pd = {node: set(nodes_for_pd_analysis) for node in nodes_for_pd_analysis}
         pd[VIRTUAL_EXIT] = {VIRTUAL_EXIT}
 
         changed = True
         while changed:
             changed = False
-            for node in sorted(all_nodes, key=lambda n: n.base_offset):  # Process in fixed order
-                preds_in_reversed_graph = reversed_successors.get(node, [])
+            for node in sorted(all_nodes, key=lambda n: n.base_offset):
+                # In G&#39;, predecessors of `node` = successors of `node` in G.
+                # Exit nodes (no successors in G) connect to VIRTUAL_EXIT in G&#39;.
+                preds_in_reversed_graph = [target for target, _ in node.branches]
                 if not preds_in_reversed_graph:
-                    continue
+                    preds_in_reversed_graph = [VIRTUAL_EXIT]
 
                 pred_pdom_sets = [pd[p] for p in preds_in_reversed_graph]
                 new_pd = {node}.union(set.intersection(*pred_pdom_sets))
@@ -1180,6 +1183,7 @@ attributes &ndash; see the documentation for details.</p></div>
         self.statements: List[IRStatement] = []
 
     def pprint(self) -&gt; str:
+        global _repr_rendered_blocks
         colors = [36, 31, 32, 33, 34, 35]
 
         depth = id(self) % len(colors)
@@ -1188,16 +1192,37 @@ attributes &ndash; see the documentation for details.</p></div>
         if not self.statements:
             return f&#34;\033[{color}m[\033[0m\033[{color}m]\033[0m&#34;
 
-        # uniform indentation
-        statements = pformat(self.statements, indent=0).replace(&#34;\n&#34;, &#34;\n\t&#34;)
+        top = _repr_rendered_blocks is None
+        if top:
+            _repr_rendered_blocks = set()
+        try:
+            if id(self) in _repr_rendered_blocks:  # type: ignore[operator]
+                return f&#34;\033[{color}m[...]\033[0m&#34;
+            _repr_rendered_blocks.add(id(self))  # type: ignore[union-attr]
+            # uniform indentation
+            statements = pformat(self.statements, indent=0).replace(&#34;\n&#34;, &#34;\n\t&#34;)
+        finally:
+            if top:
+                _repr_rendered_blocks = None
 
         return f&#34;\033[{color}m[\033[0m\n\t{statements}\n\033[{color}m]\033[0m&#34;
 
     def __repr__(self) -&gt; str:
+        global _repr_rendered_blocks
         if not self.statements:
             return &#34;[]&#34;
 
-        statements = pformat(self.statements, indent=0).replace(&#34;\n&#34;, &#34;\n\t&#34;)
+        top = _repr_rendered_blocks is None
+        if top:
+            _repr_rendered_blocks = set()
+        try:
+            if id(self) in _repr_rendered_blocks:  # type: ignore[operator]
+                return &#34;[...]&#34;
+            _repr_rendered_blocks.add(id(self))  # type: ignore[union-attr]
+            statements = pformat(self.statements, indent=0).replace(&#34;\n&#34;, &#34;\n\t&#34;)
+        finally:
+            if top:
+                _repr_rendered_blocks = None
 
         return &#34;[\n\t&#34; + statements + &#34;\n]&#34;
 
@@ -1237,6 +1262,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def pprint(self) -&gt; str:
+    global _repr_rendered_blocks
     colors = [36, 31, 32, 33, 34, 35]
 
     depth = id(self) % len(colors)
@@ -1245,8 +1271,18 @@ attributes &ndash; see the documentation for details.</p></div>
     if not self.statements:
         return f&#34;\033[{color}m[\033[0m\033[{color}m]\033[0m&#34;
 
-    # uniform indentation
-    statements = pformat(self.statements, indent=0).replace(&#34;\n&#34;, &#34;\n\t&#34;)
+    top = _repr_rendered_blocks is None
+    if top:
+        _repr_rendered_blocks = set()
+    try:
+        if id(self) in _repr_rendered_blocks:  # type: ignore[operator]
+            return f&#34;\033[{color}m[...]\033[0m&#34;
+        _repr_rendered_blocks.add(id(self))  # type: ignore[union-attr]
+        # uniform indentation
+        statements = pformat(self.statements, indent=0).replace(&#34;\n&#34;, &#34;\n\t&#34;)
+    finally:
+        if top:
+            _repr_rendered_blocks = None
 
     return f&#34;\033[{color}m[\033[0m\n\t{statements}\n\033[{color}m]\033[0m&#34;</code></pre>
 </details>
@@ -1295,10 +1331,7 @@ attributes &ndash; see the documentation for details.</p></div>
 
     def get_type(self) -&gt; Type:
         # Boolean expressions always return bool type
-        for type in self.code.types:
-            if disasm.type_name(self.code, type) == &#34;Bool&#34;:
-                return type
-        raise DecompError(&#34;Bool type not found in code&#34;)
+        return _get_type_in_code(self.code, &#34;Bool&#34;)
 
     def invert(self) -&gt; None:
         if self.op == IRBoolExpr.CompareType.NOT:
@@ -1329,6 +1362,14 @@ attributes &ndash; see the documentation for details.</p></div>
             self.op = IRBoolExpr.CompareType.GT
         else:
             raise DecompError(f&#34;Unknown IRBoolExpr type: {self.op}&#34;)
+
+    def get_children(self) -&gt; List[IRStatement]:
+        children: List[IRStatement] = []
+        if self.left is not None:
+            children.append(self.left)
+        if self.right is not None:
+            children.append(self.right)
+        return children
 
     def __repr__(self) -&gt; str:
         if self.op in [IRBoolExpr.CompareType.NULL, IRBoolExpr.CompareType.NOT_NULL]:
@@ -1406,6 +1447,24 @@ attributes &ndash; see the documentation for details.</p></div>
 </dl>
 <h3>Methods</h3>
 <dl>
+<dt id="crashlink.decomp.IRBoolExpr.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    children: List[IRStatement] = []
+    if self.left is not None:
+        children.append(self.left)
+    if self.right is not None:
+        children.append(self.right)
+    return children</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
 <dt id="crashlink.decomp.IRBoolExpr.invert"><code class="name flex">
 <span>def <span class="ident">invert</span></span>(<span>self) ‑> None</span>
 </code></dt>
@@ -1538,13 +1597,17 @@ attributes &ndash; see the documentation for details.</p></div>
     def get_type(self) -&gt; Type:
         # for now, assume closure calls return dynamic type
         if self.call_type == IRCall.CallType.CLOSURE:
-            for type in self.code.types:
-                if disasm.type_name(self.code, type) == &#34;Dyn&#34;:
-                    return type
-            raise DecompError(&#34;Dyn type not found in code&#34;)
+            return _get_type_in_code(self.code, &#34;Dyn&#34;)
         if self.call_type == IRCall.CallType.THIS or self.target is None:
             return _get_type_in_code(self.code, &#34;Obj&#34;)
         return self.target.get_type()
+
+    def get_children(self) -&gt; List[IRStatement]:
+        children: List[IRStatement] = []
+        if self.target is not None:
+            children.append(self.target)
+        children.extend(self.args)
+        return children
 
     def __repr__(self) -&gt; str:
         return f&#34;&lt;IRCall: {self.target}({&#39;, &#39;.join([str(arg) for arg in self.args])})&gt;&#34;</code></pre>
@@ -1610,6 +1673,26 @@ attributes &ndash; see the documentation for details.</p></div>
 </code></pre>
 <p>Methods can be added to enumerations, and members can have their own
 attributes &ndash; see the documentation for details.</p></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRCall.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    children: List[IRStatement] = []
+    if self.target is not None:
+        children.append(self.target)
+    children.extend(self.args)
+    return children</code></pre>
+</details>
+<div class="desc"></div>
 </dd>
 </dl>
 <h3>Inherited members</h3>
@@ -1937,6 +2020,7 @@ attributes &ndash; see the documentation for details.</p></div>
 <ul class="hlist">
 <li><a title="crashlink.decomp.IRArithmetic" href="#crashlink.decomp.IRArithmetic">IRArithmetic</a></li>
 <li>crashlink.decomp.IRArrayAccess</li>
+<li>crashlink.decomp.IRArrayLiteral</li>
 <li><a title="crashlink.decomp.IRBoolExpr" href="#crashlink.decomp.IRBoolExpr">IRBoolExpr</a></li>
 <li><a title="crashlink.decomp.IRCall" href="#crashlink.decomp.IRCall">IRCall</a></li>
 <li>crashlink.decomp.IRCast</li>
@@ -1946,7 +2030,9 @@ attributes &ndash; see the documentation for details.</p></div>
 <li>crashlink.decomp.IREnumIndex</li>
 <li>crashlink.decomp.IRField</li>
 <li><a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a></li>
+<li>crashlink.decomp.IRNeg</li>
 <li>crashlink.decomp.IRNew</li>
+<li>crashlink.decomp.IRNot</li>
 <li><a title="crashlink.decomp.IRPrimitiveJump" href="#crashlink.decomp.IRPrimitiveJump">IRPrimitiveJump</a></li>
 <li>crashlink.decomp.IRRef</li>
 <li>crashlink.decomp.IRUnliftedOpcode</li>
@@ -1985,7 +2071,7 @@ def get_type(self) -&gt; Type:
 </dd>
 <dt id="crashlink.decomp.IRFunction"><code class="flex name class">
 <span>class <span class="ident">IRFunction</span></span>
-<span>(</span><span>code: Bytecode, func: Function, do_optimize: bool = True, no_lift: bool = False)</span>
+<span>(</span><span>code: Bytecode,<br>func: Function,<br>do_optimize: bool = True,<br>no_lift: bool = False,<br>capture_layers: bool = False)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2003,39 +2089,61 @@ def get_type(self) -&gt; Type:
         func: Function,
         do_optimize: bool = True,
         no_lift: bool = False,
+        capture_layers: bool = False,
     ) -&gt; None:
         self.func = func
         self.cfg = CFGraph(func)
         self.cfg.build()
         self.code = code
+        self._enum_global_map = _build_enum_global_map(code)
         self.ops = func.ops
         self.locals: List[IRLocal] = []
         self.block: IRBlock
+        self.capture_layers = capture_layers
+        self.opcodes: str = &#34;&#34;
+        self.cfg_data: Dict[str, List[Dict[str, Any]]] = {&#34;nodes&#34;: [], &#34;edges&#34;: []}
+        self.layer_snapshots: List[Tuple[str, str]] = []
+        self._lift_cache: Dict[Tuple[Optional[&#34;CFNode&#34;], Optional[&#34;CFNode&#34;], int], IRBlock] = {}
         self._lift(no_lift=no_lift)
         if do_optimize:
             self.optimizers: List[IROptimizer] = [
                 IRBlockFlattener(self),
+                IRConstructorFolder(self),
                 IRPrimitiveJumpLifter(self),
                 IRGlobalStringOptimizer(self),
+                IRStringIntConcatOptimizer(self),
                 IRConditionInliner(self),
                 IRLoopConditionOptimizer(self),
                 IRSelfAssignOptimizer(self),
                 IRCommonBlockMerger(self),
+                IRRedundantContinueEliminator(self),
+                IRCopyPropOptimizer(self),
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRTempAssignmentInliner(self, aggressive=True),
                 IRDeadTempEliminator(self),
                 IRDeadCodeEliminator(self),
+                IRArrayPatternOptimizer(self),
+                IRTempAssignmentInliner(self, aggressive=False),
                 IRVoidAssignOptimizer(self),
-                IRConstructorFolder(self),
+                IRDeadCodeEliminator(self),
+                IRSelfAssignOptimizer(self),
                 IRTraceOptimizer(self),
+                IRStringConcatFolder(self),
+                IRIntSwitchOptimizer(self),
+                IRStringSwitchOptimizer(self),
+                IREnumSwitchOptimizer(self),
+                IRDeadTempEliminator(self),
+                IRDeadCodeEliminator(self),
                 IRBlockFlattener(self),
+                IRLoopRerollOptimizer(self),
+                IRForEachLoopOptimizer(self),
             ]
             self._optimize()
 
     def _lift(self, no_lift: bool = False) -&gt; None:
         &#34;&#34;&#34;Lift function to IR&#34;&#34;&#34;
         for i, reg in enumerate(self.func.regs):
-            self.locals.append(IRLocal(f&#34;var{i}&#34;, reg, code=self.code))
+            self.locals.append(IRLocal(f&#34;var{i}&#34;, reg, code=self.code, reg_idx=i))
         self._build_assign_map()
         self._name_locals()
         if not no_lift:
@@ -2078,7 +2186,17 @@ def get_type(self) -&gt; Type:
     def _split_local(self, reg_idx: int, name: str) -&gt; IRLocal:
         &#34;&#34;&#34;Create a new IRLocal for a register with a specific name (SSA-esque split).&#34;&#34;&#34;
         reg_type = self.func.regs[reg_idx]
-        new_local = IRLocal(name, reg_type, code=self.code)
+        new_type = reg_type.resolve(self.code)
+        # Avoid name collisions only with a different register of a different
+        # type.  Same-type duplicates are usually the same source variable split
+        # across registers.
+        base_name = name
+        suffix = 1
+        existing_names = {loc.name for i, loc in enumerate(self.locals) if i != reg_idx and loc.get_type() != new_type}
+        while name in existing_names:
+            name = f&#34;{base_name}{suffix}&#34;
+            suffix += 1
+        new_local = IRLocal(name, reg_type, code=self.code, reg_idx=reg_idx)
         self.locals[reg_idx] = new_local
         return new_local
 
@@ -2099,12 +2217,100 @@ def get_type(self) -&gt; Type:
             dbg_print(disasm.func(self.code, self.func))
             dbg_print(f&#34;----- LLIL -----&#34;)
             dbg_print(self.block.pprint())
+        if self.capture_layers:
+            self.opcodes = disasm.func(self.code, self.func)
+            self.cfg_data = self._cfg_to_dict()
+            self.layer_snapshots.append((&#34;LLIR&#34;, _strip_ansi(self.block.pprint())))
         for o in self.optimizers:
             if DEBUG:
                 dbg_print(f&#34;----- {o.__class__.__name__} -----&#34;)
             o.optimize()
             if DEBUG:
                 dbg_print(self.block.pprint())
+            if self.capture_layers:
+                self.layer_snapshots.append((o.__class__.__name__, _strip_ansi(self.block.pprint())))
+
+    def _cfg_to_dict(self) -&gt; Dict[str, Any]:
+        &#34;&#34;&#34;Serialize the control-flow graph to a JSON-friendly structure.&#34;&#34;&#34;
+        node_ids = {id(node): i for i, node in enumerate(self.cfg.nodes)}
+        nodes: List[Dict[str, Any]] = []
+        for i, node in enumerate(self.cfg.nodes):
+            label_lines = []
+            for op in node.ops:
+                parts = [op.op or &#34;?&#34;] + [str(v) for v in op.df.values()]
+                label_lines.append(&#34;. &#34;.join(parts))
+            nodes.append(
+                {
+                    &#34;id&#34;: i,
+                    &#34;label&#34;: f&#34;BB{i}&#34;,
+                    &#34;ops&#34;: label_lines,
+                    &#34;base_offset&#34;: node.base_offset,
+                    &#34;is_entry&#34;: node is self.cfg.entry,
+                }
+            )
+        edges: List[Dict[str, Any]] = []
+        for node in self.cfg.nodes:
+            src = node_ids[id(node)]
+            for target, edge_type in node.branches:
+                dst = node_ids.get(id(target))
+                if dst is not None:
+                    edges.append({&#34;from&#34;: src, &#34;to&#34;: dst, &#34;type&#34;: edge_type})
+        return {&#34;nodes&#34;: nodes, &#34;edges&#34;: edges, &#34;dot&#34;: self._cfg_to_dot(node_ids)}
+
+    def _cfg_to_dot(self, node_ids: Dict[int, int]) -&gt; str:
+        &#34;&#34;&#34;Produce a Graphviz DOT representation of the CFG.
+
+        Mirrors the entry/return node coloring and per-branch-type edge
+        coloring conventions of CFGraph.graph()/style_node(), just remapped
+        onto the Catppuccin Mocha palette used by the crashtest site.
+        &#34;&#34;&#34;
+
+        def _escape(s: str) -&gt; str:
+            return s.replace(&#34;\\&#34;, &#34;\\\\&#34;).replace(&#39;&#34;&#39;, &#39;\\&#34;&#39;)
+
+        def _node_fill(node: CFNode) -&gt; str:
+            if node is self.cfg.entry:
+                return &#39;&#34;#a6e3a1&#34;, fontcolor=&#34;#11111b&#34;&#39;  # green, like style_node&#39;s entry
+            if any(op.op == &#34;Ret&#34; for op in node.ops):
+                return &#39;&#34;#94e2d5&#34;, fontcolor=&#34;#11111b&#34;&#39;  # teal, like style_node&#39;s return blocks
+            return &#39;&#34;#313244&#34;, fontcolor=&#34;#cdd6f4&#34;&#39;
+
+        def _edge_style(edge_type: str) -&gt; str:
+            if edge_type == &#34;true&#34;:
+                return &#39;color=&#34;#a6e3a1&#34;, fontcolor=&#34;#a6e3a1&#34;, label=&#34;true&#34;&#39;
+            if edge_type == &#34;false&#34;:
+                return &#39;color=&#34;#f38ba8&#34;, fontcolor=&#34;#f38ba8&#34;, label=&#34;false&#34;&#39;
+            if edge_type.startswith(&#34;switch: &#34;):
+                case = edge_type.split(&#34;switch: &#34;)[1].strip()
+                color = &#34;#f38ba8&#34; if case == &#34;default&#34; else &#34;#cba6f7&#34;
+                return f&#39;color=&#34;{color}&#34;, fontcolor=&#34;{color}&#34;, label=&#34;{_escape(case)}&#34;&#39;
+            if edge_type == &#34;trap&#34;:
+                return &#39;color=&#34;#f9e2af&#34;, fontcolor=&#34;#f9e2af&#34;, label=&#34;trap&#34;&#39;
+            return &#39;color=&#34;#89b4fa&#34;&#39;
+
+        lines = [
+            &#34;digraph CFG {&#34;,
+            &#34;  rankdir=TB;&#34;,
+            &#34;  nodesep=0.4;&#34;,
+            &#34;  ranksep=0.5;&#34;,
+            &#39;  node [shape=box, fontname=&#34;monospace&#34;, fontsize=11, margin=&#34;0.15,0.1&#34;, style=&#34;rounded,filled&#34;, fillcolor=&#34;#313244&#34;, fontcolor=&#34;#cdd6f4&#34;, color=&#34;#585b70&#34;];&#39;,
+            &#39;  edge [fontname=&#34;monospace&#34;, fontsize=9, color=&#34;#6c7086&#34;, fontcolor=&#34;#a6adc8&#34;];&#39;,
+        ]
+        for i, node in enumerate(self.cfg.nodes):
+            op_lines = []
+            for op in node.ops:
+                parts = [op.op or &#34;?&#34;] + [str(v) for v in op.df.values()]
+                op_lines.append(_escape(&#34;. &#34;.join(parts)))
+            label = _escape(f&#34;BB{i}&#34;) + &#34;\\l&#34; + &#34;\\l&#34;.join(op_lines) + &#34;\\l&#34;
+            lines.append(f&#39;  {i} [label=&#34;{label}&#34;, fillcolor={_node_fill(node)}];&#39;)
+        for node in self.cfg.nodes:
+            src = node_ids[id(node)]
+            for target, edge_type in node.branches:
+                dst = node_ids.get(id(target))
+                if dst is not None:
+                    lines.append(f&#34;  {src} -&gt; {dst} [{_edge_style(edge_type)}];&#34;)
+        lines.append(&#34;}&#34;)
+        return &#34;\n&#34;.join(lines)
 
     def _name_locals(self) -&gt; None:
         &#34;&#34;&#34;Name locals based on debug info&#34;&#34;&#34;
@@ -2141,6 +2347,51 @@ def get_type(self) -&gt; Type:
                     pass
                 else:
                     local.name = reg_assigns[i][0]
+
+        # If the same debug name is assigned to two different registers with
+        # different types, suffix the later one so Haxe sees two distinct
+        # variables instead of a single Dynamic variable.
+        name_to_regs: Dict[str, List[int]] = {}
+        for i, local in enumerate(self.locals):
+            name_to_regs.setdefault(local.name, []).append(i)
+        for name, regs in name_to_regs.items():
+            if len(regs) &lt;= 1:
+                continue
+            typed_regs: Dict[int, List[int]] = {}
+            for r in regs:
+                typ = self.func.regs[r]
+                typ_key = id(typ.resolve(self.code))
+                typed_regs.setdefault(typ_key, []).append(r)
+            # Only rename when the same debug name is used for variables with
+            # different types.  Same-type duplicates are usually just different
+            # registers for a single source variable.
+            if len(typed_regs) &lt;= 1:
+                continue
+            ordered = sorted(regs, key=lambda r: self._reg_first_assign.get(r, float(&#34;inf&#34;)))
+            by_type: Dict[int, List[int]] = {}
+            for r in ordered:
+                typ = self.func.regs[r]
+                typ_key = id(typ.resolve(self.code))
+                by_type.setdefault(typ_key, []).append(r)
+            # Keep the earliest register of the first-seen type as the base name;
+            # rename duplicates of other types.
+            kept = set()
+            for r in ordered:
+                typ_key = id(self.func.regs[r].resolve(self.code))
+                if typ_key not in kept:
+                    kept.add(typ_key)
+                else:
+                    self.locals[r].name = f&#34;{name}{len(kept)}&#34;
+                    kept.add(typ_key)
+
+        # Register 0 is `this` in instance methods and constructors.
+        # Detect by either: full name has no leading `$` (instance method), or
+        # the function contains SetThis/GetThis opcodes (constructor).
+        if self.locals and self.locals[0].name == &#34;var0&#34;:
+            is_instance = not self.code.full_func_name(self.func).startswith(&#34;$&#34;)
+            has_this_ops = any(op.op in (&#34;SetThis&#34;, &#34;GetThis&#34;) for op in self.func.ops)
+            if is_instance or has_this_ops:
+                self.locals[0].name = &#34;this&#34;
         dbg_print(&#34;Named locals:&#34;, self.locals)
 
     def _find_convergence(self, true_node: CFNode, false_node: CFNode, visited: Set[CFNode]) -&gt; Optional[CFNode]:
@@ -2177,9 +2428,40 @@ def get_type(self) -&gt; Type:
         nodes: Set[CFNode]
         exit_node: Optional[CFNode]
 
+    def _resolve_method_field(self, obj_local: &#34;IRLocal&#34;, obj_type: Type, field_idx: int) -&gt; Optional[&#34;IRField&#34;]:
+        &#34;&#34;&#34;Build the `obj.method` IRField targeted by a CallMethod/CallThis/
+        InstanceClosure `field` operand.
+
+        For an ``Obj`` the operand indexes the virtual method table, so the
+        proto is looked up by ``pindex`` across the class hierarchy. For a
+        ``Virtual`` it indexes the (method-typed) data fields directly. Returns
+        ``None`` when the target cannot be resolved.
+        &#34;&#34;&#34;
+        defn = obj_type.definition
+        if isinstance(defn, Obj):
+            proto = self.code.proto_by_pindex(defn, field_idx)
+            if proto is None:
+                return None
+            fun = proto.findex.resolve(self.code)
+            return IRField(self.code, obj_local, proto.name.resolve(self.code), fun.type)
+        if isinstance(defn, Virtual):
+            if field_idx &gt;= len(defn.fields):
+                return None
+            field_core = defn.fields[field_idx]
+            return IRField(self.code, obj_local, field_core.name.resolve(self.code), field_core.type)
+        return None
+
     def _lift_ops_into_block(self, block: IRBlock, ops: List[Opcode]) -&gt; None:
         for op in ops:
             op_idx = self._op_id_to_idx.get(id(op))
+            # Capture the register-to-local mapping before any debug-name split.
+            # HashLink frequently reuses a register as both a source and the
+            # destination for the same opcode (e.g. `reg0 = String.__add__(reg0,
+            # reg1)`).  If we split the local for the destination first, the
+            # source operand incorrectly picks up the new, empty local.  Source
+            # operands below therefore read from this pre-opcode snapshot, while
+            # destinations read from `self.locals` after the split.
+            source_locals = self.locals.copy()
             if op_idx is not None:
                 self._check_assign(op_idx)
             if op.op == &#34;Label&#34;:
@@ -2187,8 +2469,8 @@ def get_type(self) -&gt; Type:
 
             if op.op in arithmetic:
                 dst = self.locals[op.df[&#34;dst&#34;].value]
-                lhs = self.locals[op.df[&#34;a&#34;].value]
-                rhs = self.locals[op.df[&#34;b&#34;].value]
+                lhs = source_locals[op.df[&#34;a&#34;].value]
+                rhs = source_locals[op.df[&#34;b&#34;].value]
                 block.statements.append(
                     IRAssign(
                         self.code, dst, IRArithmetic(self.code, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])
@@ -2208,9 +2490,9 @@ def get_type(self) -&gt; Type:
                 dst = self.locals[op.df[&#34;dst&#34;].value]
                 fun = IRConst(self.code, IRConst.ConstType.FUN, op.df[&#34;fun&#34;])
                 args = (
-                    [self.locals[op.df[f&#34;arg{i}&#34;].value] for i in range(n)]
+                    [source_locals[op.df[f&#34;arg{i}&#34;].value] for i in range(n)]
                     if op.op != &#34;CallN&#34;
-                    else [self.locals[arg.value] for arg in op.df[&#34;args&#34;].value]
+                    else [source_locals[arg.value] for arg in op.df[&#34;args&#34;].value]
                 )
                 call_expr = IRCall(self.code, IRCall.CallType.FUNC, fun, args)
 
@@ -2220,34 +2502,85 @@ def get_type(self) -&gt; Type:
                     block.statements.append(IRAssign(self.code, dst, call_expr))
             elif op.op == &#34;CallClosure&#34;:
                 dst = self.locals[op.df[&#34;dst&#34;].value]
-                fun = self.locals[op.df[&#34;fun&#34;].value]
-                args = [self.locals[arg.value] for arg in op.df[&#34;args&#34;].value]
+                fun = source_locals[op.df[&#34;fun&#34;].value]
+                args = [source_locals[arg.value] for arg in op.df[&#34;args&#34;].value]
                 call_expr = IRCall(self.code, IRCall.CallType.CLOSURE, fun, args)
 
                 if dst.get_type().kind.value == Type.Kind.VOID.value:
                     block.statements.append(call_expr)
                 else:
                     block.statements.append(IRAssign(self.code, dst, call_expr))
+            elif op.op in (&#34;CallMethod&#34;, &#34;CallThis&#34;):
+                dst = self.locals[op.df[&#34;dst&#34;].value]
+                arg_regs = op.df[&#34;args&#34;].value
+                if op.op == &#34;CallThis&#34;:
+                    obj_local = source_locals[0]
+                    obj_type = self.code.types[self.func.regs[0].value]
+                    method_args = [source_locals[arg.value] for arg in arg_regs]
+                else:
+                    obj_local = source_locals[arg_regs[0].value]
+                    obj_type = obj_local.get_type()
+                    method_args = [source_locals[arg.value] for arg in arg_regs[1:]]
+                field_expr = self._resolve_method_field(obj_local, obj_type, op.df[&#34;field&#34;].value)
+                if field_expr is not None:
+                    call_expr = IRCall(self.code, IRCall.CallType.METHOD, field_expr, method_args)
+                    if dst.get_type().kind.value == Type.Kind.VOID.value:
+                        block.statements.append(call_expr)
+                    else:
+                        block.statements.append(IRAssign(self.code, dst, call_expr))
+                elif dst.get_type().kind.value == Type.Kind.VOID.value:
+                    block.statements.append(IRUnliftedOpcode(self.code, op))
+                else:
+                    block.statements.append(IRAssign(self.code, dst, IRUnliftedOpcode(self.code, op)))
             elif op.op == &#34;Mov&#34;:
                 block.statements.append(
-                    IRAssign(self.code, self.locals[op.df[&#34;dst&#34;].value], self.locals[op.df[&#34;src&#34;].value])
+                    IRAssign(self.code, self.locals[op.df[&#34;dst&#34;].value], source_locals[op.df[&#34;src&#34;].value])
                 )
             elif op.op == &#34;GetGlobal&#34;:
+                global_idx = op.df[&#34;global&#34;].value
+                enum_const = self._enum_global_map.get(global_idx)
+                expr: IRExpression
+                if enum_const is not None:
+                    construct_name, enum_type_idx = enum_const
+                    expr = IREnumConstruct(self.code, construct_name, [], enum_type_idx)
+                else:
+                    expr = IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df[&#34;global&#34;])
                 block.statements.append(
                     IRAssign(
                         self.code,
                         self.locals[op.df[&#34;dst&#34;].value],
-                        IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df[&#34;global&#34;]),
+                        expr,
                     )
                 )
             elif op.op == &#34;Field&#34;:
-                dst_local, obj_local = self.locals[op.df[&#34;dst&#34;].value], self.locals[op.df[&#34;obj&#34;].value]
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                obj_local = source_locals[op.df[&#34;obj&#34;].value]
                 obj_type = obj_local.get_type()
                 if not isinstance(obj_type.definition, (Obj, Virtual)):
                     raise DecompError(f&#34;Field opcode used on non-object type: {obj_type.definition}&#34;)
                 field_core = op.df[&#34;field&#34;].resolve_obj(self.code, obj_type.definition)
                 field_expr = IRField(self.code, obj_local, field_core.name.resolve(self.code), field_core.type)
                 block.statements.append(IRAssign(self.code, dst_local, field_expr))
+            elif op.op == &#34;GetThis&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                this_local = source_locals[0]
+                this_type_def = self.code.types[self.func.regs[0].value]
+                if isinstance(this_type_def.definition, (Obj, Virtual)):
+                    field_core = op.df[&#34;field&#34;].resolve_obj(self.code, this_type_def.definition)
+                    field_expr = IRField(self.code, this_local, field_core.name.resolve(self.code), field_core.type)
+                    block.statements.append(IRAssign(self.code, dst_local, field_expr))
+                else:
+                    block.statements.append(IRUnliftedOpcode(self.code, op))
+            elif op.op == &#34;SetThis&#34;:
+                src_local = source_locals[op.df[&#34;src&#34;].value]
+                this_local = source_locals[0]
+                this_type_def = self.code.types[self.func.regs[0].value]
+                if isinstance(this_type_def.definition, (Obj, Virtual)):
+                    field_core = op.df[&#34;field&#34;].resolve_obj(self.code, this_type_def.definition)
+                    field_expr = IRField(self.code, this_local, field_core.name.resolve(self.code), field_core.type)
+                    block.statements.append(IRAssign(self.code, field_expr, src_local))
+                else:
+                    block.statements.append(IRUnliftedOpcode(self.code, op))
             elif op.op == &#34;New&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
                 alloc_type_idx = self.func.regs[op.df[&#34;dst&#34;].value]
@@ -2255,7 +2588,7 @@ def get_type(self) -&gt; Type:
                 block.statements.append(IRAssign(self.code, dst_local, new_expr))
             elif op.op == &#34;ToSFloat&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
-                src_local = self.locals[op.df[&#34;src&#34;].value]
+                src_local = source_locals[op.df[&#34;src&#34;].value]
 
                 f64_idx = self.code.find_prim_type(Type.Kind.F64)
 
@@ -2263,23 +2596,40 @@ def get_type(self) -&gt; Type:
                 block.statements.append(IRAssign(self.code, dst_local, cast_expr))
             elif op.op == &#34;ToDyn&#34; or op.op == &#34;ToVirtual&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
-                src_local = self.locals[op.df[&#34;src&#34;].value]
+                src_local = source_locals[op.df[&#34;src&#34;].value]
                 cast_expr = IRCast(self.code, self.func.regs[op.df[&#34;dst&#34;].value], src_local)
                 block.statements.append(IRAssign(self.code, dst_local, cast_expr))
             elif op.op == &#34;ToInt&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
-                src_local = self.locals[op.df[&#34;src&#34;].value]
+                src_local = source_locals[op.df[&#34;src&#34;].value]
                 cast_expr = IRCast(self.code, self.func.regs[op.df[&#34;dst&#34;].value], src_local)
                 block.statements.append(IRAssign(self.code, dst_local, cast_expr))
+            elif op.op in (&#34;SafeCast&#34;, &#34;UnsafeCast&#34;):
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                src_local = source_locals[op.df[&#34;src&#34;].value]
+                cast_expr = IRCast(self.code, self.func.regs[op.df[&#34;dst&#34;].value], src_local)
+                block.statements.append(IRAssign(self.code, dst_local, cast_expr))
+            elif op.op == &#34;GetArray&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                arr_local = source_locals[op.df[&#34;array&#34;].value]
+                idx_local = source_locals[op.df[&#34;index&#34;].value]
+                block.statements.append(
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df[&#34;dst&#34;].value]),
+                    )
+                )
             elif op.op == &#34;Incr&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                old_local = source_locals[op.df[&#34;dst&#34;].value]
                 block.statements.append(
                     IRAssign(
                         self.code,
                         dst_local,
                         IRArithmetic(
                             self.code,
-                            dst_local,
+                            old_local,
                             IRConst(self.code, IRConst.ConstType.INT, value=1),
                             IRArithmetic.ArithmeticType.ADD,
                         ),
@@ -2287,22 +2637,42 @@ def get_type(self) -&gt; Type:
                 )
             elif op.op == &#34;Decr&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                old_local = source_locals[op.df[&#34;dst&#34;].value]
                 block.statements.append(
                     IRAssign(
                         self.code,
                         dst_local,
                         IRArithmetic(
                             self.code,
-                            dst_local,
+                            old_local,
                             IRConst(self.code, IRConst.ConstType.INT, value=1),
                             IRArithmetic.ArithmeticType.SUB,
                         ),
                     )
                 )
+            elif op.op == &#34;Neg&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                src_local = source_locals[op.df[&#34;src&#34;].value]
+                block.statements.append(IRAssign(self.code, dst_local, IRNeg(self.code, src_local)))
+            elif op.op == &#34;Not&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                src_local = source_locals[op.df[&#34;src&#34;].value]
+                block.statements.append(IRAssign(self.code, dst_local, IRNot(self.code, src_local)))
             elif op.op == &#34;GetMem&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
-                arr_local = self.locals[op.df[&#34;bytes&#34;].value]
-                idx_local = self.locals[op.df[&#34;index&#34;].value]
+                arr_local = source_locals[op.df[&#34;bytes&#34;].value]
+                idx_local = source_locals[op.df[&#34;index&#34;].value]
+                block.statements.append(
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df[&#34;dst&#34;].value]),
+                    )
+                )
+            elif op.op in (&#34;GetI16&#34;, &#34;GetI8&#34;):
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                arr_local = source_locals[op.df[&#34;bytes&#34;].value]
+                idx_local = source_locals[op.df[&#34;index&#34;].value]
                 block.statements.append(
                     IRAssign(
                         self.code,
@@ -2311,19 +2681,31 @@ def get_type(self) -&gt; Type:
                     )
                 )
             elif op.op == &#34;SetMem&#34;:
-                arr_local = self.locals[op.df[&#34;bytes&#34;].value]
-                idx_local = self.locals[op.df[&#34;index&#34;].value]
-                src_local = self.locals[op.df[&#34;src&#34;].value]
+                arr_local = source_locals[op.df[&#34;bytes&#34;].value]
+                idx_local = source_locals[op.df[&#34;index&#34;].value]
+                src_local = source_locals[op.df[&#34;src&#34;].value]
                 block.statements.append(IRAssign(self.code, IRArrayAccess(self.code, arr_local, idx_local), src_local))
+            elif op.op in (&#34;SetI16&#34;, &#34;SetI8&#34;):
+                arr_local = source_locals[op.df[&#34;bytes&#34;].value]
+                idx_local = source_locals[op.df[&#34;index&#34;].value]
+                src_local = source_locals[op.df[&#34;src&#34;].value]
+                block.statements.append(IRAssign(self.code, IRArrayAccess(self.code, arr_local, idx_local), src_local))
+            elif op.op == &#34;SetArray&#34;:
+                arr_local = source_locals[op.df[&#34;array&#34;].value]
+                idx_local = source_locals[op.df[&#34;index&#34;].value]
+                src_local = source_locals[op.df[&#34;src&#34;].value]
+                block.statements.append(
+                    IRAssign(self.code, IRArrayAccess(self.code, arr_local, idx_local, src_local.get_type()), src_local)
+                )
             elif op.op == &#34;DynSet&#34;:
-                obj_local = self.locals[op.df[&#34;obj&#34;].value]
-                src_local = self.locals[op.df[&#34;src&#34;].value]
+                obj_local = source_locals[op.df[&#34;obj&#34;].value]
+                src_local = source_locals[op.df[&#34;src&#34;].value]
                 field_name = op.df[&#34;field&#34;].resolve(self.code)
                 field_expr = IRField(self.code, obj_local, field_name, self.func.regs[op.df[&#34;src&#34;].value])
                 block.statements.append(IRAssign(self.code, field_expr, src_local))
             elif op.op == &#34;SetField&#34;:
-                obj_local = self.locals[op.df[&#34;obj&#34;].value]
-                src_local = self.locals[op.df[&#34;src&#34;].value]
+                obj_local = source_locals[op.df[&#34;obj&#34;].value]
+                src_local = source_locals[op.df[&#34;src&#34;].value]
                 obj_type = obj_local.get_type()
                 if isinstance(obj_type.definition, (Obj, Virtual)):
                     field_core = op.df[&#34;field&#34;].resolve_obj(self.code, obj_type.definition)
@@ -2338,15 +2720,29 @@ def get_type(self) -&gt; Type:
                 )
             elif op.op == &#34;Ref&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
-                src_local = self.locals[op.df[&#34;src&#34;].value]
+                src_local = source_locals[op.df[&#34;src&#34;].value]
                 block.statements.append(IRAssign(self.code, dst_local, IRRef(self.code, src_local)))
+            elif op.op == &#34;Unref&#34;:
+                # References are modelled transparently (IRRef renders as its
+                # inner expression), so dereferencing one is just a copy of the
+                # underlying value.
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                src_local = source_locals[op.df[&#34;src&#34;].value]
+                block.statements.append(IRAssign(self.code, dst_local, src_local))
             elif op.op == &#34;StaticClosure&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
                 fun_const = IRConst(self.code, IRConst.ConstType.FUN, idx=op.df[&#34;fun&#34;])
                 block.statements.append(IRAssign(self.code, dst_local, fun_const))
+            elif op.op == &#34;InstanceClosure&#34;:
+                dst_local = self.locals[op.df[&#34;dst&#34;].value]
+                obj_local = source_locals[op.df[&#34;obj&#34;].value]
+                fun = op.df[&#34;fun&#34;].resolve(self.code)
+                method_name = self.code.partial_func_name(fun)
+                field_expr = IRField(self.code, obj_local, method_name, self.func.regs[op.df[&#34;dst&#34;].value])
+                block.statements.append(IRAssign(self.code, dst_local, field_expr))
             elif op.op == &#34;VirtualClosure&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
-                obj_local = self.locals[op.df[&#34;obj&#34;].value]
+                obj_local = source_locals[op.df[&#34;obj&#34;].value]
                 obj_type = obj_local.get_type()
                 if isinstance(obj_type.definition, Obj):
                     fid = op.df[&#34;field&#34;].value
@@ -2364,7 +2760,7 @@ def get_type(self) -&gt; Type:
                 continue
             elif op.op == &#34;EnumIndex&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
-                src_local = self.locals[op.df[&#34;value&#34;].value]
+                src_local = source_locals[op.df[&#34;value&#34;].value]
                 block.statements.append(IRAssign(self.code, dst_local, IREnumIndex(self.code, src_local)))
             elif op.op == &#34;MakeEnum&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
@@ -2376,13 +2772,13 @@ def get_type(self) -&gt; Type:
                     if cid &lt; len(enum_def.constructs)
                     else f&#34;construct_{cid}&#34;
                 )
-                args = [self.locals[arg.value] for arg in op.df[&#34;args&#34;].value]
+                args = [source_locals[arg.value] for arg in op.df[&#34;args&#34;].value]
                 block.statements.append(
                     IRAssign(self.code, dst_local, IREnumConstruct(self.code, construct_name, args, enum_type))
                 )
             elif op.op == &#34;EnumField&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
-                src_local = self.locals[op.df[&#34;value&#34;].value]
+                src_local = source_locals[op.df[&#34;value&#34;].value]
                 enum_type = self.func.regs[op.df[&#34;value&#34;].value]
                 enum_def = enum_type.resolve(self.code).definition
                 cid = op.df[&#34;construct&#34;].value
@@ -2447,6 +2843,19 @@ def get_type(self) -&gt; Type:
             return None
 
         return min(common_nodes, key=lambda node: (left_distances[node] + right_distances[node], node.base_offset))
+
+    def _is_terminal_branch_node(self, node: Optional[CFNode], loop_ctx: Optional[_LoopContext]) -&gt; bool:
+        &#34;&#34;&#34;Return True if a branch target has no live successors within the current region.&#34;&#34;&#34;
+        if node is None:
+            return True
+        if loop_ctx is not None and node == loop_ctx.header:
+            return False
+        if not node.branches:
+            return True
+        # A node that only leaves the current region is also terminal for our purposes.
+        if loop_ctx is not None:
+            return all(successor not in loop_ctx.nodes for successor, _ in node.branches)
+        return False
 
     def _loop_exit_nodes(self, loop_nodes: Set[CFNode]) -&gt; List[CFNode]:
         exit_nodes: Set[CFNode] = set()
@@ -2524,6 +2933,54 @@ def get_type(self) -&gt; Type:
             left = self.locals[op.df[reg_key].value]
         return IRBoolExpr(self.code, cond, left, right)
 
+    def _clone_ir(self, block: IRBlock) -&gt; IRBlock:
+        &#34;&#34;&#34;
+        Clones a cached IRBlock so a memoized `_lift_block` result can be reused without
+        making the same object reachable from multiple parents. `self.code` (the whole
+        Bytecode) and `self.locals` (the register-&gt;IRLocal identities used throughout
+        the function) are shared rather than duplicated; everything else in the
+        statement/expression tree is copied. Hand-rolled instead of `copy.deepcopy`:
+        deepcopy&#39;s generic `__reduce_ex__`/pickling-protocol dispatch is much slower
+        than just walking `__dict__`, and this runs once per cache hit.
+        &#34;&#34;&#34;
+        memo: Dict[int, Any] = {id(self.code): self.code}
+        for local in self.locals:
+            memo[id(local)] = local
+        return cast(IRBlock, self._clone_value(block, memo))
+
+    def _clone_value(self, value: Any, memo: Dict[int, Any]) -&gt; Any:
+        if value is None or isinstance(value, (int, float, str, bool, bytes, _Enum)):
+            return value
+        vid = id(value)
+        if vid in memo:
+            return memo[vid]
+        if isinstance(value, list):
+            new_list: List[Any] = []
+            memo[vid] = new_list
+            new_list.extend(self._clone_value(v, memo) for v in value)
+            return new_list
+        if isinstance(value, tuple):
+            return tuple(self._clone_value(v, memo) for v in value)
+        if isinstance(value, dict):
+            new_dict: Dict[Any, Any] = {}
+            memo[vid] = new_dict
+            for k, v in value.items():
+                new_dict[self._clone_value(k, memo)] = self._clone_value(v, memo)
+            return new_dict
+        if isinstance(value, set):
+            new_set: Set[Any] = set()
+            memo[vid] = new_set
+            new_set.update(self._clone_value(v, memo) for v in value)
+            return new_set
+        if not hasattr(value, &#34;__dict__&#34;):
+            # Unknown leaf type (e.g. a Bytecode/Function/Type reference) - share it.
+            return value
+        new_obj = object.__new__(type(value))
+        memo[vid] = new_obj
+        for k, v in vars(value).items():
+            setattr(new_obj, k, self._clone_value(v, memo))
+        return new_obj
+
     def _lift_block(
         self,
         node: Optional[CFNode],
@@ -2546,10 +3003,33 @@ def get_type(self) -&gt; Type:
         # --- Base Cases for Recursion Termination ---
         if node is None or node == stop_at or node in visited:
             return IRBlock(self.code)
-        if loop_ctx and node not in loop_ctx.nodes:
-            return IRBlock(self.code)
+        if loop_ctx and node not in loop_ctx.nodes and node.branches:
+            block = IRBlock(self.code)
+            block.statements.append(IRBreak(self.code))
+            return block
         if node in self.cfg.loops and (loop_ctx is None or node != loop_ctx.header):
             return self._lift_loop(node, visited, stop_at, loop_ctx)
+
+        # Memoize on (node, stop_at, loop_ctx): without this, CFGs where many branches
+        # funnel into a small set of shared continuation points cause the same
+        # (node, stop_at) region to be re-lifted independently from every branch that
+        # reaches it, which is exponential in the nesting depth of the function. Since
+        # loops are handled separately above, everything reachable here is acyclic, so
+        # the *logical content* for an identical (node, stop_at, loop_ctx) request never
+        # depends on which ancestor path got there. We still hand back a fresh clone
+        # rather than the cached object itself: returning the same instance would make
+        # the IR a real DAG, and nothing downstream (repr(), pprint(), the optimizer
+        # passes&#39; generic statement walk) expects a node to be reachable from multiple
+        # parents, so they would re-render/re-process the shared subtree once per
+        # reference path - the same exponential blowup we&#39;re trying to avoid, just
+        # moved into every later consumer instead of the lifter.
+        # _LoopContext is a non-frozen @dataclass, so it&#39;s unhashable; key on identity instead.
+        cache_key = (node, stop_at, id(loop_ctx))
+        cached = self._lift_cache.get(cache_key)
+        if cached is not None:
+            visited.add(node)
+            return self._clone_ir(cached)
+
         visited.add(node)
 
         block = IRBlock(self.code)
@@ -2588,6 +3068,17 @@ def get_type(self) -&gt; Type:
                     branch_block.statements.append(IRContinue(self.code))
                     return branch_block
                 if loop_ctx and target not in loop_ctx.nodes:
+                    # A return inside a loop is not a loop break; let the normal
+                    # Ret handler lift it as an IRReturn.  The exception is the
+                    # loop&#39;s own exit node, which post-dominates the header and
+                    # therefore represents leaving the loop normally.
+                    if (
+                        not target.branches
+                        and target.ops
+                        and target.ops[-1].op == &#34;Ret&#34;
+                        and loop_ctx.header not in self.cfg.post_dominators.get(target, set())
+                    ):
+                        return None
                     branch_block = IRBlock(self.code)
                     branch_block.statements.append(IRBreak(self.code))
                     return branch_block
@@ -2609,6 +3100,28 @@ def get_type(self) -&gt; Type:
             if convergence_node is None and node in self.cfg.immediate_post_dominators:
                 convergence_node = self.cfg.immediate_post_dominators[node]
 
+            # If the branches do not share a real convergence point because one of
+            # them terminates (e.g. returns), use the post-dominator of the live
+            # branch as the convergence.  This keeps the code after the terminating
+            # branch outside the conditional instead of inlining it into the other
+            # branch.
+            if convergence_node is None:
+                terminal_left = self._is_terminal_branch_node(jump_target, loop_ctx)
+                terminal_right = self._is_terminal_branch_node(fall_through, loop_ctx)
+                if terminal_left and not terminal_right and fall_through in self.cfg.immediate_post_dominators:
+                    convergence_node = self.cfg.immediate_post_dominators[fall_through]
+                elif terminal_right and not terminal_left and jump_target in self.cfg.immediate_post_dominators:
+                    convergence_node = self.cfg.immediate_post_dominators[jump_target]
+
+            # If no convergence point could be determined at all, never let a branch
+            # explore past the boundary the *enclosing* call already established. Without
+            # this, a live branch recurses with stop_at=None and re-walks the entire rest
+            # of the function independently of the outer continuation, which re-walks the
+            # same nodes again - doubling work at every such conditional and blowing up
+            # exponentially for long chains of terminal-vs-live branches.
+            if convergence_node is None:
+                convergence_node = stop_at
+
             if then_block_ir is None:
                 then_block_ir = self._lift_block(
                     fall_through, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
@@ -2621,8 +3134,10 @@ def get_type(self) -&gt; Type:
             conditional_stmt = IRConditional(self.code, cond_expr, then_block_ir, else_block_ir)
             block.statements.append(conditional_stmt)
 
-            # Continue lifting from the convergence point
-            next_block_ir = self._lift_block(convergence_node, visited, loop_ctx=loop_ctx)
+            # Continue lifting from the convergence point, but stop at the outer boundary.
+            # This prevents the convergence node from being consumed here when it equals
+            # the outer stop_at, which would leave the outer caller with nothing to lift.
+            next_block_ir = self._lift_block(convergence_node, visited, stop_at=stop_at, loop_ctx=loop_ctx)
             block.statements.extend(next_block_ir.statements)
 
         elif last_op and last_op.op == &#34;Switch&#34;:
@@ -2701,6 +3216,7 @@ def get_type(self) -&gt; Type:
                     next_block_ir = self._lift_block(successor_node, visited, stop_at, loop_ctx=loop_ctx)
                     block.statements.extend(next_block_ir.statements)
 
+        self._lift_cache[cache_key] = block
         return block
 
     def print(self) -&gt; None:
@@ -2726,7 +3242,7 @@ def get_type(self) -&gt; Type:
 </dd>
 <dt id="crashlink.decomp.IRLocal"><code class="flex name class">
 <span>class <span class="ident">IRLocal</span></span>
-<span>(</span><span>name: str, type: tIndex, code: Bytecode)</span>
+<span>(</span><span>name: str, type: tIndex, code: Bytecode, reg_idx: Optional[int] = None)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -2734,13 +3250,18 @@ def get_type(self) -&gt; Type:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class IRLocal(IRExpression):
-    def __init__(self, name: str, type: tIndex, code: Bytecode):
+    def __init__(self, name: str, type: tIndex, code: Bytecode, reg_idx: Optional[int] = None):
         super().__init__(code)
         self.name = name
         self.type = type
+        self.reg_idx = reg_idx
 
     def get_type(self) -&gt; Type:
         return self.type.resolve(self.code)
+
+    def same_register(self, other: &#34;IRLocal&#34;) -&gt; bool:
+        &#34;&#34;&#34;Return True if this local and `other` originate from the same VM register.&#34;&#34;&#34;
+        return self.reg_idx is not None and other.reg_idx is not None and self.reg_idx == other.reg_idx
 
     def __eq__(self, other: object) -&gt; bool:
         if not isinstance(other, IRLocal):
@@ -2750,6 +3271,9 @@ def get_type(self) -&gt; Type:
             and self.type.resolve(self.code) is other.type.resolve(other.code)
             and self.code is other.code
         )
+
+    def __hash__(self) -&gt; int:
+        return hash((self.name, id(self.type.resolve(self.code)), id(self.code)))
 
     def __repr__(self) -&gt; str:
         return f&#34;&lt;IRLocal: {self.name} {disasm.type_name(self.code, self.type.resolve(self.code))}&gt;&#34;</code></pre>
@@ -2761,6 +3285,23 @@ def get_type(self) -&gt; Type:
 <li><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></li>
 <li>abc.ABC</li>
 </ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRLocal.same_register"><code class="name flex">
+<span>def <span class="ident">same_register</span></span>(<span>self,<br>other: "'<a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>'") ‑> bool</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def same_register(self, other: &#34;IRLocal&#34;) -&gt; bool:
+    &#34;&#34;&#34;Return True if this local and `other` originate from the same VM register.&#34;&#34;&#34;
+    return self.reg_idx is not None and other.reg_idx is not None and self.reg_idx == other.reg_idx</code></pre>
+</details>
+<div class="desc"><p>Return True if this local and <code>other</code> originate from the same VM register.</p></div>
+</dd>
+</dl>
 <h3>Inherited members</h3>
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></b></code>:
@@ -2872,7 +3413,7 @@ def get_type(self) -&gt; Type:
         self.value = value
 
     def get_children(self) -&gt; List[IRStatement]:
-        return []
+        return [self.value] if self.value is not None else []
 
     def __repr__(self) -&gt; str:
         return f&#34;&lt;IRReturn: {self.value}&gt;&#34;</code></pre>
@@ -2894,7 +3435,7 @@ def get_type(self) -&gt; Type:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
-    return []</code></pre>
+    return [self.value] if self.value is not None else []</code></pre>
 </details>
 <div class="desc"></div>
 </dd>
@@ -2939,6 +3480,7 @@ inheritance.</p></div>
 <li><a title="crashlink.decomp.IRConditional" href="#crashlink.decomp.IRConditional">IRConditional</a></li>
 <li><a title="crashlink.decomp.IRContinue" href="#crashlink.decomp.IRContinue">IRContinue</a></li>
 <li><a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a></li>
+<li>crashlink.decomp.IRForEachLoop</li>
 <li><a title="crashlink.decomp.IRPrimitiveLoop" href="#crashlink.decomp.IRPrimitiveLoop">IRPrimitiveLoop</a></li>
 <li><a title="crashlink.decomp.IRReturn" href="#crashlink.decomp.IRReturn">IRReturn</a></li>
 <li><a title="crashlink.decomp.IRSwitch" href="#crashlink.decomp.IRSwitch">IRSwitch</a></li>
@@ -3279,6 +3821,7 @@ def get_children(self) -&gt; List[IRStatement]:
 <h4><code><a title="crashlink.decomp.IRBoolExpr" href="#crashlink.decomp.IRBoolExpr">IRBoolExpr</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.decomp.IRBoolExpr.CompareType" href="#crashlink.decomp.IRBoolExpr.CompareType">CompareType</a></code></li>
+<li><code><a title="crashlink.decomp.IRBoolExpr.get_children" href="#crashlink.decomp.IRBoolExpr.get_children">get_children</a></code></li>
 <li><code><a title="crashlink.decomp.IRBoolExpr.invert" href="#crashlink.decomp.IRBoolExpr.invert">invert</a></code></li>
 </ul>
 </li>
@@ -3292,6 +3835,7 @@ def get_children(self) -&gt; List[IRStatement]:
 <h4><code><a title="crashlink.decomp.IRCall" href="#crashlink.decomp.IRCall">IRCall</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.decomp.IRCall.CallType" href="#crashlink.decomp.IRCall.CallType">CallType</a></code></li>
+<li><code><a title="crashlink.decomp.IRCall.get_children" href="#crashlink.decomp.IRCall.get_children">get_children</a></code></li>
 </ul>
 </li>
 <li>
@@ -3328,6 +3872,9 @@ def get_children(self) -&gt; List[IRStatement]:
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRLocal.same_register" href="#crashlink.decomp.IRLocal.same_register">same_register</a></code></li>
+</ul>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.IRPrimitiveJump" href="#crashlink.decomp.IRPrimitiveJump">IRPrimitiveJump</a></code></h4>

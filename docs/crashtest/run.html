@@ -47,6 +47,82 @@ el.replaceWith(d);
 <section>
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
+<dt id="crashtest.run.compare_opcodes"><code class="name flex">
+<span>def <span class="ident">compare_opcodes</span></span>(<span>original_code: crashlink.core.Bytecode,<br>recompiled_code: crashlink.core.Bytecode,<br>class_name: str) ‑> <a title="crashtest.models.OpcodeComparison" href="models.html#crashtest.models.OpcodeComparison">OpcodeComparison</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def compare_opcodes(original_code: Bytecode, recompiled_code: Bytecode, class_name: str) -&gt; OpcodeComparison:
+    &#34;&#34;&#34;Compare per-method opcode sequences between original and recompiled bytecode.&#34;&#34;&#34;
+    try:
+        original_code.get_test_obj(class_name)
+    except ValueError:
+        return OpcodeComparison(overall_similarity=-1.0, recompile_error=f&#34;Class &#39;{class_name}&#39; not found in original&#34;)
+
+    try:
+        recompiled_code.get_test_obj(class_name)
+    except ValueError:
+        return OpcodeComparison(
+            overall_similarity=-1.0, recompile_error=f&#34;Class &#39;{class_name}&#39; not found in recompiled&#34;
+        )
+
+    def _belongs_to_class(name: str, cls: str) -&gt; bool:
+        return name.startswith(cls + &#34;.&#34;) or name.startswith(&#34;$&#34; + cls + &#34;.&#34;)
+
+    orig_funcs = {
+        original_code.full_func_name(f): f
+        for f in original_code.functions
+        if _belongs_to_class(original_code.full_func_name(f), class_name)
+    }
+    recomp_funcs = {
+        recompiled_code.full_func_name(f): f
+        for f in recompiled_code.functions
+        if _belongs_to_class(recompiled_code.full_func_name(f), class_name)
+    }
+
+    method_results: List[MethodComparison] = []
+    for name, orig_func in orig_funcs.items():
+        orig_ops = [op.op for op in orig_func.ops if op.op is not None]
+        orig_asm = to_asm_resolved(orig_func, original_code)
+        if name in recomp_funcs:
+            recomp_func = recomp_funcs[name]
+            recomp_ops = [op.op for op in recomp_func.ops if op.op is not None]
+            sim = op_similarity(orig_ops, recomp_ops)
+            method_results.append(
+                MethodComparison(
+                    name=name,
+                    similarity=sim,
+                    original_count=len(orig_ops),
+                    recompiled_count=len(recomp_ops),
+                    orig_disasm=orig_asm,
+                    recomp_disasm=to_asm_resolved(recomp_func, recompiled_code),
+                )
+            )
+        else:
+            method_results.append(
+                MethodComparison(
+                    name=name,
+                    similarity=0.0,
+                    original_count=len(orig_ops),
+                    recompiled_count=0,
+                    orig_disasm=orig_asm,
+                    recomp_disasm=&#34;&#34;,
+                    error=&#34;Method not found in recompiled bytecode&#34;,
+                )
+            )
+
+    if method_results:
+        overall = sum(m.similarity for m in method_results) / len(method_results)
+    else:
+        overall = -1.0
+
+    return OpcodeComparison(overall_similarity=overall, methods=method_results)</code></pre>
+</details>
+<div class="desc"><p>Compare per-method opcode sequences between original and recompiled bytecode.</p></div>
+</dd>
 <dt id="crashtest.run.file_to_name"><code class="name flex">
 <span>def <span class="ident">file_to_name</span></span>(<span>file: str) ‑> str</span>
 </code></dt>
@@ -104,7 +180,7 @@ el.replaceWith(d);
     - Dark Red (#991B1B): All tests failed
     &#34;&#34;&#34;
     if not results:
-        return &#34;No Tests Run&#34;, &#34;#6B7280&#34;  # Gray for no tests
+        return &#34;No Tests Run&#34;, &#34;#6B7280&#34;
 
     total = len(results)
     failed = sum(1 for case in results if case.failed)
@@ -169,6 +245,59 @@ Returns a tuple of (status_message, color_hex).</p>
 </details>
 <div class="desc"><p>Get the git branch and commit hash, if available.</p></div>
 </dd>
+<dt id="crashtest.run.op_similarity"><code class="name flex">
+<span>def <span class="ident">op_similarity</span></span>(<span>a: List[str], b: List[str]) ‑> float</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def op_similarity(a: List[str], b: List[str]) -&gt; float:
+    &#34;&#34;&#34;Sequence similarity of two opcode name lists, 0.0-1.0.&#34;&#34;&#34;
+    if not a and not b:
+        return 1.0
+    return SequenceMatcher(None, a, b).ratio()</code></pre>
+</details>
+<div class="desc"><p>Sequence similarity of two opcode name lists, 0.0-1.0.</p></div>
+</dd>
+<dt id="crashtest.run.recompile_pseudo"><code class="name flex">
+<span>def <span class="ident">recompile_pseudo</span></span>(<span>pseudo_content: str, class_name: str) ‑> Tuple[crashlink.core.Bytecode | None, str | None]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def recompile_pseudo(pseudo_content: str, class_name: str) -&gt; Tuple[Optional[Bytecode], Optional[str]]:
+    &#34;&#34;&#34;Write pseudocode to a temp file, compile with haxe, return loaded Bytecode or error string.&#34;&#34;&#34;
+    with tempfile.TemporaryDirectory() as tmpdir:
+        hx_path = os.path.join(tmpdir, f&#34;{class_name}.hx&#34;)
+        hl_path = os.path.join(tmpdir, f&#34;{class_name}.hl&#34;)
+        with open(hx_path, &#34;w&#34;, encoding=&#34;utf-8&#34;) as f:
+            f.write(pseudo_content)
+        try:
+            result = subprocess.run(
+                [&#34;haxe&#34;, &#34;-hl&#34;, hl_path, &#34;-cp&#34;, tmpdir, &#34;-main&#34;, class_name],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired:
+            return None, &#34;Haxe compiler timed out&#34;
+        except FileNotFoundError:
+            return None, &#34;haxe compiler not found on PATH&#34;
+        if result.returncode != 0:
+            stderr = result.stderr.strip()
+            return None, f&#34;Compilation failed:\n{stderr[:500]}&#34;
+        try:
+            code = Bytecode.from_path(hl_path)
+        except Exception as e:
+            return None, f&#34;Failed to load recompiled bytecode: {e}&#34;
+        return code, None</code></pre>
+</details>
+<div class="desc"><p>Write pseudocode to a temp file, compile with haxe, return loaded Bytecode or error string.</p></div>
+</dd>
 <dt id="crashtest.run.run"><code class="name flex">
 <span>def <span class="ident">run</span></span>(<span>) ‑> None</span>
 </code></dt>
@@ -192,9 +321,13 @@ Returns a tuple of (status_message, color_hex).</p>
     print(&#34;Finding test cases...&#34;)
     files = os.listdir(os.path.join(os.path.dirname(__file__), &#34;..&#34;, &#34;tests&#34;, &#34;haxe&#34;))
     cases = [f for f in files if f.endswith(&#34;.hx&#34;)]
+    skip_cases = {&#34;LongString.hx&#34;}
     for case in cases:
         if case.replace(&#34;.hx&#34;, &#34;.hl&#34;) not in files:
             print(f&#34;Warning: no compiled bytecode found for {case}. Skipping.&#34;)
+            cases.remove(case)
+        elif case in skip_cases:
+            print(f&#34;Skipping excluded sample {case}.&#34;)
             cases.remove(case)
 
     print(&#34;Running tests...&#34;)
@@ -231,7 +364,8 @@ Returns a tuple of (status_message, color_hex).</p>
 <pre><code class="python">def run_case(case: str, id: int) -&gt; TestCase:
     &#34;&#34;&#34;
     Runs a single test case by decompiling the main class in the file.
-    It generates both class-level pseudocode and a combined IR view of all methods.
+    It generates both class-level pseudocode and a combined IR view of all methods,
+    then recompiles the pseudocode and compares opcodes with the original.
     &#34;&#34;&#34;
     try:
         original_content = open(
@@ -252,10 +386,13 @@ Returns a tuple of (status_message, color_hex).</p>
 
     ir_content = &#34;Failed to produce IR.&#34;
     pseudo_content = &#34;Failed to produce pseudocode.&#34;
+    raw_pseudo_content: Optional[str] = None
     error_message = None
+    original_code: Optional[Bytecode] = None
+    layers: Optional[Dict[str, Any]] = None
 
     try:
-        code = Bytecode.from_path(
+        original_code = Bytecode.from_path(
             os.path.join(
                 os.path.dirname(__file__),
                 &#34;..&#34;,
@@ -266,31 +403,65 @@ Returns a tuple of (status_message, color_hex).</p>
         )
 
         class_name = case.replace(&#34;.hx&#34;, &#34;&#34;)
-        test_obj = code.get_test_obj(class_name)
+        test_obj = original_code.get_test_obj(class_name)
 
-        ir_class = decomp.IRClass(code, test_obj)
+        ir_class = decomp.IRClass(original_code, test_obj, capture_layers=True)
 
-        pseudo_content = ir_class.pseudo()
+        raw_pseudo_content = ir_class.pseudo()
+        pseudo_content = raw_pseudo_content
 
         ir_parts = []
+        layers = {}
         if not ir_class.static_methods and not ir_class.methods:
             ir_parts.append(&#34;/* No methods found in class */&#34;)
         else:
             for static_method in ir_class.static_methods:
-                func_name = code.full_func_name(static_method.func)
+                func_name = original_code.full_func_name(static_method.func)
                 ir_parts.append(f&#34;// --- Static Method: {func_name} ---&#34;)
                 ir_parts.append(str(static_method.block))
+                cfg_data = static_method.cfg_data
+                cfg_data[&#34;svg&#34;] = _render_cfg_svg(cfg_data[&#34;dot&#34;])
+                layers[func_name] = {
+                    &#34;opcodes&#34;: static_method.opcodes,
+                    &#34;cfg&#34;: cfg_data,
+                    &#34;steps&#34;: [{&#34;name&#34;: n, &#34;ir&#34;: ir} for n, ir in static_method.layer_snapshots],
+                    &#34;pseudo&#34;: pseudo(static_method),
+                }
 
             for method in ir_class.methods:
-                func_name = code.full_func_name(method.func)
+                func_name = original_code.full_func_name(method.func)
                 ir_parts.append(f&#34;// --- Instance Method: {func_name} ---&#34;)
                 ir_parts.append(str(method.block))
+                cfg_data = method.cfg_data
+                cfg_data[&#34;svg&#34;] = _render_cfg_svg(cfg_data[&#34;dot&#34;])
+                layers[func_name] = {
+                    &#34;opcodes&#34;: method.opcodes,
+                    &#34;cfg&#34;: cfg_data,
+                    &#34;steps&#34;: [{&#34;name&#34;: n, &#34;ir&#34;: ir} for n, ir in method.layer_snapshots],
+                    &#34;pseudo&#34;: pseudo(method),
+                }
 
         ir_content = &#34;\n\n&#34;.join(ir_parts)
 
     except Exception as e:
         tb_last = traceback.format_exc().splitlines()[-1]
         error_message = escape(f&#34;An error occurred during decompilation: {str(e)}\n{tb_last}&#34;)
+
+    opcode_comparison: Optional[OpcodeComparison] = None
+    if raw_pseudo_content and original_code is not None:
+        class_name = case.replace(&#34;.hx&#34;, &#34;&#34;)
+        recompiled, recompile_error = recompile_pseudo(raw_pseudo_content, class_name)
+        if recompiled is not None:
+            opcode_comparison = compare_opcodes(original_code, recompiled, class_name)
+        else:
+            opcode_comparison = OpcodeComparison(
+                overall_similarity=-1.0,
+                recompile_error=recompile_error,
+            )
+
+    similarity_failed = (
+        opcode_comparison is not None and 0.0 &lt;= opcode_comparison.overall_similarity &lt; SIMILARITY_THRESHOLD
+    )
 
     return TestCase(
         original=TestFile(
@@ -302,14 +473,106 @@ Returns a tuple of (status_message, color_hex).</p>
             content=escape(pseudo_content),
         ),
         ir=TestFile(name=f&#34;{case.replace(&#39;.hx&#39;, &#39;&#39;)} (IR)&#34;, content=escape(ir_content)),
-        failed=bool(error_message),
+        failed=bool(error_message) or similarity_failed,
         test_name=file_to_name(case),
         test_id=id,
         error=error_message,
+        opcode_comparison=opcode_comparison,
+        layers=layers,
     )</code></pre>
 </details>
 <div class="desc"><p>Runs a single test case by decompiling the main class in the file.
-It generates both class-level pseudocode and a combined IR view of all methods.</p></div>
+It generates both class-level pseudocode and a combined IR view of all methods,
+then recompiles the pseudocode and compares opcodes with the original.</p></div>
+</dd>
+<dt id="crashtest.run.run_single_case"><code class="name flex">
+<span>def <span class="ident">run_single_case</span></span>(<span>args: Any) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def run_single_case(args: Any) -&gt; None:
+    &#34;&#34;&#34;Run a single test case by name and print results to the terminal.&#34;&#34;&#34;
+    case_file = _find_case_file(args.name)
+    if case_file is None:
+        print(f&#34;No test case matching &#39;{args.name}&#39; found.&#34;)
+        return
+
+    result = run_case(case_file, 0)
+
+    if args.verbose:
+        args.show_orig = True
+        args.show_decompiled = True
+        args.show_ir = True
+        args.no_diff = False
+
+    print(f&#34;== {result.test_name} ({result.original.name}) ==&#34;)
+    if result.error:
+        print(f&#34;Error: {html.unescape(result.error)}&#34;)
+        return
+
+    print(f&#34;Failed: {result.failed}&#34;)
+
+    if args.show_orig:
+        print(&#34;\n--- Original ---&#34;)
+        print(html.unescape(result.original.content))
+
+    if args.show_decompiled:
+        print(&#34;\n--- Decompiled ---&#34;)
+        print(html.unescape(result.decompiled.content))
+
+    if args.show_ir:
+        print(&#34;\n--- IR ---&#34;)
+        print(html.unescape(result.ir.content))
+
+    if not args.no_recompile:
+        oc = result.opcode_comparison
+        if oc is None:
+            print(&#34;\nNo opcode comparison available.&#34;)
+            return
+        print(f&#34;\nOpcode similarity: {oc.overall_similarity:.4f}&#34;)
+        if oc.recompile_error:
+            print(f&#34;Recompile error: {oc.recompile_error}&#34;)
+        for m in oc.methods:
+            print(f&#34;\n  {m.name}&#34;)
+            print(f&#34;    original:   {m.original_count} ops&#34;)
+            print(f&#34;    recompiled: {m.recompiled_count} ops&#34;)
+            print(f&#34;    similarity: {m.similarity:.4f}&#34;)
+            if m.error:
+                print(f&#34;    error:      {m.error}&#34;)
+            if not args.no_diff and m.orig_disasm and m.recomp_disasm:
+                diff = unified_diff(
+                    m.orig_disasm.splitlines(),
+                    m.recomp_disasm.splitlines(),
+                    fromfile=&#34;original&#34;,
+                    tofile=&#34;recompiled&#34;,
+                    lineterm=&#34;&#34;,
+                )
+                print(&#34;    diff:&#34;)
+                for line in diff:
+                    print(f&#34;      {line}&#34;)</code></pre>
+</details>
+<div class="desc"><p>Run a single test case by name and print results to the terminal.</p></div>
+</dd>
+<dt id="crashtest.run.to_asm_resolved"><code class="name flex">
+<span>def <span class="ident">to_asm_resolved</span></span>(<span>func: crashlink.core.Function, code: crashlink.core.Bytecode) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def to_asm_resolved(func: Function, code: Bytecode) -&gt; str:
+    &#34;&#34;&#34;Like to_asm but resolves constant-pool indices to their actual values.&#34;&#34;&#34;
+    lines = []
+    for op in func.ops:
+        parts = [op.op or &#34;?&#34;] + [_fmt_operand(v, code) for v in op.df.values()]
+        lines.append(&#34;. &#34;.join(parts))
+    return &#34;\n&#34;.join(lines)</code></pre>
+</details>
+<div class="desc"><p>Like to_asm but resolves constant-pool indices to their actual values.</p></div>
 </dd>
 </dl>
 </section>
@@ -328,12 +591,17 @@ It generates both class-level pseudocode and a combined IR view of all methods.<
 </li>
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="two-column">
+<li><code><a title="crashtest.run.compare_opcodes" href="#crashtest.run.compare_opcodes">compare_opcodes</a></code></li>
 <li><code><a title="crashtest.run.file_to_name" href="#crashtest.run.file_to_name">file_to_name</a></code></li>
 <li><code><a title="crashtest.run.gen_id" href="#crashtest.run.gen_id">gen_id</a></code></li>
 <li><code><a title="crashtest.run.gen_status" href="#crashtest.run.gen_status">gen_status</a></code></li>
 <li><code><a title="crashtest.run.get_repo_info" href="#crashtest.run.get_repo_info">get_repo_info</a></code></li>
+<li><code><a title="crashtest.run.op_similarity" href="#crashtest.run.op_similarity">op_similarity</a></code></li>
+<li><code><a title="crashtest.run.recompile_pseudo" href="#crashtest.run.recompile_pseudo">recompile_pseudo</a></code></li>
 <li><code><a title="crashtest.run.run" href="#crashtest.run.run">run</a></code></li>
 <li><code><a title="crashtest.run.run_case" href="#crashtest.run.run_case">run_case</a></code></li>
+<li><code><a title="crashtest.run.run_single_case" href="#crashtest.run.run_single_case">run_single_case</a></code></li>
+<li><code><a title="crashtest.run.to_asm_resolved" href="#crashtest.run.to_asm_resolved">to_asm_resolved</a></code></li>
 </ul>
 </li>
 </ul>

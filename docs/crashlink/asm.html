@@ -144,6 +144,7 @@ el.replaceWith(d);
                 typ.kind.value = def_to_kind[typedef]
                 typ.definition = m_def
                 code.types.append(typ)
+                code.invalidate_proto_field_cache()
             elif parts[0] == &#34;Fun&#34;:
                 print(&#34;Adding Fun...&#34;)
                 fun = Fun()
@@ -163,6 +164,7 @@ el.replaceWith(d);
                 typ.kind.value = 10  # Fun
                 typ.definition = m_def  # pyright: ignore[reportPossiblyUnboundVariable]
                 code.types.append(typ)
+                code.invalidate_proto_field_cache()
 
     def _parse_ref(self, val: str) -&gt; ResolvableVarInt:
         if val[1] != &#34;@&#34;:
@@ -244,6 +246,7 @@ el.replaceWith(d);
             obj.name = _name
             obj.type = _typ
             code.natives.append(obj)
+            code.invalidate_findex_cache()
 
     def _opcode(self, val: str) -&gt; Opcode:
         def remove_commas_outside_quotes(text: str) -&gt; str:
@@ -320,6 +323,7 @@ el.replaceWith(d);
                 func.has_debug = False
                 func.version = code.version.value
                 code.functions.append(func)
+                code.invalidate_findex_cache()
 
     def _add_strings(self, code: Bytecode) -&gt; None:
         for s in self.strings:

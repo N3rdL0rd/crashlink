@@ -57,61 +57,13 @@ el.replaceWith(d);
 </summary>
 <pre><code class="python">def class_pseudo(ir_class: &#34;IRClass&#34;) -&gt; str:
     &#34;&#34;&#34;
-    Generates Haxe pseudocode for an entire IRClass.
+    Generates Haxe pseudocode for an entire IRClass, including any user-defined
+    super classes or other referenced classes needed for recompilation.
     &#34;&#34;&#34;
-    code: Bytecode = ir_class.code
-
-    primary_obj = ir_class.dynamic if ir_class.dynamic else ir_class.static
-    if not primary_obj:
-        return &#34;// Error: IRClass contains no valid Obj definitions.&#34;
-
-    output_lines: List[str] = []
-    indent_str = _indent_str(1)
-
-    class_name = destaticify(primary_obj.name.resolve(code))
-    header = f&#34;class {class_name}&#34;
-    if ir_class.dynamic and ir_class.dynamic.super and ir_class.dynamic.super.value &gt; 0:
-        super_type = ir_class.dynamic.super.resolve(code)
-        if isinstance(super_type.definition, Obj):
-            super_name = destaticify(super_type.definition.name.resolve(code))
-            header += f&#34; extends {super_name}&#34;
-    header += &#34; {&#34;
-    output_lines.append(header)
-
-    if ir_class.static_fields:
-        for field_name, field_type in ir_class.static_fields:
-            field_type_haxe = disasm.type_to_haxe(disasm.type_name(code, field_type))
-            output_lines.append(f&#34;{indent_str}public static var {field_name}: {field_type_haxe};&#34;)
-        output_lines.append(&#34;&#34;)
-
-    if ir_class.fields:
-        for field_name, field_type in ir_class.fields:
-            field_type_haxe = disasm.type_to_haxe(disasm.type_name(code, field_type))
-            output_lines.append(f&#34;{indent_str}public var {field_name}: {field_type_haxe};&#34;)
-        output_lines.append(&#34;&#34;)
-
-    for ir_func in ir_class.static_methods:
-        # A bit of a hack to give the generator context about where the function came from
-        setattr(ir_func, &#34;_containing_class&#34;, ir_class)
-        func_str = _generate_function_pseudo(ir_func)
-        for line in func_str.split(&#34;\n&#34;):
-            output_lines.append(f&#34;{indent_str}{line}&#34;)
-        output_lines.append(&#34;&#34;)
-
-    for ir_func in ir_class.methods:
-        setattr(ir_func, &#34;_containing_class&#34;, ir_class)
-        func_str = _generate_function_pseudo(ir_func)
-        for line in func_str.split(&#34;\n&#34;):
-            output_lines.append(f&#34;{indent_str}{line}&#34;)
-        output_lines.append(&#34;&#34;)
-
-    if output_lines and output_lines[-1] == &#34;&#34;:
-        output_lines.pop()
-
-    output_lines.append(&#34;}&#34;)
-    return &#34;\n&#34;.join(output_lines)</code></pre>
+    return &#34;\n\n&#34;.join(_class_pseudo_recursive(ir_class, set()))</code></pre>
 </details>
-<div class="desc"><p>Generates Haxe pseudocode for an entire IRClass.</p></div>
+<div class="desc"><p>Generates Haxe pseudocode for an entire IRClass, including any user-defined
+super classes or other referenced classes needed for recompilation.</p></div>
 </dd>
 <dt id="crashlink.pseudo.pseudo"><code class="name flex">
 <span>def <span class="ident">pseudo</span></span>(<span>ir_func: IRFunction) ‑> str</span>

@@ -30,7 +30,17 @@ from crashlink.core import (
 from crashlink.disasm import to_asm, type_name
 from crashlink.pseudo import pseudo
 
-from .models import SIMILARITY_THRESHOLD, GitInfo, MethodComparison, OpcodeComparison, Run, TestCase, TestContext, TestFile, save_run
+from .models import (
+    SIMILARITY_THRESHOLD,
+    GitInfo,
+    MethodComparison,
+    OpcodeComparison,
+    Run,
+    TestCase,
+    TestContext,
+    TestFile,
+    save_run,
+)
 
 
 def _fmt_operand(val: object, code: Bytecode) -> str:
@@ -141,7 +151,9 @@ def compare_opcodes(original_code: Bytecode, recompiled_code: Bytecode, class_na
     try:
         recompiled_code.get_test_obj(class_name)
     except ValueError:
-        return OpcodeComparison(overall_similarity=-1.0, recompile_error=f"Class '{class_name}' not found in recompiled")
+        return OpcodeComparison(
+            overall_similarity=-1.0, recompile_error=f"Class '{class_name}' not found in recompiled"
+        )
 
     def _belongs_to_class(name: str, cls: str) -> bool:
         return name.startswith(cls + ".") or name.startswith("$" + cls + ".")
@@ -323,8 +335,7 @@ def run_case(case: str, id: int) -> TestCase:
             )
 
     similarity_failed = (
-        opcode_comparison is not None
-        and 0.0 <= opcode_comparison.overall_similarity < SIMILARITY_THRESHOLD
+        opcode_comparison is not None and 0.0 <= opcode_comparison.overall_similarity < SIMILARITY_THRESHOLD
     )
 
     return TestCase(
