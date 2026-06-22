@@ -3745,6 +3745,7 @@ class IRStringConcatFolder(TraversingIROptimizer):
         if folded_expr_for_use is None:
             folded_expr_for_use = self._fold_concat(parts)
 
+        new_use: IRStatement
         if isinstance(use_stmt, IRTrace):
             new_use = IRTrace(
                 code=self.func.code,
@@ -3810,38 +3811,6 @@ class IRStringConcatFolder(TraversingIROptimizer):
                 if "String.hx" in path.replace("\\", "/"):
                     return f
         raise DecompError("String.__add__ not found in bytecode")
-
-    def _statement_reads_local(self, stmt: IRStatement, local: IRLocal) -> bool:
-        if isinstance(stmt, IRAssign):
-            return self._expr_contains_local(stmt.expr, local)
-        if isinstance(stmt, IRReturn):
-            return stmt.value is not None and self._expr_contains_local(stmt.value, local)
-        if isinstance(stmt, IRTrace):
-            return self._expr_contains_local(stmt.msg, local)
-        if isinstance(stmt, IRConditional):
-            return self._expr_contains_local(stmt.condition, local)
-        if isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop)):
-            return self._expr_contains_local(getattr(stmt, "condition", None), local)
-        if isinstance(stmt, IRSwitch):
-            return self._expr_contains_local(stmt.value, local)
-        if isinstance(stmt, IRCall):
-            if stmt.target is not None and self._expr_contains_local(stmt.target, local):
-                return True
-            return any(self._expr_contains_local(arg, local) for arg in stmt.args)
-        return False
-
-    def _statement_assigns_local(self, stmt: IRStatement, local: IRLocal) -> bool:
-        return isinstance(stmt, IRAssign) and stmt.target == local
-
-    def _expr_contains_local(self, expr: Optional[IRStatement], local: IRLocal) -> bool:
-        if expr is None:
-            return False
-        if expr == local:
-            return True
-        for child in expr.get_children():
-            if self._expr_contains_local(child, local):
-                return True
-        return False
 
     def _statement_assigns_local(self, stmt: IRStatement, local: IRLocal) -> bool:
         if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target == local:
@@ -4385,13 +4354,13 @@ class IRLoopRerollOptimizer(TraversingIROptimizer):
     def _stmts_equal(self, a: IRStatement, b: IRStatement) -> bool:
         if type(a) is not type(b):
             return False
-        if isinstance(a, IRAssign):
+        if isinstance(a, IRAssign) and isinstance(b, IRAssign):
             return self._exprs_equal(a.target, b.target) and self._exprs_equal(a.expr, b.expr)
-        if isinstance(a, IRTrace):
+        if isinstance(a, IRTrace) and isinstance(b, IRTrace):
             return self._exprs_equal(a.msg, b.msg)
-        if isinstance(a, IRReturn):
+        if isinstance(a, IRReturn) and isinstance(b, IRReturn):
             return self._exprs_equal(a.value, b.value)
-        if isinstance(a, IRCall):
+        if isinstance(a, IRCall) and isinstance(b, IRCall):
             return (
                 self._exprs_equal(a.target, b.target)
                 and len(a.args) == len(b.args)
@@ -4404,31 +4373,31 @@ class IRLoopRerollOptimizer(TraversingIROptimizer):
             return a is b
         if type(a) is not type(b):
             return False
-        if isinstance(a, IRConst):
+        if isinstance(a, IRConst) and isinstance(b, IRConst):
             return a.const_type == b.const_type and a.value == b.value
-        if isinstance(a, IRLocal):
+        if isinstance(a, IRLocal) and isinstance(b, IRLocal):
             return a == b
-        if isinstance(a, (IRArithmetic, IRBoolExpr)):
+        if isinstance(a, (IRArithmetic, IRBoolExpr)) and isinstance(b, (IRArithmetic, IRBoolExpr)):
             return a.op == b.op and self._exprs_equal(a.left, b.left) and self._exprs_equal(a.right, b.right)
-        if isinstance(a, IRArrayAccess):
+        if isinstance(a, IRArrayAccess) and isinstance(b, IRArrayAccess):
             return self._exprs_equal(a.array, b.array) and self._exprs_equal(a.index, b.index)
-        if isinstance(a, IRField):
+        if isinstance(a, IRField) and isinstance(b, IRField):
             return a.field_name == b.field_name and self._exprs_equal(a.target, b.target)
-        if isinstance(a, IRCast):
+        if isinstance(a, IRCast) and isinstance(b, IRCast):
             return self._exprs_equal(a.expr, b.expr)
-        if isinstance(a, IRCall):
+        if isinstance(a, IRCall) and isinstance(b, IRCall):
             return (
                 self._exprs_equal(a.target, b.target)
                 and len(a.args) == len(b.args)
                 and all(self._exprs_equal(x, y) for x, y in zip(a.args, b.args))
             )
-        if isinstance(a, IRNew):
+        if isinstance(a, IRNew) and isinstance(b, IRNew):
             return (
                 a.alloc_type_idx == b.alloc_type_idx
                 and len(a.constructor_args) == len(b.constructor_args)
                 and all(self._exprs_equal(x, y) for x, y in zip(a.constructor_args, b.constructor_args))
             )
-        if isinstance(a, IRRef):
+        if isinstance(a, IRRef) and isinstance(b, IRRef):
             return self._exprs_equal(a.target, b.target)
         return False
 
@@ -4540,8 +4509,12 @@ class IRForEachLoopOptimizer(TraversingIROptimizer):
             return any(self._stmt_reads_local(s, local) for s in stmt.true_block.statements) or any(
                 self._stmt_reads_local(s, local) for s in stmt.false_block.statements
             )
-        if isinstance(stmt, (IRWhileLoop, IRForEachLoop)):
+        if isinstance(stmt, IRWhileLoop):
             if self._expr_reads_local(stmt.condition, local):
+                return True
+            return any(self._stmt_reads_local(s, local) for s in stmt.body.statements)
+        if isinstance(stmt, IRForEachLoop):
+            if self._expr_reads_local(stmt.array, local):
                 return True
             return any(self._stmt_reads_local(s, local) for s in stmt.body.statements)
         if isinstance(stmt, IRPrimitiveLoop):
@@ -5492,7 +5465,10 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         # Haxe compiler will often constant-fold the whole array away.  Keep the
         # low-level allocation in that case so the recompiled bytecode stays close
         # to the original.
-        if return_target is not None and not self._array_literal_is_worth_recovering(return_target, stmts, i):
+        if (
+            isinstance(return_target, IRLocal)
+            and not self._array_literal_is_worth_recovering(return_target, stmts, i)
+        ):
             return None
 
         if return_target is not None:
@@ -5595,6 +5571,8 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         else:
             return None
 
+        if length_expr is None:
+            return None
         resolved = self._array_from_length_expr(stmts, start, length_expr)
         if resolved is None:
             return None
@@ -5738,6 +5716,8 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         else:
             return None
 
+        if length_expr is None:
+            return None
         arr_var = self._array_var_from_length_expr(length_expr)
         if arr_var is None:
             return None

@@ -2726,7 +2726,7 @@ class Bytecode(Serialisable):
         (the most-derived override wins).
         """
         current: Optional[Obj] = obj
-        visited: set = set()
+        visited: set[int] = set()
         while current is not None and id(current) not in visited:
             visited.add(id(current))
             for proto in current.protos:
