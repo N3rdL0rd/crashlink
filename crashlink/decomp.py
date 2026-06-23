@@ -16,6 +16,7 @@ from .core import (
     Bytecode,
     DynObj,
     Enum,
+    Fun,
     Function,
     Native,
     Obj,
@@ -648,6 +649,12 @@ class IRLocal(IRExpression):
         # so this records the `T` recovered from the allocation site for the
         # declared-type renderer to use instead of the generic Array<Dynamic>.
         self.native_elem_type: Optional[Type] = None
+        # Set by IRNativeMapAllocOptimizer when this local is bound to one of
+        # HL's raw map-abstract allocators (e.g. `Native.hballoc()`): the
+        # bytecode's Abstract type carries no usable name (see
+        # IRNativeMapNew), so this records the recovered Haxe class name for
+        # the declared-type renderer to use instead of the generic Abstract.
+        self.native_map_class: Optional[str] = None
 
     def get_type(self) -> Type:
         return self.type.resolve(self.code)
@@ -793,9 +800,11 @@ class IRAssign(IRStatement):
 
     def __init__(self, code: Bytecode, target: IRExpression, expr: IRExpression):
         super().__init__(code)
-        if not isinstance(target, (IRLocal, IRField, IRArrayAccess)):
+        is_global_target = isinstance(target, IRConst) and target.const_type == IRConst.ConstType.GLOBAL_OBJ
+        if not isinstance(target, (IRLocal, IRField, IRArrayAccess)) and not is_global_target:
             raise DecompError(
-                f"Invalid target for IRAssign: {type(target).__name__}. Must be IRLocal, IRField, or IRArrayAccess."
+                f"Invalid target for IRAssign: {type(target).__name__}. "
+                "Must be IRLocal, IRField, IRArrayAccess, or a GLOBAL_OBJ IRConst (SetGlobal)."
             )
         self.target = target
         self.expr = expr
@@ -1405,6 +1414,32 @@ class IRNativeArrayNew(IRExpression):
         return f"<IRNativeArrayNew: new hl.NativeArray<{elem_name}>({self.size})>"
 
 
+class IRNativeMapNew(IRExpression):
+    """
+    Represents allocating one of HL's raw map abstracts via its no-arg native
+    allocator, e.g. `new hl.types.BytesMap()` (lifted from `Native.hballoc()`
+    by IRNativeMapAllocOptimizer). The bytecode's Abstract type carries no
+    usable name (disasm.type_name falls back to the generic "Abstract" for
+    every abstract kind), so `haxe_class_name` is recovered from the native's
+    own name instead and used purely for rendering; `abstract_type` is the
+    actual bytecode type, kept for type compatibility with the rest of the IR.
+    """
+
+    def __init__(self, code: Bytecode, abstract_type: tIndex, haxe_class_name: str):
+        super().__init__(code)
+        self.abstract_type_idx = abstract_type
+        self.haxe_class_name = haxe_class_name
+
+    def get_type(self) -> Type:
+        return self.abstract_type_idx.resolve(self.code)
+
+    def get_children(self) -> List[IRStatement]:
+        return []
+
+    def __repr__(self) -> str:
+        return f"<IRNativeMapNew: new {self.haxe_class_name}()>"
+
+
 class IRCast(IRExpression):
     """Represents a type cast, e.g., `(MyType)value`"""
 
@@ -1589,8 +1624,18 @@ class IROptimizer(ABC):
     Base class for intermediate representation optimization routines.
     """
 
+    #: Opcodes that must appear somewhere in the function for this optimizer to
+    #: possibly do anything. None means "can't tell from opcodes alone, always run".
+    TARGET_OPCODES: Optional[Set[str]] = None
+
     def __init__(self, function: "IRFunction"):
         self.func = function
+
+    def should_run(self) -> bool:
+        """Cheap pre-check: skip optimize() if none of TARGET_OPCODES are present."""
+        if self.TARGET_OPCODES is None:
+            return True
+        return any(op.op in self.TARGET_OPCODES for op in self.func.ops)
 
     @abstractmethod
     def optimize(self) -> None:
@@ -2471,6 +2516,8 @@ class IRGlobalStringOptimizer(TraversingIROptimizer):
     into:
         reg = <IRConst type=GLOBAL_STRING, value="the actual string">
     """
+
+    TARGET_OPCODES = {"GetGlobal"}
 
     def visit_block(self, block: IRBlock) -> None:
         for stmt in block.statements:
@@ -3614,6 +3661,8 @@ class IRDeadCodeEliminator(TraversingIROptimizer):
 class IRConstructorFolder(TraversingIROptimizer):
     """Folds `new X; __constructor__(x, args...)` into `new X(args...)`."""
 
+    TARGET_OPCODES = {"New"}
+
     def visit_block(self, block: IRBlock) -> None:
         made_change = True
         while made_change:
@@ -3708,6 +3757,8 @@ class IRNativeArrayAllocOptimizer(TraversingIROptimizer):
     `Array<Dynamic>`) `Array<Dynamic>`.
     """
 
+    TARGET_OPCODES = {"Type"}
+
     def _is_alloc_array_call(self, expr: IRExpression) -> bool:
         if not isinstance(expr, IRCall) or len(expr.args) != 2:
             return False
@@ -3736,11 +3787,73 @@ class IRNativeArrayAllocOptimizer(TraversingIROptimizer):
                     self.visit_block(child)
 
 
+class IRNativeMapAllocOptimizer(TraversingIROptimizer):
+    """
+    Folds the no-arg native allocators backing HL's raw map abstracts into
+    their Haxe constructor calls, e.g. `Native.hballoc()` -> `new
+    hl.types.BytesMap()`.
+
+    hl/types/{Bytes,Int,Int64,Object}Map.hx each wrap a single Abstract in a
+    `new()` that's just `extern public inline function new() this = alloc();`,
+    with `alloc` a `@:hlNative("std", ...)` call taking no arguments (see
+    src/std/maps.c's `hballoc`/`hialloc`/`hi64alloc`/`hoalloc` in the
+    hashlink runtime). The Abstract type itself carries no name we can
+    recover (see IRNativeMapNew), so the native's own name is the only way
+    to tell which map class an allocation belongs to.
+    """
+
+    TARGET_OPCODES = {"Call0"}
+
+    NATIVE_TO_CLASS = {
+        "hballoc": "hl.types.BytesMap",
+        "hialloc": "hl.types.IntMap",
+        "hi64alloc": "hl.types.Int64Map",
+        "hoalloc": "hl.types.ObjectMap",
+    }
+
+    def _map_alloc(self, expr: IRExpression) -> Optional[Tuple[str, Native]]:
+        if not isinstance(expr, IRCall) or expr.args:
+            return None
+        if not (isinstance(expr.target, IRConst) and isinstance(expr.target.value, Native)):
+            return None
+        native = expr.target.value
+        if native.lib.resolve(self.func.code) != "std":
+            return None
+        class_name = self.NATIVE_TO_CLASS.get(native.name.resolve(self.func.code))
+        return (class_name, native) if class_name is not None else None
+
+    def visit_block(self, block: IRBlock) -> None:
+        for stmt in block.statements:
+            if not isinstance(stmt, IRAssign):
+                continue
+            alloc = self._map_alloc(stmt.expr)
+            if alloc is None:
+                continue
+            class_name, native = alloc
+            # The allocation site itself is the only place that carries the
+            # Abstract return type by way of the native's own signature; a
+            # local target's declared (register) type is the same value, but
+            # by the time this optimizer runs the assignment may already be
+            # copy-propagated onto a non-local target (e.g. SetGlobal).
+            fun_def = native.type.resolve(self.func.code).definition
+            assert isinstance(fun_def, Fun)
+            abstract_type = fun_def.ret
+            if isinstance(stmt.target, IRLocal):
+                stmt.target.native_map_class = class_name
+            stmt.expr = IRNativeMapNew(self.func.code, abstract_type, class_name)
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
+
 class IRTraceOptimizer(TraversingIROptimizer):
     """
     Finds the common `haxe.Log.trace` pattern with an anonymous object for
     position and collapses it into a single IRTrace statement.
     """
+
+    TARGET_OPCODES = {"New"}
 
     def visit_block(self, block: IRBlock) -> None:
         made_change = True
@@ -5273,6 +5386,8 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
     using enum constructor names for the cases.
     """
 
+    TARGET_OPCODES = {"EnumIndex"}
+
     def visit_block(self, block: IRBlock) -> None:
         made_change = True
         while made_change:
@@ -5347,6 +5462,9 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
       - Conditional arr.bytes[idx << 2] loads with length guard -> arr[idx].
       - ArrayObj allocation with <none>(alloc_array(...)) -> [].
       - temp = arr.bytes; ...; x = temp[idx << 2] -> x = arr[idx].
+
+    Too many distinct opcode triggers to gate safely by TARGET_OPCODES — runs
+    unconditionally.
     """
 
     def visit_block(self, block: IRBlock) -> None:
@@ -6414,7 +6532,7 @@ class IRFunction:
         self.capture_layers = capture_layers
         self.opcodes: str = ""
         self.cfg_data: Dict[str, List[Dict[str, Any]]] = {"nodes": [], "edges": []}
-        self.layer_snapshots: List[Tuple[str, str]] = []
+        self.layer_snapshots: List[Tuple[str, str, bool]] = []
         self._lift_cache: Dict[Tuple[Optional["CFNode"], Optional["CFNode"], int], IRBlock] = {}
         self._lift(no_lift=no_lift)
         if do_optimize:
@@ -6436,6 +6554,7 @@ class IRFunction:
                 IRDeadCodeEliminator(self),
                 IRArrayPatternOptimizer(self),
                 IRNativeArrayAllocOptimizer(self),
+                IRNativeMapAllocOptimizer(self),
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRVoidAssignOptimizer(self),
                 IRDeadCodeEliminator(self),
@@ -6545,15 +6664,17 @@ class IRFunction:
         if self.capture_layers:
             self.opcodes = disasm.func(self.code, self.func)
             self.cfg_data = self._cfg_to_dict()
-            self.layer_snapshots.append(("LLIR", _strip_ansi(self.block.pprint())))
+            self.layer_snapshots.append(("LLIR", _strip_ansi(self.block.pprint()), True))
         for o in self.optimizers:
+            ran = o.should_run()
             if DEBUG:
-                dbg_print(f"----- {o.__class__.__name__} -----")
-            o.optimize()
+                dbg_print(f"----- {o.__class__.__name__} ({'ran' if ran else 'skipped'}) -----")
+            if ran:
+                o.optimize()
             if DEBUG:
                 dbg_print(self.block.pprint())
             if self.capture_layers:
-                self.layer_snapshots.append((o.__class__.__name__, _strip_ansi(self.block.pprint())))
+                self.layer_snapshots.append((o.__class__.__name__, _strip_ansi(self.block.pprint()), ran))
 
     def _cfg_to_dict(self) -> Dict[str, Any]:
         """Serialize the control-flow graph to a JSON-friendly structure."""
@@ -6886,6 +7007,16 @@ class IRFunction:
                         expr,
                     )
                 )
+            elif op.op == "SetGlobal":
+                global_idx = op.df["global"].value
+                # Enum singletons are reconstructed inline at each read (see
+                # GetGlobal above), so the write that populates the cache has
+                # no separate effect to preserve.
+                if global_idx in self._enum_global_map:
+                    continue
+                src_local = source_locals[op.df["src"].value]
+                global_target = IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df["global"])
+                block.statements.append(IRAssign(self.code, global_target, src_local))
             elif op.op == "Field":
                 dst_local = self.locals[op.df["dst"].value]
                 obj_local = source_locals[op.df["obj"].value]

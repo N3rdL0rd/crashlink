@@ -8,7 +8,7 @@ import re
 from abc import ABC, abstractmethod
 from typing import Optional, List, Set, Dict, Tuple, Union, cast, Any
 
-from .core import Bytecode, Obj, Type, Function, Fun, Native, Enum, destaticify
+from .core import Bytecode, Obj, Type, Function, Fun, Native, Enum, destaticify, gIndex
 from . import disasm
 from .decomp import (
     IRBreak,
@@ -45,6 +45,7 @@ from .decomp import (
     IRForEachLoop,
     IRIntRangeLoop,
     IRNativeArrayNew,
+    IRNativeMapNew,
     IRPrimitiveLoop,
     IRReturn,
     IRPrimitiveJump,
@@ -55,6 +56,12 @@ from .decomp import (
 
 def _indent_str(level: int) -> str:
     return "    " * level  # 4 spaces for indentation
+
+
+def global_name(const: "IRConst") -> str:
+    """Synthesized name for a raw HL global with no source-level name (see varN)."""
+    assert isinstance(const.original_index, gIndex)
+    return f"global{const.original_index.value}"
 
 
 def _collect_assigned_names(stmts: List[IRStatement]) -> set[str]:
@@ -143,6 +150,15 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         elif expr.value is None:  # For IRConst.ConstType.NULL
             return "null"
         elif isinstance(expr.value, Type):
+            if isinstance(expr.original_index, gIndex):
+                # A real mutable global slot (from GetGlobal/SetGlobal), not a
+                # compile-time class/type reference (those come from the `Type`
+                # opcode). Mirrors Haxe's actual `untyped $name(...)` idiom for
+                # raw HL globals (zero-arg call to read, one-arg call to write
+                # — see e.g. `get_allTypes()`/`init()` in hl/_std/Type.hx),
+                # with a synthesized name (see varN) since there's no
+                # source-level name to recover.
+                return f"untyped ${global_name(expr)}()"
             # Types as runtime values are used internally by the HashLink stdlib.
             # There is no direct Haxe equivalent, so emit null as a placeholder.
             return "null"
@@ -413,6 +429,9 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         size_str = _expression_to_haxe(expr.size, code, ir_function)
         return f"new hl.NativeArray<{elem_haxe_type}>({size_str})"
 
+    elif isinstance(expr, IRNativeMapNew):
+        return f"new {expr.haxe_class_name}()"
+
     elif isinstance(expr, IRCast):
         target_name = disasm.type_name(code, expr.get_type())
         source_name = disasm.type_name(code, expr.expr.get_type())
@@ -508,6 +527,20 @@ def _generate_statements(
                 value_str = f"cast {value_str}"
             output_lines.append(f"{indent}var {local_name}: {type_str} = {value_str};")
             declared_vars_in_scope.add(local_name)
+
+        elif (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRConst)
+            and stmt.target.const_type == IRConst.ConstType.GLOBAL_OBJ
+            and isinstance(stmt.target.original_index, gIndex)
+        ):
+            # Raw HL globals (from SetGlobal) have no source-level name and
+            # aren't real Haxe fields, so they can't be written with normal
+            # `x = y;` syntax. Haxe's actual idiom for this is the one-arg
+            # `untyped $name(value)` call form (see `untyped $allTypes(...)`
+            # in hl/_std/Type.hx), which is what this mirrors.
+            value_str = _expression_to_haxe(stmt.expr, code, ir_function)
+            output_lines.append(f"{indent}untyped ${global_name(stmt.target)}({value_str});")
 
         elif isinstance(stmt, IRAssign):
             target_str = _expression_to_haxe(stmt.target, code, ir_function)
@@ -1936,6 +1969,8 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
             if stmt.native_elem_type is not None:
                 elem_haxe_type = disasm.type_to_haxe(disasm.type_name(stmt.code, stmt.native_elem_type))
                 type_name = f"hl.NativeArray<{elem_haxe_type}>"
+            elif stmt.native_map_class is not None:
+                type_name = stmt.native_map_class
             else:
                 type_name = disasm.type_to_haxe(disasm.type_name(stmt.code, stmt.get_type()))
             if stmt.name in locals and locals[stmt.name] != type_name:

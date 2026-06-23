@@ -317,7 +317,7 @@ def run_case(case: str, id: int) -> TestCase:
                 layers[func_name] = {
                     "opcodes": static_method.opcodes,
                     "cfg": cfg_data,
-                    "steps": [{"name": n, "ir": ir} for n, ir in static_method.layer_snapshots],
+                    "steps": [{"name": n, "ir": ir, "ran": ran} for n, ir, ran in static_method.layer_snapshots],
                     "pseudo": pseudo(static_method),
                 }
 
@@ -330,7 +330,7 @@ def run_case(case: str, id: int) -> TestCase:
                 layers[func_name] = {
                     "opcodes": method.opcodes,
                     "cfg": cfg_data,
-                    "steps": [{"name": n, "ir": ir} for n, ir in method.layer_snapshots],
+                    "steps": [{"name": n, "ir": ir, "ran": ran} for n, ir, ran in method.layer_snapshots],
                     "pseudo": pseudo(method),
                 }
 

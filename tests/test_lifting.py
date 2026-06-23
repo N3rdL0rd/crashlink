@@ -27,6 +27,11 @@ def _decompile_named(path: str, name_suffix: str) -> str:
     raise AssertionError(f"No function ending in {name_suffix!r} found in {path}")
 
 
+def _decompile_at(path: str, findex: int) -> str:
+    code = Bytecode.from_path(path)
+    return pseudo.pseudo(IRFunction(code, code.fn(findex)))
+
+
 def _unlifted(out: str) -> set:
     return set(UNLIFTED_RE.findall(out))
 
@@ -76,3 +81,36 @@ def test_gettype_gettid_lifted():
     assert "GetTID" not in _unlifted(out)
     assert "Type.getDynamic(" in out
     assert ".kind" in out
+
+
+def test_setglobal_lifted():
+    # Type.init (f@243) caches an Abstract handle in a global via
+    # `untyped $allTypes(new hl.types.BytesMap())`, compiling to a GetGlobal
+    # null-check followed by SetGlobal (mirroring hl/_std/Type.hx's actual
+    # `get_allTypes`/`init` source: `untyped $allTypes()` reads, `untyped
+    # $allTypes(value)` writes). The global has no source-level name to
+    # recover, so a synthesized name is used, but the read/write call-arity
+    # idiom is preserved so both sides agree and the null-check stays
+    # meaningful.
+    out = _decompile_at("tests/haxe/Clazz.hl", 243)
+    assert "SetGlobal" not in _unlifted(out)
+    assert "untyped $global15() != null" in out
+    assert "untyped $global15(new hl.types.BytesMap());" in out
+
+
+def test_native_map_alloc_lifted():
+    # NativeMapAlloc.main directly constructs each of HL's raw map abstracts.
+    # Their constructors compile to a no-arg native call (Call0 of
+    # hballoc/hialloc/hoalloc); IRNativeMapAllocOptimizer should fold those
+    # back into the original `new hl.types.XMap()` rather than leaving a
+    # `Native.h*alloc()` call with a generic `Abstract`-typed local.
+    out = _decompile_main("tests/haxe/NativeMapAlloc.hl")
+    assert "new hl.types.BytesMap()" in out
+    assert "new hl.types.IntMap()" in out
+    assert "new hl.types.ObjectMap()" in out
+    assert "Native.hballoc" not in out
+    assert "Native.hialloc" not in out
+    assert "Native.hoalloc" not in out
+    assert "var b: hl.types.BytesMap" in out
+    assert "var i: hl.types.IntMap" in out
+    assert "var o: hl.types.ObjectMap" in out

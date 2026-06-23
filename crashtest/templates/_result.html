@@ -526,6 +526,16 @@
         }
         .layers-tab:hover { color: var(--text); }
         .layers-tab.active { color: var(--mauve); border-bottom-color: var(--mauve); }
+        .layers-tab.skipped { color: var(--overlay0); font-style: italic; }
+        .layers-tab.skipped.active { color: var(--yellow); border-bottom-color: var(--yellow); }
+        .layers-skipped-note {
+            color: var(--yellow);
+            font-size: 0.8rem;
+            padding: 0.5rem 0.75rem;
+            margin-bottom: 0.5rem;
+            border-left: 3px solid var(--yellow);
+            background: rgba(255, 255, 0, 0.05);
+        }
         .layers-body {
             overflow: auto;
             flex: 1;
@@ -1161,7 +1171,9 @@
     function visibleStepIndices(method) {
         const indices = [];
         method.steps.forEach((s, i) => {
-            if (i === 0 || !_hideUnchangedSteps || s.ir !== method.steps[i - 1].ir) {
+            // Always surface skipped steps regardless of the hide-unchanged
+            // toggle — that's the whole point of showing should_run() results.
+            if (s.ran === false || i === 0 || !_hideUnchangedSteps || s.ir !== method.steps[i - 1].ir) {
                 indices.push(i);
             }
         });
@@ -1252,7 +1264,8 @@
             { key: 'cfg', label: 'CFG' },
         ];
         visibleStepIndices(method).forEach(i => {
-            tabDefs.push({ key: `step-${i}`, label: method.steps[i].name });
+            const s = method.steps[i];
+            tabDefs.push({ key: `step-${i}`, label: s.name, skipped: s.ran === false });
         });
         tabDefs.push({ key: 'pseudo', label: 'Pseudo' });
 
@@ -1261,12 +1274,15 @@
         }
 
         tabsEl.innerHTML = tabDefs.map(t =>
-            `<button class="layers-tab ${t.key === _currentLayersTab ? 'active' : ''}"` +
-            ` onclick="switchLayersTab('${t.key}')">${esc(t.label)}</button>`
+            `<button class="layers-tab ${t.key === _currentLayersTab ? 'active' : ''} ${t.skipped ? 'skipped' : ''}"` +
+            ` title="${t.skipped ? 'Skipped: no relevant opcodes in this function' : ''}"` +
+            ` onclick="switchLayersTab('${t.key}')">${esc(t.label)}${t.skipped ? ' ⊘' : ''}</button>`
         ).join('');
 
+        const skippedCount = method.steps.filter(s => s.ran === false).length;
         document.getElementById('layers-method-meta').textContent =
-            `${method.cfg.nodes.length} nodes · ${method.cfg.edges.length} edges · ${method.steps.length} optimizer passes`;
+            `${method.cfg.nodes.length} nodes · ${method.cfg.edges.length} edges · ` +
+            `${method.steps.length} optimizer passes (${skippedCount} skipped)`;
 
         bodyEl.innerHTML = '';
         if (_currentLayersTab === 'opcodes') {
@@ -1280,7 +1296,10 @@
         } else if (_currentLayersTab.startsWith('step-')) {
             const idx = parseInt(_currentLayersTab.split('-')[1], 10);
             const step = method.steps[idx];
-            bodyEl.innerHTML = `<pre class="line-numbers"><code class="language-ir">${esc(step ? step.ir : '')}</code></pre>`;
+            const skippedNote = step && step.ran === false
+                ? '<div class="layers-skipped-note">Skipped — should_run() found none of this optimizer\'s target opcodes in the function.</div>'
+                : '';
+            bodyEl.innerHTML = skippedNote + `<pre class="line-numbers"><code class="language-ir">${esc(step ? step.ir : '')}</code></pre>`;
         }
         Prism.highlightAllUnder(bodyEl);
         updateLayersNav();
