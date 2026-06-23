@@ -2966,7 +2966,10 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         if isinstance(expr, IRRef):
             return False
         if isinstance(expr, IREnumConstruct):
-            return all(self.is_safe_to_inline_aggressively(a) for a in expr.args)
+            # An EnumAlloc produces an empty-args IREnumConstruct that represents
+            # a mutable allocation site (subsequent SetEnumField writes mutate it).
+            # Do not inline it, or each use site would get a distinct value.
+            return bool(expr.args) and all(self.is_safe_to_inline_aggressively(a) for a in expr.args)
         if isinstance(expr, IREnumIndex):
             return self.is_safe_to_inline_aggressively(expr.value)
         if isinstance(expr, IREnumField):
@@ -7262,6 +7265,19 @@ class IRFunction:
                 args = [source_locals[arg.value] for arg in op.df["args"].value]
                 block.statements.append(
                     IRAssign(self.code, dst_local, IREnumConstruct(self.code, construct_name, args, enum_type))
+                )
+            elif op.op == "EnumAlloc":
+                dst_local = self.locals[op.df["dst"].value]
+                enum_type = self.func.regs[op.df["dst"].value]
+                enum_def = enum_type.resolve(self.code).definition
+                cid = op.df["construct"].value
+                construct_name = (
+                    enum_def.constructs[cid].name.resolve(self.code)
+                    if cid < len(enum_def.constructs)
+                    else f"construct_{cid}"
+                )
+                block.statements.append(
+                    IRAssign(self.code, dst_local, IREnumConstruct(self.code, construct_name, [], enum_type))
                 )
             elif op.op == "EnumField":
                 dst_local = self.locals[op.df["dst"].value]
