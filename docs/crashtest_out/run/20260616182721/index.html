@@ -8317,17 +8317,39 @@ class Base {
     // ── LCS diff engine ───────────────────────────────────────────────────────
 
     /**
-     * Myers-LCS diff. Returns an array of {type, line} where type is
-     * 'same' | 'add' | 'rem'.
+     * Register numbers are allocated by the compiler's temp-slot layout, which
+     * shifts around between the original and a recompile even when the code is
+     * semantically identical (e.g. one extra temp elsewhere offsets every later
+     * index). Blanking out register tokens entirely for the comparison key (but
+     * not the displayed text) means lines match as long as the opcode and its
+     * non-register operands (globals, constants, jump targets) line up, so a
+     * single inserted/removed instruction doesn't desync the rest of the diff.
+     * A per-side canonical renumbering (preserving distinct register identity)
+     * was tried first, but a single newly-introduced register on one side shifts
+     * that side's whole numbering relative to the other, reintroducing the same
+     * cascade of false mismatches it was meant to fix.
+     */
+    function canonicalizeRegLines(lines) {
+        return lines.map(line => line.replace(/\br\d+\b/g, 'R'));
+    }
+
+    /**
+     * Myers-LCS diff. Matches lines on a register-canonicalized key (see
+     * canonicalizeRegLines) but returns the original display text, so the
+     * visible diff is immune to benign register renumbering while still
+     * showing the real register numbers. Returns an array of {type, line}
+     * where type is 'same' | 'add' | 'rem'.
      */
     function diffLines(aLines, bLines) {
+        const aKeys = canonicalizeRegLines(aLines);
+        const bKeys = canonicalizeRegLines(bLines);
         const m = aLines.length, n = bLines.length;
         // Build LCS table
         const dp = [];
         for (let i = 0; i <= m; i++) dp.push(new Int32Array(n + 1));
         for (let i = 1; i <= m; i++)
             for (let j = 1; j <= n; j++)
-                dp[i][j] = aLines[i-1] === bLines[j-1]
+                dp[i][j] = aKeys[i-1] === bKeys[j-1]
                     ? dp[i-1][j-1] + 1
                     : Math.max(dp[i-1][j], dp[i][j-1]);
 
@@ -8335,7 +8357,7 @@ class Base {
         const ops = [];
         let i = m, j = n;
         while (i > 0 || j > 0) {
-            if (i > 0 && j > 0 && aLines[i-1] === bLines[j-1]) {
+            if (i > 0 && j > 0 && aKeys[i-1] === bKeys[j-1]) {
                 ops.push({ type: 'same', line: aLines[i-1] });
                 i--; j--;
             } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
