@@ -801,10 +801,10 @@ class IRAssign(IRStatement):
     def __init__(self, code: Bytecode, target: IRExpression, expr: IRExpression):
         super().__init__(code)
         is_global_target = isinstance(target, IRConst) and target.const_type == IRConst.ConstType.GLOBAL_OBJ
-        if not isinstance(target, (IRLocal, IRField, IRArrayAccess)) and not is_global_target:
+        if not isinstance(target, (IRLocal, IRField, IRArrayAccess, IREnumField)) and not is_global_target:
             raise DecompError(
                 f"Invalid target for IRAssign: {type(target).__name__}. "
-                "Must be IRLocal, IRField, IRArrayAccess, or a GLOBAL_OBJ IRConst (SetGlobal)."
+                "Must be IRLocal, IRField, IRArrayAccess, IREnumField, or a GLOBAL_OBJ IRConst (SetGlobal)."
             )
         self.target = target
         self.expr = expr
@@ -7279,6 +7279,31 @@ class IRFunction:
                     )
                 else:
                     block.statements.append(IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op)))
+            elif op.op == "SetEnumField":
+                value_local = source_locals[op.df["value"].value]
+                src_local = source_locals[op.df["src"].value]
+                enum_type = self.func.regs[op.df["value"].value]
+                enum_def = enum_type.resolve(self.code).definition
+                fid = op.df["field"].value
+                # SetEnumField has no explicit construct operand; use the only
+                # construct when the enum is a singleton, otherwise pick the first
+                # construct that has a parameter at this index.
+                construct = None
+                if len(enum_def.constructs) == 1:
+                    construct = enum_def.constructs[0]
+                else:
+                    for c in enum_def.constructs:
+                        if fid < len(c.params):
+                            construct = c
+                            break
+                if construct is not None and fid < len(construct.params):
+                    field_name = f"param{fid}"
+                    field_type = construct.params[fid]
+                    block.statements.append(
+                        IRAssign(self.code, IREnumField(self.code, value_local, field_name, field_type), src_local)
+                    )
+                else:
+                    block.statements.append(IRUnliftedOpcode(self.code, op))
             else:
                 if "dst" in op.df:
                     block.statements.append(
