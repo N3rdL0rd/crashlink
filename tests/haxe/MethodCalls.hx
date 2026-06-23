@@ -1,5 +1,3 @@
-// Targets CallMethod (virtual dispatch on a base-typed reference) and
-// CallThis (a method calling another method on itself via `this`).
 class MethodBase {
     public function new() {}
 

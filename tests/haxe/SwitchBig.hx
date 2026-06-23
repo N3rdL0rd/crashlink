@@ -8,13 +8,13 @@ class SwitchBig {
         }
         switch (b) {
             case 0: b += 1;
-            case 1: b += 1;
-            case 2: b += 1;
-            //case 4: b += 1;
+            case 1: b += 2;
+            case 2: b += 3;
+            case 8: b += 32;
         }
         switch (a) {
             case -1: b += 1;
-            case -5: b += 1;
+            case -5: b += 5;
         }
         var c = "hello";
         switch (c) {

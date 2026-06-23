@@ -1,5 +1,3 @@
-// Targets GetArray: hl.NativeArray indexing lowers to the generic GetArray
-// opcode for element reads.
 class GetArrayCase {
     static function main() {
         var a = new hl.NativeArray<Int>(3);

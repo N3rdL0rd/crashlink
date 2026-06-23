@@ -10,7 +10,7 @@ class Arithmetic {
         var res4 = first_var / second_var;
         var res5 = first_var % second_var;
         var res6 = first_var << second_var;
-        var bool_res = first_var < second_var; // true
+        var bool_res = first_var < second_var;
         if (bool_res) {
             var final_res = first_var + second_var;
         } else {
