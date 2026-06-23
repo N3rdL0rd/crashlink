@@ -3146,6 +3146,30 @@ class IRCopyPropOptimizer(TraversingIROptimizer):
                         ):
                             break
                         self._replace_local_shallow(later, temp_local, user_local)
+                return None
+
+            # A branch's `temp = expr; user = temp` can get folded to `user = expr`
+            # at lift time, leaving a dangling read of `temp` elsewhere (e.g. a
+            # later switch's subject). Every branch set `user` to that value, so
+            # an unreassigned read of another local right after must be it too.
+            user_local = self._common_user_assign_target(stmt)
+            if user_local is not None and block is not None:
+                idx = block.statements.index(stmt)
+                reassigned: Set[IRLocal] = set()
+                for later in block.statements[idx + 1 :]:
+                    for phantom in self._phantom_reads(later):
+                        if phantom == user_local or phantom in reassigned:
+                            continue
+                        # Match by name pattern (not _is_user_local): the same
+                        # register can be debug-named later in the function while
+                        # still anonymous here.
+                        if not self._is_synthetic_temp(phantom):
+                            continue
+                        self._replace_local_shallow(later, phantom, user_local)
+                    if isinstance(later, IRAssign) and isinstance(later.target, IRLocal):
+                        if later.target == user_local:
+                            break
+                        reassigned.add(later.target)
             return None
 
         # Simple sequential copy propagation: after `user = temp`, replace reads
@@ -3217,6 +3241,46 @@ class IRCopyPropOptimizer(TraversingIROptimizer):
             elif copy != current:
                 return None
         return copy
+
+    def _common_user_assign_target(self, stmt: IRStatement) -> Optional[IRLocal]:
+        """Return the user-named local every branch's last statement assigns to, if it's the same one."""
+        branches: List[IRBlock] = []
+        if isinstance(stmt, IRConditional):
+            branches.append(stmt.true_block)
+            if stmt.false_block:
+                branches.append(stmt.false_block)
+        elif isinstance(stmt, IRSwitch):
+            branches.extend(stmt.cases.values())
+            if stmt.default:
+                branches.append(stmt.default)
+        else:
+            return None
+
+        user_local: Optional[IRLocal] = None
+        for branch in branches:
+            last = self._last_significant_statement(branch)
+            if not isinstance(last, IRAssign) or not isinstance(last.target, IRLocal):
+                return None
+            if not self._is_user_local(last.target):
+                return None
+            if user_local is None:
+                user_local = last.target
+            elif user_local != last.target:
+                return None
+        return user_local
+
+    def _phantom_reads(self, stmt: IRStatement) -> List[IRLocal]:
+        """Top-level local(s) read directly as a switch's value or a conditional's condition."""
+        if isinstance(stmt, IRSwitch) and isinstance(stmt.value, IRLocal):
+            return [stmt.value]
+        if isinstance(stmt, IRConditional) and isinstance(stmt.condition, IRBoolExpr):
+            found = []
+            if isinstance(stmt.condition.left, IRLocal):
+                found.append(stmt.condition.left)
+            if isinstance(stmt.condition.right, IRLocal):
+                found.append(stmt.condition.right)
+            return found
+        return []
 
     def _last_significant_statement(self, block: IRBlock) -> Optional[IRStatement]:
         """Return the last non-IRReturn statement in a block, or None."""
