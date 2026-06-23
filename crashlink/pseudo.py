@@ -603,7 +603,8 @@ def _generate_statements(
 
         elif isinstance(stmt, IRUnliftedOpcode):
             output_lines.append(
-                f"{indent}// UNLIFTED OPCODE: {disasm.pseudo_from_op(stmt.op, 0, ir_function.func.regs, code, terse=True)}"
+                f"{indent}// UNLIFTED OPCODE: {stmt.op.op} "
+                f"{disasm.pseudo_from_op(stmt.op, 0, ir_function.func.regs, code, terse=True)}"
             )
 
         elif isinstance(stmt, IRConditional):

@@ -6922,6 +6922,9 @@ class IRFunction:
             if op.op == "Label":
                 continue
 
+            if op.op == "Nop":
+                continue
+
             if op.op in arithmetic:
                 dst = self.locals[op.df["dst"].value]
                 lhs = source_locals[op.df["a"].value]
@@ -7051,7 +7054,7 @@ class IRFunction:
                 alloc_type_idx = self.func.regs[op.df["dst"].value]
                 new_expr = IRNew(self.code, alloc_type_idx)
                 block.statements.append(IRAssign(self.code, dst_local, new_expr))
-            elif op.op == "ToSFloat":
+            elif op.op in ("ToSFloat", "ToUFloat"):
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = source_locals[op.df["src"].value]
 
@@ -7214,6 +7217,12 @@ class IRFunction:
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = source_locals[op.df["src"].value]
                 block.statements.append(IRAssign(self.code, dst_local, src_local))
+            elif op.op == "Setref":
+                # References are modelled transparently; writing through one is
+                # represented as a copy to the reference register itself.
+                dst_local = self.locals[op.df["dst"].value]
+                src_local = source_locals[op.df["value"].value]
+                block.statements.append(IRAssign(self.code, dst_local, src_local))
             elif op.op == "StaticClosure":
                 dst_local = self.locals[op.df["dst"].value]
                 fun_const = IRConst(self.code, IRConst.ConstType.FUN, idx=op.df["fun"])
@@ -7229,16 +7238,9 @@ class IRFunction:
                 dst_local = self.locals[op.df["dst"].value]
                 obj_local = source_locals[op.df["obj"].value]
                 obj_type = obj_local.get_type()
-                if isinstance(obj_type.definition, Obj):
-                    fid = op.df["field"].value
-                    if fid < len(obj_type.definition.virtuals):
-                        from .core import fIndex
-
-                        fun_idx = obj_type.definition.virtuals[fid]
-                        fun_const = IRConst(self.code, IRConst.ConstType.FUN, idx=fIndex(fun_idx))
-                        block.statements.append(IRAssign(self.code, dst_local, fun_const))
-                    else:
-                        block.statements.append(IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op)))
+                field_expr = self._resolve_method_field(obj_local, obj_type, op.df["field"].value)
+                if field_expr is not None:
+                    block.statements.append(IRAssign(self.code, dst_local, field_expr))
                 else:
                     block.statements.append(IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op)))
             elif op.op == "NullCheck":

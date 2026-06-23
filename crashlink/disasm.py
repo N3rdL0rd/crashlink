@@ -190,6 +190,8 @@ def pseudo_from_op(
             return f"reg{op.df['dst']} = {op.df['value'].value}"
         case "String":
             return f'reg{op.df["dst"]} = "{op.df["ptr"].resolve(code)}"'
+        case "Bytes":
+            return f"reg{op.df['dst']} = bytes@{op.df['ptr'].resolve(code)}"
         case "Null":
             return f"reg{op.df['dst']} = null"
 
@@ -208,10 +210,16 @@ def pseudo_from_op(
             return f"if reg{op.df['cond']} is true: jump to {idx + (op.df['offset'].value + 1)}"
         case "JSGte":
             return f"if reg{op.df['a']} >= reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
+        case "JSLte":
+            return f"if reg{op.df['a']} <= reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
         case "JULt" | "JSLt":
             return f"if reg{op.df['a']} < reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
+        case "JUGte":
+            return f"if reg{op.df['a']} >=u reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
         case "JNotLt":
             return f"if reg{op.df['a']} >= reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
+        case "JNotGte":
+            return f"if reg{op.df['a']} < reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
         case "JNotEq":
             return f"if reg{op.df['a']} != reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
         case "JSGt":
@@ -222,8 +230,14 @@ def pseudo_from_op(
         # Arithmetic
         case "Mul":
             return f"reg{op.df['dst']} = reg{op.df['a']} * reg{op.df['b']}"
+        case "UDiv":
+            return f"reg{op.df['dst']} = reg{op.df['a']} /u reg{op.df['b']}"
         case "SDiv":
             return f"reg{op.df['dst']} = reg{op.df['a']} / reg{op.df['b']}"
+        case "UMod":
+            return f"reg{op.df['dst']} = reg{op.df['a']} %u reg{op.df['b']}"
+        case "SMod":
+            return f"reg{op.df['dst']} = reg{op.df['a']} % reg{op.df['b']}"
         case "Incr":
             return f"reg{op.df['dst']}++"
         case "Decr":
@@ -234,10 +248,20 @@ def pseudo_from_op(
             return f"reg{op.df['dst']} = reg{op.df['a']} + reg{op.df['b']}"
         case "Shl":
             return f"reg{op.df['dst']} = reg{op.df['a']} << reg{op.df['b']}"
-        case "SMod":
-            return f"reg{op.df['dst']} = reg{op.df['a']} % reg{op.df['b']}"
+        case "SShr":
+            return f"reg{op.df['dst']} = reg{op.df['a']} >> reg{op.df['b']}"
+        case "UShr":
+            return f"reg{op.df['dst']} = reg{op.df['a']} >>> reg{op.df['b']}"
+        case "And":
+            return f"reg{op.df['dst']} = reg{op.df['a']} & reg{op.df['b']}"
+        case "Or":
+            return f"reg{op.df['dst']} = reg{op.df['a']} | reg{op.df['b']}"
         case "Xor":
             return f"reg{op.df['dst']} = reg{op.df['a']} ^ reg{op.df['b']}"
+        case "Neg":
+            return f"reg{op.df['dst']} = -reg{op.df['src']}"
+        case "Not":
+            return f"reg{op.df['dst']} = !reg{op.df['src']}"
 
         # Memory/Object Operations
         case "GetThis":
@@ -255,6 +279,9 @@ def pseudo_from_op(
         case "GetGlobal":
             glob = type_name(code, op.df["global"].resolve(code))
             return f"reg{op.df['dst']} = {glob} (g@{op.df['global']})"
+        case "SetGlobal":
+            glob = type_name(code, op.df["global"].resolve(code))
+            return f"{glob} (g@{op.df['global']}) = reg{op.df['src']}"
         case "Field":
             field = op.df["field"].resolve_obj(code, regs[op.df["obj"].value].resolve(code).definition)
             return f"reg{op.df['dst']} = reg{op.df['obj']}.{field.name.resolve(code)}"
@@ -272,6 +299,8 @@ def pseudo_from_op(
             return f"reg{op.df['dst']} = new {type_name(code, typ)}"
         case "DynSet":
             return f"reg{op.df['obj']}.{op.df['field'].resolve(code)} = reg{op.df['src']}"
+        case "DynGet":
+            return f"reg{op.df['dst']} = reg{op.df['obj']}.{op.df['field'].resolve(code)}"
         case "GetThis":
             if not func:
                 return f"reg{op.df['dst']} = this.field{op.df['field']}"
@@ -290,22 +319,52 @@ def pseudo_from_op(
             return f"this.{field.name.resolve(code)} = reg{op.df['src']}"
         case "InstanceClosure":
             return f"reg{op.df['dst']} = f@{op.df['fun']} (as method of reg{op.df['obj']})"
+        case "StaticClosure":
+            return f"reg{op.df['dst']} = f@{op.df['fun']} (static closure)"
+        case "VirtualClosure":
+            return f"reg{op.df['dst']} = reg{op.df['obj']}.field{op.df['field']} (virtual closure)"
 
         # Type Conversions
         case "ToSFloat":
             return f"reg{op.df['dst']} = SFloat(reg{op.df['src']})"
+        case "ToUFloat":
+            return f"reg{op.df['dst']} = UFloat(reg{op.df['src']})"
+        case "ToInt":
+            return f"reg{op.df['dst']} = Int(reg{op.df['src']})"
+        case "ToDyn":
+            return f"reg{op.df['dst']} = Dyn(reg{op.df['src']})"
         case "ToVirtual":
             return f"reg{op.df['dst']} = Virtual(reg{op.df['src']})"
+        case "Type":
+            return f"reg{op.df['dst']} = type {type_name(code, op.df['ty'].resolve(code))}"
+        case "GetType":
+            return f"reg{op.df['dst']} = type(reg{op.df['src']})"
+        case "GetTID":
+            return f"reg{op.df['dst']} = tid(reg{op.df['src']})"
         case "Ref":
             return f"reg{op.df['dst']} = &reg{op.df['src']}"
         case "Unref":
             return f"reg{op.df['dst']} = *reg{op.df['src']}"
+        case "Setref":
+            return f"*reg{op.df['dst']} = reg{op.df['value']}"
+        case "RefData":
+            return f"reg{op.df['dst']} = data(reg{op.df['src']})"
+        case "RefOffset":
+            return f"reg{op.df['dst']} = reg{op.df['reg']} + reg{op.df['offset']}"
         case "GetArray":
             return f"reg{op.df['dst']} = reg{op.df['array']}[reg{op.df['index']}]"
-        case "SetMem":
-            return f"reg{op.df['bytes']}[reg{op.df['index']}] = reg{op.df['src']}"
         case "GetMem":
             return f"reg{op.df['dst']} = reg{op.df['bytes']}[reg{op.df['index']}]"
+        case "GetI8":
+            return f"reg{op.df['dst']} = reg{op.df['bytes']}[reg{op.df['index']}] (i8)"
+        case "GetI16":
+            return f"reg{op.df['dst']} = reg{op.df['bytes']}[reg{op.df['index']}] (i16)"
+        case "SetMem":
+            return f"reg{op.df['bytes']}[reg{op.df['index']}] = reg{op.df['src']}"
+        case "SetI8":
+            return f"reg{op.df['bytes']}[reg{op.df['index']}] = reg{op.df['src']} (i8)"
+        case "SetI16":
+            return f"reg{op.df['bytes']}[reg{op.df['index']}] = reg{op.df['src']} (i16)"
         case "SafeCast":
             return f"reg{op.df['dst']} = reg{op.df['src']} as {type_name(code, regs[op.df['dst'].value].resolve(code))}"
         case "UnsafeCast":
@@ -350,12 +409,29 @@ def pseudo_from_op(
         # Error Handling
         case "NullCheck":
             return f"if reg{op.df['reg']} is null: error"
+        case "Throw":
+            return f"throw reg{op.df['exc']}"
+        case "Rethrow":
+            return f"rethrow reg{op.df['exc']}"
         case "Trap":
             return f"trap to reg{op.df['exc']} (end: {idx + (op.df['offset'].value)})"
         case "EndTrap":
             return f"end trap to reg{op.df['exc']}"
         case "Catch":
             return f"catch to reg{op.df['global']}"
+
+        # Enums
+        case "MakeEnum":
+            args = ", ".join([f"reg{arg}" for arg in op.df["args"].value])
+            return f"reg{op.df['dst']} = construct{op.df['construct']}({args})"
+        case "EnumAlloc":
+            return f"reg{op.df['dst']} = alloc construct{op.df['construct']}"
+        case "EnumIndex":
+            return f"reg{op.df['dst']} = index(reg{op.df['value']})"
+        case "EnumField":
+            return f"reg{op.df['dst']} = reg{op.df['value']}.field{op.df['field']} (construct{op.df['construct']})"
+        case "SetEnumField":
+            return f"reg{op.df['value']}.field{op.df['field']} = reg{op.df['src']}"
 
         # Switch
         case "Switch":
@@ -378,6 +454,12 @@ def pseudo_from_op(
             if type(regs[op.df["ret"].value].resolve(code).definition) == Void:
                 return "return"
             return f"return reg{op.df['ret']}"
+
+        # Other
+        case "Assert":
+            return "assert"
+        case "Nop":
+            return "nop"
 
         # Unknown
         case _:

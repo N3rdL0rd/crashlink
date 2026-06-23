@@ -8,6 +8,7 @@ expected high-level Haxe construct is produced.
 import re
 
 from crashlink import Bytecode
+from crashlink.core import Function, Opcode, Reg, tIndex
 from crashlink.decomp import IRFunction
 from crashlink import pseudo
 
@@ -114,3 +115,42 @@ def test_native_map_alloc_lifted():
     assert "var b: hl.types.BytesMap" in out
     assert "var i: hl.types.IntMap" in out
     assert "var o: hl.types.ObjectMap" in out
+
+
+def test_toufloat_lifted():
+    # ToUFloatCase.main converts a UInt to Float via ToUFloat.
+    out = _decompile_main("tests/haxe/ToUFloatCase.hl")
+    assert "ToUFloat" not in _unlifted(out)
+
+
+def test_setref_lifted():
+    # SetrefCase.main uses hl.Ref, generating Ref/Setref/Unref.
+    out = _decompile_main("tests/haxe/SetrefCase.hl")
+    assert "Setref" not in _unlifted(out)
+
+
+def test_nop_lifted():
+    # Nop is rare in real HL output, so build a minimal in-memory function.
+    code = Bytecode.create_empty(no_extra_types=True, version=5)
+    func = Function()
+    func.findex.value = 0
+    func.type = tIndex(0)
+    func.regs = [tIndex(0)]
+    func.version = code.version.value
+    func.has_debug = False
+
+    nop = Opcode()
+    nop.op = "Nop"
+    nop.df = {}
+
+    ret = Opcode()
+    ret.op = "Ret"
+    ret.df = {"ret": Reg(0)}
+
+    func.ops = [nop, ret]
+    code.functions.append(func)
+    code.entrypoint.value = 0
+    code.invalidate_findex_cache()
+
+    out = pseudo.pseudo(IRFunction(code, func))
+    assert "Nop" not in _unlifted(out)
