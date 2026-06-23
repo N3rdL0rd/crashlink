@@ -38,6 +38,8 @@ class MethodComparison:
     orig_disasm: str = ""
     recomp_disasm: str = ""
     error: Optional[str] = None
+    orig_lines: List[int] = field(default_factory=list)
+    recomp_lines: List[int] = field(default_factory=list)
 
     def to_json(self) -> dict:
         return asdict(self)
@@ -52,6 +54,8 @@ class MethodComparison:
             orig_disasm=data.get("orig_disasm", ""),
             recomp_disasm=data.get("recomp_disasm", ""),
             error=data.get("error"),
+            orig_lines=data.get("orig_lines", []),
+            recomp_lines=data.get("recomp_lines", []),
         )
 
 

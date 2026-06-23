@@ -395,6 +395,12 @@
         .diff-text { color: var(--text); white-space: pre; }
         .diff-line.add .diff-text { color: var(--green); }
         .diff-line.rem .diff-text { color: var(--red); }
+        .diff-src-hint {
+            color: var(--overlay0);
+            font-style: italic;
+            white-space: pre;
+            margin-left: 0.75rem;
+        }
 
         /* Side-by-side diff */
         .diff-side-by-side {
@@ -731,6 +737,8 @@
                         data-name="{{ m.name }}"
                         data-orig='{{ m.orig_disasm | tojson }}'
                         data-recomp='{{ m.recomp_disasm | tojson }}'
+                        data-orig-lines='{{ m.orig_lines | tojson }}'
+                        data-recomp-lines='{{ m.recomp_lines | tojson }}'
                         data-orig-count="{{ m.original_count }}"
                         data-recomp-count="{{ m.recompiled_count }}"
                         data-sim="{{ (m.similarity * 100) | round(1) }}"
@@ -934,10 +942,14 @@
      * Myers-LCS diff. Matches lines on a register-canonicalized key (see
      * canonicalizeRegLines) but returns the original display text, so the
      * visible diff is immune to benign register renumbering while still
-     * showing the real register numbers. Returns an array of {type, line}
-     * where type is 'same' | 'add' | 'rem'.
+     * showing the real register numbers. `aSrcLines`/`bSrcLines` are the
+     * per-op source line numbers (parallel to aLines/bLines) so each diffed
+     * opcode can be traced back to the line of source that produced it.
+     * Returns an array of {type, line, srcLine} where type is
+     * 'same' | 'add' | 'rem', and srcLine is the 1-indexed source line (or
+     * -1) — for 'same' it's the *original*-side line.
      */
-    function diffLines(aLines, bLines) {
+    function diffLines(aLines, bLines, aSrcLines, bSrcLines) {
         const aKeys = canonicalizeRegLines(aLines);
         const bKeys = canonicalizeRegLines(bLines);
         const m = aLines.length, n = bLines.length;
@@ -955,13 +967,13 @@
         let i = m, j = n;
         while (i > 0 || j > 0) {
             if (i > 0 && j > 0 && aKeys[i-1] === bKeys[j-1]) {
-                ops.push({ type: 'same', line: aLines[i-1] });
+                ops.push({ type: 'same', line: aLines[i-1], srcLine: (aSrcLines && aSrcLines[i-1]) ?? -1 });
                 i--; j--;
             } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
-                ops.push({ type: 'add', line: bLines[j-1] });
+                ops.push({ type: 'add', line: bLines[j-1], srcLine: (bSrcLines && bSrcLines[j-1]) ?? -1 });
                 j--;
             } else {
-                ops.push({ type: 'rem', line: aLines[i-1] });
+                ops.push({ type: 'rem', line: aLines[i-1], srcLine: (aSrcLines && aSrcLines[i-1]) ?? -1 });
                 i--;
             }
         }
@@ -974,13 +986,34 @@
         return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 
+    /**
+     * Looks up the text of a source line by 1-indexed line number from the
+     * Original/Decompiled source already rendered in this test case's code
+     * panels (so we don't need to ship the file content again separately).
+     * `which` is 'orig' or 'recomp' (recomp source == the Decompiled panel,
+     * since that's the pseudocode that actually got fed to haxe).
+     */
+    function sourceLineText(which, lineNum) {
+        const lines = which === 'orig' ? _diffOrigSrcLines : _diffRecompSrcLines;
+        if (!lines || lineNum < 1 || lineNum > lines.length) return null;
+        return lines[lineNum - 1];
+    }
+
+    function srcHint(which, srcLine) {
+        if (!srcLine || srcLine < 1) return '';
+        const text = sourceLineText(which, srcLine);
+        if (text === null) return ` <span class="diff-src-hint">L${srcLine}</span>`;
+        return ` <span class="diff-src-hint" title="${esc(text.trim())}">L${srcLine}: ${esc(text.trim())}</span>`;
+    }
+
     function renderUnifiedCorrect(diff) {
         let html = '<div class="diff-unified">';
         let la = 1, lb = 1;
-        for (const {type, line} of diff) {
+        for (const {type, line, srcLine} of diff) {
             let gutter = '';
             let sign = ' ';
             let cls = '';
+            let hint = '';
             if (type === 'same') {
                 gutter = `${la}`;
                 la++; lb++;
@@ -988,15 +1021,17 @@
                 gutter = `${la}`;
                 la++;
                 sign = '-'; cls = ' rem';
+                hint = srcHint('orig', srcLine);
             } else {
                 gutter = `${lb}`;
                 lb++;
                 sign = '+'; cls = ' add';
+                hint = srcHint('recomp', srcLine);
             }
             html += `<div class="diff-line${cls}">` +
                     `<span class="diff-gutter">${gutter}</span>` +
                     `<span class="diff-sign">${sign}</span>` +
-                    `<span class="diff-text">${esc(line)}</span>` +
+                    `<span class="diff-text">${esc(line)}</span>${hint}` +
                     `</div>`;
         }
         html += '</div>';
@@ -1008,21 +1043,21 @@
         const rows = [];
         let i = 0;
         while (i < diff.length) {
-            const {type, line} = diff[i];
+            const {type, line, srcLine} = diff[i];
             if (type === 'same') {
                 rows.push({ left: line, right: line, cls: 'same' });
                 i++;
             } else if (type === 'rem') {
                 // Peek ahead: if next is add, pair them
                 if (i + 1 < diff.length && diff[i+1].type === 'add') {
-                    rows.push({ left: line, right: diff[i+1].line, cls: 'changed' });
+                    rows.push({ left: line, right: diff[i+1].line, cls: 'changed', leftSrc: srcLine, rightSrc: diff[i+1].srcLine });
                     i += 2;
                 } else {
-                    rows.push({ left: line, right: null, cls: 'rem' });
+                    rows.push({ left: line, right: null, cls: 'rem', leftSrc: srcLine });
                     i++;
                 }
             } else {
-                rows.push({ left: null, right: line, cls: 'add' });
+                rows.push({ left: null, right: line, cls: 'add', rightSrc: srcLine });
                 i++;
             }
         }
@@ -1032,13 +1067,15 @@
         for (const row of rows) {
             const lCls = (row.cls === 'rem' || row.cls === 'changed') ? ' orig-rem' : row.left === null ? ' empty' : '';
             const rCls = (row.cls === 'add' || row.cls === 'changed') ? ' recomp-add' : row.right === null ? ' empty' : '';
+            const lHint = lCls.includes('orig-rem') ? srcHint('orig', row.leftSrc) : '';
+            const rHint = rCls.includes('recomp-add') ? srcHint('recomp', row.rightSrc) : '';
             if (row.left !== null) {
-                leftLines += `<div class="diff-side-line${lCls}"><span class="diff-side-gutter">${la++}</span><span class="diff-side-text">${esc(row.left)}</span></div>`;
+                leftLines += `<div class="diff-side-line${lCls}"><span class="diff-side-gutter">${la++}</span><span class="diff-side-text">${esc(row.left)}</span>${lHint}</div>`;
             } else {
                 leftLines += `<div class="diff-side-line empty"><span class="diff-side-gutter"></span><span class="diff-side-text"></span></div>`;
             }
             if (row.right !== null) {
-                rightLines += `<div class="diff-side-line${rCls}"><span class="diff-side-gutter">${lb++}</span><span class="diff-side-text">${esc(row.right)}</span></div>`;
+                rightLines += `<div class="diff-side-line${rCls}"><span class="diff-side-gutter">${lb++}</span><span class="diff-side-text">${esc(row.right)}</span>${rHint}</div>`;
             } else {
                 rightLines += `<div class="diff-side-line empty"><span class="diff-side-gutter"></span><span class="diff-side-text"></span></div>`;
             }
@@ -1060,6 +1097,8 @@
 
     let _currentDiff = null;
     let _currentTab = 'unified';
+    let _diffOrigSrcLines = null;
+    let _diffRecompSrcLines = null;
 
     function openDiff(row) {
         const name      = row.dataset.name;
@@ -1068,11 +1107,21 @@
         const origCount = row.dataset.origCount;
         const recompCount = row.dataset.recompCount;
         const sim       = row.dataset.sim;
+        const origSrcLineNums = row.dataset.origLines ? JSON.parse(row.dataset.origLines) : [];
+        const recompSrcLineNums = row.dataset.recompLines ? JSON.parse(row.dataset.recompLines) : [];
 
         const origLines  = origRaw.trim().split('\n');
         const recompLines = recompRaw.trim() ? recompRaw.trim().split('\n') : [];
 
-        _currentDiff = diffLines(origLines, recompLines);
+        // Source for the hints attached to diffed lines: the Original panel for
+        // orig-side ops, the Decompiled panel for recomp-side ops (that's the
+        // pseudocode that was actually fed to haxe to produce the recompile).
+        const testCase = row.closest('.test-case');
+        const codePanels = testCase ? testCase.querySelectorAll('.code-panel code.language-haxe') : [];
+        _diffOrigSrcLines = codePanels[0] ? codePanels[0].textContent.split('\n') : null;
+        _diffRecompSrcLines = codePanels[1] ? codePanels[1].textContent.split('\n') : null;
+
+        _currentDiff = diffLines(origLines, recompLines, origSrcLineNums, recompSrcLineNums);
         _currentTab = 'unified';
 
         document.getElementById('diff-title').textContent = name;

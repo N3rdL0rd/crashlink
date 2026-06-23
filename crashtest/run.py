@@ -98,6 +98,20 @@ def to_asm_resolved(func: Function, code: Bytecode) -> str:
     return "\n".join(lines)
 
 
+def op_source_lines(func: Function) -> List[int]:
+    """
+    Per-op source line numbers (1-indexed), parallel to `to_asm_resolved`'s output
+    line-for-line. Each op's debug entry points back into whatever source file was
+    compiled to produce this bytecode (the original .hx for the original function,
+    or the decompiled pseudocode .hx for the recompiled one) — this is what lets the
+    UI match a diffed opcode line up with the source line that produced it. -1 where
+    no debug info is available.
+    """
+    if not func.has_debug or not func.debuginfo:
+        return [-1] * len(func.ops)
+    return [ref.line for ref in func.debuginfo.value]
+
+
 def get_repo_info() -> GitInfo:
     """
     Get the git branch and commit hash, if available.
@@ -173,6 +187,7 @@ def compare_opcodes(original_code: Bytecode, recompiled_code: Bytecode, class_na
     for name, orig_func in orig_funcs.items():
         orig_ops = [op.op for op in orig_func.ops if op.op is not None]
         orig_asm = to_asm_resolved(orig_func, original_code)
+        orig_lines = op_source_lines(orig_func)
         if name in recomp_funcs:
             recomp_func = recomp_funcs[name]
             recomp_ops = [op.op for op in recomp_func.ops if op.op is not None]
@@ -185,6 +200,8 @@ def compare_opcodes(original_code: Bytecode, recompiled_code: Bytecode, class_na
                     recompiled_count=len(recomp_ops),
                     orig_disasm=orig_asm,
                     recomp_disasm=to_asm_resolved(recomp_func, recompiled_code),
+                    orig_lines=orig_lines,
+                    recomp_lines=op_source_lines(recomp_func),
                 )
             )
         else:
@@ -197,6 +214,7 @@ def compare_opcodes(original_code: Bytecode, recompiled_code: Bytecode, class_na
                     orig_disasm=orig_asm,
                     recomp_disasm="",
                     error="Method not found in recompiled bytecode",
+                    orig_lines=orig_lines,
                 )
             )
 
