@@ -27,6 +27,8 @@ from .decomp import (
     IRArithmetic,
     IRNeg,
     IRNot,
+    IRTypeOf,
+    IRTypeKind,
     IRBoolExpr,
     IRCall,
     IRConditional,
@@ -171,6 +173,17 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         if isinstance(expr.expr, (IRArithmetic, IRBoolExpr)):
             inner = f"({inner})"
         return f"!{inner}"
+
+    elif isinstance(expr, IRTypeOf):
+        inner = _expression_to_haxe(expr.expr, code, ir_function)
+        return f"hl.Type.getDynamic({inner})"
+
+    elif isinstance(expr, IRTypeKind):
+        # `hl.Type.kind` is `hl.TypeKind`, an enum abstract over Int that doesn't
+        # implicitly unify with Int (our dst register's real, lifted type) — an
+        # explicit untyped cast is needed so e.g. `var x: Int = ...` type-checks.
+        inner = _expression_to_haxe(expr.expr, code, ir_function)
+        return f"cast {inner}.kind"
 
     elif isinstance(expr, IRBoolExpr):
         op_map = {
@@ -2118,9 +2131,11 @@ def _collect_referenced_user_classes(root: IRStatement, code: Bytecode, exclude:
             if name not in exclude and is_user_type(stmt.value):
                 names.add(name)
         elif isinstance(stmt, IRNew):
-            name = destaticify(disasm.type_name(code, stmt.get_type()))
-            if name not in exclude:
-                names.add(name)
+            new_type = stmt.get_type()
+            if isinstance(new_type.definition, Obj):
+                name = destaticify(disasm.type_name(code, new_type))
+                if name not in exclude and is_user_type(new_type):
+                    names.add(name)
         elif isinstance(stmt, IRField):
             target_type = stmt.target.get_type()
             if isinstance(target_type.definition, Obj):

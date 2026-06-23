@@ -746,6 +746,42 @@ class IRNot(IRExpression):
         return f"<IRNot: !{self.expr}>"
 
 
+class IRTypeOf(IRExpression):
+    """Represents fetching a value's runtime type, e.g. `Type.getDynamic(x)` (lifted from `GetType`)."""
+
+    def __init__(self, code: Bytecode, expr: IRExpression, dst_type: tIndex):
+        super().__init__(code)
+        self.expr = expr
+        self.dst_type_idx = dst_type
+
+    def get_type(self) -> Type:
+        return self.dst_type_idx.resolve(self.code)
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.expr]
+
+    def __repr__(self) -> str:
+        return f"<IRTypeOf: Type.getDynamic({self.expr})>"
+
+
+class IRTypeKind(IRExpression):
+    """Represents reading a runtime type's kind tag, e.g. `t.kind` (lifted from `GetTID`)."""
+
+    def __init__(self, code: Bytecode, expr: IRExpression, dst_type: tIndex):
+        super().__init__(code)
+        self.expr = expr
+        self.dst_type_idx = dst_type
+
+    def get_type(self) -> Type:
+        return self.dst_type_idx.resolve(self.code)
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.expr]
+
+    def __repr__(self) -> str:
+        return f"<IRTypeKind: {self.expr}.kind>"
+
+
 class IRAssign(IRStatement):
     """Assignment of an expression result to a target (local variable, field, etc.)"""
 
@@ -3524,6 +3560,21 @@ class IRTraceOptimizer(TraversingIROptimizer):
                 if DEBUG:
                     dbg_print(f"[TraceOpt] Analyzing statement {i}: {stmt}")
 
+                if isinstance(stmt, IRConditional) and stmt.true_block is not None and stmt.false_block is not None:
+                    branched = self._try_branched_trace(stmt, block.statements, i)
+                    if branched is not None:
+                        true_tail, false_tail, msg_true, msg_false, pos_true, pos_false, consumed_after = branched
+                        stmt.true_block.statements = true_tail + [
+                            IRTrace(self.func.code, msg_true, pos_true)
+                        ]
+                        stmt.false_block.statements = false_tail + [
+                            IRTrace(self.func.code, msg_false, pos_false)
+                        ]
+                        new_statements.append(stmt)
+                        i += 1 + consumed_after
+                        made_change = True
+                        continue
+
                 temp_local = None
                 start_idx = i
 
@@ -3648,6 +3699,152 @@ class IRTraceOptimizer(TraversingIROptimizer):
                 i += 1
 
             block.statements = new_statements
+
+    def _match_trace_prep(
+        self, stmts: List[IRStatement]
+    ) -> Optional[Tuple[List[IRStatement], IRLocal, IRLocal, Dict[str, Any]]]:
+        """
+        Matches a branch that ends with the `haxe.Log.trace` position-object setup
+        (`fun = ...trace; temp = new DynObj; temp.field = const; ...`) but has no
+        call of its own — the call was hoisted out to a point after the branches
+        converge. Returns (statements before the pattern, fun local, temp local,
+        position info) or None if the branch doesn't end in this shape.
+        """
+        new_idx = None
+        temp_local = None
+        for k, s in enumerate(stmts):
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRLocal)
+                and isinstance(s.expr, IRNew)
+                and s.expr.get_type().definition.__class__ == DynObj
+            ):
+                new_idx = k
+                temp_local = s.target
+                break
+        if new_idx is None or temp_local is None:
+            return None
+
+        fun_local = None
+        for k in range(new_idx - 1, -1, -1):
+            s = stmts[k]
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and isinstance(s.expr, IRField):
+                if s.expr.field_name == "trace":
+                    fun_local = s.target
+                break
+        if fun_local is None:
+            return None
+
+        pos_info: Dict[str, Any] = {}
+        j = new_idx + 1
+        while j < len(stmts):
+            s = stmts[j]
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRField)
+                and s.target.target == temp_local
+                and isinstance(s.expr, IRConst)
+            ):
+                pos_info[s.target.field_name] = s.expr.value
+                j += 1
+                continue
+            break
+        if j != len(stmts):
+            return None
+
+        return stmts[:new_idx], fun_local, temp_local, pos_info
+
+    def _resolve_local_value(self, stmts: List[IRStatement], local: IRExpression) -> Optional[IRExpression]:
+        """Find the most recent assignment to `local` within `stmts`, searching from the end."""
+        for s in reversed(stmts):
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target == local:
+                return s.expr
+        return None
+
+    def _try_branched_trace(
+        self, cond: "IRConditional", statements: List[IRStatement], idx: int
+    ) -> Optional[Tuple[List[IRStatement], List[IRStatement], IRExpression, IRExpression, Dict[str, Any], Dict[str, Any], int]]:
+        """
+        Matches `trace(msg)` calls that got duplicated into each branch of an
+        if/else by the Haxe/HL compiler, then merged back into a single shared
+        call after the branches converge (since both calls have the same target
+        and arg count, just a different message/line number). Returns the new
+        branch tails, per-branch resolved message + position info, and how many
+        extra statements after the conditional the merged call consumed.
+        """
+        true_block = cond.true_block
+        false_block = cond.false_block
+        if true_block is None or false_block is None:
+            return None
+
+        true_match = self._match_trace_prep(true_block.statements)
+        false_match = self._match_trace_prep(false_block.statements)
+        if true_match is None or false_match is None:
+            return None
+        true_tail, fun_local_t, temp_local_t, pos_t = true_match
+        false_tail, fun_local_f, temp_local_f, pos_f = false_match
+        if fun_local_t != fun_local_f or temp_local_t != temp_local_f:
+            return None
+
+        j = idx + 1
+        shared_pos: Dict[str, Any] = {}
+        while j < len(statements):
+            s = statements[j]
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRField)
+                and s.target.target == temp_local_t
+                and isinstance(s.expr, IRConst)
+            ):
+                shared_pos[s.target.field_name] = s.expr.value
+                j += 1
+                continue
+            break
+        if j >= len(statements):
+            return None
+
+        call_stmt = statements[j]
+        if not (isinstance(call_stmt, IRCall) and len(call_stmt.args) == 2):
+            return None
+        last_arg = call_stmt.args[1]
+        is_our_var = (isinstance(last_arg, IRLocal) and last_arg == temp_local_t) or (
+            isinstance(last_arg, IRCast) and last_arg.expr == temp_local_t
+        )
+        if not is_our_var:
+            return None
+
+        is_trace_func = False
+        target = call_stmt.target
+        if isinstance(target, IRField) and target.field_name == "trace":
+            target_obj = target.target
+            if (
+                isinstance(target_obj, IRConst)
+                and isinstance(target_obj.value, Type)
+                and isinstance(target_obj.value.definition, Obj)
+            ):
+                obj_name = target_obj.value.definition.name.resolve(self.func.code)
+                if "haxe.$Log" in obj_name:
+                    is_trace_func = True
+        elif isinstance(target, IRLocal) and target == fun_local_t:
+            is_trace_func = True
+        if not is_trace_func:
+            return None
+
+        msg_arg = call_stmt.args[0]
+        msg_true: IRExpression = msg_arg
+        msg_false: IRExpression = msg_arg
+        if isinstance(msg_arg, IRLocal):
+            resolved_true = self._resolve_local_value(true_block.statements, msg_arg)
+            resolved_false = self._resolve_local_value(false_block.statements, msg_arg)
+            if resolved_true is not None:
+                msg_true = resolved_true
+            if resolved_false is not None:
+                msg_false = resolved_false
+
+        final_pos_t = {**pos_t, **shared_pos}
+        final_pos_f = {**pos_f, **shared_pos}
+        consumed_after = j - idx
+        return true_tail, false_tail, msg_true, msg_false, final_pos_t, final_pos_f, consumed_after
 
 
 class IRStringConcatFolder(TraversingIROptimizer):
@@ -6339,6 +6536,26 @@ class IRFunction:
                         self.code,
                         dst_local,
                         IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df["dst"].value]),
+                    )
+                )
+            elif op.op == "ArraySize":
+                dst_local = self.locals[op.df["dst"].value]
+                arr_local = source_locals[op.df["array"].value]
+                i32_idx = self.code.find_prim_type(Type.Kind.I32)
+                length_expr = IRField(self.code, arr_local, "length", i32_idx)
+                block.statements.append(IRAssign(self.code, dst_local, length_expr))
+            elif op.op == "GetType":
+                dst_local = self.locals[op.df["dst"].value]
+                src_local = source_locals[op.df["src"].value]
+                block.statements.append(
+                    IRAssign(self.code, dst_local, IRTypeOf(self.code, src_local, self.func.regs[op.df["dst"].value]))
+                )
+            elif op.op == "GetTID":
+                dst_local = self.locals[op.df["dst"].value]
+                src_local = source_locals[op.df["src"].value]
+                block.statements.append(
+                    IRAssign(
+                        self.code, dst_local, IRTypeKind(self.code, src_local, self.func.regs[op.df["dst"].value])
                     )
                 )
             elif op.op == "Incr":

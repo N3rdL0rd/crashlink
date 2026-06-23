@@ -66,3 +66,13 @@ def test_getarray_lifted():
     assert "GetArray" not in _unlifted(out)
     # Element read renders as indexed access.
     assert re.search(r"\w+\[\w+\]", out)
+
+
+def test_gettype_gettid_lifted():
+    # TypeIntrinsics.main calls hl.Type.getDynamic(v) (GetType) and reads
+    # the resulting type's .kind (GetTID).
+    out = _decompile_main("tests/haxe/TypeIntrinsics.hl")
+    assert "GetType" not in _unlifted(out)
+    assert "GetTID" not in _unlifted(out)
+    assert "Type.getDynamic(" in out
+    assert ".kind" in out

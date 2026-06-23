@@ -67,6 +67,7 @@ def type_to_haxe(type: str) -> str:
         "Dyn": "Dynamic",
         "DynObj": "Dynamic",
         "Fun": "Dynamic",
+        "TypeType": "hl.Type",
     }
     if type.startswith("hl.types.ArrayBytes_"):
         suffix = type[len("hl.types.ArrayBytes_") :]

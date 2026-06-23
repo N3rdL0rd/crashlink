@@ -686,6 +686,11 @@
         <div class="error-box">{{ case.error }}</div>
         {% endif %}
 
+        {% if oc and oc.recompile_error %}
+        <div class="error-box">Recompile failed:
+{{ oc.recompile_error }}</div>
+        {% endif %}
+
         <div class="container" style="--visible-columns: 2;">
             <div class="code-panel">
                 <div class="panel-label">Original</div>

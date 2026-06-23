@@ -337,6 +337,7 @@ def run_case(case: str, id: int) -> TestCase:
     similarity_failed = (
         opcode_comparison is not None and 0.0 <= opcode_comparison.overall_similarity < SIMILARITY_THRESHOLD
     )
+    recompile_failed = opcode_comparison is not None and opcode_comparison.recompile_error is not None
 
     return TestCase(
         original=TestFile(
@@ -348,7 +349,7 @@ def run_case(case: str, id: int) -> TestCase:
             content=escape(pseudo_content),
         ),
         ir=TestFile(name=f"{case.replace('.hx', '')} (IR)", content=escape(ir_content)),
-        failed=bool(error_message) or similarity_failed,
+        failed=bool(error_message) or similarity_failed or recompile_failed,
         test_name=file_to_name(case),
         test_id=id,
         error=error_message,
