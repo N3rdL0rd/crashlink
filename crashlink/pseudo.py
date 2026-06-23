@@ -43,6 +43,8 @@ from .decomp import (
     IREnumField,
     IRWhileLoop,
     IRForEachLoop,
+    IRIntRangeLoop,
+    IRNativeArrayNew,
     IRPrimitiveLoop,
     IRReturn,
     IRPrimitiveJump,
@@ -406,6 +408,11 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
             args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args)
             return f"new {disasm.type_to_haxe(type_name)}({args_str})"
 
+    elif isinstance(expr, IRNativeArrayNew):
+        elem_haxe_type = disasm.type_to_haxe(disasm.type_name(code, expr.elem_type))
+        size_str = _expression_to_haxe(expr.size, code, ir_function)
+        return f"new hl.NativeArray<{elem_haxe_type}>({size_str})"
+
     elif isinstance(expr, IRCast):
         target_name = disasm.type_name(code, expr.get_type())
         source_name = disasm.type_name(code, expr.expr.get_type())
@@ -730,6 +737,23 @@ def _generate_statements(
             elem_str = stmt.elem.name
             array_str = _expression_to_haxe(stmt.array, code, ir_function)
             output_lines.append(f"{indent}for ({elem_str} in {array_str}) {{")
+            output_lines.extend(
+                _generate_statements(
+                    stmt.body.statements,
+                    code,
+                    ir_function,
+                    indent_level + 1,
+                    declared_vars_in_scope.copy(),
+                    inline_declarations=inline_declarations,
+                )
+            )
+            output_lines.append(f"{indent}}}")
+
+        elif isinstance(stmt, IRIntRangeLoop):
+            elem_str = stmt.elem.name
+            start_str = _expression_to_haxe(stmt.start, code, ir_function)
+            end_str = _expression_to_haxe(stmt.end, code, ir_function)
+            output_lines.append(f"{indent}for ({elem_str} in {start_str}...{end_str}) {{")
             output_lines.extend(
                 _generate_statements(
                     stmt.body.statements,
@@ -1069,7 +1093,7 @@ def _collect_foreach_elem_names(block: IRBlock) -> Set[str]:
     """Collect names of IRForEachLoop element locals at any depth in block."""
     names: Set[str] = set()
     for stmt in block.statements:
-        if isinstance(stmt, IRForEachLoop):
+        if isinstance(stmt, (IRForEachLoop, IRIntRangeLoop)):
             if stmt.elem.name:
                 names.add(stmt.elem.name)
             names.update(_collect_foreach_elem_names(stmt.body))
@@ -1908,7 +1932,11 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
         if isinstance(stmt, IRLocal):
             if stmt.name in pattern_locals:
                 return
-            type_name = disasm.type_to_haxe(disasm.type_name(stmt.code, stmt.get_type()))
+            if stmt.native_elem_type is not None:
+                elem_haxe_type = disasm.type_to_haxe(disasm.type_name(stmt.code, stmt.native_elem_type))
+                type_name = f"hl.NativeArray<{elem_haxe_type}>"
+            else:
+                type_name = disasm.type_to_haxe(disasm.type_name(stmt.code, stmt.get_type()))
             if stmt.name in locals and locals[stmt.name] != type_name:
                 locals[stmt.name] = "Dynamic"
             else:

@@ -642,6 +642,12 @@ class IRLocal(IRExpression):
         self.name = name
         self.type = type
         self.reg_idx = reg_idx
+        # Set by IRNativeArrayAllocOptimizer when this local is bound to a
+        # `Native.alloc_array(ty, size)` result: the bytecode's own "Array" kind
+        # carries no element-type info, but Haxe's hl.NativeArray<T> needs one,
+        # so this records the `T` recovered from the allocation site for the
+        # declared-type renderer to use instead of the generic Array<Dynamic>.
+        self.native_elem_type: Optional[Type] = None
 
     def get_type(self) -> Type:
         return self.type.resolve(self.code)
@@ -1300,6 +1306,35 @@ class IRForEachLoop(IRStatement):
         return self.__repr__()
 
 
+class IRIntRangeLoop(IRStatement):
+    """
+    Represents a Haxe int-range for loop: for (elem in start...end) { body }
+    """
+
+    elem: IRLocal
+    start: IRExpression
+    end: IRExpression
+    body: IRBlock
+
+    def __init__(self, code: Bytecode, elem: IRLocal, start: IRExpression, end: IRExpression, body: IRBlock):
+        super().__init__(code)
+        self.elem = elem
+        self.start = start
+        self.end = end
+        self.body = body
+        self.comment = ""
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.elem, self.start, self.end, self.body]
+
+    def __repr__(self) -> str:
+        body_repr = pformat(self.body, indent=0).replace("\n", "\n\t")
+        return f"<IRIntRangeLoop: for ({self.elem} in {self.start}...{self.end}) {{\n\t{body_repr}\n}}>"
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
+
 class IRField(IRExpression):
     """Represents an object field access expression, e.g., `obj.field`"""
 
@@ -1341,6 +1376,33 @@ class IRNew(IRExpression):
             return "<IRNew: {}>"
         args_str = ", ".join(repr(a) for a in self.constructor_args) if self.constructor_args else ""
         return f"<IRNew: new {type_name}({args_str})>"
+
+
+class IRNativeArrayNew(IRExpression):
+    """
+    Represents allocating a raw HL native array with a known element type, e.g.
+    `new hl.NativeArray<Int>(3)` (lifted from `Native.alloc_array(ty, size)` by
+    IRNativeArrayAllocOptimizer). `array_type` is the tIndex of the bytecode's
+    own (element-type-erased) "Array" kind, used for type compatibility with the
+    rest of the array-handling IR (GetArray/SetArray/ArraySize all expect it);
+    `elem_type` is only used for rendering the Haxe generic parameter.
+    """
+
+    def __init__(self, code: Bytecode, array_type: tIndex, elem_type: Type, size: IRExpression):
+        super().__init__(code)
+        self.array_type_idx = array_type
+        self.elem_type = elem_type
+        self.size = size
+
+    def get_type(self) -> Type:
+        return self.array_type_idx.resolve(self.code)
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.size] if isinstance(self.size, IRStatement) else []
+
+    def __repr__(self) -> str:
+        elem_name = disasm.type_name(self.code, self.elem_type)
+        return f"<IRNativeArrayNew: new hl.NativeArray<{elem_name}>({self.size})>"
 
 
 class IRCast(IRExpression):
@@ -2758,8 +2820,14 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             stmt.condition, changed = self._substitute_in_expr(stmt.condition, target, replacement)
             made_change = made_change or changed
         elif isinstance(stmt, IRWhileLoop):
-            stmt.condition, changed = self._substitute_in_expr(stmt.condition, target, replacement)
-            made_change = made_change or changed
+            # Unlike a one-shot IRConditional, a while-loop's condition re-evaluates
+            # on every iteration. If `target` is reassigned inside the body, the
+            # condition needs that live value each time — substituting in the value
+            # from before the loop would freeze it to a stale snapshot (e.g. turning
+            # `idx = 0; while (idx < n)` into the loop-invariant `while (0 < n)`).
+            if not self._is_local_redefined(target, stmt.body.statements):
+                stmt.condition, changed = self._substitute_in_expr(stmt.condition, target, replacement)
+                made_change = made_change or changed
         return made_change
 
     def _is_local_redefined(self, local_to_check: IRLocal, statements: List[IRStatement]) -> bool:
@@ -2881,6 +2949,21 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         # still evaluated exactly once: safe even though it can in principle throw.
         if isinstance(expr, IRArrayAccess):
             return isinstance(expr.array, (IRConst, IRLocal)) and isinstance(expr.index, (IRConst, IRLocal))
+        # Same reasoning as IRArrayAccess: an `arr.length` read on a simple target
+        # is moved, not duplicated, by this inliner. This matters for recovering
+        # for-loops: `len = arr.length;` immediately followed by `while (idx < len)`
+        # needs to fold into `while (idx < arr.length)` for IRForEachLoopOptimizer's
+        # pattern match to fire. Deliberately narrow to the Array kind (not e.g.
+        # String, whose `.length` IRStringSwitchOptimizer expects to find un-inlined
+        # in its own specific shape) — array length is a plain struct read with no
+        # room for that kind of downstream pattern dependency.
+        if (
+            isinstance(expr, IRField)
+            and expr.field_name == "length"
+            and isinstance(expr.target, (IRConst, IRLocal))
+            and expr.target.get_type().kind.value == Type.Kind.ARRAY.value
+        ):
+            return True
         return False
 
     def visit_block(self, block: IRBlock) -> None:
@@ -3546,6 +3629,47 @@ class IRConstructorFolder(TraversingIROptimizer):
         if expr == local:
             return True
         return any(self._expr_uses_local(child, local) for child in expr.get_children())
+
+
+class IRNativeArrayAllocOptimizer(TraversingIROptimizer):
+    """
+    Folds `Native.alloc_array(ty, size)` into `new hl.NativeArray<T>(size)`.
+
+    HL's raw "Array" kind is element-type-erased at the bytecode level — the
+    only place the element type shows up is as the first argument to the
+    `alloc_array` native at the allocation site (a `Type` opcode result, lifted
+    to an IRConst(GLOBAL_OBJ) carrying the actual `Type`). Recovering it here
+    lets the declared local be typed `hl.NativeArray<T>` instead of the much
+    too generic (and, on recompile, semantically different — a boxed Haxe
+    `Array<Dynamic>`) `Array<Dynamic>`.
+    """
+
+    def _is_alloc_array_call(self, expr: IRExpression) -> bool:
+        if not isinstance(expr, IRCall) or len(expr.args) != 2:
+            return False
+        if not isinstance(expr.target, IRConst) or not isinstance(expr.target.value, Native):
+            return False
+        return expr.target.value.name.resolve(self.func.code) == "alloc_array"
+
+    def visit_block(self, block: IRBlock) -> None:
+        for stmt in block.statements:
+            if not (isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)):
+                continue
+            if not self._is_alloc_array_call(stmt.expr):
+                continue
+            assert isinstance(stmt.expr, IRCall)
+            ty_arg, size_arg = stmt.expr.args
+            if not (isinstance(ty_arg, IRConst) and ty_arg.const_type == IRConst.ConstType.GLOBAL_OBJ):
+                continue
+            elem_type = ty_arg.value
+            if not isinstance(elem_type, Type):
+                continue
+            stmt.target.native_elem_type = elem_type
+            stmt.expr = IRNativeArrayNew(self.func.code, stmt.target.type, elem_type, size_arg)
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
 
 
 class IRTraceOptimizer(TraversingIROptimizer):
@@ -4888,6 +5012,197 @@ class IRForEachLoopOptimizer(TraversingIROptimizer):
                     self.visit_block(child)
 
 
+class IRIntRangeLoopOptimizer(TraversingIROptimizer):
+    """
+    Recover Haxe int-range for loops from the manual index-while lowering.
+
+    HashLink compiles `for (elem in start...end) { body }` as:
+        idx = start
+        while (idx < end) {
+            elem = idx
+            idx++
+            body
+        }
+
+    This is the same index-while shape IRForEachLoopOptimizer targets, but the
+    loop variable is a copy of the index itself (`elem = idx`) rather than an
+    array element (`elem = array[idx]`) — i.e. the source iterates over a range
+    of integers, not an array's contents.
+    """
+
+    def _is_user_local(self, local: IRLocal) -> bool:
+        if not self.func.func.has_debug or not self.func.func.assigns:
+            return False
+        user_regs: Set[int] = set()
+        for _, op_idx in self.func.func.assigns:
+            val = op_idx.value - 1
+            if 0 <= val < len(self.func.ops):
+                op = self.func.ops[val]
+                if "dst" in op.df:
+                    user_regs.add(op.df["dst"].value)
+        if local.name.startswith("var"):
+            try:
+                return int(local.name[3:]) in user_regs
+            except ValueError:
+                pass
+        return True
+
+    def _expr_reads_local(self, expr: Optional[IRExpression], local: IRLocal) -> bool:
+        if expr is None:
+            return False
+        if expr == local:
+            return True
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            return self._expr_reads_local(expr.left, local) or self._expr_reads_local(expr.right, local)
+        if isinstance(expr, IRCall):
+            if expr.target is not None and self._expr_reads_local(expr.target, local):
+                return True
+            return any(self._expr_reads_local(arg, local) for arg in expr.args)
+        if isinstance(expr, IRField):
+            return self._expr_reads_local(expr.target, local)
+        if isinstance(expr, IRCast):
+            return self._expr_reads_local(expr.expr, local)
+        if isinstance(expr, IRArrayAccess):
+            return self._expr_reads_local(expr.array, local) or self._expr_reads_local(expr.index, local)
+        return False
+
+    def _stmt_reads_local(self, stmt: IRStatement, local: IRLocal) -> bool:
+        if isinstance(stmt, IRLocal):
+            return stmt == local
+        if isinstance(stmt, IRAssign):
+            if self._expr_reads_local(stmt.expr, local):
+                return True
+            if isinstance(stmt.target, IRArrayAccess):
+                return self._expr_reads_local(stmt.target.array, local) or self._expr_reads_local(
+                    stmt.target.index, local
+                )
+            return False
+        if isinstance(stmt, IRReturn):
+            return stmt.value is not None and self._expr_reads_local(stmt.value, local)
+        if isinstance(stmt, IRCall):
+            if stmt.target is not None and self._expr_reads_local(stmt.target, local):
+                return True
+            return any(self._expr_reads_local(arg, local) for arg in stmt.args)
+        if isinstance(stmt, IRTrace):
+            return self._expr_reads_local(stmt.msg, local)
+        return False
+
+    def _stmt_assigns_local(self, stmt: IRStatement, local: IRExpression) -> bool:
+        if isinstance(stmt, IRAssign) and stmt.target == local:
+            return True
+        for child in stmt.get_children():
+            if isinstance(child, IRBlock):
+                if any(self._stmt_assigns_local(s, local) for s in child.statements):
+                    return True
+            elif self._stmt_assigns_local(child, local):
+                return True
+        return False
+
+    def _is_index_increment(self, stmt: IRStatement, idx: IRLocal) -> bool:
+        if not isinstance(stmt, IRAssign) or stmt.target != idx:
+            return False
+        expr = stmt.expr
+        if isinstance(expr, IRCast):
+            expr = expr.expr
+        if not isinstance(expr, IRArithmetic) or expr.op != IRArithmetic.ArithmeticType.ADD:
+            return False
+        if expr.left != idx:
+            return False
+        if not isinstance(expr.right, IRConst) or expr.right.const_type != IRConst.ConstType.INT:
+            return False
+        val = _int_const_value(expr.right)
+        return val == 1
+
+    def _try_convert(self, loop: IRWhileLoop) -> Optional[Tuple[IRIntRangeLoop, IRLocal]]:
+        cond = loop.condition
+        if not isinstance(cond, IRBoolExpr):
+            return None
+        idx: Optional[IRLocal] = None
+        end_expr: Optional[IRExpression] = None
+        if cond.op == IRBoolExpr.CompareType.LT and isinstance(cond.left, IRLocal):
+            idx = cond.left
+            end_expr = cond.right
+        elif cond.op == IRBoolExpr.CompareType.GT and isinstance(cond.right, IRLocal):
+            idx = cond.right
+            end_expr = cond.left
+        if idx is None or end_expr is None:
+            return None
+        if self._is_user_local(idx):
+            return None
+        body = loop.body
+        if len(body.statements) < 2:
+            return None
+        first = body.statements[0]
+        if not isinstance(first, IRAssign) or not isinstance(first.target, IRLocal):
+            return None
+        # The loop variable must be a plain copy of the index, not e.g. an
+        # array element — that pattern belongs to IRForEachLoopOptimizer.
+        if first.expr != idx:
+            return None
+        elem = first.target
+        if elem == idx:
+            return None
+        if not self._is_index_increment(body.statements[1], idx):
+            return None
+        rest = body.statements[2:]
+        for s in rest:
+            if self._stmt_reads_local(s, idx):
+                return None
+            if self._stmt_assigns_local(s, elem):
+                return None
+        # The bound must be loop-invariant: nothing in the body may redefine
+        # whatever it reads from (e.g. reassigning the array behind `a.length`).
+        for s in body.statements:
+            if isinstance(end_expr, IRLocal) and self._stmt_assigns_local(s, end_expr):
+                return None
+            if isinstance(end_expr, IRField) and isinstance(end_expr.target, IRLocal):
+                if self._stmt_assigns_local(s, end_expr.target):
+                    return None
+        new_body = IRBlock(loop.code)
+        new_body.statements = list(rest)
+        return IRIntRangeLoop(loop.code, elem, idx, end_expr, new_body), idx
+
+    def visit_block(self, block: IRBlock) -> None:
+        made_change = True
+        while made_change:
+            made_change = False
+            new_statements: List[IRStatement] = []
+            i = 0
+            while i < len(block.statements):
+                stmt = block.statements[i]
+                converted: Optional[Tuple[IRIntRangeLoop, IRLocal]] = None
+                if isinstance(stmt, IRWhileLoop):
+                    converted = self._try_convert(stmt)
+                if converted is not None:
+                    range_loop, idx = converted
+                    # The index temporary's `idx = start` initializer may have been
+                    # hoisted several statements before the loop. Find the closest
+                    # preceding safe assignment to the index, use its expression as
+                    # the range's start, and remove it, but only if nothing between
+                    # it and the loop touches the index.
+                    for j in range(len(new_statements) - 1, -1, -1):
+                        prev = new_statements[j]
+                        if isinstance(prev, IRAssign) and prev.target == idx:
+                            if not self._expr_reads_local(prev.expr, idx):
+                                range_loop.start = prev.expr
+                                del new_statements[j]
+                            break
+                        if self._stmt_reads_local(prev, idx):
+                            break
+
+                    new_statements.append(range_loop)
+                    i += 1
+                    made_change = True
+                    continue
+                new_statements.append(stmt)
+                i += 1
+            block.statements = new_statements
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
+
 class IREnumSwitchOptimizer(TraversingIROptimizer):
     """
     Transform switches on enum indices into switches on the enum value itself,
@@ -6056,6 +6371,7 @@ class IRFunction:
                 IRDeadTempEliminator(self),
                 IRDeadCodeEliminator(self),
                 IRArrayPatternOptimizer(self),
+                IRNativeArrayAllocOptimizer(self),
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRVoidAssignOptimizer(self),
                 IRDeadCodeEliminator(self),
@@ -6070,6 +6386,7 @@ class IRFunction:
                 IRBlockFlattener(self),
                 IRLoopRerollOptimizer(self),
                 IRForEachLoopOptimizer(self),
+                IRIntRangeLoopOptimizer(self),
             ]
             self._optimize()
 
