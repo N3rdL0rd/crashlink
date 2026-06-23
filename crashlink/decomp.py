@@ -3669,6 +3669,16 @@ class IRTraceOptimizer(TraversingIROptimizer):
                     if is_valid_trace_call:
                         assert isinstance(call_stmt, IRCall)
                         msg_expr = call_stmt.args[0]
+                        if (
+                            isinstance(msg_expr, IRLocal)
+                            and msg_expr.reg_idx is not None
+                            and msg_expr.reg_idx not in self.func._user_reg_indices
+                            and new_statements
+                            and isinstance(new_statements[-1], IRAssign)
+                            and new_statements[-1].target == msg_expr
+                        ):
+                            # inline if this is obviously compiler-generated (one use, right before the call, has no user assign)
+                            msg_expr = new_statements.pop().expr
                         resolved_pos: Dict[str, Any] = {}
                         for k, v in pos_info.items():
                             if isinstance(v, IRLocal):
