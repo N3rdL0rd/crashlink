@@ -2876,6 +2876,11 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         # Nested arithmetic is excluded to prevent exponential chaining.
         if isinstance(expr, IRArithmetic):
             return isinstance(expr.left, (IRConst, IRLocal)) and isinstance(expr.right, (IRConst, IRLocal))
+        # A read with simple (non-side-effecting) array/index operands is moved, not
+        # duplicated, by inlining into its sole immediately-following use, so it's
+        # still evaluated exactly once: safe even though it can in principle throw.
+        if isinstance(expr, IRArrayAccess):
+            return isinstance(expr.array, (IRConst, IRLocal)) and isinstance(expr.index, (IRConst, IRLocal))
         return False
 
     def visit_block(self, block: IRBlock) -> None:
