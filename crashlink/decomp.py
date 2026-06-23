@@ -6412,9 +6412,20 @@ class IRFunction:
         self._op_id_to_idx: Dict[int, int] = {id(op): i for i, op in enumerate(self.ops)}
         if not (self.func.has_debug and self.func.assigns):
             return
+        # Assigns with op index 0 name function parameters rather than pointing at
+        # a `dst`-producing op, so they need the same register offset as in
+        # _name_locals (register 0 is `this` in instance methods/constructors).
+        is_instance = not self.code.full_func_name(self.func).startswith("$")
+        has_this_ops = any(op.op in ("SetThis", "GetThis") for op in self.func.ops)
+        param_start = 1 if (is_instance or has_this_ops) else 0
+        param_idx = 0
         for assign in self.func.assigns:
             val = assign[1].value - 1
             if val < 0:
+                reg = param_start + param_idx
+                param_idx += 1
+                if reg < len(self.func.regs):
+                    self._user_reg_indices.add(reg)
                 continue
             op = self.ops[val]
             try:
@@ -6565,6 +6576,14 @@ class IRFunction:
     def _name_locals(self) -> None:
         """Name locals based on debug info"""
         reg_assigns: List[List[str]] = [[] for _ in self.func.regs]
+        # Register 0 is `this` in instance methods and constructors. Detect by
+        # either: full name has no leading `$` (instance method), or the function
+        # contains SetThis/GetThis opcodes (constructor). Needed up front because
+        # parameter-name assigns (below) are numbered relative to the explicit
+        # parameter list, which starts at register 1 when `this` occupies register 0.
+        is_instance = not self.code.full_func_name(self.func).startswith("$")
+        has_this_ops = any(op.op in ("SetThis", "GetThis") for op in self.func.ops)
+        has_this = is_instance or has_this_ops
         if self.func.has_debug and self.func.assigns:
             for assign in self.func.assigns:
                 # assign: Tuple[strRef (name), VarInt (op index)]
@@ -6583,10 +6602,17 @@ class IRFunction:
                     if name not in reg_assigns[reg]:
                         reg_assigns[reg].append(name)
         if self.func.assigns and self.func.has_debug:
+            # Assigns with op index 0 (val == -1 above) name function parameters,
+            # in order — not necessarily register 0: that's `this` for instance
+            # methods/constructors, so parameters start at register 1 there.
+            param_start = 1 if has_this else 0
             for i, assign in enumerate([assign for assign in self.func.assigns if assign[1].value <= 0]):
+                reg = param_start + i
+                if reg >= len(reg_assigns):
+                    break
                 name = assign[0].resolve(self.code)
-                if name not in reg_assigns[i]:
-                    reg_assigns[i].append(name)
+                if name not in reg_assigns[reg]:
+                    reg_assigns[reg].append(name)
         for i, _reg in enumerate(self.func.regs):
             if _reg.resolve(self.code).definition and isinstance(_reg.resolve(self.code).definition, Void):
                 if "voidReg" not in reg_assigns[i]:
@@ -6634,14 +6660,8 @@ class IRFunction:
                     self.locals[r].name = f"{name}{len(kept)}"
                     kept.add(typ_key)
 
-        # Register 0 is `this` in instance methods and constructors.
-        # Detect by either: full name has no leading `$` (instance method), or
-        # the function contains SetThis/GetThis opcodes (constructor).
-        if self.locals and self.locals[0].name == "var0":
-            is_instance = not self.code.full_func_name(self.func).startswith("$")
-            has_this_ops = any(op.op in ("SetThis", "GetThis") for op in self.func.ops)
-            if is_instance or has_this_ops:
-                self.locals[0].name = "this"
+        if self.locals and self.locals[0].name == "var0" and has_this:
+            self.locals[0].name = "this"
         dbg_print("Named locals:", self.locals)
 
     def _find_convergence(self, true_node: CFNode, false_node: CFNode, visited: Set[CFNode]) -> Optional[CFNode]:

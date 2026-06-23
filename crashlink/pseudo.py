@@ -965,11 +965,12 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
 
             param_name = f"arg{i}"
             if func_core.has_debug and func_core.assigns:
+                # `this` is implicit and never has its own debug assign entry, so
+                # this list already lines up 1:1 with the explicit parameters in
+                # core_fun_type_def.args[start_arg:] - no further offset needed.
                 arg_assigns = [a for a in func_core.assigns if a[1].value <= 0]
-                # Account for the skipped `this` parameter.
-                debug_idx = i + start_arg
-                if debug_idx < len(arg_assigns):
-                    param_name = arg_assigns[debug_idx][0].resolve(code)
+                if i < len(arg_assigns):
+                    param_name = arg_assigns[i][0].resolve(code)
 
             param_type_decl = f": {arg_haxe_type_name}" if arg_haxe_type_name else ""
             params_str_list.append(f"{param_name}{param_type_decl}")
