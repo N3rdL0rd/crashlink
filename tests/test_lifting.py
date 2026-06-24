@@ -193,3 +193,12 @@ def test_param_name_preserved_after_modification():
     assert "var0" not in out
     assert "x = -x" in out
     assert "return x * 2" in out
+
+
+def test_operator_precedence_parentheses():
+    # OperatorPrecedenceCase verifies that shift/bitwise ops are parenthesised
+    # when used as operands of higher-precedence arithmetic.
+    out = _decompile_named("tests/haxe/OperatorPrecedenceCase.hl", "OperatorPrecedenceCase.combine")
+    assert "(a >> 2) + b" in out
+    out = _decompile_named("tests/haxe/OperatorPrecedenceCase.hl", "OperatorPrecedenceCase.maskAdd")
+    assert "(a & 255) + b" in out

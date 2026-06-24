@@ -152,6 +152,45 @@ def _is_expression_switch(
     return target, cases, default_expr
 
 
+# Haxe operator precedence (higher number = tighter binding).  Used to emit
+# parentheses only where precedence would otherwise change the meaning.
+_HAXE_OP_PRECEDENCE = {
+    "||": 1,
+    "&&": 2,
+    "|": 3,
+    "^": 4,
+    "&": 5,
+    "==": 6,
+    "!=": 6,
+    "<": 6,
+    "<=": 6,
+    ">": 6,
+    ">=": 6,
+    "<<": 7,
+    ">>": 7,
+    ">>>": 7,
+    "+": 8,
+    "-": 8,
+    "*": 9,
+    "/": 9,
+    "%": 9,
+}
+
+
+def _expr_to_haxe_with_precedence(
+    expr: Optional[IRExpression], code: Bytecode, ir_function: Optional[IRFunction], parent_op: str
+) -> str:
+    """Render an expression, wrapping it in parentheses if its operator is
+    lower-precedence than the parent's and would otherwise bind incorrectly."""
+    rendered = _expression_to_haxe(expr, code, ir_function)
+    if isinstance(expr, IRArithmetic):
+        child_prec = _HAXE_OP_PRECEDENCE.get(expr.op.value, 10)
+        parent_prec = _HAXE_OP_PRECEDENCE.get(parent_op, 10)
+        if child_prec < parent_prec:
+            return f"({rendered})"
+    return rendered
+
+
 def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function: Optional[IRFunction] = None) -> str:
     assert expr is not None, "Found empty statement!"
 
@@ -217,11 +256,8 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         return str(expr.value)
 
     elif isinstance(expr, IRArithmetic):
-        left = _expression_to_haxe(expr.left, code, ir_function)
-        right = _expression_to_haxe(expr.right, code, ir_function)
-        # Add parentheses for potentially ambiguous operations if needed for clarity
-        # e.g., if expr.op.value in ["*", "/"] and (isinstance(expr.left, IRArithmetic) or isinstance(expr.right, IRArithmetic)):
-        # For pseudocode, direct representation is often fine.
+        left = _expr_to_haxe_with_precedence(expr.left, code, ir_function, expr.op.value)
+        right = _expr_to_haxe_with_precedence(expr.right, code, ir_function, expr.op.value)
         return f"{left} {expr.op.value} {right}"
 
     elif isinstance(expr, IRNeg):
