@@ -718,8 +718,47 @@ def _redefined_locals(stmt: IRStatement) -> Set[IRLocal]:
     return found
 
 
+def _redefined_before_expression(stmt: IRStatement) -> Set[IRLocal]:
+    """Locals assigned by `stmt` before its own expression(s) are evaluated.
+
+    Only IRAssignments to a local fall into this category (the RHS is read
+    before the target is overwritten).  Array/field writes mutate their base
+    object after the index/value expressions are evaluated, so they are not
+    included here.
+    """
+    found: Set[IRLocal] = set()
+    if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+        found.add(stmt.target)
+    return found
+
+
+def _contains_top_level_call(stmt: IRStatement) -> bool:
+    """True if any expression evaluated by `stmt` itself (not nested blocks) is a call."""
+
+    def walk(e: Optional[IRExpression]) -> bool:
+        if e is None:
+            return False
+        if isinstance(e, IRCall):
+            return True
+        return any(walk(child) for child in e.get_children() if isinstance(child, IRExpression))
+
+    if isinstance(stmt, IRAssign):
+        return walk(stmt.expr) or walk(stmt.target)
+    if isinstance(stmt, (IRReturn, IRThrow)) and stmt.value is not None:
+        return walk(stmt.value)
+    if isinstance(stmt, IRTrace):
+        return walk(stmt.msg)
+    if isinstance(stmt, (IRConditional, IRWhileLoop)) and stmt.condition is not None:
+        return walk(stmt.condition)
+    if isinstance(stmt, IRSwitch) and stmt.value is not None:
+        return walk(stmt.value)
+    if isinstance(stmt, IRExpression):
+        return walk(stmt)
+    return False
+
+
 def _contains_call(stmt: IRStatement) -> bool:
-    """True if a statement contains any IRCall expression."""
+    """True if a statement contains any IRCall expression (including nested blocks)."""
     found = False
 
     def walk(e: Optional[IRExpression]) -> None:
@@ -763,13 +802,19 @@ def _generate_statements(
     ir_function._render_subs = render_subs
 
     for stmt in statements:
-        # Drop any render substitution that this statement invalidates.
-        redefined = _redefined_locals(stmt)
+        # Substitutions are valid for the statement's own expressions unless a
+        # local they depend on is overwritten before that expression is evaluated.
+        # For loops, any assignment in the body invalidates pre-loop substitutions
+        # because the condition is re-evaluated after the body runs.
+        if isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop, IRForEachLoop, IRIntRangeLoop)):
+            redefined_before = _redefined_locals(stmt)
+        else:
+            redefined_before = _redefined_before_expression(stmt)
         for key in list(render_subs.keys()):
-            if key in redefined or render_subs[key][1] & redefined:
+            if key in redefined_before or render_subs[key][1] & redefined_before:
                 del render_subs[key]
-        # Calls may mutate locals (out/ref params), so avoid substituting across them.
-        if _contains_call(stmt):
+        # Calls may mutate locals (out/ref params), so avoid substituting into them.
+        if _contains_top_level_call(stmt):
             render_subs.clear()
 
         if isinstance(stmt, IRBlock):  # Nested block, usually from if/else/loop bodies
@@ -1298,6 +1343,15 @@ def _generate_statements(
 
         else:
             output_lines.append(f"{indent}// <Unhandled IRStatement: {type(stmt).__name__}> {str(stmt)[:50]}...")
+
+        # After rendering this statement, drop substitutions that are invalidated by
+        # any assignment it performs (including in nested blocks) or by calls inside it.
+        redefined_full = _redefined_locals(stmt)
+        for key in list(render_subs.keys()):
+            if key in redefined_full or render_subs[key][1] & redefined_full:
+                del render_subs[key]
+        if _contains_call(stmt):
+            render_subs.clear()
 
         # Register simple assignments for render-time substitution into later uses.
         if (
