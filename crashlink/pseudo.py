@@ -14,6 +14,7 @@ from .decomp import (
     IRBreak,
     IRContinue,
     IRCast,
+    IRNativeStub,
     IRClass,
     IRField,
     IRFunction,
@@ -941,6 +942,16 @@ def _generate_statements(
                 f"{disasm.pseudo_from_op(stmt.op, 0, ir_function.func.regs, code, terse=True)}"
             )
 
+        elif isinstance(stmt, IRNativeStub):
+            name = ir_function.code.full_func_name(ir_function.func)
+            if name and name != "<none>.<none>":
+                output_lines.append(f"{indent}// native stub: {name}")
+            else:
+                native_name = getattr(stmt.native, "name", None)
+                if native_name is not None:
+                    native_name = native_name.resolve(ir_function.code)
+                output_lines.append(f"{indent}// native stub: {native_name or '?'}")
+
         elif isinstance(stmt, IRConditional):
             true_stmts = stmt.true_block.statements if stmt.true_block else []
             false_stmts = stmt.false_block.statements if stmt.false_block else []
@@ -1382,6 +1393,10 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
 
     output_lines: List[str] = []
     base_indent = 0
+
+    if isinstance(func_core, Native):
+        native_name = func_core.name.resolve(code) if func_core.name else f"native{func_core.findex.value}"
+        return f"// native stub: {native_name}"
 
     func_name_str = code.partial_func_name(func_core) or f"f{func_core.findex.value}"
     func_name_str = getattr(ir_func, "_anon_name", func_name_str)

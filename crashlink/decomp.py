@@ -1620,6 +1620,23 @@ class IRUnliftedOpcode(IRExpression):
         return f"<IRUntranslatedOpcode: {self.op.op}>"
 
 
+class IRNativeStub(IRStatement):
+    """Placeholder for a raw native function entry that has no HL bytecode."""
+
+    def __init__(self, code: Bytecode, native: "Native"):
+        super().__init__(code)
+        self.native = native
+
+    def get_type(self) -> Type:
+        return _get_type_in_code(self.code, "Void")
+
+    def get_children(self) -> List[IRStatement]:
+        return []
+
+    def __repr__(self) -> str:
+        return f"<IRNativeStub: {self.native.name.resolve(self.code)}>"
+
+
 def _find_jumps_to_label(
     start_node: CFNode, label_node: CFNode, visited: Set[CFNode]
 ) -> List[Tuple[CFNode, List[CFNode]]]:
@@ -4154,20 +4171,24 @@ class IRSequentialTempFolder(TraversingIROptimizer):
 class IRDeadAssignmentEliminator(TraversingIROptimizer):
     """Removes assignments to locals that are never read before being redefined.
 
-    Performs a structured backward liveness sweep.  Each block is processed with
-    a live-out set so that assignments feeding into later statements, sibling
-    branches, loop conditions, or code after a loop are never dropped.
+    Performs a structured backward liveness sweep keyed by local *name* (HL IR
+    may split a single local into several objects).  Each block is processed
+    with a live-out set so that assignments feeding into later statements,
+    sibling branches, loop conditions, or code after a loop are never dropped.
     """
 
     def optimize(self) -> None:
         if not hasattr(self.func, "block"):
             return
-        self._block_live: Dict[int, Tuple[Set[IRLocal], Set[IRLocal]]] = {}
+        self._block_live: Dict[int, Tuple[Set[str], Set[str]]] = {}
         self._process_block(self.func.block, set())
 
+    def _local_name(self, local: IRLocal) -> str:
+        return local.name
+
     def _process_block(
-        self, block: IRBlock, live_out: Set[IRLocal], mutate: bool = True
-    ) -> Set[IRLocal]:
+        self, block: IRBlock, live_out: Set[str], mutate: bool = True
+    ) -> Set[str]:
         block_id = id(block)
         if mutate:
             cached = self._block_live.get(block_id)
@@ -4177,19 +4198,22 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
                     return cached_in
                 live_out = cached_out | live_out
 
-        live: Set[IRLocal] = set(live_out)
+        live: Set[str] = set(live_out)
         new_stmts: List[IRStatement] = []
 
         for stmt in reversed(block.statements):
             uses, defs = self._stmt_uses_and_defs(stmt, live, mutate=mutate)
-            can_drop = (
+            if (
                 mutate
                 and isinstance(stmt, IRAssign)
                 and isinstance(stmt.target, IRLocal)
-                and stmt.target not in live
-                and not self._has_side_effects(stmt.expr)
-            )
-            if can_drop:
+                and self._local_name(stmt.target) not in live
+            ):
+                if self._has_side_effects(stmt.expr):
+                    # Keep the side effects as a bare expression statement.
+                    new_stmts.append(stmt.expr)
+                    live.update(uses)
+                # else: drop the dead assignment entirely.
                 continue
             if mutate:
                 new_stmts.append(stmt)
@@ -4202,10 +4226,10 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
         return live
 
     def _stmt_uses_and_defs(
-        self, stmt: IRStatement, live_after_stmt: Set[IRLocal], mutate: bool = True
-    ) -> Tuple[Set[IRLocal], Set[IRLocal]]:
-        uses: Set[IRLocal] = set()
-        defs: Set[IRLocal] = set()
+        self, stmt: IRStatement, live_after_stmt: Set[str], mutate: bool = True
+    ) -> Tuple[Set[str], Set[str]]:
+        uses: Set[str] = set()
+        defs: Set[str] = set()
 
         if isinstance(stmt, IRAssign):
             uses.update(self._locals_in_expr(stmt.expr))
@@ -4215,7 +4239,7 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
             elif isinstance(stmt.target, IRField):
                 uses.update(self._locals_in_expr(stmt.target.target))
             elif isinstance(stmt.target, IRLocal):
-                defs.add(stmt.target)
+                defs.add(self._local_name(stmt.target))
         elif isinstance(stmt, (IRReturn, IRThrow)) and stmt.value is not None:
             uses.update(self._locals_in_expr(stmt.value))
         elif isinstance(stmt, IRCall):
@@ -4271,8 +4295,8 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
         return uses, defs
 
     def _process_loop_body(
-        self, body: IRBlock, live_after: Set[IRLocal], header_uses: Set[IRLocal], mutate: bool = True
-    ) -> Set[IRLocal]:
+        self, body: IRBlock, live_after: Set[str], header_uses: Set[str], mutate: bool = True
+    ) -> Set[str]:
         """Process a loop body to a fixed point so loop-carried assignments live.
 
         We must not mutate ``body`` until the live-in set stabilises, because the
@@ -4292,22 +4316,22 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
         return self._process_block(body, child_out)
 
     def _compute_block_live_in(
-        self, block: IRBlock, live_out: Set[IRLocal]
-    ) -> Set[IRLocal]:
+        self, block: IRBlock, live_out: Set[str]
+    ) -> Set[str]:
         """Return the live-in set for ``block`` without mutating it."""
-        live: Set[IRLocal] = set(live_out)
+        live: Set[str] = set(live_out)
         for stmt in reversed(block.statements):
             uses, defs = self._stmt_uses_and_defs(stmt, live, mutate=False)
             live.difference_update(defs)
             live.update(uses)
         return live
 
-    def _locals_in_expr(self, expr: Optional[IRExpression]) -> Set[IRLocal]:
-        found: Set[IRLocal] = set()
+    def _locals_in_expr(self, expr: Optional[IRExpression]) -> Set[str]:
+        found: Set[str] = set()
         if expr is None:
             return found
         if isinstance(expr, IRLocal):
-            found.add(expr)
+            found.add(self._local_name(expr))
         elif isinstance(expr, (IRArithmetic, IRBoolExpr)):
             found.update(self._locals_in_expr(expr.left))
             found.update(self._locals_in_expr(expr.right))
@@ -4340,8 +4364,12 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
     def _has_side_effects(self, expr: Optional[IRExpression]) -> bool:
         if expr is None:
             return False
-        if isinstance(expr, (IRCall, IRNew)):
+        if isinstance(expr, IRNew):
             return True
+        if isinstance(expr, IRCall):
+            # Keep side effects for calls whose result is discarded.  Pure-ish
+            # stdlib helpers (String.substr, indexOf, etc.) can be dropped safely.
+            return not self._is_pure_call(expr)
         if isinstance(expr, IREnumConstruct):
             return any(self._has_side_effects(arg) for arg in expr.args)
         if isinstance(expr, (IRArithmetic, IRBoolExpr)):
@@ -4357,6 +4385,29 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
             return self._has_side_effects(expr.value)
         if isinstance(expr, IRRef):
             return self._has_side_effects(expr.target)
+        return False
+
+    def _is_pure_call(self, call: IRCall) -> bool:
+        """True for calls that are safe to drop when their result is unused."""
+        target = call.target
+        if not isinstance(target, IRConst) or not isinstance(target.value, Function):
+            return False
+        code = self.func.code
+        name = code.full_func_name(target.value) or code.partial_func_name(target.value) or ""
+        # Array read-only inspectors.
+        if any(s in name for s in ("ArrayAccess.getDyn", "ArrayAccess.get_length", "ArrayBase.indexOf")):
+            return True
+        # String read-only inspectors / factories whose result is unused.
+        if any(s in name for s in (
+            "String.substr", "String.substring", "String.charAt", "String.charCodeAt",
+            "String.indexOf", "String.lastIndexOf", "String.findChar",
+            "String.toUpperCase", "String.toLowerCase", "String.toString",
+            "String.__alloc__", "$String.__alloc__",
+        )):
+            return True
+        # Byte/string comparison/search helpers.
+        if any(s in name for s in ("bytes_find", "bytes_compare", "ucs2_length", "ucs2_upper", "ucs2_lower")):
+            return True
         return False
 
 
@@ -7639,9 +7690,21 @@ class IRFunction:
         capture_layers: bool = False,
     ) -> None:
         self.func = func
+        self.code = code
+        if isinstance(func, Native):
+            # Native entries have no HL bytecode; represent them as a stub block.
+            self.cfg = None  # type: ignore[assignment]
+            self.block = IRBlock(code)
+            self.block.statements.append(IRNativeStub(code, func))
+            self.locals = []
+            self.opcodes = ""
+            self.cfg_data = {"nodes": [], "edges": []}
+            self.layer_snapshots = []
+            self._lift_cache = {}
+            self._enum_global_map = _build_enum_global_map(code)
+            return
         self.cfg = CFGraph(func)
         self.cfg.build()
-        self.code = code
         self._enum_global_map = _build_enum_global_map(code)
         self.ops = func.ops
         self.locals: List[IRLocal] = []
