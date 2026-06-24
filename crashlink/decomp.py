@@ -3570,6 +3570,8 @@ class IRDeadTempEliminator(IROptimizer):
                 self._collect_used_in_expr(stmt.target.index, used)
         elif isinstance(stmt, IRReturn) and stmt.value:
             self._collect_used_in_expr(stmt.value, used)
+        elif isinstance(stmt, IRThrow):
+            self._collect_used_in_expr(stmt.value, used)
         elif isinstance(stmt, IRCall):
             self._collect_used_in_expr(stmt.target, used)
             for arg in stmt.args:
