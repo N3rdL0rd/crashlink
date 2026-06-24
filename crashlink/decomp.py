@@ -3645,6 +3645,31 @@ class IRDeadTempEliminator(IROptimizer):
 class IRDeadCodeEliminator(TraversingIROptimizer):
     """Removes statements after terminators (return, break, continue) within the same block."""
 
+    def _body_has_break(self, block: IRBlock) -> bool:
+        """Return True if the block (recursively) contains an IRBreak."""
+        for stmt in block.statements:
+            if isinstance(stmt, IRBreak):
+                return True
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock) and self._body_has_break(child):
+                    return True
+        return False
+
+    def _is_infinite_loop(self, stmt: IRStatement) -> bool:
+        if not isinstance(stmt, IRWhileLoop):
+            return False
+        cond = stmt.condition
+        if isinstance(cond, IRBoolExpr):
+            if cond.op == IRBoolExpr.CompareType.TRUE:
+                return True
+            if (
+                cond.op == IRBoolExpr.CompareType.ISTRUE
+                and isinstance(cond.left, IRConst)
+                and cond.left.value is True
+            ):
+                return True
+        return False
+
     def visit_block(self, block: IRBlock) -> None:
         new_stmts: List[IRStatement] = []
         terminated = False
@@ -3653,6 +3678,8 @@ class IRDeadCodeEliminator(TraversingIROptimizer):
                 continue
             new_stmts.append(stmt)
             if isinstance(stmt, (IRReturn, IRBreak, IRContinue)):
+                terminated = True
+            elif self._is_infinite_loop(stmt) and not self._body_has_break(stmt.body):
                 terminated = True
         block.statements = new_stmts
         for stmt in block.statements:
@@ -7475,8 +7502,21 @@ class IRFunction:
         visited.add(header)
         block = IRBlock(self.code)
         loop_nodes = self.cfg.loops[header]
-        exit_nodes = self._loop_exit_nodes(loop_nodes)
-        exit_node = exit_nodes[0] if len(exit_nodes) == 1 else None
+        # Prefer the header's own outside successor as the loop exit when the header
+        # is a conditional. This correctly identifies post-loop code even when the
+        # loop body contains internal returns that would otherwise look like extra
+        # exits (e.g. String.lastIndexOf).
+        exit_node: Optional[CFNode] = None
+        header_last_op = header.ops[-1] if header.ops else None
+        if header_last_op and header_last_op.op in conditionals:
+            outside_header_successors = [
+                target for target, _ in header.branches if target not in loop_nodes
+            ]
+            if len(outside_header_successors) == 1:
+                exit_node = outside_header_successors[0]
+        if exit_node is None:
+            exit_nodes = self._loop_exit_nodes(loop_nodes)
+            exit_node = exit_nodes[0] if len(exit_nodes) == 1 else None
         loop_ctx = self._LoopContext(header, loop_nodes, exit_node)
 
         header_last_op = header.ops[-1] if header.ops else None
@@ -7721,6 +7761,21 @@ class IRFunction:
             # exponentially for long chains of terminal-vs-live branches.
             if convergence_node is None:
                 convergence_node = stop_at
+
+            # When one branch leaves the loop and the other loops back, do not let the
+            # convergence point be outside the loop. Lifting the exit node here would
+            # pull post-loop code into the body and emit a spurious trailing break.
+            if (
+                loop_ctx
+                and convergence_node is not None
+                and convergence_node not in loop_ctx.nodes
+                and convergence_node != loop_ctx.header
+            ):
+                loops_back = (fall_through is not None and fall_through in loop_ctx.nodes) or (
+                    jump_target is not None and jump_target in loop_ctx.nodes
+                )
+                if loops_back:
+                    convergence_node = loop_ctx.header
 
             if then_block_ir is None:
                 then_block_ir = self._lift_block(

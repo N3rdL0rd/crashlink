@@ -216,3 +216,39 @@ def test_array_indexing_and_length():
     assert "a.getDyn" not in out
     assert "a.setDyn" not in out
     assert "get_length" not in out
+
+
+def test_loop_control_flow_structured():
+    # LoopControlCase verifies that loops with both internal exits and normal
+    # post-loop code are structured correctly: no spurious trailing breaks and
+    # no missing post-loop returns.
+    out = _decompile_named("tests/haxe/LoopControlCase.hl", "LoopControlCase.sumUntilNegative")
+    assert "while (i < arr.length)" in out
+    assert "return total" in out
+    assert out.count("return total") == 2
+
+    out = _decompile_named("tests/haxe/LoopControlCase.hl", "LoopControlCase.findLastPositive")
+    assert "while (i >= 0)" in out
+    assert "break" in out
+    assert "return -1" in out
+
+
+def test_loop_internal_return_no_trailing_dead_return():
+    # String.findChar is a stdlib while(true) loop that only exits through
+    # internal returns. The decompiler should not emit a dead trailing return.
+    out = _decompile_at("tests/haxe/Clazz.hl", 4)
+    assert "while (true)" in out
+    assert "return p" in out
+    # There should be no top-level statement after the closing brace of the loop.
+    loop_end = out.rfind("}")
+    trailing = out[loop_end + 1 :].strip()
+    assert trailing == "", f"unexpected trailing code after loop: {trailing!r}"
+
+
+def test_loop_exit_node_preserved_for_internal_return():
+    # String.lastIndexOf has an internal return inside the loop and a normal
+    # return after the loop. The post-loop return must not be dropped.
+    out = _decompile_at("tests/haxe/Clazz.hl", 6)
+    assert "while (pos >= 0)" in out
+    assert "return pos" in out
+    assert "return -1" in out
