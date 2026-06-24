@@ -6962,16 +6962,32 @@ class IRFunction:
             # in order — not necessarily register 0: that's `this` for instance
             # methods/constructors, so parameters start at register 1 there.
             param_start = 1 if has_this else 0
-            for i, assign in enumerate([assign for assign in self.func.assigns if assign[1].value <= 0]):
-                reg = param_start + i
-                if reg >= len(reg_assigns):
+            param_candidates = [assign for assign in self.func.assigns if assign[1].value <= 0]
+            param_count: Optional[int] = None
+            fun_def = self.func.type.resolve(self.code).definition
+            if isinstance(fun_def, Fun):
+                param_count = max(0, len(fun_def.args) - (1 if has_this else 0))
+            seen_param_names: Set[str] = set()
+            param_idx = 0
+            for assign in param_candidates:
+                if param_count is not None and param_idx >= param_count:
                     break
                 name = assign[0].resolve(self.code)
+                # A body local can shadow a parameter with the same debug name
+                # (e.g. ArrayBytes.getDyn's `pos`). Keep only the first parameter
+                # use of a name and continue with the next parameter slot.
+                if name in seen_param_names:
+                    continue
+                reg = param_start + param_idx
+                if reg >= len(reg_assigns):
+                    break
                 if name not in reg_assigns[reg]:
                     reg_assigns[reg].append(name)
                 # A parameter name applies from the start of the function, even if
                 # the same register is later reassigned with the same debug name.
                 self._reg_first_assign[reg] = -1
+                seen_param_names.add(name)
+                param_idx += 1
         for i, _reg in enumerate(self.func.regs):
             if _reg.resolve(self.code).definition and isinstance(_reg.resolve(self.code).definition, Void):
                 if "voidReg" not in reg_assigns[i]:
@@ -7001,6 +7017,17 @@ class IRFunction:
             # different types.  Same-type duplicates are usually just different
             # registers for a single source variable.
             if len(typed_regs) <= 1:
+                # Exception: a parameter shadowed by a body local with the same
+                # name must be disambiguated (e.g. ArrayBytes.getDyn's `pos`).
+                ordered = sorted(regs, key=lambda r: self._reg_first_assign.get(r, float("inf")))
+                param_regs = [r for r in ordered if self._reg_first_assign.get(r, float("inf")) == -1]
+                if param_regs:
+                    suffix = 1
+                    for r in ordered:
+                        if r == param_regs[0]:
+                            continue
+                        self.locals[r].name = f"{name}{suffix}"
+                        suffix += 1
                 continue
             ordered = sorted(regs, key=lambda r: self._reg_first_assign.get(r, float("inf")))
             by_type: Dict[int, List[int]] = {}

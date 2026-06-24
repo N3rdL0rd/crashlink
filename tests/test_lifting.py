@@ -228,6 +228,38 @@ def test_array_indexing_and_length():
     assert "get_length" not in out
 
 
+def test_arraybytes_internal_call_rendered_as_instance_method():
+    # ArrayBytes_Float.push calls the private __expand helper. It should render
+    # as an instance call rather than a StdFuncs extern stub.
+    out = _decompile_at("tests/haxe/Clazz.hl", 100)
+    assert "this.__expand(len)" in out
+    assert "StdFuncs.__std_" not in out
+
+
+def test_arrayobj_alloc_factory_rendered_cleanly():
+    # ArrayObj.concat returns alloc(arr); the anonymous factory must not become
+    # a StdFuncs extern stub.
+    out = _decompile_at("tests/haxe/Clazz.hl", 62)
+    assert "return alloc(arr)" in out
+    assert "StdFuncs.__std_" not in out
+
+
+def test_parameter_shadowing_preserves_second_parameter_name():
+    # ArrayObj.setDyn has a parameter `pos` that is shadowed by a UInt local
+    # with the same debug name. The signature must keep the real second param
+    # name `v`, not duplicate `pos`.
+    out = _decompile_at("tests/haxe/Clazz.hl", 88)
+    assert "public function setDyn(pos: Int, v: Dynamic): Void" in out
+    assert "pos: Int, pos: Dynamic" not in out
+
+
+def test_arraybytes_getdyn_bound_check_uses_length():
+    # ArrayBytes_Float.getDyn compares the parameter against this.length.
+    # A previous shadowing bug collapsed the comparison to `pos >= pos`.
+    out = _decompile_at("tests/haxe/Clazz.hl", 120)
+    assert "pos >= this.length" in out
+
+
 def test_loop_control_flow_structured():
     # LoopControlCase verifies that loops with both internal exits and normal
     # post-loop code are structured correctly: no spurious trailing breaks and

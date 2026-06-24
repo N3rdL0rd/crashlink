@@ -463,18 +463,27 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
 
             # Instance method calls are emitted as `obj.method(args)` rather
             # than `method(obj, args)`, which avoids shadowing issues and is
-            # valid Haxe syntax.
+            # valid Haxe syntax. This also covers std static wrappers like
+            # ArrayBytes.__expand(this, len) -> this.__expand(len).
             if (
                 isinstance(expr.target, IRConst)
                 and isinstance(expr.target.value, Function)
                 and expr.args
-                and not _is_std_function(expr.target.value, code)
             ):
                 instance_method = _try_instance_method_call(expr.target.value, expr.args[0], code)
                 if instance_method:
                     callee_str = instance_method
                     args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in expr.args[1:])
                     return f"{callee_str}({args_str})"
+
+            # Anonymous ArrayObj alloc factory: render `alloc(arr)` instead of a
+            # synthetic StdFuncs stub.
+            if (
+                isinstance(expr.target, IRConst)
+                and isinstance(expr.target.value, Function)
+                and _is_arrayobj_alloc_call(expr.target.value, expr, code)
+            ):
+                return f"alloc({_expression_to_haxe(expr.args[0], code, ir_function)})"
 
             callee_str = _expression_to_haxe(expr.target, code, ir_function)
             # Std functions used as direct call targets can usually be rendered
@@ -1103,10 +1112,13 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
             arg_haxe_type_name = disasm.type_to_haxe(disasm.type_name(code, arg_core_type))
 
             param_name = f"arg{i}"
-            if func_core.has_debug and func_core.assigns:
-                # `this` is implicit and never has its own debug assign entry, so
-                # this list already lines up 1:1 with the explicit parameters in
-                # core_fun_type_def.args[start_arg:] - no further offset needed.
+            local_idx = start_arg + i
+            if local_idx < len(ir_func.locals):
+                candidate = ir_func.locals[local_idx].name
+                if candidate and candidate != "this":
+                    param_name = candidate
+            elif func_core.has_debug and func_core.assigns:
+                # Fallback to raw debug assigns if locals aren't available.
                 arg_assigns = [a for a in func_core.assigns if a[1].value <= 0]
                 if i < len(arg_assigns):
                     param_name = arg_assigns[i][0].resolve(code)
@@ -2168,6 +2180,23 @@ def _std_call_name(func: "Function", code: Bytecode) -> Optional[str]:
     return f"{class_name}.{method_name}"
 
 
+def _is_arrayobj_alloc_call(func: "Function", call: "IRCall", code: Bytecode) -> bool:
+    """Return True for anonymous ArrayObj factory calls like alloc(arr)."""
+    try:
+        path = func.resolve_file(code)
+    except Exception:
+        return False
+    if "ArrayObj.hx" not in path.replace("\\", "/"):
+        return False
+    fun_type = func.type.resolve(code).definition
+    if not isinstance(fun_type, Fun):
+        return False
+    if len(fun_type.args) != 1 or len(call.args) != 1:
+        return False
+    ret_name = disasm.type_name(code, fun_type.ret.resolve(code))
+    return "ArrayObj" in ret_name
+
+
 def _collect_function_externs(root: IRStatement, code: Bytecode) -> Dict[int, Tuple[str, int]]:
     """
     Collect Function constants that are used as call targets and are not defined
@@ -2213,6 +2242,9 @@ def _call_renders_as_std_stub(func: "Function", call: "IRCall", code: Bytecode) 
     """
     # Resolves to a real Haxe name, e.g. Std.random / Math.random.
     if _std_call_name(func, code) is not None:
+        return False
+    # Anonymous ArrayObj alloc factory is rendered as `alloc(arr)`.
+    if _is_arrayobj_alloc_call(func, call, code):
         return False
     partial = code.partial_func_name(func)
     # String.__add__(a, b) is rendered with the `+` operator.
