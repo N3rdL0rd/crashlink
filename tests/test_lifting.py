@@ -183,3 +183,13 @@ def test_array_alloc_folded():
     out_new = _decompile_named("tests/haxe/ArrayAllocCase.hl", "ArrayAllocCase.makeNew")
     assert "StdFuncs.__std_" not in out_new
     assert "new Array<Dynamic>()" in out_new
+
+
+def test_param_name_preserved_after_modification():
+    # ParamRenameCase.absDouble reassigns its parameter; the decompiler should
+    # keep the original parameter name instead of inventing a fresh varN.
+    out = _decompile_named("tests/haxe/ParamRenameCase.hl", "ParamRenameCase.absDouble")
+    assert "public static function absDouble(x: Int): Int" in out
+    assert "var0" not in out
+    assert "x = -x" in out
+    assert "return x * 2" in out

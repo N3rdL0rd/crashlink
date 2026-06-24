@@ -6693,6 +6693,9 @@ class IRFunction:
             suffix += 1
         new_local = IRLocal(name, reg_type, code=self.code, reg_idx=reg_idx)
         self.locals[reg_idx] = new_local
+        # Cached blocks may still reference the old local object; force them to
+        # be re-lifted so they pick up the new name.
+        self._lift_cache.clear()
         return new_local
 
     def _check_assign(self, op_idx: int) -> None:
@@ -6849,6 +6852,9 @@ class IRFunction:
                 name = assign[0].resolve(self.code)
                 if name not in reg_assigns[reg]:
                     reg_assigns[reg].append(name)
+                # A parameter name applies from the start of the function, even if
+                # the same register is later reassigned with the same debug name.
+                self._reg_first_assign[reg] = -1
         for i, _reg in enumerate(self.func.regs):
             if _reg.resolve(self.code).definition and isinstance(_reg.resolve(self.code).definition, Void):
                 if "voidReg" not in reg_assigns[i]:
