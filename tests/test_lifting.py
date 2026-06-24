@@ -286,12 +286,68 @@ def test_string_alloc_folded_from_inline_pattern():
     assert "String.__alloc__(bytes, len)" in out
 
 
+def test_string_bytes_field_rendered():
+    # String's private `.bytes` backing field must be visible when it is used as
+    # an hl.Bytes value (rather than silently rendering the String itself).
+    out = _decompile_at("tests/haxe/Clazz.hl", 11)
+    assert "this.bytes" in out
+    out = _decompile_at("tests/haxe/Clazz.hl", 13)
+    assert "this.bytes" in out
+    assert "s.bytes" in out
+    out = _decompile_at("tests/haxe/Clazz.hl", 17)
+    assert "return s.bytes" in out
+
+
+def test_string_charcodeat_bytes_indexed():
+    # charCodeAt reads `bytes.getUI16(index << 1)`, which lowers to a byte-level
+    # array access. The decompiler should keep `.bytes` instead of pretending
+    # Strings are indexable.
+    out = _decompile_at("tests/haxe/Clazz.hl", 3)
+    assert "return this.bytes[idx]" in out
+
+
+def test_string_split_final_segment_pushed_before_break():
+    # String.split's non-empty delimiter loop pushes the final substring before
+    # breaking out of the loop. A previous loop-structuring bug dropped it.
+    out = _decompile_at("tests/haxe/Clazz.hl", 7)
+    assert "this.substr(pos, this.length - pos)" in out
+    assert "out.push(var7)" in out
+
+
 def test_string_fromuc2_not_folded_prematurely():
     # String.fromUCS2 computes the length *after* creating the empty string, so
     # it must not be folded into a __alloc__ call with a stale length value.
     out = _decompile_at("tests/haxe/Clazz.hl", 18)
     assert "new String()" in out
     assert "Native.ucs2length(b, 0)" in out
+
+
+def test_string_concat_shift_amount_constant():
+    # String.__add__ lowers shifts as `var n = 1; ... = length << n`. The
+    # decompiler should recover the immediate constant shift amount.
+    out = _decompile_at("tests/haxe/Clazz.hl", 20)
+    assert re.search(r"asize: Int = .*<< 1", out), f"missing constant shift in: {out!r}"
+    assert "asize << var5" not in out
+    assert "bsize << var5" not in out
+
+
+def test_loop_carried_value_preserved_after_internal_break():
+    # String.indexOf breaks out of its while(true) loop with the bytes_find
+    # result in a loop-carried temporary. A previous inliner bug removed the
+    # assignment and left `p = 0; return p;` instead of the real result.
+    out = _decompile_at("tests/haxe/Clazz.hl", 5)
+    assert "p = var9" in out
+    assert "p = var9 >> 1" in out
+    assert "p = 0 >> 1" not in out
+
+
+def test_loop_bound_not_confused_with_later_branch_local():
+    # String.split's empty-delimiter branch loops up to this.length. Because the
+    # bound register is later named `dlen` in the non-empty branch, the loop
+    # condition was previously mis-rendered as `while (pos < dlen)`.
+    out = _decompile_at("tests/haxe/Clazz.hl", 7)
+    assert "while (var5 < this.length)" in out
+    assert "while (pos < dlen)" not in out
 
 
 def test_loop_control_flow_structured():
@@ -305,7 +361,8 @@ def test_loop_control_flow_structured():
 
     out = _decompile_named("tests/haxe/LoopControlCase.hl", "LoopControlCase.findLastPositive")
     assert "while (i >= 0)" in out
-    assert "break" in out
+    assert "return arr[i]" in out
+    assert "break" not in out
     assert "return -1" in out
 
 

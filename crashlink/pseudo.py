@@ -202,10 +202,19 @@ def _expr_to_haxe_with_precedence(
     return rendered
 
 
-def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function: Optional[IRFunction] = None) -> str:
+def _expression_to_haxe(
+    expr: Optional[IRStatement],
+    code: Bytecode,
+    ir_function: Optional[IRFunction] = None,
+) -> str:
     assert expr is not None, "Found empty statement!"
 
     if isinstance(expr, IRLocal):
+        if ir_function is not None:
+            subs = getattr(ir_function, "_render_subs", None)
+            if subs and expr in subs:
+                rendered = subs[expr][0]
+                return f"({rendered})"
         return expr.name
 
     elif isinstance(expr, IRConst):
@@ -341,7 +350,12 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
             raise NotImplementedError(f"Unhandled IRBoolExpr: {expr}")
 
     elif isinstance(expr, IRField):
-        target_str = _expression_to_haxe(expr.target, code, ir_function)
+        # Render the field base without render-time substitutions: substituting
+        # a different local here would change the object the field is read from.
+        if isinstance(expr.target, IRLocal):
+            target_str = expr.target.name
+        else:
+            target_str = _expression_to_haxe(expr.target, code, ir_function)
         target_type = expr.target.get_type()
         type_name = disasm.type_name(code, target_type)
         # Static field access on a class type constant: Type.field -> Class.field
@@ -349,17 +363,18 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
             defn = expr.target.value.definition
             if isinstance(defn, Obj):
                 return f"{destaticify(defn.name.resolve(code))}.{expr.field_name}"
-        # HashLink stores String data in a private `.bytes` field. Haxe code
-        # should use the String directly, not access the internal bytes.
-        if expr.field_name == "bytes" and type_name == "String":
-            return target_str
         # Enum constructor parameters are not real Haxe fields. Cast to Dynamic.
         if isinstance(target_type.definition, Enum) and expr.field_name.startswith("param"):
             return f"({target_str} : Dynamic).{expr.field_name}"
         return f"{target_str}.{expr.field_name}"
 
     elif isinstance(expr, IRArrayAccess):
-        arr_str = _expression_to_haxe(expr.array, code, ir_function)
+        # Render the array base without render-time substitutions to avoid
+        # changing the array object after mutations.
+        if isinstance(expr.array, IRLocal):
+            arr_str = expr.array.name
+        else:
+            arr_str = _expression_to_haxe(expr.array, code, ir_function)
         idx_str = _expression_to_haxe(expr.index, code, ir_function)
         # HashLink stores array data in a `.bytes` field and indexes by element
         # size. Convert `arr.bytes[idx << n]` back to `arr[idx]` for any shift.
@@ -372,6 +387,9 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
         ):
             arr_str = _expression_to_haxe(expr.array.target, code, ir_function)
             idx_str = _expression_to_haxe(expr.index.left, code, ir_function)
+            # String bytes are a private backing buffer; keep `.bytes` visible.
+            if disasm.type_name(code, expr.array.target.get_type()) == "String":
+                arr_str = f"{arr_str}.bytes"
         # Raw hl.Bytes temporaries that feed ArrayBase.alloc* are upgraded to
         # hl.BytesAccess<T>; render `bytes[idx << n]` as `bytes[idx]`.
         elif (
@@ -631,6 +649,98 @@ def _inverted_bool_expr_to_haxe(expr: IRBoolExpr, code: Bytecode, ir_function: I
     return f"!({_expression_to_haxe(expr, code, ir_function)})"
 
 
+def _is_simple_render_expr(expr: IRExpression) -> bool:
+    """Expressions safe to duplicate when rendering a local substitution.
+
+    Restricted to locals, constants, and casts of locals/constants. Field and
+    array reads are deliberately excluded: substituting them tends to make the
+    source assignment look dead and can introduce self-referential renders.
+    """
+    if isinstance(expr, (IRConst, IRLocal)):
+        return True
+    if isinstance(expr, IRCast):
+        return _is_simple_render_expr(expr.expr)
+    return False
+
+
+def _free_locals_in_expr(expr: IRExpression) -> Set[IRLocal]:
+    found: Set[IRLocal] = set()
+
+    def walk(e: Optional[IRExpression]) -> None:
+        if e is None:
+            return
+        if isinstance(e, IRLocal):
+            found.add(e)
+        elif isinstance(e, (IRArithmetic, IRBoolExpr)):
+            walk(e.left)
+            walk(e.right)
+        elif isinstance(e, IRCall):
+            if e.target is not None:
+                walk(e.target)
+            for arg in e.args:
+                walk(arg)
+        elif isinstance(e, IRField):
+            walk(e.target)
+        elif isinstance(e, IRCast):
+            walk(e.expr)
+        elif isinstance(e, IRArrayAccess):
+            walk(e.array)
+            walk(e.index)
+
+    walk(expr)
+    return found
+
+
+def _redefined_locals(stmt: IRStatement) -> Set[IRLocal]:
+    found: Set[IRLocal] = set()
+
+    def walk(s: IRStatement) -> None:
+        if isinstance(s, IRAssign):
+            if isinstance(s.target, IRLocal):
+                found.add(s.target)
+            # Array/field writes mutate the object referenced by their base local.
+            elif isinstance(s.target, IRArrayAccess):
+                arr = s.target.array
+                if isinstance(arr, IRLocal):
+                    found.add(arr)
+                elif isinstance(arr, IRField) and isinstance(arr.target, IRLocal):
+                    found.add(arr.target)
+            elif isinstance(s.target, IRField) and isinstance(s.target.target, IRLocal):
+                found.add(s.target.target)
+        for child in s.get_children():
+            if isinstance(child, IRBlock):
+                for child_stmt in child.statements:
+                    walk(child_stmt)
+            else:
+                walk(child)
+
+    walk(stmt)
+    return found
+
+
+def _contains_call(stmt: IRStatement) -> bool:
+    """True if a statement contains any IRCall expression."""
+    found = False
+
+    def walk(e: Optional[IRExpression]) -> None:
+        nonlocal found
+        if e is None:
+            return
+        if isinstance(e, IRCall):
+            found = True
+        for child in e.get_children():
+            if isinstance(child, IRExpression):
+                walk(child)
+
+    for child in stmt.get_children():
+        if isinstance(child, IRExpression):
+            walk(child)
+        elif isinstance(child, IRBlock):
+            for child_stmt in child.statements:
+                walk(child_stmt)
+    return found
+
+
 def _generate_statements(
     statements: List[IRStatement],
     code: Bytecode,
@@ -640,13 +750,28 @@ def _generate_statements(
     # This is a simplification; a proper symbol table would be more robust.
     declared_vars_in_scope: set[str],
     inline_declarations: Optional[Dict[IRStatement, Tuple[str, str]]] = None,
+    render_subs: Optional[Dict[IRLocal, str]] = None,
 ) -> List[str]:
     output_lines: List[str] = []
     indent = _indent_str(indent_level)
     if inline_declarations is None:
         inline_declarations = {}
+    if render_subs is None:
+        render_subs = {}
+
+    prev_render_subs = getattr(ir_function, "_render_subs", None)
+    ir_function._render_subs = render_subs
 
     for stmt in statements:
+        # Drop any render substitution that this statement invalidates.
+        redefined = _redefined_locals(stmt)
+        for key in list(render_subs.keys()):
+            if key in redefined or render_subs[key][1] & redefined:
+                del render_subs[key]
+        # Calls may mutate locals (out/ref params), so avoid substituting across them.
+        if _contains_call(stmt):
+            render_subs.clear()
+
         if isinstance(stmt, IRBlock):  # Nested block, usually from if/else/loop bodies
             # HaxeBlock's content is generated by recursively calling _generate_statements
             # The parent (if/while) handles the "{" and "}"
@@ -658,6 +783,7 @@ def _generate_statements(
                     indent_level,
                     declared_vars_in_scope.copy(),
                     inline_declarations=inline_declarations,
+                    render_subs=render_subs.copy(),
                 )
             )
         elif isinstance(stmt, IRAssign) and stmt in inline_declarations:
@@ -686,7 +812,28 @@ def _generate_statements(
             output_lines.append(f"{indent}untyped ${global_name(stmt.target)}({value_str});")
 
         elif isinstance(stmt, IRAssign):
-            target_str = _expression_to_haxe(stmt.target, code, ir_function)
+            # HashLink's String is backed by a private `.bytes` field. For reads
+            # we hide it so String usage looks natural, but assignments to it
+            # need to render as `this.bytes = ...` to be valid Haxe. When the
+            # source value is another String's `.bytes` field, expose it as well.
+            if (
+                isinstance(stmt.target, IRField)
+                and stmt.target.field_name == "bytes"
+                and disasm.type_name(code, stmt.target.target.get_type()) == "String"
+            ):
+                target_str = f"{_expression_to_haxe(stmt.target.target, code, ir_function)}.bytes"
+                value_expr = stmt.expr
+                if (
+                    isinstance(value_expr, IRField)
+                    and value_expr.field_name == "bytes"
+                    and disasm.type_name(code, value_expr.target.get_type()) == "String"
+                ):
+                    value_str = f"{_expression_to_haxe(value_expr.target, code, ir_function)}.bytes"
+                else:
+                    value_str = _expression_to_haxe(value_expr, code, ir_function)
+            else:
+                target_str = _expression_to_haxe(stmt.target, code, ir_function)
+                value_str = _expression_to_haxe(stmt.expr, code, ir_function)
 
             # Compare locals by name since splitting can create different instances.
             def _same_local(a: Optional[IRStatement], b: Optional[IRStatement]) -> bool:
@@ -736,7 +883,6 @@ def _generate_statements(
                 rhs_str = _expression_to_haxe(stmt.expr.right, code, ir_function)
                 output_lines.append(f"{indent}{target_str} {_compound_ops[stmt.expr.op]} {rhs_str};")
             else:
-                value_str = _expression_to_haxe(stmt.expr, code, ir_function)
                 output_lines.append(f"{indent}{target_str} = {value_str};")
 
         elif isinstance(stmt, IRTrace):
@@ -779,6 +925,7 @@ def _generate_statements(
                     inv_cond = _inverted_bool_expr_to_haxe(stmt.condition, code, ir_function)
                 else:
                     inv_cond = f"!({_expression_to_haxe(stmt.condition, code, ir_function)})"
+                false_subs = render_subs.copy()
                 output_lines.append(f"{indent}if ({inv_cond}) {{")
                 output_lines.extend(
                     _generate_statements(
@@ -788,13 +935,18 @@ def _generate_statements(
                         indent_level + 1,
                         declared_vars_in_scope.copy(),
                         inline_declarations=inline_declarations,
+                        render_subs=false_subs,
                     )
                 )
                 output_lines.append(f"{indent}}}")
                 declared_vars_in_scope.update(_collect_assigned_names(false_stmts))
+                for key in list(render_subs.keys()):
+                    if key not in false_subs:
+                        del render_subs[key]
             else:
                 cond_str = _expression_to_haxe(stmt.condition, code, ir_function)
                 output_lines.append(f"{indent}if ({cond_str}) {{")
+                true_subs = render_subs.copy()
                 output_lines.extend(
                     _generate_statements(
                         true_stmts,
@@ -803,10 +955,12 @@ def _generate_statements(
                         indent_level + 1,
                         declared_vars_in_scope.copy(),
                         inline_declarations=inline_declarations,
+                        render_subs=true_subs,
                     )
                 )
                 # If the true block ends with a control-flow statement, the else is unnecessary.
                 true_ends_with_cf = bool(true_stmts) and isinstance(true_stmts[-1], (IRBreak, IRContinue, IRReturn))
+                false_subs = render_subs.copy()
                 if false_stmts and not true_ends_with_cf:
                     output_lines.append(f"{indent}}} else {{")
                     output_lines.extend(
@@ -817,6 +971,7 @@ def _generate_statements(
                             indent_level + 1,
                             declared_vars_in_scope.copy(),
                             inline_declarations=inline_declarations,
+                            render_subs=false_subs,
                         )
                     )
                     output_lines.append(f"{indent}}}")
@@ -831,12 +986,19 @@ def _generate_statements(
                             indent_level,
                             declared_vars_in_scope.copy(),
                             inline_declarations=inline_declarations,
+                            render_subs=false_subs,
                         )
                     )
                 else:
                     output_lines.append(f"{indent}}}")
                 declared_vars_in_scope.update(_collect_assigned_names(true_stmts))
                 declared_vars_in_scope.update(_collect_assigned_names(false_stmts))
+                valid_keys = set(render_subs.keys()) & set(true_subs.keys())
+                if false_stmts:
+                    valid_keys &= set(false_subs.keys())
+                for key in list(render_subs.keys()):
+                    if key not in valid_keys:
+                        del render_subs[key]
 
         elif isinstance(stmt, IRWhileLoop):
             rendered_as_do_while = False
@@ -854,6 +1016,7 @@ def _generate_statements(
                     and (not last_stmt.false_block or not last_stmt.false_block.statements)
                 ):
                     output_lines.append(f"{indent}do {{")
+                    body_subs = render_subs.copy()
                     output_lines.extend(
                         _generate_statements(
                             stmt.body.statements[:-1],
@@ -862,15 +1025,20 @@ def _generate_statements(
                             indent_level + 1,
                             declared_vars_in_scope.copy(),
                             inline_declarations=inline_declarations,
+                            render_subs=body_subs,
                         )
                     )
                     cond_str = _inverted_bool_expr_to_haxe(last_stmt.condition, code, ir_function)
                     output_lines.append(f"{indent}}} while ({cond_str});")
                     rendered_as_do_while = True
+                    for key in list(render_subs.keys()):
+                        if key not in body_subs:
+                            del render_subs[key]
 
             if not rendered_as_do_while:
                 cond_str = _expression_to_haxe(stmt.condition, code, ir_function)
                 output_lines.append(f"{indent}while ({cond_str}) {{")
+                body_subs = render_subs.copy()
                 output_lines.extend(
                     _generate_statements(
                         stmt.body.statements,
@@ -879,13 +1047,18 @@ def _generate_statements(
                         indent_level + 1,
                         declared_vars_in_scope.copy(),
                         inline_declarations=inline_declarations,
+                        render_subs=body_subs,
                     )
                 )
                 output_lines.append(f"{indent}}}")
+                for key in list(render_subs.keys()):
+                    if key not in body_subs:
+                        del render_subs[key]
 
         elif isinstance(stmt, IRPrimitiveLoop):  # Fallback if not optimized to IRWhileLoop
             output_lines.append(f"{indent}// Primitive Loop (condition first, then body)")
             output_lines.append(f"{indent}{{ // Condition Block")
+            cond_subs = render_subs.copy()
             output_lines.extend(
                 _generate_statements(
                     stmt.condition.statements,
@@ -894,10 +1067,12 @@ def _generate_statements(
                     indent_level + 1,
                     declared_vars_in_scope.copy(),
                     inline_declarations=inline_declarations,
+                    render_subs=cond_subs,
                 )
             )
             output_lines.append(f"{indent}}}")
             output_lines.append(f"{indent}{{ // Body Block")
+            body_subs = render_subs.copy()
             output_lines.extend(
                 _generate_statements(
                     stmt.body.statements,
@@ -906,14 +1081,19 @@ def _generate_statements(
                     indent_level + 1,
                     declared_vars_in_scope.copy(),
                     inline_declarations=inline_declarations,
+                    render_subs=body_subs,
                 )
             )
             output_lines.append(f"{indent}}}")
+            for key in list(render_subs.keys()):
+                if key not in cond_subs or key not in body_subs:
+                    del render_subs[key]
 
         elif isinstance(stmt, IRForEachLoop):
             elem_str = stmt.elem.name
             array_str = _expression_to_haxe(stmt.array, code, ir_function)
             output_lines.append(f"{indent}for ({elem_str} in {array_str}) {{")
+            body_subs = render_subs.copy()
             output_lines.extend(
                 _generate_statements(
                     stmt.body.statements,
@@ -922,15 +1102,20 @@ def _generate_statements(
                     indent_level + 1,
                     declared_vars_in_scope.copy(),
                     inline_declarations=inline_declarations,
+                    render_subs=body_subs,
                 )
             )
             output_lines.append(f"{indent}}}")
+            for key in list(render_subs.keys()):
+                if key not in body_subs:
+                    del render_subs[key]
 
         elif isinstance(stmt, IRIntRangeLoop):
             elem_str = stmt.elem.name
             start_str = _expression_to_haxe(stmt.start, code, ir_function)
             end_str = _expression_to_haxe(stmt.end, code, ir_function)
             output_lines.append(f"{indent}for ({elem_str} in {start_str}...{end_str}) {{")
+            body_subs = render_subs.copy()
             output_lines.extend(
                 _generate_statements(
                     stmt.body.statements,
@@ -939,9 +1124,13 @@ def _generate_statements(
                     indent_level + 1,
                     declared_vars_in_scope.copy(),
                     inline_declarations=inline_declarations,
+                    render_subs=body_subs,
                 )
             )
             output_lines.append(f"{indent}}}")
+            for key in list(render_subs.keys()):
+                if key not in body_subs:
+                    del render_subs[key]
 
         elif isinstance(stmt, IRReturn):
             if stmt.value:
@@ -1004,11 +1193,13 @@ def _generate_statements(
                 switch_value_expr = detected2 if detected2 is not None else stmt.value
             else:
                 switch_value_expr = stmt.value
+            case_subs: List[Dict[IRLocal, Tuple[str, Set[IRLocal]]]] = []
             for case_value, case_block in stmt.cases.items():
                 param_names = _enum_case_params(case_block, switch_value_expr)
                 case_str = _case_value_to_haxe(case_value, enum_type, code, ir_function, param_names)
                 output_lines.append(f"{indent}    case {case_str}:")
                 case_statements = case_block.statements[len(param_names) if param_names else 0 :]
+                branch_subs = render_subs.copy()
                 output_lines.extend(
                     _generate_statements(
                         case_statements,
@@ -1017,8 +1208,10 @@ def _generate_statements(
                         indent_level + 2,
                         declared_vars_in_scope.copy(),
                         inline_declarations=inline_declarations,
+                        render_subs=branch_subs,
                     )
                 )
+                case_subs.append(branch_subs)
                 if param_names:
                     for name in param_names:
                         declared_vars_in_scope.add(name)
@@ -1028,6 +1221,7 @@ def _generate_statements(
                             declared_vars_in_scope.add(s.target.name)
             if stmt.default and stmt.default.statements:
                 output_lines.append(f"{indent}    default:")
+                default_subs = render_subs.copy()
                 output_lines.extend(
                     _generate_statements(
                         stmt.default.statements,
@@ -1036,12 +1230,20 @@ def _generate_statements(
                         indent_level + 2,
                         declared_vars_in_scope.copy(),
                         inline_declarations=inline_declarations,
+                        render_subs=default_subs,
                     )
                 )
+                case_subs.append(default_subs)
                 for s in stmt.default.statements:
                     if isinstance(s, IRAssign) and isinstance(s.target, IRLocal):
                         declared_vars_in_scope.add(s.target.name)
             output_lines.append(f"{indent}}}")
+            valid_keys = set(render_subs.keys())
+            for subs in case_subs:
+                valid_keys &= set(subs.keys())
+            for key in list(render_subs.keys()):
+                if key not in valid_keys:
+                    del render_subs[key]
 
         elif isinstance(stmt, IRTryCatch):
             catch_name = "e"
@@ -1053,6 +1255,7 @@ def _generate_statements(
                 if t and t != "Dyn":
                     catch_type = disasm.type_to_haxe(t)
             output_lines.append(f"{indent}try {{")
+            try_subs = render_subs.copy()
             output_lines.extend(
                 _generate_statements(
                     stmt.try_block.statements,
@@ -1061,9 +1264,11 @@ def _generate_statements(
                     indent_level + 1,
                     declared_vars_in_scope.copy(),
                     inline_declarations=inline_declarations,
+                    render_subs=try_subs,
                 )
             )
             output_lines.append(f"{indent}}} catch ({catch_name}:{catch_type}) {{")
+            catch_subs = render_subs.copy()
             output_lines.extend(
                 _generate_statements(
                     stmt.catch_block.statements,
@@ -1072,9 +1277,14 @@ def _generate_statements(
                     indent_level + 1,
                     declared_vars_in_scope.copy(),
                     inline_declarations=inline_declarations,
+                    render_subs=catch_subs,
                 )
             )
             output_lines.append(f"{indent}}}")
+            valid_keys = set(render_subs.keys()) & set(try_subs.keys()) & set(catch_subs.keys())
+            for key in list(render_subs.keys()):
+                if key not in valid_keys:
+                    del render_subs[key]
 
         elif isinstance(stmt, IRBreak):
             output_lines.append(f"{indent}break;")
@@ -1089,6 +1299,17 @@ def _generate_statements(
         else:
             output_lines.append(f"{indent}// <Unhandled IRStatement: {type(stmt).__name__}> {str(stmt)[:50]}...")
 
+        # Register simple assignments for render-time substitution into later uses.
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRLocal)
+            and _is_simple_render_expr(stmt.expr)
+        ):
+            free_locals = _free_locals_in_expr(stmt.expr)
+            if stmt.target not in free_locals:
+                rendered_expr = _expression_to_haxe(stmt.expr, code, ir_function)
+                render_subs[stmt.target] = (rendered_expr, free_locals)
+
         if stmt.comment:
             # Add comment at the end of the line or on a new line
             if output_lines:
@@ -1096,6 +1317,7 @@ def _generate_statements(
             else:  # Should not happen if statement generated something
                 output_lines.append(f"{indent}// {stmt.comment}")
 
+    ir_function._render_subs = prev_render_subs
     return output_lines
 
 
@@ -1211,9 +1433,14 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
         type_str = local_types[local_name]
         defining_stmt = _find_defining_assignment(local_name, ir_func.block)
         if defining_stmt is not None:
-            # Emit inline at the assignment site, preserving statement order.
-            inline_declarations[defining_stmt] = (local_name, type_str)
-            continue
+            # If the same local is also assigned inside a compound statement that
+            # appears earlier in the block, declaring it at the later assignment
+            # site would produce a use-before-declaration.  Fall back to a top-level
+            # declaration instead.
+            if not _assigned_before_in_block(local_name, ir_func.block, defining_stmt):
+                # Emit inline at the assignment site, preserving statement order.
+                inline_declarations[defining_stmt] = (local_name, type_str)
+                continue
         # If the variable only lives inside a single compound statement, declare
         # it inline there rather than pre-declaring at function level.
         inner_stmt = _find_inner_defining_assignment(local_name, ir_func.block)
@@ -1411,19 +1638,15 @@ def _find_defining_assignment(local_name: str, block: IRBlock) -> Optional[Union
     """Return the top-level assignment (or expression switch) that defines a local
     if it happens unconditionally before any read of that local.
 
-    The assignment is only folded into the declaration if none of the locals
-    it reads are reassigned elsewhere in the block.  Hoisting the assignment
-    above a later reassignment of one of its source locals would change the
-    value it sees.
+    The assignment is folded into `var name = ...` at its existing statement
+    position, so it is safe as long as the statement itself does not read the
+    local being defined.
     """
     for stmt in block.statements:
         if isinstance(stmt, IRAssign):
             if isinstance(stmt.target, IRLocal) and stmt.target.name == local_name:
                 if _contains_local_name(local_name, stmt.expr):
                     return None
-                for used_name in _collect_local_names(stmt.expr):
-                    if _has_multiple_assignments(used_name, block):
-                        return None
                 return stmt
         elif isinstance(stmt, IRSwitch):
             target = _switch_defines_local(stmt, local_name)
@@ -1438,9 +1661,6 @@ def _find_defining_assignment(local_name: str, block: IRBlock) -> Optional[Union
                     sources.update(_collect_local_names(default_expr))
                 if local_name in sources:
                     return None
-                for used_name in sources:
-                    if _has_multiple_assignments(used_name, block):
-                        return None
                 return stmt
         if _contains_local_name(local_name, stmt):
             return None
@@ -1619,6 +1839,18 @@ def _has_multiple_assignments(local_name: str, block: IRBlock) -> bool:
             count += 1
             if count > 1:
                 return True
+    return False
+
+
+def _assigned_before_in_block(local_name: str, block: IRBlock, stmt: IRStatement) -> bool:
+    """Return True if `local_name` is assigned anywhere inside a statement that
+    appears before `stmt` in the block (including nested compound statements).
+    """
+    for s in block.statements:
+        if s is stmt:
+            return False
+        if _find_assignment_recursive(local_name, s) is not None:
+            return True
     return False
 
 

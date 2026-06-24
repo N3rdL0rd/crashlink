@@ -1197,9 +1197,19 @@ class IRSwitch(IRStatement):
 class IRPrimitiveJump(IRExpression):
     """An unlifted jump to be handled by further optimization stages."""
 
-    def __init__(self, code: Bytecode, op: Opcode):
+    def __init__(
+        self,
+        code: Bytecode,
+        op: Opcode,
+        left: Optional[IRExpression] = None,
+        right: Optional[IRExpression] = None,
+        cond: Optional[IRExpression] = None,
+    ):
         super().__init__(code)
         self.op = op
+        self.left = left
+        self.right = right
+        self.cond = cond
         assert op.op in conditionals
 
     def get_type(self) -> Type:
@@ -1824,14 +1834,19 @@ class IRPrimitiveJumpLifter(TraversingIROptimizer):
         right_expr: Optional[IRExpression] = None
         cond_operand_expr: Optional[IRExpression] = None
 
-        # Helper to get operand as IRLocal
-        def get_local_operand(key_name: str) -> Optional[IRLocal]:
+        # Helper to get operand as IRLocal. Prefer operands captured at lift time
+        # so that later local-name splits do not change which value the jump was
+        # testing (e.g. String.split's empty-delimiter loop bound).
+        def resolve_operand(key_name: str) -> Optional[IRLocal]:
+            stored = getattr(primitive_jump, key_name, None)
+            if stored is not None:
+                return stored
             if key_name not in op_df:
                 return None
             try:
                 reg_idx = op_df[key_name].value
                 assert isinstance(reg_idx, int), "this should literally never happen!"
-                return self.func.locals[reg_idx]  # self.func comes from TraversingIROptimizer
+                return self.func.locals[reg_idx]
             except (AttributeError, IndexError, KeyError):
                 dbg_print(f"IRPrimitiveJumpLifter: Could not resolve local for key {key_name} in {original_jump_op}")
                 return None
@@ -1840,19 +1855,19 @@ class IRPrimitiveJumpLifter(TraversingIROptimizer):
             IRBoolExpr.CompareType.ISTRUE,
             IRBoolExpr.CompareType.ISFALSE,
         ]:
-            cond_operand_expr = get_local_operand("cond")
+            cond_operand_expr = resolve_operand("cond") if primitive_jump.cond is None else primitive_jump.cond
             if not cond_operand_expr:
                 return  # Failed to create
         elif condition_type in [
             IRBoolExpr.CompareType.NULL,
             IRBoolExpr.CompareType.NOT_NULL,
         ]:
-            cond_operand_expr = get_local_operand("reg")
+            cond_operand_expr = resolve_operand("reg") if primitive_jump.cond is None else primitive_jump.cond
             if not cond_operand_expr:
                 return
         else:  # Two-operand comparisons
-            left_expr = get_local_operand("a")
-            right_expr = get_local_operand("b")
+            left_expr = primitive_jump.left if primitive_jump.left is not None else resolve_operand("a")
+            right_expr = primitive_jump.right if primitive_jump.right is not None else resolve_operand("b")
             if not left_expr or not right_expr:
                 dbg_print(f"IRPrimitiveJumpLifter: Missing operands for binary jump {original_jump_op.op}")
                 return
@@ -1903,6 +1918,95 @@ class IRConditionInliner(TraversingIROptimizer):
                 pass
         return False
 
+    def _expr_contains_local(self, expr: Optional[IRExpression], local: IRLocal) -> bool:
+        if expr is None:
+            return False
+        if expr == local:
+            return True
+        for child in expr.get_children():
+            if isinstance(child, IRExpression) and self._expr_contains_local(child, local):
+                return True
+        return False
+
+    def _stmt_contains_local(self, stmt: IRStatement, local: IRLocal) -> bool:
+        if isinstance(stmt, IRAssign):
+            if isinstance(stmt.target, IRExpression) and self._expr_contains_local(stmt.target, local):
+                return True
+            if self._expr_contains_local(stmt.expr, local):
+                return True
+        elif isinstance(stmt, IRExpression):
+            if self._expr_contains_local(stmt, local):
+                return True
+        elif isinstance(stmt, IRReturn):
+            if stmt.value is not None and self._expr_contains_local(stmt.value, local):
+                return True
+        elif isinstance(stmt, IRConditional):
+            if self._expr_contains_local(stmt.condition, local):
+                return True
+        elif isinstance(stmt, IRWhileLoop):
+            if self._expr_contains_local(stmt.condition, local):
+                return True
+        for child in stmt.get_children():
+            if child is not stmt and self._stmt_contains_local(child, local):
+                return True
+        return False
+
+    def _is_safe_to_duplicate(self, expr: IRExpression) -> bool:
+        """Return True for side-effect-free expressions that can be duplicated
+        without changing program behavior. Calls and allocations are excluded."""
+        if isinstance(expr, (IRConst, IRLocal)):
+            return True
+        if isinstance(expr, (IRField, IRCast, IRNeg, IRNot)):
+            for child in expr.get_children():
+                if isinstance(child, IRExpression) and not self._is_safe_to_duplicate(child):
+                    return False
+            return True
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            return self._is_safe_to_duplicate(expr.left) and self._is_safe_to_duplicate(expr.right)
+        return False
+
+    def _stmt_contains_local_read(self, stmt: IRStatement, local: IRLocal) -> bool:
+        """Like _stmt_contains_local but ignoring assignment targets (redefinitions)."""
+        if isinstance(stmt, IRAssign):
+            return self._expr_contains_local(stmt.expr, local)
+        if isinstance(stmt, IRExpression):
+            return self._expr_contains_local(stmt, local)
+        if isinstance(stmt, IRReturn):
+            if stmt.value is not None and self._expr_contains_local(stmt.value, local):
+                return True
+        elif isinstance(stmt, IRConditional):
+            if self._expr_contains_local(stmt.condition, local):
+                return True
+        elif isinstance(stmt, IRWhileLoop):
+            if self._expr_contains_local(stmt.condition, local):
+                return True
+        for child in stmt.get_children():
+            if child is not stmt and self._stmt_contains_local_read(child, local):
+                return True
+        return False
+
+    def _local_used_outside_condition(
+        self,
+        local: IRLocal,
+        conditional_stmt: Union[IRConditional, IRWhileLoop],
+        later_statements: List[IRStatement],
+    ) -> bool:
+        """Return True if `local` is read in the branches/body of a conditional or after it."""
+        if isinstance(conditional_stmt, IRConditional):
+            blocks = [conditional_stmt.true_block]
+            if conditional_stmt.false_block:
+                blocks.append(conditional_stmt.false_block)
+        else:
+            blocks = [conditional_stmt.body]
+        for blk in blocks:
+            for s in blk.statements:
+                if self._stmt_contains_local_read(s, local):
+                    return True
+        for s in later_statements:
+            if self._stmt_contains_local_read(s, local):
+                return True
+        return False
+
     def visit_block(self, block: IRBlock) -> None:
         """
         Iterates through statements to find inlining opportunities.
@@ -1928,15 +2032,28 @@ class IRConditionInliner(TraversingIROptimizer):
 
                     if isinstance(next_stmt, IRConditional):
                         conditional_stmt: IRConditional = next_stmt
+                        used_outside = isinstance(assigned_local, IRLocal) and self._local_used_outside_condition(
+                            assigned_local, conditional_stmt, block.statements[i + 2 :]
+                        )
                         if conditional_stmt.condition == assigned_local:
+                            if used_outside and not self._is_safe_to_duplicate(expr_to_inline):
+                                new_statements.append(current_stmt)
+                                i += 1
+                                continue
                             dbg_print(
                                 f"IRCondInliner: Inlining {expr_to_inline} into IRConditional condition (direct) for {assigned_local}"
                             )
                             conditional_stmt.condition = expr_to_inline
+                            if used_outside:
+                                new_statements.append(current_stmt)
                             new_statements.append(next_stmt)
                             i += 2
                             inlined_something = True
                         elif isinstance(conditional_stmt.condition, IRBoolExpr):
+                            if used_outside and not self._is_safe_to_duplicate(expr_to_inline):
+                                new_statements.append(current_stmt)
+                                i += 1
+                                continue
                             modified_bool_expr = self._try_inline_into_boolexpr(
                                 conditional_stmt.condition,
                                 assigned_local,
@@ -1947,21 +2064,36 @@ class IRConditionInliner(TraversingIROptimizer):
                                     f"IRCondInliner: Inlining {expr_to_inline} into IRBoolExpr within IRConditional for {assigned_local}"
                                 )
                                 conditional_stmt.condition = modified_bool_expr
+                                if used_outside:
+                                    new_statements.append(current_stmt)
                                 new_statements.append(next_stmt)
                                 i += 2
                                 inlined_something = True
 
                     elif not inlined_something and isinstance(next_stmt, IRWhileLoop):
                         while_loop_stmt: IRWhileLoop = next_stmt
+                        used_outside = isinstance(assigned_local, IRLocal) and self._local_used_outside_condition(
+                            assigned_local, while_loop_stmt, block.statements[i + 2 :]
+                        )
                         if while_loop_stmt.condition == assigned_local:
+                            if used_outside and not self._is_safe_to_duplicate(expr_to_inline):
+                                new_statements.append(current_stmt)
+                                i += 1
+                                continue
                             dbg_print(
                                 f"IRCondInliner: Inlining {expr_to_inline} into IRWhileLoop condition (direct) for {assigned_local}"
                             )
                             while_loop_stmt.condition = expr_to_inline
+                            if used_outside:
+                                new_statements.append(current_stmt)
                             new_statements.append(next_stmt)
                             i += 2
                             inlined_something = True
                         elif isinstance(while_loop_stmt.condition, IRBoolExpr):
+                            if used_outside and not self._is_safe_to_duplicate(expr_to_inline):
+                                new_statements.append(current_stmt)
+                                i += 1
+                                continue
                             modified_bool_expr = self._try_inline_into_boolexpr(
                                 while_loop_stmt.condition,
                                 assigned_local,
@@ -1972,6 +2104,8 @@ class IRConditionInliner(TraversingIROptimizer):
                                     f"IRCondInliner: Inlining {expr_to_inline} into IRBoolExpr within IRWhileLoop for {assigned_local}"
                                 )
                                 while_loop_stmt.condition = modified_bool_expr
+                                if used_outside:
+                                    new_statements.append(current_stmt)
                                 new_statements.append(next_stmt)
                                 i += 2
                                 inlined_something = True
@@ -1982,6 +2116,18 @@ class IRConditionInliner(TraversingIROptimizer):
                         and isinstance(next_stmt.expr, IRExpression)
                     ):
                         assign_next_stmt: IRAssign = next_stmt
+                        # If the assigned local is read later, inlining it away here
+                        # would disconnect that later use from its definition. Keep
+                        # the original assignment when the expression is safe to
+                        # duplicate; otherwise leave both statements untouched.
+                        used_outside = isinstance(assigned_local, IRLocal) and any(
+                            self._stmt_contains_local_read(s, assigned_local)
+                            for s in block.statements[i + 2 :]
+                        )
+                        if used_outside and not self._is_safe_to_duplicate(expr_to_inline):
+                            new_statements.append(current_stmt)
+                            i += 1
+                            continue
                         modified_rhs_expr = self._try_inline_into_generic_expr(
                             assign_next_stmt.expr, assigned_local, expr_to_inline
                         )
@@ -1991,6 +2137,8 @@ class IRConditionInliner(TraversingIROptimizer):
                                     f"IRCondInliner: Inlining {expr_to_inline} into IRAssign RHS for {assigned_local}"
                                 )
                             assign_next_stmt.expr = modified_rhs_expr
+                            if used_outside:
+                                new_statements.append(current_stmt)
                             new_statements.append(assign_next_stmt)
                             i += 2
                             inlined_something = True
@@ -3066,8 +3214,17 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 return True
         return False
 
-    def _visit_block_conservative(self, block: IRBlock) -> None:
-        """Only inlines an assignment if it is used in the very next statement."""
+    def _is_loop_body_block(self, parent: IRStatement, child: IRStatement) -> bool:
+        """Return True if `child` is the body block of a loop statement."""
+        return isinstance(parent, (IRWhileLoop, IRPrimitiveLoop, IRForEachLoop, IRIntRangeLoop)) and getattr(parent, "body", None) is child
+
+    def _visit_block_conservative(self, block: IRBlock, inside_loop_body: bool = False) -> None:
+        """Only inlines an assignment if it is used in the very next statement.
+
+        Inside a loop body we still perform the inline substitution, but we keep
+        the original assignment. Removing it would destroy the loop-carried value
+        that is live after the loop (e.g. String.indexOf's search result).
+        """
         if not block.statements:
             return
 
@@ -3103,11 +3260,16 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                                 self._stmt_contains_local(s, temp_local) for s in statements[i + 2 :]
                             )
                             if not later_uses:
-                                self._substitute_in_statement(next_stmt, temp_local, expr_to_inline)
-                                dbg_print(f"Conservatively inlining assignment for temporary '{temp_local.name}'.")
-                                new_statements.append(next_stmt)
-                                i += 2
-                                inlined = True
+                                substituted = self._substitute_in_statement(
+                                    next_stmt, temp_local, expr_to_inline
+                                )
+                                if substituted:
+                                    dbg_print(f"Conservatively inlining assignment for temporary '{temp_local.name}'.")
+                                    if inside_loop_body:
+                                        new_statements.append(current_stmt)
+                                    new_statements.append(next_stmt)
+                                    i += 2
+                                    inlined = True
 
             if not inlined:
                 new_statements.append(current_stmt)
@@ -3118,10 +3280,16 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         for stmt in block.statements:
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
-                    self.visit_block(child)
+                    self._visit_block_conservative(
+                        child, inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child)
+                    )
 
-    def _visit_block_aggressive(self, block: IRBlock) -> None:
-        """Inlines safe expressions everywhere they are used, until no more changes can be made."""
+    def _visit_block_aggressive(self, block: IRBlock, inside_loop_body: bool = False) -> None:
+        """Inlines safe expressions everywhere they are used, until no more changes can be made.
+
+        As in conservative mode, assignments inside a loop body are preserved so
+        loop-carried values remain live after the loop.
+        """
         made_change_in_pass = True
         while made_change_in_pass:
             made_change_in_pass = False
@@ -3156,24 +3324,38 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 free_vars = self._collect_free_locals(expr_to_inline)
                 free_vars.discard(temp_local.name)
 
+                # Find every remaining statement that reads `temp_local` before it
+                # is redefined. If a use also reassigns a free variable and there
+                # are uses after it, inlining would break those later uses (the
+                # temp preserves the pre-reassignment value). Keep the temp and
+                # let copy propagation clean up the simple copy instead.
+                use_indices = [
+                    j
+                    for j, s in enumerate(remaining_statements)
+                    if self._stmt_contains_local(s, temp_local)
+                ]
+                if not use_indices:
+                    continue
+                blocked = False
+                for ui in use_indices:
+                    if free_vars and self._stmt_reassigns_any(remaining_statements[ui], free_vars):
+                        if any(uj > ui for uj in use_indices):
+                            blocked = True
+                            break
+                if blocked:
+                    continue
+
                 any_substituted = False
                 for subsequent_stmt in remaining_statements:
                     if self._substitute_in_statement(subsequent_stmt, temp_local, expr_to_inline):
                         any_substituted = True
-                    # Stop once a free variable of the inlined expression is
-                    # reassigned: later reads of the temp need the new value.
-                    if free_vars and self._stmt_reassigns_any(subsequent_stmt, free_vars):
-                        # The temp is not redefined in remaining_statements (checked
-                        # above), so a later use would read a stale value. Bail on
-                        # removing the definition; leave the assignment in place.
-                        any_substituted = False
-                        break
 
                 if not any_substituted:
                     continue
 
                 dbg_print(f"Aggressively inlining safe expression from temporary '{temp_local.name}'.")
-                statements_to_remove.append(stmt)
+                if not inside_loop_body:
+                    statements_to_remove.append(stmt)
                 made_change_in_pass = True
                 break
 
@@ -3183,7 +3365,9 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         for stmt in block.statements:
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
-                    self.visit_block(child)
+                    self._visit_block_aggressive(
+                        child, inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child)
+                    )
 
 
 class IRCopyPropOptimizer(TraversingIROptimizer):
@@ -3716,6 +3900,434 @@ class IRDeadCodeEliminator(TraversingIROptimizer):
                     self.visit_block(child)
 
 
+class IRDeadStoreEliminator(TraversingIROptimizer):
+    """Removes local assignments that are overwritten before being read within a block."""
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_stmts: List[IRStatement] = []
+        # local -> index in new_stmts of its pending assignment
+        pending: Dict[IRLocal, int] = {}
+
+        def _locals_in_expr(expr: Optional[IRExpression]) -> Set[IRLocal]:
+            found: Set[IRLocal] = set()
+            if expr is None:
+                return found
+            if isinstance(expr, IRLocal):
+                found.add(expr)
+            elif isinstance(expr, (IRArithmetic, IRBoolExpr)):
+                found.update(_locals_in_expr(expr.left))
+                found.update(_locals_in_expr(expr.right))
+            elif isinstance(expr, IRArrayAccess):
+                found.update(_locals_in_expr(expr.array))
+                found.update(_locals_in_expr(expr.index))
+            elif isinstance(expr, (IRField, IRCast, IRNeg, IRNot, IRTypeOf, IRTypeKind, IREnumIndex)):
+                target = getattr(expr, "target", getattr(expr, "expr", getattr(expr, "value", None)))
+                found.update(_locals_in_expr(target))
+            elif isinstance(expr, IRCall):
+                if expr.target is not None:
+                    found.update(_locals_in_expr(expr.target))
+                for arg in expr.args:
+                    found.update(_locals_in_expr(arg))
+            elif isinstance(expr, IRNew):
+                for arg in expr.constructor_args:
+                    found.update(_locals_in_expr(arg))
+            elif isinstance(expr, IRArrayLiteral):
+                for element in expr.elements:
+                    found.update(_locals_in_expr(element))
+            elif isinstance(expr, IREnumConstruct):
+                for arg in expr.args:
+                    found.update(_locals_in_expr(arg))
+            elif isinstance(expr, IREnumField):
+                found.update(_locals_in_expr(expr.value))
+            elif isinstance(expr, IRRef):
+                found.update(_locals_in_expr(expr.target))
+            return found
+
+        def _has_side_effects(expr: Optional[IRExpression]) -> bool:
+            if expr is None:
+                return False
+            if isinstance(expr, (IRCall, IRNew)):
+                return True
+            if isinstance(expr, IREnumConstruct):
+                return any(_has_side_effects(arg) for arg in expr.args)
+            if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+                return _has_side_effects(expr.left) or _has_side_effects(expr.right)
+            if isinstance(expr, (IRField, IRCast, IRNeg, IRNot, IRTypeOf, IRTypeKind, IREnumIndex)):
+                target = getattr(expr, "target", getattr(expr, "expr", getattr(expr, "value", None)))
+                return _has_side_effects(target)
+            if isinstance(expr, IRArrayAccess):
+                return _has_side_effects(expr.array) or _has_side_effects(expr.index)
+            if isinstance(expr, IRArrayLiteral):
+                return any(_has_side_effects(e) for e in expr.elements)
+            if isinstance(expr, IREnumField):
+                return _has_side_effects(expr.value)
+            if isinstance(expr, IRRef):
+                return _has_side_effects(expr.target)
+            return False
+
+        def _reads_in_stmt(stmt: IRStatement) -> Set[IRLocal]:
+            reads: Set[IRLocal] = set()
+            if isinstance(stmt, IRAssign):
+                reads.update(_locals_in_expr(stmt.expr))
+                if isinstance(stmt.target, IRArrayAccess):
+                    reads.update(_locals_in_expr(stmt.target.array))
+                    reads.update(_locals_in_expr(stmt.target.index))
+                elif isinstance(stmt.target, IRField):
+                    reads.update(_locals_in_expr(stmt.target.target))
+            elif isinstance(stmt, (IRReturn, IRThrow)) and stmt.value is not None:
+                reads.update(_locals_in_expr(stmt.value))
+            elif isinstance(stmt, IRCall):
+                if stmt.target is not None:
+                    reads.update(_locals_in_expr(stmt.target))
+                for arg in stmt.args:
+                    reads.update(_locals_in_expr(arg))
+            elif isinstance(stmt, IRTrace):
+                reads.update(_locals_in_expr(stmt.msg))
+            elif isinstance(stmt, IRConditional):
+                reads.update(_locals_in_expr(stmt.condition))
+            elif isinstance(stmt, IRWhileLoop):
+                reads.update(_locals_in_expr(stmt.condition))
+            elif isinstance(stmt, IRSwitch):
+                reads.update(_locals_in_expr(stmt.value))
+            return reads
+
+        def _written_local(stmt: IRStatement) -> Optional[IRLocal]:
+            if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+                return stmt.target
+            return None
+
+        for stmt in block.statements:
+            reads = _reads_in_stmt(stmt)
+            for local in reads:
+                pending.pop(local, None)
+
+            target = _written_local(stmt)
+            if target is not None:
+                if target in pending and not _has_side_effects(new_stmts[pending[target]].expr):
+                    dead_idx = pending[target]
+                    del new_stmts[dead_idx]
+                    # adjust indices after removal
+                    for loc, idx in list(pending.items()):
+                        if idx > dead_idx:
+                            pending[loc] = idx - 1
+                new_stmts.append(stmt)
+                pending[target] = len(new_stmts) - 1
+            else:
+                new_stmts.append(stmt)
+
+        block.statements = new_stmts
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
+
+class IRSequentialTempFolder(TraversingIROptimizer):
+    """Folds a simple local assignment into the very next assignment to the same local.
+
+    Patterns like `var1 = this.bytes; var1 = Native.f(var1, ...)` are simplified
+    to `var1 = Native.f(this.bytes, ...)` and the first assignment is dropped.
+    The source expression must be side-effect free and must not reference the
+    target local.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        changed = True
+        while changed:
+            changed = False
+            i = 0
+            while i < len(block.statements) - 1:
+                stmt = block.statements[i]
+                nxt = block.statements[i + 1]
+                if not (
+                    isinstance(stmt, IRAssign)
+                    and isinstance(stmt.target, IRLocal)
+                    and self._is_simple_expr(stmt.expr)
+                    and not self._expr_uses_local(stmt.expr, stmt.target)
+                    and isinstance(nxt, IRAssign)
+                    and isinstance(nxt.target, IRLocal)
+                    and nxt.target == stmt.target
+                ):
+                    i += 1
+                    continue
+                replaced = self._replace_local_in_expr(nxt.expr, stmt.target, stmt.expr)
+                if not replaced:
+                    # The next RHS may also use the local through its target (e.g. array index).
+                    if isinstance(nxt.target, IRArrayAccess):
+                        replaced |= self._replace_local_in_expr(nxt.target.array, stmt.target, stmt.expr)
+                        replaced |= self._replace_local_in_expr(nxt.target.index, stmt.target, stmt.expr)
+                    if not replaced:
+                        i += 1
+                        continue
+                block.statements.pop(i)
+                changed = True
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
+    def _is_simple_expr(self, expr: IRExpression) -> bool:
+        if isinstance(expr, (IRCall, IRNew)):
+            return False
+        for child in expr.get_children():
+            if isinstance(child, IRExpression) and not self._is_simple_expr(child):
+                return False
+        return True
+
+    def _expr_uses_local(self, expr: IRExpression, local: IRLocal) -> bool:
+        if expr == local:
+            return True
+        return any(self._expr_uses_local(child, local) for child in expr.get_children() if isinstance(child, IRExpression))
+
+    def _replace_local_in_expr(self, expr: IRExpression, local: IRLocal, replacement: IRExpression) -> bool:
+        if expr == local:
+            return True
+        made_change = False
+        # get_children returns a list of child statements/expressions.  We only
+        # mutate expression children.
+        children = expr.get_children()
+        for i, child in enumerate(children):
+            if not isinstance(child, IRExpression):
+                continue
+            if child == local:
+                # Use the type-specific setter to keep the IR node intact.
+                if self._set_child(expr, i, replacement):
+                    made_change = True
+                continue
+            if self._replace_local_in_expr(child, local, replacement):
+                made_change = True
+        return made_change
+
+    def _set_child(self, parent: IRExpression, index: int, value: IRExpression) -> bool:
+        children = parent.get_children()
+        if index >= len(children):
+            return False
+        child = children[index]
+        if isinstance(parent, (IRArithmetic, IRBoolExpr)):
+            if child is parent.left:
+                parent.left = value
+                return True
+            if child is parent.right:
+                parent.right = value
+                return True
+        elif isinstance(parent, IRCall):
+            for j, arg in enumerate(parent.args):
+                if arg is child:
+                    parent.args[j] = value
+                    return True
+        elif isinstance(parent, IRField):
+            if child is parent.target:
+                parent.target = value
+                return True
+        elif isinstance(parent, IRCast):
+            if child is parent.expr:
+                parent.expr = value
+                return True
+        elif isinstance(parent, (IRNeg, IRNot, IRTypeOf, IRTypeKind, IREnumIndex)):
+            attr = "expr" if hasattr(parent, "expr") else "value"
+            if getattr(parent, attr) is child:
+                setattr(parent, attr, value)
+                return True
+        elif isinstance(parent, IRArrayAccess):
+            if child is parent.array:
+                parent.array = value
+                return True
+            if child is parent.index:
+                parent.index = value
+                return True
+        elif isinstance(parent, IREnumConstruct):
+            for j, arg in enumerate(parent.args):
+                if arg is child:
+                    parent.args[j] = value
+                    return True
+        elif isinstance(parent, IREnumField):
+            if child is parent.value:
+                parent.value = value
+                return True
+        elif isinstance(parent, IRRef):
+            if child is parent.target:
+                parent.target = value
+                return True
+        return False
+
+
+class IRDeadAssignmentEliminator(TraversingIROptimizer):
+    """Removes assignments to locals that are never read before being redefined.
+
+    Performs a structured backward liveness sweep.  Each block is processed with
+    a live-out set so that assignments feeding into later statements, sibling
+    branches, loop conditions, or code after a loop are never dropped.
+    """
+
+    def optimize(self) -> None:
+        if not hasattr(self.func, "block"):
+            return
+        self._block_live: Dict[int, Tuple[Set[IRLocal], Set[IRLocal]]] = {}
+        self._process_block(self.func.block, set())
+
+    def _process_block(self, block: IRBlock, live_out: Set[IRLocal]) -> Set[IRLocal]:
+        block_id = id(block)
+        cached = self._block_live.get(block_id)
+        if cached is not None:
+            cached_out, cached_in = cached
+            if live_out.issubset(cached_out):
+                return cached_in
+            live_out = cached_out | live_out
+
+        live: Set[IRLocal] = set(live_out)
+        new_stmts: List[IRStatement] = []
+
+        for stmt in reversed(block.statements):
+            uses, defs = self._stmt_uses_and_defs(stmt, live)
+            can_drop = (
+                isinstance(stmt, IRAssign)
+                and isinstance(stmt.target, IRLocal)
+                and stmt.target not in live
+                and not self._has_side_effects(stmt.expr)
+            )
+            if can_drop:
+                continue
+            new_stmts.append(stmt)
+            live.difference_update(defs)
+            live.update(uses)
+
+        block.statements = list(reversed(new_stmts))
+        self._block_live[block_id] = (live_out, live)
+        return live
+
+    def _stmt_uses_and_defs(
+        self, stmt: IRStatement, live_after_stmt: Set[IRLocal]
+    ) -> Tuple[Set[IRLocal], Set[IRLocal]]:
+        uses: Set[IRLocal] = set()
+        defs: Set[IRLocal] = set()
+
+        if isinstance(stmt, IRAssign):
+            uses.update(self._locals_in_expr(stmt.expr))
+            if isinstance(stmt.target, IRArrayAccess):
+                uses.update(self._locals_in_expr(stmt.target.array))
+                uses.update(self._locals_in_expr(stmt.target.index))
+            elif isinstance(stmt.target, IRField):
+                uses.update(self._locals_in_expr(stmt.target.target))
+            elif isinstance(stmt.target, IRLocal):
+                defs.add(stmt.target)
+        elif isinstance(stmt, (IRReturn, IRThrow)) and stmt.value is not None:
+            uses.update(self._locals_in_expr(stmt.value))
+        elif isinstance(stmt, IRCall):
+            if stmt.target is not None:
+                uses.update(self._locals_in_expr(stmt.target))
+            for arg in stmt.args:
+                uses.update(self._locals_in_expr(arg))
+        elif isinstance(stmt, IRTrace):
+            uses.update(self._locals_in_expr(stmt.msg))
+        elif isinstance(stmt, (IRConditional, IRWhileLoop)):
+            uses.update(self._locals_in_expr(stmt.condition))
+        elif isinstance(stmt, IRSwitch):
+            uses.update(self._locals_in_expr(stmt.value))
+
+        # Recursively process nested blocks with the correct live-out sets.
+        if isinstance(stmt, IRConditional):
+            child_out = set(live_after_stmt)
+            true_in = self._process_block(stmt.true_block, child_out) if stmt.true_block else set()
+            false_in = self._process_block(stmt.false_block, child_out) if stmt.false_block else set()
+            uses.update(true_in)
+            uses.update(false_in)
+        elif isinstance(stmt, IRWhileLoop):
+            # Loop-carried values include anything live after the loop plus the
+            # loop condition.  The body is processed with that live-out set.
+            child_out = live_after_stmt | self._locals_in_expr(stmt.condition)
+            body_in = self._process_block(stmt.body, child_out)
+            uses.update(body_in)
+        elif isinstance(stmt, IRPrimitiveLoop):
+            cond_uses = self._locals_in_expr(stmt.condition) if hasattr(stmt, "condition") else set()
+            child_out = live_after_stmt | cond_uses
+            body_in = self._process_block(stmt.body, child_out)
+            uses.update(body_in)
+            uses.update(cond_uses)
+        elif isinstance(stmt, IRForEachLoop):
+            child_out = set(live_after_stmt)
+            body_in = self._process_block(stmt.body, child_out)
+            uses.update(body_in)
+            if hasattr(stmt, "array"):
+                uses.update(self._locals_in_expr(stmt.array))
+        elif isinstance(stmt, IRIntRangeLoop):
+            uses.update(self._locals_in_expr(stmt.start))
+            uses.update(self._locals_in_expr(stmt.end))
+            child_out = set(live_after_stmt)
+            body_in = self._process_block(stmt.body, child_out)
+            uses.update(body_in)
+        elif isinstance(stmt, IRSwitch):
+            child_out = set(live_after_stmt)
+            for case_block in stmt.cases.values():
+                uses.update(self._process_block(case_block, child_out))
+            if stmt.default is not None:
+                uses.update(self._process_block(stmt.default, child_out))
+        elif isinstance(stmt, IRTryCatch):
+            child_out = set(live_after_stmt)
+            try_in = self._process_block(stmt.try_block, child_out)
+            catch_in = self._process_block(stmt.catch_block, child_out)
+            uses.update(try_in)
+            uses.update(catch_in)
+
+        return uses, defs
+
+    def _locals_in_expr(self, expr: Optional[IRExpression]) -> Set[IRLocal]:
+        found: Set[IRLocal] = set()
+        if expr is None:
+            return found
+        if isinstance(expr, IRLocal):
+            found.add(expr)
+        elif isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            found.update(self._locals_in_expr(expr.left))
+            found.update(self._locals_in_expr(expr.right))
+        elif isinstance(expr, IRArrayAccess):
+            found.update(self._locals_in_expr(expr.array))
+            found.update(self._locals_in_expr(expr.index))
+        elif isinstance(expr, (IRField, IRCast, IRNeg, IRNot, IRTypeOf, IRTypeKind, IREnumIndex)):
+            target = getattr(expr, "target", getattr(expr, "expr", getattr(expr, "value", None)))
+            found.update(self._locals_in_expr(target))
+        elif isinstance(expr, IRCall):
+            if expr.target is not None:
+                found.update(self._locals_in_expr(expr.target))
+            for arg in expr.args:
+                found.update(self._locals_in_expr(arg))
+        elif isinstance(expr, IRNew):
+            for arg in expr.constructor_args:
+                found.update(self._locals_in_expr(arg))
+        elif isinstance(expr, IRArrayLiteral):
+            for element in expr.elements:
+                found.update(self._locals_in_expr(element))
+        elif isinstance(expr, IREnumConstruct):
+            for arg in expr.args:
+                found.update(self._locals_in_expr(arg))
+        elif isinstance(expr, IREnumField):
+            found.update(self._locals_in_expr(expr.value))
+        elif isinstance(expr, IRRef):
+            found.update(self._locals_in_expr(expr.target))
+        return found
+
+    def _has_side_effects(self, expr: Optional[IRExpression]) -> bool:
+        if expr is None:
+            return False
+        if isinstance(expr, (IRCall, IRNew)):
+            return True
+        if isinstance(expr, IREnumConstruct):
+            return any(self._has_side_effects(arg) for arg in expr.args)
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            return self._has_side_effects(expr.left) or self._has_side_effects(expr.right)
+        if isinstance(expr, (IRField, IRCast, IRNeg, IRNot, IRTypeOf, IRTypeKind, IREnumIndex)):
+            target = getattr(expr, "target", getattr(expr, "expr", getattr(expr, "value", None)))
+            return self._has_side_effects(target)
+        if isinstance(expr, IRArrayAccess):
+            return self._has_side_effects(expr.array) or self._has_side_effects(expr.index)
+        if isinstance(expr, IRArrayLiteral):
+            return any(self._has_side_effects(e) for e in expr.elements)
+        if isinstance(expr, IREnumField):
+            return self._has_side_effects(expr.value)
+        if isinstance(expr, IRRef):
+            return self._has_side_effects(expr.target)
+        return False
+
+
 class IRConstructorFolder(TraversingIROptimizer):
     """Folds `new X; __constructor__(x, args...)` into `new X(args...)`."""
 
@@ -3800,6 +4412,73 @@ class IRConstructorFolder(TraversingIROptimizer):
         if expr == local:
             return True
         return any(self._expr_uses_local(child, local) for child in expr.get_children())
+
+
+class IRShiftConstantOptimizer(TraversingIROptimizer):
+    """
+    Replaces shift-amount locals with their constant values when the local is
+    assigned a constant and not yet redefined. This cleans up bytecode patterns
+    like `var n = 1; x = y << n` without the broader risks of full copy
+    propagation.
+    """
+
+    def _replace_shift_const(self, expr: IRExpression, const_map: Dict[IRLocal, IRConst]) -> bool:
+        if isinstance(expr, IRArithmetic) and expr.op.value in ("<<", ">>", ">>>"):
+            if isinstance(expr.right, IRLocal) and expr.right in const_map:
+                expr.right = const_map[expr.right]
+                return True
+        made_change = False
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            if expr.left is not None and self._replace_shift_const(expr.left, const_map):
+                made_change = True
+            if expr.right is not None and self._replace_shift_const(expr.right, const_map):
+                made_change = True
+        elif isinstance(expr, IRCall):
+            if expr.target is not None and self._replace_shift_const(expr.target, const_map):
+                made_change = True
+            for arg in expr.args:
+                if self._replace_shift_const(arg, const_map):
+                    made_change = True
+        elif isinstance(expr, IRCast):
+            if self._replace_shift_const(expr.expr, const_map):
+                made_change = True
+        elif isinstance(expr, IRField):
+            if self._replace_shift_const(expr.target, const_map):
+                made_change = True
+        elif isinstance(expr, IRArrayAccess):
+            if self._replace_shift_const(expr.array, const_map):
+                made_change = True
+            if self._replace_shift_const(expr.index, const_map):
+                made_change = True
+        return made_change
+
+    def _apply_to_statement(self, stmt: IRStatement, const_map: Dict[IRLocal, IRConst]) -> None:
+        if isinstance(stmt, IRAssign):
+            self._replace_shift_const(stmt.expr, const_map)
+        elif isinstance(stmt, IRReturn):
+            self._replace_shift_const(stmt.value, const_map)
+        elif isinstance(stmt, IRConditional):
+            self._replace_shift_const(stmt.condition, const_map)
+        elif isinstance(stmt, IRPrimitiveJump):
+            for attr in ("left", "right", "cond"):
+                val = getattr(stmt, attr, None)
+                if val is not None:
+                    self._replace_shift_const(val, const_map)
+        elif isinstance(stmt, IRSwitch):
+            self._replace_shift_const(stmt.value, const_map)
+
+    def visit_block(self, block: IRBlock) -> None:
+        const_map: Dict[IRLocal, IRConst] = {}
+        for stmt in block.statements:
+            # Apply current constant mappings before updating them, so the
+            # definition site itself is not rewritten.
+            self._apply_to_statement(stmt, const_map)
+
+            if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+                target_local = stmt.target
+                const_map.pop(target_local, None)
+                if isinstance(stmt.expr, IRConst):
+                    const_map[target_local] = stmt.expr
 
 
 class IRStringAllocOptimizer(TraversingIROptimizer):
@@ -4013,17 +4692,29 @@ class IRNativeArrayAllocOptimizer(TraversingIROptimizer):
         return expr.target.value.name.resolve(self.func.code) == "alloc_array"
 
     def visit_block(self, block: IRBlock) -> None:
+        local_defs: Dict[IRLocal, IRExpression] = {}
         for stmt in block.statements:
+            if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+                local_defs[stmt.target] = stmt.expr
             if not (isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)):
                 continue
             if not self._is_alloc_array_call(stmt.expr):
                 continue
             assert isinstance(stmt.expr, IRCall)
             ty_arg, size_arg = stmt.expr.args
-            if not (isinstance(ty_arg, IRConst) and ty_arg.const_type == IRConst.ConstType.GLOBAL_OBJ):
-                continue
-            elem_type = ty_arg.value
-            if not isinstance(elem_type, Type):
+            elem_type: Optional[Type] = None
+            if isinstance(ty_arg, IRConst) and ty_arg.const_type == IRConst.ConstType.GLOBAL_OBJ:
+                if isinstance(ty_arg.value, Type):
+                    elem_type = ty_arg.value
+            elif isinstance(ty_arg, IRLocal):
+                defn = local_defs.get(ty_arg)
+                if (
+                    isinstance(defn, IRConst)
+                    and defn.const_type == IRConst.ConstType.GLOBAL_OBJ
+                    and isinstance(defn.value, Type)
+                ):
+                    elem_type = defn.value
+            if elem_type is None:
                 continue
             stmt.target.native_elem_type = elem_type
             stmt.expr = IRNativeArrayNew(self.func.code, stmt.target.type, elem_type, size_arg)
@@ -4079,8 +4770,24 @@ class IRArrayObjWrapperOptimizer(TraversingIROptimizer):
 
         if isinstance(expr, IRArrayLiteral):
             return not expr.elements
+        if isinstance(expr, IRCall) and len(expr.args) == 2:
+            target = expr.target
+            if (
+                isinstance(target, IRConst)
+                and isinstance(target.value, Native)
+                and target.value.name.resolve(self.func.code) == "alloc_array"
+            ):
+                size = expr.args[1]
+                if isinstance(size, IRLocal):
+                    size = local_defs.get(size, size)
+                if isinstance(size, IRConst):
+                    size_val = getattr(size.value, "value", size.value)
+                    if size.const_type == IRConst.ConstType.INT and size_val == 0:
+                        return True
         if isinstance(expr, IRNativeArrayNew):
             size = expr.size
+            if isinstance(size, IRLocal):
+                size = local_defs.get(size, size)
             if not isinstance(size, IRConst):
                 return False
             size_val = getattr(size.value, "value", size.value)
@@ -6926,9 +7633,11 @@ class IRFunction:
                 IRCommonBlockMerger(self),
                 IRRedundantContinueEliminator(self),
                 IRCopyPropOptimizer(self),
+                IRShiftConstantOptimizer(self),
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRTempAssignmentInliner(self, aggressive=True),
                 IRStringAllocOptimizer(self),
+                IRSequentialTempFolder(self),
                 IRDeadTempEliminator(self),
                 IRDeadCodeEliminator(self),
                 IRArrayPatternOptimizer(self),
@@ -6950,6 +7659,8 @@ class IRFunction:
                 IRLoopRerollOptimizer(self),
                 IRForEachLoopOptimizer(self),
                 IRIntRangeLoopOptimizer(self),
+                IRDeadStoreEliminator(self),
+                IRDeadAssignmentEliminator(self),
             ]
             self._optimize()
 
@@ -7216,12 +7927,31 @@ class IRFunction:
             if _reg.resolve(self.code).definition and isinstance(_reg.resolve(self.code).definition, Void):
                 if "voidReg" not in reg_assigns[i]:
                     reg_assigns[i].append("voidReg")
+
+        # A register may be used as an anonymous temporary before the first
+        # debug-named assignment that names it. Naming the whole register after
+        # that later debug name makes the earlier uses look like the named
+        # variable (e.g. String.split's empty-delimiter loop bound becomes
+        # `dlen` because reg6 is later named for delimiter.length). In that
+        # case keep the pre-name segment as a temp; _check_assign will split
+        # off the named segment at the debug assignment.
+        first_def: Dict[int, int] = {}
+        for op_idx, op in enumerate(self.ops):
+            if op.df and "dst" in op.df:
+                reg = op.df["dst"].value
+                if reg not in first_def:
+                    first_def[reg] = op_idx
+
         for i, local in enumerate(self.locals):
             if reg_assigns[i]:
-                if i in self._reg_first_assign and self._reg_first_assign[i] > 0:
-                    pass
-                else:
-                    local.name = reg_assigns[i][0]
+                named_op = self._reg_first_assign.get(i)
+                if (
+                    named_op is not None
+                    and named_op > 0
+                    and first_def.get(i, float("inf")) < named_op
+                ):
+                    continue
+                local.name = reg_assigns[i][0]
 
         # If the same debug name is assigned to two different registers with
         # different types, suffix the later one so Haxe sees two distinct
@@ -7852,7 +8582,18 @@ class IRFunction:
         if header_last_op and header_last_op.op in conditionals:
             cond_block = IRBlock(self.code)
             self._lift_ops_into_block(cond_block, header.ops[:-1])
-            cond_block.statements.append(IRPrimitiveJump(self.code, header_last_op))
+
+            def _jump_operand(key: str) -> Optional[IRExpression]:
+                if key not in header_last_op.df:
+                    return None
+                return self.locals[header_last_op.df[key].value]
+
+            pj_left = _jump_operand("a")
+            pj_right = _jump_operand("b")
+            pj_cond = _jump_operand("cond") if "cond" in header_last_op.df else _jump_operand("reg")
+            cond_block.statements.append(
+                IRPrimitiveJump(self.code, header_last_op, pj_left, pj_right, pj_cond)
+            )
 
             inside_successors = [target for target, _ in header.branches if target in loop_nodes and target != header]
             body_start = inside_successors[0] if len(inside_successors) == 1 else None
@@ -8048,6 +8789,23 @@ class IRFunction:
                         and loop_ctx.header not in self.cfg.post_dominators.get(target, set())
                     ):
                         return None
+                    # Branches that leave the loop may contain side effects before the
+                    # exit (e.g. a final push before breaking out of while(true)). Lift
+                    # them up to the loop's normal exit node and append a break only if
+                    # the branch does not already terminate on its own.
+                    if loop_ctx.exit_node is not None:
+                        # Lift the exiting branch outside the current loop context so
+                        # its statements are preserved; stop at the loop's normal exit
+                        # node so post-loop code is not duplicated here.
+                        branch_block = self._lift_block(
+                            target, visited.copy(), stop_at=loop_ctx.exit_node, loop_ctx=None
+                        )
+                        if branch_block.statements and isinstance(
+                            branch_block.statements[-1], (IRReturn, IRThrow)
+                        ):
+                            return branch_block
+                        branch_block.statements.append(IRBreak(self.code))
+                        return branch_block
                     branch_block = IRBlock(self.code)
                     branch_block.statements.append(IRBreak(self.code))
                     return branch_block
