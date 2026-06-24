@@ -202,3 +202,17 @@ def test_operator_precedence_parentheses():
     assert "(a >> 2) + b" in out
     out = _decompile_named("tests/haxe/OperatorPrecedenceCase.hl", "OperatorPrecedenceCase.maskAdd")
     assert "(a & 255) + b" in out
+
+
+def test_array_indexing_and_length():
+    # ArrayIndexingCase checks that getDyn/setDyn/get_length helpers are
+    # rendered as normal array indexing and .length.
+    out = _decompile_named("tests/haxe/ArrayIndexingCase.hl", "ArrayIndexingCase.sum")
+    assert "for (i in 0...a.length)" in out
+    assert "total += a[i]" in out
+    out = _decompile_named("tests/haxe/ArrayIndexingCase.hl", "ArrayIndexingCase.swap")
+    assert "a[i] = a[j]" in out
+    assert "a[j] = tmp" in out
+    assert "a.getDyn" not in out
+    assert "a.setDyn" not in out
+    assert "get_length" not in out

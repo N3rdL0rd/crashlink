@@ -6638,6 +6638,20 @@ class IRFunction:
         else:
             dbg_print("Skipping lift.")
 
+    def _is_instance_method(self) -> bool:
+        """Return True if this function is bound as a prototype on a class."""
+        for t in self.code.types:
+            if t.kind.value != Type.Kind.OBJ.value:
+                continue
+            obj = t.definition
+            if not isinstance(obj, Obj):
+                continue
+            for proto in obj.protos:
+                fn = proto.findex.resolve(self.code)
+                if fn is self.func:
+                    return True
+        return False
+
     def _build_assign_map(self) -> None:
         """Build a mapping from op index to (register, name) for SSA-esque splitting."""
         self._op_assigns: Dict[int, Dict[int, str]] = {}
@@ -6649,7 +6663,7 @@ class IRFunction:
         # Assigns with op index 0 name function parameters rather than pointing at
         # a `dst`-producing op, so they need the same register offset as in
         # _name_locals (register 0 is `this` in instance methods/constructors).
-        is_instance = not self.code.full_func_name(self.func).startswith("$")
+        is_instance = self._is_instance_method()
         has_this_ops = any(op.op in ("SetThis", "GetThis") for op in self.func.ops)
         param_start = 1 if (is_instance or has_this_ops) else 0
         param_idx = 0
@@ -6816,11 +6830,9 @@ class IRFunction:
         """Name locals based on debug info"""
         reg_assigns: List[List[str]] = [[] for _ in self.func.regs]
         # Register 0 is `this` in instance methods and constructors. Detect by
-        # either: full name has no leading `$` (instance method), or the function
-        # contains SetThis/GetThis opcodes (constructor). Needed up front because
-        # parameter-name assigns (below) are numbered relative to the explicit
-        # parameter list, which starts at register 1 when `this` occupies register 0.
-        is_instance = not self.code.full_func_name(self.func).startswith("$")
+        # either: the function is bound as a prototype on a class, or the
+        # function contains SetThis/GetThis opcodes (constructor).
+        is_instance = self._is_instance_method()
         has_this_ops = any(op.op in ("SetThis", "GetThis") for op in self.func.ops)
         has_this = is_instance or has_this_ops
         if self.func.has_debug and self.func.assigns:

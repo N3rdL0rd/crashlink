@@ -428,6 +428,22 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
                     rest = expr.args[1:] if partial == "push" else []
                     args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in rest)
                     return f"{instance}({args_str})"
+            # ArrayDyn/ArrayObj length may be accessed via a static get_length helper.
+            if partial == "get_length" and len(expr.args) == 1:
+                arr = _expression_to_haxe(expr.args[0], code, ir_function)
+                return f"{arr}.length"
+
+        # Render HL array getDyn/setDyn method calls as plain index reads/writes.
+        if isinstance(expr.target, IRField):
+            if expr.target.field_name in ("getDyn", "get") and len(expr.args) == 1:
+                arr = _expression_to_haxe(expr.target.target, code, ir_function)
+                idx = _expression_to_haxe(expr.args[0], code, ir_function)
+                return f"{arr}[{idx}]"
+            if expr.target.field_name in ("setDyn", "set") and len(expr.args) == 2:
+                arr = _expression_to_haxe(expr.target.target, code, ir_function)
+                idx = _expression_to_haxe(expr.args[0], code, ir_function)
+                val = _expression_to_haxe(expr.args[1], code, ir_function)
+                return f"{arr}[{idx}] = {val}"
 
         if expr.call_type == IRCall.CallType.THIS and expr.target is None:
             callee_str = "this.unknownMethod"
