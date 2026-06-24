@@ -48,6 +48,7 @@ from .decomp import (
     IRNativeMapNew,
     IRPrimitiveLoop,
     IRReturn,
+    IRThrow,
     IRPrimitiveJump,
     IRSwitch,
     _get_type_in_code,
@@ -908,6 +909,10 @@ def _generate_statements(
             else:
                 output_lines.append(f"{indent}return;")
 
+        elif isinstance(stmt, IRThrow):
+            val_str = _expression_to_haxe(stmt.value, code, ir_function)
+            output_lines.append(f"{indent}throw {val_str};")
+
         elif isinstance(stmt, IRSwitch):
             value_str = _expression_to_haxe(stmt.value, code, ir_function)
             enum_type: Optional["Enum"] = None
@@ -1213,9 +1218,9 @@ def pseudo(ir_func: IRFunction) -> str:
     full_name = ir_func.code.full_func_name(ir_func.func)
     class_name_suggestion = "DecompiledClass"
     if "." in full_name and full_name != "<none>.<none>":
-        class_name_part = full_name.split(".")[0]
+        class_name_part = full_name.rsplit(".", 1)[0]
         if class_name_part and class_name_part != "<none>":
-            class_name_suggestion = class_name_part.lstrip("$").replace(".", "_")
+            class_name_suggestion = class_name_part.lstrip("$")
 
     final_output = [f"class {class_name_suggestion} {{"]
     final_output.extend(["    " + line for line in function_body_str.split("\n")])

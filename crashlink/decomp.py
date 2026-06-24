@@ -1113,6 +1113,20 @@ class IRReturn(IRStatement):
         return f"<IRReturn: {self.value}>"
 
 
+class IRThrow(IRStatement):
+    """Throw statement"""
+
+    def __init__(self, code: Bytecode, value: IRExpression):
+        super().__init__(code)
+        self.value = value
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.value]
+
+    def __repr__(self) -> str:
+        return f"<IRThrow: {self.value}>"
+
+
 class IRTrace(IRStatement):
     """Represents a simplified trace call."""
 
@@ -3687,7 +3701,7 @@ class IRDeadCodeEliminator(TraversingIROptimizer):
             if terminated:
                 continue
             new_stmts.append(stmt)
-            if isinstance(stmt, (IRReturn, IRBreak, IRContinue)):
+            if isinstance(stmt, (IRReturn, IRBreak, IRContinue, IRThrow)):
                 terminated = True
             elif self._is_infinite_loop(stmt) and not self._body_has_break(stmt.body):
                 terminated = True
@@ -7862,6 +7876,10 @@ class IRFunction:
             ret_type = self.func.regs[last_op.df["ret"].value].resolve(self.code)
             ret_val = self.locals[last_op.df["ret"].value] if not isinstance(ret_type.definition, Void) else None
             block.statements.append(IRReturn(self.code, ret_val))
+
+        elif last_op and last_op.op in ("Throw", "Rethrow"):
+            exc_local = self.locals[last_op.df["exc"].value]
+            block.statements.append(IRThrow(self.code, exc_local))
 
         elif last_op and last_op.op == "EndTrap":
             if node.branches:

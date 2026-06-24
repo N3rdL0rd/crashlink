@@ -262,3 +262,11 @@ def test_temp_inliner_no_stale_reference_in_nested_branch():
     assert "if (this.length <" in out
     assert "if (this.length < var5)" not in out
     assert "if (this.length < 0)" not in out
+
+
+def test_throw_lifted():
+    # ThrowCase.decode ends with a throw; the decompiler must emit `throw expr;`
+    # rather than silently dropping the opcode.
+    out = _decompile_named("tests/haxe/ThrowCase.hl", "ThrowCase.decode")
+    assert "throw " in out
+    assert "UNLIFTED OPCODE: Throw" not in out
