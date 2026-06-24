@@ -579,7 +579,7 @@ def _expression_to_haxe(
 
     elif isinstance(expr, IRNew):
         type_name = disasm.type_name(code, expr.get_type())
-        if type_name == "DynObj":
+        if type_name == "DynObj" or type_name.startswith("Virtual["):
             return "{}"
         else:
             args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args)

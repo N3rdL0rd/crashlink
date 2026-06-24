@@ -87,6 +87,8 @@ def type_to_haxe(type: str) -> str:
         return "Dynamic"
     if type == "Null":
         return "Dynamic"
+    if type.startswith("Virtual["):
+        return "Dynamic"
     return destaticify(mapping.get(type, type))
 
 
