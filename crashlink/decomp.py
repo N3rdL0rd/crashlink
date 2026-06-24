@@ -3790,6 +3790,53 @@ class IRNativeArrayAllocOptimizer(TraversingIROptimizer):
                     self.visit_block(child)
 
 
+class IRArrayObjWrapperOptimizer(TraversingIROptimizer):
+    """
+    Folds stdlib ArrayObj/ArrayDyn wrapper calls into Haxe array literals.
+
+    Haxe's `new Array<Dynamic>()` and `[]` lower to calls like
+    `__std_234_anon(Native.alloc_array(...))` or `__std_253_anon(new ArrayObj())`.
+    These anonymous wrapper functions live in `hl/types/Array*.hx` and simply
+    initialize an array object.  Rendering them as `[]` recovers the original
+    source idiom.
+    """
+
+    _ARRAY_WRAPPER_RE = re.compile(r"__std_\d+_anon$")
+
+    def _is_array_wrapper_call(self, expr: IRExpression) -> bool:
+        if not isinstance(expr, IRCall) or len(expr.args) != 1:
+            return False
+        target = expr.target
+        if not isinstance(target, IRConst) or not isinstance(target.value, Function):
+            return False
+        func = target.value
+        try:
+            path = func.resolve_file(self.func.code).replace("\\", "/")
+        except Exception:
+            return False
+        if "hl/types/Array" not in path:
+            return False
+        partial = self.func.code.partial_func_name(func)
+        return partial in (None, "", "<none>")
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements: List[IRStatement] = []
+        for stmt in block.statements:
+            if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRCall) and self._is_array_wrapper_call(stmt.expr):
+                stmt.expr = IRArrayLiteral(self.func.code, [])
+            elif isinstance(stmt, IRCall) and self._is_array_wrapper_call(stmt):
+                # Bare wrapper call (typically a constructor wrapper on a fresh
+                # `new ArrayObj()`).  It has no observable effect beyond
+                # initializing the array, so drop it.
+                continue
+            new_statements.append(stmt)
+        block.statements = new_statements
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
+
 class IRNativeMapAllocOptimizer(TraversingIROptimizer):
     """
     Folds the no-arg native allocators backing HL's raw map abstracts into
@@ -6557,6 +6604,7 @@ class IRFunction:
                 IRDeadCodeEliminator(self),
                 IRArrayPatternOptimizer(self),
                 IRNativeArrayAllocOptimizer(self),
+                IRArrayObjWrapperOptimizer(self),
                 IRNativeMapAllocOptimizer(self),
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRVoidAssignOptimizer(self),

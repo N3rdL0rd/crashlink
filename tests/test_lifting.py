@@ -173,3 +173,13 @@ def test_instance_method_rendered():
     # The call site should use dot-call syntax.
     out_main = _decompile_main("tests/haxe/InstanceMethodCase.hl")
     assert "instance.getValue()" in out_main
+
+
+def test_array_alloc_folded():
+    # ArrayAllocCase exercises the std ArrayObj/ArrayDyn allocation wrappers.
+    out_empty = _decompile_named("tests/haxe/ArrayAllocCase.hl", "ArrayAllocCase.makeEmpty")
+    assert "StdFuncs.__std_" not in out_empty
+    assert "[]" in out_empty
+    out_new = _decompile_named("tests/haxe/ArrayAllocCase.hl", "ArrayAllocCase.makeNew")
+    assert "StdFuncs.__std_" not in out_new
+    assert "new Array<Dynamic>()" in out_new
