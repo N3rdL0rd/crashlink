@@ -252,3 +252,13 @@ def test_loop_exit_node_preserved_for_internal_return():
     assert "while (pos >= 0)" in out
     assert "return pos" in out
     assert "return -1" in out
+
+
+def test_temp_inliner_no_stale_reference_in_nested_branch():
+    # String.substring's end clamping assigns a temp in one branch and uses it
+    # in a nested comparison in the other branch. The decompiler must not leave
+    # a stale reference to the temp after inlining.
+    out = _decompile_at("tests/haxe/Clazz.hl", 9)
+    assert "if (this.length <" in out
+    assert "if (this.length < var5)" not in out
+    assert "if (this.length < 0)" not in out

@@ -3022,6 +3022,34 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         else:
             self._visit_block_conservative(block)
 
+    def _stmt_contains_local(self, stmt: IRStatement, local: IRLocal) -> bool:
+        """Return True if `stmt` (recursively into child blocks/expressions) reads `local`."""
+        if isinstance(stmt, IRAssign):
+            if isinstance(stmt.target, IRExpression) and self._expr_contains_local(stmt.target, local):
+                return True
+            if isinstance(stmt.expr, IRExpression) and self._expr_contains_local(stmt.expr, local):
+                return True
+        elif isinstance(stmt, IRExpression):
+            if self._expr_contains_local(stmt, local):
+                return True
+        elif isinstance(stmt, IRReturn):
+            if stmt.value is not None and self._expr_contains_local(stmt.value, local):
+                return True
+        elif isinstance(stmt, IRConditional):
+            if self._expr_contains_local(stmt.condition, local):
+                return True
+        elif isinstance(stmt, IRWhileLoop):
+            if self._expr_contains_local(stmt.condition, local):
+                return True
+        elif isinstance(stmt, IRSwitch):
+            if self._expr_contains_local(stmt.value, local):
+                return True
+
+        for child in stmt.get_children():
+            if child is not stmt and self._stmt_contains_local(child, local):
+                return True
+        return False
+
     def _visit_block_conservative(self, block: IRBlock) -> None:
         """Only inlines an assignment if it is used in the very next statement."""
         if not block.statements:
@@ -3051,35 +3079,17 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                         continue
                     if i + 1 < len(statements):
                         next_stmt = statements[i + 1]
-                        if self._substitute_shallow(next_stmt, temp_local, expr_to_inline):
-                            dbg_print(f"Conservatively inlining assignment for temporary '{temp_local.name}'.")
-                            new_statements.append(next_stmt)
-                            copy_target = None
-                            if (
-                                isinstance(next_stmt, IRAssign)
-                                and isinstance(next_stmt.target, IRLocal)
-                                and self._is_user_local(next_stmt.target)
-                            ):
-                                copy_target = next_stmt.target
-                            if self._is_local_redefined(temp_local, [next_stmt]):
-                                i += 2
-                                inlined = True
-                            else:
-                                for later_stmt in statements[i + 2 :]:
-                                    if self._is_local_redefined(temp_local, [later_stmt]):
-                                        break
-                                    sub: IRExpression
-                                    if copy_target is not None:
-                                        sub = copy_target
-                                    elif (
-                                        isinstance(next_stmt, IRAssign)
-                                        and isinstance(next_stmt.target, IRLocal)
-                                        and next_stmt.target == temp_local
-                                    ):
-                                        sub = next_stmt.expr
-                                    else:
-                                        sub = expr_to_inline
-                                    self._substitute_shallow(later_stmt, temp_local, sub)
+                        if (
+                            self._stmt_contains_local(next_stmt, temp_local)
+                            and not self._is_local_redefined(temp_local, [next_stmt])
+                        ):
+                            later_uses = any(
+                                self._stmt_contains_local(s, temp_local) for s in statements[i + 2 :]
+                            )
+                            if not later_uses:
+                                self._substitute_in_statement(next_stmt, temp_local, expr_to_inline)
+                                dbg_print(f"Conservatively inlining assignment for temporary '{temp_local.name}'.")
+                                new_statements.append(next_stmt)
                                 i += 2
                                 inlined = True
 
