@@ -3872,11 +3872,44 @@ class IRArrayObjWrapperOptimizer(TraversingIROptimizer):
         partial = self.func.code.partial_func_name(func)
         return partial in (None, "", "<none>")
 
+    def _is_empty_array_alloc(
+        self,
+        expr: Optional[IRExpression],
+        local_defs: Dict["IRLocal", IRExpression],
+        seen: Optional[Set[int]] = None,
+    ) -> bool:
+        """True when `expr` resolves to a zero-length array allocation."""
+        if expr is None or not isinstance(expr, IRStatement):
+            return False
+        if seen is None:
+            seen = set()
+        if id(expr) in seen:
+            return False
+        seen.add(id(expr))
+
+        if isinstance(expr, IRArrayLiteral):
+            return not expr.elements
+        if isinstance(expr, IRNativeArrayNew):
+            size = expr.size
+            if not isinstance(size, IRConst):
+                return False
+            size_val = getattr(size.value, "value", size.value)
+            return size.const_type == IRConst.ConstType.INT and size_val == 0
+        if isinstance(expr, IRLocal):
+            return self._is_empty_array_alloc(local_defs.get(expr), local_defs, seen)
+        return False
+
     def visit_block(self, block: IRBlock) -> None:
+        local_defs: Dict[IRLocal, IRExpression] = {}
         new_statements: List[IRStatement] = []
         for stmt in block.statements:
+            if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+                local_defs[stmt.target] = stmt.expr
             if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRCall) and self._is_array_wrapper_call(stmt.expr):
-                stmt.expr = IRArrayLiteral(self.func.code, [])
+                if self._is_empty_array_alloc(stmt.expr.args[0], local_defs):
+                    stmt.expr = IRArrayLiteral(self.func.code, [])
+                # Non-empty wrappers (e.g. ArrayObj.alloc(anew) after blitting)
+                # must stay so pseudo can render `alloc(anew)`.
             elif isinstance(stmt, IRCall) and self._is_array_wrapper_call(stmt):
                 # Bare wrapper call (typically a constructor wrapper on a fresh
                 # `new ArrayObj()`).  It has no observable effect beyond

@@ -103,6 +103,16 @@ def _containing_class_for(ir_func: IRFunction, code: Bytecode) -> Optional[_Pseu
     return _PseudoClass(info[0], [ir_func])
 
 
+def _containing_class_name(ir_function: Optional[IRFunction], code: Bytecode) -> Optional[str]:
+    """Return the de-staticified name of the class containing the current function."""
+    if ir_function is None:
+        return None
+    containing = getattr(ir_function, "_containing_class", None)
+    if not containing or not containing.dynamic:
+        return None
+    return destaticify(containing.dynamic.name.resolve(code))
+
+
 def global_name(const: "IRConst") -> str:
     """Synthesized name for a raw HL global with no source-level name (see varN)."""
     assert isinstance(const.original_index, gIndex)
@@ -477,13 +487,17 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
                     return f"{callee_str}({args_str})"
 
             # Anonymous ArrayObj alloc factory: render `alloc(arr)` instead of a
-            # synthetic StdFuncs stub.
+            # synthetic StdFuncs stub. Qualify as `ArrayObj.alloc` when used
+            # outside the ArrayObj class itself.
             if (
                 isinstance(expr.target, IRConst)
                 and isinstance(expr.target.value, Function)
                 and _is_arrayobj_alloc_call(expr.target.value, expr, code)
             ):
-                return f"alloc({_expression_to_haxe(expr.args[0], code, ir_function)})"
+                arg_str = _expression_to_haxe(expr.args[0], code, ir_function)
+                if _containing_class_name(ir_function, code) == "hl.types.ArrayObj":
+                    return f"alloc({arg_str})"
+                return f"ArrayObj.alloc({arg_str})"
 
             callee_str = _expression_to_haxe(expr.target, code, ir_function)
             # Std functions used as direct call targets can usually be rendered
@@ -496,7 +510,17 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
             ):
                 std_name = _std_call_name(expr.target.value, code)
                 if std_name:
-                    callee_str = std_name
+                    # Inside a class, static calls to the same class need no
+                    # package qualifier (e.g. ArrayDyn.concat returns
+                    # `alloc(..., true)` rather than `hl.types.ArrayDyn.alloc`).
+                    if "." in std_name:
+                        call_class, call_method = std_name.rsplit(".", 1)
+                        if _containing_class_name(ir_function, code) == call_class:
+                            callee_str = call_method
+                        else:
+                            callee_str = std_name
+                    else:
+                        callee_str = std_name
                 else:
                     callee_str = f"StdFuncs.{_std_func_name(expr.target.value, code)}"
         else:

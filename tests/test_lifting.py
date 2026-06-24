@@ -260,6 +260,18 @@ def test_arraybytes_getdyn_bound_check_uses_length():
     assert "pos >= this.length" in out
 
 
+def test_arraydyn_concat_map_copy_not_folded_to_empty_literal():
+    # ArrayDyn.concat/.map/.copy build a fresh NativeArray, fill it, then wrap
+    # it with ArrayObj.alloc() and ArrayDyn.alloc(..., true). A previous
+    # wrapper-optimizer bug folded the non-empty ArrayObj.alloc() into an empty
+    # array literal, producing `([] : Array<Dynamic>)`.
+    for findex, native_name in [(270, "anew"), (290, "a"), (287, "a")]:
+        out = _decompile_at("tests/haxe/Clazz.hl", findex)
+        assert f"ArrayObj.alloc({native_name})" in out, f"f@{findex}: missing ArrayObj.alloc({native_name})"
+        assert re.search(r"alloc\(\w+, true\)", out), f"f@{findex}: missing alloc(..., true)"
+        assert "([] : Array<Dynamic>)" not in out, f"f@{findex}: empty literal folded incorrectly"
+
+
 def test_loop_control_flow_structured():
     # LoopControlCase verifies that loops with both internal exits and normal
     # post-loop code are structured correctly: no spurious trailing breaks and
