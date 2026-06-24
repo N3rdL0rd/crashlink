@@ -4165,38 +4165,44 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
         self._block_live: Dict[int, Tuple[Set[IRLocal], Set[IRLocal]]] = {}
         self._process_block(self.func.block, set())
 
-    def _process_block(self, block: IRBlock, live_out: Set[IRLocal]) -> Set[IRLocal]:
+    def _process_block(
+        self, block: IRBlock, live_out: Set[IRLocal], mutate: bool = True
+    ) -> Set[IRLocal]:
         block_id = id(block)
-        cached = self._block_live.get(block_id)
-        if cached is not None:
-            cached_out, cached_in = cached
-            if live_out.issubset(cached_out):
-                return cached_in
-            live_out = cached_out | live_out
+        if mutate:
+            cached = self._block_live.get(block_id)
+            if cached is not None:
+                cached_out, cached_in = cached
+                if live_out.issubset(cached_out):
+                    return cached_in
+                live_out = cached_out | live_out
 
         live: Set[IRLocal] = set(live_out)
         new_stmts: List[IRStatement] = []
 
         for stmt in reversed(block.statements):
-            uses, defs = self._stmt_uses_and_defs(stmt, live)
+            uses, defs = self._stmt_uses_and_defs(stmt, live, mutate=mutate)
             can_drop = (
-                isinstance(stmt, IRAssign)
+                mutate
+                and isinstance(stmt, IRAssign)
                 and isinstance(stmt.target, IRLocal)
                 and stmt.target not in live
                 and not self._has_side_effects(stmt.expr)
             )
             if can_drop:
                 continue
-            new_stmts.append(stmt)
+            if mutate:
+                new_stmts.append(stmt)
             live.difference_update(defs)
             live.update(uses)
 
-        block.statements = list(reversed(new_stmts))
-        self._block_live[block_id] = (live_out, live)
+        if mutate:
+            block.statements = list(reversed(new_stmts))
+            self._block_live[block_id] = (live_out, live)
         return live
 
     def _stmt_uses_and_defs(
-        self, stmt: IRStatement, live_after_stmt: Set[IRLocal]
+        self, stmt: IRStatement, live_after_stmt: Set[IRLocal], mutate: bool = True
     ) -> Tuple[Set[IRLocal], Set[IRLocal]]:
         uses: Set[IRLocal] = set()
         defs: Set[IRLocal] = set()
@@ -4227,48 +4233,74 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
         # Recursively process nested blocks with the correct live-out sets.
         if isinstance(stmt, IRConditional):
             child_out = set(live_after_stmt)
-            true_in = self._process_block(stmt.true_block, child_out) if stmt.true_block else set()
-            false_in = self._process_block(stmt.false_block, child_out) if stmt.false_block else set()
+            true_in = self._process_block(stmt.true_block, child_out, mutate=mutate) if stmt.true_block else set()
+            false_in = self._process_block(stmt.false_block, child_out, mutate=mutate) if stmt.false_block else set()
             uses.update(true_in)
             uses.update(false_in)
         elif isinstance(stmt, IRWhileLoop):
-            # Loop-carried values include anything live after the loop plus the
-            # loop condition.  The body is processed with that live-out set.
-            child_out = live_after_stmt | self._locals_in_expr(stmt.condition)
-            body_in = self._process_block(stmt.body, child_out)
+            body_in = self._process_loop_body(stmt.body, live_after_stmt, self._locals_in_expr(stmt.condition), mutate=mutate)
             uses.update(body_in)
         elif isinstance(stmt, IRPrimitiveLoop):
             cond_uses = self._locals_in_expr(stmt.condition) if hasattr(stmt, "condition") else set()
-            child_out = live_after_stmt | cond_uses
-            body_in = self._process_block(stmt.body, child_out)
+            body_in = self._process_loop_body(stmt.body, live_after_stmt, cond_uses, mutate=mutate)
             uses.update(body_in)
             uses.update(cond_uses)
         elif isinstance(stmt, IRForEachLoop):
-            child_out = set(live_after_stmt)
-            body_in = self._process_block(stmt.body, child_out)
+            array_uses = self._locals_in_expr(stmt.array) if hasattr(stmt, "array") else set()
+            body_in = self._process_loop_body(stmt.body, live_after_stmt, array_uses, mutate=mutate)
             uses.update(body_in)
-            if hasattr(stmt, "array"):
-                uses.update(self._locals_in_expr(stmt.array))
+            uses.update(array_uses)
         elif isinstance(stmt, IRIntRangeLoop):
-            uses.update(self._locals_in_expr(stmt.start))
-            uses.update(self._locals_in_expr(stmt.end))
-            child_out = set(live_after_stmt)
-            body_in = self._process_block(stmt.body, child_out)
+            header_uses = self._locals_in_expr(stmt.start) | self._locals_in_expr(stmt.end)
+            body_in = self._process_loop_body(stmt.body, live_after_stmt, header_uses, mutate=mutate)
             uses.update(body_in)
+            uses.update(header_uses)
         elif isinstance(stmt, IRSwitch):
             child_out = set(live_after_stmt)
             for case_block in stmt.cases.values():
-                uses.update(self._process_block(case_block, child_out))
+                uses.update(self._process_block(case_block, child_out, mutate=mutate))
             if stmt.default is not None:
-                uses.update(self._process_block(stmt.default, child_out))
+                uses.update(self._process_block(stmt.default, child_out, mutate=mutate))
         elif isinstance(stmt, IRTryCatch):
             child_out = set(live_after_stmt)
-            try_in = self._process_block(stmt.try_block, child_out)
-            catch_in = self._process_block(stmt.catch_block, child_out)
+            try_in = self._process_block(stmt.try_block, child_out, mutate=mutate)
+            catch_in = self._process_block(stmt.catch_block, child_out, mutate=mutate)
             uses.update(try_in)
             uses.update(catch_in)
 
         return uses, defs
+
+    def _process_loop_body(
+        self, body: IRBlock, live_after: Set[IRLocal], header_uses: Set[IRLocal], mutate: bool = True
+    ) -> Set[IRLocal]:
+        """Process a loop body to a fixed point so loop-carried assignments live.
+
+        We must not mutate ``body`` until the live-in set stabilises, because the
+        first backward pass would otherwise drop loop-carried assignments whose
+        uses appear earlier in the source order (later in reverse).
+        """
+        if not mutate:
+            return self._compute_block_live_in(body, live_after | header_uses)
+
+        child_out = live_after | header_uses
+        while True:
+            body_in = self._compute_block_live_in(body, child_out)
+            next_out = live_after | header_uses | body_in
+            if next_out == child_out:
+                break
+            child_out = next_out
+        return self._process_block(body, child_out)
+
+    def _compute_block_live_in(
+        self, block: IRBlock, live_out: Set[IRLocal]
+    ) -> Set[IRLocal]:
+        """Return the live-in set for ``block`` without mutating it."""
+        live: Set[IRLocal] = set(live_out)
+        for stmt in reversed(block.statements):
+            uses, defs = self._stmt_uses_and_defs(stmt, live, mutate=False)
+            live.difference_update(defs)
+            live.update(uses)
+        return live
 
     def _locals_in_expr(self, expr: Optional[IRExpression]) -> Set[IRLocal]:
         found: Set[IRLocal] = set()
