@@ -154,3 +154,10 @@ def test_nop_lifted():
 
     out = pseudo.pseudo(IRFunction(code, func))
     assert "Nop" not in _unlifted(out)
+
+
+def test_dynget_lifted():
+    # $String.call_toString does a dynamic field read via DynGet.
+    out = _decompile_named("tests/haxe/Clazz.hl", "String.call_toString")
+    assert "DynGet" not in _unlifted(out)
+    assert ".toString" in out
