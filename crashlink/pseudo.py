@@ -58,6 +58,50 @@ def _indent_str(level: int) -> str:
     return "    " * level  # 4 spaces for indentation
 
 
+class _PseudoClass:
+    """Lightweight stand-in for IRClass when pseudo() is called on a bare IRFunction."""
+
+    __slots__ = ("dynamic", "static", "methods")
+
+    def __init__(self, obj: Obj, methods: List[IRFunction]):
+        self.dynamic = obj
+        self.static = None
+        self.methods = methods
+
+
+def _method_registry(code: Bytecode) -> Dict[int, Tuple[Obj, str, bool]]:
+    """Map findex -> (class Obj, method name, is_instance) using Obj protos/bindings."""
+    registry = getattr(code, "_pseudo_method_registry", None)
+    if registry is not None:
+        return registry
+    registry = {}
+    for t in code.types:
+        if t.kind.value != Type.Kind.OBJ.value:
+            continue
+        obj = t.definition
+        if not isinstance(obj, Obj):
+            continue
+        for proto in obj.protos:
+            fn = proto.findex.resolve(code)
+            if isinstance(fn, Function):
+                registry[fn.findex.value] = (obj, proto.name.resolve(code), True)
+        for binding in obj.bindings:
+            fn = binding.findex.resolve(code)
+            if isinstance(fn, Function):
+                field = binding.field.resolve_obj(code, obj)
+                registry[fn.findex.value] = (obj, field.name.resolve(code), False)
+    code._pseudo_method_registry = registry
+    return registry
+
+
+def _containing_class_for(ir_func: IRFunction, code: Bytecode) -> Optional[_PseudoClass]:
+    """Return a lightweight containing class for instance methods, or None."""
+    info = _method_registry(code).get(ir_func.func.findex.value)
+    if info is None or not info[2]:
+        return None
+    return _PseudoClass(info[0], [ir_func])
+
+
 def global_name(const: "IRConst") -> str:
     """Synthesized name for a raw HL global with no source-level name (see varN)."""
     assert isinstance(const.original_index, gIndex)
@@ -969,6 +1013,10 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
     static_kw = ""
 
     containing = getattr(ir_func, "_containing_class", None)
+    if containing is None:
+        containing = _containing_class_for(ir_func, code)
+        if containing is not None:
+            ir_func._containing_class = containing
     is_instance = containing is not None and ir_func in containing.methods
     if is_constructor:
         is_instance = True

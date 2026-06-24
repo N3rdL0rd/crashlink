@@ -161,3 +161,15 @@ def test_dynget_lifted():
     out = _decompile_named("tests/haxe/Clazz.hl", "String.call_toString")
     assert "DynGet" not in _unlifted(out)
     assert ".toString" in out
+
+
+def test_instance_method_rendered():
+    # InstanceMethodCase.getValue should render as an instance method, not a
+    # static function with an explicit receiver argument.
+    out = _decompile_named("tests/haxe/InstanceMethodCase.hl", "InstanceMethodCase.getValue")
+    assert "public function getValue(): Int" in out
+    assert "arg0" not in out
+    assert "return this.value" in out
+    # The call site should use dot-call syntax.
+    out_main = _decompile_main("tests/haxe/InstanceMethodCase.hl")
+    assert "instance.getValue()" in out_main
