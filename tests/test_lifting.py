@@ -185,6 +185,16 @@ def test_array_alloc_folded():
     assert "new Array<Dynamic>()" in out_new
 
 
+def test_typed_array_literal_folded():
+    # Arrays.hl exercises typed array literals ([1, 2, 3]).  The decompiler must
+    # recover them instead of leaving the raw alloc_bytes/store/allocI32 lowering.
+    out = _decompile_main("tests/haxe/Arrays.hl")
+    assert "var a: Array<Int> = [1, 2, 3]" in out
+    assert "var arr: Array<Int> = [1, 2, 3]" in out
+    assert "Native.alloc_bytes" not in out
+    assert "allocI32" not in out
+
+
 def test_param_name_preserved_after_modification():
     # ParamRenameCase.absDouble reassigns its parameter; the decompiler should
     # keep the original parameter name instead of inventing a fresh varN.
