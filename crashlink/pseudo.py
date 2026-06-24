@@ -499,6 +499,19 @@ def _expression_to_haxe(expr: Optional[IRStatement], code: Bytecode, ir_function
                     return f"alloc({arg_str})"
                 return f"ArrayObj.alloc({arg_str})"
 
+            # String.__alloc__(bytes, length) is rendered as the source idiom.
+            # Inside String.hx methods it's unqualified; elsewhere keep the class.
+            if (
+                isinstance(expr.target, IRConst)
+                and isinstance(expr.target.value, Function)
+                and _is_string_alloc_call(expr.target.value, expr, code)
+            ):
+                bytes_str = _expression_to_haxe(expr.args[0], code, ir_function)
+                len_str = _expression_to_haxe(expr.args[1], code, ir_function)
+                if _containing_class_name(ir_function, code) == "String":
+                    return f"__alloc__({bytes_str}, {len_str})"
+                return f"String.__alloc__({bytes_str}, {len_str})"
+
             callee_str = _expression_to_haxe(expr.target, code, ir_function)
             # Std functions used as direct call targets can usually be rendered
             # with their Haxe-qualified name (e.g. Std.random, Math.random)
@@ -2221,6 +2234,22 @@ def _is_arrayobj_alloc_call(func: "Function", call: "IRCall", code: Bytecode) ->
     return "ArrayObj" in ret_name
 
 
+def _is_string_alloc_call(func: "Function", call: "IRCall", code: Bytecode) -> bool:
+    """Return True for String.__alloc__(bytes, length) factory calls."""
+    try:
+        path = func.resolve_file(code)
+    except Exception:
+        return False
+    if "String.hx" not in path.replace("\\", "/"):
+        return False
+    if code.partial_func_name(func) != "__alloc__":
+        return False
+    fun_type = func.type.resolve(code).definition
+    if not isinstance(fun_type, Fun):
+        return False
+    return len(fun_type.args) == 2 and len(call.args) == 2
+
+
 def _collect_function_externs(root: IRStatement, code: Bytecode) -> Dict[int, Tuple[str, int]]:
     """
     Collect Function constants that are used as call targets and are not defined
@@ -2274,9 +2303,9 @@ def _call_renders_as_std_stub(func: "Function", call: "IRCall", code: Bytecode) 
     # String.__add__(a, b) is rendered with the `+` operator.
     if partial == "__add__" and len(call.args) == 2:
         return False
-    # String.__alloc__(itos(x, &x), x) collapses to just `x` when the pattern
-    # matches. If it does not simplify, it still renders as a stub.
-    if partial == "__alloc__" and _try_simplify_string_alloc(call, code, None) is not None:
+    # String.__alloc__(bytes, length) is rendered as `__alloc__(...)` (or
+    # `String.__alloc__(...)` outside the String class), so it never needs a stub.
+    if partial == "__alloc__" and _is_string_alloc_call(func, call, code):
         return False
     return True
 

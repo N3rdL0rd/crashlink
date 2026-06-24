@@ -2908,6 +2908,8 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             visited.add(id(stmt))
             if isinstance(stmt, IRAssign) and stmt.target == local_to_check:
                 return True
+            if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target.same_register(local_to_check):
+                return True
             for child in stmt.get_children():
                 child_stmts = child.statements if isinstance(child, IRBlock) else [child]
                 if self._is_local_redefined_walk(local_to_check, child_stmts, visited):
@@ -3798,6 +3800,194 @@ class IRConstructorFolder(TraversingIROptimizer):
         if expr == local:
             return True
         return any(self._expr_uses_local(child, local) for child in expr.get_children())
+
+
+class IRStringAllocOptimizer(TraversingIROptimizer):
+    """
+    Folds the inlined body of `String.__alloc__(bytes, length)` back into a call.
+
+    Because `__alloc__` is an inline static method, call sites lower to:
+        var s = new String();
+        s.bytes = bytesExpr;
+        s.length = lengthExpr;
+    This optimizer recognises that sequence and replaces it with
+    `String.__alloc__(bytesExpr, lengthExpr)`, which pseudo can render as the
+    source idiom `__alloc__(bytes, length)` inside the String class.
+    """
+
+    TARGET_OPCODES = {"New"}
+
+    def __init__(self, function: "IRFunction"):
+        super().__init__(function)
+        self.alloc_func: Optional[Function] = self._find_string_alloc()
+
+    def _find_string_alloc(self) -> Optional[Function]:
+        for f in self.func.code.functions:
+            try:
+                path = f.resolve_file(self.func.code).replace("\\", "/")
+            except Exception:
+                continue
+            if "/std/hl/_std/String.hx" not in path:
+                continue
+            if self.func.code.partial_func_name(f) == "__alloc__":
+                return f
+        return None
+
+    def _match_new_string(self, stmt: IRStatement) -> Optional[IRLocal]:
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRLocal)
+            and isinstance(stmt.expr, IRNew)
+            and not stmt.expr.constructor_args
+        ):
+            type_name = disasm.type_name(self.func.code, stmt.expr.get_type())
+            if type_name == "String":
+                return stmt.target
+        return None
+
+    def _match_bytes_assign(self, stmt: IRStatement, local: IRLocal) -> Optional[IRExpression]:
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRField)
+            and stmt.target.target == local
+            and stmt.target.field_name == "bytes"
+        ):
+            return stmt.expr
+        return None
+
+    def _match_length_assign(self, stmt: IRStatement, local: IRLocal) -> Optional[IRExpression]:
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRField)
+            and stmt.target.target == local
+            and stmt.target.field_name == "length"
+        ):
+            return stmt.expr
+        return None
+
+    def _statement_touches_local(self, stmt: IRStatement, local: IRLocal) -> bool:
+        """True if stmt reads or writes `local` (including via a field target)."""
+        if isinstance(stmt, IRAssign):
+            if stmt.target == local or (
+                isinstance(stmt.target, IRExpression) and self._expr_uses_local(stmt.target, local)
+            ):
+                return True
+            if stmt.expr is not None and self._expr_uses_local(stmt.expr, local):
+                return True
+        elif isinstance(stmt, IRReturn):
+            if stmt.value is not None and self._expr_uses_local(stmt.value, local):
+                return True
+        elif isinstance(stmt, IRCall):
+            if stmt.target is not None and self._expr_uses_local(stmt.target, local):
+                return True
+            if any(self._expr_uses_local(a, local) for a in stmt.args):
+                return True
+        elif isinstance(stmt, IRExpression):
+            if self._expr_uses_local(stmt, local):
+                return True
+        return False
+
+    def _expr_uses_local(self, expr: Optional[IRStatement], local: IRLocal) -> bool:
+        if expr is None:
+            return False
+        if expr == local:
+            return True
+        for child in expr.get_children():
+            if child is not expr and self._expr_uses_local(child, local):
+                return True
+        return False
+
+    def _collect_free_locals(self, expr: IRExpression) -> Set[str]:
+        """Names of all locals read by `expr`."""
+        names: Set[str] = set()
+
+        def walk(e: Optional[IRStatement]) -> None:
+            if e is None:
+                return
+            if isinstance(e, IRLocal):
+                names.add(e.name)
+            for child in e.get_children():
+                if child is not e:
+                    walk(child)
+
+        walk(expr)
+        return names
+
+    def _stmt_reassigns_any(self, stmt: IRStatement, names: Set[str]) -> bool:
+        """True if stmt (or any nested statement) assigns to a local in `names`."""
+        if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target.name in names:
+            return True
+        for child in stmt.get_children():
+            if child is not stmt and self._stmt_reassigns_any(child, names):
+                return True
+        return False
+
+    def visit_block(self, block: IRBlock) -> None:
+        if self.alloc_func is None or self.func.func.findex.value == self.alloc_func.findex.value:
+            for stmt in block.statements:
+                for child in stmt.get_children():
+                    if isinstance(child, IRBlock):
+                        self.visit_block(child)
+            return
+
+        remove: Set[int] = set()
+        i = 0
+        while i < len(block.statements):
+            stmt = block.statements[i]
+            local = self._match_new_string(stmt)
+            if local is not None:
+                bytes_idx: Optional[int] = None
+                len_idx: Optional[int] = None
+                for j in range(i + 1, len(block.statements)):
+                    nxt = block.statements[j]
+                    if bytes_idx is None and self._match_bytes_assign(nxt, local) is not None:
+                        bytes_idx = j
+                        continue
+                    if bytes_idx is not None and len_idx is None and self._match_length_assign(nxt, local) is not None:
+                        len_idx = j
+                        break
+                    if self._statement_touches_local(nxt, local):
+                        break
+                if bytes_idx is not None and len_idx is not None:
+                    bytes_expr = cast(IRExpression, self._match_bytes_assign(block.statements[bytes_idx], local))
+                    length_expr = cast(IRExpression, self._match_length_assign(block.statements[len_idx], local))
+                    # Moving the call to the allocation site evaluates its arguments
+                    # earlier. That is only safe if no free variable of the bytes
+                    # or length expression is reassigned between the allocation and
+                    # the field writes (e.g. String.fromUCS2 computes the length
+                    # after creating the empty string).
+                    free_names = self._collect_free_locals(bytes_expr) | self._collect_free_locals(length_expr)
+                    free_names.discard(local.name)
+                    safe = True
+                    for k in range(i + 1, len_idx):
+                        if self._stmt_reassigns_any(block.statements[k], free_names):
+                            safe = False
+                            break
+                    if safe:
+                        target = IRConst(
+                            self.func.code,
+                            IRConst.ConstType.FUN,
+                            idx=self.alloc_func.findex,
+                        )
+                        stmt.expr = IRCall(
+                            self.func.code,
+                            IRCall.CallType.FUNC,
+                            target,
+                            [bytes_expr, length_expr],
+                        )
+                        remove.add(bytes_idx)
+                        remove.add(len_idx)
+                        i = len_idx + 1
+                        continue
+            i += 1
+
+        if remove:
+            block.statements = [s for idx, s in enumerate(block.statements) if idx not in remove]
+
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
 
 
 class IRNativeArrayAllocOptimizer(TraversingIROptimizer):
@@ -6738,6 +6928,7 @@ class IRFunction:
                 IRCopyPropOptimizer(self),
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRTempAssignmentInliner(self, aggressive=True),
+                IRStringAllocOptimizer(self),
                 IRDeadTempEliminator(self),
                 IRDeadCodeEliminator(self),
                 IRArrayPatternOptimizer(self),

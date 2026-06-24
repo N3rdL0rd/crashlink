@@ -272,6 +272,28 @@ def test_arraydyn_concat_map_copy_not_folded_to_empty_literal():
         assert "([] : Array<Dynamic>)" not in out, f"f@{findex}: empty literal folded incorrectly"
 
 
+def test_string_alloc_folded_from_inline_pattern():
+    # String.__alloc__ is an inline static; call sites lower to
+    # `new String(); s.bytes = ...; s.length = ...;`. The decompiler should fold
+    # those back into __alloc__ calls.
+    out = _decompile_at("tests/haxe/Clazz.hl", 0)
+    assert "__alloc__(var1, this.length)" in out
+    out = _decompile_at("tests/haxe/Clazz.hl", 2)
+    assert "__alloc__(b, 1)" in out
+    out = _decompile_at("tests/haxe/Clazz.hl", 20)
+    assert "String.__alloc__(bytes, tot >> 1)" in out
+    out = _decompile_at("tests/haxe/Clazz.hl", 26)
+    assert "String.__alloc__(bytes, len)" in out
+
+
+def test_string_fromuc2_not_folded_prematurely():
+    # String.fromUCS2 computes the length *after* creating the empty string, so
+    # it must not be folded into a __alloc__ call with a stale length value.
+    out = _decompile_at("tests/haxe/Clazz.hl", 18)
+    assert "new String()" in out
+    assert "Native.ucs2length(b, 0)" in out
+
+
 def test_loop_control_flow_structured():
     # LoopControlCase verifies that loops with both internal exits and normal
     # post-loop code are structured correctly: no spurious trailing breaks and
