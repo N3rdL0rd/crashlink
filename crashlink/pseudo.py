@@ -249,8 +249,9 @@ def _resolve_array_access(
         arr_str = _expression_to_haxe(expr.array, code, ir_function)
     idx_str = _expression_to_haxe(expr.index, code, ir_function)
     # HashLink stores array data in a `.bytes` field and indexes by element
-    # size. Convert `arr.bytes[idx << n]` back to `arr[idx]` for any shift —
-    # the wrapper's own bracket operator already supports its element type.
+    # size. `this.bytes` inside an ArrayBytes impl indexes the BytesAccess<T>
+    # backing buffer directly, so keep `.bytes[idx]`. A user-facing array local
+    # only exposes its own bracket operator, so strip `.bytes` → `arr[idx]`.
     if (
         isinstance(expr.array, IRField)
         and expr.array.field_name == "bytes"
@@ -258,11 +259,15 @@ def _resolve_array_access(
         and expr.index.op.value == "<<"
         and isinstance(expr.index.right, IRConst)
     ):
-        arr_str = _expression_to_haxe(expr.array.target, code, ir_function)
+        target = expr.array.target
+        keep_bytes = (isinstance(target, IRLocal) and target.name == "this") or (
+            disasm.type_name(code, target.get_type()) == "String"
+        )
+        if keep_bytes:
+            arr_str = _expression_to_haxe(expr.array, code, ir_function)
+        else:
+            arr_str = _expression_to_haxe(target, code, ir_function)
         idx_str = _expression_to_haxe(expr.index.left, code, ir_function)
-        # String bytes are a private backing buffer; keep `.bytes` visible.
-        if disasm.type_name(code, expr.array.target.get_type()) == "String":
-            arr_str = f"{arr_str}.bytes"
         return arr_str, idx_str, None
     # Raw hl.Bytes temporaries that feed ArrayBase.alloc* are upgraded to
     # hl.BytesAccess<T>; render `bytes[idx << n]` as `bytes[idx]`.
@@ -1064,13 +1069,18 @@ def _generate_statements(
                 val = expr.value.value if hasattr(expr.value, "value") else expr.value
                 return int(val)
 
+            def _field_eq(a: IRStatement, b: IRStatement) -> bool:
+                return isinstance(a, IRField) and isinstance(b, IRField) and a.field_name == b.field_name and isinstance(a.target, IRLocal) and isinstance(b.target, IRLocal) and a.target.name == b.target.name
+
             if (
-                isinstance(stmt.target, IRLocal)
-                and isinstance(stmt.expr, IRArithmetic)
-                and _same_local(stmt.expr.left, stmt.target)
+                isinstance(stmt.expr, IRArithmetic)
                 and isinstance(stmt.expr.right, IRConst)
                 and _const_int_value(stmt.expr.right) == 1
                 and stmt.expr.op in (IRArithmetic.ArithmeticType.ADD, IRArithmetic.ArithmeticType.SUB)
+                and (
+                    (isinstance(stmt.target, IRLocal) and _same_local(stmt.expr.left, stmt.target))
+                    or (isinstance(stmt.target, IRField) and _field_eq(stmt.expr.left, stmt.target))
+                )
             ):
                 op_sym = "++" if stmt.expr.op == IRArithmetic.ArithmeticType.ADD else "--"
                 output_lines.append(f"{indent}{target_str}{op_sym};")
