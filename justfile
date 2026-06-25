@@ -49,7 +49,7 @@ serve-docs:
 
 # Run tests
 test:
-    pytest -n 4 --ignore pyhl/
+    pytest -n 24 --ignore pyhl/
 
 # Profile the codebase running tests
 profile:
