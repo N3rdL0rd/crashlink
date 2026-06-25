@@ -223,6 +223,55 @@ def _expr_to_haxe_with_precedence(
     return rendered
 
 
+def _resolve_array_access(
+    expr: "IRArrayAccess", code: Bytecode, ir_function: Optional[IRFunction]
+) -> Tuple[str, str, Optional[str]]:
+    """Return (array_str, index_str, method_kind) for rendering an IRArrayAccess.
+
+    method_kind is None when ordinary `array[index]` bracket syntax is valid
+    (a typed-array wrapper's own `@:arrayAccess`, or hl.Bytes's only actual
+    bracket overload, the 1-byte `getUI8`/`setUI8`). Otherwise it's the
+    hl.Bytes accessor suffix ("UI16", "I32", "F32", "F64") the caller must
+    render as an explicit `.getX(...)`/`.setX(..., ...)` call instead, since
+    hl.Bytes has no `@:arrayAccess` overload for those widths.
+    """
+    if isinstance(expr.array, IRLocal):
+        arr_str = expr.array.name
+    else:
+        arr_str = _expression_to_haxe(expr.array, code, ir_function)
+    idx_str = _expression_to_haxe(expr.index, code, ir_function)
+    # HashLink stores array data in a `.bytes` field and indexes by element
+    # size. Convert `arr.bytes[idx << n]` back to `arr[idx]` for any shift —
+    # the wrapper's own bracket operator already supports its element type.
+    if (
+        isinstance(expr.array, IRField)
+        and expr.array.field_name == "bytes"
+        and isinstance(expr.index, IRArithmetic)
+        and expr.index.op.value == "<<"
+        and isinstance(expr.index.right, IRConst)
+    ):
+        arr_str = _expression_to_haxe(expr.array.target, code, ir_function)
+        idx_str = _expression_to_haxe(expr.index.left, code, ir_function)
+        # String bytes are a private backing buffer; keep `.bytes` visible.
+        if disasm.type_name(code, expr.array.target.get_type()) == "String":
+            arr_str = f"{arr_str}.bytes"
+        return arr_str, idx_str, None
+    # Raw hl.Bytes temporaries that feed ArrayBase.alloc* are upgraded to
+    # hl.BytesAccess<T>; render `bytes[idx << n]` as `bytes[idx]`.
+    if (
+        isinstance(expr.array, IRLocal)
+        and disasm.type_to_haxe(disasm.type_name(code, expr.array.get_type())).startswith("hl.BytesAccess")
+        and isinstance(expr.index, IRArithmetic)
+        and expr.index.op.value == "<<"
+        and isinstance(expr.index.right, IRConst)
+    ):
+        return expr.array.name, _expression_to_haxe(expr.index.left, code, ir_function), None
+    kind = getattr(expr, "bytes_access_kind", None)
+    if kind and kind != "UI8":
+        return arr_str, idx_str, kind
+    return arr_str, idx_str, None
+
+
 def _expression_to_haxe(
     expr: Optional[IRStatement],
     code: Bytecode,
@@ -395,38 +444,9 @@ def _expression_to_haxe(
         return f"{target_str}.{expr.field_name}"
 
     elif isinstance(expr, IRArrayAccess):
-        # Render the array base without render-time substitutions to avoid
-        # changing the array object after mutations.
-        if isinstance(expr.array, IRLocal):
-            arr_str = expr.array.name
-        else:
-            arr_str = _expression_to_haxe(expr.array, code, ir_function)
-        idx_str = _expression_to_haxe(expr.index, code, ir_function)
-        # HashLink stores array data in a `.bytes` field and indexes by element
-        # size. Convert `arr.bytes[idx << n]` back to `arr[idx]` for any shift.
-        if (
-            isinstance(expr.array, IRField)
-            and expr.array.field_name == "bytes"
-            and isinstance(expr.index, IRArithmetic)
-            and expr.index.op.value == "<<"
-            and isinstance(expr.index.right, IRConst)
-        ):
-            arr_str = _expression_to_haxe(expr.array.target, code, ir_function)
-            idx_str = _expression_to_haxe(expr.index.left, code, ir_function)
-            # String bytes are a private backing buffer; keep `.bytes` visible.
-            if disasm.type_name(code, expr.array.target.get_type()) == "String":
-                arr_str = f"{arr_str}.bytes"
-        # Raw hl.Bytes temporaries that feed ArrayBase.alloc* are upgraded to
-        # hl.BytesAccess<T>; render `bytes[idx << n]` as `bytes[idx]`.
-        elif (
-            isinstance(expr.array, IRLocal)
-            and disasm.type_to_haxe(disasm.type_name(code, expr.array.get_type())).startswith("hl.BytesAccess")
-            and isinstance(expr.index, IRArithmetic)
-            and expr.index.op.value == "<<"
-            and isinstance(expr.index.right, IRConst)
-        ):
-            arr_str = expr.array.name
-            idx_str = _expression_to_haxe(expr.index.left, code, ir_function)
+        arr_str, idx_str, method_kind = _resolve_array_access(expr, code, ir_function)
+        if method_kind is not None:
+            return f"{arr_str}.get{method_kind}({idx_str})"
         return f"{arr_str}[{idx_str}]"
 
     elif isinstance(expr, IRArrayLiteral):
@@ -966,6 +986,18 @@ def _generate_statements(
             output_lines.append(f"{indent}untyped ${global_name(stmt.target)}({value_str});")
 
         elif isinstance(stmt, IRAssign):
+            # hl.Bytes has no `@:arrayAccess` setter for anything but the
+            # 1-byte `setUI8` — `bytes[idx] = value` for any wider element
+            # (Int/Single/Float) doesn't compile, so this needs the explicit
+            # `bytes.setX(idx, value)` call form instead.
+            if isinstance(stmt.target, IRArrayAccess):
+                arr_str, idx_str, method_kind = _resolve_array_access(stmt.target, code, ir_function)
+                if method_kind is not None:
+                    value_str = _expression_to_haxe(stmt.expr, code, ir_function)
+                    output_lines.append(f"{indent}{arr_str}.set{method_kind}({idx_str}, {value_str});")
+                    if stmt.comment:
+                        output_lines[-1] += f" // {stmt.comment}"
+                    continue
             # HashLink's String is backed by a private `.bytes` field. For reads
             # we hide it so String usage looks natural, but assignments to it
             # need to render as `this.bytes = ...` to be valid Haxe. When the

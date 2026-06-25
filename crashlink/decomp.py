@@ -1532,6 +1532,15 @@ class IRArrayAccess(IRExpression):
         self.array = array
         self.index = index
         self.elem_type_idx = elem_type
+        # Set for raw hl.Bytes memory accesses (GetMem/GetI16/GetI8 and their
+        # Set counterparts) to the HL.Bytes accessor method's value suffix
+        # (e.g. "UI8", "UI16", "I32", "F32", "F64"). hl.Bytes's `arr[idx]`
+        # bracket syntax only actually exists for `getUI8`/`setUI8` — every
+        # other width requires calling the named method explicitly — so the
+        # renderer needs this to know which form is valid. None for ordinary
+        # typed-array accesses (GetArray/SetArray), where the wrapper's own
+        # `@:arrayAccess` already does the right thing for any element type.
+        self.bytes_access_kind: Optional[str] = None
 
     def get_type(self) -> Type:
         if self.elem_type_idx:
@@ -5853,6 +5862,23 @@ class IRGuardOrMerger(TraversingIROptimizer):
         return IRBoolExpr(self.func.code, IRBoolExpr.CompareType.NOT, cond)
 
 
+def _bytes_mem_kind(code: Bytecode, reg_type: tIndex) -> Optional[str]:
+    """Map a GetMem/SetMem operand's register type to the matching hl.Bytes
+    accessor suffix ("I32", "F32", or "F64"). GetMem/SetMem are used for any
+    element width from 4 bytes up; unlike GetI16/GetI8, the opcode itself
+    doesn't distinguish 4-byte int vs 4-byte float, so this only works
+    because the *register's own type* (Int vs Single vs Float) does.
+    """
+    typedef = type(reg_type.resolve(code).definition)
+    if typedef.__name__ == "I32":
+        return "I32"
+    if typedef.__name__ == "F32":
+        return "F32"
+    if typedef.__name__ == "F64":
+        return "F64"
+    return None
+
+
 def _int_const_value(c: IRConst) -> Optional[int]:
     """Return the integer value of an IRConst INT, handling intRef objects."""
     if c.const_type != IRConst.ConstType.INT:
@@ -8919,34 +8945,31 @@ class IRFunction:
                 dst_local = self.locals[op.df["dst"].value]
                 arr_local = source_locals[op.df["bytes"].value]
                 idx_local = source_locals[op.df["index"].value]
-                block.statements.append(
-                    IRAssign(
-                        self.code,
-                        dst_local,
-                        IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df["dst"].value]),
-                    )
-                )
+                access = IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df["dst"].value])
+                access.bytes_access_kind = _bytes_mem_kind(self.code, self.func.regs[op.df["dst"].value])
+                block.statements.append(IRAssign(self.code, dst_local, access))
             elif op.op in ("GetI16", "GetI8"):
                 dst_local = self.locals[op.df["dst"].value]
                 arr_local = source_locals[op.df["bytes"].value]
                 idx_local = source_locals[op.df["index"].value]
-                block.statements.append(
-                    IRAssign(
-                        self.code,
-                        dst_local,
-                        IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df["dst"].value]),
-                    )
-                )
+                access = IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df["dst"].value])
+                access.bytes_access_kind = "UI16" if op.op == "GetI16" else "UI8"
+                block.statements.append(IRAssign(self.code, dst_local, access))
             elif op.op == "SetMem":
                 arr_local = source_locals[op.df["bytes"].value]
                 idx_local = source_locals[op.df["index"].value]
                 src_local = source_locals[op.df["src"].value]
-                block.statements.append(IRAssign(self.code, IRArrayAccess(self.code, arr_local, idx_local), src_local))
+                src_reg = op.df["src"].value
+                access = IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[src_reg])
+                access.bytes_access_kind = _bytes_mem_kind(self.code, self.func.regs[src_reg])
+                block.statements.append(IRAssign(self.code, access, src_local))
             elif op.op in ("SetI16", "SetI8"):
                 arr_local = source_locals[op.df["bytes"].value]
                 idx_local = source_locals[op.df["index"].value]
                 src_local = source_locals[op.df["src"].value]
-                block.statements.append(IRAssign(self.code, IRArrayAccess(self.code, arr_local, idx_local), src_local))
+                access = IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df["src"].value])
+                access.bytes_access_kind = "UI16" if op.op == "SetI16" else "UI8"
+                block.statements.append(IRAssign(self.code, access, src_local))
             elif op.op == "SetArray":
                 arr_local = source_locals[op.df["array"].value]
                 idx_local = source_locals[op.df["index"].value]
