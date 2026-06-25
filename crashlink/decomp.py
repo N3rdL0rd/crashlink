@@ -2015,7 +2015,20 @@ class IRConditionInliner(TraversingIROptimizer):
     def _stmt_contains_local_read(self, stmt: IRStatement, local: IRLocal) -> bool:
         """Like _stmt_contains_local but ignoring assignment targets (redefinitions)."""
         if isinstance(stmt, IRAssign):
-            return self._expr_contains_local(stmt.expr, local)
+            if self._expr_contains_local(stmt.expr, local):
+                return True
+            # A compound target (`obj.field = ...`) still reads `local` to
+            # compute the field's containing object — only a bare local
+            # target (`local = ...`) is a pure redefinition with no read of
+            # the old value. (Deliberately narrower than IRField: treating
+            # an IRArrayAccess target's index as a "read" here blocks the
+            # generic IRAssign-pair fold below from ever reaching it, since
+            # that fold only substitutes into the *value* side, not the
+            # target — see the dedicated IRArrayAccess substitution path
+            # there instead.)
+            if isinstance(stmt.target, IRField) and self._expr_contains_local(stmt.target, local):
+                return True
+            return False
         if isinstance(stmt, IRExpression):
             return self._expr_contains_local(stmt, local)
         if isinstance(stmt, IRReturn):
@@ -2058,7 +2071,11 @@ class IRConditionInliner(TraversingIROptimizer):
         """
         Iterates through statements to find inlining opportunities.
         """
+        self._visit_block_pass(block)
+
+    def _visit_block_pass(self, block: IRBlock) -> bool:
         new_statements: List[IRStatement] = []
+        changed = False
 
         i = 0
         while i < len(block.statements):
@@ -2167,10 +2184,21 @@ class IRConditionInliner(TraversingIROptimizer):
                         # would disconnect that later use from its definition. Keep
                         # the original assignment when the expression is safe to
                         # duplicate; otherwise leave both statements untouched.
-                        used_outside = isinstance(assigned_local, IRLocal) and any(
-                            self._stmt_contains_local_read(s, assigned_local)
-                            for s in block.statements[i + 2 :]
-                        )
+                        # Registers get reused for unrelated values throughout a
+                        # function, so a later statement reassigning this same
+                        # local name ends the lookahead: reads after that point
+                        # belong to that new value, not the one being inlined here
+                        # (keeping current_stmt around just to feed a read that's
+                        # actually unrelated would also leave its now-inlined value
+                        # double-applied wherever next_stmt's substitution put it).
+                        used_outside = False
+                        if isinstance(assigned_local, IRLocal):
+                            for s in block.statements[i + 2 :]:
+                                if self._stmt_contains_local_read(s, assigned_local):
+                                    used_outside = True
+                                    break
+                                if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target.name == assigned_local.name:
+                                    break
                         if used_outside and not self._is_safe_to_duplicate(expr_to_inline):
                             new_statements.append(current_stmt)
                             i += 1
@@ -2228,8 +2256,11 @@ class IRConditionInliner(TraversingIROptimizer):
             if not inlined_something:
                 new_statements.append(current_stmt)
                 i += 1
+            else:
+                changed = True
 
         block.statements = new_statements
+        return changed
 
     def _try_inline_into_boolexpr(
         self, bool_expr: IRBoolExpr, target: IRLocal | IRField | IRArrayAccess, expr_to_inline: IRExpression
@@ -2479,6 +2510,41 @@ class IRSelfAssignOptimizer(TraversingIROptimizer):
                 if isinstance(stmt.target, IRLocal) and stmt.target == stmt.expr:
                     if DEBUG:
                         dbg_print(f"IRSelfAssignOptimizer: Removing redundant assignment: {stmt}")
+                    continue
+            new_statements.append(stmt)
+
+        block.statements = new_statements
+
+
+class IRArrayGrowGuardEliminator(TraversingIROptimizer):
+    """
+    Removes `if (idx >= arr.length) arr.__expand(idx);` guards.
+
+    HL's compiler emits this guard in front of *every* bracket write to a
+    typed array (`arr[idx] = value;`), growing the backing storage first if
+    needed. `__expand` isn't a real method of `Array<T>` though — it only
+    exists on the internal ArrayBytes_T/ArrayObj implementation classes —
+    so rendering this guard literally produces Haxe that doesn't compile.
+    Since the guard is implied by (and always paired with) an ordinary
+    bracket write, it's safe to drop unconditionally rather than try to
+    render it.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements = []
+
+        for stmt in block.statements:
+            if isinstance(stmt, IRConditional) and not (stmt.false_block and stmt.false_block.statements):
+                true_stmts = stmt.true_block.statements if stmt.true_block else []
+                if (
+                    len(true_stmts) == 1
+                    and isinstance(true_stmts[0], IRCall)
+                    and isinstance(true_stmts[0].target, IRConst)
+                    and isinstance(true_stmts[0].target.value, Function)
+                    and self.func.code.partial_func_name(true_stmts[0].target.value) == "__expand"
+                ):
+                    if DEBUG:
+                        dbg_print(f"IRArrayGrowGuardEliminator: Removing __expand guard: {stmt}")
                     continue
             new_statements.append(stmt)
 
@@ -8231,6 +8297,7 @@ class IRFunction:
                 IRGlobalStringOptimizer(self),
                 IRStringIntConcatOptimizer(self),
                 IRConditionInliner(self),
+                IRArrayGrowGuardEliminator(self),
                 IRLoopConditionOptimizer(self),
                 IRSelfAssignOptimizer(self),
                 IRRedundantContinueEliminator(self),
@@ -9568,7 +9635,8 @@ class IRFunction:
                     default_block = case_block_ir
 
             block.statements.append(IRSwitch(self.code, val_reg, cases, default_block))
-            next_block_ir = self._lift_block(convergence_node, visited, loop_ctx=loop_ctx)
+            # See the Trap case below for why stop_at must be threaded through here.
+            next_block_ir = self._lift_block(convergence_node, visited, stop_at=stop_at, loop_ctx=loop_ctx)
             block.statements.extend(next_block_ir.statements)
 
         elif last_op and last_op.op == "Trap":
@@ -9600,7 +9668,14 @@ class IRFunction:
                 IRTryCatch(self.code, try_block_ir, catch_block_ir, catch_local, explicit_catch_type)
             )
 
-            next_block_ir = self._lift_block(convergence_node, visited, loop_ctx=loop_ctx)
+            # Must bound this by the enclosing stop_at, like the conditional case
+            # below does: when this Trap is itself inside a branch that was lifted
+            # with stop_at == convergence_node (e.g. an enclosing if/else where one
+            # side returns early and the other falls through into this try/catch),
+            # omitting it would re-lift the shared tail past the try/catch here, and
+            # the enclosing branch's own caller would *also* lift it as the
+            # conditional's post-merge continuation — duplicating it.
+            next_block_ir = self._lift_block(convergence_node, visited, stop_at=stop_at, loop_ctx=loop_ctx)
             block.statements.extend(next_block_ir.statements)
 
         elif last_op and last_op.op == "Ret":
