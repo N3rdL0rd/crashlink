@@ -223,6 +223,14 @@ def _expr_to_haxe_with_precedence(
     return rendered
 
 
+def _is_untyped_array_access_class(typ: "Type", code: Bytecode) -> bool:
+    """True if `typ` is hl.types.ArrayBase/ArrayAccess — the type-erased base
+    classes that back every concrete typed array (ArrayBytes_T, ArrayObj,
+    ArrayDyn) but, unlike them, define no `@:arrayAccess` of their own."""
+    name = disasm.type_name(code, typ)
+    return name in ("hl.types.ArrayBase", "hl.types.ArrayAccess")
+
+
 def _resolve_array_access(
     expr: "IRArrayAccess", code: Bytecode, ir_function: Optional[IRFunction]
 ) -> Tuple[str, str, Optional[str]]:
@@ -508,8 +516,16 @@ def _expression_to_haxe(
                 arr = _expression_to_haxe(expr.args[0], code, ir_function)
                 return f"{arr}.length"
 
-        # Render HL array getDyn/setDyn method calls as plain index reads/writes.
-        if isinstance(expr.target, IRField):
+        # Render HL array getDyn/setDyn method calls as plain index reads/writes
+        # — but only when the receiver actually has a real `@:arrayAccess` for
+        # it. Concrete typed arrays (Array<Int>, Array<Float>, ...) implement
+        # `[]` via exactly these methods, so collapsing is just undoing that.
+        # The abstract `hl.types.ArrayBase`/`ArrayAccess` base classes (used
+        # when the concrete element type isn't known statically) define no
+        # such operator at all — bracket syntax on them doesn't compile.
+        if isinstance(expr.target, IRField) and not _is_untyped_array_access_class(
+            expr.target.target.get_type(), code
+        ):
             if expr.target.field_name in ("getDyn", "get") and len(expr.args) == 1:
                 arr = _expression_to_haxe(expr.target.target, code, ir_function)
                 idx = _expression_to_haxe(expr.args[0], code, ir_function)
