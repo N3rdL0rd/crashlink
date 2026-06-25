@@ -2552,6 +2552,14 @@ class IRArrayGrowGuardEliminator(TraversingIROptimizer):
                     and isinstance(true_stmts[0].target, IRConst)
                     and isinstance(true_stmts[0].target.value, Function)
                     and self.func.code.partial_func_name(true_stmts[0].target.value) == "__expand"
+                    # Keep the guard when __expand is called on `this`: that's the
+                    # array impl class's own setDyn body (real source), not a
+                    # compiler-inserted guard fronting a user's `arr[i] = v`.
+                    and not (
+                        true_stmts[0].args
+                        and isinstance(true_stmts[0].args[0], IRLocal)
+                        and true_stmts[0].args[0].name == "this"
+                    )
                 ):
                     if DEBUG:
                         dbg_print(f"IRArrayGrowGuardEliminator: Removing __expand guard: {stmt}")
@@ -7117,7 +7125,12 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         if not isinstance(stmt.expr, IRField) or stmt.expr.field_name != "bytes":
             return None
         temp = stmt.target
-        arr_expr = stmt.expr.target
+        arr_expr: IRExpression = stmt.expr.target
+        # When the bytes field is loaded off `this`, the receiver is the array
+        # impl class itself: collapse to `this.bytes[i]`, not `this[i]` (which
+        # has no array accessor and won't recompile).
+        if isinstance(arr_expr, IRLocal) and arr_expr.name == "this":
+            arr_expr = stmt.expr
 
         # Scan forward for the first use of temp in an array access. The shift
         # offset may have been hoisted into its own temp (`idxTmp = idx << n`)
@@ -8097,6 +8110,11 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         if self.func.code.partial_func_name(call_stmt.target.value) != "__expand":
             return None
         if len(call_stmt.args) != 2:
+            return None
+        # Keep the guard when __expand is called on `this`: that's the array
+        # impl class's own setDyn body (real source), not a compiler-inserted
+        # guard fronting a user's `arr[i] = v`.
+        if isinstance(call_stmt.args[0], IRLocal) and call_stmt.args[0].name == "this":
             return None
         if call_stmt.args[0] != arr_var or not self._expr_eq(call_stmt.args[1], idx_expr):
             return None
