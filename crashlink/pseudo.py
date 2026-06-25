@@ -2602,18 +2602,31 @@ def _virtual_receiver_static_types(ir_function: IRFunction, code: Bytecode) -> D
         if id(stmt) in seen:
             return
         seen.add(id(stmt))
-        if isinstance(stmt, IRConst) and isinstance(stmt.value, Function):
-            func = stmt.value
+        # Only a *captured* function constant (the StaticClosure lift shape,
+        # `dst_local = IRConst(Function)` — i.e. `var f = SomeClass.method;`)
+        # implies anything about the receiver's static type: the closure is
+        # invoked later through `dst_local`, separately from this assignment,
+        # so its virtual-dispatch behavior depends on the receiver's
+        # *declared* type at that later point, not its concrete one here.
+        # An IRConst(Function) used directly as an IRCall's target (a normal
+        # `obj.method(...)` call) carries no such implication — the call
+        # already resolves to a specific, possibly-overridden implementation
+        # regardless of how `obj` is declared, so widening obj's type here
+        # would be both unnecessary and wrong.
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.expr, IRConst)
+            and isinstance(stmt.expr.value, Function)
+        ):
+            func = stmt.expr.value
             parts = _func_name_parts(func, code)
-            if parts is None:
-                return
-            class_name, _ = parts
-            base = _base_class_for_virtual_method(func, code)
-            if base is None:
-                return
-            receiver = _find_receiver_local(class_name, ir_function, code)
-            if receiver is not None:
-                result[receiver] = base
+            if parts is not None:
+                class_name, _ = parts
+                base = _base_class_for_virtual_method(func, code)
+                if base is not None:
+                    receiver = _find_receiver_local(class_name, ir_function, code)
+                    if receiver is not None:
+                        result[receiver] = base
         if (
             isinstance(stmt, IRField)
             and stmt.virtual_dispatch_fun is not None
