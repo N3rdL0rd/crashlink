@@ -66,8 +66,16 @@ class _PseudoClass:
     __slots__ = ("dynamic", "static", "methods")
 
     def __init__(self, obj: Obj, methods: List[IRFunction]):
-        self.dynamic = obj
-        self.static = None
+        # Bindings (e.g. a __constructor__ wrapper) are registered against the
+        # *static* companion class, not the dynamic/instance one — if `obj`
+        # is static, route it to its real dynamic counterpart so the actual
+        # class hierarchy (super chain, instance fields) is visible.
+        if obj.is_static and obj.dynamic is not None:
+            self.dynamic = obj.dynamic
+            self.static = obj
+        else:
+            self.dynamic = obj
+            self.static = None
         self.methods = methods
 
 
@@ -99,7 +107,13 @@ def _method_registry(code: Bytecode) -> Dict[int, Tuple[Obj, str, bool]]:
 def _containing_class_for(ir_func: IRFunction, code: Bytecode) -> Optional[_PseudoClass]:
     """Return a lightweight containing class for instance methods, or None."""
     info = _method_registry(code).get(ir_func.func.findex.value)
-    if info is None or not info[2]:
+    if info is None:
+        return None
+    # Constructors are registered as bindings (is_instance=False in the
+    # registry, since they aren't virtual/vtable methods), but they still
+    # need their containing class attached — e.g. to detect a `super(...)`
+    # delegation call to the parent's own constructor.
+    if not info[2] and code.partial_func_name(ir_func.func) != "__constructor__":
         return None
     return _PseudoClass(info[0], [ir_func])
 
@@ -464,7 +478,7 @@ def _expression_to_haxe(
         ):
             partial = code.partial_func_name(expr.target.value)
             if partial in ("push", "pop"):
-                instance = _try_instance_method_call(expr.target.value, expr.args[0], code)
+                instance = _try_instance_method_call(expr.target.value, expr.args[0], code, ir_function)
                 if instance is not None:
                     rest = expr.args[1:] if partial == "push" else []
                     args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in rest)
@@ -510,7 +524,7 @@ def _expression_to_haxe(
                 and isinstance(expr.target.value, Function)
                 and expr.args
             ):
-                instance_method = _try_instance_method_call(expr.target.value, expr.args[0], code)
+                instance_method = _try_instance_method_call(expr.target.value, expr.args[0], code, ir_function)
                 if instance_method:
                     callee_str = instance_method
                     args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in expr.args[1:])
@@ -1507,7 +1521,8 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
         native_name = func_core.name.resolve(code) if func_core.name else f"native{func_core.findex.value}"
         return f"// native stub: {native_name}"
 
-    func_name_str = code.partial_func_name(func_core) or f"f{func_core.findex.value}"
+    raw_name = code.partial_func_name(func_core)
+    func_name_str = raw_name if raw_name and raw_name != "<none>" else f"f{func_core.findex.value}"
     func_name_str = getattr(ir_func, "_anon_name", func_name_str)
     is_constructor = func_name_str == "__constructor__"
     setattr(ir_func, "_is_constructor", is_constructor)
@@ -1523,6 +1538,23 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
     is_instance = containing is not None and ir_func in containing.methods
     if is_constructor:
         is_instance = True
+
+    # Some bytecode has functions with no proto/field registration at all (no
+    # debug name, not listed in any class's vtable) — e.g. the implicit
+    # default-field-initializer body HL synthesizes for a class. There's no
+    # name or class membership to look up, but if its first argument is `this`
+    # (an Obj/Virtual instance type), render it as an unnamed instance method
+    # of that class instead of bailing out into a contentless stub. Only do
+    # this when the name itself was unresolvable too — a real static method
+    # (e.g. String.__add__(a, b)) can legitimately take an Obj-typed first
+    # parameter without being an instance method of that class.
+    if containing is None and not is_instance and (not raw_name or raw_name == "<none>"):
+        core_fun_type = func_core.type.resolve(code).definition
+        if isinstance(core_fun_type, Fun) and core_fun_type.args:
+            first_arg_type = core_fun_type.args[0].resolve(code)
+            if isinstance(first_arg_type.definition, Obj):
+                is_instance = True
+
     if getattr(ir_func, "_force_static", False):
         is_instance = False
 
@@ -1534,9 +1566,6 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
     if is_instance and not is_constructor and containing is not None:
         if _method_overrides(func_name_str, containing, code):
             override_kw = "override "
-
-    if not func_name_str or func_name_str == "<none>":
-        return f"// Could not determine name for f@{func_core.findex.value}"
 
     params_str_list = []
     return_type_str = "Void"
@@ -1675,6 +1704,15 @@ def pseudo(ir_func: IRFunction) -> str:
         class_name_part = full_name.rsplit(".", 1)[0]
         if class_name_part and class_name_part != "<none>":
             class_name_suggestion = class_name_part.lstrip("$")
+    elif not isinstance(ir_func.func, Native):
+        # No proto/field registration at all to get a name from (see the
+        # matching fallback in _generate_function_pseudo) — fall back to the
+        # first argument's type if it looks like a `this` receiver.
+        core_fun_type = ir_func.func.type.resolve(ir_func.code).definition
+        if isinstance(core_fun_type, Fun) and core_fun_type.args:
+            first_arg_type = core_fun_type.args[0].resolve(ir_func.code)
+            if isinstance(first_arg_type.definition, Obj):
+                class_name_suggestion = destaticify(disasm.type_name(ir_func.code, first_arg_type))
 
     final_output = [f"class {class_name_suggestion} {{"]
     final_output.extend(["    " + line for line in function_body_str.split("\n")])
@@ -2358,12 +2396,12 @@ def _rewrite_constructor_call(call: IRCall, code: Bytecode, ir_function: Optiona
 
     if (
         isinstance(arg, IRLocal)
-        and arg.name == "var0"
+        and arg.name in ("this", "var0")
         and ir_function is not None
         and getattr(ir_function, "_is_constructor", False)
     ):
         # Inside a constructor the first local is the implicit `this`.
-        # Calling the superclass constructor becomes `super()`.
+        # Calling the superclass constructor becomes `super(...)`.
         containing = getattr(ir_function, "_containing_class", None)
         if containing:
             primary_obj = containing.dynamic if containing.dynamic else containing.static
@@ -2372,15 +2410,29 @@ def _rewrite_constructor_call(call: IRCall, code: Bytecode, ir_function: Optiona
                 if isinstance(super_type.definition, Obj):
                     super_name = destaticify(super_type.definition.name.resolve(code))
                     if ctor_class_name == super_name:
-                        return "super()"
+                        rest_args = ", ".join(_expression_to_haxe(a, code, ir_function) for a in call.args[1:])
+                        return f"super({rest_args})"
         return ""
 
     return None
 
 
-def _try_instance_method_call(func: "Function", first_arg: IRExpression, code: Bytecode) -> Optional[str]:
+def _try_instance_method_call(
+    func: "Function", first_arg: IRExpression, code: Bytecode, ir_function: Optional[IRFunction] = None
+) -> Optional[str]:
     """If func is an instance method and first_arg is the `this` argument,
-    return Haxe syntax `expr.methodName` for the call target."""
+    return Haxe syntax `expr.methodName` for the call target.
+
+    HL compiles `super.foo()` as a direct (non-virtual) call straight to the
+    parent class's own implementation of `foo`, passing `this` as the first
+    argument — the same shape as any other "call an instance method, passing
+    its receiver as arg 0" pattern. The only way to tell it apart from a
+    plain `this.foo()` is that the callee's declaring class differs from
+    (and is an ancestor of) the *caller's* containing class: rendering it as
+    `this.foo()` would dispatch virtually back to the override and (for a
+    same-named override calling its parent, e.g. an overridden `toString`)
+    recurse infinitely instead of reaching the parent's implementation.
+    """
     parts = _func_name_parts(func, code)
     if not parts:
         return None
@@ -2397,8 +2449,33 @@ def _try_instance_method_call(func: "Function", first_arg: IRExpression, code: B
     if first_arg_type_name != class_name:
         return None
 
+    if (
+        isinstance(first_arg, IRLocal)
+        and first_arg.name == "this"
+        and ir_function is not None
+        and _is_super_call(class_name, ir_function, code)
+    ):
+        return f"super.{method_name}"
+
     arg_expr_str = _expression_to_haxe(first_arg, code, None)
     return f"{arg_expr_str}.{method_name}"
+
+
+def _is_super_call(callee_class_name: str, ir_function: IRFunction, code: Bytecode) -> bool:
+    """True if `callee_class_name` is the direct superclass of the function
+    that's currently being rendered (i.e. this call is `super.foo()`, not a
+    same-class `this.foo()`)."""
+    containing = getattr(ir_function, "_containing_class", None)
+    if containing is None:
+        return False
+    primary_obj = containing.dynamic if containing.dynamic else containing.static
+    if primary_obj is None or not primary_obj.super or primary_obj.super.value <= 0:
+        return False
+    super_type = primary_obj.super.resolve(code)
+    if not isinstance(super_type.definition, Obj):
+        return False
+    super_name = destaticify(super_type.definition.name.resolve(code))
+    return super_name == callee_class_name
 
 
 def _find_receiver_local(class_name: str, ir_function: IRFunction, code: Bytecode) -> Optional[str]:

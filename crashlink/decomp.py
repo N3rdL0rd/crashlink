@@ -2866,6 +2866,7 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
 
         value_local: Optional[IRLocal] = None
         count_ref_local: Optional[IRLocal] = None
+        consumed_stmt: Optional[IRAssign] = None
         if isinstance(bytes_arg, IRCall):
             result = self._check_conversion_call(bytes_arg)
             if result:
@@ -2876,12 +2877,15 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
                 result = self._check_conversion_call(defn.expr)
                 if result:
                     value_local, count_ref_local = result
+                    consumed_stmt = defn
 
         if value_local is None or count_ref_local is None:
             return None
 
         # Direct match: count_ref is the same local as int_arg
         if count_ref_local.name == int_arg.name:
+            if consumed_stmt is not None:
+                self._consumed.add(id(consumed_stmt))
             return value_local
 
         # Indirect match: count_ref = &int_arg (before IRConditionInliner runs, the Ref
@@ -2890,6 +2894,8 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
             ref_defn = current_assigns[count_ref_local.name]
             if isinstance(ref_defn.expr, IRRef) and isinstance(ref_defn.expr.target, IRLocal):
                 if ref_defn.expr.target.name == int_arg.name:
+                    if consumed_stmt is not None:
+                        self._consumed.add(id(consumed_stmt))
                     return value_local
 
         return None
@@ -2906,12 +2912,23 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
 
     def visit_block(self, block: IRBlock) -> None:
         current_assigns: Dict[str, IRAssign] = {}
+        self._consumed: Set[int] = getattr(self, "_consumed", set())
         for stmt in block.statements:
             if isinstance(stmt, IRAssign):
                 if isinstance(stmt.target, IRLocal):
                     current_assigns[stmt.target.name] = stmt
                 if isinstance(stmt.expr, IRExpression):
                     stmt.expr = self._rewrite_expr(stmt.expr, current_assigns)
+
+        # A bytes-temp assignment fully consumed by a collapse above is now
+        # dead — its only use (the __alloc__ call) no longer reads it — but
+        # the register it occupies is frequently reused later in the same
+        # block for an unrelated value, so leaving the statement in place
+        # would have a later, completely unrelated assignment's debug name
+        # misleadingly attached to this stale `itos`/`ftos` call.
+        if self._consumed:
+            block.statements = [s for s in block.statements if id(s) not in self._consumed]
+            self._consumed = set()
 
 
 class IRTempAssignmentInliner(TraversingIROptimizer):
@@ -3014,6 +3031,19 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             made_change = made_change or changed
         elif isinstance(expr, IREnumField):
             expr.value, changed = self._substitute_in_expr(expr.value, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(expr, (IRNeg, IRNot, IRTypeOf, IRTypeKind)):
+            expr.expr, changed = self._substitute_in_expr(expr.expr, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(expr, IRArrayLiteral):
+            new_elements = []
+            for element in expr.elements:
+                new_element, changed = self._substitute_in_expr(element, target, replacement)
+                new_elements.append(new_element)
+                made_change = made_change or changed
+            expr.elements = new_elements
+        elif isinstance(expr, IRNativeArrayNew):
+            expr.size, changed = self._substitute_in_expr(expr.size, target, replacement)
             made_change = made_change or changed
 
         return expr, made_change
@@ -3903,6 +3933,14 @@ class IRDeadTempEliminator(IROptimizer):
                 self._collect_used_in_expr(arg, used)
         elif isinstance(expr, IRRef):
             self._collect_used_in_expr(expr.target, used)
+        else:
+            # Fall back to generic traversal for any expression type not
+            # explicitly listed above (e.g. IRNativeArrayNew/IRNativeMapNew),
+            # so a missing case here can't silently treat a real read as
+            # absent and delete a still-needed assignment as dead.
+            for child in expr.get_children():
+                if isinstance(child, IRExpression):
+                    self._collect_used_in_expr(child, used)
 
     def _remove_dead(
         self,
@@ -4249,6 +4287,20 @@ class IRSequentialTempFolder(TraversingIROptimizer):
             if child is parent.target:
                 parent.target = value
                 return True
+        elif isinstance(parent, IRArrayLiteral):
+            for j, element in enumerate(parent.elements):
+                if element is child:
+                    parent.elements[j] = value
+                    return True
+        elif isinstance(parent, IRNativeArrayNew):
+            if child is parent.size:
+                parent.size = value
+                return True
+        elif isinstance(parent, IRNew):
+            for j, arg in enumerate(parent.constructor_args):
+                if arg is child:
+                    parent.constructor_args[j] = value
+                    return True
         return False
 
 
@@ -5615,6 +5667,9 @@ class IRStringConcatFolder(TraversingIROptimizer):
             for arg in expr.constructor_args:
                 if self._expr_contains_local(arg, local):
                     return True
+        for child in expr.get_children():
+            if isinstance(child, IRExpression) and self._expr_contains_local(child, local):
+                return True
         return False
 
 
@@ -8003,10 +8058,20 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
 def _build_enum_global_map(code: Bytecode) -> Dict[int, Tuple[str, tIndex]]:
     """
     HashLink stores parameterless enum constants as globals whose type is the
-    enum type.  The declaration order of those constants matches the order of
-    the enum's parameterless constructors.  Build a map from global index to
-    the constructor name and enum type index so that `GetGlobal` can be lifted
-    to `Red`/`Green`/... instead of an opaque enum-typed global object.
+    enum type. Build a map from global index to the constructor name and enum
+    type index so that `GetGlobal` can be lifted to `Red`/`Green`/... instead
+    of an opaque enum-typed global object.
+
+    The static initializer that populates these globals reads them out of the
+    enum's own `__evalues__` array by construct index (`GetArray(evalues,
+    Int(N))` then `SetGlobal(g, ...)`), so trace that pattern directly to
+    recover the exact (global -> construct index) mapping. The order globals
+    are *allocated* in (their numeric index) does not necessarily match
+    declaration order — it depends on which construct is first referenced
+    during compilation — so guessing via sorted-globals-zip-constructs is
+    unreliable and silently mismatches names when an enum has more than one
+    construct referenced across the program (see e.g. haxe.io.Error, where
+    `OutsideBounds`, not `Blocked`, ends up at the lowest global index).
     """
     enum_globals: Dict[int, List[int]] = {}
     for gi, gt in enumerate(code.global_types):
@@ -8015,13 +8080,59 @@ def _build_enum_global_map(code: Bytecode) -> Dict[int, Tuple[str, tIndex]]:
             enum_globals.setdefault(gt.value, []).append(gi)
 
     result: Dict[int, Tuple[str, tIndex]] = {}
-    for type_idx, globals in enum_globals.items():
+    resolved_globals: Set[int] = set()
+    all_enum_globals: Set[int] = set()
+    for globals_for_type in enum_globals.values():
+        all_enum_globals.update(globals_for_type)
+
+    # Pass 1: trace the actual `__evalues__[N]` initializer pattern.
+    for func in code.functions:
+        if isinstance(func, Native):
+            continue
+        reg_int_value: Dict[int, int] = {}
+        reg_array_index: Dict[int, int] = {}  # GetArray dst -> construct index
+        for op in func.ops:
+            if op.op == "Int":
+                try:
+                    resolved = op.df["ptr"].resolve(code)
+                    reg_int_value[op.df["dst"].value] = int(getattr(resolved, "value", resolved))
+                except Exception:
+                    pass
+            elif op.op == "GetArray":
+                idx_reg = op.df["index"].value
+                if idx_reg in reg_int_value:
+                    reg_array_index[op.df["dst"].value] = reg_int_value[idx_reg]
+            elif op.op in ("SafeCast", "UnsafeCast", "Mov"):
+                src_reg = op.df["src"].value
+                if src_reg in reg_array_index:
+                    reg_array_index[op.df["dst"].value] = reg_array_index[src_reg]
+            elif op.op == "SetGlobal":
+                gi = op.df["global"].value
+                src_reg = op.df["src"].value
+                if gi in all_enum_globals and src_reg in reg_array_index:
+                    type_idx = code.global_types[gi].value
+                    enum_def = code.types[type_idx].definition
+                    if isinstance(enum_def, Enum):
+                        construct_idx = reg_array_index[src_reg]
+                        if 0 <= construct_idx < len(enum_def.constructs):
+                            construct = enum_def.constructs[construct_idx]
+                            result[gi] = (construct.name.resolve(code), code.global_types[gi])
+                            resolved_globals.add(gi)
+
+    # Pass 2: fall back to the declaration-order guess for anything the
+    # initializer trace didn't cover (e.g. an enum with only one referenced
+    # parameterless construct, where ordering can't be ambiguous anyway).
+    for type_idx, globals_for_type in enum_globals.items():
         enum_def = code.types[type_idx].definition
         if not isinstance(enum_def, Enum):
             continue
-        globals.sort()
+        remaining = sorted(gi for gi in globals_for_type if gi not in resolved_globals)
+        if not remaining:
+            continue
         parameterless = [c for c in enum_def.constructs if c.nparams.value == 0]
-        for gi, construct in zip(globals, parameterless):
+        used_names = {result[gi][0] for gi in globals_for_type if gi in result}
+        remaining_constructs = [c for c in parameterless if c.name.resolve(code) not in used_names]
+        for gi, construct in zip(remaining, remaining_constructs):
             result[gi] = (construct.name.resolve(code), code.global_types[gi])
     return result
 
@@ -8319,7 +8430,13 @@ class IRFunction:
         # function contains SetThis/GetThis opcodes (constructor).
         is_instance = self._is_instance_method()
         has_this_ops = any(op.op in ("SetThis", "GetThis") for op in self.func.ops)
-        has_this = is_instance or has_this_ops
+        # A constructor that only delegates to `super(...)` (no field writes of
+        # its own) has neither SetThis/GetThis ops nor a vtable proto entry
+        # (constructors aren't virtual), so it would otherwise be misdetected
+        # as a plain static function and have all its parameter names shifted
+        # by one onto the wrong registers.
+        is_ctor_wrapper = self.code.partial_func_name(self.func) == "__constructor__"
+        has_this = is_instance or has_this_ops or is_ctor_wrapper
         if self.func.has_debug and self.func.assigns:
             for assign in self.func.assigns:
                 # assign: Tuple[strRef (name), VarInt (op index)]
@@ -8869,8 +8986,23 @@ class IRFunction:
                 obj_local = source_locals[op.df["obj"].value]
                 fun = op.df["fun"].resolve(self.code)
                 method_name = self.code.partial_func_name(fun)
-                field_expr = IRField(self.code, obj_local, method_name, self.func.regs[op.df["dst"].value])
-                block.statements.append(IRAssign(self.code, dst_local, field_expr))
+                obj_def = obj_local.get_type().definition
+                if method_name in (None, "<none>") or not isinstance(obj_def, (Obj, Virtual)):
+                    # Not a real `obj.method` binding: the compiler also uses
+                    # InstanceClosure to wrap a `Dynamic` value as the captured
+                    # `this` of a small synthesized adapter function (e.g. the
+                    # type-converting closure built for `cast f` on a
+                    # function value), which has no name and no real receiver
+                    # object. There's no Haxe syntax for "this anonymous
+                    # function bound with this capture", but the adapter
+                    # always exists to make `obj` itself callable with a
+                    # different signature, so a type cast renders the same
+                    # observable result without inventing a bogus field name.
+                    cast_expr = IRCast(self.code, self.func.regs[op.df["dst"].value], obj_local)
+                    block.statements.append(IRAssign(self.code, dst_local, cast_expr))
+                else:
+                    field_expr = IRField(self.code, obj_local, method_name, self.func.regs[op.df["dst"].value])
+                    block.statements.append(IRAssign(self.code, dst_local, field_expr))
             elif op.op == "VirtualClosure":
                 dst_local = self.locals[op.df["dst"].value]
                 obj_local = source_locals[op.df["obj"].value]
