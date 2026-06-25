@@ -3201,7 +3201,25 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
 
         for child in stmt.get_children():
             if child is not stmt:
-                if self._substitute_in_statement(child, target, replacement, _visited):
+                if isinstance(child, IRBlock):
+                    # Don't substitute past a direct reassignment of `target`
+                    # inside a sub-block: reads after that point belong to the
+                    # new value, not the one being inlined.
+                    if id(child) in _visited:
+                        continue
+                    _visited.add(id(child))
+                    for sub_stmt in child.statements:
+                        if id(sub_stmt) in _visited:
+                            continue
+                        if self._substitute_in_statement(sub_stmt, target, replacement, _visited):
+                            made_change = True
+                        if (
+                            isinstance(sub_stmt, IRAssign)
+                            and isinstance(sub_stmt.target, IRLocal)
+                            and (sub_stmt.target == target or sub_stmt.target.same_register(target))
+                        ):
+                            break
+                elif self._substitute_in_statement(child, target, replacement, _visited):
                     made_change = True
 
         return made_change
