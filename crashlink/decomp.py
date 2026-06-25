@@ -3448,10 +3448,14 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 free_vars.discard(temp_local.name)
 
                 # Find every remaining statement that reads `temp_local` before it
-                # is redefined. If a use also reassigns a free variable and there
-                # are uses after it, inlining would break those later uses (the
-                # temp preserves the pre-reassignment value). Keep the temp and
-                # let copy propagation clean up the simple copy instead.
+                # is redefined. If a free variable referenced by expr_to_inline
+                # gets reassigned anywhere between the definition and a given
+                # use (not just by the use statement itself — an unrelated
+                # statement in between counts too), substituting the captured
+                # expression there would silently start reading the *new* value
+                # of that free variable instead of the one live when temp_local
+                # was actually computed. Keep the temp and let copy propagation
+                # clean up the simple copy instead.
                 use_indices = [
                     j
                     for j, s in enumerate(remaining_statements)
@@ -3460,9 +3464,11 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 if not use_indices:
                     continue
                 blocked = False
-                for ui in use_indices:
-                    if free_vars and self._stmt_reassigns_any(remaining_statements[ui], free_vars):
-                        if any(uj > ui for uj in use_indices):
+                if free_vars:
+                    for ui in use_indices:
+                        if any(
+                            self._stmt_reassigns_any(remaining_statements[k], free_vars) for k in range(ui)
+                        ):
                             blocked = True
                             break
                 if blocked:
@@ -6959,14 +6965,23 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
 
                 temp_match = self._try_eliminate_bytes_temp(block.statements, i)
                 if temp_match:
-                    new_statements, consumed = temp_match
-                    i += consumed
+                    # Unlike the other _try_* helpers above, this one returns
+                    # a full replacement for the whole statement list (the
+                    # match can reach arbitrarily far ahead of `i`), not just
+                    # a local edit at the current position — apply it
+                    # immediately and restart the scan, instead of appending
+                    # more onto `new_statements` from `i` in the *original*
+                    # list, which would duplicate everything already folded
+                    # into the returned list.
+                    new_full_statements, _consumed = temp_match
+                    block.statements = new_full_statements
                     made_change = True
-                    continue
+                    break
 
                 new_statements.append(stmt)
                 i += 1
-            block.statements = new_statements
+            else:
+                block.statements = new_statements
 
     def _try_eliminate_bytes_temp(
         self, stmts: List[IRStatement], start: int
@@ -7001,7 +7016,13 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             accesses = self._find_temp_accesses(use, temp, arr_expr, idx_temp_map)
             if accesses:
                 new_use = self._replace_temp_accesses(use, accesses)
-                return stmts[:start] + [new_use] + stmts[start + 1 : j] + stmts[j + 1 :], 1
+                # Drop only the temp definition itself; the statements between
+                # it and the use (start+1..j-1) must stay in their original
+                # relative order *before* the (now-collapsed) use — moving the
+                # use back to the definition's old position would run it
+                # before intervening statements it may depend on (e.g. an
+                # index-shift temp recomputed in between).
+                return stmts[:start] + stmts[start + 1 : j] + [new_use] + stmts[j + 1 :], 1
         return None
 
     def _find_temp_accesses(
