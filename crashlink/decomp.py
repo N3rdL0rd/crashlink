@@ -588,11 +588,16 @@ class IRBlock(IRStatement):
         if top:
             _repr_rendered_blocks = set()
         try:
+            # Ancestor-stack guard: only collapse a block that is its own
+            # ancestor (a real cycle). Shared acyclic continuations render fully.
             if id(self) in _repr_rendered_blocks:  # type: ignore[operator]
                 return f"\033[{color}m[...]\033[0m"
             _repr_rendered_blocks.add(id(self))  # type: ignore[union-attr]
-            # uniform indentation
-            statements = pformat(self.statements, indent=0).replace("\n", "\n\t")
+            try:
+                # uniform indentation
+                statements = pformat(self.statements, indent=0).replace("\n", "\n\t")
+            finally:
+                _repr_rendered_blocks.discard(id(self))  # type: ignore[union-attr]
         finally:
             if top:
                 _repr_rendered_blocks = None
@@ -608,10 +613,15 @@ class IRBlock(IRStatement):
         if top:
             _repr_rendered_blocks = set()
         try:
+            # Ancestor-stack guard: only collapse a block that is its own
+            # ancestor (a real cycle). Shared acyclic continuations render fully.
             if id(self) in _repr_rendered_blocks:  # type: ignore[operator]
                 return "[...]"
             _repr_rendered_blocks.add(id(self))  # type: ignore[union-attr]
-            statements = pformat(self.statements, indent=0).replace("\n", "\n\t")
+            try:
+                statements = pformat(self.statements, indent=0).replace("\n", "\n\t")
+            finally:
+                _repr_rendered_blocks.discard(id(self))  # type: ignore[union-attr]
         finally:
             if top:
                 _repr_rendered_blocks = None
