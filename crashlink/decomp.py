@@ -4,6 +4,7 @@ Decompilation, IR and control flow graph generation
 
 from __future__ import annotations
 
+import copy
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ from .core import (
     Native,
     Obj,
     Opcode,
+    Reg,
+    Regs,
     ResolvableVarInt,
     Type,
     TypeDef,
@@ -655,6 +658,11 @@ class IRLocal(IRExpression):
         # IRNativeMapNew), so this records the recovered Haxe class name for
         # the declared-type renderer to use instead of the generic Abstract.
         self.native_map_class: Optional[str] = None
+        # Set when this I32 local feeds a `ToUFloat` conversion: HL has no
+        # separate UInt register kind (it's an I32 like Int), so this is the
+        # only signal that the source used `UInt` rather than `Int` — without
+        # it, the conversion recompiles as the (wrong) signed `ToSFloat`.
+        self.is_unsigned: bool = False
 
     def get_type(self) -> Type:
         return self.type.resolve(self.code)
@@ -881,6 +889,10 @@ class IRBoolExpr(IRExpression):
         TRUE = "true"
         FALSE = "false"
         NOT = "not"
+        # Synthesized short-circuit combinators (see IRGuardOrMerger); `left`
+        # and `right` are themselves full boolean expressions, not operands.
+        OR = "or"
+        AND = "and"
 
     def __init__(
         self,
@@ -1152,11 +1164,17 @@ class IRTryCatch(IRStatement):
         try_block: IRBlock,
         catch_block: IRBlock,
         catch_local: Optional[IRLocal] = None,
+        explicit_catch_type: bool = False,
     ):
         super().__init__(code)
         self.try_block = try_block
         self.catch_block = catch_block
         self.catch_local = catch_local
+        # Haxe's codegen for a catch clause differs depending on whether the
+        # source wrote an explicit `catch (e: Dynamic)` or just `catch (e)`,
+        # even though both infer the same type — see
+        # IRFunction._catch_has_explicit_type for the bytecode fingerprint.
+        self.explicit_catch_type = explicit_catch_type
 
     def get_children(self) -> List[IRStatement]:
         children: List[IRStatement] = [self.try_block, self.catch_block]
@@ -1376,6 +1394,9 @@ class IRField(IRExpression):
         self.target = target
         self.field_name = field_name
         self.field_type_idx = field_type
+        # Set when this field access is a method closure lifted from a
+        # VirtualClosure opcode; see IRFunction._lift_ops_into_block.
+        self.virtual_dispatch_fun: Optional["Function"] = None
 
     def get_type(self) -> Type:
         return self.field_type_idx.resolve(self.code)
@@ -2452,6 +2473,61 @@ class IRSelfAssignOptimizer(TraversingIROptimizer):
                     continue
             new_statements.append(stmt)
 
+        block.statements = new_statements
+
+
+class IRRedundantRecomputeEliminator(TraversingIROptimizer):
+    """
+    Rewrites `t1 = E; t2 = E;` (the same expression recomputed verbatim in the
+    very next statement) into `t1 = E; t2 = t1;`.
+
+    This undoes copy-propagation's effect on a `temp = expr; user = temp;`
+    pattern when it inlined `expr` into the second assignment instead of
+    leaving a plain copy: HashLink's own compiler always lowers compound
+    assignment (`x += n`) to exactly that compute-then-copy shape (`Add`
+    then `Mov`), so re-expanding the second assignment into a fresh `Add`
+    produces extra opcodes that don't exist in the original bytecode.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements: List[IRStatement] = []
+        i = 0
+        stmts = block.statements
+        while i < len(stmts):
+            stmt = stmts[i]
+            if (
+                i + 1 < len(stmts)
+                and isinstance(stmt, IRAssign)
+                and isinstance(stmt.target, IRLocal)
+                and isinstance(stmts[i + 1], IRAssign)
+                and isinstance(stmts[i + 1].target, IRLocal)
+                and stmts[i + 1].target != stmt.target
+                and not isinstance(stmt.expr, (IRLocal, IRConst))
+                and _structurally_equal(stmt.expr, stmts[i + 1].expr)
+            ):
+                new_statements.append(stmt)
+                new_statements.append(IRAssign(self.func.code, stmts[i + 1].target, stmt.target))
+                i += 2
+                continue
+            # `t = E; return E;` (or throw) — the terminator re-evaluates E
+            # independently rather than reading t (e.g. left over from a
+            # condition check that reused the checked value), so t's
+            # assignment is pure overhead. Safe regardless of whether t is
+            # used elsewhere: a return ends this path, so nothing after it
+            # on this path could have read t anyway.
+            if (
+                i + 1 < len(stmts)
+                and isinstance(stmt, IRAssign)
+                and isinstance(stmt.target, IRLocal)
+                and not isinstance(stmt.expr, (IRLocal, IRConst))
+                and isinstance(stmts[i + 1], (IRReturn, IRThrow))
+                and stmts[i + 1].value is not None
+                and _structurally_equal(stmt.expr, stmts[i + 1].value)
+            ):
+                i += 1
+                continue
+            new_statements.append(stmt)
+            i += 1
         block.statements = new_statements
 
 
@@ -3958,6 +4034,14 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
                 found.update(_locals_in_expr(expr.value))
             elif isinstance(expr, IRRef):
                 found.update(_locals_in_expr(expr.target))
+            else:
+                # Fall back to generic traversal for any expression type not
+                # explicitly listed above (e.g. IRNativeArrayNew/IRNativeMapNew)
+                # so a missing case here can't silently treat a real read as
+                # absent and prune a still-needed assignment as dead.
+                for child in expr.get_children():
+                    if isinstance(child, IRExpression):
+                        found.update(_locals_in_expr(child))
             return found
 
         def _has_side_effects(expr: Optional[IRExpression]) -> bool:
@@ -4560,7 +4644,12 @@ class IRShiftConstantOptimizer(TraversingIROptimizer):
             if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
                 target_local = stmt.target
                 const_map.pop(target_local, None)
-                if isinstance(stmt.expr, IRConst):
+                # Only substitute compiler-generated temporaries (`varN`):
+                # user-named shift-amount variables (e.g. `x << n`) are
+                # meaningful source identifiers and substituting their value
+                # in destroys the symbolic shift the user actually wrote,
+                # even though the bytecode result is equivalent.
+                if isinstance(stmt.expr, IRConst) and re.fullmatch(r"var\d+", target_local.name):
                     const_map[target_local] = stmt.expr
 
 
@@ -5527,6 +5616,180 @@ class IRStringConcatFolder(TraversingIROptimizer):
                 if self._expr_contains_local(arg, local):
                     return True
         return False
+
+
+def _structurally_equal(a: Any, b: Any) -> bool:
+    """Deep structural equality for IR statements/expressions.
+
+    Used by IRGuardOrMerger to detect when two branches perform the exact
+    same action (e.g. an identical `throw`), so they can be merged into a
+    single branch with an `||`/`&&` condition. Conservative: returns False
+    for any shape it doesn't specifically recognize rather than guessing.
+    """
+    if a is b:
+        return True
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, IRLocal):
+        return a == b
+    if isinstance(a, IRConst):
+        if a.const_type != b.const_type:
+            return False
+        if a.const_type == IRConst.ConstType.INT:
+            return _int_const_value(a) == _int_const_value(b)
+        return a.value == b.value
+    if isinstance(a, IRArithmetic):
+        return a.op == b.op and _structurally_equal(a.left, b.left) and _structurally_equal(a.right, b.right)
+    if isinstance(a, IRBoolExpr):
+        return a.op == b.op and _structurally_equal(a.left, b.left) and _structurally_equal(a.right, b.right)
+    if isinstance(a, IRField):
+        return a.field_name == b.field_name and _structurally_equal(a.target, b.target)
+    if isinstance(a, IRArrayAccess):
+        return _structurally_equal(a.array, b.array) and _structurally_equal(a.index, b.index)
+    if isinstance(a, IRCall):
+        if a.call_type != b.call_type or len(a.args) != len(b.args):
+            return False
+        if not _structurally_equal(a.target, b.target):
+            return False
+        return all(_structurally_equal(x, y) for x, y in zip(a.args, b.args))
+    if isinstance(a, IRCast):
+        return _structurally_equal(a.expr, b.expr)
+    if isinstance(a, (IRNeg, IRNot)):
+        return _structurally_equal(a.expr, b.expr)
+    if isinstance(a, IRAssign):
+        return _structurally_equal(a.target, b.target) and _structurally_equal(a.expr, b.expr)
+    if isinstance(a, IRThrow):
+        return _structurally_equal(a.value, b.value)
+    if isinstance(a, IRReturn):
+        return _structurally_equal(a.value, b.value)
+    if a is None and b is None:
+        return True
+    return False
+
+
+def _stmt_lists_structurally_equal(a: List[IRStatement], b: List[IRStatement]) -> bool:
+    return len(a) == len(b) and all(_structurally_equal(x, y) for x, y in zip(a, b))
+
+
+class IRGuardOrMerger(TraversingIROptimizer):
+    """Merge `if (A) { T } else { if (B) { T } else { W } } }` into a single
+    `if (A || B) { T } else { W }` when both `T` branches perform the exact
+    same action.
+
+    This is the inverse of how Haxe's `||`/`&&` short-circuiting lowers to
+    bytecode: `if (A || B) X; else Y;` compiles to a nested guard where the
+    "taken" branch is reachable from two jump targets. Without this merge,
+    the decompiled source duplicates the action under two separate branches,
+    which recompiles to different (larger) bytecode than the original.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements: List[IRStatement] = []
+        i = 0
+        stmts = block.statements
+        while i < len(stmts):
+            stmt = stmts[i]
+            if isinstance(stmt, IRConditional):
+                merged = self._try_merge_else(stmt)
+                if merged is not None:
+                    new_statements.append(merged)
+                    i += 1
+                    continue
+                merged2 = self._try_merge_sibling(stmt, stmts[i + 1 :])
+                if merged2 is not None:
+                    new_cond, consumed_siblings = merged2
+                    new_statements.append(new_cond)
+                    i += 1 + consumed_siblings
+                    continue
+                merged3 = self._try_merge_sibling_and(stmt, stmts[i + 1 :])
+                if merged3 is not None:
+                    new_cond, consumed_siblings = merged3
+                    new_statements.append(new_cond)
+                    i += 1 + consumed_siblings
+                    continue
+            new_statements.append(stmt)
+            i += 1
+        block.statements = new_statements
+
+    def _try_merge_else(self, stmt: IRConditional) -> Optional[IRConditional]:
+        """if (A) { T } else { if (B) { T } else { W } } -> if (A || B) { T } else { W }"""
+        outer_true = stmt.true_block.statements
+        false_stmts = stmt.false_block.statements
+        if not outer_true or len(false_stmts) != 1:
+            return None
+        inner = false_stmts[0]
+        if not isinstance(inner, IRConditional):
+            return None
+        if _stmt_lists_structurally_equal(outer_true, inner.true_block.statements):
+            or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, stmt.condition, inner.condition)
+            return IRConditional(self.func.code, or_cond, inner.true_block, inner.false_block)
+        return None
+
+    def _try_merge_sibling(
+        self, stmt: IRConditional, following: List[IRStatement]
+    ) -> Optional[Tuple[IRConditional, int]]:
+        """if (A) { if (B) { T } REST } (empty else), followed in the parent
+        block by T as the fallthrough-when-!A path -> if (!A || B) { T } { REST },
+        consuming T's statements from the parent block."""
+        outer_true = stmt.true_block.statements
+        if stmt.false_block.statements or not outer_true:
+            return None
+        inner = outer_true[0]
+        if not isinstance(inner, IRConditional) or inner.false_block.statements:
+            return None
+        inner_true = inner.true_block.statements
+        if not inner_true or len(following) < len(inner_true):
+            return None
+        if not _stmt_lists_structurally_equal(inner_true, following[: len(inner_true)]):
+            return None
+        not_a = self._invert(stmt.condition)
+        or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, not_a, inner.condition)
+        rest_block = IRBlock(self.func.code)
+        rest_block.statements = outer_true[1:]
+        return IRConditional(self.func.code, or_cond, inner.true_block, rest_block), len(inner_true)
+
+    def _try_merge_sibling_and(
+        self, stmt: IRConditional, following: List[IRStatement]
+    ) -> Optional[Tuple[IRConditional, int]]:
+        """if (A) { if (B) { X } else { Y } TAIL } (empty else), followed in
+        the parent block by Y then TAIL again (the fallthrough-when-!A path
+        repeats the else-action and shared tail-code) -> if (A && B) { X }
+        else { Y } TAIL, consuming Y+TAIL's statements from the parent block.
+        """
+        outer_true = stmt.true_block.statements
+        if stmt.false_block.statements or not outer_true:
+            return None
+        inner = outer_true[0]
+        if not isinstance(inner, IRConditional) or not inner.false_block.statements:
+            return None
+        tail = outer_true[1:]
+        inner_false = inner.false_block.statements
+        wanted = inner_false + tail
+        if not wanted or len(following) < len(wanted):
+            return None
+        if not _stmt_lists_structurally_equal(wanted, following[: len(wanted)]):
+            return None
+        and_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.AND, stmt.condition, inner.condition)
+        merged = IRConditional(self.func.code, and_cond, inner.true_block, inner.false_block)
+        return merged, len(inner_false)
+
+    def _invert(self, cond: IRExpression) -> IRExpression:
+        """Return a negated copy of a boolean expression. Flips simple
+        comparisons (>= becomes <, etc.) in place on a shallow copy rather
+        than wrapping with a unary NOT, which existing code doesn't expect
+        to need parenthesizing."""
+        if isinstance(cond, IRBoolExpr) and cond.op not in (
+            IRBoolExpr.CompareType.OR,
+            IRBoolExpr.CompareType.AND,
+            IRBoolExpr.CompareType.NOT,
+        ):
+            inverted = copy.copy(cond)
+            try:
+                inverted.invert()
+                return inverted
+            except DecompError:
+                pass
+        return IRBoolExpr(self.func.code, IRBoolExpr.CompareType.NOT, cond)
 
 
 def _int_const_value(c: IRConst) -> Optional[int]:
@@ -6666,17 +6929,32 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         temp = stmt.target
         arr_expr = stmt.expr.target
 
-        # Scan forward for the first use of temp in an array access.
+        # Scan forward for the first use of temp in an array access. The shift
+        # offset may have been hoisted into its own temp (`idxTmp = idx << n`)
+        # rather than appearing inline in the access; track those as we go.
+        idx_temp_map: Dict[str, IRExpression] = {}
         for j in range(start + 1, len(stmts)):
             use = stmts[j]
-            accesses = self._find_temp_accesses(use, temp, arr_expr)
+            if (
+                isinstance(use, IRAssign)
+                and isinstance(use.target, IRLocal)
+                and isinstance(use.expr, IRArithmetic)
+                and use.expr.op.value == "<<"
+                and isinstance(use.expr.right, IRConst)
+            ):
+                idx_temp_map[use.target.name] = use.expr.left
+            accesses = self._find_temp_accesses(use, temp, arr_expr, idx_temp_map)
             if accesses:
                 new_use = self._replace_temp_accesses(use, accesses)
                 return stmts[:start] + [new_use] + stmts[start + 1 : j] + stmts[j + 1 :], 1
         return None
 
     def _find_temp_accesses(
-        self, stmt: IRStatement, temp: IRLocal, arr_expr: IRExpression
+        self,
+        stmt: IRStatement,
+        temp: IRLocal,
+        arr_expr: IRExpression,
+        idx_temp_map: Optional[Dict[str, IRExpression]] = None,
     ) -> List[Tuple[IRArrayAccess, IRExpression]]:
         """Find array accesses in stmt that read temp[idx << n].
 
@@ -6686,20 +6964,22 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         """
         result: List[Tuple[IRArrayAccess, IRExpression]] = []
         seen: Set[int] = set()
+        idx_temp_map = idx_temp_map or {}
 
         def visit(node: IRStatement) -> None:
             if id(node) in seen:
                 return
             seen.add(id(node))
             if isinstance(node, IRArrayAccess):
-                if (
-                    isinstance(node.array, IRLocal)
-                    and node.array.name == temp.name
-                    and isinstance(node.index, IRArithmetic)
-                    and node.index.op.value == "<<"
-                    and isinstance(node.index.right, IRConst)
-                ):
-                    result.append((node, IRArrayAccess(node.code, arr_expr, node.index.left)))
+                if isinstance(node.array, IRLocal) and node.array.name == temp.name:
+                    if (
+                        isinstance(node.index, IRArithmetic)
+                        and node.index.op.value == "<<"
+                        and isinstance(node.index.right, IRConst)
+                    ):
+                        result.append((node, IRArrayAccess(node.code, arr_expr, node.index.left)))
+                    elif isinstance(node.index, IRLocal) and node.index.name in idx_temp_map:
+                        result.append((node, IRArrayAccess(node.code, arr_expr, idx_temp_map[node.index.name])))
             for child in node.get_children():
                 visit(child)
 
@@ -7577,6 +7857,15 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             return None
         return IRAssign(self.func.code, s.target, first_arg), 1
 
+    @staticmethod
+    def _expr_eq(a: Optional[IRExpression], b: Optional[IRExpression]) -> bool:
+        """Equality that also handles IRConst, which has no value-based `__eq__`
+        (constant propagation creates a fresh IRConst node per substitution site,
+        so identity/default equality spuriously fails for equal constants)."""
+        if isinstance(a, IRConst) and isinstance(b, IRConst):
+            return _int_const_value(a) == _int_const_value(b) and a.const_type == b.const_type
+        return a == b
+
     def _try_write_bounds_guard(self, stmts: List[IRStatement], start: int) -> Optional[int]:
         """Drop the no-op `if (C >= a.length) a.__expand(C)` guard before an array write."""
         if start + 1 >= len(stmts):
@@ -7613,16 +7902,77 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             return None
         if len(call_stmt.args) != 2:
             return None
-        if call_stmt.args[0] != arr_var or call_stmt.args[1] != idx_expr:
+        if call_stmt.args[0] != arr_var or not self._expr_eq(call_stmt.args[1], idx_expr):
             return None
 
-        next_stmt = stmts[start + 1]
+        pos = start + 1
+        bytes_temp_name: Optional[str] = None
+        if (
+            pos < len(stmts)
+            and isinstance(stmts[pos], IRAssign)
+            and isinstance(stmts[pos].target, IRLocal)
+            and isinstance(stmts[pos].expr, IRField)
+            and stmts[pos].expr.field_name == "bytes"
+            and isinstance(stmts[pos].expr.target, IRLocal)
+            and stmts[pos].expr.target.name == arr_var.name
+        ):
+            # `a.bytes` was hoisted into a temp before the write; look past it.
+            bytes_temp_name = stmts[pos].target.name
+            pos += 1
+
+        # A leftover dead store (e.g. loading the shift amount into a scratch
+        # register that the actual shift below recomputes from constants
+        # directly) can sit here too; skip over a bounded run of those.
+        while (
+            pos < len(stmts)
+            and isinstance(stmts[pos], IRAssign)
+            and isinstance(stmts[pos].target, IRLocal)
+            and isinstance(stmts[pos].expr, IRConst)
+            and pos + 1 < len(stmts)
+            and isinstance(stmts[pos + 1], IRAssign)
+            and isinstance(stmts[pos + 1].target, IRLocal)
+            and stmts[pos + 1].target.name == stmts[pos].target.name
+        ):
+            pos += 1
+
+        # The `idx << 2` byte offset may also have been hoisted into its own temp
+        # rather than appearing inline in the array access.
+        idx_temp_expr: Optional[IRExpression] = None
+        if (
+            pos < len(stmts)
+            and isinstance(stmts[pos], IRAssign)
+            and isinstance(stmts[pos].target, IRLocal)
+            and isinstance(stmts[pos].expr, IRArithmetic)
+            and stmts[pos].expr.op.value == "<<"
+            and self._expr_eq(stmts[pos].expr.left, idx_expr)
+            and isinstance(stmts[pos].expr.right, IRConst)
+        ):
+            idx_temp_expr = stmts[pos].target
+            pos += 1
+
+        if pos >= len(stmts):
+            return None
+        next_stmt = stmts[pos]
         if not isinstance(next_stmt, IRAssign) or not isinstance(next_stmt.target, IRArrayAccess):
             return None
         access = next_stmt.target
+
+        def _matches_shifted_index(index: IRExpression) -> bool:
+            if idx_temp_expr is not None:
+                return self._expr_eq(index, idx_temp_expr)
+            if not isinstance(index, IRArithmetic) or index.op.value != "<<":
+                return False
+            if not self._expr_eq(index.left, idx_expr):
+                return False
+            return isinstance(index.right, IRConst)
+
         # High-level store: a[idx]
         if isinstance(access.array, IRLocal) and access.array.name == arr_var.name:
-            if access.index != idx_expr:
+            if not self._expr_eq(access.index, idx_expr):
+                return None
+        # Low-level store via the hoisted bytes temp: tmp[idx << 2]
+        elif bytes_temp_name is not None and isinstance(access.array, IRLocal) and access.array.name == bytes_temp_name:
+            if not _matches_shifted_index(access.index):
                 return None
         # Low-level store: a.bytes[idx << 2]
         elif isinstance(access.array, IRField) and access.array.field_name == "bytes":
@@ -7630,7 +7980,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                 return None
             if not isinstance(access.index, IRArithmetic) or access.index.op.value != "<<":
                 return None
-            if access.index.left != idx_expr:
+            if not self._expr_eq(access.index.left, idx_expr):
                 return None
             if not isinstance(access.index.right, IRConst):
                 return None
@@ -7725,7 +8075,6 @@ class IRFunction:
                 IRConditionInliner(self),
                 IRLoopConditionOptimizer(self),
                 IRSelfAssignOptimizer(self),
-                IRCommonBlockMerger(self),
                 IRRedundantContinueEliminator(self),
                 IRCopyPropOptimizer(self),
                 IRShiftConstantOptimizer(self),
@@ -7755,7 +8104,8 @@ class IRFunction:
                 IRForEachLoopOptimizer(self),
                 IRIntRangeLoopOptimizer(self),
                 IRDeadStoreEliminator(self),
-                IRDeadAssignmentEliminator(self),
+                IRGuardOrMerger(self),
+                IRRedundantRecomputeEliminator(self),
             ]
             self._optimize()
 
@@ -8133,6 +8483,35 @@ class IRFunction:
         nodes: Set[CFNode]
         exit_node: Optional[CFNode]
 
+    def _catch_has_explicit_type(self, catch_branch_node: "CFNode") -> bool:
+        """Detect whether the original source wrote an explicit type on the
+        catch clause (`catch (e: Dynamic)`) rather than leaving it untyped
+        (`catch (e)`).
+
+        Both infer to the same Haxe type, but Haxe's codegen differs subtly:
+        an explicit annotation emits a dead `Null` store to a scratch register
+        that's never read again, used here purely as a bytecode fingerprint to
+        reproduce the same choice when recompiling decompiled source.
+        """
+        def _read_regs(o: Opcode) -> Set[int]:
+            regs: Set[int] = set()
+            for key, val in o.df.items():
+                if key == "dst":
+                    continue
+                if isinstance(val, Reg):
+                    regs.add(val.value)
+                elif isinstance(val, Regs):
+                    regs.update(r.value for r in val.value)
+            return regs
+
+        for op in catch_branch_node.ops:
+            if op.op != "Null":
+                continue
+            dst = op.df["dst"].value
+            if not any(dst in _read_regs(o) for o in self.func.ops if o is not op):
+                return True
+        return False
+
     def _resolve_method_field(self, obj_local: "IRLocal", obj_type: Type, field_idx: int) -> Optional["IRField"]:
         """Build the `obj.method` IRField targeted by a CallMethod/CallThis/
         InstanceClosure `field` operand.
@@ -8307,6 +8686,8 @@ class IRFunction:
             elif op.op in ("ToSFloat", "ToUFloat"):
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = source_locals[op.df["src"].value]
+                if op.op == "ToUFloat" and isinstance(src_local, IRLocal):
+                    src_local.is_unsigned = True
 
                 f64_idx = self.code.find_prim_type(Type.Kind.F64)
 
@@ -8496,6 +8877,19 @@ class IRFunction:
                 obj_type = obj_local.get_type()
                 field_expr = self._resolve_method_field(obj_local, obj_type, op.df["field"].value)
                 if field_expr is not None:
+                    # Unlike InstanceClosure, this opcode means the original Haxe
+                    # source resolved the closure through a statically-typed
+                    # receiver that required virtual dispatch (e.g. the receiver
+                    # was typed as a base class). The lifted local's type is the
+                    # concrete allocated type, which would make the recompiled
+                    # closure bind directly instead of virtually — record the
+                    # declaring function so pseudo-rendering can widen the
+                    # receiver's declared type back to where dispatch is virtual.
+                    defn = obj_type.definition
+                    if isinstance(defn, Obj):
+                        proto = self.code.proto_by_pindex(defn, op.df["field"].value)
+                        if proto is not None:
+                            field_expr.virtual_dispatch_fun = proto.findex.resolve(self.code)
                     block.statements.append(IRAssign(self.code, dst_local, field_expr))
                 else:
                     block.statements.append(IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op)))
@@ -9025,7 +9419,10 @@ class IRFunction:
                 catch_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
             )
             catch_local = self.locals[last_op.df["exc"].value]
-            block.statements.append(IRTryCatch(self.code, try_block_ir, catch_block_ir, catch_local))
+            explicit_catch_type = self._catch_has_explicit_type(catch_branch_node)
+            block.statements.append(
+                IRTryCatch(self.code, try_block_ir, catch_block_ir, catch_local, explicit_catch_type)
+            )
 
             next_block_ir = self._lift_block(convergence_node, visited, loop_ctx=loop_ctx)
             block.statements.extend(next_block_ir.statements)

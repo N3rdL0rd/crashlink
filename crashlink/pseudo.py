@@ -8,7 +8,7 @@ import re
 from abc import ABC, abstractmethod
 from typing import Optional, List, Set, Dict, Tuple, Union, cast, Any
 
-from .core import Bytecode, Obj, Type, Function, Fun, Native, Enum, destaticify, gIndex
+from .core import Bytecode, Obj, Ref, Type, Function, Fun, Native, Enum, destaticify, gIndex
 from . import disasm
 from .decomp import (
     IRBreak,
@@ -200,6 +200,12 @@ def _expr_to_haxe_with_precedence(
         parent_prec = _HAXE_OP_PRECEDENCE.get(parent_op, 10)
         if child_prec < parent_prec:
             return f"({rendered})"
+    elif isinstance(expr, IRBoolExpr) and expr.op in (IRBoolExpr.CompareType.OR, IRBoolExpr.CompareType.AND):
+        child_sym = "||" if expr.op == IRBoolExpr.CompareType.OR else "&&"
+        child_prec = _HAXE_OP_PRECEDENCE.get(child_sym, 10)
+        parent_prec = _HAXE_OP_PRECEDENCE.get(parent_op, 10)
+        if child_prec < parent_prec:
+            return f"({rendered})"
     return rendered
 
 
@@ -335,6 +341,11 @@ def _expression_to_haxe(
             return "true"
         elif expr.op == IRBoolExpr.CompareType.FALSE:
             return "false"
+        elif expr.op in (IRBoolExpr.CompareType.OR, IRBoolExpr.CompareType.AND):
+            sym = "||" if expr.op == IRBoolExpr.CompareType.OR else "&&"
+            left = _expr_to_haxe_with_precedence(expr.left, code, ir_function, sym)
+            right = _expr_to_haxe_with_precedence(expr.right, code, ir_function, sym)
+            return f"{left} {sym} {right}"
         elif expr.left and expr.right and expr.op in op_map:
             # Normalize: constants on the right side for natural-reading output.
             actual_op: IRBoolExpr.CompareType = expr.op
@@ -651,16 +662,31 @@ def _inverted_bool_expr_to_haxe(expr: IRBoolExpr, code: Bytecode, ir_function: I
 
 
 def _is_simple_render_expr(expr: IRExpression) -> bool:
-    """Expressions safe to duplicate when rendering a local substitution.
+    """Expressions safe to substitute into every later use of a local.
 
-    Restricted to locals, constants, and casts of locals/constants. Field and
-    array reads are deliberately excluded: substituting them tends to make the
-    source assignment look dead and can introduce self-referential renders.
+    Restricted to bare locals (aliases). Constants are deliberately excluded
+    here even though they're "simple": duplicating a constant into multiple
+    expressions can let Haxe's own compiler constant-fold arithmetic that the
+    original bytecode computed at runtime (e.g. `x << n` becoming `x << 4`),
+    which changes the recompiled opcodes. See _is_single_use_render_expr for
+    the narrower, single-use-safe variant that does allow constants.
     """
-    if isinstance(expr, (IRConst, IRLocal)):
+    return isinstance(expr, IRLocal)
+
+
+def _is_single_use_render_expr(expr: IRExpression) -> bool:
+    """Expressions safe to substitute when the local is read exactly once.
+
+    With only one read to satisfy, substituting a constant can't trigger the
+    multi-use constant-folding problem _is_simple_render_expr avoids, so this
+    additionally allows IRConst (and casts of locals/constants) — covering
+    compiler temps like a single-use ToSFloat/ToDyn result or boxed literal
+    that would otherwise be declared and then never referenced by name.
+    """
+    if isinstance(expr, (IRLocal, IRConst)):
         return True
     if isinstance(expr, IRCast):
-        return _is_simple_render_expr(expr.expr)
+        return _is_single_use_render_expr(expr.expr)
     return False
 
 
@@ -690,6 +716,46 @@ def _free_locals_in_expr(expr: IRExpression) -> Set[IRLocal]:
 
     walk(expr)
     return found
+
+
+def _count_local_reads_and_writes(root: IRStatement, name: str) -> Tuple[int, int]:
+    """Count read vs write occurrences of a local by name across an IR subtree.
+
+    A write is an IRAssign whose target is exactly that local; every other
+    occurrence (including as the array/field base of a write, which is itself
+    a read of the base pointer) counts as a read.
+    """
+    reads = 0
+    writes = 0
+    seen: Set[int] = set()
+
+    def walk(s: Optional[IRStatement]) -> None:
+        nonlocal reads, writes
+        if s is None or id(s) in seen:
+            return
+        seen.add(id(s))
+        if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target.name == name:
+            writes += 1
+            walk(s.expr)
+            return
+        if isinstance(s, IRLocal) and s.name == name:
+            reads += 1
+        # IRArithmetic doesn't expose left/right via get_children (several
+        # passes rely on that to avoid auto-recursing into operands), so walk
+        # them explicitly here instead.
+        if isinstance(s, IRArithmetic):
+            walk(s.left)
+            walk(s.right)
+            return
+        for child in s.get_children():
+            if isinstance(child, IRBlock):
+                for child_stmt in child.statements:
+                    walk(child_stmt)
+            else:
+                walk(child)
+
+    walk(root)
+    return reads, writes
 
 
 def _redefined_locals(stmt: IRStatement) -> Set[IRLocal]:
@@ -814,9 +880,6 @@ def _generate_statements(
         for key in list(render_subs.keys()):
             if key in redefined_before or render_subs[key][1] & redefined_before:
                 del render_subs[key]
-        # Calls may mutate locals (out/ref params), so avoid substituting into them.
-        if _contains_top_level_call(stmt):
-            render_subs.clear()
 
         if isinstance(stmt, IRBlock):  # Nested block, usually from if/else/loop bodies
             # HaxeBlock's content is generated by recursively calling _generate_statements
@@ -835,13 +898,44 @@ def _generate_statements(
         elif isinstance(stmt, IRAssign) and stmt in inline_declarations:
             # Emit as `var name: type = value;` at its natural position.
             local_name, type_str = inline_declarations[stmt]
-            value_str = _expression_to_haxe(stmt.expr, code, ir_function)
-            # A raw native alloc_bytes returns Dynamic; cast it when assigning to
-            # a typed BytesAccess local.
-            if type_str.startswith("hl.BytesAccess") and not value_str.startswith("cast "):
-                value_str = f"cast {value_str}"
-            output_lines.append(f"{indent}var {local_name}: {type_str} = {value_str};")
-            declared_vars_in_scope.add(local_name)
+
+            # A compiler-temp (`varN`) holding a bare local/constant that is
+            # read exactly once, right where it's defined, doesn't need its
+            # own declaration at all — it can be substituted in directly at
+            # that one use site (handled by the render_subs registration
+            # below). Skipping the otherwise-pointless `var varN = ...;` line
+            # avoids it lingering as a leftover, never-referenced-by-name
+            # declaration after substitution (e.g. when copy-propagation
+            # leaves a single-use ToSFloat/cast result with no other reads).
+            skip_declaration = False
+            if (
+                isinstance(stmt.target, IRLocal)
+                and re.fullmatch(r"var\d+", local_name)
+                and _is_single_use_render_expr(stmt.expr)
+            ):
+                reads, writes = _count_local_reads_and_writes(ir_function.block, local_name)
+                skip_declaration = reads == 1 and writes == 1
+
+            if not skip_declaration:
+                value_str = _expression_to_haxe(stmt.expr, code, ir_function)
+                # A raw native alloc_bytes returns Dynamic; cast it when assigning to
+                # a typed BytesAccess local.
+                if type_str.startswith("hl.BytesAccess") and not value_str.startswith("cast "):
+                    value_str = f"cast {value_str}"
+                # HL has no real function-type info, so a closure-typed local
+                # (e.g. `var f = obj.method;`) renders its declared type as the
+                # opaque "Dynamic". Writing that out explicitly as `:Dynamic`
+                # changes Haxe's codegen for the call versus letting it infer the
+                # type from the right-hand side, so omit it in that case.
+                if (
+                    type_str == "Dynamic"
+                    and isinstance(stmt.expr, IRField)
+                    and isinstance(stmt.expr.get_type().definition, Fun)
+                ):
+                    output_lines.append(f"{indent}var {local_name} = {value_str};")
+                else:
+                    output_lines.append(f"{indent}var {local_name}: {type_str} = {value_str};")
+                declared_vars_in_scope.add(local_name)
 
         elif (
             isinstance(stmt, IRAssign)
@@ -1306,6 +1400,11 @@ def _generate_statements(
             catch_type = "Dynamic"
             if stmt.catch_local and stmt.catch_local.name and not stmt.catch_local.name.startswith("var"):
                 catch_name = stmt.catch_local.name
+            elif stmt.catch_local:
+                # The auto-generated `varN` name is only a display fallback for the
+                # `catch (...)` header — rename the local itself so references to
+                # it inside the catch body render as the same identifier.
+                stmt.catch_local.name = catch_name
             if stmt.catch_local:
                 t = disasm.type_name(code, stmt.catch_local.get_type())
                 if t and t != "Dyn":
@@ -1323,7 +1422,14 @@ def _generate_statements(
                     render_subs=try_subs,
                 )
             )
-            output_lines.append(f"{indent}}} catch ({catch_name}:{catch_type}) {{")
+            # An explicit `:Dynamic` annotation on the catch variable changes
+            # Haxe's codegen (it emits an extra init op, and changes how the
+            # caught value unifies with Dynamic-typed call args) versus
+            # leaving it untyped, even though both infer to the same type —
+            # reproduce whichever the original source used.
+            omit_type = catch_type == "Dynamic" and not stmt.explicit_catch_type
+            catch_decl = catch_name if omit_type else f"{catch_name}:{catch_type}"
+            output_lines.append(f"{indent}}} catch ({catch_decl}) {{")
             catch_subs = render_subs.copy()
             output_lines.extend(
                 _generate_statements(
@@ -1365,15 +1471,18 @@ def _generate_statements(
             render_subs.clear()
 
         # Register simple assignments for render-time substitution into later uses.
-        if (
-            isinstance(stmt, IRAssign)
-            and isinstance(stmt.target, IRLocal)
-            and _is_simple_render_expr(stmt.expr)
-        ):
-            free_locals = _free_locals_in_expr(stmt.expr)
-            if stmt.target not in free_locals:
-                rendered_expr = _expression_to_haxe(stmt.expr, code, ir_function)
-                render_subs[stmt.target] = (rendered_expr, free_locals)
+        if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+            registerable = _is_simple_render_expr(stmt.expr)
+            if not registerable and re.fullmatch(r"var\d+", stmt.target.name) and _is_single_use_render_expr(
+                stmt.expr
+            ):
+                reads, writes = _count_local_reads_and_writes(ir_function.block, stmt.target.name)
+                registerable = reads == 1 and writes == 1
+            if registerable:
+                free_locals = _free_locals_in_expr(stmt.expr)
+                if stmt.target not in free_locals:
+                    rendered_expr = _expression_to_haxe(stmt.expr, code, ir_function)
+                    render_subs[stmt.target] = (rendered_expr, free_locals)
 
         if stmt.comment:
             # Add comment at the end of the line or on a new line
@@ -2104,7 +2213,11 @@ def _collect_enum_switch_index_names(block: IRBlock) -> Set[str]:
         if isinstance(stmt, IRSwitch):
             if isinstance(stmt.value, IRLocal) and not isinstance(stmt.value, IREnumIndex):
                 detected = _detect_enum_value_from_cases(stmt)
-                if detected is not None:
+                # Only a genuine index temp (distinct from the real enum value
+                # used in the case bodies) is safe to skip. If the switch already
+                # operates directly on the enum-typed local, that local is a real
+                # variable that still needs its own declaration.
+                if detected is not None and detected is not stmt.value:
                     names.add(stmt.value.name)
     return names
 
@@ -2167,6 +2280,12 @@ def _case_value_to_haxe(
         for construct in enum_type.constructs:
             if construct.name.resolve(code) == case_value.value:
                 params = param_names if param_names else [f"arg{i}" for i in range(len(construct.params))]
+                # DAE may have dropped assignments for trailing params that go
+                # unused, so the captured prefix can be shorter than the
+                # constructor's arity. Haxe requires every constructor arg to
+                # be matched, so pad the rest with `_` wildcards.
+                if len(params) < len(construct.params):
+                    params = params + ["_"] * (len(construct.params) - len(params))
                 if params:
                     case_str = f"{case_str}({', '.join(params)})"
                 break
@@ -2181,6 +2300,8 @@ def _case_value_to_haxe(
                 if param_names
                 else ([f"arg{i}" for i in range(len(construct.params))] if construct.params else [])
             )
+            if len(params) < len(construct.params):
+                params = params + ["_"] * (len(construct.params) - len(params))
             if params:
                 return f"{name}({', '.join(params)})"
             return name
@@ -2384,6 +2505,14 @@ def _virtual_receiver_static_types(ir_function: IRFunction, code: Bytecode) -> D
             receiver = _find_receiver_local(class_name, ir_function, code)
             if receiver is not None:
                 result[receiver] = base
+        if (
+            isinstance(stmt, IRField)
+            and stmt.virtual_dispatch_fun is not None
+            and isinstance(stmt.target, IRLocal)
+        ):
+            base = _base_class_for_virtual_method(stmt.virtual_dispatch_fun, code)
+            if base is not None:
+                result[stmt.target.name] = base
         for child in stmt.get_children():
             visit(child)
 
@@ -2428,7 +2557,15 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
             elif stmt.native_map_class is not None:
                 type_name = stmt.native_map_class
             else:
-                type_name = disasm.type_to_haxe(disasm.type_name(stmt.code, stmt.get_type()))
+                local_type = stmt.get_type()
+                if isinstance(local_type.definition, Ref):
+                    # hl.Ref<T> is modelled transparently (Ref/Unref/Setref all
+                    # lift to plain copies), so the local just holds a T value;
+                    # declaring it as the opaque "Ref" type isn't valid Haxe.
+                    local_type = local_type.definition.type.resolve(stmt.code)
+                type_name = disasm.type_to_haxe(disasm.type_name(stmt.code, local_type))
+                if stmt.is_unsigned and type_name == "Int":
+                    type_name = "UInt"
             if stmt.name in locals and locals[stmt.name] != type_name:
                 locals[stmt.name] = "Dynamic"
             else:
