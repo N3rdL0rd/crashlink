@@ -16,6 +16,7 @@ from mcp.server.fastmcp import FastMCP
 from . import decomp as _decomp
 from . import disasm as _disasm
 from .core import Bytecode, Function, Native, Obj, Enum, Fun, Virtual
+from .xref import XRef, TargetKind, SourceKind, RefKind
 from .hlc import code_to_c
 from .opcodes import opcode_docs, opcodes
 from .pseudo import pseudo
@@ -506,36 +507,43 @@ def list_globals(offset: int = 0, limit: int = 200) -> str:
 @mcp.tool()
 def get_xrefs(findex: int) -> str:
     """
-    Find all functions that call the given function (cross-references).
+    Find all cross-references to a function: callers (direct calls, virtual calls, and closures),
+    plus structural references (proto/binding declarations in type definitions).
 
     Args:
-        findex: The function index to find callers of
+        findex: The function index to find references to
     """
     code = _require_code()
-    target: Optional[Function | Native] = None
-    for func in code.functions:
-        if func.findex.value == findex:
-            target = func
-            break
-    if target is None:
-        for native in code.natives:
-            if native.findex.value == findex:
-                target = native
-                break
-    if target is None:
+    func_map = code.get_findex_map()
+    if findex not in func_map:
         raise RuntimeError(f"Function f@{findex} not found.")
+    target = func_map[findex]
 
-    xrefs = target.called_by(code)
-    if not xrefs:
-        return f"No callers found for f@{findex}."
+    xi = code.xref_index()
+    refs = xi.refs_to(TargetKind.FUNCTION, findex)
+    if not refs:
+        return f"No xrefs found for f@{findex} ({code.full_func_name(target)})."
 
-    lines = [f"Callers of f@{findex} ({code.full_func_name(target)}):"]
-    for i, caller_findex in enumerate(xrefs):
-        try:
-            caller = caller_findex.resolve(code)
-            lines.append(f"  {i}. {_disasm.func_header(code, caller)}")
-        except Exception:
-            lines.append(f"  {i}. f@{caller_findex.value} (error resolving)")
+    lines = [f"Xrefs to f@{findex} ({code.full_func_name(target)}) [{len(refs)} total]:"]
+    by_kind: dict[str, list[XRef]] = {}
+    for r in refs:
+        by_kind.setdefault(r.ref_kind.value, []).append(r)
+
+    for rk in sorted(by_kind):
+        group = by_kind[rk]
+        lines.append(f"  [{rk}] ({len(group)})")
+        for r in group[:20]:
+            loc = f" op#{r.opcode_index}" if r.opcode_index is not None else ""
+            if r.source_kind == SourceKind.FUNCTION:
+                try:
+                    src = func_map[r.source_index]
+                    lines.append(f"    {_disasm.func_header(code, src)}{loc}")
+                except Exception:
+                    lines.append(f"    f@{r.source_index}{loc}")
+            else:
+                lines.append(f"    {r.source_kind.value}@{r.source_index}{loc}")
+        if len(group) > 20:
+            lines.append(f"    ... and {len(group) - 20} more")
     return _trim("\n".join(lines))
 
 

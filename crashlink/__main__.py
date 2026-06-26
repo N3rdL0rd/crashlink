@@ -21,6 +21,7 @@ from functools import wraps
 from crashlink.hlc import code_to_c
 
 from . import decomp, disasm, globals
+from .xref import XRef, XrefIndex, TargetKind, SourceKind, RefKind
 from .asm import AsmFile
 from .core import (
     Bytecode,
@@ -1277,40 +1278,177 @@ class Commands(BaseCommands):
         print("String set.")
 
     def xref(self, args: List[str]) -> None:
-        """Prints all function cross-references to a given fIndex. `xref <idx>`"""
-        if len(args) == 0:
-            print("Usage: xref <index>")
+        """Cross-references for a function, type, field, global, or string. `xref <kind> <index> [aux]`
+
+        Kinds:
+          func <findex>               — all callers, closures, proto/binding decls
+          type <tindex>               — allocations, casts, inheritors, field decls, signature uses
+          field <tindex> <slot>       — all reads and writes to a specific field slot
+          global <gindex>             — readers and writers
+          string <string_idx>         — all functions using this string constant
+          enum <tindex> <construct>   — all MakeEnum / EnumField refs to a construct
+        """
+        if len(args) < 2:
+            print("Usage: xref <kind> <index> [aux]")
+            print("  kinds: func, type, field, global, string, enum")
             return
+
+        kind = args[0].lower()
         try:
-            index = int(args[0])
+            index = int(args[1])
+            aux = int(args[2]) if len(args) > 2 else None
         except ValueError:
             print("Invalid index.")
             return
 
-        target_func: Function | Native | None = None
-        for func in self.code.functions:
-            if func.findex.value == index:
-                target_func = func
-                break
-        for native in self.code.natives:
-            if native.findex.value == index:
-                target_func = native
-                break
+        xi = self.code.xref_index()
+        code = self.code
 
-        if not target_func:
-            print("Function not found.")
-            return
+        def _func_label(findex: int) -> str:
+            try:
+                f = code.get_findex_map()[findex]
+                return disasm.func_header(code, f)
+            except Exception:
+                return f"f@{findex}"
 
-        xrefs = target_func.called_by(self.code)
+        def _type_label(tindex: int) -> str:
+            try:
+                t = code.types[tindex]
+                return f"t@{tindex} ({t.definition})"
+            except Exception:
+                return f"t@{tindex}"
 
-        if not xrefs:
-            print(f"No cross-references found for function f@{index}.")
-            return
+        if kind == "func":
+            func_map = code.get_findex_map()
+            if index not in func_map:
+                print(f"Function f@{index} not found.")
+                return
+            target = func_map[index]
+            refs = xi.refs_to(TargetKind.FUNCTION, index)
+            if not refs:
+                print(f"No xrefs to f@{index} ({code.full_func_name(target)}).")
+                return
+            print(f"Xrefs to f@{index} ({code.full_func_name(target)}) [{len(refs)} total]:")
+            by_kind: Dict[str, List[XRef]] = {}
+            for r in refs:
+                by_kind.setdefault(r.ref_kind.value, []).append(r)
+            for rk, group in sorted(by_kind.items()):
+                print(f"  [{rk}]")
+                for r in group:
+                    loc = f" op#{r.opcode_index}" if r.opcode_index is not None else ""
+                    if r.source_kind == SourceKind.FUNCTION:
+                        print(f"    {_func_label(r.source_index)}{loc}")
+                    else:
+                        print(f"    {r.source_kind.value}@{r.source_index}{loc}")
 
-        print(f"Cross-references to f@{index} ({self.code.full_func_name(target_func)}):")
-        for i, caller_findex in enumerate(xrefs):
-            caller = caller_findex.resolve(self.code)
-            print(f"  {i}. {disasm.func_header(self.code, caller)}")
+        elif kind == "type":
+            refs = xi.refs_to(TargetKind.TYPE, index)
+            if not refs:
+                print(f"No xrefs to {_type_label(index)}.")
+                return
+            print(f"Xrefs to {_type_label(index)} [{len(refs)} total]:")
+            by_kind = {}
+            for r in refs:
+                by_kind.setdefault(r.ref_kind.value, []).append(r)
+            for rk, group in sorted(by_kind.items()):
+                print(f"  [{rk}]")
+                for r in group:
+                    loc = f" op#{r.opcode_index}" if r.opcode_index is not None else ""
+                    if r.source_kind == SourceKind.FUNCTION:
+                        print(f"    {_func_label(r.source_index)}{loc}")
+                    else:
+                        print(f"    {r.source_kind.value}@{r.source_index}{loc}")
+
+        elif kind == "field":
+            if aux is None:
+                print("Usage: xref field <tindex> <field_slot>")
+                return
+            from .core import Obj
+            try:
+                obj_def = code.types[index].definition
+                field_name = obj_def.fields[aux].name.resolve(code) if isinstance(obj_def, Obj) else f"slot{aux}"
+            except Exception:
+                field_name = f"slot{aux}"
+            refs = xi.all_field_accesses(index, aux)
+            if not refs:
+                print(f"No field accesses for t@{index}.{field_name}.")
+                return
+            reads = [r for r in refs if r.ref_kind == RefKind.FIELD_READ]
+            writes = [r for r in refs if r.ref_kind == RefKind.FIELD_WRITE]
+            print(f"Field t@{index}.{field_name}: {len(reads)} read(s), {len(writes)} write(s)")
+            if reads:
+                print("  [reads]")
+                for r in reads:
+                    print(f"    {_func_label(r.source_index)} op#{r.opcode_index}")
+            if writes:
+                print("  [writes]")
+                for r in writes:
+                    print(f"    {_func_label(r.source_index)} op#{r.opcode_index}")
+
+        elif kind == "global":
+            reads = xi.global_reads(index)
+            writes = xi.global_writes(index)
+            try:
+                gt = code.global_types[index]
+                glabel = f"g@{index} (t@{gt.value})"
+            except Exception:
+                glabel = f"g@{index}"
+            if not reads and not writes:
+                print(f"No xrefs to {glabel}.")
+                return
+            print(f"Xrefs to {glabel}: {len(reads)} read(s), {len(writes)} write(s)")
+            if reads:
+                print("  [reads]")
+                for r in reads:
+                    print(f"    {_func_label(r.source_index)} op#{r.opcode_index}")
+            if writes:
+                print("  [writes]")
+                for r in writes:
+                    print(f"    {_func_label(r.source_index)} op#{r.opcode_index}")
+
+        elif kind == "string":
+            try:
+                s = code.strings.value[index]
+                slabel = f"s@{index} ({s!r})"
+            except Exception:
+                slabel = f"s@{index}"
+            refs = xi.string_uses(index)
+            if not refs:
+                print(f"No xrefs to {slabel}.")
+                return
+            print(f"Xrefs to {slabel} [{len(refs)} total]:")
+            for r in refs:
+                rk = "dyn_read" if r.ref_kind == RefKind.DYN_FIELD_READ else \
+                     "dyn_write" if r.ref_kind == RefKind.DYN_FIELD_WRITE else "use"
+                print(f"  [{rk}] {_func_label(r.source_index)} op#{r.opcode_index}")
+
+        elif kind == "enum":
+            if aux is None:
+                print("Usage: xref enum <tindex> <construct_idx>")
+                return
+            from .core import Enum as HLEnum
+            try:
+                edef = code.types[index].definition
+                cname = edef.constructs[aux].name.resolve(code) if isinstance(edef, HLEnum) else f"construct{aux}"
+                elabel = f"t@{index}.{cname}"
+            except Exception:
+                elabel = f"t@{index} construct#{aux}"
+            refs = xi.construct_uses(index, aux)
+            if not refs:
+                print(f"No xrefs to {elabel}.")
+                return
+            print(f"Xrefs to {elabel} [{len(refs)} total]:")
+            by_kind = {}
+            for r in refs:
+                by_kind.setdefault(r.ref_kind.value, []).append(r)
+            for rk, group in sorted(by_kind.items()):
+                print(f"  [{rk}]")
+                for r in group:
+                    print(f"    {_func_label(r.source_index)} op#{r.opcode_index}")
+
+        else:
+            print(f"Unknown xref kind: {kind!r}")
+            print("  kinds: func, type, field, global, string, enum")
 
     @alias("pkl")
     def pickle(self, args: List[str]) -> None:

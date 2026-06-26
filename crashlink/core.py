@@ -15,7 +15,10 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from enum import Enum as _Enum
 from io import BytesIO
-from typing import Any, BinaryIO, Dict, List, Literal, Optional, Tuple, TypeVar
+from typing import TYPE_CHECKING, Any, BinaryIO, Dict, List, Literal, Optional, Tuple, TypeVar
+
+if TYPE_CHECKING:
+    from .xref import XrefIndex
 
 T = TypeVar("T", bound="VarInt")  # easier than reimplementing deserialise for each subclass
 
@@ -1867,6 +1870,7 @@ class Bytecode(Serialisable):
         self._field_map: Dict[int, "Field"] | None = None
         self._proto_owner_map: Dict[int, "Obj"] | None = None
         self._field_owner_map: Dict[int, "Obj"] | None = None
+        self._xref_index: "Optional[XrefIndex]" = None
 
         self.virtuals_built = False
 
@@ -2771,6 +2775,13 @@ class Bytecode(Serialisable):
             if field:
                 return field.name.resolve(self)
         return "<none>"
+
+    def xref_index(self) -> "XrefIndex":
+        """Build (or return cached) the full cross-reference index for this bytecode."""
+        if self._xref_index is None:
+            from .xref import XrefIndex
+            self._xref_index = XrefIndex.build(self)
+        return self._xref_index
 
 
 __all__ = [
