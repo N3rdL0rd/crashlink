@@ -53,11 +53,11 @@ def _make_progress_cb() -> "Optional[ProgressCallback]":
         return None
     try:
         from tqdm import tqdm as _tqdm
-        bar = _tqdm(total=100, desc="Loading", unit="%", bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt}% [{elapsed}<{remaining}] {postfix}")
+        bar = _tqdm(total=100, desc="loading", unit="%", bar_format="{desc} {bar}| {n_fmt}/{total_fmt}% [{elapsed}<{remaining}]")
         _last: List[int] = [0]
         def _cb(frac: float, status: str) -> None:
             pct = int(frac * 100)
-            bar.set_postfix_str(status, refresh=False)
+            bar.set_description_str(status, refresh=False)
             delta = pct - _last[0]
             if delta > 0:
                 bar.update(delta)
