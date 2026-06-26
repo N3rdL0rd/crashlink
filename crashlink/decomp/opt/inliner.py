@@ -154,9 +154,12 @@ class IRPrimitiveJumpLifter(TraversingIROptimizer):
         # so that later local-name splits do not change which value the jump was
         # testing (e.g. String.split's empty-delimiter loop bound).
         def resolve_operand(key_name: str) -> Optional[IRLocal]:
-            stored = getattr(primitive_jump, key_name, None)
-            if stored is not None and isinstance(stored, IRLocal):
-                return cast(IRLocal, stored)
+            stored: Optional[IRLocal] = None
+            _attr = getattr(primitive_jump, key_name, None)
+            if isinstance(_attr, IRLocal):
+                stored = _attr
+            if stored is not None:
+                return stored
             if key_name not in op_df:
                 return None
             try:
