@@ -43,7 +43,12 @@ List of all arithmetic opcodes.
 
 simple_calls = ["Call0", "Call1", "Call2", "Call3", "Call4", "CallN"]
 """
-List of all function call opcodes.
+List of all function call opcodes that call by fIndex.
+"""
+
+calls = ["Call0", "Call1", "Call2", "Call3", "Call4", "CallN", "CallMethod", "CallThis", "CallClosure"]
+"""
+List of all function call opcodes, including method calls and closure calls.
 """
 
 opcodes = {
