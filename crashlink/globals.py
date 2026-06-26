@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 from io import BytesIO
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, Callable, Optional
 
 
 def _is_debug() -> bool:
@@ -36,12 +36,22 @@ Whether to enable certain features meant only for development or debugging of cr
 """
 
 
+_dbg_callback: Optional[Callable[[str], None]] = None
+
+
+def set_dbg_callback(cb: Optional[Callable[[str], None]]) -> None:
+    """Route dbg_print output to *cb* instead of stdout (pass None to clear)."""
+    global _dbg_callback
+    _dbg_callback = cb
+
+
 def dbg_print(*args: Any, **kwargs: Any) -> None:
-    """
-    Print a message if DEBUG is True.
-    """
-    if DEBUG:
-        print(*args, **kwargs)
+    """Print if DEBUG is True; always forward to the GUI callback when one is registered."""
+    msg = " ".join(str(a) for a in args)
+    if _dbg_callback is not None:
+        _dbg_callback(msg)
+    elif DEBUG:
+        print(msg, **kwargs)
 
 
 def tell(f: BinaryIO | BytesIO) -> str:

@@ -2114,6 +2114,12 @@ def main() -> None:
     """
     Main entrypoint.
     """
+    if len(sys.argv) > 1 and sys.argv[1] == "gui":
+        from .gui import main as gui_main
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+        gui_main()
+        return
+
     _subcommands: Dict[str, Callable[[List[str]], None]] = {
         "hlc": hlc_main,
         "mcp": mcp_main,

@@ -916,6 +916,116 @@ def gen_mkdocs(code: Bytecode, site_name: str = "API Reference") -> Dict[str, st
     return res
 
 
+from dataclasses import dataclass, field as dc_field
+
+
+@dataclass
+class MethodEntry:
+    findex: int
+    method_name: str
+    first_line: int
+
+
+@dataclass
+class ClassEntry:
+    canonical_name: str
+    first_line: int
+    methods: List[MethodEntry] = dc_field(default_factory=list)
+
+
+def file_class_map(code: Bytecode) -> Dict[str, List[ClassEntry]]:
+    """Return source-file → ordered class list with per-method line info.
+
+    Heuristic: for each function with debug info, take the minimum
+    non-zero line number across all its opcodes as its "start line".
+    Classes are identified via the pseudo method registry (static + instance
+    unified by destaticify).  Within each file, classes are sorted by their
+    earliest start line; methods within each class are sorted the same way.
+    Functions not registered to any class appear under the synthetic class
+    name "(standalone)".
+
+    Returns {} if the bytecode has no debug info.
+    """
+    from .pseudo import _method_registry
+    from .core import destaticify
+
+    if not code.has_debug_info:
+        return {}
+
+    reg = _method_registry(code)
+    fmap = code.get_findex_map()
+
+    # (file_path, canonical_class) -> list of MethodEntry
+    _groups: Dict[tuple, List[MethodEntry]] = {}
+
+    for findex, func in fmap.items():
+        if isinstance(func, Native):
+            continue
+        if not func.has_debug or not func.debuginfo or not func.debuginfo.value:
+            continue
+
+        # Minimum non-zero line across all ops = best proxy for declaration line
+        lines = [ref.line for ref in func.debuginfo.value if ref.line > 0]
+        if not lines:
+            continue
+        first_line = min(lines)
+
+        try:
+            file_path = func.resolve_file(code)
+        except Exception:
+            continue
+
+        if findex in reg:
+            obj, method_name, _ = reg[findex]
+            canonical = destaticify(obj.name.resolve(code))
+        else:
+            method_name = full_func_name_str(code, func)
+            canonical = "(standalone)"
+
+        key = (file_path, canonical)
+        _groups.setdefault(key, []).append(
+            MethodEntry(findex=findex, method_name=method_name, first_line=first_line)
+        )
+
+    # Sort methods within each class by first_line
+    for entries in _groups.values():
+        entries.sort(key=lambda e: e.first_line)
+
+    # Group by file, then build ClassEntry list sorted by earliest method line
+    file_map: Dict[str, Dict[str, ClassEntry]] = {}
+    for (file_path, canonical), entries in _groups.items():
+        class_first_line = entries[0].first_line
+        if file_path not in file_map:
+            file_map[file_path] = {}
+        if canonical not in file_map[file_path]:
+            file_map[file_path][canonical] = ClassEntry(
+                canonical_name=canonical,
+                first_line=class_first_line,
+                methods=entries,
+            )
+        else:
+            # Merge if the same class appears in the same file (static + instance split)
+            existing = file_map[file_path][canonical]
+            existing.methods.extend(entries)
+            existing.methods.sort(key=lambda e: e.first_line)
+            existing.first_line = min(existing.first_line, class_first_line)
+
+    # Sort classes within each file by first_line
+    return {
+        fp: sorted(classes.values(), key=lambda c: c.first_line)
+        for fp, classes in sorted(file_map.items())
+    }
+
+
+def full_func_name_str(code: Bytecode, func: Function) -> str:
+    """Safe full_func_name that never raises."""
+    try:
+        name = code.full_func_name(func)
+        return name if name else f"f@{func.findex.value}"
+    except Exception:
+        return f"f@{func.findex.value}"
+
+
 __all__ = [
     "type_name",
     "type_to_haxe",
@@ -929,4 +1039,8 @@ __all__ = [
     "to_asm",
     "from_asm",
     "gen_mkdocs",
+    "file_class_map",
+    "MethodEntry",
+    "ClassEntry",
+    "full_func_name_str",
 ]
