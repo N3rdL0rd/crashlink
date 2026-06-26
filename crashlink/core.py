@@ -12,9 +12,11 @@ from __future__ import annotations
 import ctypes
 import struct
 from abc import ABC, abstractmethod
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum as _Enum
+import threading
 
 _EnumBase = _Enum
 from io import BytesIO
@@ -1875,6 +1877,9 @@ class Bytecode(Serialisable):
         self._xref_index: Optional[XrefIndex] = None
         self._search_index: Optional[SearchIndex] = None
         self._source_map: Optional[SourceMap] = None
+        self._xref_lock = threading.Lock()
+        self._search_lock = threading.Lock()
+        self._source_map_lock = threading.Lock()
         self.annotations: AnnotationStore = AnnotationStore()
 
         self.virtuals_built = False
@@ -2805,21 +2810,24 @@ class Bytecode(Serialisable):
 
     def xref_index(self) -> "XrefIndex":
         """Build (or return cached) the full cross-reference index for this bytecode."""
-        if self._xref_index is None:
-            self._xref_index = XrefIndex.build(self)
-        return self._xref_index
+        with self._xref_lock:
+            if self._xref_index is None:
+                self._xref_index = XrefIndex.build(self)
+            return self._xref_index
 
     def search_index(self) -> "SearchIndex":
         """Build (or return cached) the function search index for this bytecode."""
-        if self._search_index is None:
-            self._search_index = SearchIndex.build(self)
-        return self._search_index
+        with self._search_lock:
+            if self._search_index is None:
+                self._search_index = SearchIndex.build(self)
+            return self._search_index
 
     def source_map(self) -> "SourceMap":
         """Build (or return cached) the source-location map for this bytecode."""
-        if self._source_map is None:
-            self._source_map = SourceMap.build(self)
-        return self._source_map
+        with self._source_map_lock:
+            if self._source_map is None:
+                self._source_map = SourceMap.build(self)
+            return self._source_map
 
 
 # ── Annotation store ──────────────────────────────────────────────────────────
@@ -3337,7 +3345,98 @@ class SourceMap:
         return list(self._file_names.values())
 
 
+# ── Analysis worker ────────────────────────────────────────────────────────────
+
+
+class AnalysisWorker:
+    """
+    Thread-pool backed worker for off-thread bytecode analysis.
+
+    One instance per loaded file. All public methods are thread-safe.
+    Callers receive standard :class:`concurrent.futures.Future` objects and can
+    integrate with any event loop or signal system.
+    """
+
+    def __init__(self, max_workers: int = 2) -> None:
+        self._pool = ThreadPoolExecutor(max_workers=max_workers)
+        self._cache: Dict[int, Any] = {}  # findex → IRFunction (Any avoids circular import)
+        self._cache_lock = threading.Lock()
+
+    def decompile(self, code: "Bytecode", findex: int) -> "Future[Any]":
+        """Return a Future[IRFunction], served from cache if available."""
+        with self._cache_lock:
+            cached = self._cache.get(findex)
+        if cached is not None:
+            f: Future[Any] = Future()
+            f.set_result(cached)
+            return f
+        return self._pool.submit(self._do_decompile, code, findex)
+
+    def _do_decompile(self, code: "Bytecode", findex: int) -> Any:
+        from .decomp.function import IRFunction  # lazy to avoid circular import
+        func = code.get_findex_map()[findex]
+        ir = IRFunction(code, func)
+        with self._cache_lock:
+            self._cache[findex] = ir
+        return ir
+
+    def invalidate(self, findex: Optional[int] = None) -> None:
+        """Evict decompile cache entries. Omit findex to clear all."""
+        with self._cache_lock:
+            if findex is None:
+                self._cache.clear()
+            else:
+                self._cache.pop(findex, None)
+
+    def build_indices(
+        self,
+        code: "Bytecode",
+        progress_cb: Optional[ProgressCallback] = None,
+    ) -> "Future[None]":
+        """Build xref, search, and source map indices in a background thread."""
+        return self._pool.submit(self._do_build_indices, code, progress_cb)
+
+    def _do_build_indices(
+        self,
+        code: "Bytecode",
+        progress_cb: Optional[ProgressCallback],
+    ) -> None:
+        def _p(frac: float, status: str) -> None:
+            if progress_cb is not None:
+                progress_cb(frac, status)
+        _p(0.0, "building xref index")
+        code.xref_index()
+        _p(0.33, "building search index")
+        code.search_index()
+        _p(0.66, "building source map")
+        code.source_map()
+        _p(1.0, "done")
+
+    def build_xref(self, code: "Bytecode") -> "Future[XrefIndex]":
+        """Build (or return cached) the xref index in a background thread."""
+        return self._pool.submit(code.xref_index)
+
+    def build_search(self, code: "Bytecode") -> "Future[SearchIndex]":
+        """Build (or return cached) the search index in a background thread."""
+        return self._pool.submit(code.search_index)
+
+    def build_source_map(self, code: "Bytecode") -> "Future[SourceMap]":
+        """Build (or return cached) the source map in a background thread."""
+        return self._pool.submit(code.source_map)
+
+    def shutdown(self, wait: bool = True) -> None:
+        """Shut down the thread pool. Call when the GUI closes."""
+        self._pool.shutdown(wait=wait)
+
+    def __enter__(self) -> "AnalysisWorker":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.shutdown()
+
+
 __all__ = [
+    "AnalysisWorker",
     "ProgressCallback",
     "Abstract",
     "Array",

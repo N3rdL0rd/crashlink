@@ -21,7 +21,7 @@ from functools import wraps
 from crashlink.hlc import code_to_c
 
 from . import decomp, disasm, globals
-from .core import XRef, XrefIndex, TargetKind, SourceKind, RefKind, AnnotationStore, USE_TQDM, ProgressCallback
+from .core import XRef, XrefIndex, TargetKind, SourceKind, RefKind, AnnotationStore, USE_TQDM, ProgressCallback, AnalysisWorker
 from .asm import AsmFile
 from .core import (
     Bytecode,
