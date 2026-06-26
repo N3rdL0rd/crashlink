@@ -66,8 +66,12 @@ class LogPanel(QWidget):
         if self._theme:
             return getattr(self._theme, attr, self._theme.text)
         _fallbacks = {
-            "subtext": "#a6adc8", "green": "#a6e3a1", "yellow": "#f9e2af",
-            "red": "#f38ba8", "accent": "#b4befe", "text": "#cdd6f4",
+            "subtext": "#a6adc8",
+            "green": "#a6e3a1",
+            "yellow": "#f9e2af",
+            "red": "#f38ba8",
+            "accent": "#b4befe",
+            "text": "#cdd6f4",
         }
         return _fallbacks.get(attr, "#cdd6f4")
 

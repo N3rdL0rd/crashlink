@@ -21,7 +21,17 @@ from functools import wraps
 from crashlink.hlc import code_to_c
 
 from . import decomp, disasm, globals
-from .core import XRef, XrefIndex, TargetKind, SourceKind, RefKind, AnnotationStore, USE_TQDM, ProgressCallback, AnalysisWorker
+from .core import (
+    XRef,
+    XrefIndex,
+    TargetKind,
+    SourceKind,
+    RefKind,
+    AnnotationStore,
+    USE_TQDM,
+    ProgressCallback,
+    AnalysisWorker,
+)
 from .asm import AsmFile
 from .core import (
     Bytecode,
@@ -53,8 +63,12 @@ def _make_progress_cb() -> "Optional[ProgressCallback]":
         return None
     try:
         from tqdm import tqdm as _tqdm
-        bar = _tqdm(total=100, desc="loading", unit="%", bar_format="{desc} {bar}| {n_fmt}/{total_fmt}% [{elapsed}<{remaining}]")
+
+        bar = _tqdm(
+            total=100, desc="loading", unit="%", bar_format="{desc} {bar}| {n_fmt}/{total_fmt}% [{elapsed}<{remaining}]"
+        )
         _last: List[int] = [0]
+
         def _cb(frac: float, status: str) -> None:
             pct = int(frac * 100)
             bar.set_description_str(status, refresh=False)
@@ -64,6 +78,7 @@ def _make_progress_cb() -> "Optional[ProgressCallback]":
                 _last[0] = pct
             if frac >= 1.0:
                 bar.close()
+
         return _cb
     except Exception:
         return None
@@ -1385,6 +1400,7 @@ class Commands(BaseCommands):
                 print("Usage: xref field <tindex> <field_slot>")
                 return
             from .core import Obj
+
             try:
                 obj_def = code.types[index].definition
                 field_name = obj_def.fields[aux].name.resolve(code) if isinstance(obj_def, Obj) else f"slot{aux}"
@@ -1439,8 +1455,13 @@ class Commands(BaseCommands):
                 return
             print(f"Xrefs to {slabel} [{len(refs)} total]:")
             for r in refs:
-                rk = "dyn_read" if r.ref_kind == RefKind.DYN_FIELD_READ else \
-                     "dyn_write" if r.ref_kind == RefKind.DYN_FIELD_WRITE else "use"
+                rk = (
+                    "dyn_read"
+                    if r.ref_kind == RefKind.DYN_FIELD_READ
+                    else "dyn_write"
+                    if r.ref_kind == RefKind.DYN_FIELD_WRITE
+                    else "use"
+                )
                 print(f"  [{rk}] {_func_label(r.source_index)} op#{r.opcode_index}")
 
         elif kind == "enum":
@@ -1448,6 +1469,7 @@ class Commands(BaseCommands):
                 print("Usage: xref enum <tindex> <construct_idx>")
                 return
             from .core import Enum as HLEnum
+
             try:
                 edef = code.types[index].definition
                 cname = edef.constructs[aux].name.resolve(code) if isinstance(edef, HLEnum) else f"construct{aux}"
@@ -1534,6 +1556,7 @@ class Commands(BaseCommands):
         func = func_map[findex]
         from .decomp.function import IRFunction
         from .core import Function
+
         if not isinstance(func, Function):
             print("Natives have no locals.")
             return
@@ -1547,9 +1570,7 @@ class Commands(BaseCommands):
                 seen[local.reg_idx] = local
         for local in ir.all_locals:
             def_op = str(local.defining_op_idx) if local.defining_op_idx is not None else "_"
-            renamed = self.code.annotations.get_rename(
-                findex, local.reg_idx or 0, local.defining_op_idx
-            )
+            renamed = self.code.annotations.get_rename(findex, local.reg_idx or 0, local.defining_op_idx)
             rename_str = f"  -> {renamed!r}" if renamed else ""
             print(f"  reg={local.reg_idx} def_op={def_op}  {local.name}: {local.get_type()}{rename_str}")
 
@@ -2116,6 +2137,7 @@ def main() -> None:
     """
     if len(sys.argv) > 1 and sys.argv[1] == "gui":
         from .gui import main as gui_main
+
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         gui_main()
         return

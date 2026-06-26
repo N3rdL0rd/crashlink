@@ -11,23 +11,23 @@ from typing import Dict, Tuple
 @dataclass
 class Theme:
     name: str
-    base: str       # main window / editor background
-    mantle: str     # sidebar / panel background
-    crust: str      # status bar / deepest background
-    surface0: str   # widget backgrounds (list items, table rows)
-    surface1: str   # hover state
-    surface2: str   # selection / active
-    text: str       # primary text
-    subtext: str    # secondary / dimmed text
-    overlay: str    # placeholders / disabled
-    accent: str     # highlights, active tabs, focus rings
-    green: str      # identifiers / success
-    yellow: str     # literals / warnings
-    red: str        # errors / keywords
-    teal: str       # types
-    mauve: str      # keywords
-    peach: str      # numbers / constants
-    pink: str       # methods
+    base: str  # main window / editor background
+    mantle: str  # sidebar / panel background
+    crust: str  # status bar / deepest background
+    surface0: str  # widget backgrounds (list items, table rows)
+    surface1: str  # hover state
+    surface2: str  # selection / active
+    text: str  # primary text
+    subtext: str  # secondary / dimmed text
+    overlay: str  # placeholders / disabled
+    accent: str  # highlights, active tabs, focus rings
+    green: str  # identifiers / success
+    yellow: str  # literals / warnings
+    red: str  # errors / keywords
+    teal: str  # types
+    mauve: str  # keywords
+    peach: str  # numbers / constants
+    pink: str  # methods
 
 
 _ICON_DIR = os.path.join(tempfile.gettempdir(), "crashlink_qss_icons")
@@ -38,15 +38,19 @@ def _arrow_urls(color: str) -> Tuple[str, str]:
     os.makedirs(_ICON_DIR, exist_ok=True)
     safe = color.lstrip("#")
     right = os.path.join(_ICON_DIR, f"arr_r_{safe}.svg")
-    down  = os.path.join(_ICON_DIR, f"arr_d_{safe}.svg")
+    down = os.path.join(_ICON_DIR, f"arr_d_{safe}.svg")
     if not os.path.exists(right):
         with open(right, "w") as f:
-            f.write(f'<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8">'
-                    f'<polygon points="1,1 7,4 1,7" fill="{color}"/></svg>')
+            f.write(
+                f'<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8">'
+                f'<polygon points="1,1 7,4 1,7" fill="{color}"/></svg>'
+            )
     if not os.path.exists(down):
         with open(down, "w") as f:
-            f.write(f'<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8">'
-                    f'<polygon points="1,1 7,1 4,7" fill="{color}"/></svg>')
+            f.write(
+                f'<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8">'
+                f'<polygon points="1,1 7,1 4,7" fill="{color}"/></svg>'
+            )
     # QSS url() needs forward slashes on all platforms
     return right.replace("\\", "/"), down.replace("\\", "/")
 
@@ -478,64 +482,134 @@ QToolTip {{
 
 MOCHA = Theme(
     name="Catppuccin Mocha",
-    base="#1e1e2e", mantle="#181825", crust="#11111b",
-    surface0="#313244", surface1="#45475a", surface2="#585b70",
-    text="#cdd6f4", subtext="#a6adc8", overlay="#6c7086",
-    accent="#b4befe", green="#a6e3a1", yellow="#f9e2af",
-    red="#f38ba8", teal="#94e2d5", mauve="#cba6f7", peach="#fab387", pink="#f5c2e7",
+    base="#1e1e2e",
+    mantle="#181825",
+    crust="#11111b",
+    surface0="#313244",
+    surface1="#45475a",
+    surface2="#585b70",
+    text="#cdd6f4",
+    subtext="#a6adc8",
+    overlay="#6c7086",
+    accent="#b4befe",
+    green="#a6e3a1",
+    yellow="#f9e2af",
+    red="#f38ba8",
+    teal="#94e2d5",
+    mauve="#cba6f7",
+    peach="#fab387",
+    pink="#f5c2e7",
 )
 
 MACCHIATO = Theme(
     name="Catppuccin Macchiato",
-    base="#24273a", mantle="#1e2030", crust="#181926",
-    surface0="#363a4f", surface1="#494d64", surface2="#5b6078",
-    text="#cad3f5", subtext="#a5adcb", overlay="#6e738d",
-    accent="#b7bdf8", green="#a6da95", yellow="#eed49f",
-    red="#ed8796", teal="#8bd5ca", mauve="#c6a0f6", peach="#f5a97f", pink="#f5bde6",
+    base="#24273a",
+    mantle="#1e2030",
+    crust="#181926",
+    surface0="#363a4f",
+    surface1="#494d64",
+    surface2="#5b6078",
+    text="#cad3f5",
+    subtext="#a5adcb",
+    overlay="#6e738d",
+    accent="#b7bdf8",
+    green="#a6da95",
+    yellow="#eed49f",
+    red="#ed8796",
+    teal="#8bd5ca",
+    mauve="#c6a0f6",
+    peach="#f5a97f",
+    pink="#f5bde6",
 )
 
 FRAPPE = Theme(
     name="Catppuccin Frappé",
-    base="#303446", mantle="#292c3c", crust="#232634",
-    surface0="#414559", surface1="#51576d", surface2="#626880",
-    text="#c6d0f5", subtext="#a5adce", overlay="#737994",
-    accent="#babbf1", green="#a6d189", yellow="#e5c890",
-    red="#e78284", teal="#81c8be", mauve="#ca9ee6", peach="#ef9f76", pink="#f4b8e4",
+    base="#303446",
+    mantle="#292c3c",
+    crust="#232634",
+    surface0="#414559",
+    surface1="#51576d",
+    surface2="#626880",
+    text="#c6d0f5",
+    subtext="#a5adce",
+    overlay="#737994",
+    accent="#babbf1",
+    green="#a6d189",
+    yellow="#e5c890",
+    red="#e78284",
+    teal="#81c8be",
+    mauve="#ca9ee6",
+    peach="#ef9f76",
+    pink="#f4b8e4",
 )
 
 LATTE = Theme(
     name="Catppuccin Latte",
-    base="#eff1f5", mantle="#e6e9ef", crust="#dce0e8",
-    surface0="#ccd0da", surface1="#bcc0cc", surface2="#acb0be",
-    text="#4c4f69", subtext="#5c5f77", overlay="#7c7f93",
-    accent="#7287fd", green="#40a02b", yellow="#df8e1d",
-    red="#d20f39", teal="#179299", mauve="#8839ef", peach="#fe640b", pink="#ea76cb",
+    base="#eff1f5",
+    mantle="#e6e9ef",
+    crust="#dce0e8",
+    surface0="#ccd0da",
+    surface1="#bcc0cc",
+    surface2="#acb0be",
+    text="#4c4f69",
+    subtext="#5c5f77",
+    overlay="#7c7f93",
+    accent="#7287fd",
+    green="#40a02b",
+    yellow="#df8e1d",
+    red="#d20f39",
+    teal="#179299",
+    mauve="#8839ef",
+    peach="#fe640b",
+    pink="#ea76cb",
 )
 
 # ── Nord ──────────────────────────────────────────────────────────────────────
 
 NORD = Theme(
     name="Nord",
-    base="#2e3440", mantle="#272c36", crust="#1f2329",
-    surface0="#3b4252", surface1="#434c5e", surface2="#4c566a",
-    text="#eceff4", subtext="#d8dee9", overlay="#7b88a1",
-    accent="#88c0d0", green="#a3be8c", yellow="#ebcb8b",
-    red="#bf616a", teal="#8fbcbb", mauve="#b48ead", peach="#d08770", pink="#b48ead",
+    base="#2e3440",
+    mantle="#272c36",
+    crust="#1f2329",
+    surface0="#3b4252",
+    surface1="#434c5e",
+    surface2="#4c566a",
+    text="#eceff4",
+    subtext="#d8dee9",
+    overlay="#7b88a1",
+    accent="#88c0d0",
+    green="#a3be8c",
+    yellow="#ebcb8b",
+    red="#bf616a",
+    teal="#8fbcbb",
+    mauve="#b48ead",
+    peach="#d08770",
+    pink="#b48ead",
 )
 
 # ── Gruvbox ───────────────────────────────────────────────────────────────────
 
 GRUVBOX = Theme(
     name="Gruvbox Dark",
-    base="#282828", mantle="#1d2021", crust="#141617",
-    surface0="#3c3836", surface1="#504945", surface2="#665c54",
-    text="#ebdbb2", subtext="#d5c4a1", overlay="#928374",
-    accent="#83a598", green="#b8bb26", yellow="#fabd2f",
-    red="#fb4934", teal="#8ec07c", mauve="#d3869b", peach="#fe8019", pink="#d3869b",
+    base="#282828",
+    mantle="#1d2021",
+    crust="#141617",
+    surface0="#3c3836",
+    surface1="#504945",
+    surface2="#665c54",
+    text="#ebdbb2",
+    subtext="#d5c4a1",
+    overlay="#928374",
+    accent="#83a598",
+    green="#b8bb26",
+    yellow="#fabd2f",
+    red="#fb4934",
+    teal="#8ec07c",
+    mauve="#d3869b",
+    peach="#fe8019",
+    pink="#d3869b",
 )
 
-THEMES: Dict[str, Theme] = {
-    t.name: t for t in [MOCHA, MACCHIATO, FRAPPE, LATTE, NORD, GRUVBOX]
-}
+THEMES: Dict[str, Theme] = {t.name: t for t in [MOCHA, MACCHIATO, FRAPPE, LATTE, NORD, GRUVBOX]}
 
 DEFAULT_THEME = MOCHA

@@ -983,9 +983,7 @@ def file_class_map(code: Bytecode) -> Dict[str, List[ClassEntry]]:
             canonical = "(standalone)"
 
         key = (file_path, canonical)
-        _groups.setdefault(key, []).append(
-            MethodEntry(findex=findex, method_name=method_name, first_line=first_line)
-        )
+        _groups.setdefault(key, []).append(MethodEntry(findex=findex, method_name=method_name, first_line=first_line))
 
     # Sort methods within each class by first_line
     for entries in _groups.values():
@@ -1011,10 +1009,7 @@ def file_class_map(code: Bytecode) -> Dict[str, List[ClassEntry]]:
             existing.first_line = min(existing.first_line, class_first_line)
 
     # Sort classes within each file by first_line
-    return {
-        fp: sorted(classes.values(), key=lambda c: c.first_line)
-        for fp, classes in sorted(file_map.items())
-    }
+    return {fp: sorted(classes.values(), key=lambda c: c.first_line) for fp, classes in sorted(file_map.items())}
 
 
 def full_func_name_str(code: Bytecode, func: Function) -> str:

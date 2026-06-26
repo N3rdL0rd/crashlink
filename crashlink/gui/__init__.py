@@ -25,6 +25,7 @@ def main() -> None:
     # Open a file from the command line if provided
     if len(sys.argv) > 1:
         import os
+
         path = sys.argv[1]
         if os.path.isfile(path):
             win._load_file(path)

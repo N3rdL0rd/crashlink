@@ -52,8 +52,10 @@ class _LoadThread(QThread):
 
     def run(self) -> None:
         try:
+
             def _cb(frac: float, status: str) -> None:
                 self.signals.progress.emit(frac, status)
+
             code = Bytecode.from_path(self.path, progress_cb=_cb)
             self.signals.finished.emit(code)
         except Exception as e:
@@ -61,13 +63,12 @@ class _LoadThread(QThread):
 
 
 class _DecompSignals(QObject):
-    finished = Signal(str, int, object)   # class_key, findex, IRFunction
-    error = Signal(str, int, str)         # class_key, findex, message
+    finished = Signal(str, int, object)  # class_key, findex, IRFunction
+    error = Signal(str, int, str)  # class_key, findex, message
 
 
 class _DecompRunnable(QRunnable):
-    def __init__(self, worker: AnalysisWorker, code: Bytecode,
-                 class_key: str, findex: int) -> None:
+    def __init__(self, worker: AnalysisWorker, code: Bytecode, class_key: str, findex: int) -> None:
         super().__init__()
         self._worker = worker
         self._code = code
@@ -211,8 +212,7 @@ class MainWindow(QMainWindow):
 
     def _open_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open HashLink bytecode", "",
-            "HashLink files (*.hl *.dat);;All files (*)"
+            self, "Open HashLink bytecode", "", "HashLink files (*.hl *.dat);;All files (*)"
         )
         if path:
             self._load_file(path)
@@ -275,14 +275,10 @@ class MainWindow(QMainWindow):
         class_key = f"class:{canonical}"
 
         # Gather all findices that belong to this canonical class (static + instance)
-        all_fi = sorted(
-            fi for fi, (o, _, _) in reg.items()
-            if destaticify(o.name.resolve(self._code)) == canonical
-        )
+        all_fi = sorted(fi for fi, (o, _, _) in reg.items() if destaticify(o.name.resolve(self._code)) == canonical)
         return class_key, canonical, all_fi
 
-    def _open_class_tab(self, class_key: str, display_name: str,
-                        all_fi: List[int], jump_to: int) -> None:
+    def _open_class_tab(self, class_key: str, display_name: str, all_fi: List[int], jump_to: int) -> None:
         assert self._code is not None
 
         self._class_findices[class_key] = all_fi
@@ -297,10 +293,7 @@ class MainWindow(QMainWindow):
         view.xref_requested.connect(self._on_xref_hotkey)
 
         # Render immediately with placeholders
-        placeholder = [
-            (fi, f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}")
-            for fi in all_fi
-        ]
+        placeholder = [(fi, f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}") for fi in all_fi]
         view.load_methods(display_name, placeholder)
 
         tab_label = _tab_label(display_name)
@@ -317,9 +310,7 @@ class MainWindow(QMainWindow):
             r.signals.error.connect(self._on_decompile_error)
             QThreadPool.globalInstance().start(r)
 
-        self._status_label.setText(
-            f"Decompiling {display_name} ({len(all_fi)} methods)…"
-        )
+        self._status_label.setText(f"Decompiling {display_name} ({len(all_fi)} methods)…")
 
     def _add_close_btn(self, tab_idx: int, class_key: str) -> None:
         btn = QToolButton()
@@ -328,9 +319,7 @@ class MainWindow(QMainWindow):
         btn.setFixedSize(QSize(18, 18))
         btn.setToolTip("Close tab")
         btn.clicked.connect(lambda: QTimer.singleShot(0, lambda: self._close_tab_by_key(class_key)))
-        self._tabs.tabBar().setTabButton(
-            tab_idx, QTabBar.ButtonPosition.RightSide, btn
-        )
+        self._tabs.tabBar().setTabButton(tab_idx, QTabBar.ButtonPosition.RightSide, btn)
 
     def _close_tab_by_key(self, class_key: str) -> None:
         idx = self._open_tabs.pop(class_key, None)
@@ -400,9 +389,7 @@ class MainWindow(QMainWindow):
         pending = sum(1 for v in results.values() if v is None)
         if pending == 0:
             name = self._class_names.get(class_key, class_key)
-            self._status_label.setText(
-                f"{name} — {len(results)} methods"
-            )
+            self._status_label.setText(f"{name} — {len(results)} methods")
 
     def _on_decompile_error(self, class_key: str, findex: int, msg: str) -> None:
         if class_key not in self._class_results:
@@ -448,26 +435,20 @@ class MainWindow(QMainWindow):
             return
 
         # Find locals matching word under cursor
-        locals_matching = [
-            loc for loc in ir.all_locals
-            if loc.name == word and loc.reg_idx is not None
-        ]
+        locals_matching = [loc for loc in ir.all_locals if loc.name == word and loc.reg_idx is not None]
         if not locals_matching:
             self._log_panel.warn(f"No local named '{word}' in f@{findex}")
             return
 
         loc = locals_matching[0]
-        new_name, ok = QInputDialog.getText(
-            self, "Rename", f"Rename '{word}' to:", text=word
-        )
+        new_name, ok = QInputDialog.getText(self, "Rename", f"Rename '{word}' to:", text=word)
         if not ok or not new_name or new_name == word:
             return
 
         self._apply_rename(findex, loc.reg_idx, loc.defining_op_idx, new_name)
         self._log_panel.success(f"Renamed '{word}' → '{new_name}' in f@{findex}")
 
-    def _apply_rename(self, findex: int, reg_idx: int, def_op: object,
-                      new_name: str) -> None:
+    def _apply_rename(self, findex: int, reg_idx: int, def_op: object, new_name: str) -> None:
         if self._code is None:
             return
         def_op_int = int(def_op) if def_op is not None else None
@@ -533,13 +514,15 @@ class MainWindow(QMainWindow):
         sites: List[XrefSite] = []
         for j, line in enumerate(content):
             if pat.search(line):
-                sites.append(XrefSite(
-                    source_findex=findex,
-                    source_label=label,
-                    opcode_index=None,
-                    body_line=j,
-                    ref_kind="use",
-                ))
+                sites.append(
+                    XrefSite(
+                        source_findex=findex,
+                        source_label=label,
+                        opcode_index=None,
+                        body_line=j,
+                        ref_kind="use",
+                    )
+                )
         if not sites:
             return None
         return XrefGroup(label=f"local '{word}'", kind="local", sites=sites)
@@ -631,8 +614,9 @@ class MainWindow(QMainWindow):
 
     def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
         if isinstance(event, QKeyEvent):
-            if (event.key() == Qt.Key.Key_I
-                    and event.modifiers() == (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)):
+            if event.key() == Qt.Key.Key_I and event.modifiers() == (
+                Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+            ):
                 self._inspect_widget()
                 return
         super().keyPressEvent(event)  # type: ignore[arg-type]

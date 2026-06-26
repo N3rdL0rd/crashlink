@@ -7,8 +7,15 @@ from typing import List, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import (
-    QColor, QContextMenuEvent, QFont, QKeyEvent, QKeySequence,
-    QSyntaxHighlighter, QTextCharFormat, QTextCursor, QTextDocument,
+    QColor,
+    QContextMenuEvent,
+    QFont,
+    QKeyEvent,
+    QKeySequence,
+    QSyntaxHighlighter,
+    QTextCharFormat,
+    QTextCursor,
+    QTextDocument,
 )
 from PySide6.QtWidgets import QMenu, QPlainTextEdit, QTextEdit, QWidget
 
@@ -36,8 +43,14 @@ _RULES: List[_Rule] = [
 ]
 
 _NAV_KEYS = {
-    Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up, Qt.Key.Key_Down,
-    Qt.Key.Key_Home, Qt.Key.Key_End, Qt.Key.Key_PageUp, Qt.Key.Key_PageDown,
+    Qt.Key.Key_Left,
+    Qt.Key.Key_Right,
+    Qt.Key.Key_Up,
+    Qt.Key.Key_Down,
+    Qt.Key.Key_Home,
+    Qt.Key.Key_End,
+    Qt.Key.Key_PageUp,
+    Qt.Key.Key_PageDown,
 }
 
 
@@ -58,12 +71,12 @@ class DecompHighlighter(QSyntaxHighlighter):
             return f
 
         self._fmts = {
-            "keyword":   fmt(theme.mauve, bold=True),
+            "keyword": fmt(theme.mauve, bold=True),
             "type_name": fmt(theme.teal),
-            "number":    fmt(theme.peach),
-            "string":    fmt(theme.yellow),
+            "number": fmt(theme.peach),
+            "string": fmt(theme.yellow),
             "func_call": fmt(theme.green),
-            "comment":   fmt(theme.overlay, italic=True),
+            "comment": fmt(theme.overlay, italic=True),
         }
         self.rehighlight()
 
@@ -133,8 +146,7 @@ class DecompView(QPlainTextEdit):
         fmt = QTextCharFormat()
         fmt.setBackground(bg)
 
-        flags = (QTextDocument.FindFlag.FindWholeWords
-                 | QTextDocument.FindFlag.FindCaseSensitively)
+        flags = QTextDocument.FindFlag.FindWholeWords | QTextDocument.FindFlag.FindCaseSensitively
         selections: List[QTextEdit.ExtraSelection] = []
         c = self.document().find(word, 0, flags)
         while not c.isNull():
@@ -149,9 +161,11 @@ class DecompView(QPlainTextEdit):
     def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
         if not isinstance(event, QKeyEvent):
             return
-        if (event.matches(QKeySequence.StandardKey.Copy)
-                or event.matches(QKeySequence.StandardKey.SelectAll)
-                or event.key() in _NAV_KEYS):
+        if (
+            event.matches(QKeySequence.StandardKey.Copy)
+            or event.matches(QKeySequence.StandardKey.SelectAll)
+            or event.key() in _NAV_KEYS
+        ):
             super().keyPressEvent(event)
         # Drop all other keys (typing, paste, delete, etc.)
 

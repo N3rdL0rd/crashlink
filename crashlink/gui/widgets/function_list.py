@@ -32,8 +32,8 @@ from crashlink.pseudo import _method_registry
 from ..themes import Theme
 
 _PAGE_CLASS = 0
-_PAGE_LIST  = 1
-_PAGE_FILE  = 2
+_PAGE_LIST = 1
+_PAGE_FILE = 2
 
 _SEARCH_CAP = 300
 
@@ -41,9 +41,10 @@ _SEARCH_CAP = 300
 @dataclass
 class _PkgNode:
     """Trie node: package (has children, no methods) or class (has methods, no children)."""
+
     children: Dict[str, "_PkgNode"] = field(default_factory=dict)
-    methods:  Optional[List[Tuple[int, str]]] = None  # None → package node
-    canonical: Optional[str] = None                   # full dotted name for class nodes
+    methods: Optional[List[Tuple[int, str]]] = None  # None → package node
+    canonical: Optional[str] = None  # full dotted name for class nodes
 
 
 class FunctionList(QWidget):
@@ -124,11 +125,11 @@ class FunctionList(QWidget):
         self._stack = QStackedWidget()
 
         self._tree = _make_tree()
-        self._stack.addWidget(self._tree)       # page 0
+        self._stack.addWidget(self._tree)  # page 0
 
         self._list = QListWidget()
         self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._stack.addWidget(self._list)       # page 1
+        self._stack.addWidget(self._list)  # page 1
 
         self._file_tree = _make_tree()
         self._stack.addWidget(self._file_tree)  # page 2
@@ -217,11 +218,12 @@ class FunctionList(QWidget):
         bold = QFont()
         bold.setBold(True)
         t = self._theme
-        pkg_color  = QColor(t.subtext) if t else None
-        cls_color  = QColor(t.teal)    if t else None
-        meth_color = QColor(t.pink)    if t else None
-        _build_tree_items(self._tree, root, bold, top_level=True,
-                          pkg_color=pkg_color, cls_color=cls_color, meth_color=meth_color)
+        pkg_color = QColor(t.subtext) if t else None
+        cls_color = QColor(t.teal) if t else None
+        meth_color = QColor(t.pink) if t else None
+        _build_tree_items(
+            self._tree, root, bold, top_level=True, pkg_color=pkg_color, cls_color=cls_color, meth_color=meth_color
+        )
 
         if standalone:
             stub = QTreeWidgetItem(["(standalone)"])
@@ -260,8 +262,7 @@ class FunctionList(QWidget):
             for cls in classes:
                 methods = cls.methods
                 if not self._show_std and not is_std_file:
-                    methods = [m for m in cls.methods
-                               if not _method_is_std(self._code, fmap, m.findex)]
+                    methods = [m for m in cls.methods if not _method_is_std(self._code, fmap, m.findex)]
                 if methods:
                     visible_classes.append((cls, methods))
 
@@ -401,8 +402,9 @@ def _build_tree_items(
             if pkg_color:
                 item.setForeground(0, QBrush(pkg_color))
             item.setData(0, Qt.ItemDataRole.UserRole, _first_findex(child))
-            _build_tree_items(item, child, bold, top_level=False,
-                              pkg_color=pkg_color, cls_color=cls_color, meth_color=meth_color)
+            _build_tree_items(
+                item, child, bold, top_level=False, pkg_color=pkg_color, cls_color=cls_color, meth_color=meth_color
+            )
             _add_item(parent, item)
             item.setExpanded(True)
 

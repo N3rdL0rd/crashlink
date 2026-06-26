@@ -1233,7 +1233,9 @@ def _generate_statements(
                 cond_str = _expression_to_haxe(stmt.condition, code, ir_function)
                 output_lines.append(f"{indent}while ({cond_str}) {{")
                 body_subs = render_subs.copy()
-                output_lines.extend(_gen(stmt.body.statements, indent_level + 1, declared_vars_in_scope.copy(), body_subs))
+                output_lines.extend(
+                    _gen(stmt.body.statements, indent_level + 1, declared_vars_in_scope.copy(), body_subs)
+                )
                 output_lines.append(f"{indent}}}")
                 for key in list(render_subs.keys()):
                     if key not in body_subs:
@@ -1243,7 +1245,9 @@ def _generate_statements(
             output_lines.append(f"{indent}// Primitive Loop (condition first, then body)")
             output_lines.append(f"{indent}{{ // Condition Block")
             cond_subs = render_subs.copy()
-            output_lines.extend(_gen(stmt.condition.statements, indent_level + 1, declared_vars_in_scope.copy(), cond_subs))
+            output_lines.extend(
+                _gen(stmt.condition.statements, indent_level + 1, declared_vars_in_scope.copy(), cond_subs)
+            )
             output_lines.append(f"{indent}}}")
             output_lines.append(f"{indent}{{ // Body Block")
             body_subs = render_subs.copy()
@@ -1356,7 +1360,9 @@ def _generate_statements(
             if stmt.default and stmt.default.statements:
                 output_lines.append(f"{indent}    default:")
                 default_subs = render_subs.copy()
-                output_lines.extend(_gen(stmt.default.statements, indent_level + 2, declared_vars_in_scope.copy(), default_subs))
+                output_lines.extend(
+                    _gen(stmt.default.statements, indent_level + 2, declared_vars_in_scope.copy(), default_subs)
+                )
                 case_subs.append(default_subs)
                 for s in stmt.default.statements:
                     if isinstance(s, IRAssign) and isinstance(s.target, IRLocal):
@@ -1385,7 +1391,9 @@ def _generate_statements(
                     catch_type = disasm.type_to_haxe(t)
             output_lines.append(f"{indent}try {{")
             try_subs = render_subs.copy()
-            output_lines.extend(_gen(stmt.try_block.statements, indent_level + 1, declared_vars_in_scope.copy(), try_subs))
+            output_lines.extend(
+                _gen(stmt.try_block.statements, indent_level + 1, declared_vars_in_scope.copy(), try_subs)
+            )
             # An explicit `:Dynamic` annotation on the catch variable changes
             # Haxe's codegen (it emits an extra init op, and changes how the
             # caught value unifies with Dynamic-typed call args) versus
@@ -1395,7 +1403,9 @@ def _generate_statements(
             catch_decl = catch_name if omit_type else f"{catch_name}:{catch_type}"
             output_lines.append(f"{indent}}} catch ({catch_decl}) {{")
             catch_subs = render_subs.copy()
-            output_lines.extend(_gen(stmt.catch_block.statements, indent_level + 1, declared_vars_in_scope.copy(), catch_subs))
+            output_lines.extend(
+                _gen(stmt.catch_block.statements, indent_level + 1, declared_vars_in_scope.copy(), catch_subs)
+            )
             output_lines.append(f"{indent}}}")
             valid_keys = set(render_subs.keys()) & set(try_subs.keys()) & set(catch_subs.keys())
             for key in list(render_subs.keys()):

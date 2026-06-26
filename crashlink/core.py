@@ -2055,7 +2055,9 @@ class Bytecode(Serialisable):
             offset += buffer_size
 
     @classmethod
-    def from_path(cls, path: str, search_magic: bool = True, progress_cb: Optional[ProgressCallback] = None) -> "Bytecode":
+    def from_path(
+        cls, path: str, search_magic: bool = True, progress_cb: Optional[ProgressCallback] = None
+    ) -> "Bytecode":
         """
         Create a new Bytecode instance from a file path.
         """
@@ -2065,7 +2067,9 @@ class Bytecode(Serialisable):
         return instance
 
     @classmethod
-    def from_bytes(cls, data: bytes, search_magic: bool = True, progress_cb: Optional[ProgressCallback] = None) -> "Bytecode":
+    def from_bytes(
+        cls, data: bytes, search_magic: bool = True, progress_cb: Optional[ProgressCallback] = None
+    ) -> "Bytecode":
         """
         Create a new Bytecode instance from a `bytes` object.
         """
@@ -2128,6 +2132,7 @@ class Bytecode(Serialisable):
 
         progress_cb, if provided, is called as ``progress_cb(fraction, status)`` at each parse milestone, where fraction is in [0, 1].
         """
+
         def _progress(frac: float, status: str) -> None:
             if progress_cb is not None:
                 progress_cb(frac, status)
@@ -2833,7 +2838,7 @@ class Bytecode(Serialisable):
 # ── Annotation store ──────────────────────────────────────────────────────────
 
 _LocalKey = Tuple[int, int, Optional[int]]  # (findex, reg_idx, defining_op_idx)
-_CommentKey = Tuple[int, int]               # (findex, src_op_idx)
+_CommentKey = Tuple[int, int]  # (findex, src_op_idx)
 
 
 class AnnotationStore:
@@ -2965,12 +2970,18 @@ class XrefIndex:
         return self._from.get((source_kind, index), [])
 
     def callers_of(self, findex: int) -> List[XRef]:
-        return [r for r in self.refs_to(TargetKind.FUNCTION, findex)
-                if r.ref_kind in (RefKind.CALL, RefKind.CALL_VIRTUAL, RefKind.CLOSURE)]
+        return [
+            r
+            for r in self.refs_to(TargetKind.FUNCTION, findex)
+            if r.ref_kind in (RefKind.CALL, RefKind.CALL_VIRTUAL, RefKind.CLOSURE)
+        ]
 
     def callees_of(self, findex: int) -> List[XRef]:
-        return [r for r in self.refs_from(SourceKind.FUNCTION, findex)
-                if r.ref_kind in (RefKind.CALL, RefKind.CALL_VIRTUAL, RefKind.CLOSURE)]
+        return [
+            r
+            for r in self.refs_from(SourceKind.FUNCTION, findex)
+            if r.ref_kind in (RefKind.CALL, RefKind.CALL_VIRTUAL, RefKind.CLOSURE)
+        ]
 
     def field_reads(self, tindex: int, field_slot: int) -> List[XRef]:
         return [r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot) if r.ref_kind == RefKind.FIELD_READ]
@@ -2979,8 +2990,11 @@ class XrefIndex:
         return [r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot) if r.ref_kind == RefKind.FIELD_WRITE]
 
     def all_field_accesses(self, tindex: int, field_slot: int) -> List[XRef]:
-        return [r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot)
-                if r.ref_kind in (RefKind.FIELD_READ, RefKind.FIELD_WRITE)]
+        return [
+            r
+            for r in self.refs_to(TargetKind.FIELD, tindex, field_slot)
+            if r.ref_kind in (RefKind.FIELD_READ, RefKind.FIELD_WRITE)
+        ]
 
     def allocators_of(self, tindex: int) -> List[XRef]:
         return [r for r in self.refs_to(TargetKind.TYPE, tindex) if r.ref_kind == RefKind.ALLOC]
@@ -3374,6 +3388,7 @@ class AnalysisWorker:
 
     def _do_decompile(self, code: "Bytecode", findex: int) -> Any:
         from .decomp.function import IRFunction  # lazy to avoid circular import
+
         func = code.get_findex_map()[findex]
         ir = IRFunction(code, func)
         with self._cache_lock:
@@ -3404,6 +3419,7 @@ class AnalysisWorker:
         def _p(frac: float, status: str) -> None:
             if progress_cb is not None:
                 progress_cb(frac, status)
+
         _p(0.0, "building xref index")
         code.xref_index()
         _p(0.33, "building search index")

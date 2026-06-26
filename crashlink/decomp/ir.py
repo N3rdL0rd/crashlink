@@ -168,7 +168,14 @@ class IRExpression(IRStatement, ABC):
 
 
 class IRLocal(IRExpression):
-    def __init__(self, name: str, type: tIndex, code: Bytecode, reg_idx: Optional[int] = None, defining_op_idx: Optional[int] = None):
+    def __init__(
+        self,
+        name: str,
+        type: tIndex,
+        code: Bytecode,
+        reg_idx: Optional[int] = None,
+        defining_op_idx: Optional[int] = None,
+    ):
         super().__init__(code)
         self.name = name
         self.type = type

@@ -32,11 +32,11 @@ from ..themes import Theme
 class XrefSite:
     """A single reference location."""
 
-    source_findex: Optional[int]   # function the reference lives in (None for non-function sources)
+    source_findex: Optional[int]  # function the reference lives in (None for non-function sources)
     source_label: str
-    opcode_index: Optional[int]    # opcode within the source function, if known
-    body_line: Optional[int]       # body-relative pseudocode line, for locals (resolved directly)
-    ref_kind: str                  # human label for the kind of reference
+    opcode_index: Optional[int]  # opcode within the source function, if known
+    body_line: Optional[int]  # body-relative pseudocode line, for locals (resolved directly)
+    ref_kind: str  # human label for the kind of reference
 
 
 @dataclass
@@ -44,7 +44,7 @@ class XrefGroup:
     """A resolved target and all of its reference sites."""
 
     label: str
-    kind: str                      # "function" | "type" | "field" | "enum" | "string" | "local"
+    kind: str  # "function" | "type" | "field" | "enum" | "string" | "local"
     sites: List[XrefSite] = field(default_factory=list)
 
 

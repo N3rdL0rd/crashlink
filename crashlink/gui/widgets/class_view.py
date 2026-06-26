@@ -15,9 +15,9 @@ from ..themes import Theme
 class ClassView(DecompView):
     """Renders all methods of a class together, emitting which function the cursor is in."""
 
-    function_focused   = Signal(int)        # findex when cursor moves to a new function
-    rename_requested   = Signal(int, str)   # findex, word under cursor
-    xref_requested     = Signal(int, str)   # findex, word under cursor
+    function_focused = Signal(int)  # findex when cursor moves to a new function
+    rename_requested = Signal(int, str)  # findex, word under cursor
+    xref_requested = Signal(int, str)  # findex, word under cursor
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
