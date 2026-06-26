@@ -145,10 +145,10 @@ You can use the following pre-defined commands with `just`:
 - [ ] IR optimization layers
   - [x] Resolve locals from assigns block
   - [x] Trace optimization
-  - [ ] Nested if/else/if/else -> switch
+  - [x] Nested if/else/if/else -> switch
+  - [ ] More to address issues as they arise!
 - [x] Haxe pseudocode
 - [x] Cross-reference index
-- [ ] Partial recompilation (against stubs of other functions)
 - [ ] GUI prerequisites
   - [ ] Workspace/project abstraction (wraps `Bytecode` with cached analysis state)
   - [ ] Incremental/async analysis API (background decompile, progress callbacks)
@@ -160,6 +160,8 @@ You can use the following pre-defined commands with `just`:
   - [ ] Embedded CFG viewer through some Graphviz bindings
   - [ ] Decompiler and patching interface
   - [ ] IR layer viewer
+- [ ] Opcode patching in GUI
+- [ ] Partial recompilation (against stubs of other functions)
 
 ## Portability
 
