@@ -76,6 +76,18 @@ class ClassView(DecompView):
                 self.centerCursor()
                 return
 
+    def scroll_to_op_line(self, findex: int, body_line: int) -> None:
+        """Scroll to a body-relative pseudocode line within the given function and center it."""
+        for start, end, fi in self._line_ranges:
+            if fi == findex:
+                combined = max(start, min(start + body_line, end))
+                block = self.document().findBlockByNumber(combined)
+                cursor = self.textCursor()
+                cursor.setPosition(block.position())
+                self.setTextCursor(cursor)
+                self.centerCursor()
+                return
+
     def findex_at_cursor(self) -> Optional[int]:
         line = self.textCursor().blockNumber()
         for start, end, findex in self._line_ranges:

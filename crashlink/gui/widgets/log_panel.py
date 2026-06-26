@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import QTextEdit, QVBoxLayout, QWidget
 
@@ -12,6 +13,10 @@ from ..themes import Theme
 
 
 class LogPanel(QWidget):
+    # Internal: marshals appends onto the GUI thread. dbg_print may fire from
+    # worker threads (e.g. the load thread), and QTextEdit is not thread-safe.
+    _append_requested = Signal(str, str, str)  # level, msg, color
+
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._theme: Optional[Theme] = None
@@ -28,6 +33,8 @@ class LogPanel(QWidget):
         font.setStyleHint(QFont.StyleHint.Monospace)
         self._output.setFont(font)
         layout.addWidget(self._output)
+
+        self._append_requested.connect(self._do_append, Qt.ConnectionType.QueuedConnection)
 
     def set_theme(self, theme: Theme) -> None:
         self._theme = theme
@@ -65,6 +72,10 @@ class LogPanel(QWidget):
         return _fallbacks.get(attr, "#cdd6f4")
 
     def _append(self, level: str, msg: str, color: str) -> None:
+        # Always hop to the GUI thread; callers may be on worker threads.
+        self._append_requested.emit(level, msg, color)
+
+    def _do_append(self, level: str, msg: str, color: str) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
         cursor = self._output.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)

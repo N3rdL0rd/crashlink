@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QRect, QRunnable, QThread, QThreadPool, QTimer, Qt, Signal, QObject, QSize
@@ -25,12 +26,13 @@ from PySide6.QtWidgets import (
 from crashlink.core import AnalysisWorker, Bytecode, destaticify
 from crashlink.decomp.function import IRFunction
 from crashlink.globals import set_dbg_callback
-from crashlink.pseudo import pseudo, _method_registry
+from crashlink.pseudo import pseudo_oplines, _method_registry
 
 from .themes import DEFAULT_THEME, THEMES, Theme, generate_qss
 from .widgets.class_view import ClassView
 from .widgets.function_list import FunctionList
 from .widgets.log_panel import LogPanel
+from .widgets.xref_panel import XrefPopup, resolve_targets, XrefGroup, XrefSite, _func_label
 
 
 # ── Async helpers ─────────────────────────────────────────────────────────────
@@ -127,6 +129,10 @@ class MainWindow(QMainWindow):
         self._class_names: Dict[str, str] = {}
         # findex → IRFunction
         self._ir_cache: Dict[int, object] = {}
+        # findex → {opcode_index: body-relative pseudocode line}
+        self._opline_cache: Dict[int, Dict[int, int]] = {}
+        # deferred navigation when the target's op map isn't cached yet
+        self._pending_op_scroll: Optional[Tuple[int, int]] = None
 
         self._build_ui()
         self._build_menu()
@@ -167,6 +173,10 @@ class MainWindow(QMainWindow):
         log_dock.setWidget(self._log_panel)
         log_dock.setMinimumHeight(80)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, log_dock)
+
+        # ── Xrefs popup (frameless, keyboard-navigable) ───────
+        self._xref_popup = XrefPopup(self)
+        self._xref_popup.navigate_requested.connect(self._navigate_to_xref)
 
         # ── Status bar ────────────────────────────────────────
         self._status_bar = QStatusBar()
@@ -214,6 +224,8 @@ class MainWindow(QMainWindow):
         self._class_results.clear()
         self._class_names.clear()
         self._ir_cache.clear()
+        self._opline_cache.clear()
+        self._pending_op_scroll = None
         self._log_panel.clear()
         self._code = None
         self._worker.invalidate()
@@ -370,12 +382,18 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            text = pseudo(ir)
+            text, opmap = pseudo_oplines(ir)
+            self._opline_cache[findex] = opmap
         except Exception as e:
             text = f"class ? {{\n    // f@{findex} error: {e}\n}}"
 
         self._class_results[class_key][findex] = text
         self._refresh_class_view(class_key)
+
+        if self._pending_op_scroll is not None and self._pending_op_scroll[0] == findex:
+            pf, pop = self._pending_op_scroll
+            self._pending_op_scroll = None
+            self._navigate_to_xref(pf, pop, -1)
 
         # Update status when all done
         results = self._class_results.get(class_key, {})
@@ -456,6 +474,7 @@ class MainWindow(QMainWindow):
         self._code.annotations.rename(findex, reg_idx, def_op_int, new_name)
         self._worker.invalidate(findex)
         self._ir_cache.pop(findex, None)
+        self._opline_cache.pop(findex, None)
 
         for class_key, fi_list in self._class_findices.items():
             if findex in fi_list:
@@ -472,38 +491,97 @@ class MainWindow(QMainWindow):
     def _on_xref_hotkey(self, findex: int, word: str) -> None:
         if self._code is None:
             return
-
-        # Try to resolve word → findex via method registry
-        reg = _method_registry(self._code)
-        candidates = [
-            fi for fi, (_, mname, _) in reg.items()
-            if mname == word
-        ]
-
-        if not candidates:
-            self._log_panel.error(f"Cannot find xrefs for '{word}' — no matching function")
+        word = word.strip()
+        if not word:
             return
 
-        xi = self._code.xref_index()
-        for target_fi in candidates:
-            callers = xi.callers_of(target_fi)
-            try:
-                fname = self._code.full_func_name(self._code.get_findex_map()[target_fi]) or f"f@{target_fi}"
-            except Exception:
-                fname = f"f@{target_fi}"
+        groups = resolve_targets(self._code, word)
+        local_group = self._resolve_locals(findex, word)
+        if local_group is not None:
+            groups.insert(0, local_group)
 
-            if not callers:
-                self._log_panel.warn(f"No callers of {fname}")
-                continue
+        view = self._current_class_view()
+        if isinstance(view, ClassView):
+            at = view.mapToGlobal(view.cursorRect().bottomLeft())
+        else:
+            at = self.mapToGlobal(self.rect().center())
+        self._xref_popup.show_results(word, groups, at)
+        self._log_panel.result(f"Xrefs for '{word}': {len(groups)} target(s)")
 
-            self._log_panel.result(f"Xrefs to {fname} ({len(callers)} caller(s)):")
-            for ref in callers:
-                try:
-                    caller_func = self._code.get_findex_map()[ref.source_index]
-                    caller_name = self._code.full_func_name(caller_func) or f"f@{ref.source_index}"
-                except Exception:
-                    caller_name = f"f@{ref.source_index}"
-                self._log_panel.info(f"  ← {caller_name}  op@{ref.op_index}")
+    def _resolve_locals(self, findex: int, word: str) -> Optional[XrefGroup]:
+        """Build a group of every occurrence of `word` (a local) in the focused
+        function's displayed pseudocode, each site carrying its body-relative line."""
+        ir = self._ir_cache.get(findex)
+        if not isinstance(ir, IRFunction):
+            return None
+        if not any(loc.name == word for loc in ir.all_locals):
+            return None
+
+        class_key, _, _ = self._class_key_for(findex)
+        text = self._class_results.get(class_key, {}).get(findex)
+        if not text:
+            return None
+
+        func_lines = text.split("\n")
+        if len(func_lines) >= 3 and func_lines[0].startswith("class ") and func_lines[-1].strip() == "}":
+            content = func_lines[1:-1]
+        else:
+            content = func_lines
+
+        pat = re.compile(rf"\b{re.escape(word)}\b")
+        label = _func_label(self._code, findex) if self._code else f"f@{findex}"
+        sites: List[XrefSite] = []
+        for j, line in enumerate(content):
+            if pat.search(line):
+                sites.append(XrefSite(
+                    source_findex=findex,
+                    source_label=label,
+                    opcode_index=None,
+                    body_line=j,
+                    ref_kind="use",
+                ))
+        if not sites:
+            return None
+        return XrefGroup(label=f"local '{word}'", kind="local", sites=sites)
+
+    def _navigate_to_xref(self, findex: int, op_idx: int, body_line: int) -> None:
+        if self._code is None:
+            return
+
+        # Open / focus the class tab containing findex.
+        self._on_function_selected(findex)
+        view = self._current_class_view()
+        if not isinstance(view, ClassView):
+            return
+
+        # Local site: body line is known directly.
+        if body_line >= 0:
+            view.scroll_to_op_line(findex, body_line)
+            return
+
+        if op_idx < 0:
+            view.scroll_to_findex(findex)
+            return
+
+        opmap = self._opline_cache.get(findex)
+        if opmap is None:
+            # Map not cached yet (still decompiling) — defer to _on_decompile_finished.
+            self._pending_op_scroll = (findex, op_idx)
+            return
+
+        line = opmap.get(op_idx)
+        if line is None:
+            # Nearest preceding mapped op.
+            preceding = [v for k, v in opmap.items() if k <= op_idx]
+            line = max(preceding) if preceding else None
+        if line is None:
+            view.scroll_to_findex(findex)
+        else:
+            view.scroll_to_op_line(findex, line)
+
+    def _current_class_view(self) -> Optional[ClassView]:
+        w = self._tabs.currentWidget()
+        return w if isinstance(w, ClassView) else None
 
     # ── Theme ─────────────────────────────────────────────────────────────────
 
@@ -514,6 +592,7 @@ class MainWindow(QMainWindow):
         self._tab_bar.update()
         self._func_list.set_theme(theme)
         self._log_panel.set_theme(theme)
+        self._xref_popup.set_theme(theme)
         for i in range(self._tabs.count()):
             view = self._tabs.widget(i)
             if isinstance(view, ClassView):

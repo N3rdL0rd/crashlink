@@ -153,8 +153,8 @@ You can use the following pre-defined commands with `just`:
   - [ ] Workspace/project abstraction (wraps `Bytecode` with cached analysis state)
   - [ ] Incremental/async analysis API (background decompile, progress callbacks)
   - [ ] Patch buffer (in-memory edits, dirty tracking, re-serialisation)
-  - [ ] Function search index (by name, file, type)
-  - [ ] Source location API (debug file + line → function/opcode, and reverse)
+  - [x] Function search index (by name, file, type)
+  - [x] Source location API (debug file + line → function/opcode, and reverse)
 - [ ] GUI (probably qt6 at this point)
   - [ ] Graphical disassembler
   - [ ] Embedded CFG viewer through some Graphviz bindings
