@@ -68,6 +68,7 @@ class IRStatement(ABC):
         self.comment: str = ""
         self.src_line: Optional[int] = None
         self.src_file_idx: Optional[int] = None
+        self.src_op_idx: Optional[int] = None
 
     @abstractmethod
     def __repr__(self) -> str:
@@ -167,11 +168,12 @@ class IRExpression(IRStatement, ABC):
 
 
 class IRLocal(IRExpression):
-    def __init__(self, name: str, type: tIndex, code: Bytecode, reg_idx: Optional[int] = None):
+    def __init__(self, name: str, type: tIndex, code: Bytecode, reg_idx: Optional[int] = None, defining_op_idx: Optional[int] = None):
         super().__init__(code)
         self.name = name
         self.type = type
         self.reg_idx = reg_idx
+        self.defining_op_idx: Optional[int] = defining_op_idx
         # Set by IRNativeArrayAllocOptimizer when this local is bound to a
         # `Native.alloc_array(ty, size)` result: the bytecode's own "Array" kind
         # carries no element-type info, but Haxe's hl.NativeArray<T> needs one,

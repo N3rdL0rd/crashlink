@@ -15,13 +15,13 @@ import sys
 import tempfile
 import traceback
 import webbrowser
-from typing import Callable, Dict, List, Tuple, Set, cast
+from typing import Callable, Dict, List, Optional, Tuple, Set, cast
 from functools import wraps
 
 from crashlink.hlc import code_to_c
 
 from . import decomp, disasm, globals
-from .core import XRef, XrefIndex, TargetKind, SourceKind, RefKind
+from .core import XRef, XrefIndex, TargetKind, SourceKind, RefKind, AnnotationStore
 from .asm import AsmFile
 from .core import (
     Bytecode,
@@ -1495,6 +1495,107 @@ class Commands(BaseCommands):
         print(f"{len(results)} result(s) for {query!r}:")
         for hit in results:
             print(f"  {disasm.func_header(self.code, hit)}")
+
+    def locals(self, args: List[str]) -> None:
+        """List all IR locals for a function with their rename keys. `locals <findex>`"""
+        if not args:
+            print("Usage: locals <findex>")
+            return
+        try:
+            findex = int(args[0])
+        except ValueError:
+            print("Invalid findex.")
+            return
+        func_map = self.code.get_findex_map()
+        if findex not in func_map:
+            print(f"f@{findex} not found.")
+            return
+        func = func_map[findex]
+        from .decomp.function import IRFunction
+        from .core import Function
+        if not isinstance(func, Function):
+            print("Natives have no locals.")
+            return
+        ir = IRFunction(self.code, func)
+        print(f"Locals for f@{findex} ({self.code.full_func_name(func)}):")
+        seen: Dict[int, object] = {}
+        for local in ir.all_locals:
+            if local.reg_idx is not None and local.reg_idx in seen:
+                continue
+            if local.reg_idx is not None:
+                seen[local.reg_idx] = local
+        for local in ir.all_locals:
+            def_op = str(local.defining_op_idx) if local.defining_op_idx is not None else "_"
+            renamed = self.code.annotations.get_rename(
+                findex, local.reg_idx or 0, local.defining_op_idx
+            )
+            rename_str = f"  -> {renamed!r}" if renamed else ""
+            print(f"  reg={local.reg_idx} def_op={def_op}  {local.name}: {local.get_type()}{rename_str}")
+
+    def rename(self, args: List[str]) -> None:
+        """Rename an IR local. `rename <findex> <reg_idx> <def_op|_> <new_name>`
+
+        def_op is the opcode index that defines this local (see `locals <findex>`),
+        or _ for the initial (pre-split) value of a register.
+        """
+        if len(args) < 4:
+            print("Usage: rename <findex> <reg_idx> <def_op|_> <new_name>")
+            return
+        try:
+            findex = int(args[0])
+            reg_idx = int(args[1])
+        except ValueError:
+            print("Invalid findex or reg_idx.")
+            return
+        def_op_str = args[2]
+        def_op: Optional[int] = None if def_op_str == "_" else int(def_op_str)
+        new_name = args[3]
+        self.code.annotations.rename(findex, reg_idx, def_op, new_name)
+        print(f"Renamed reg{reg_idx} (def_op={def_op_str}) in f@{findex} -> {new_name!r}.")
+
+    def unrename(self, args: List[str]) -> None:
+        """Clear a local rename. `unrename <findex> <reg_idx> <def_op|_>`"""
+        if len(args) < 3:
+            print("Usage: unrename <findex> <reg_idx> <def_op|_>")
+            return
+        try:
+            findex = int(args[0])
+            reg_idx = int(args[1])
+        except ValueError:
+            print("Invalid findex or reg_idx.")
+            return
+        def_op: Optional[int] = None if args[2] == "_" else int(args[2])
+        self.code.annotations.clear_rename(findex, reg_idx, def_op)
+        print("Rename cleared.")
+
+    def addcomment(self, args: List[str]) -> None:
+        """Attach a comment to a statement by opcode index. `addcomment <findex> <op_idx> <text>`"""
+        if len(args) < 3:
+            print("Usage: addcomment <findex> <op_idx> <text>")
+            return
+        try:
+            findex = int(args[0])
+            op_idx = int(args[1])
+        except ValueError:
+            print("Invalid findex or op_idx.")
+            return
+        text = " ".join(args[2:])
+        self.code.annotations.set_comment(findex, op_idx, text)
+        print(f"Comment set on f@{findex} op#{op_idx}.")
+
+    def rmcomment(self, args: List[str]) -> None:
+        """Remove a comment from a statement. `rmcomment <findex> <op_idx>`"""
+        if len(args) < 2:
+            print("Usage: rmcomment <findex> <op_idx>")
+            return
+        try:
+            findex = int(args[0])
+            op_idx = int(args[1])
+        except ValueError:
+            print("Invalid findex or op_idx.")
+            return
+        self.code.annotations.clear_comment(findex, op_idx)
+        print("Comment cleared.")
 
     def srcloc(self, args: List[str]) -> None:
         """Source location lookup.

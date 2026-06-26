@@ -1873,6 +1873,7 @@ class Bytecode(Serialisable):
         self._xref_index: Optional[XrefIndex] = None
         self._search_index: Optional[SearchIndex] = None
         self._source_map: Optional[SourceMap] = None
+        self.annotations: AnnotationStore = AnnotationStore()
 
         self.virtuals_built = False
 
@@ -2797,6 +2798,55 @@ class Bytecode(Serialisable):
         return self._source_map
 
 
+# ── Annotation store ──────────────────────────────────────────────────────────
+
+_LocalKey = Tuple[int, int, Optional[int]]  # (findex, reg_idx, defining_op_idx)
+_CommentKey = Tuple[int, int]               # (findex, src_op_idx)
+
+
+class AnnotationStore:
+    """
+    Persistent user annotations (renames, comments) keyed on stable bytecode
+    positions rather than IR object identity, so they survive re-decompilation.
+
+    Renames are keyed on (findex, reg_idx, defining_op_idx) where
+    defining_op_idx=None identifies the initial (pre-split) local for a register.
+    Comments are keyed on (findex, src_op_idx).
+    """
+
+    def __init__(self) -> None:
+        self._renames: Dict[_LocalKey, str] = {}
+        self._comments: Dict[_CommentKey, str] = {}
+
+    # ── Renames ───────────────────────────────────────────────────────────────
+
+    def rename(self, findex: int, reg_idx: int, defining_op_idx: Optional[int], name: str) -> None:
+        self._renames[(findex, reg_idx, defining_op_idx)] = name
+
+    def get_rename(self, findex: int, reg_idx: int, defining_op_idx: Optional[int]) -> Optional[str]:
+        return self._renames.get((findex, reg_idx, defining_op_idx))
+
+    def clear_rename(self, findex: int, reg_idx: int, defining_op_idx: Optional[int]) -> None:
+        self._renames.pop((findex, reg_idx, defining_op_idx), None)
+
+    def renames_for(self, findex: int) -> Dict[_LocalKey, str]:
+        return {k: v for k, v in self._renames.items() if k[0] == findex}
+
+    # ── Comments ──────────────────────────────────────────────────────────────
+
+    def set_comment(self, findex: int, src_op_idx: int, text: str) -> None:
+        self._comments[(findex, src_op_idx)] = text
+
+    def get_comment(self, findex: int, src_op_idx: int) -> Optional[str]:
+        return self._comments.get((findex, src_op_idx))
+
+    def clear_comment(self, findex: int, src_op_idx: int) -> None:
+        self._comments.pop((findex, src_op_idx), None)
+
+    def comments_for(self, findex: int) -> Dict[_CommentKey, str]:
+        return {k: v for k, v in self._comments.items() if k[0] == findex}
+
+
 # ── Cross-reference index ──────────────────────────────────────────────────────
 
 
@@ -3321,6 +3371,7 @@ __all__ = [
     "intRef",
     "strRef",
     "tIndex",
+    "AnnotationStore",
     "RefKind",
     "SearchIndex",
     "SourceKind",

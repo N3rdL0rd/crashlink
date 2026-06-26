@@ -241,6 +241,7 @@ class IRFunction:
         self.cfg: Optional[CFGraph] = None
         self.block: IRBlock = IRBlock(code)
         self.locals: List[IRLocal] = []
+        self.all_locals: List[IRLocal] = []  # all created locals including superseded splits
         self.opcodes: str = ""
         self.cfg_data: Dict[str, List[Dict[str, Any]]] = {"nodes": [], "edges": []}
         self.layer_snapshots: List[Tuple[str, str, bool]] = []
@@ -301,12 +302,15 @@ class IRFunction:
                 IRRedundantRecomputeEliminator(self),
             ]
             self._optimize()
+            self.apply_annotations()
 
     def _lift(self, no_lift: bool = False) -> None:
         """Lift function to IR"""
         assert self.cfg is not None
         for i, reg in enumerate(self.func.regs):
-            self.locals.append(IRLocal(f"var{i}", reg, code=self.code, reg_idx=i))
+            local = IRLocal(f"var{i}", reg, code=self.code, reg_idx=i, defining_op_idx=None)
+            self.locals.append(local)
+            self.all_locals.append(local)
         self._build_assign_map()
         self._name_locals()
         if not no_lift:
@@ -371,7 +375,7 @@ class IRFunction:
         """Get the current IRLocal for a register, respecting SSA-esque name transitions."""
         return self.locals[reg_idx]
 
-    def _split_local(self, reg_idx: int, name: str) -> IRLocal:
+    def _split_local(self, reg_idx: int, name: str, defining_op_idx: Optional[int] = None) -> IRLocal:
         """Create a new IRLocal for a register with a specific name (SSA-esque split)."""
         reg_type = self.func.regs[reg_idx]
         new_type = reg_type.resolve(self.code)
@@ -384,8 +388,9 @@ class IRFunction:
         while name in existing_names:
             name = f"{base_name}{suffix}"
             suffix += 1
-        new_local = IRLocal(name, reg_type, code=self.code, reg_idx=reg_idx)
+        new_local = IRLocal(name, reg_type, code=self.code, reg_idx=reg_idx, defining_op_idx=defining_op_idx)
         self.locals[reg_idx] = new_local
+        self.all_locals.append(new_local)
         # Cached blocks may still reference the old local object; force them to
         # be re-lifted so they pick up the new name.
         self._lift_cache.clear()
@@ -397,7 +402,29 @@ class IRFunction:
             for reg_idx, name in self._op_assigns[op_idx].items():
                 current = self.locals[reg_idx]
                 if current.name != name:
-                    self._split_local(reg_idx, name)
+                    self._split_local(reg_idx, name, defining_op_idx=op_idx)
+
+    def apply_annotations(self) -> None:
+        """Apply renames and comments from code.annotations to this IR function in-place."""
+        store = self.code.annotations
+        findex = self.func.findex.value
+        for local in self.all_locals:
+            if local.reg_idx is not None:
+                rename = store.get_rename(findex, local.reg_idx, local.defining_op_idx)
+                if rename is not None:
+                    local.name = rename
+
+        def _walk(block: IRBlock) -> None:
+            for stmt in block.statements:
+                if stmt.src_op_idx is not None:
+                    comment = store.get_comment(findex, stmt.src_op_idx)
+                    if comment is not None:
+                        stmt.comment = comment
+                for child in stmt.get_children():
+                    if isinstance(child, IRBlock):
+                        _walk(child)
+
+        _walk(self.block)
 
     def _optimize(self) -> None:
         """Optimize the IR"""
@@ -1190,14 +1217,17 @@ class IRFunction:
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
 
-            # Tag the newly-appended statement(s) with source location
-            if _debuginfo is not None and op_idx is not None and len(block.statements) > _prev_len:
-                try:
-                    ref = _debuginfo[op_idx]
-                    block.statements[-1].src_line = ref.line
-                    block.statements[-1].src_file_idx = ref.value
-                except IndexError:
-                    pass
+            # Tag the newly-appended statement with source location and opcode index
+            if op_idx is not None and len(block.statements) > _prev_len:
+                stmt = block.statements[-1]
+                stmt.src_op_idx = op_idx
+                if _debuginfo is not None:
+                    try:
+                        ref = _debuginfo[op_idx]
+                        stmt.src_line = ref.line
+                        stmt.src_file_idx = ref.value
+                    except IndexError:
+                        pass
 
     def _shortest_distances(
         self,
