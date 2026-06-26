@@ -170,6 +170,11 @@ class XrefIndex:
 
         # ── 1. Per-function opcode scan ──────────────────────────────────────
 
+        # Pre-build definition-object → tindex map to avoid O(n) scans in _field_owner
+        _defn_to_ti: Dict[int, int] = {id(t.definition): ti for ti, t in enumerate(code.types)}
+        # Cache (tindex, flat_slot) → (owner_tindex, own_slot) across all functions
+        _field_owner_cache: Dict[Tuple[int, int], Tuple[int, int]] = {}
+
         for func in code.functions:
             findex = func.findex.value
             regs = func.regs  # list[tIndex]
@@ -180,15 +185,12 @@ class XrefIndex:
                 except IndexError:
                     return None
 
-            def _field_owner(flat_slot: int, obj: Obj) -> Tuple[int, int]:
-                """
-                Given a flat resolved-field slot on `obj`, return
-                (declaring_tindex, own_slot) so that inherited fields from
-                different subclasses resolve to the same target key.
-                """
-                # Walk the inheritance chain bottom-up; resolve_fields prepends
-                # ancestor fields, so flat_slot 0..len(ancestor.fields)-1 belong
-                # to the deepest ancestor, etc.
+            def _field_owner(flat_slot: int, tindex: int, obj: Obj) -> Tuple[int, int]:
+                """Return (declaring_tindex, own_slot) for a flat resolved field slot."""
+                cache_key = (tindex, flat_slot)
+                cached = _field_owner_cache.get(cache_key)
+                if cached is not None:
+                    return cached
                 chain: List[Obj] = []
                 visited: Set[int] = set()
                 cur: Optional[Obj] = obj
@@ -199,19 +201,18 @@ class XrefIndex:
                         break
                     s = cur.super.resolve(code).definition
                     cur = s if isinstance(s, Obj) else None
-                # chain is [most-derived, ..., root]; fields are laid out root-first
                 chain.reverse()
                 offset = 0
+                result = (0, flat_slot)
                 for ancestor in chain:
                     if flat_slot < offset + len(ancestor.fields):
                         own_slot = flat_slot - offset
-                        # find tindex for ancestor
-                        for ti, t in enumerate(code.types):
-                            if t.definition is ancestor:
-                                return (ti, own_slot)
-                        return (0, own_slot)  # fallback
+                        owner_ti = _defn_to_ti.get(id(ancestor), 0)
+                        result = (owner_ti, own_slot)
+                        break
                     offset += len(ancestor.fields)
-                return (0, flat_slot)
+                _field_owner_cache[cache_key] = result
+                return result
 
             for op_idx, op in enumerate(func.ops):
                 op_name = op.op
@@ -243,8 +244,19 @@ class XrefIndex:
                             if proto is not None:
                                 _emit(TargetKind.FUNCTION, proto.findex.value, RefKind.CALL_VIRTUAL)
 
-                elif op_name in ("StaticClosure", "VirtualClosure", "InstanceClosure"):
+                elif op_name in ("StaticClosure", "InstanceClosure"):
                     _emit(TargetKind.FUNCTION, df["fun"].value, RefKind.CLOSURE)
+
+                elif op_name == "VirtualClosure":
+                    # field is a pindex into the receiver's vtable
+                    pindex = df["field"].value
+                    recv_t = _reg_tindex(df["obj"].value)
+                    if recv_t is not None:
+                        t = code.types[recv_t]
+                        if isinstance(t.definition, Obj):
+                            proto = code.proto_by_pindex(t.definition, pindex)
+                            if proto is not None:
+                                _emit(TargetKind.FUNCTION, proto.findex.value, RefKind.CLOSURE)
 
                 elif op_name in ("Field",):
                     obj_t = _reg_tindex(df["obj"].value)
@@ -253,7 +265,7 @@ class XrefIndex:
                         if isinstance(t.definition, Obj):
                             try:
                                 flat = df["field"].value
-                                owner_t, own_slot = _field_owner(flat, t.definition)
+                                owner_t, own_slot = _field_owner(flat, obj_t, t.definition)
                                 _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_READ, own_slot)
                             except (IndexError, KeyError):
                                 pass
@@ -265,7 +277,7 @@ class XrefIndex:
                         if isinstance(t.definition, Obj):
                             try:
                                 flat = df["field"].value
-                                owner_t, own_slot = _field_owner(flat, t.definition)
+                                owner_t, own_slot = _field_owner(flat, this_t, t.definition)
                                 _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_READ, own_slot)
                             except (IndexError, KeyError):
                                 pass
@@ -277,7 +289,7 @@ class XrefIndex:
                         if isinstance(t.definition, Obj):
                             try:
                                 flat = df["field"].value
-                                owner_t, own_slot = _field_owner(flat, t.definition)
+                                owner_t, own_slot = _field_owner(flat, obj_t, t.definition)
                                 _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_WRITE, own_slot)
                             except (IndexError, KeyError):
                                 pass
@@ -289,7 +301,7 @@ class XrefIndex:
                         if isinstance(t.definition, Obj):
                             try:
                                 flat = df["field"].value
-                                owner_t, own_slot = _field_owner(flat, t.definition)
+                                owner_t, own_slot = _field_owner(flat, this_t, t.definition)
                                 _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_WRITE, own_slot)
                             except (IndexError, KeyError):
                                 pass
