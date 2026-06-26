@@ -21,7 +21,7 @@ from functools import wraps
 from crashlink.hlc import code_to_c
 
 from . import decomp, disasm, globals
-from .core import XRef, XrefIndex, TargetKind, SourceKind, RefKind, AnnotationStore
+from .core import XRef, XrefIndex, TargetKind, SourceKind, RefKind, AnnotationStore, USE_TQDM, ProgressCallback
 from .asm import AsmFile
 from .core import (
     Bytecode,
@@ -48,6 +48,27 @@ from .pseudo import pseudo
 from hlrun.patch import Patch
 
 
+def _make_progress_cb() -> "Optional[ProgressCallback]":
+    if not USE_TQDM:
+        return None
+    try:
+        from tqdm import tqdm as _tqdm
+        bar = _tqdm(total=100, desc="Loading", unit="%", bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt}% [{elapsed}<{remaining}] {postfix}")
+        _last: List[int] = [0]
+        def _cb(frac: float, status: str) -> None:
+            pct = int(frac * 100)
+            bar.set_postfix_str(status, refresh=False)
+            delta = pct - _last[0]
+            if delta > 0:
+                bar.update(delta)
+                _last[0] = pct
+            if frac >= 1.0:
+                bar.close()
+        return _cb
+    except Exception:
+        return None
+
+
 def _load_code_from_cli_path(path: str, no_constants: bool) -> Bytecode:
     is_haxe = True
     with open(path, "rb") as f:
@@ -64,11 +85,11 @@ def _load_code_from_cli_path(path: str, no_constants: bool) -> Bytecode:
         stripped = path.split(".")[0]
         os.system(f"haxe -hl {stripped}.hl -main {path}")
         with open(f"{stripped}.hl", "rb") as f:
-            return Bytecode().deserialise(f, init_globals=not no_constants)
+            return Bytecode().deserialise(f, init_globals=not no_constants, progress_cb=_make_progress_cb())
 
     if not path.endswith(".pkl"):
         with open(path, "rb") as f:
-            return Bytecode().deserialise(f, init_globals=not no_constants)
+            return Bytecode().deserialise(f, init_globals=not no_constants, progress_cb=_make_progress_cb())
 
     try:
         import dill  # type: ignore[import-untyped]

@@ -18,7 +18,7 @@ from enum import Enum as _Enum
 
 _EnumBase = _Enum
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, BinaryIO, Dict, List, Literal, Optional, Set, Tuple, TypeVar
+from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Dict, List, Literal, Optional, Set, Tuple, TypeVar
 
 T = TypeVar("T", bound="VarInt")  # easier than reimplementing deserialise for each subclass
 
@@ -46,6 +46,8 @@ try:
 except ImportError:
     dbg_print("Could not find tqdm. Progress bars will not be displayed.")
     USE_TQDM = False
+
+ProgressCallback = Callable[[float, str], None]
 
 
 def destaticify(s: str) -> str:
@@ -2048,22 +2050,22 @@ class Bytecode(Serialisable):
             offset += buffer_size
 
     @classmethod
-    def from_path(cls, path: str, search_magic: bool = True) -> "Bytecode":
+    def from_path(cls, path: str, search_magic: bool = True, progress_cb: Optional[ProgressCallback] = None) -> "Bytecode":
         """
         Create a new Bytecode instance from a file path.
         """
         f = open(path, "rb")
-        instance = cls().deserialise(f, search_magic=search_magic)
+        instance = cls().deserialise(f, search_magic=search_magic, progress_cb=progress_cb)
         f.close()
         return instance
 
     @classmethod
-    def from_bytes(cls, data: bytes, search_magic: bool = True) -> "Bytecode":
+    def from_bytes(cls, data: bytes, search_magic: bool = True, progress_cb: Optional[ProgressCallback] = None) -> "Bytecode":
         """
         Create a new Bytecode instance from a `bytes` object.
         """
         f = BytesIO(data)
-        instance = cls().deserialise(f, search_magic=search_magic)
+        instance = cls().deserialise(f, search_magic=search_magic, progress_cb=progress_cb)
         f.close()
         return instance
 
@@ -2114,15 +2116,23 @@ class Bytecode(Serialisable):
         f: BinaryIO | BytesIO,
         search_magic: bool = True,
         init_globals: bool = True,
+        progress_cb: Optional[ProgressCallback] = None,
     ) -> "Bytecode":
         """
         Deserialise the bytecode in-place from an open binary file handle or a BytesIO object. By default will search for the bytecode magic (b'HLB') anywhere in the file, pass `search_magic=False` to disable.
+
+        progress_cb, if provided, is called as ``progress_cb(fraction, status)`` at each parse milestone, where fraction is in [0, 1].
         """
+        def _progress(frac: float, status: str) -> None:
+            if progress_cb is not None:
+                progress_cb(frac, status)
+
         start_time = datetime.now()
         dbg_print("---- Deserialise ----")
         if search_magic:
             dbg_print("Searching for magic...")
             self._find_magic(f)
+        _progress(0.00, "parsing header")
         self.track_section(f, "magic")
         self.magic.deserialise(f)
         assert self.magic.value == b"HLB", "Incorrect magic found!"
@@ -2167,6 +2177,7 @@ class Bytecode(Serialisable):
         self.entrypoint.deserialise(f)
         dbg_print(f"Entrypoint: f@{self.entrypoint.value}")
 
+        _progress(0.02, "parsing ints and floats")
         self.track_section(f, "ints")
         for i in range(self.nints.value):
             self.track_section(f, f"int {i}")
@@ -2177,6 +2188,7 @@ class Bytecode(Serialisable):
             self.track_section(f, f"float {i}")
             self.floats.append(SerialisableF64().deserialise(f))
 
+        _progress(0.04, "parsing strings")
         dbg_print(f"Strings section starts at {tell(f)}")
         self.track_section(f, "strings")
         self.strings.deserialise(f, self.nstrings.value)
@@ -2190,6 +2202,7 @@ class Bytecode(Serialisable):
         else:
             self.bytes = None
 
+        _progress(0.06, "parsing debug files")
         if self.has_debug_info and self.ndebugfiles and self.debugfiles:
             dbg_print(f"Deserialising debug files... (at {tell(f)})")
             self.track_section(f, "ndebugfiles")
@@ -2204,30 +2217,37 @@ class Bytecode(Serialisable):
         dbg_print(f"Starting main blobs at {tell(f)}")
         dbg_print(f"Types starting at {tell(f)}")
         self.track_section(f, "types")
-        for i in range(self.ntypes.value):
+        _ntypes = self.ntypes.value
+        _report_every_type = max(1, _ntypes // 100)
+        for i in range(_ntypes):
             self.track_section(f, f"type {i}")
             self.types.append(Type().deserialise(f))
+            if i % _report_every_type == 0:
+                _progress(0.07 + (i / _ntypes) * 0.13, "parsing types")
         dbg_print(f"Globals starting at {tell(f)}")
+        _progress(0.20, "parsing globals")
         self.track_section(f, "globals")
         for i in range(self.nglobals.value):
             self.track_section(f, f"global {i}")
             self.global_types.append(tIndex().deserialise(f))
         dbg_print(f"Natives starting at {tell(f)}")
+        _progress(0.22, "parsing natives")
         self.track_section(f, "natives")
         for i in range(self.nnatives.value):
             self.track_section(f, f"native {i}")
             self.natives.append(Native().deserialise(f))
         dbg_print(f"Functions starting at {tell(f)}")
+        _progress(0.23, "parsing functions")
         self.track_section(f, "functions")
-        if not USE_TQDM or self.nfunctions.value < 1000:
-            for i in range(self.nfunctions.value):
-                self.track_section(f, f"function {i}")
-                self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
-        else:
-            for i in tqdm(range(self.nfunctions.value), desc="Reading functions"):
-                self.track_section(f, f"function {i}")
-                self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
+        _nfunctions = self.nfunctions.value
+        _report_every_func = max(1, _nfunctions // 200)
+        for i in range(_nfunctions):
+            self.track_section(f, f"function {i}")
+            self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
+            if i % _report_every_func == 0:
+                _progress(0.23 + (i / _nfunctions) * 0.65, "parsing functions")
         if self.nconstants is not None:
+            _progress(0.88, "parsing constants")
             dbg_print(f"Constants starting at {tell(f)}")
             self.track_section(f, "constants")
             for i in range(self.nconstants.value):
@@ -2236,12 +2256,16 @@ class Bytecode(Serialisable):
         dbg_print(f"Bytecode end at {tell(f)}.")
         self.deserialised = True
         if init_globals:
+            _progress(0.90, "initializing globals")
             dbg_print("Initializing globals...")
             self.init_globals()
+            _progress(0.95, "building virtual tables")
             dbg_print("Building virtual tables...")
             self._build_virtual_tables()
+            _progress(0.98, "mapping statics")
             dbg_print("Mapping statics...")
             self.map_statics()
+        _progress(1.00, "done")
         dbg_print(f"{(datetime.now() - start_time).total_seconds()}s elapsed.")
         return self
 
@@ -3314,6 +3338,7 @@ class SourceMap:
 
 
 __all__ = [
+    "ProgressCallback",
     "Abstract",
     "Array",
     "Binding",
