@@ -70,21 +70,24 @@ class _PseudoClass:
         # *static* companion class, not the dynamic/instance one — if `obj`
         # is static, route it to its real dynamic counterpart so the actual
         # class hierarchy (super chain, instance fields) is visible.
+        self.static: Optional[Obj] = None
         if obj.is_static and obj.dynamic is not None:
             self.dynamic = obj.dynamic
             self.static = obj
         else:
             self.dynamic = obj
-            self.static = None
         self.methods = methods
+
+
+_method_registry_cache: Dict[int, Dict[int, Tuple[Obj, str, bool]]] = {}
 
 
 def _method_registry(code: Bytecode) -> Dict[int, Tuple[Obj, str, bool]]:
     """Map findex -> (class Obj, method name, is_instance) using Obj protos/bindings."""
-    registry = getattr(code, "_pseudo_method_registry", None)
-    if registry is not None:
-        return registry
-    registry = {}
+    cache_key = id(code)
+    if cache_key in _method_registry_cache:
+        return _method_registry_cache[cache_key]
+    registry: Dict[int, Tuple[Obj, str, bool]] = {}
     for t in code.types:
         if t.kind.value != Type.Kind.OBJ.value:
             continue
@@ -100,7 +103,7 @@ def _method_registry(code: Bytecode) -> Dict[int, Tuple[Obj, str, bool]]:
             if isinstance(fn, Function):
                 field = binding.field.resolve_obj(code, obj)
                 registry[fn.findex.value] = (obj, field.name.resolve(code), False)
-    code._pseudo_method_registry = registry
+    _method_registry_cache[cache_key] = registry
     return registry
 
 
@@ -528,9 +531,7 @@ def _expression_to_haxe(
         # The abstract `hl.types.ArrayBase`/`ArrayAccess` base classes (used
         # when the concrete element type isn't known statically) define no
         # such operator at all — bracket syntax on them doesn't compile.
-        if isinstance(expr.target, IRField) and not _is_untyped_array_access_class(
-            expr.target.target.get_type(), code
-        ):
+        if isinstance(expr.target, IRField) and not _is_untyped_array_access_class(expr.target.target.get_type(), code):
             if expr.target.field_name in ("getDyn", "get") and len(expr.args) == 1:
                 arr = _expression_to_haxe(expr.target.target, code, ir_function)
                 idx = _expression_to_haxe(expr.args[0], code, ir_function)
@@ -560,11 +561,7 @@ def _expression_to_haxe(
             # than `method(obj, args)`, which avoids shadowing issues and is
             # valid Haxe syntax. This also covers std static wrappers like
             # ArrayBytes.__expand(this, len) -> this.__expand(len).
-            if (
-                isinstance(expr.target, IRConst)
-                and isinstance(expr.target.value, Function)
-                and expr.args
-            ):
+            if isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function) and expr.args:
                 instance_method = _try_instance_method_call(expr.target.value, expr.args[0], code, ir_function)
                 if instance_method:
                     callee_str = instance_method
@@ -898,7 +895,8 @@ def _contains_call(stmt: IRStatement) -> bool:
             walk(child)
         elif isinstance(child, IRBlock):
             for child_stmt in child.statements:
-                walk(child_stmt)
+                if isinstance(child_stmt, IRExpression):
+                    walk(child_stmt)
     return found
 
 
@@ -911,7 +909,7 @@ def _generate_statements(
     # This is a simplification; a proper symbol table would be more robust.
     declared_vars_in_scope: set[str],
     inline_declarations: Optional[Dict[IRStatement, Tuple[str, str]]] = None,
-    render_subs: Optional[Dict[IRLocal, str]] = None,
+    render_subs: Optional[Dict[IRLocal, Tuple[str, Set[IRLocal]]]] = None,
 ) -> List[str]:
     output_lines: List[str] = []
     indent = _indent_str(indent_level)
@@ -921,7 +919,7 @@ def _generate_statements(
         render_subs = {}
 
     prev_render_subs = getattr(ir_function, "_render_subs", None)
-    ir_function._render_subs = render_subs
+    ir_function._render_subs = render_subs  # type: ignore[attr-defined]
 
     for stmt in statements:
         # Substitutions are valid for the statement's own expressions unless a
@@ -1070,7 +1068,14 @@ def _generate_statements(
                 return int(val)
 
             def _field_eq(a: IRStatement, b: IRStatement) -> bool:
-                return isinstance(a, IRField) and isinstance(b, IRField) and a.field_name == b.field_name and isinstance(a.target, IRLocal) and isinstance(b.target, IRLocal) and a.target.name == b.target.name
+                return (
+                    isinstance(a, IRField)
+                    and isinstance(b, IRField)
+                    and a.field_name == b.field_name
+                    and isinstance(a.target, IRLocal)
+                    and isinstance(b.target, IRLocal)
+                    and a.target.name == b.target.name
+                )
 
             if (
                 isinstance(stmt.expr, IRArithmetic)
@@ -1545,9 +1550,7 @@ def _generate_statements(
         # Register simple assignments for render-time substitution into later uses.
         if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
             registerable = _is_simple_render_expr(stmt.expr)
-            if not registerable and re.fullmatch(r"var\d+", stmt.target.name) and _is_single_use_render_expr(
-                stmt.expr
-            ):
+            if not registerable and re.fullmatch(r"var\d+", stmt.target.name) and _is_single_use_render_expr(stmt.expr):
                 reads, writes = _count_local_reads_and_writes(ir_function.block, stmt.target.name)
                 registerable = reads == 1 and writes == 1
             if registerable:
@@ -1563,7 +1566,7 @@ def _generate_statements(
             else:  # Should not happen if statement generated something
                 output_lines.append(f"{indent}// {stmt.comment}")
 
-    ir_function._render_subs = prev_render_subs
+    ir_function._render_subs = prev_render_subs  # type: ignore[attr-defined]
     return output_lines
 
 
@@ -1592,7 +1595,7 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
     if containing is None:
         containing = _containing_class_for(ir_func, code)
         if containing is not None:
-            ir_func._containing_class = containing
+            ir_func._containing_class = containing  # type: ignore[attr-defined]
     is_instance = containing is not None and ir_func in containing.methods
     if is_constructor:
         is_instance = True
@@ -2556,7 +2559,7 @@ def _find_receiver_local(class_name: str, ir_function: IRFunction, code: Bytecod
     return candidates[0] if candidates else None
 
 
-def _method_overrides(method_name: str, ir_class: "IRClass", code: Bytecode) -> bool:
+def _method_overrides(method_name: str, ir_class: "Union[IRClass, _PseudoClass]", code: Bytecode) -> bool:
     """Return True if ir_class declares a method that overrides a superclass method."""
     primary_obj = ir_class.dynamic if ir_class.dynamic else ir_class.static
     if not primary_obj or not primary_obj.super or primary_obj.super.value <= 0:
@@ -2639,11 +2642,7 @@ def _virtual_receiver_static_types(ir_function: IRFunction, code: Bytecode) -> D
         # already resolves to a specific, possibly-overridden implementation
         # regardless of how `obj` is declared, so widening obj's type here
         # would be both unnecessary and wrong.
-        if (
-            isinstance(stmt, IRAssign)
-            and isinstance(stmt.expr, IRConst)
-            and isinstance(stmt.expr.value, Function)
-        ):
+        if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRConst) and isinstance(stmt.expr.value, Function):
             func = stmt.expr.value
             parts = _func_name_parts(func, code)
             if parts is not None:
@@ -2653,11 +2652,7 @@ def _virtual_receiver_static_types(ir_function: IRFunction, code: Bytecode) -> D
                     receiver = _find_receiver_local(class_name, ir_function, code)
                     if receiver is not None:
                         result[receiver] = base
-        if (
-            isinstance(stmt, IRField)
-            and stmt.virtual_dispatch_fun is not None
-            and isinstance(stmt.target, IRLocal)
-        ):
+        if isinstance(stmt, IRField) and stmt.virtual_dispatch_fun is not None and isinstance(stmt.target, IRLocal):
             base = _base_class_for_virtual_method(stmt.virtual_dispatch_fun, code)
             if base is not None:
                 result[stmt.target.name] = base

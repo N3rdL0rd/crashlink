@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.6">
+<title>crashlink.decomp.opt API documentation</title>
+<meta name="description" content="Base optimizer infrastructure and shared helpers.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>crashlink.decomp.opt</code></h1>
+</header>
+<section id="section-intro">
+<p>Base optimizer infrastructure and shared helpers.</p>
+</section>
+<section>
+<h2 class="section-title" id="header-submodules">Sub-modules</h2>
+<dl>
+<dt><code class="name"><a title="crashlink.decomp.opt.arrays" href="arrays.html">crashlink.decomp.opt.arrays</a></code></dt>
+<dd>
+<div class="desc"><p>Array and bytes-buffer pattern optimizers.</p></div>
+</dd>
+<dt><code class="name"><a title="crashlink.decomp.opt.clean" href="clean.html">crashlink.decomp.opt.clean</a></code></dt>
+<dd>
+<div class="desc"><p>Structural cleanup and dead-code elimination optimizers.</p></div>
+</dd>
+<dt><code class="name"><a title="crashlink.decomp.opt.inliner" href="inliner.html">crashlink.decomp.opt.inliner</a></code></dt>
+<dd>
+<div class="desc"><p>Inlining and copy-propagation optimizers.</p></div>
+</dd>
+<dt><code class="name"><a title="crashlink.decomp.opt.loops" href="loops.html">crashlink.decomp.opt.loops</a></code></dt>
+<dd>
+<div class="desc"><p>Loop-reroll and loop-lifting optimizers.</p></div>
+</dd>
+<dt><code class="name"><a title="crashlink.decomp.opt.strings" href="strings.html">crashlink.decomp.opt.strings</a></code></dt>
+<dd>
+<div class="desc"><p>String-related IR optimizers.</p></div>
+</dd>
+<dt><code class="name"><a title="crashlink.decomp.opt.switches" href="switches.html">crashlink.decomp.opt.switches</a></code></dt>
+<dd>
+<div class="desc"><p>Switch-statement pattern optimizers.</p></div>
+</dd>
+</dl>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="crashlink.decomp.opt.IROptimizer"><code class="flex name class">
+<span>class <span class="ident">IROptimizer</span></span>
+<span>(</span><span>function: "'IRFunction'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IROptimizer(ABC):
+    &#34;&#34;&#34;
+    Base class for intermediate representation optimization routines.
+    &#34;&#34;&#34;
+
+    #: Opcodes that must appear somewhere in the function for this optimizer to
+    #: possibly do anything. None means &#34;can&#39;t tell from opcodes alone, always run&#34;.
+    TARGET_OPCODES: Optional[Set[str]] = None
+
+    def __init__(self, function: &#34;IRFunction&#34;):
+        self.func = function
+
+    def should_run(self) -&gt; bool:
+        &#34;&#34;&#34;Cheap pre-check: skip optimize() if none of TARGET_OPCODES are present.&#34;&#34;&#34;
+        if self.TARGET_OPCODES is None:
+            return True
+        return any(op.op in self.TARGET_OPCODES for op in self.func.ops)
+
+    @abstractmethod
+    def optimize(self) -&gt; None:
+        pass</code></pre>
+</details>
+<div class="desc"><p>Base class for intermediate representation optimization routines.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>abc.ABC</li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.opt.TraversingIROptimizer" href="#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRDeadTempEliminator" href="clean.html#crashlink.decomp.opt.clean.IRDeadTempEliminator">IRDeadTempEliminator</a></li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashlink.decomp.opt.IROptimizer.TARGET_OPCODES"><code class="name">var <span class="ident">TARGET_OPCODES</span> : Set[str] | None</code></dt>
+<dd>
+<div class="desc"><p>Opcodes that must appear somewhere in the function for this optimizer to
+possibly do anything. None means "can't tell from opcodes alone, always run".</p></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.opt.IROptimizer.optimize"><code class="name flex">
+<span>def <span class="ident">optimize</span></span>(<span>self) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@abstractmethod
+def optimize(self) -&gt; None:
+    pass</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.decomp.opt.IROptimizer.should_run"><code class="name flex">
+<span>def <span class="ident">should_run</span></span>(<span>self) ‑> bool</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def should_run(self) -&gt; bool:
+    &#34;&#34;&#34;Cheap pre-check: skip optimize() if none of TARGET_OPCODES are present.&#34;&#34;&#34;
+    if self.TARGET_OPCODES is None:
+        return True
+    return any(op.op in self.TARGET_OPCODES for op in self.func.ops)</code></pre>
+</details>
+<div class="desc"><p>Cheap pre-check: skip optimize() if none of TARGET_OPCODES are present.</p></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.decomp.opt.TraversingIROptimizer"><code class="flex name class">
+<span>class <span class="ident">TraversingIROptimizer</span></span>
+<span>(</span><span>function: "'IRFunction'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class TraversingIROptimizer(IROptimizer):
+    &#34;&#34;&#34;
+    Base class for intermediate representation optimization routines that recursively travel through the decompilation.
+    &#34;&#34;&#34;
+
+    def optimize(self) -&gt; None:
+        &#34;&#34;&#34;Start the optimization by traversing the root IR block.&#34;&#34;&#34;
+        if hasattr(self.func, &#34;block&#34;):
+            self._visited_ids: Set[int] = set()
+            self.visit(self.func.block)
+
+    def visit(self, statement: IRStatement) -&gt; None:
+        &#34;&#34;&#34;
+        Recursively visit an IR statement and its children.
+
+        The traversal performs a pre-order visit (parent first, then children):
+        1. Call before_visit_statement for the current statement
+        2. Handle specific statement type with visit_X methods
+        3. Visit all children recursively
+        4. Call after_visit_statement for the current statement
+
+        IRFunction._lift_block memoizes shared continuation points, so the same
+        IRBlock/IRStatement object can be reachable from multiple parents (a DAG,
+        not a tree). Skip a node already visited in this pass: it denotes the
+        exact same content, so revisiting would just redundantly (but harmlessly,
+        since mutating it once already applies everywhere it&#39;s referenced) re-walk
+        an already-processed subtree, which is exponential for deeply nested,
+        heavily-converging control flow.
+        &#34;&#34;&#34;
+        if id(statement) in self._visited_ids:
+            return
+        self._visited_ids.add(id(statement))
+
+        self.before_visit_statement(statement)
+
+        if isinstance(statement, IRBlock):
+            self.visit_block(statement)
+        elif isinstance(statement, IRAssign):
+            self.visit_assign(statement)
+        elif isinstance(statement, IRConditional):
+            self.visit_conditional(statement)
+        elif isinstance(statement, IRPrimitiveLoop):
+            self.visit_primitive_loop(statement)
+        elif isinstance(statement, IRSwitch):
+            self.visit_switch(statement)
+        elif isinstance(statement, IRReturn):
+            self.visit_return(statement)
+        elif isinstance(statement, IRTryCatch):
+            self.visit_try_catch(statement)
+        elif isinstance(statement, IRBreak):
+            self.visit_break(statement)
+        elif isinstance(statement, IRContinue):
+            self.visit_continue(statement)
+        elif isinstance(statement, IRExpression):
+            self.visit_expression(statement)
+
+        for child in statement.get_children():
+            self.visit(child)
+
+        self.after_visit_statement(statement)
+
+    def before_visit_statement(self, statement: IRStatement) -&gt; None:
+        &#34;&#34;&#34;Called before visiting a statement. Override in subclasses for custom behavior.&#34;&#34;&#34;
+        pass
+
+    def after_visit_statement(self, statement: IRStatement) -&gt; None:
+        &#34;&#34;&#34;Called after visiting a statement and all its children. Override in subclasses for custom behavior.&#34;&#34;&#34;
+        pass
+
+    def visit_block(self, block: IRBlock) -&gt; None:
+        &#34;&#34;&#34;Visit an IRBlock. Override in subclasses for custom behavior.&#34;&#34;&#34;
+        pass
+
+    def visit_assign(self, assign: IRAssign) -&gt; None:
+        &#34;&#34;&#34;Visit an IRAssign. Override in subclasses for custom behavior.&#34;&#34;&#34;
+        pass
+
+    def visit_conditional(self, conditional: IRConditional) -&gt; None:
+        &#34;&#34;&#34;Visit an IRConditional. Override in subclasses for custom behavior.&#34;&#34;&#34;
+        pass
+
+    def visit_primitive_loop(self, loop: IRPrimitiveLoop) -&gt; None:
+        &#34;&#34;&#34;Visit an IRPrimitiveLoop. Override in subclasses for custom behavior.&#34;&#34;&#34;
+        pass
+
+    def visit_switch(self, switch: IRSwitch) -&gt; None:
+        &#34;&#34;&#34;Visit an IRSwitch. Override in subclasses for custom behavior.&#34;&#34;&#34;
+        pass
+
+    def visit_return(self, ret: IRReturn) -&gt; None:
+        &#34;&#34;&#34;Visit an IRReturn. Override in subclasses for custom behavior.&#34;&#34;&#34;
+
+    def visit_try_catch(self, try_catch: IRTryCatch) -&gt; None:
+        &#34;&#34;&#34;Visit an IRTryCatch. Override in subclasses for custom behavior.&#34;&#34;&#34;
+        pass
+
+    def visit_break(self, brk: IRBreak) -&gt; None:
+        &#34;&#34;&#34;Visit an IRBreak. Override in subclasses for custom behavior.&#34;&#34;&#34;
+        pass
+
+    def visit_continue(self, cont: IRContinue) -&gt; None:
+        &#34;&#34;&#34;Visit an IRContinue. Override in subclasses for custom behavior.&#34;&#34;&#34;
+        pass
+
+    def visit_expression(self, expr: IRExpression) -&gt; None:
+        &#34;&#34;&#34;Visit an IRExpression. Override in subclasses for custom behavior.&#34;&#34;&#34;
+        pass</code></pre>
+</details>
+<div class="desc"><p>Base class for intermediate representation optimization routines that recursively travel through the decompilation.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.opt.IROptimizer" href="#crashlink.decomp.opt.IROptimizer">IROptimizer</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.opt.arrays.IRArrayObjWrapperOptimizer" href="arrays.html#crashlink.decomp.opt.arrays.IRArrayObjWrapperOptimizer">IRArrayObjWrapperOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.arrays.IRArrayPatternOptimizer" href="arrays.html#crashlink.decomp.opt.arrays.IRArrayPatternOptimizer">IRArrayPatternOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.arrays.IRNativeArrayAllocOptimizer" href="arrays.html#crashlink.decomp.opt.arrays.IRNativeArrayAllocOptimizer">IRNativeArrayAllocOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.arrays.IRNativeMapAllocOptimizer" href="arrays.html#crashlink.decomp.opt.arrays.IRNativeMapAllocOptimizer">IRNativeMapAllocOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRArrayGrowGuardEliminator" href="clean.html#crashlink.decomp.opt.clean.IRArrayGrowGuardEliminator">IRArrayGrowGuardEliminator</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRBlockFlattener" href="clean.html#crashlink.decomp.opt.clean.IRBlockFlattener">IRBlockFlattener</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRCommonBlockMerger" href="clean.html#crashlink.decomp.opt.clean.IRCommonBlockMerger">IRCommonBlockMerger</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRConstructorFolder" href="clean.html#crashlink.decomp.opt.clean.IRConstructorFolder">IRConstructorFolder</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRDeadAssignmentEliminator" href="clean.html#crashlink.decomp.opt.clean.IRDeadAssignmentEliminator">IRDeadAssignmentEliminator</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRDeadCodeEliminator" href="clean.html#crashlink.decomp.opt.clean.IRDeadCodeEliminator">IRDeadCodeEliminator</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRDeadStoreEliminator" href="clean.html#crashlink.decomp.opt.clean.IRDeadStoreEliminator">IRDeadStoreEliminator</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRGuardOrMerger" href="clean.html#crashlink.decomp.opt.clean.IRGuardOrMerger">IRGuardOrMerger</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRLoopConditionOptimizer" href="clean.html#crashlink.decomp.opt.clean.IRLoopConditionOptimizer">IRLoopConditionOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRRedundantContinueEliminator" href="clean.html#crashlink.decomp.opt.clean.IRRedundantContinueEliminator">IRRedundantContinueEliminator</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRRedundantRecomputeEliminator" href="clean.html#crashlink.decomp.opt.clean.IRRedundantRecomputeEliminator">IRRedundantRecomputeEliminator</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRSelfAssignOptimizer" href="clean.html#crashlink.decomp.opt.clean.IRSelfAssignOptimizer">IRSelfAssignOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRSequentialTempFolder" href="clean.html#crashlink.decomp.opt.clean.IRSequentialTempFolder">IRSequentialTempFolder</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRShiftConstantOptimizer" href="clean.html#crashlink.decomp.opt.clean.IRShiftConstantOptimizer">IRShiftConstantOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRVoidAssignOptimizer" href="clean.html#crashlink.decomp.opt.clean.IRVoidAssignOptimizer">IRVoidAssignOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.inliner.IRConditionInliner" href="inliner.html#crashlink.decomp.opt.inliner.IRConditionInliner">IRConditionInliner</a></li>
+<li><a title="crashlink.decomp.opt.inliner.IRCopyPropOptimizer" href="inliner.html#crashlink.decomp.opt.inliner.IRCopyPropOptimizer">IRCopyPropOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.inliner.IRPrimitiveJumpLifter" href="inliner.html#crashlink.decomp.opt.inliner.IRPrimitiveJumpLifter">IRPrimitiveJumpLifter</a></li>
+<li><a title="crashlink.decomp.opt.inliner.IRTempAssignmentInliner" href="inliner.html#crashlink.decomp.opt.inliner.IRTempAssignmentInliner">IRTempAssignmentInliner</a></li>
+<li><a title="crashlink.decomp.opt.loops.IRForEachLoopOptimizer" href="loops.html#crashlink.decomp.opt.loops.IRForEachLoopOptimizer">IRForEachLoopOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.loops.IRIntRangeLoopOptimizer" href="loops.html#crashlink.decomp.opt.loops.IRIntRangeLoopOptimizer">IRIntRangeLoopOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.loops.IRLoopRerollOptimizer" href="loops.html#crashlink.decomp.opt.loops.IRLoopRerollOptimizer">IRLoopRerollOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.strings.IRGlobalStringOptimizer" href="strings.html#crashlink.decomp.opt.strings.IRGlobalStringOptimizer">IRGlobalStringOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.strings.IRStringAllocOptimizer" href="strings.html#crashlink.decomp.opt.strings.IRStringAllocOptimizer">IRStringAllocOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.strings.IRStringConcatFolder" href="strings.html#crashlink.decomp.opt.strings.IRStringConcatFolder">IRStringConcatFolder</a></li>
+<li><a title="crashlink.decomp.opt.strings.IRStringIntConcatOptimizer" href="strings.html#crashlink.decomp.opt.strings.IRStringIntConcatOptimizer">IRStringIntConcatOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.strings.IRTraceOptimizer" href="strings.html#crashlink.decomp.opt.strings.IRTraceOptimizer">IRTraceOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.switches.IREnumSwitchOptimizer" href="switches.html#crashlink.decomp.opt.switches.IREnumSwitchOptimizer">IREnumSwitchOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.switches.IRIntSwitchOptimizer" href="switches.html#crashlink.decomp.opt.switches.IRIntSwitchOptimizer">IRIntSwitchOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.switches.IRStringSwitchOptimizer" href="switches.html#crashlink.decomp.opt.switches.IRStringSwitchOptimizer">IRStringSwitchOptimizer</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement"><code class="name flex">
+<span>def <span class="ident">after_visit_statement</span></span>(<span>self, statement: IRStatement) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def after_visit_statement(self, statement: IRStatement) -&gt; None:
+    &#34;&#34;&#34;Called after visiting a statement and all its children. Override in subclasses for custom behavior.&#34;&#34;&#34;
+    pass</code></pre>
+</details>
+<div class="desc"><p>Called after visiting a statement and all its children. Override in subclasses for custom behavior.</p></div>
+</dd>
+<dt id="crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement"><code class="name flex">
+<span>def <span class="ident">before_visit_statement</span></span>(<span>self, statement: IRStatement) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def before_visit_statement(self, statement: IRStatement) -&gt; None:
+    &#34;&#34;&#34;Called before visiting a statement. Override in subclasses for custom behavior.&#34;&#34;&#34;
+    pass</code></pre>
+</details>
+<div class="desc"><p>Called before visiting a statement. Override in subclasses for custom behavior.</p></div>
+</dd>
+<dt id="crashlink.decomp.opt.TraversingIROptimizer.optimize"><code class="name flex">
+<span>def <span class="ident">optimize</span></span>(<span>self) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def optimize(self) -&gt; None:
+    &#34;&#34;&#34;Start the optimization by traversing the root IR block.&#34;&#34;&#34;
+    if hasattr(self.func, &#34;block&#34;):
+        self._visited_ids: Set[int] = set()
+        self.visit(self.func.block)</code></pre>
+</details>
+<div class="desc"><p>Start the optimization by traversing the root IR block.</p></div>
+</dd>
+<dt id="crashlink.decomp.opt.TraversingIROptimizer.visit"><code class="name flex">
+<span>def <span class="ident">visit</span></span>(<span>self, statement: IRStatement) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def visit(self, statement: IRStatement) -&gt; None:
+    &#34;&#34;&#34;
+    Recursively visit an IR statement and its children.
+
+    The traversal performs a pre-order visit (parent first, then children):
+    1. Call before_visit_statement for the current statement
+    2. Handle specific statement type with visit_X methods
+    3. Visit all children recursively
+    4. Call after_visit_statement for the current statement
+
+    IRFunction._lift_block memoizes shared continuation points, so the same
+    IRBlock/IRStatement object can be reachable from multiple parents (a DAG,
+    not a tree). Skip a node already visited in this pass: it denotes the
+    exact same content, so revisiting would just redundantly (but harmlessly,
+    since mutating it once already applies everywhere it&#39;s referenced) re-walk
+    an already-processed subtree, which is exponential for deeply nested,
+    heavily-converging control flow.
+    &#34;&#34;&#34;
+    if id(statement) in self._visited_ids:
+        return
+    self._visited_ids.add(id(statement))
+
+    self.before_visit_statement(statement)
+
+    if isinstance(statement, IRBlock):
+        self.visit_block(statement)
+    elif isinstance(statement, IRAssign):
+        self.visit_assign(statement)
+    elif isinstance(statement, IRConditional):
+        self.visit_conditional(statement)
+    elif isinstance(statement, IRPrimitiveLoop):
+        self.visit_primitive_loop(statement)
+    elif isinstance(statement, IRSwitch):
+        self.visit_switch(statement)
+    elif isinstance(statement, IRReturn):
+        self.visit_return(statement)
+    elif isinstance(statement, IRTryCatch):
+        self.visit_try_catch(statement)
+    elif isinstance(statement, IRBreak):
+        self.visit_break(statement)
+    elif isinstance(statement, IRContinue):
+        self.visit_continue(statement)
+    elif isinstance(statement, IRExpression):
+        self.visit_expression(statement)
+
+    for child in statement.get_children():
+        self.visit(child)
+
+    self.after_visit_statement(statement)</code></pre>
+</details>
+<div class="desc"><p>Recursively visit an IR statement and its children.</p>
+<p>The traversal performs a pre-order visit (parent first, then children):
+1. Call before_visit_statement for the current statement
+2. Handle specific statement type with visit_X methods
+3. Visit all children recursively
+4. Call after_visit_statement for the current statement</p>
+<p>IRFunction._lift_block memoizes shared continuation points, so the same
+IRBlock/IRStatement object can be reachable from multiple parents (a DAG,
+not a tree). Skip a node already visited in this pass: it denotes the
+exact same content, so revisiting would just redundantly (but harmlessly,
+since mutating it once already applies everywhere it's referenced) re-walk
+an already-processed subtree, which is exponential for deeply nested,
+heavily-converging control flow.</p></div>
+</dd>
+<dt id="crashlink.decomp.opt.TraversingIROptimizer.visit_assign"><code class="name flex">
+<span>def <span class="ident">visit_assign</span></span>(<span>self, assign: IRAssign) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def visit_assign(self, assign: IRAssign) -&gt; None:
+    &#34;&#34;&#34;Visit an IRAssign. Override in subclasses for custom behavior.&#34;&#34;&#34;
+    pass</code></pre>
+</details>
+<div class="desc"><p>Visit an IRAssign. Override in subclasses for custom behavior.</p></div>
+</dd>
+<dt id="crashlink.decomp.opt.TraversingIROptimizer.visit_block"><code class="name flex">
+<span>def <span class="ident">visit_block</span></span>(<span>self, block: IRBlock) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def visit_block(self, block: IRBlock) -&gt; None:
+    &#34;&#34;&#34;Visit an IRBlock. Override in subclasses for custom behavior.&#34;&#34;&#34;
+    pass</code></pre>
+</details>
+<div class="desc"><p>Visit an IRBlock. Override in subclasses for custom behavior.</p></div>
+</dd>
+<dt id="crashlink.decomp.opt.TraversingIROptimizer.visit_break"><code class="name flex">
+<span>def <span class="ident">visit_break</span></span>(<span>self, brk: IRBreak) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def visit_break(self, brk: IRBreak) -&gt; None:
+    &#34;&#34;&#34;Visit an IRBreak. Override in subclasses for custom behavior.&#34;&#34;&#34;
+    pass</code></pre>
+</details>
+<div class="desc"><p>Visit an IRBreak. Override in subclasses for custom behavior.</p></div>
+</dd>
+<dt id="crashlink.decomp.opt.TraversingIROptimizer.visit_conditional"><code class="name flex">
+<span>def <span class="ident">visit_conditional</span></span>(<span>self, conditional: IRConditional) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def visit_conditional(self, conditional: IRConditional) -&gt; None:
+    &#34;&#34;&#34;Visit an IRConditional. Override in subclasses for custom behavior.&#34;&#34;&#34;
+    pass</code></pre>
+</details>
+<div class="desc"><p>Visit an IRConditional. Override in subclasses for custom behavior.</p></div>
+</dd>
+<dt id="crashlink.decomp.opt.TraversingIROptimizer.visit_continue"><code class="name flex">
+<span>def <span class="ident">visit_continue</span></span>(<span>self, cont: IRContinue) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def visit_continue(self, cont: IRContinue) -&gt; None:
+    &#34;&#34;&#34;Visit an IRContinue. Override in subclasses for custom behavior.&#34;&#34;&#34;
+    pass</code></pre>
+</details>
+<div class="desc"><p>Visit an IRContinue. Override in subclasses for custom behavior.</p></div>
+</dd>
+<dt id="crashlink.decomp.opt.TraversingIROptimizer.visit_expression"><code class="name flex">
+<span>def <span class="ident">visit_expression</span></span>(<span>self, expr: IRExpression) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def visit_expression(self, expr: IRExpression) -&gt; None:
+    &#34;&#34;&#34;Visit an IRExpression. Override in subclasses for custom behavior.&#34;&#34;&#34;
+    pass</code></pre>
+</details>
+<div class="desc"><p>Visit an IRExpression. Override in subclasses for custom behavior.</p></div>
+</dd>
+<dt id="crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop"><code class="name flex">
+<span>def <span class="ident">visit_primitive_loop</span></span>(<span>self, loop: IRPrimitiveLoop) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def visit_primitive_loop(self, loop: IRPrimitiveLoop) -&gt; None:
+    &#34;&#34;&#34;Visit an IRPrimitiveLoop. Override in subclasses for custom behavior.&#34;&#34;&#34;
+    pass</code></pre>
+</details>
+<div class="desc"><p>Visit an IRPrimitiveLoop. Override in subclasses for custom behavior.</p></div>
+</dd>
+<dt id="crashlink.decomp.opt.TraversingIROptimizer.visit_return"><code class="name flex">
+<span>def <span class="ident">visit_return</span></span>(<span>self, ret: IRReturn) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def visit_return(self, ret: IRReturn) -&gt; None:
+    &#34;&#34;&#34;Visit an IRReturn. Override in subclasses for custom behavior.&#34;&#34;&#34;</code></pre>
+</details>
+<div class="desc"><p>Visit an IRReturn. Override in subclasses for custom behavior.</p></div>
+</dd>
+<dt id="crashlink.decomp.opt.TraversingIROptimizer.visit_switch"><code class="name flex">
+<span>def <span class="ident">visit_switch</span></span>(<span>self, switch: IRSwitch) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def visit_switch(self, switch: IRSwitch) -&gt; None:
+    &#34;&#34;&#34;Visit an IRSwitch. Override in subclasses for custom behavior.&#34;&#34;&#34;
+    pass</code></pre>
+</details>
+<div class="desc"><p>Visit an IRSwitch. Override in subclasses for custom behavior.</p></div>
+</dd>
+<dt id="crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch"><code class="name flex">
+<span>def <span class="ident">visit_try_catch</span></span>(<span>self, try_catch: IRTryCatch) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def visit_try_catch(self, try_catch: IRTryCatch) -&gt; None:
+    &#34;&#34;&#34;Visit an IRTryCatch. Override in subclasses for custom behavior.&#34;&#34;&#34;
+    pass</code></pre>
+</details>
+<div class="desc"><p>Visit an IRTryCatch. Override in subclasses for custom behavior.</p></div>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.opt.IROptimizer" href="#crashlink.decomp.opt.IROptimizer">IROptimizer</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.opt.IROptimizer.TARGET_OPCODES" href="#crashlink.decomp.opt.IROptimizer.TARGET_OPCODES">TARGET_OPCODES</a></code></li>
+<li><code><a title="crashlink.decomp.opt.IROptimizer.should_run" href="#crashlink.decomp.opt.IROptimizer.should_run">should_run</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashlink.decomp" href="../index.html">crashlink.decomp</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-submodules">Sub-modules</a></h3>
+<ul>
+<li><code><a title="crashlink.decomp.opt.arrays" href="arrays.html">crashlink.decomp.opt.arrays</a></code></li>
+<li><code><a title="crashlink.decomp.opt.clean" href="clean.html">crashlink.decomp.opt.clean</a></code></li>
+<li><code><a title="crashlink.decomp.opt.inliner" href="inliner.html">crashlink.decomp.opt.inliner</a></code></li>
+<li><code><a title="crashlink.decomp.opt.loops" href="loops.html">crashlink.decomp.opt.loops</a></code></li>
+<li><code><a title="crashlink.decomp.opt.strings" href="strings.html">crashlink.decomp.opt.strings</a></code></li>
+<li><code><a title="crashlink.decomp.opt.switches" href="switches.html">crashlink.decomp.opt.switches</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="crashlink.decomp.opt.IROptimizer" href="#crashlink.decomp.opt.IROptimizer">IROptimizer</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.opt.IROptimizer.TARGET_OPCODES" href="#crashlink.decomp.opt.IROptimizer.TARGET_OPCODES">TARGET_OPCODES</a></code></li>
+<li><code><a title="crashlink.decomp.opt.IROptimizer.optimize" href="#crashlink.decomp.opt.IROptimizer.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.opt.IROptimizer.should_run" href="#crashlink.decomp.opt.IROptimizer.should_run">should_run</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.opt.TraversingIROptimizer" href="#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement" href="#crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement">after_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement" href="#crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement">before_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.optimize" href="#crashlink.decomp.opt.TraversingIROptimizer.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit" href="#crashlink.decomp.opt.TraversingIROptimizer.visit">visit</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_assign" href="#crashlink.decomp.opt.TraversingIROptimizer.visit_assign">visit_assign</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_block" href="#crashlink.decomp.opt.TraversingIROptimizer.visit_block">visit_block</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_break" href="#crashlink.decomp.opt.TraversingIROptimizer.visit_break">visit_break</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_conditional" href="#crashlink.decomp.opt.TraversingIROptimizer.visit_conditional">visit_conditional</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_continue" href="#crashlink.decomp.opt.TraversingIROptimizer.visit_continue">visit_continue</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_expression" href="#crashlink.decomp.opt.TraversingIROptimizer.visit_expression">visit_expression</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop" href="#crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop">visit_primitive_loop</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_return" href="#crashlink.decomp.opt.TraversingIROptimizer.visit_return">visit_return</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_switch" href="#crashlink.decomp.opt.TraversingIROptimizer.visit_switch">visit_switch</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch" href="#crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch">visit_try_catch</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
+</footer>
+</body>
+</html>

@@ -1,35 +1,93 @@
 """
 Inlining and copy-propagation optimizers.
 """
+
 from __future__ import annotations
 
 import copy
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union, cast
+
+if TYPE_CHECKING:
+    from ..function import IRFunction
 
 from ...core import (
-    Bytecode, DynObj, Enum, Fun, Function, Native, Obj, Opcode, Ref,
-    ResolvableVarInt, Type, TypeDef, Virtual, Void, fieldRef, gIndex, tIndex,
+    Bytecode,
+    DynObj,
+    Enum,
+    Fun,
+    Function,
+    Native,
+    Obj,
+    Opcode,
+    Ref,
+    ResolvableVarInt,
+    Type,
+    TypeDef,
+    Virtual,
+    Void,
+    fieldRef,
+    gIndex,
+    tIndex,
 )
 from ...errors import DecompError
 from ...globals import DEBUG, dbg_print
 from ... import disasm
 from ...opcodes import arithmetic, conditionals, terminal, simple_calls
 from ..ir import (
-    IRStatement, IRExpression, IRBlock, IRLocal, IRArithmetic, IRNeg, IRNot,
-    IRTypeOf, IRTypeKind, IRAssign, IRCall, IRBoolExpr, IRConst, IRConditional,
-    IRPrimitiveLoop, IRBreak, IRContinue, IRReturn, IRThrow, IRTrace, IRTryCatch,
-    IRSwitch, IRPrimitiveJump, IRWhileLoop, IRForEachLoop, IRIntRangeLoop,
-    IRField, IRNew, IRNativeArrayNew, IRNativeMapNew, IRCast, IRArrayLiteral,
-    IRArrayAccess, IRRef, IREnumConstruct, IREnumIndex, IREnumField,
-    IRUnliftedOpcode, IRNativeStub, _get_type_in_code, _strip_ansi,
+    IRStatement,
+    IRExpression,
+    IRBlock,
+    IRLocal,
+    IRArithmetic,
+    IRNeg,
+    IRNot,
+    IRTypeOf,
+    IRTypeKind,
+    IRAssign,
+    IRCall,
+    IRBoolExpr,
+    IRConst,
+    IRConditional,
+    IRPrimitiveLoop,
+    IRBreak,
+    IRContinue,
+    IRReturn,
+    IRThrow,
+    IRTrace,
+    IRTryCatch,
+    IRSwitch,
+    IRPrimitiveJump,
+    IRWhileLoop,
+    IRForEachLoop,
+    IRIntRangeLoop,
+    IRField,
+    IRNew,
+    IRNativeArrayNew,
+    IRNativeMapNew,
+    IRCast,
+    IRArrayLiteral,
+    IRArrayAccess,
+    IRRef,
+    IREnumConstruct,
+    IREnumIndex,
+    IREnumField,
+    IRUnliftedOpcode,
+    IRNativeStub,
+    _get_type_in_code,
+    _strip_ansi,
 )
 from ..cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
 from . import (
-    IROptimizer, TraversingIROptimizer,
-    _ir_structurally_equal, _structurally_equal, _stmt_lists_structurally_equal,
-    _bytes_mem_kind, _int_const_value, _signed_i32,
+    IROptimizer,
+    TraversingIROptimizer,
+    _ir_structurally_equal,
+    _structurally_equal,
+    _stmt_lists_structurally_equal,
+    _bytes_mem_kind,
+    _int_const_value,
+    _signed_i32,
 )
 
 
@@ -97,14 +155,15 @@ class IRPrimitiveJumpLifter(TraversingIROptimizer):
         # testing (e.g. String.split's empty-delimiter loop bound).
         def resolve_operand(key_name: str) -> Optional[IRLocal]:
             stored = getattr(primitive_jump, key_name, None)
-            if stored is not None:
-                return stored
+            if stored is not None and isinstance(stored, IRLocal):
+                return cast(IRLocal, stored)
             if key_name not in op_df:
                 return None
             try:
                 reg_idx = op_df[key_name].value
                 assert isinstance(reg_idx, int), "this should literally never happen!"
-                return self.func.locals[reg_idx]
+                local = self.func.locals[reg_idx]
+                return local if isinstance(local, IRLocal) else None
             except (AttributeError, IndexError, KeyError):
                 dbg_print(f"IRPrimitiveJumpLifter: Could not resolve local for key {key_name} in {original_jump_op}")
                 return None
@@ -138,6 +197,8 @@ class IRPrimitiveJumpLifter(TraversingIROptimizer):
         # Replace the last statement (IRPrimitiveJump) with the new IRBoolExpr
         loop.condition.statements[-1] = bool_condition_expr
         dbg_print(f"IRPrimitiveJumpLifter: Lifted jump to {bool_condition_expr}")
+
+
 class IRConditionInliner(TraversingIROptimizer):
     """
     Optimizes IR by inlining expressions (especially IRConst or IRBoolExpr)
@@ -218,7 +279,9 @@ class IRConditionInliner(TraversingIROptimizer):
                     return False
             return True
         if isinstance(expr, (IRArithmetic, IRBoolExpr)):
-            return self._is_safe_to_duplicate(expr.left) and self._is_safe_to_duplicate(expr.right)
+            return (expr.left is not None and self._is_safe_to_duplicate(expr.left)) and (
+                expr.right is not None and self._is_safe_to_duplicate(expr.right)
+            )
         return False
 
     def _stmt_contains_local_read(self, stmt: IRStatement, local: IRLocal) -> bool:
@@ -292,7 +355,9 @@ class IRConditionInliner(TraversingIROptimizer):
             inlined_something = False
 
             if isinstance(current_stmt, IRAssign) and isinstance(current_stmt.expr, IRExpression):
-                assigned_local: IRLocal | IRField | IRArrayAccess = current_stmt.target
+                assigned_local: IRLocal | IRField | IRArrayAccess = cast(
+                    "IRLocal | IRField | IRArrayAccess", current_stmt.target
+                )
                 expr_to_inline: IRExpression = current_stmt.expr
 
                 if isinstance(assigned_local, IRLocal) and self._is_user_local(assigned_local):
@@ -406,7 +471,11 @@ class IRConditionInliner(TraversingIROptimizer):
                                 if self._stmt_contains_local_read(s, assigned_local):
                                     used_outside = True
                                     break
-                                if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target.name == assigned_local.name:
+                                if (
+                                    isinstance(s, IRAssign)
+                                    and isinstance(s.target, IRLocal)
+                                    and s.target.name == assigned_local.name
+                                ):
                                     break
                         if used_outside and not self._is_safe_to_duplicate(expr_to_inline):
                             new_statements.append(current_stmt)
@@ -576,6 +645,8 @@ class IRConditionInliner(TraversingIROptimizer):
             return None
 
         return None
+
+
 class IRTempAssignmentInliner(TraversingIROptimizer):
     """
     Optimizes IR by inlining temporary variable assignments.
@@ -842,7 +913,11 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             visited.add(id(stmt))
             if isinstance(stmt, IRAssign) and stmt.target == local_to_check:
                 return True
-            if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target.same_register(local_to_check):
+            if (
+                isinstance(stmt, IRAssign)
+                and isinstance(stmt.target, IRLocal)
+                and stmt.target.same_register(local_to_check)
+            ):
                 return True
             for child in stmt.get_children():
                 child_stmts = child.statements if isinstance(child, IRBlock) else [child]
@@ -1002,7 +1077,10 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
 
     def _is_loop_body_block(self, parent: IRStatement, child: IRStatement) -> bool:
         """Return True if `child` is the body block of a loop statement."""
-        return isinstance(parent, (IRWhileLoop, IRPrimitiveLoop, IRForEachLoop, IRIntRangeLoop)) and getattr(parent, "body", None) is child
+        return (
+            isinstance(parent, (IRWhileLoop, IRPrimitiveLoop, IRForEachLoop, IRIntRangeLoop))
+            and getattr(parent, "body", None) is child
+        )
 
     def _visit_block_conservative(self, block: IRBlock, inside_loop_body: bool = False) -> None:
         """Only inlines an assignment if it is used in the very next statement.
@@ -1038,17 +1116,12 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                         continue
                     if i + 1 < len(statements):
                         next_stmt = statements[i + 1]
-                        if (
-                            self._stmt_contains_local(next_stmt, temp_local)
-                            and not self._is_local_redefined(temp_local, [next_stmt])
+                        if self._stmt_contains_local(next_stmt, temp_local) and not self._is_local_redefined(
+                            temp_local, [next_stmt]
                         ):
-                            later_uses = any(
-                                self._stmt_contains_local(s, temp_local) for s in statements[i + 2 :]
-                            )
+                            later_uses = any(self._stmt_contains_local(s, temp_local) for s in statements[i + 2 :])
                             if not later_uses:
-                                substituted = self._substitute_in_statement(
-                                    next_stmt, temp_local, expr_to_inline
-                                )
+                                substituted = self._substitute_in_statement(next_stmt, temp_local, expr_to_inline)
                                 if substituted:
                                     dbg_print(f"Conservatively inlining assignment for temporary '{temp_local.name}'.")
                                     if inside_loop_body:
@@ -1120,18 +1193,14 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 # was actually computed. Keep the temp and let copy propagation
                 # clean up the simple copy instead.
                 use_indices = [
-                    j
-                    for j, s in enumerate(remaining_statements)
-                    if self._stmt_contains_local(s, temp_local)
+                    j for j, s in enumerate(remaining_statements) if self._stmt_contains_local(s, temp_local)
                 ]
                 if not use_indices:
                     continue
                 blocked = False
                 if free_vars:
                     for ui in use_indices:
-                        if any(
-                            self._stmt_reassigns_any(remaining_statements[k], free_vars) for k in range(ui)
-                        ):
+                        if any(self._stmt_reassigns_any(remaining_statements[k], free_vars) for k in range(ui)):
                             blocked = True
                             break
                 if blocked:
@@ -1160,6 +1229,8 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                     self._visit_block_aggressive(
                         child, inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child)
                     )
+
+
 class IRCopyPropOptimizer(TraversingIROptimizer):
     """
     Propagates copies of user-named locals introduced by switch/conditional branches.
@@ -1202,8 +1273,9 @@ class IRCopyPropOptimizer(TraversingIROptimizer):
             # at lift time, leaving a dangling read of `temp` elsewhere (e.g. a
             # later switch's subject). Every branch set `user` to that value, so
             # an unreassigned read of another local right after must be it too.
-            user_local = self._common_user_assign_target(stmt)
-            if user_local is not None and block is not None:
+            user_local_opt = self._common_user_assign_target(stmt)
+            if user_local_opt is not None and block is not None:
+                user_local = user_local_opt
                 idx = block.statements.index(stmt)
                 reassigned: Set[IRLocal] = set()
                 for later in block.statements[idx + 1 :]:

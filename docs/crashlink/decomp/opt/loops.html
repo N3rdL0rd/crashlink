@@ -1,0 +1,897 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.6">
+<title>crashlink.decomp.opt.loops API documentation</title>
+<meta name="description" content="Loop-reroll and loop-lifting optimizers.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>crashlink.decomp.opt.loops</code></h1>
+</header>
+<section id="section-intro">
+<p>Loop-reroll and loop-lifting optimizers.</p>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="crashlink.decomp.opt.loops.IRForEachLoopOptimizer"><code class="flex name class">
+<span>class <span class="ident">IRForEachLoopOptimizer</span></span>
+<span>(</span><span>function: "'IRFunction'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRForEachLoopOptimizer(TraversingIROptimizer):
+    &#34;&#34;&#34;
+    Recover Haxe for-each loops from the manual index-while lowering.
+
+    HashLink compiles `for (elem in array) { body }` as:
+        idx = 0
+        while (idx &lt; array.length) {
+            elem = array[idx]
+            idx++
+            body
+        }
+
+    This pass recognises that pattern and raises it back, but only when the
+    index temporary is compiler-generated (no debug assign).  User-written
+    `while (idx &lt; arr.length)` loops keep their explicit index.
+    &#34;&#34;&#34;
+
+    def _is_user_local(self, local: IRLocal) -&gt; bool:
+        if not self.func.func.has_debug or not self.func.func.assigns:
+            return False
+        user_regs: Set[int] = set()
+        for _, op_idx in self.func.func.assigns:
+            val = op_idx.value - 1
+            if 0 &lt;= val &lt; len(self.func.ops):
+                op = self.func.ops[val]
+                if &#34;dst&#34; in op.df:
+                    user_regs.add(op.df[&#34;dst&#34;].value)
+        if local.name.startswith(&#34;var&#34;):
+            try:
+                return int(local.name[3:]) in user_regs
+            except ValueError:
+                pass
+        return True
+
+    def _expr_reads_local(self, expr: Optional[IRExpression], local: IRLocal) -&gt; bool:
+        if expr is None:
+            return False
+        if expr == local:
+            return True
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            return self._expr_reads_local(expr.left, local) or self._expr_reads_local(expr.right, local)
+        if isinstance(expr, IRCall):
+            if expr.target is not None and self._expr_reads_local(expr.target, local):
+                return True
+            return any(self._expr_reads_local(arg, local) for arg in expr.args)
+        if isinstance(expr, IRField):
+            return self._expr_reads_local(expr.target, local)
+        if isinstance(expr, IRCast):
+            return self._expr_reads_local(expr.expr, local)
+        if isinstance(expr, IRArrayAccess):
+            return self._expr_reads_local(expr.array, local) or self._expr_reads_local(expr.index, local)
+        if isinstance(expr, IRArrayLiteral):
+            return any(self._expr_reads_local(e, local) for e in expr.elements)
+        if isinstance(expr, (IREnumIndex, IREnumField)):
+            return self._expr_reads_local(expr.value, local)
+        if isinstance(expr, IRNew):
+            return any(self._expr_reads_local(arg, local) for arg in expr.constructor_args)
+        return False
+
+    def _stmt_reads_local(self, stmt: IRStatement, local: IRLocal) -&gt; bool:
+        if isinstance(stmt, IRLocal):
+            return stmt == local
+        if isinstance(stmt, IRAssign):
+            if self._expr_reads_local(stmt.expr, local):
+                return True
+            if isinstance(stmt.target, IRArrayAccess):
+                return self._expr_reads_local(stmt.target.array, local) or self._expr_reads_local(
+                    stmt.target.index, local
+                )
+            return False
+        if isinstance(stmt, IRReturn):
+            return stmt.value is not None and self._expr_reads_local(stmt.value, local)
+        if isinstance(stmt, IRCall):
+            if stmt.target is not None and self._expr_reads_local(stmt.target, local):
+                return True
+            return any(self._expr_reads_local(arg, local) for arg in stmt.args)
+        if isinstance(stmt, IRConditional):
+            if self._expr_reads_local(stmt.condition, local):
+                return True
+            return any(self._stmt_reads_local(s, local) for s in stmt.true_block.statements) or any(
+                self._stmt_reads_local(s, local) for s in stmt.false_block.statements
+            )
+        if isinstance(stmt, IRWhileLoop):
+            if self._expr_reads_local(stmt.condition, local):
+                return True
+            return any(self._stmt_reads_local(s, local) for s in stmt.body.statements)
+        if isinstance(stmt, IRForEachLoop):
+            if self._expr_reads_local(stmt.array, local):
+                return True
+            return any(self._stmt_reads_local(s, local) for s in stmt.body.statements)
+        if isinstance(stmt, IRPrimitiveLoop):
+            return any(self._stmt_reads_local(s, local) for s in stmt.condition.statements) or any(
+                self._stmt_reads_local(s, local) for s in stmt.body.statements
+            )
+        if isinstance(stmt, IRSwitch):
+            if self._expr_reads_local(stmt.value, local):
+                return True
+            for case_block in stmt.cases.values():
+                if any(self._stmt_reads_local(s, local) for s in case_block.statements):
+                    return True
+            if stmt.default and any(self._stmt_reads_local(s, local) for s in stmt.default.statements):
+                return True
+        if isinstance(stmt, IRTrace):
+            return self._expr_reads_local(stmt.msg, local)
+        return False
+
+    def _stmt_assigns_local(self, stmt: IRStatement, local: IRExpression) -&gt; bool:
+        if isinstance(stmt, IRAssign) and stmt.target == local:
+            return True
+        for child in stmt.get_children():
+            if isinstance(child, IRBlock):
+                if any(self._stmt_assigns_local(s, local) for s in child.statements):
+                    return True
+            elif self._stmt_assigns_local(child, local):
+                return True
+        return False
+
+    def _is_index_increment(self, stmt: IRStatement, idx: IRLocal) -&gt; bool:
+        if not isinstance(stmt, IRAssign) or stmt.target != idx:
+            return False
+        expr = stmt.expr
+        if isinstance(expr, IRCast):
+            expr = expr.expr
+        if not isinstance(expr, IRArithmetic) or expr.op != IRArithmetic.ArithmeticType.ADD:
+            return False
+        if expr.left != idx:
+            return False
+        if not isinstance(expr.right, IRConst) or expr.right.const_type != IRConst.ConstType.INT:
+            return False
+        val = _int_const_value(expr.right)
+        return val == 1
+
+    def _try_convert(self, loop: IRWhileLoop) -&gt; Optional[Tuple[IRForEachLoop, IRLocal]]:
+        cond = loop.condition
+        if not isinstance(cond, IRBoolExpr):
+            return None
+        idx: Optional[IRLocal] = None
+        arr: Optional[IRExpression] = None
+        if cond.op == IRBoolExpr.CompareType.LT:
+            if isinstance(cond.left, IRLocal) and isinstance(cond.right, IRField) and cond.right.field_name == &#34;length&#34;:
+                idx = cond.left
+                arr = cond.right.target
+        elif cond.op == IRBoolExpr.CompareType.GT:
+            if isinstance(cond.right, IRLocal) and isinstance(cond.left, IRField) and cond.left.field_name == &#34;length&#34;:
+                idx = cond.right
+                arr = cond.left.target
+        if idx is None or arr is None:
+            return None
+        if self._is_user_local(idx):
+            return None
+        body = loop.body
+        if len(body.statements) &lt; 2:
+            return None
+        first = body.statements[0]
+        if not isinstance(first, IRAssign) or not isinstance(first.target, IRLocal):
+            return None
+        if not isinstance(first.expr, IRArrayAccess):
+            return None
+        if first.expr.array != arr or first.expr.index != idx:
+            return None
+        elem = first.target
+        if not self._is_index_increment(body.statements[1], idx):
+            return None
+        rest = body.statements[2:]
+        for s in rest:
+            if self._stmt_reads_local(s, idx):
+                return None
+            if self._stmt_assigns_local(s, elem):
+                return None
+        for s in body.statements:
+            if self._stmt_assigns_local(s, arr):
+                return None
+        new_body = IRBlock(loop.code)
+        new_body.statements = list(rest)
+        return IRForEachLoop(loop.code, elem, arr, new_body), idx
+
+    def visit_block(self, block: IRBlock) -&gt; None:
+        made_change = True
+        while made_change:
+            made_change = False
+            new_statements: List[IRStatement] = []
+            i = 0
+            while i &lt; len(block.statements):
+                stmt = block.statements[i]
+                converted: Optional[Tuple[IRForEachLoop, IRLocal]] = None
+                if isinstance(stmt, IRWhileLoop):
+                    converted = self._try_convert(stmt)
+                if converted is not None:
+                    foreach_loop, idx = converted
+                    # The index temporary&#39;s `idx = 0` initializer may have been
+                    # hoisted several statements before the loop (e.g. because
+                    # the array expression was lifted into a temp).  Find the
+                    # closest preceding safe assignment to the index and remove
+                    # it, but only if nothing between it and the loop touches
+                    # the index.
+                    for j in range(len(new_statements) - 1, -1, -1):
+                        prev = new_statements[j]
+                        if isinstance(prev, IRAssign) and prev.target == idx:
+                            if isinstance(prev.expr, IRConst) and not self._expr_reads_local(prev.expr, idx):
+                                del new_statements[j]
+                            break
+                        if self._stmt_reads_local(prev, idx):
+                            break
+
+                    # If the iterable was lifted into a compiler temp that is
+                    # only used by this loop, inline it into the `for (...)`
+                    # header.  This recovers `for (i in foo())` instead of
+                    # leaving a separate `var arr = foo();` declaration.
+                    if isinstance(foreach_loop.array, IRLocal):
+                        arr_local = foreach_loop.array
+                        for j in range(len(new_statements) - 1, -1, -1):
+                            prev = new_statements[j]
+                            if not (
+                                isinstance(prev, IRAssign)
+                                and prev.target == arr_local
+                                and not self._is_user_local(arr_local)
+                            ):
+                                continue
+                            # Ensure nothing else reads or redefines the temp
+                            # between the assignment and the loop.
+                            intervening = new_statements[j + 1 :]
+                            if any(self._stmt_reads_local(s, arr_local) for s in intervening):
+                                break
+                            if any(self._stmt_assigns_local(s, arr_local) for s in intervening):
+                                break
+                            if self._stmt_reads_local(foreach_loop.body, arr_local):
+                                break
+                            if self._stmt_assigns_local(foreach_loop.body, arr_local):
+                                break
+                            foreach_loop.array = prev.expr
+                            del new_statements[j]
+                            break
+
+                    new_statements.append(foreach_loop)
+                    i += 1
+                    made_change = True
+                    continue
+                new_statements.append(stmt)
+                i += 1
+            block.statements = new_statements
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)</code></pre>
+</details>
+<div class="desc"><p>Recover Haxe for-each loops from the manual index-while lowering.</p>
+<p>HashLink compiles <code>for (elem in array) { body }</code> as:
+idx = 0
+while (idx &lt; array.length) {
+elem = array[idx]
+idx++
+body
+}</p>
+<p>This pass recognises that pattern and raises it back, but only when the
+index temporary is compiler-generated (no debug assign).
+User-written
+<code>while (idx &lt; arr.length)</code> loops keep their explicit index.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></li>
+<li><a title="crashlink.decomp.opt.IROptimizer" href="index.html#crashlink.decomp.opt.IROptimizer">IROptimizer</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.TARGET_OPCODES" href="index.html#crashlink.decomp.opt.IROptimizer.TARGET_OPCODES">TARGET_OPCODES</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement">after_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement">before_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.optimize" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.should_run" href="index.html#crashlink.decomp.opt.IROptimizer.should_run">should_run</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit">visit</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_assign" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_assign">visit_assign</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_block" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_block">visit_block</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_break" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_break">visit_break</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_conditional" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_conditional">visit_conditional</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_continue" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_continue">visit_continue</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_expression" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_expression">visit_expression</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop">visit_primitive_loop</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_return" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_return">visit_return</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_switch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_switch">visit_switch</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch">visit_try_catch</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.opt.loops.IRIntRangeLoopOptimizer"><code class="flex name class">
+<span>class <span class="ident">IRIntRangeLoopOptimizer</span></span>
+<span>(</span><span>function: "'IRFunction'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRIntRangeLoopOptimizer(TraversingIROptimizer):
+    &#34;&#34;&#34;
+    Recover Haxe int-range for loops from the manual index-while lowering.
+
+    HashLink compiles `for (elem in start...end) { body }` as:
+        idx = start
+        while (idx &lt; end) {
+            elem = idx
+            idx++
+            body
+        }
+
+    This is the same index-while shape IRForEachLoopOptimizer targets, but the
+    loop variable is a copy of the index itself (`elem = idx`) rather than an
+    array element (`elem = array[idx]`) — i.e. the source iterates over a range
+    of integers, not an array&#39;s contents.
+    &#34;&#34;&#34;
+
+    def _is_user_local(self, local: IRLocal) -&gt; bool:
+        if not self.func.func.has_debug or not self.func.func.assigns:
+            return False
+        user_regs: Set[int] = set()
+        for _, op_idx in self.func.func.assigns:
+            val = op_idx.value - 1
+            if 0 &lt;= val &lt; len(self.func.ops):
+                op = self.func.ops[val]
+                if &#34;dst&#34; in op.df:
+                    user_regs.add(op.df[&#34;dst&#34;].value)
+        if local.name.startswith(&#34;var&#34;):
+            try:
+                return int(local.name[3:]) in user_regs
+            except ValueError:
+                pass
+        return True
+
+    def _expr_reads_local(self, expr: Optional[IRExpression], local: IRLocal) -&gt; bool:
+        if expr is None:
+            return False
+        if expr == local:
+            return True
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            return self._expr_reads_local(expr.left, local) or self._expr_reads_local(expr.right, local)
+        if isinstance(expr, IRCall):
+            if expr.target is not None and self._expr_reads_local(expr.target, local):
+                return True
+            return any(self._expr_reads_local(arg, local) for arg in expr.args)
+        if isinstance(expr, IRField):
+            return self._expr_reads_local(expr.target, local)
+        if isinstance(expr, IRCast):
+            return self._expr_reads_local(expr.expr, local)
+        if isinstance(expr, IRArrayAccess):
+            return self._expr_reads_local(expr.array, local) or self._expr_reads_local(expr.index, local)
+        return False
+
+    def _stmt_reads_local(self, stmt: IRStatement, local: IRLocal) -&gt; bool:
+        if isinstance(stmt, IRLocal):
+            return stmt == local
+        if isinstance(stmt, IRAssign):
+            if self._expr_reads_local(stmt.expr, local):
+                return True
+            if isinstance(stmt.target, IRArrayAccess):
+                return self._expr_reads_local(stmt.target.array, local) or self._expr_reads_local(
+                    stmt.target.index, local
+                )
+            return False
+        if isinstance(stmt, IRReturn):
+            return stmt.value is not None and self._expr_reads_local(stmt.value, local)
+        if isinstance(stmt, IRCall):
+            if stmt.target is not None and self._expr_reads_local(stmt.target, local):
+                return True
+            return any(self._expr_reads_local(arg, local) for arg in stmt.args)
+        if isinstance(stmt, IRTrace):
+            return self._expr_reads_local(stmt.msg, local)
+        return False
+
+    def _stmt_assigns_local(self, stmt: IRStatement, local: IRExpression) -&gt; bool:
+        if isinstance(stmt, IRAssign) and stmt.target == local:
+            return True
+        for child in stmt.get_children():
+            if isinstance(child, IRBlock):
+                if any(self._stmt_assigns_local(s, local) for s in child.statements):
+                    return True
+            elif self._stmt_assigns_local(child, local):
+                return True
+        return False
+
+    def _is_index_increment(self, stmt: IRStatement, idx: IRLocal) -&gt; bool:
+        if not isinstance(stmt, IRAssign) or stmt.target != idx:
+            return False
+        expr = stmt.expr
+        if isinstance(expr, IRCast):
+            expr = expr.expr
+        if not isinstance(expr, IRArithmetic) or expr.op != IRArithmetic.ArithmeticType.ADD:
+            return False
+        if expr.left != idx:
+            return False
+        if not isinstance(expr.right, IRConst) or expr.right.const_type != IRConst.ConstType.INT:
+            return False
+        val = _int_const_value(expr.right)
+        return val == 1
+
+    def _try_convert(self, loop: IRWhileLoop) -&gt; Optional[Tuple[IRIntRangeLoop, IRLocal]]:
+        cond = loop.condition
+        if not isinstance(cond, IRBoolExpr):
+            return None
+        idx: Optional[IRLocal] = None
+        end_expr: Optional[IRExpression] = None
+        if cond.op == IRBoolExpr.CompareType.LT and isinstance(cond.left, IRLocal):
+            idx = cond.left
+            end_expr = cond.right
+        elif cond.op == IRBoolExpr.CompareType.GT and isinstance(cond.right, IRLocal):
+            idx = cond.right
+            end_expr = cond.left
+        if idx is None or end_expr is None:
+            return None
+        if self._is_user_local(idx):
+            return None
+        body = loop.body
+        if len(body.statements) &lt; 2:
+            return None
+        first = body.statements[0]
+        if not isinstance(first, IRAssign) or not isinstance(first.target, IRLocal):
+            return None
+        # The loop variable must be a plain copy of the index, not e.g. an
+        # array element — that pattern belongs to IRForEachLoopOptimizer.
+        if first.expr != idx:
+            return None
+        elem = first.target
+        if elem == idx:
+            return None
+        if not self._is_index_increment(body.statements[1], idx):
+            return None
+        rest = body.statements[2:]
+        for s in rest:
+            if self._stmt_reads_local(s, idx):
+                return None
+            if self._stmt_assigns_local(s, elem):
+                return None
+        # The bound must be loop-invariant: nothing in the body may redefine
+        # whatever it reads from (e.g. reassigning the array behind `a.length`).
+        for s in body.statements:
+            if isinstance(end_expr, IRLocal) and self._stmt_assigns_local(s, end_expr):
+                return None
+            if isinstance(end_expr, IRField) and isinstance(end_expr.target, IRLocal):
+                if self._stmt_assigns_local(s, end_expr.target):
+                    return None
+        new_body = IRBlock(loop.code)
+        new_body.statements = list(rest)
+        return IRIntRangeLoop(loop.code, elem, idx, end_expr, new_body), idx
+
+    def visit_block(self, block: IRBlock) -&gt; None:
+        made_change = True
+        while made_change:
+            made_change = False
+            new_statements: List[IRStatement] = []
+            i = 0
+            while i &lt; len(block.statements):
+                stmt = block.statements[i]
+                converted: Optional[Tuple[IRIntRangeLoop, IRLocal]] = None
+                if isinstance(stmt, IRWhileLoop):
+                    converted = self._try_convert(stmt)
+                if converted is not None:
+                    range_loop, idx = converted
+                    # The index temporary&#39;s `idx = start` initializer may have been
+                    # hoisted several statements before the loop. Find the closest
+                    # preceding safe assignment to the index, use its expression as
+                    # the range&#39;s start, and remove it, but only if nothing between
+                    # it and the loop touches the index.
+                    for j in range(len(new_statements) - 1, -1, -1):
+                        prev = new_statements[j]
+                        if isinstance(prev, IRAssign) and prev.target == idx:
+                            if not self._expr_reads_local(prev.expr, idx):
+                                range_loop.start = prev.expr
+                                del new_statements[j]
+                            break
+                        if self._stmt_reads_local(prev, idx):
+                            break
+
+                    new_statements.append(range_loop)
+                    i += 1
+                    made_change = True
+                    continue
+                new_statements.append(stmt)
+                i += 1
+            block.statements = new_statements
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)</code></pre>
+</details>
+<div class="desc"><p>Recover Haxe int-range for loops from the manual index-while lowering.</p>
+<p>HashLink compiles <code>for (elem in start...end) { body }</code> as:
+idx = start
+while (idx &lt; end) {
+elem = idx
+idx++
+body
+}</p>
+<p>This is the same index-while shape IRForEachLoopOptimizer targets, but the
+loop variable is a copy of the index itself (<code>elem = idx</code>) rather than an
+array element (<code>elem = array[idx]</code>) — i.e. the source iterates over a range
+of integers, not an array's contents.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></li>
+<li><a title="crashlink.decomp.opt.IROptimizer" href="index.html#crashlink.decomp.opt.IROptimizer">IROptimizer</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.TARGET_OPCODES" href="index.html#crashlink.decomp.opt.IROptimizer.TARGET_OPCODES">TARGET_OPCODES</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement">after_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement">before_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.optimize" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.should_run" href="index.html#crashlink.decomp.opt.IROptimizer.should_run">should_run</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit">visit</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_assign" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_assign">visit_assign</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_block" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_block">visit_block</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_break" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_break">visit_break</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_conditional" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_conditional">visit_conditional</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_continue" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_continue">visit_continue</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_expression" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_expression">visit_expression</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop">visit_primitive_loop</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_return" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_return">visit_return</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_switch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_switch">visit_switch</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch">visit_try_catch</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.opt.loops.IRLoopRerollOptimizer"><code class="flex name class">
+<span>class <span class="ident">IRLoopRerollOptimizer</span></span>
+<span>(</span><span>function: "'IRFunction'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRLoopRerollOptimizer(TraversingIROptimizer):
+    &#34;&#34;&#34;
+    Recover Haxe for-each loops from bytecode that the compiler unrolled.
+
+    This is intentionally conservative: it only matches consecutive iterations of
+    the form::
+
+        elem = c0
+        &lt;body using elem&gt;
+        elem = c1
+        &lt;identical body using elem&gt;
+        ...
+
+    where c0, c1, ... are consecutive integers.  The matched run is replaced
+    with `for (elem in [c0, c1, ...]) { body }`.
+    &#34;&#34;&#34;
+
+    def visit_block(self, block: IRBlock) -&gt; None:
+        if not block.statements:
+            return
+        new_statements: List[IRStatement] = []
+        i = 0
+        while i &lt; len(block.statements):
+            reroll = self._try_reroll(block.statements, i)
+            if reroll is not None:
+                loop, consumed = reroll
+                new_statements.append(loop)
+                i += consumed
+                continue
+            new_statements.append(block.statements[i])
+            i += 1
+        block.statements = new_statements
+
+    def _try_reroll(self, stmts: List[IRStatement], start: int) -&gt; Optional[Tuple[IRForEachLoop, int]]:
+        header = self._header_assign(stmts[start])
+        if header is None:
+            return None
+        elem_local, start_value = header
+
+        # Find the second iteration header so we can determine the body length.
+        h1 = self._find_next_header(stmts, start + 1, elem_local, start_value + 1)
+        if h1 is None:
+            return None
+
+        body = stmts[start + 1 : h1]
+        if not body:
+            return None
+        if not self._body_is_simple(body, elem_local):
+            return None
+
+        body_len = len(body)
+        headers = [start, h1]
+        # Expect further headers at regular intervals with consecutive constants.
+        while True:
+            expected_idx = headers[-1] + 1 + body_len
+            expected_value = start_value + len(headers)
+            if expected_idx &gt;= len(stmts):
+                break
+            if not self._is_header(stmts[expected_idx], elem_local, expected_value):
+                break
+            next_body = stmts[headers[-1] + 1 : expected_idx]
+            if not self._bodies_equal(body, next_body):
+                break
+            headers.append(expected_idx)
+
+        if len(headers) &lt; 2:
+            return None
+
+        last_header = headers[-1]
+        run_end = last_header + 1 + body_len
+        # Verify the final body segment too (it may not have a trailing header).
+        final_body = stmts[last_header + 1 : run_end]
+        if len(final_body) != body_len or not self._bodies_equal(body, final_body):
+            return None
+
+        values: List[IRExpression] = [
+            IRConst(self.func.code, IRConst.ConstType.INT, value=start_value + k) for k in range(len(headers))
+        ]
+        array_literal = IRArrayLiteral(self.func.code, values)
+        new_body = IRBlock(self.func.code)
+        new_body.statements = list(body)
+        loop = IRForEachLoop(self.func.code, elem_local, array_literal, new_body)
+        return loop, run_end - start
+
+    def _header_assign(self, stmt: IRStatement) -&gt; Optional[Tuple[IRLocal, int]]:
+        if not isinstance(stmt, IRAssign) or not isinstance(stmt.target, IRLocal):
+            return None
+        expr = stmt.expr
+        if isinstance(expr, IRCast):
+            expr = expr.expr
+        if not isinstance(expr, IRConst) or expr.const_type != IRConst.ConstType.INT:
+            return None
+        value = _int_const_value(expr)
+        if value is None:
+            return None
+        return stmt.target, value
+
+    def _is_header(self, stmt: IRStatement, elem: IRLocal, value: int) -&gt; bool:
+        header = self._header_assign(stmt)
+        if header is None:
+            return False
+        return header[0] == elem and header[1] == value
+
+    def _find_next_header(self, stmts: List[IRStatement], start: int, elem: IRLocal, value: int) -&gt; Optional[int]:
+        for i in range(start, len(stmts)):
+            if self._is_header(stmts[i], elem, value):
+                return i
+        return None
+
+    def _body_is_simple(self, body: List[IRStatement], elem: IRLocal) -&gt; bool:
+        # Conservative: only allow assignments and expression statements; no
+        # nested control flow. Also require the body to actually use the element.
+        uses_elem = False
+        for stmt in body:
+            if isinstance(stmt, IRAssign):
+                if isinstance(stmt.target, IRLocal) and stmt.target == elem:
+                    return False
+                if self._expr_reads_local(stmt.expr, elem):
+                    uses_elem = True
+                if isinstance(stmt.target, IRArrayAccess):
+                    if self._expr_reads_local(stmt.target.array, elem) or self._expr_reads_local(
+                        stmt.target.index, elem
+                    ):
+                        uses_elem = True
+            elif isinstance(stmt, (IRTrace, IRCall, IRReturn)):
+                if self._expr_reads_local(
+                    stmt.msg
+                    if isinstance(stmt, IRTrace)
+                    else stmt.value
+                    if isinstance(stmt, IRReturn)
+                    else stmt.target,
+                    elem,
+                ):
+                    uses_elem = True
+                for arg in getattr(stmt, &#34;args&#34;, []):
+                    if self._expr_reads_local(arg, elem):
+                        uses_elem = True
+            else:
+                return False
+        return uses_elem
+
+    def _bodies_equal(self, a: List[IRStatement], b: List[IRStatement]) -&gt; bool:
+        if len(a) != len(b):
+            return False
+        for s1, s2 in zip(a, b):
+            if not self._stmts_equal(s1, s2):
+                return False
+        return True
+
+    def _stmts_equal(self, a: IRStatement, b: IRStatement) -&gt; bool:
+        if type(a) is not type(b):
+            return False
+        if isinstance(a, IRAssign) and isinstance(b, IRAssign):
+            return self._exprs_equal(a.target, b.target) and self._exprs_equal(a.expr, b.expr)
+        if isinstance(a, IRTrace) and isinstance(b, IRTrace):
+            return self._exprs_equal(a.msg, b.msg)
+        if isinstance(a, IRReturn) and isinstance(b, IRReturn):
+            return self._exprs_equal(a.value, b.value)
+        if isinstance(a, IRCall) and isinstance(b, IRCall):
+            return (
+                self._exprs_equal(a.target, b.target)
+                and len(a.args) == len(b.args)
+                and all(self._exprs_equal(x, y) for x, y in zip(a.args, b.args))
+            )
+        return False
+
+    def _exprs_equal(self, a: Optional[IRExpression], b: Optional[IRExpression]) -&gt; bool:
+        if a is None or b is None:
+            return a is b
+        if type(a) is not type(b):
+            return False
+        if isinstance(a, IRConst) and isinstance(b, IRConst):
+            return a.const_type == b.const_type and a.value == b.value
+        if isinstance(a, IRLocal) and isinstance(b, IRLocal):
+            return a == b
+        if isinstance(a, (IRArithmetic, IRBoolExpr)) and isinstance(b, (IRArithmetic, IRBoolExpr)):
+            return a.op == b.op and self._exprs_equal(a.left, b.left) and self._exprs_equal(a.right, b.right)
+        if isinstance(a, IRArrayAccess) and isinstance(b, IRArrayAccess):
+            return self._exprs_equal(a.array, b.array) and self._exprs_equal(a.index, b.index)
+        if isinstance(a, IRField) and isinstance(b, IRField):
+            return a.field_name == b.field_name and self._exprs_equal(a.target, b.target)
+        if isinstance(a, IRCast) and isinstance(b, IRCast):
+            return self._exprs_equal(a.expr, b.expr)
+        if isinstance(a, IRCall) and isinstance(b, IRCall):
+            return (
+                self._exprs_equal(a.target, b.target)
+                and len(a.args) == len(b.args)
+                and all(self._exprs_equal(x, y) for x, y in zip(a.args, b.args))
+            )
+        if isinstance(a, IRNew) and isinstance(b, IRNew):
+            return (
+                a.alloc_type_idx == b.alloc_type_idx
+                and len(a.constructor_args) == len(b.constructor_args)
+                and all(self._exprs_equal(x, y) for x, y in zip(a.constructor_args, b.constructor_args))
+            )
+        if isinstance(a, IRRef) and isinstance(b, IRRef):
+            return self._exprs_equal(a.target, b.target)
+        return False
+
+    def _expr_reads_local(self, expr: Optional[IRExpression], local: IRLocal) -&gt; bool:
+        if expr is None:
+            return False
+        if expr == local:
+            return True
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            return self._expr_reads_local(expr.left, local) or self._expr_reads_local(expr.right, local)
+        if isinstance(expr, IRCall):
+            if self._expr_reads_local(expr.target, local):
+                return True
+            return any(self._expr_reads_local(arg, local) for arg in expr.args)
+        if isinstance(expr, IRField):
+            return self._expr_reads_local(expr.target, local)
+        if isinstance(expr, IRCast):
+            return self._expr_reads_local(expr.expr, local)
+        if isinstance(expr, IRArrayAccess):
+            return self._expr_reads_local(expr.array, local) or self._expr_reads_local(expr.index, local)
+        if isinstance(expr, IRArrayLiteral):
+            return any(self._expr_reads_local(e, local) for e in expr.elements)
+        if isinstance(expr, IRNew):
+            return any(self._expr_reads_local(arg, local) for arg in expr.constructor_args)
+        if isinstance(expr, IRRef):
+            return self._expr_reads_local(expr.target, local)
+        return False</code></pre>
+</details>
+<div class="desc"><p>Recover Haxe for-each loops from bytecode that the compiler unrolled.</p>
+<p>This is intentionally conservative: it only matches consecutive iterations of
+the form::</p>
+<pre><code>elem = c0
+&lt;body using elem&gt;
+elem = c1
+&lt;identical body using elem&gt;
+...
+</code></pre>
+<p>where c0, c1, &hellip; are consecutive integers.
+The matched run is replaced
+with <code>for (elem in [c0, c1, ...]) { body }</code>.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></li>
+<li><a title="crashlink.decomp.opt.IROptimizer" href="index.html#crashlink.decomp.opt.IROptimizer">IROptimizer</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.TARGET_OPCODES" href="index.html#crashlink.decomp.opt.IROptimizer.TARGET_OPCODES">TARGET_OPCODES</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement">after_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement">before_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.optimize" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.should_run" href="index.html#crashlink.decomp.opt.IROptimizer.should_run">should_run</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit">visit</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_assign" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_assign">visit_assign</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_block" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_block">visit_block</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_break" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_break">visit_break</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_conditional" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_conditional">visit_conditional</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_continue" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_continue">visit_continue</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_expression" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_expression">visit_expression</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop">visit_primitive_loop</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_return" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_return">visit_return</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_switch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_switch">visit_switch</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch">visit_try_catch</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashlink.decomp.opt" href="index.html">crashlink.decomp.opt</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="crashlink.decomp.opt.loops.IRForEachLoopOptimizer" href="#crashlink.decomp.opt.loops.IRForEachLoopOptimizer">IRForEachLoopOptimizer</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.opt.loops.IRIntRangeLoopOptimizer" href="#crashlink.decomp.opt.loops.IRIntRangeLoopOptimizer">IRIntRangeLoopOptimizer</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.opt.loops.IRLoopRerollOptimizer" href="#crashlink.decomp.opt.loops.IRLoopRerollOptimizer">IRLoopRerollOptimizer</a></code></h4>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
+</footer>
+</body>
+</html>

@@ -1,6 +1,7 @@
 """
 IRFunction and IRClass — the top-level decompilation orchestrators.
 """
+
 from __future__ import annotations
 
 import copy
@@ -10,54 +11,132 @@ from enum import Enum as _Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
 
 from ..core import (
-    Bytecode, DynObj, Enum, Fun, Function, Native, Obj, Opcode, Ref, Reg, Regs,
-    ResolvableVarInt, Type, TypeDef, Virtual, Void, fieldRef, gIndex, tIndex,
+    Bytecode,
+    DynObj,
+    Enum,
+    Fun,
+    Function,
+    Native,
+    Obj,
+    Opcode,
+    Ref,
+    Reg,
+    Regs,
+    ResolvableVarInt,
+    Type,
+    TypeDef,
+    Virtual,
+    Void,
+    fieldRef,
+    gIndex,
+    tIndex,
 )
 from ..errors import DecompError
 from ..globals import DEBUG, dbg_print
 from .. import disasm
 from ..opcodes import arithmetic, conditionals, terminal, simple_calls
 from .ir import (
-    IRStatement, IRExpression, IRBlock, IRLocal, IRArithmetic, IRNeg, IRNot,
-    IRTypeOf, IRTypeKind, IRAssign, IRCall, IRBoolExpr, IRConst, IRConditional,
-    IRPrimitiveLoop, IRBreak, IRContinue, IRReturn, IRThrow, IRTrace, IRTryCatch,
-    IRSwitch, IRPrimitiveJump, IRWhileLoop, IRForEachLoop, IRIntRangeLoop,
-    IRField, IRNew, IRNativeArrayNew, IRNativeMapNew, IRCast, IRArrayLiteral,
-    IRArrayAccess, IRRef, IREnumConstruct, IREnumIndex, IREnumField,
-    IRUnliftedOpcode, IRNativeStub, _get_type_in_code, _strip_ansi,
-    _type_by_name_cache, _repr_rendered_blocks,
+    IRStatement,
+    IRExpression,
+    IRBlock,
+    IRLocal,
+    IRArithmetic,
+    IRNeg,
+    IRNot,
+    IRTypeOf,
+    IRTypeKind,
+    IRAssign,
+    IRCall,
+    IRBoolExpr,
+    IRConst,
+    IRConditional,
+    IRPrimitiveLoop,
+    IRBreak,
+    IRContinue,
+    IRReturn,
+    IRThrow,
+    IRTrace,
+    IRTryCatch,
+    IRSwitch,
+    IRPrimitiveJump,
+    IRWhileLoop,
+    IRForEachLoop,
+    IRIntRangeLoop,
+    IRField,
+    IRNew,
+    IRNativeArrayNew,
+    IRNativeMapNew,
+    IRCast,
+    IRArrayLiteral,
+    IRArrayAccess,
+    IRRef,
+    IREnumConstruct,
+    IREnumIndex,
+    IREnumField,
+    IRUnliftedOpcode,
+    IRNativeStub,
+    _get_type_in_code,
+    _strip_ansi,
+    _type_by_name_cache,
+    _repr_rendered_blocks,
 )
 from .cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
 from .opt import (
-    IROptimizer, TraversingIROptimizer,
-    _ir_structurally_equal, _structurally_equal, _stmt_lists_structurally_equal,
-    _bytes_mem_kind, _int_const_value, _signed_i32,
+    IROptimizer,
+    TraversingIROptimizer,
+    _ir_structurally_equal,
+    _structurally_equal,
+    _stmt_lists_structurally_equal,
+    _bytes_mem_kind,
+    _int_const_value,
+    _signed_i32,
 )
 from .opt.inliner import (
-    IRPrimitiveJumpLifter, IRConditionInliner,
-    IRTempAssignmentInliner, IRCopyPropOptimizer,
+    IRPrimitiveJumpLifter,
+    IRConditionInliner,
+    IRTempAssignmentInliner,
+    IRCopyPropOptimizer,
 )
 from .opt.clean import (
-    IRLoopConditionOptimizer, IRSelfAssignOptimizer, IRArrayGrowGuardEliminator,
-    IRRedundantRecomputeEliminator, IRBlockFlattener, IRCommonBlockMerger,
-    IRRedundantContinueEliminator, IRVoidAssignOptimizer,
-    IRDeadTempEliminator, IRDeadCodeEliminator, IRDeadStoreEliminator,
-    IRSequentialTempFolder, IRDeadAssignmentEliminator, IRConstructorFolder,
-    IRShiftConstantOptimizer, IRGuardOrMerger,
+    IRLoopConditionOptimizer,
+    IRSelfAssignOptimizer,
+    IRArrayGrowGuardEliminator,
+    IRRedundantRecomputeEliminator,
+    IRBlockFlattener,
+    IRCommonBlockMerger,
+    IRRedundantContinueEliminator,
+    IRVoidAssignOptimizer,
+    IRDeadTempEliminator,
+    IRDeadCodeEliminator,
+    IRDeadStoreEliminator,
+    IRSequentialTempFolder,
+    IRDeadAssignmentEliminator,
+    IRConstructorFolder,
+    IRShiftConstantOptimizer,
+    IRGuardOrMerger,
 )
 from .opt.strings import (
-    IRGlobalStringOptimizer, IRStringIntConcatOptimizer, IRStringAllocOptimizer,
-    IRTraceOptimizer, IRStringConcatFolder,
+    IRGlobalStringOptimizer,
+    IRStringIntConcatOptimizer,
+    IRStringAllocOptimizer,
+    IRTraceOptimizer,
+    IRStringConcatFolder,
 )
 from .opt.arrays import (
-    IRNativeArrayAllocOptimizer, IRArrayObjWrapperOptimizer,
-    IRNativeMapAllocOptimizer, IRArrayPatternOptimizer,
+    IRNativeArrayAllocOptimizer,
+    IRArrayObjWrapperOptimizer,
+    IRNativeMapAllocOptimizer,
+    IRArrayPatternOptimizer,
 )
 from .opt.loops import (
-    IRLoopRerollOptimizer, IRForEachLoopOptimizer, IRIntRangeLoopOptimizer,
+    IRLoopRerollOptimizer,
+    IRForEachLoopOptimizer,
+    IRIntRangeLoopOptimizer,
 )
 from .opt.switches import (
-    IRIntSwitchOptimizer, IRStringSwitchOptimizer, IREnumSwitchOptimizer,
+    IRIntSwitchOptimizer,
+    IRStringSwitchOptimizer,
+    IREnumSwitchOptimizer,
 )
 
 
@@ -158,29 +237,25 @@ class IRFunction:
     ) -> None:
         self.func = func
         self.code = code
+        # Declare all instance attributes with types upfront so mypy can track them.
+        self.cfg: Optional[CFGraph] = None
+        self.block: IRBlock = IRBlock(code)
+        self.locals: List[IRLocal] = []
+        self.opcodes: str = ""
+        self.cfg_data: Dict[str, List[Dict[str, Any]]] = {"nodes": [], "edges": []}
+        self.layer_snapshots: List[Tuple[str, str, bool]] = []
+        self._lift_cache: Dict[Tuple[Optional[CFNode], Optional[CFNode], int], IRBlock] = {}
+        self._enum_global_map: Dict[int, Tuple[str, tIndex]] = {}
+        self.capture_layers: bool = capture_layers
         if isinstance(func, Native):
             # Native entries have no HL bytecode; represent them as a stub block.
-            self.cfg = None  # type: ignore[assignment]
-            self.block = IRBlock(code)
             self.block.statements.append(IRNativeStub(code, func))
-            self.locals = []
-            self.opcodes = ""
-            self.cfg_data = {"nodes": [], "edges": []}
-            self.layer_snapshots = []
-            self._lift_cache = {}
             self._enum_global_map = _build_enum_global_map(code)
             return
         self.cfg = CFGraph(func)
         self.cfg.build()
         self._enum_global_map = _build_enum_global_map(code)
         self.ops = func.ops
-        self.locals: List[IRLocal] = []
-        self.block: IRBlock
-        self.capture_layers = capture_layers
-        self.opcodes: str = ""
-        self.cfg_data: Dict[str, List[Dict[str, Any]]] = {"nodes": [], "edges": []}
-        self.layer_snapshots: List[Tuple[str, str, bool]] = []
-        self._lift_cache: Dict[Tuple[Optional["CFNode"], Optional["CFNode"], int], IRBlock] = {}
         self._lift(no_lift=no_lift)
         if do_optimize:
             self.optimizers: List[IROptimizer] = [
@@ -229,6 +304,7 @@ class IRFunction:
 
     def _lift(self, no_lift: bool = False) -> None:
         """Lift function to IR"""
+        assert self.cfg is not None
         for i, reg in enumerate(self.func.regs):
             self.locals.append(IRLocal(f"var{i}", reg, code=self.code, reg_idx=i))
         self._build_assign_map()
@@ -349,9 +425,11 @@ class IRFunction:
 
     def _cfg_to_dict(self) -> Dict[str, Any]:
         """Serialize the control-flow graph to a JSON-friendly structure."""
-        node_ids = {id(node): i for i, node in enumerate(self.cfg.nodes)}
+        assert self.cfg is not None
+        cfg = self.cfg
+        node_ids = {id(node): i for i, node in enumerate(cfg.nodes)}
         nodes: List[Dict[str, Any]] = []
-        for i, node in enumerate(self.cfg.nodes):
+        for i, node in enumerate(cfg.nodes):
             label_lines = []
             for op in node.ops:
                 parts = [op.op or "?"] + [str(v) for v in op.df.values()]
@@ -362,11 +440,11 @@ class IRFunction:
                     "label": f"BB{i}",
                     "ops": label_lines,
                     "base_offset": node.base_offset,
-                    "is_entry": node is self.cfg.entry,
+                    "is_entry": node is cfg.entry,
                 }
             )
         edges: List[Dict[str, Any]] = []
-        for node in self.cfg.nodes:
+        for node in cfg.nodes:
             src = node_ids[id(node)]
             for target, edge_type in node.branches:
                 dst = node_ids.get(id(target))
@@ -381,12 +459,14 @@ class IRFunction:
         coloring conventions of CFGraph.graph()/style_node(), just remapped
         onto the Catppuccin Mocha palette used by the crashtest site.
         """
+        assert self.cfg is not None
+        cfg = self.cfg
 
         def _escape(s: str) -> str:
             return s.replace("\\", "\\\\").replace('"', '\\"')
 
         def _node_fill(node: CFNode) -> str:
-            if node is self.cfg.entry:
+            if node is cfg.entry:
                 return '"#a6e3a1", fontcolor="#11111b"'  # green, like style_node's entry
             if any(op.op == "Ret" for op in node.ops):
                 return '"#94e2d5", fontcolor="#11111b"'  # teal, like style_node's return blocks
@@ -413,14 +493,14 @@ class IRFunction:
             '  node [shape=box, fontname="monospace", fontsize=11, margin="0.15,0.1", style="rounded,filled", fillcolor="#313244", fontcolor="#cdd6f4", color="#585b70"];',
             '  edge [fontname="monospace", fontsize=9, color="#6c7086", fontcolor="#a6adc8"];',
         ]
-        for i, node in enumerate(self.cfg.nodes):
+        for i, node in enumerate(cfg.nodes):
             op_lines = []
             for op in node.ops:
                 parts = [op.op or "?"] + [str(v) for v in op.df.values()]
                 op_lines.append(_escape(". ".join(parts)))
             label = _escape(f"BB{i}") + "\\l" + "\\l".join(op_lines) + "\\l"
             lines.append(f'  {i} [label="{label}", fillcolor={_node_fill(node)}];')
-        for node in self.cfg.nodes:
+        for node in cfg.nodes:
             src = node_ids[id(node)]
             for target, edge_type in node.branches:
                 dst = node_ids.get(id(target))
@@ -514,11 +594,7 @@ class IRFunction:
         for i, local in enumerate(self.locals):
             if reg_assigns[i]:
                 named_op = self._reg_first_assign.get(i)
-                if (
-                    named_op is not None
-                    and named_op > 0
-                    and first_def.get(i, float("inf")) < named_op
-                ):
+                if named_op is not None and named_op > 0 and first_def.get(i, float("inf")) < named_op:
                     continue
                 local.name = reg_assigns[i][0]
 
@@ -617,6 +693,7 @@ class IRFunction:
         that's never read again, used here purely as a bytecode fingerprint to
         reproduce the same choice when recompiling decompiled source.
         """
+
         def _read_regs(o: Opcode) -> Set[int]:
             regs: Set[int] = set()
             for key, val in o.df.items():
@@ -859,9 +936,7 @@ class IRFunction:
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = source_locals[op.df["src"].value]
                 block.statements.append(
-                    IRAssign(
-                        self.code, dst_local, IRTypeKind(self.code, src_local, self.func.regs[op.df["dst"].value])
-                    )
+                    IRAssign(self.code, dst_local, IRTypeKind(self.code, src_local, self.func.regs[op.df["dst"].value]))
                 )
             elif op.op == "Incr":
                 dst_local = self.locals[op.df["dst"].value]
@@ -1025,7 +1100,9 @@ class IRFunction:
                     if isinstance(defn, Obj):
                         proto = self.code.proto_by_pindex(defn, op.df["field"].value)
                         if proto is not None:
-                            field_expr.virtual_dispatch_fun = proto.findex.resolve(self.code)
+                            resolved_fun = proto.findex.resolve(self.code)
+                            if isinstance(resolved_fun, Function):
+                                field_expr.virtual_dispatch_fun = resolved_fun
                     block.statements.append(IRAssign(self.code, dst_local, field_expr))
                 else:
                     block.statements.append(IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op)))
@@ -1183,6 +1260,7 @@ class IRFunction:
         stop_at: Optional[CFNode],
         parent_loop: Optional[_LoopContext],
     ) -> IRBlock:
+        assert self.cfg is not None
         visited.add(header)
         block = IRBlock(self.code)
         loop_nodes = self.cfg.loops[header]
@@ -1193,9 +1271,7 @@ class IRFunction:
         exit_node: Optional[CFNode] = None
         header_last_op = header.ops[-1] if header.ops else None
         if header_last_op and header_last_op.op in conditionals:
-            outside_header_successors = [
-                target for target, _ in header.branches if target not in loop_nodes
-            ]
+            outside_header_successors = [target for target, _ in header.branches if target not in loop_nodes]
             if len(outside_header_successors) == 1:
                 exit_node = outside_header_successors[0]
         if exit_node is None:
@@ -1211,14 +1287,12 @@ class IRFunction:
             def _jump_operand(key: str) -> Optional[IRExpression]:
                 if key not in header_last_op.df:
                     return None
-                return self.locals[header_last_op.df[key].value]
+                return cast(IRExpression, self.locals[header_last_op.df[key].value])
 
             pj_left = _jump_operand("a")
             pj_right = _jump_operand("b")
             pj_cond = _jump_operand("cond") if "cond" in header_last_op.df else _jump_operand("reg")
-            cond_block.statements.append(
-                IRPrimitiveJump(self.code, header_last_op, pj_left, pj_right, pj_cond)
-            )
+            cond_block.statements.append(IRPrimitiveJump(self.code, header_last_op, pj_left, pj_right, pj_cond))
 
             inside_successors = [target for target, _ in header.branches if target in loop_nodes and target != header]
             body_start = inside_successors[0] if len(inside_successors) == 1 else None
@@ -1336,13 +1410,15 @@ class IRFunction:
             An IRBlock containing the lifted IR statements.
         """
         # --- Base Cases for Recursion Termination ---
+        assert self.cfg is not None
+        cfg = self.cfg
         if node is None or node == stop_at or node in visited:
             return IRBlock(self.code)
         if loop_ctx and node not in loop_ctx.nodes and node.branches:
             block = IRBlock(self.code)
             block.statements.append(IRBreak(self.code))
             return block
-        if node in self.cfg.loops and (loop_ctx is None or node != loop_ctx.header):
+        if node in cfg.loops and (loop_ctx is None or node != loop_ctx.header):
             return self._lift_loop(node, visited, stop_at, loop_ctx)
 
         # Memoize on (node, stop_at, loop_ctx): without this, CFGs where many branches
@@ -1411,7 +1487,7 @@ class IRFunction:
                         not target.branches
                         and target.ops
                         and target.ops[-1].op == "Ret"
-                        and loop_ctx.header not in self.cfg.post_dominators.get(target, set())
+                        and loop_ctx.header not in cfg.post_dominators.get(target, set())
                     ):
                         return None
                     # Branches that leave the loop may contain side effects before the
@@ -1425,9 +1501,7 @@ class IRFunction:
                         branch_block = self._lift_block(
                             target, visited.copy(), stop_at=loop_ctx.exit_node, loop_ctx=None
                         )
-                        if branch_block.statements and isinstance(
-                            branch_block.statements[-1], (IRReturn, IRThrow)
-                        ):
+                        if branch_block.statements and isinstance(branch_block.statements[-1], (IRReturn, IRThrow)):
                             return branch_block
                         branch_block.statements.append(IRBreak(self.code))
                         return branch_block
@@ -1449,8 +1523,8 @@ class IRFunction:
                 stop_nodes=stop_nodes,
             )
 
-            if convergence_node is None and node in self.cfg.immediate_post_dominators:
-                convergence_node = self.cfg.immediate_post_dominators[node]
+            if convergence_node is None and node in cfg.immediate_post_dominators:
+                convergence_node = cfg.immediate_post_dominators[node]
 
             # If the branches do not share a real convergence point because one of
             # them terminates (e.g. returns), use the post-dominator of the live
@@ -1460,10 +1534,10 @@ class IRFunction:
             if convergence_node is None:
                 terminal_left = self._is_terminal_branch_node(jump_target, loop_ctx)
                 terminal_right = self._is_terminal_branch_node(fall_through, loop_ctx)
-                if terminal_left and not terminal_right and fall_through in self.cfg.immediate_post_dominators:
-                    convergence_node = self.cfg.immediate_post_dominators[fall_through]
-                elif terminal_right and not terminal_left and jump_target in self.cfg.immediate_post_dominators:
-                    convergence_node = self.cfg.immediate_post_dominators[jump_target]
+                if terminal_left and not terminal_right and fall_through in cfg.immediate_post_dominators:
+                    convergence_node = cfg.immediate_post_dominators[fall_through]
+                elif terminal_right and not terminal_left and jump_target in cfg.immediate_post_dominators:
+                    convergence_node = cfg.immediate_post_dominators[jump_target]
 
             # If no convergence point could be determined at all, never let a branch
             # explore past the boundary the *enclosing* call already established. Without
@@ -1556,7 +1630,9 @@ class IRFunction:
                 catch_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
             )
             catch_local = self.locals[last_op.df["exc"].value]
-            explicit_catch_type = self._catch_has_explicit_type(catch_branch_node)
+            explicit_catch_type = (
+                self._catch_has_explicit_type(catch_branch_node) if catch_branch_node is not None else False
+            )
             block.statements.append(
                 IRTryCatch(self.code, try_block_ir, catch_block_ir, catch_local, explicit_catch_type)
             )

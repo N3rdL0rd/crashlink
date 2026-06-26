@@ -212,4 +212,8 @@ __all__ = [
     "IRVoidAssignOptimizer",
     "IRWhileLoop",
     "TraversingIROptimizer",
+    "_get_type_in_code",
+    "_strip_ansi",
+    "_type_by_name_cache",
+    "_repr_rendered_blocks",
 ]

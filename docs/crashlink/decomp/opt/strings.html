@@ -1,0 +1,1248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.6">
+<title>crashlink.decomp.opt.strings API documentation</title>
+<meta name="description" content="String-related IR optimizers.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>crashlink.decomp.opt.strings</code></h1>
+</header>
+<section id="section-intro">
+<p>String-related IR optimizers.</p>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="crashlink.decomp.opt.strings.IRGlobalStringOptimizer"><code class="flex name class">
+<span>class <span class="ident">IRGlobalStringOptimizer</span></span>
+<span>(</span><span>function: "'IRFunction'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRGlobalStringOptimizer(TraversingIROptimizer):
+    &#34;&#34;&#34;
+    Optimizes `GetGlobal` operations that resolve to constant strings.
+    It replaces an assignment from a global `String` object with a direct
+    assignment of a new IRConst type that holds the string value.
+
+    This transforms:
+        reg = &lt;IRConst type=OBJ, value=&lt;Obj: ...&gt;&gt;
+    into:
+        reg = &lt;IRConst type=GLOBAL_STRING, value=&#34;the actual string&#34;&gt;
+    &#34;&#34;&#34;
+
+    TARGET_OPCODES = {&#34;GetGlobal&#34;}
+
+    def visit_block(self, block: IRBlock) -&gt; None:
+        for stmt in block.statements:
+            if not isinstance(stmt, IRAssign):
+                continue
+
+            assign_stmt = stmt
+            expr = assign_stmt.expr
+
+            if not (isinstance(expr, IRConst) and expr.const_type == IRConst.ConstType.GLOBAL_OBJ):
+                continue
+
+            if not (expr.original_index and isinstance(expr.original_index, gIndex)):
+                continue
+
+            global_idx = expr.original_index.value
+            try:
+                string_value = self.func.code.const_str(global_idx)
+
+                dbg_print(f&#34;IRGlobalStringOptimizer: Optimizing GetGlobal for string &#39;{string_value}&#39;&#34;)
+
+                new_string_const = IRConst(self.func.code, IRConst.ConstType.GLOBAL_STRING, value=string_value)
+
+                assign_stmt.expr = new_string_const
+
+            except (ValueError, TypeError):
+                pass</code></pre>
+</details>
+<div class="desc"><p>Optimizes <code>GetGlobal</code> operations that resolve to constant strings.
+It replaces an assignment from a global <code>String</code> object with a direct
+assignment of a new IRConst type that holds the string value.</p>
+<p>This transforms:
+reg = <IRConst type=OBJ, value=\<Obj: ...>>
+into:
+reg = <IRConst type=GLOBAL_STRING, value="the actual string"></p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></li>
+<li><a title="crashlink.decomp.opt.IROptimizer" href="index.html#crashlink.decomp.opt.IROptimizer">IROptimizer</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.TARGET_OPCODES" href="index.html#crashlink.decomp.opt.IROptimizer.TARGET_OPCODES">TARGET_OPCODES</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement">after_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement">before_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.optimize" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.should_run" href="index.html#crashlink.decomp.opt.IROptimizer.should_run">should_run</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit">visit</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_assign" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_assign">visit_assign</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_block" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_block">visit_block</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_break" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_break">visit_break</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_conditional" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_conditional">visit_conditional</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_continue" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_continue">visit_continue</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_expression" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_expression">visit_expression</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop">visit_primitive_loop</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_return" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_return">visit_return</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_switch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_switch">visit_switch</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch">visit_try_catch</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.opt.strings.IRStringAllocOptimizer"><code class="flex name class">
+<span>class <span class="ident">IRStringAllocOptimizer</span></span>
+<span>(</span><span>function: "'IRFunction'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRStringAllocOptimizer(TraversingIROptimizer):
+    &#34;&#34;&#34;
+    Folds the inlined body of `String.__alloc__(bytes, length)` back into a call.
+
+    Because `__alloc__` is an inline static method, call sites lower to:
+        var s = new String();
+        s.bytes = bytesExpr;
+        s.length = lengthExpr;
+    This optimizer recognises that sequence and replaces it with
+    `String.__alloc__(bytesExpr, lengthExpr)`, which pseudo can render as the
+    source idiom `__alloc__(bytes, length)` inside the String class.
+    &#34;&#34;&#34;
+
+    TARGET_OPCODES = {&#34;New&#34;}
+
+    def __init__(self, function: &#34;IRFunction&#34;):
+        super().__init__(function)
+        self.alloc_func: Optional[Function] = self._find_string_alloc()
+
+    def _find_string_alloc(self) -&gt; Optional[Function]:
+        for f in self.func.code.functions:
+            try:
+                path = f.resolve_file(self.func.code).replace(&#34;\\&#34;, &#34;/&#34;)
+            except Exception:
+                continue
+            if &#34;/std/hl/_std/String.hx&#34; not in path:
+                continue
+            if self.func.code.partial_func_name(f) == &#34;__alloc__&#34;:
+                return f
+        return None
+
+    def _match_new_string(self, stmt: IRStatement) -&gt; Optional[IRLocal]:
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRLocal)
+            and isinstance(stmt.expr, IRNew)
+            and not stmt.expr.constructor_args
+        ):
+            type_name = disasm.type_name(self.func.code, stmt.expr.get_type())
+            if type_name == &#34;String&#34;:
+                return stmt.target
+        return None
+
+    def _match_bytes_assign(self, stmt: IRStatement, local: IRLocal) -&gt; Optional[IRExpression]:
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRField)
+            and stmt.target.target == local
+            and stmt.target.field_name == &#34;bytes&#34;
+        ):
+            return stmt.expr
+        return None
+
+    def _match_length_assign(self, stmt: IRStatement, local: IRLocal) -&gt; Optional[IRExpression]:
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRField)
+            and stmt.target.target == local
+            and stmt.target.field_name == &#34;length&#34;
+        ):
+            return stmt.expr
+        return None
+
+    def _statement_touches_local(self, stmt: IRStatement, local: IRLocal) -&gt; bool:
+        &#34;&#34;&#34;True if stmt reads or writes `local` (including via a field target).&#34;&#34;&#34;
+        if isinstance(stmt, IRAssign):
+            if stmt.target == local or (
+                isinstance(stmt.target, IRExpression) and self._expr_uses_local(stmt.target, local)
+            ):
+                return True
+            if stmt.expr is not None and self._expr_uses_local(stmt.expr, local):
+                return True
+        elif isinstance(stmt, IRReturn):
+            if stmt.value is not None and self._expr_uses_local(stmt.value, local):
+                return True
+        elif isinstance(stmt, IRCall):
+            if stmt.target is not None and self._expr_uses_local(stmt.target, local):
+                return True
+            if any(self._expr_uses_local(a, local) for a in stmt.args):
+                return True
+        elif isinstance(stmt, IRExpression):
+            if self._expr_uses_local(stmt, local):
+                return True
+        return False
+
+    def _expr_uses_local(self, expr: Optional[IRStatement], local: IRLocal) -&gt; bool:
+        if expr is None:
+            return False
+        if expr == local:
+            return True
+        for child in expr.get_children():
+            if child is not expr and self._expr_uses_local(child, local):
+                return True
+        return False
+
+    def _collect_free_locals(self, expr: IRExpression) -&gt; Set[str]:
+        &#34;&#34;&#34;Names of all locals read by `expr`.&#34;&#34;&#34;
+        names: Set[str] = set()
+
+        def walk(e: Optional[IRStatement]) -&gt; None:
+            if e is None:
+                return
+            if isinstance(e, IRLocal):
+                names.add(e.name)
+            for child in e.get_children():
+                if child is not e:
+                    walk(child)
+
+        walk(expr)
+        return names
+
+    def _stmt_reassigns_any(self, stmt: IRStatement, names: Set[str]) -&gt; bool:
+        &#34;&#34;&#34;True if stmt (or any nested statement) assigns to a local in `names`.&#34;&#34;&#34;
+        if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target.name in names:
+            return True
+        for child in stmt.get_children():
+            if child is not stmt and self._stmt_reassigns_any(child, names):
+                return True
+        return False
+
+    def visit_block(self, block: IRBlock) -&gt; None:
+        if self.alloc_func is None or self.func.func.findex.value == self.alloc_func.findex.value:
+            for stmt in block.statements:
+                for child in stmt.get_children():
+                    if isinstance(child, IRBlock):
+                        self.visit_block(child)
+            return
+
+        remove: Set[int] = set()
+        i = 0
+        while i &lt; len(block.statements):
+            stmt = block.statements[i]
+            local = self._match_new_string(stmt)
+            if local is not None:
+                bytes_idx: Optional[int] = None
+                len_idx: Optional[int] = None
+                for j in range(i + 1, len(block.statements)):
+                    nxt = block.statements[j]
+                    if bytes_idx is None and self._match_bytes_assign(nxt, local) is not None:
+                        bytes_idx = j
+                        continue
+                    if bytes_idx is not None and len_idx is None and self._match_length_assign(nxt, local) is not None:
+                        len_idx = j
+                        break
+                    if self._statement_touches_local(nxt, local):
+                        break
+                if bytes_idx is not None and len_idx is not None:
+                    bytes_expr = cast(IRExpression, self._match_bytes_assign(block.statements[bytes_idx], local))
+                    length_expr = cast(IRExpression, self._match_length_assign(block.statements[len_idx], local))
+                    # Moving the call to the allocation site evaluates its arguments
+                    # earlier. That is only safe if no free variable of the bytes
+                    # or length expression is reassigned between the allocation and
+                    # the field writes (e.g. String.fromUCS2 computes the length
+                    # after creating the empty string).
+                    free_names = self._collect_free_locals(bytes_expr) | self._collect_free_locals(length_expr)
+                    free_names.discard(local.name)
+                    safe = True
+                    for k in range(i + 1, len_idx):
+                        if self._stmt_reassigns_any(block.statements[k], free_names):
+                            safe = False
+                            break
+                    if safe and isinstance(stmt, IRAssign):
+                        target = IRConst(
+                            self.func.code,
+                            IRConst.ConstType.FUN,
+                            idx=self.alloc_func.findex,
+                        )
+                        stmt.expr = IRCall(
+                            self.func.code,
+                            IRCall.CallType.FUNC,
+                            target,
+                            [bytes_expr, length_expr],
+                        )
+                        remove.add(bytes_idx)
+                        remove.add(len_idx)
+                        i = len_idx + 1
+                        continue
+            i += 1
+
+        if remove:
+            block.statements = [s for idx, s in enumerate(block.statements) if idx not in remove]
+
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)</code></pre>
+</details>
+<div class="desc"><p>Folds the inlined body of <code>String.__alloc__(bytes, length)</code> back into a call.</p>
+<p>Because <code>__alloc__</code> is an inline static method, call sites lower to:
+var s = new String();
+s.bytes = bytesExpr;
+s.length = lengthExpr;
+This optimizer recognises that sequence and replaces it with
+<code>String.__alloc__(bytesExpr, lengthExpr)</code>, which pseudo can render as the
+source idiom <code>__alloc__(bytes, length)</code> inside the String class.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></li>
+<li><a title="crashlink.decomp.opt.IROptimizer" href="index.html#crashlink.decomp.opt.IROptimizer">IROptimizer</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.TARGET_OPCODES" href="index.html#crashlink.decomp.opt.IROptimizer.TARGET_OPCODES">TARGET_OPCODES</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement">after_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement">before_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.optimize" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.should_run" href="index.html#crashlink.decomp.opt.IROptimizer.should_run">should_run</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit">visit</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_assign" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_assign">visit_assign</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_block" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_block">visit_block</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_break" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_break">visit_break</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_conditional" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_conditional">visit_conditional</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_continue" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_continue">visit_continue</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_expression" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_expression">visit_expression</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop">visit_primitive_loop</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_return" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_return">visit_return</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_switch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_switch">visit_switch</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch">visit_try_catch</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.opt.strings.IRStringConcatFolder"><code class="flex name class">
+<span>class <span class="ident">IRStringConcatFolder</span></span>
+<span>(</span><span>function: "'IRFunction'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRStringConcatFolder(TraversingIROptimizer):
+    &#34;&#34;&#34;
+    Folds chained string-concat temporaries into a single inline expression.
+
+    HashLink often lowers `trace(&#34;...&#34; + x)` or `var s = &#34;...&#34; + x` to:
+        temp = &#34;...&#34;;
+        temp = String.__add__(temp, x);
+        temp = String.__add__(temp, y);
+        ... use(temp);
+
+    After dead-temp cleanup the assignments become adjacent.  This pass collapses
+    the whole chain into a single String.__add__ expression at the use site, which
+    the pseudocode printer then renders with Haxe&#39;s `+` operator.
+    &#34;&#34;&#34;
+
+    def visit_block(self, block: IRBlock) -&gt; None:
+        made_change = True
+        while made_change:
+            made_change = False
+            new_statements: List[IRStatement] = []
+            i = 0
+            n = len(block.statements)
+            while i &lt; n:
+                fold = self._try_fold_concat_temp(block.statements, i)
+                if fold is not None:
+                    use_stmt, consumed = fold
+                    new_statements.append(use_stmt)
+                    i += consumed
+                    made_change = True
+                    continue
+                new_statements.append(block.statements[i])
+                i += 1
+            block.statements = new_statements
+
+    def _try_fold_concat_temp(self, statements: List[IRStatement], start: int) -&gt; Optional[Tuple[IRStatement, int]]:
+        # Look for: temp = init_string_expr;
+        #           temp = String.__add__(temp, rhs1);
+        #           temp = String.__add__(temp, rhs2);
+        #           ...
+        #           use(temp)   (trace(temp) or target = temp)
+        if start &gt;= len(statements):
+            return None
+
+        first = statements[start]
+        if not (isinstance(first, IRAssign) and isinstance(first.target, IRLocal) and self._is_string_expr(first.expr)):
+            return None
+
+        temp = first.target
+        init_expr = first.expr
+
+        # Collect a chain of adjacent `temp = String.__add__(temp, rhs)` assignments.
+        i = start + 1
+        parts: List[IRExpression] = [init_expr]
+        while i &lt; len(statements):
+            stmt = statements[i]
+            if not isinstance(stmt, IRAssign) or stmt.target != temp:
+                break
+            add_call = stmt.expr
+            if not self._is_string_add_with_temp(add_call, temp):
+                break
+            assert isinstance(add_call, IRCall)
+            rhs = add_call.args[1]
+            if self._expr_contains_local(rhs, temp):
+                break
+            parts.append(rhs)
+            i += 1
+
+        if len(parts) == 1:
+            return None  # No concat happened.
+
+        # Now find the single use of `temp` after the chain.  We allow unrelated
+        # statements in between as long as they don&#39;t touch `temp`.
+        use_idx: Optional[int] = None
+        folded_expr_for_use: Optional[IRCall] = None
+        for j in range(i, len(statements)):
+            stmt = statements[j]
+            if self._statement_assigns_local(stmt, temp):
+                break
+            if self._statement_reads_local(stmt, temp):
+                if use_idx is not None:
+                    return None
+                if isinstance(stmt, IRTrace) and stmt.msg == temp:
+                    use_idx = j
+                elif isinstance(stmt, IRAssign) and stmt.expr == temp:
+                    use_idx = j
+                elif isinstance(stmt, IRAssign) and self._is_string_add_with_temp(stmt.expr, temp):
+                    use_idx = j
+                    folded_expr_for_use = self._fold_concat(parts + [cast(IRCall, stmt.expr).args[1]])
+                else:
+                    return None
+
+        if use_idx is None:
+            return None
+
+        use_stmt = statements[use_idx]
+        if folded_expr_for_use is None:
+            folded_expr_for_use = self._fold_concat(parts)
+
+        new_use: IRStatement
+        if isinstance(use_stmt, IRTrace):
+            new_use = IRTrace(
+                code=self.func.code,
+                msg=folded_expr_for_use,
+                pos_info=use_stmt.pos_info,
+            )
+        elif isinstance(use_stmt, IRAssign):
+            new_use = IRAssign(
+                code=self.func.code,
+                target=use_stmt.target,
+                expr=folded_expr_for_use,
+            )
+        else:
+            return None
+
+        return new_use, use_idx - start + 1
+
+    def _is_string_expr(self, expr: IRExpression) -&gt; bool:
+        if isinstance(expr, IRConst) and isinstance(expr.value, str):
+            return True
+        if isinstance(expr, IRLocal):
+            return True
+        if isinstance(expr, IRCall):
+            return self._is_string_add(expr)
+        return False
+
+    def _is_string_add(self, expr: IRExpression) -&gt; bool:
+        if not isinstance(expr, IRCall):
+            return False
+        if not (isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function)):
+            return False
+        return self.func.code.partial_func_name(expr.target.value) == &#34;__add__&#34;
+
+    def _is_string_add_with_temp(self, expr: IRExpression, temp: IRLocal) -&gt; bool:
+        if not self._is_string_add(expr):
+            return False
+        assert isinstance(expr, IRCall)
+        return len(expr.args) == 2 and expr.args[0] == temp
+
+    def _fold_concat(self, parts: List[IRExpression]) -&gt; IRCall:
+        # Build a left-associative String.__add__ chain from the parts.
+        add_func = self._string_add_func()
+        result: IRExpression = parts[0]
+        for part in parts[1:]:
+            result = IRCall(
+                code=self.func.code,
+                call_type=IRCall.CallType.FUNC,
+                target=IRConst(self.func.code, IRConst.ConstType.FUN, idx=add_func.findex),
+                args=[result, part],
+            )
+        assert isinstance(result, IRCall)
+        return result
+
+    def _string_add_func(self) -&gt; Function:
+        # Locate String.__add__ in the bytecode.  It is needed often enough that
+        # caching it avoids creating mismatched call targets.
+        for f in self.func.code.functions:
+            if self.func.code.partial_func_name(f) == &#34;__add__&#34;:
+                try:
+                    path = f.resolve_file(self.func.code)
+                except Exception:
+                    continue
+                if &#34;String.hx&#34; in path.replace(&#34;\\&#34;, &#34;/&#34;):
+                    return f
+        raise DecompError(&#34;String.__add__ not found in bytecode&#34;)
+
+    def _statement_assigns_local(self, stmt: IRStatement, local: IRLocal) -&gt; bool:
+        if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target == local:
+            return True
+        for child in stmt.get_children():
+            if isinstance(child, IRBlock):
+                if any(self._statement_assigns_local(s, local) for s in child.statements):
+                    return True
+            elif self._statement_assigns_local(child, local):
+                return True
+        return False
+
+    def _statement_reads_local(self, stmt: IRStatement, local: IRLocal) -&gt; bool:
+        if isinstance(stmt, IRAssign):
+            if isinstance(stmt.target, IRExpression) and self._expr_contains_local(stmt.target, local):
+                return True
+            if stmt.expr is not None and self._expr_contains_local(stmt.expr, local):
+                return True
+        elif isinstance(stmt, IRReturn):
+            if stmt.value is not None and self._expr_contains_local(stmt.value, local):
+                return True
+        elif isinstance(stmt, IRCall):
+            if stmt.target is not None and self._expr_contains_local(stmt.target, local):
+                return True
+            for arg in stmt.args:
+                if self._expr_contains_local(arg, local):
+                    return True
+        elif isinstance(stmt, IRTrace):
+            if self._expr_contains_local(stmt.msg, local):
+                return True
+        elif isinstance(stmt, IRConditional):
+            if self._expr_contains_local(stmt.condition, local):
+                return True
+        elif isinstance(stmt, IRWhileLoop):
+            if self._expr_contains_local(stmt.condition, local):
+                return True
+        elif isinstance(stmt, IRPrimitiveLoop):
+            if self._statement_reads_local(stmt.condition, local):
+                return True
+        elif isinstance(stmt, IRSwitch):
+            if self._expr_contains_local(stmt.value, local):
+                return True
+        return False
+
+    def _expr_contains_local(self, expr: IRExpression, local: IRLocal) -&gt; bool:
+        if expr == local:
+            return True
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            if expr.left is not None and self._expr_contains_local(expr.left, local):
+                return True
+            if expr.right is not None and self._expr_contains_local(expr.right, local):
+                return True
+        elif isinstance(expr, IRCall):
+            if expr.target is not None and self._expr_contains_local(expr.target, local):
+                return True
+            for arg in expr.args:
+                if self._expr_contains_local(arg, local):
+                    return True
+        elif isinstance(expr, IRField):
+            if self._expr_contains_local(expr.target, local):
+                return True
+        elif isinstance(expr, IRCast):
+            if self._expr_contains_local(expr.expr, local):
+                return True
+        elif isinstance(expr, IRArrayAccess):
+            if self._expr_contains_local(expr.array, local):
+                return True
+            if self._expr_contains_local(expr.index, local):
+                return True
+        elif isinstance(expr, IRRef):
+            if self._expr_contains_local(expr.target, local):
+                return True
+        elif isinstance(expr, IREnumConstruct):
+            for arg in expr.args:
+                if self._expr_contains_local(arg, local):
+                    return True
+        elif isinstance(expr, (IREnumIndex, IREnumField)):
+            if self._expr_contains_local(expr.value, local):
+                return True
+        elif isinstance(expr, IRNew):
+            for arg in expr.constructor_args:
+                if self._expr_contains_local(arg, local):
+                    return True
+        for child in expr.get_children():
+            if isinstance(child, IRExpression) and self._expr_contains_local(child, local):
+                return True
+        return False</code></pre>
+</details>
+<div class="desc"><p>Folds chained string-concat temporaries into a single inline expression.</p>
+<p>HashLink often lowers <code>trace("..." + x)</code> or <code>var s = "..." + x</code> to:
+temp = "&hellip;";
+temp = String.<strong>add</strong>(temp, x);
+temp = String.<strong>add</strong>(temp, y);
+&hellip; use(temp);</p>
+<p>After dead-temp cleanup the assignments become adjacent.
+This pass collapses
+the whole chain into a single String.<strong>add</strong> expression at the use site, which
+the pseudocode printer then renders with Haxe's <code>+</code> operator.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></li>
+<li><a title="crashlink.decomp.opt.IROptimizer" href="index.html#crashlink.decomp.opt.IROptimizer">IROptimizer</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.TARGET_OPCODES" href="index.html#crashlink.decomp.opt.IROptimizer.TARGET_OPCODES">TARGET_OPCODES</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement">after_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement">before_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.optimize" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.should_run" href="index.html#crashlink.decomp.opt.IROptimizer.should_run">should_run</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit">visit</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_assign" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_assign">visit_assign</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_block" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_block">visit_block</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_break" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_break">visit_break</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_conditional" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_conditional">visit_conditional</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_continue" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_continue">visit_continue</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_expression" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_expression">visit_expression</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop">visit_primitive_loop</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_return" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_return">visit_return</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_switch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_switch">visit_switch</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch">visit_try_catch</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.opt.strings.IRStringIntConcatOptimizer"><code class="flex name class">
+<span>class <span class="ident">IRStringIntConcatOptimizer</span></span>
+<span>(</span><span>function: "'IRFunction'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRStringIntConcatOptimizer(TraversingIROptimizer):
+    &#34;&#34;&#34;
+    Collapses the HashLink string+int lowering pattern at the IR level.
+
+    HashLink compiles `str + int` as:
+        var_bytes = itos(int_local, ref(int_local))
+        var_str   = String.__alloc__(var_bytes, int_local)  [or inline itos]
+        result    = String.__add__(left, var_str)
+
+    Does a single forward pass tracking the most-recent assignment for each
+    local so that reused registers (same var7 for multiple conversions) are
+    resolved correctly.  Both top-level __alloc__ assignments and __alloc__
+    nested inside __add__ are collapsed to the plain integer local.
+    &#34;&#34;&#34;
+
+    def _check_conversion_call(self, expr: IRExpression) -&gt; Optional[Tuple[&#34;IRLocal&#34;, &#34;IRLocal&#34;]]:
+        &#34;&#34;&#34;
+        If `expr` is itos(val, ref) or ftos(val, ref), return (value_local, count_ref_local).
+        For itos, HashLink uses the same variable as both value and ref storage.
+        For ftos, a separate int variable stores the byte count.
+        &#34;&#34;&#34;
+        if not (
+            isinstance(expr, IRCall) and isinstance(expr.target, IRConst) and isinstance(expr.target.value, Native)
+        ):
+            return None
+        func_name = expr.target.value.name.resolve(self.func.code)
+        if func_name not in (&#34;itos&#34;, &#34;ftos&#34;):
+            return None
+        if len(expr.args) &lt; 2:
+            return None
+        if not isinstance(expr.args[0], IRLocal):
+            return None
+        # arg1 is the ref where byte count is stored back (IRLocal or IRRef wrapping one)
+        count_ref: Optional[IRLocal] = None
+        arg1 = expr.args[1]
+        if isinstance(arg1, IRLocal):
+            count_ref = arg1
+        elif isinstance(arg1, IRRef) and isinstance(arg1.target, IRLocal):
+            count_ref = arg1.target
+        if count_ref is None:
+            return None
+        return expr.args[0], count_ref
+
+    def _try_collapse_alloc(self, expr: IRExpression, current_assigns: Dict[str, &#34;IRAssign&#34;]) -&gt; Optional[IRLocal]:
+        &#34;&#34;&#34;
+        If `expr` is __alloc__(itos/ftos_bytes, count_ref) with matching count_ref, return
+        the value local (int for itos, float for ftos). `current_assigns` maps local names
+        to their most-recent assignments seen so far.
+        &#34;&#34;&#34;
+        if not isinstance(expr, IRCall):
+            return None
+        if not (isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function)):
+            return None
+        if self.func.code.partial_func_name(expr.target.value) != &#34;__alloc__&#34;:
+            return None
+        if len(expr.args) != 2:
+            return None
+
+        bytes_arg, int_arg = expr.args[0], expr.args[1]
+        if not isinstance(int_arg, IRLocal):
+            return None
+
+        value_local: Optional[IRLocal] = None
+        count_ref_local: Optional[IRLocal] = None
+        consumed_stmt: Optional[IRAssign] = None
+        if isinstance(bytes_arg, IRCall):
+            result = self._check_conversion_call(bytes_arg)
+            if result:
+                value_local, count_ref_local = result
+        elif isinstance(bytes_arg, IRLocal) and bytes_arg.name in current_assigns:
+            defn = current_assigns[bytes_arg.name]
+            if isinstance(defn.expr, IRCall):
+                result = self._check_conversion_call(defn.expr)
+                if result:
+                    value_local, count_ref_local = result
+                    consumed_stmt = defn
+
+        if value_local is None or count_ref_local is None:
+            return None
+
+        # Direct match: count_ref is the same local as int_arg
+        if count_ref_local.name == int_arg.name:
+            if consumed_stmt is not None:
+                self._consumed.add(id(consumed_stmt))
+            return value_local
+
+        # Indirect match: count_ref = &amp;int_arg (before IRConditionInliner runs, the Ref
+        # is a separate local var6 = &amp;var13; we need to look through it)
+        if count_ref_local.name in current_assigns:
+            ref_defn = current_assigns[count_ref_local.name]
+            if isinstance(ref_defn.expr, IRRef) and isinstance(ref_defn.expr.target, IRLocal):
+                if ref_defn.expr.target.name == int_arg.name:
+                    if consumed_stmt is not None:
+                        self._consumed.add(id(consumed_stmt))
+                    return value_local
+
+        return None
+
+    def _rewrite_expr(self, expr: IRExpression, current_assigns: Dict[str, &#34;IRAssign&#34;]) -&gt; IRExpression:
+        &#34;&#34;&#34;Recursively collapse __alloc__ within an expression.&#34;&#34;&#34;
+        collapsed = self._try_collapse_alloc(expr, current_assigns)
+        if collapsed is not None:
+            dbg_print(f&#34;IRStringIntConcatOptimizer: collapsing __alloc__(...,{collapsed.name}) → {collapsed.name}&#34;)
+            return collapsed
+        if isinstance(expr, IRCall):
+            expr.args = [self._rewrite_expr(a, current_assigns) for a in expr.args]
+        return expr
+
+    def visit_block(self, block: IRBlock) -&gt; None:
+        current_assigns: Dict[str, IRAssign] = {}
+        self._consumed: Set[int] = getattr(self, &#34;_consumed&#34;, set())
+        for stmt in block.statements:
+            if isinstance(stmt, IRAssign):
+                if isinstance(stmt.target, IRLocal):
+                    current_assigns[stmt.target.name] = stmt
+                if isinstance(stmt.expr, IRExpression):
+                    stmt.expr = self._rewrite_expr(stmt.expr, current_assigns)
+
+        # A bytes-temp assignment fully consumed by a collapse above is now
+        # dead — its only use (the __alloc__ call) no longer reads it — but
+        # the register it occupies is frequently reused later in the same
+        # block for an unrelated value, so leaving the statement in place
+        # would have a later, completely unrelated assignment&#39;s debug name
+        # misleadingly attached to this stale `itos`/`ftos` call.
+        if self._consumed:
+            block.statements = [s for s in block.statements if id(s) not in self._consumed]
+            self._consumed = set()</code></pre>
+</details>
+<div class="desc"><p>Collapses the HashLink string+int lowering pattern at the IR level.</p>
+<p>HashLink compiles <code>str + int</code> as:
+var_bytes = itos(int_local, ref(int_local))
+var_str
+= String.<strong>alloc</strong>(var_bytes, int_local)
+[or inline itos]
+result
+= String.<strong>add</strong>(left, var_str)</p>
+<p>Does a single forward pass tracking the most-recent assignment for each
+local so that reused registers (same var7 for multiple conversions) are
+resolved correctly.
+Both top-level <strong>alloc</strong> assignments and <strong>alloc</strong>
+nested inside <strong>add</strong> are collapsed to the plain integer local.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></li>
+<li><a title="crashlink.decomp.opt.IROptimizer" href="index.html#crashlink.decomp.opt.IROptimizer">IROptimizer</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.TARGET_OPCODES" href="index.html#crashlink.decomp.opt.IROptimizer.TARGET_OPCODES">TARGET_OPCODES</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement">after_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement">before_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.optimize" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.should_run" href="index.html#crashlink.decomp.opt.IROptimizer.should_run">should_run</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit">visit</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_assign" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_assign">visit_assign</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_block" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_block">visit_block</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_break" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_break">visit_break</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_conditional" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_conditional">visit_conditional</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_continue" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_continue">visit_continue</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_expression" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_expression">visit_expression</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop">visit_primitive_loop</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_return" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_return">visit_return</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_switch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_switch">visit_switch</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch">visit_try_catch</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.opt.strings.IRTraceOptimizer"><code class="flex name class">
+<span>class <span class="ident">IRTraceOptimizer</span></span>
+<span>(</span><span>function: "'IRFunction'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRTraceOptimizer(TraversingIROptimizer):
+    &#34;&#34;&#34;
+    Finds the common `haxe.Log.trace` pattern with an anonymous object for
+    position and collapses it into a single IRTrace statement.
+    &#34;&#34;&#34;
+
+    TARGET_OPCODES = {&#34;New&#34;}
+
+    def visit_block(self, block: IRBlock) -&gt; None:
+        made_change = True
+        while made_change:
+            made_change = False
+            new_statements: List[IRStatement] = []
+            i = 0
+            while i &lt; len(block.statements):
+                stmt = block.statements[i]
+                if DEBUG:
+                    dbg_print(f&#34;[TraceOpt] Analyzing statement {i}: {stmt}&#34;)
+
+                if isinstance(stmt, IRConditional) and stmt.true_block is not None and stmt.false_block is not None:
+                    branched = self._try_branched_trace(stmt, block.statements, i)
+                    if branched is not None:
+                        true_tail, false_tail, msg_true, msg_false, pos_true, pos_false, consumed_after = branched
+                        stmt.true_block.statements = true_tail + [IRTrace(self.func.code, msg_true, pos_true)]
+                        stmt.false_block.statements = false_tail + [IRTrace(self.func.code, msg_false, pos_false)]
+                        new_statements.append(stmt)
+                        i += 1 + consumed_after
+                        made_change = True
+                        continue
+
+                temp_local = None
+                start_idx = i
+
+                if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+                    if isinstance(stmt.expr, IRNew) and stmt.expr.get_type().definition.__class__ == DynObj:
+                        temp_local = stmt.target
+                        start_idx = i + 1
+                    else:
+                        new_statements.append(stmt)
+                        i += 1
+                        continue
+                elif isinstance(stmt, IRAssign) and isinstance(stmt.target, IRField):
+                    candidate = stmt.target.target
+                    if isinstance(candidate, IRLocal):
+                        temp_local = candidate
+                        start_idx = i
+                    else:
+                        new_statements.append(stmt)
+                        i += 1
+                        continue
+                else:
+                    new_statements.append(stmt)
+                    i += 1
+                    continue
+
+                if temp_local is None:
+                    new_statements.append(stmt)
+                    i += 1
+                    continue
+
+                pos_info: Dict[str, Any] = {}
+                j = start_idx
+
+                while j &lt; len(block.statements):
+                    next_stmt = block.statements[j]
+                    if isinstance(next_stmt, IRAssign) and isinstance(next_stmt.target, IRField):
+                        field_target = next_stmt.target
+                        if field_target.target == temp_local:
+                            field_name = field_target.field_name
+                            if isinstance(next_stmt.expr, IRConst):
+                                pos_info[field_name] = next_stmt.expr.value
+                                dbg_print(
+                                    f&#34;[TraceOpt]  -&gt; Collected const field: {field_name} = {next_stmt.expr.value!r}&#34;
+                                )
+                                j += 1
+                                continue
+                            elif isinstance(next_stmt.expr, IRLocal):
+                                pos_info[field_name] = next_stmt.expr
+                                if DEBUG:
+                                    dbg_print(f&#34;[TraceOpt]  -&gt; Collected local field: {field_name} = {next_stmt.expr}&#34;)
+                                j += 1
+                                continue
+                    elif isinstance(next_stmt, IRAssign) and isinstance(next_stmt.target, IRLocal):
+                        j += 1
+                        continue
+                    break
+
+                if j &lt; len(block.statements):
+                    call_stmt = block.statements[j]
+                    if DEBUG:
+                        dbg_print(f&#34;[TraceOpt] Checking statement {j} as potential trace call: {call_stmt}&#34;)
+
+                    is_valid_trace_call = False
+                    if isinstance(call_stmt, IRCall) and len(call_stmt.args) == 2:
+                        last_arg = call_stmt.args[1]
+
+                        is_our_var = (isinstance(last_arg, IRLocal) and last_arg == temp_local) or (
+                            isinstance(last_arg, IRCast) and last_arg.expr == temp_local
+                        )
+
+                        is_trace_func = False
+                        if isinstance(call_stmt.target, IRField) and call_stmt.target.field_name == &#34;trace&#34;:
+                            dbg_print(&#34;[TraceOpt]  -&gt; Call target is a field named &#39;trace&#39;.&#34;)
+                            target_obj = call_stmt.target.target
+                            if (
+                                isinstance(target_obj, IRConst)
+                                and isinstance(target_obj.value, Type)
+                                and isinstance(target_obj.value.definition, Obj)
+                            ):
+                                obj_name = target_obj.value.definition.name.resolve(self.func.code)
+                                if &#34;haxe.$Log&#34; in obj_name:
+                                    is_trace_func = True
+
+                        dbg_print(f&#34;[TraceOpt]  -&gt; Is function &#39;haxe.Log.trace&#39;? {is_trace_func}&#34;)
+
+                        if is_our_var and is_trace_func:
+                            is_valid_trace_call = True
+
+                    else:
+                        dbg_print(f&#34;[TraceOpt]  -&gt; FAILED: Statement is not an IRCall with 2 arguments.&#34;)
+
+                    if is_valid_trace_call:
+                        assert isinstance(call_stmt, IRCall)
+                        msg_expr = call_stmt.args[0]
+                        if (
+                            isinstance(msg_expr, IRLocal)
+                            and msg_expr.reg_idx is not None
+                            and msg_expr.reg_idx not in self.func._user_reg_indices
+                            and new_statements
+                            and isinstance(new_statements[-1], IRAssign)
+                            and new_statements[-1].target == msg_expr
+                        ):
+                            # inline if this is obviously compiler-generated (one use, right before the call, has no user assign)
+                            _popped = new_statements.pop()
+                            msg_expr = _popped.expr if isinstance(_popped, IRAssign) else msg_expr
+                        resolved_pos: Dict[str, Any] = {}
+                        for k, v in pos_info.items():
+                            if isinstance(v, IRLocal):
+                                for s_idx in range(start_idx, j):
+                                    s = block.statements[s_idx]
+                                    if isinstance(s, IRAssign) and s.target == v and isinstance(s.expr, IRConst):
+                                        try:
+                                            resolved_pos[k] = int(
+                                                s.expr.value.value if hasattr(s.expr.value, &#34;value&#34;) else s.expr.value
+                                            )
+                                        except (ValueError, TypeError):
+                                            resolved_pos[k] = v
+                                        break
+                                else:
+                                    resolved_pos[k] = v
+                            else:
+                                resolved_pos[k] = v
+                        trace_stmt = IRTrace(self.func.code, msg_expr, resolved_pos)
+                        new_statements.append(trace_stmt)
+
+                        i = j + 1
+                        made_change = True
+                        continue
+                    else:
+                        dbg_print(f&#34;[TraceOpt] FAILED: Pattern did not match for trace call.&#34;)
+
+                new_statements.append(stmt)
+                i += 1
+
+            block.statements = new_statements
+
+    def _match_trace_prep(
+        self, stmts: List[IRStatement]
+    ) -&gt; Optional[Tuple[List[IRStatement], IRLocal, IRLocal, Dict[str, Any]]]:
+        &#34;&#34;&#34;
+        Matches a branch that ends with the `haxe.Log.trace` position-object setup
+        (`fun = ...trace; temp = new DynObj; temp.field = const; ...`) but has no
+        call of its own — the call was hoisted out to a point after the branches
+        converge. Returns (statements before the pattern, fun local, temp local,
+        position info) or None if the branch doesn&#39;t end in this shape.
+        &#34;&#34;&#34;
+        new_idx = None
+        temp_local = None
+        for k, s in enumerate(stmts):
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRLocal)
+                and isinstance(s.expr, IRNew)
+                and s.expr.get_type().definition.__class__ == DynObj
+            ):
+                new_idx = k
+                temp_local = s.target
+                break
+        if new_idx is None or temp_local is None:
+            return None
+
+        fun_local = None
+        for k in range(new_idx - 1, -1, -1):
+            s = stmts[k]
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and isinstance(s.expr, IRField):
+                if s.expr.field_name == &#34;trace&#34;:
+                    fun_local = s.target
+                break
+        if fun_local is None:
+            return None
+
+        pos_info: Dict[str, Any] = {}
+        j = new_idx + 1
+        while j &lt; len(stmts):
+            s = stmts[j]
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRField)
+                and s.target.target == temp_local
+                and isinstance(s.expr, IRConst)
+            ):
+                pos_info[s.target.field_name] = s.expr.value
+                j += 1
+                continue
+            break
+        if j != len(stmts):
+            return None
+
+        return stmts[:new_idx], fun_local, temp_local, pos_info
+
+    def _resolve_local_value(self, stmts: List[IRStatement], local: IRExpression) -&gt; Optional[IRExpression]:
+        &#34;&#34;&#34;Find the most recent assignment to `local` within `stmts`, searching from the end.&#34;&#34;&#34;
+        for s in reversed(stmts):
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target == local:
+                return s.expr
+        return None
+
+    def _try_branched_trace(
+        self, cond: &#34;IRConditional&#34;, statements: List[IRStatement], idx: int
+    ) -&gt; Optional[
+        Tuple[List[IRStatement], List[IRStatement], IRExpression, IRExpression, Dict[str, Any], Dict[str, Any], int]
+    ]:
+        &#34;&#34;&#34;
+        Matches `trace(msg)` calls that got duplicated into each branch of an
+        if/else by the Haxe/HL compiler, then merged back into a single shared
+        call after the branches converge (since both calls have the same target
+        and arg count, just a different message/line number). Returns the new
+        branch tails, per-branch resolved message + position info, and how many
+        extra statements after the conditional the merged call consumed.
+        &#34;&#34;&#34;
+        true_block = cond.true_block
+        false_block = cond.false_block
+        if true_block is None or false_block is None:
+            return None
+
+        true_match = self._match_trace_prep(true_block.statements)
+        false_match = self._match_trace_prep(false_block.statements)
+        if true_match is None or false_match is None:
+            return None
+        true_tail, fun_local_t, temp_local_t, pos_t = true_match
+        false_tail, fun_local_f, temp_local_f, pos_f = false_match
+        if fun_local_t != fun_local_f or temp_local_t != temp_local_f:
+            return None
+
+        j = idx + 1
+        shared_pos: Dict[str, Any] = {}
+        while j &lt; len(statements):
+            s = statements[j]
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRField)
+                and s.target.target == temp_local_t
+                and isinstance(s.expr, IRConst)
+            ):
+                shared_pos[s.target.field_name] = s.expr.value
+                j += 1
+                continue
+            break
+        if j &gt;= len(statements):
+            return None
+
+        call_stmt = statements[j]
+        if not (isinstance(call_stmt, IRCall) and len(call_stmt.args) == 2):
+            return None
+        last_arg = call_stmt.args[1]
+        is_our_var = (isinstance(last_arg, IRLocal) and last_arg == temp_local_t) or (
+            isinstance(last_arg, IRCast) and last_arg.expr == temp_local_t
+        )
+        if not is_our_var:
+            return None
+
+        is_trace_func = False
+        target = call_stmt.target
+        if isinstance(target, IRField) and target.field_name == &#34;trace&#34;:
+            target_obj = target.target
+            if (
+                isinstance(target_obj, IRConst)
+                and isinstance(target_obj.value, Type)
+                and isinstance(target_obj.value.definition, Obj)
+            ):
+                obj_name = target_obj.value.definition.name.resolve(self.func.code)
+                if &#34;haxe.$Log&#34; in obj_name:
+                    is_trace_func = True
+        elif isinstance(target, IRLocal) and target == fun_local_t:
+            is_trace_func = True
+        if not is_trace_func:
+            return None
+
+        msg_arg = call_stmt.args[0]
+        msg_true: IRExpression = msg_arg
+        msg_false: IRExpression = msg_arg
+        if isinstance(msg_arg, IRLocal):
+            resolved_true = self._resolve_local_value(true_block.statements, msg_arg)
+            resolved_false = self._resolve_local_value(false_block.statements, msg_arg)
+            if resolved_true is not None:
+                msg_true = resolved_true
+            if resolved_false is not None:
+                msg_false = resolved_false
+
+        final_pos_t = {**pos_t, **shared_pos}
+        final_pos_f = {**pos_f, **shared_pos}
+        consumed_after = j - idx
+        return true_tail, false_tail, msg_true, msg_false, final_pos_t, final_pos_f, consumed_after</code></pre>
+</details>
+<div class="desc"><p>Finds the common <code>haxe.Log.trace</code> pattern with an anonymous object for
+position and collapses it into a single IRTrace statement.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></li>
+<li><a title="crashlink.decomp.opt.IROptimizer" href="index.html#crashlink.decomp.opt.IROptimizer">IROptimizer</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.TARGET_OPCODES" href="index.html#crashlink.decomp.opt.IROptimizer.TARGET_OPCODES">TARGET_OPCODES</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement">after_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement">before_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.optimize" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.should_run" href="index.html#crashlink.decomp.opt.IROptimizer.should_run">should_run</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit">visit</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_assign" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_assign">visit_assign</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_block" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_block">visit_block</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_break" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_break">visit_break</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_conditional" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_conditional">visit_conditional</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_continue" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_continue">visit_continue</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_expression" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_expression">visit_expression</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop">visit_primitive_loop</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_return" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_return">visit_return</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_switch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_switch">visit_switch</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch">visit_try_catch</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashlink.decomp.opt" href="index.html">crashlink.decomp.opt</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="crashlink.decomp.opt.strings.IRGlobalStringOptimizer" href="#crashlink.decomp.opt.strings.IRGlobalStringOptimizer">IRGlobalStringOptimizer</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.opt.strings.IRStringAllocOptimizer" href="#crashlink.decomp.opt.strings.IRStringAllocOptimizer">IRStringAllocOptimizer</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.opt.strings.IRStringConcatFolder" href="#crashlink.decomp.opt.strings.IRStringConcatFolder">IRStringConcatFolder</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.opt.strings.IRStringIntConcatOptimizer" href="#crashlink.decomp.opt.strings.IRStringIntConcatOptimizer">IRStringIntConcatOptimizer</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.opt.strings.IRTraceOptimizer" href="#crashlink.decomp.opt.strings.IRTraceOptimizer">IRTraceOptimizer</a></code></h4>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
+</footer>
+</body>
+</html>

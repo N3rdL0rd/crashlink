@@ -1,29 +1,82 @@
 """
 Base optimizer infrastructure and shared helpers.
 """
+
 from __future__ import annotations
 
 import copy
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union, cast
+
+if TYPE_CHECKING:
+    from ..function import IRFunction
 
 from ...core import (
-    Bytecode, DynObj, Enum, Fun, Function, Native, Obj, Opcode, Ref,
-    ResolvableVarInt, Type, TypeDef, Virtual, Void, fieldRef, gIndex, tIndex,
+    Bytecode,
+    DynObj,
+    Enum,
+    Fun,
+    Function,
+    Native,
+    Obj,
+    Opcode,
+    Ref,
+    ResolvableVarInt,
+    Type,
+    TypeDef,
+    Virtual,
+    Void,
+    fieldRef,
+    gIndex,
+    tIndex,
 )
 from ...errors import DecompError
 from ...globals import DEBUG, dbg_print
 from ... import disasm
 from ...opcodes import arithmetic, conditionals, terminal, simple_calls
 from ..ir import (
-    IRStatement, IRExpression, IRBlock, IRLocal, IRArithmetic, IRNeg, IRNot,
-    IRTypeOf, IRTypeKind, IRAssign, IRCall, IRBoolExpr, IRConst, IRConditional,
-    IRPrimitiveLoop, IRBreak, IRContinue, IRReturn, IRThrow, IRTrace, IRTryCatch,
-    IRSwitch, IRPrimitiveJump, IRWhileLoop, IRForEachLoop, IRIntRangeLoop,
-    IRField, IRNew, IRNativeArrayNew, IRNativeMapNew, IRCast, IRArrayLiteral,
-    IRArrayAccess, IRRef, IREnumConstruct, IREnumIndex, IREnumField,
-    IRUnliftedOpcode, IRNativeStub, _get_type_in_code, _strip_ansi,
+    IRStatement,
+    IRExpression,
+    IRBlock,
+    IRLocal,
+    IRArithmetic,
+    IRNeg,
+    IRNot,
+    IRTypeOf,
+    IRTypeKind,
+    IRAssign,
+    IRCall,
+    IRBoolExpr,
+    IRConst,
+    IRConditional,
+    IRPrimitiveLoop,
+    IRBreak,
+    IRContinue,
+    IRReturn,
+    IRThrow,
+    IRTrace,
+    IRTryCatch,
+    IRSwitch,
+    IRPrimitiveJump,
+    IRWhileLoop,
+    IRForEachLoop,
+    IRIntRangeLoop,
+    IRField,
+    IRNew,
+    IRNativeArrayNew,
+    IRNativeMapNew,
+    IRCast,
+    IRArrayLiteral,
+    IRArrayAccess,
+    IRRef,
+    IREnumConstruct,
+    IREnumIndex,
+    IREnumField,
+    IRUnliftedOpcode,
+    IRNativeStub,
+    _get_type_in_code,
+    _strip_ansi,
 )
 from ..cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
 
@@ -158,6 +211,8 @@ class TraversingIROptimizer(IROptimizer):
     def visit_expression(self, expr: IRExpression) -> None:
         """Visit an IRExpression. Override in subclasses for custom behavior."""
         pass
+
+
 def _ir_structurally_equal(a: Any, b: Any, memo: Optional[Set[Tuple[int, int]]] = None) -> bool:
     """Deep structural equality for IR nodes that is safe and fast on the IR DAG.
 
@@ -219,13 +274,13 @@ def _structurally_equal(a: Any, b: Any) -> bool:
     if type(a) is not type(b):
         return False
     if isinstance(a, IRLocal):
-        return a == b
+        return bool(a == b)
     if isinstance(a, IRConst):
         if a.const_type != b.const_type:
             return False
         if a.const_type == IRConst.ConstType.INT:
-            return _int_const_value(a) == _int_const_value(b)
-        return a.value == b.value
+            return bool(_int_const_value(a) == _int_const_value(b))
+        return bool(a.value == b.value)
     if isinstance(a, IRArithmetic):
         return a.op == b.op and _structurally_equal(a.left, b.left) and _structurally_equal(a.right, b.right)
     if isinstance(a, IRBoolExpr):
@@ -257,6 +312,7 @@ def _structurally_equal(a: Any, b: Any) -> bool:
 
 def _stmt_lists_structurally_equal(a: List[IRStatement], b: List[IRStatement]) -> bool:
     return len(a) == len(b) and all(_structurally_equal(x, y) for x, y in zip(a, b))
+
 
 def _bytes_mem_kind(code: Bytecode, reg_type: tIndex) -> Optional[str]:
     """Map a GetMem/SetMem operand's register type to the matching hl.Bytes

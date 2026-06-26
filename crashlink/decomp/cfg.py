@@ -1,6 +1,7 @@
 """
 Control-flow graph construction and optimization.
 """
+
 from __future__ import annotations
 
 import copy
@@ -12,13 +13,30 @@ from pprint import pformat
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
 
 from ..core import (
-    Bytecode, DynObj, Enum, Fun, Function, Native, Obj, Opcode, Reg, Regs,
-    ResolvableVarInt, Type, TypeDef, Virtual, Void, fieldRef, gIndex, tIndex,
+    Bytecode,
+    DynObj,
+    Enum,
+    Fun,
+    Function,
+    Native,
+    Obj,
+    Opcode,
+    Reg,
+    Regs,
+    ResolvableVarInt,
+    Type,
+    TypeDef,
+    Virtual,
+    Void,
+    fieldRef,
+    gIndex,
+    tIndex,
 )
 from ..errors import DecompError
 from ..globals import DEBUG, dbg_print
 from .. import disasm
 from ..opcodes import arithmetic, conditionals, terminal, simple_calls
+
 
 class CFNode:
     """
@@ -560,7 +578,7 @@ class IsolatedCFGraph(CFGraph):
             elif not self.entry and self.nodes:
                 self.entry = self.nodes[0]
 
-    
+
 def _find_jumps_to_label(
     start_node: CFNode, label_node: CFNode, visited: Set[CFNode]
 ) -> List[Tuple[CFNode, List[CFNode]]]:

@@ -1,35 +1,93 @@
 """
 Array and bytes-buffer pattern optimizers.
 """
+
 from __future__ import annotations
 
 import copy
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union, cast
+
+if TYPE_CHECKING:
+    from ..function import IRFunction
 
 from ...core import (
-    Bytecode, DynObj, Enum, Fun, Function, Native, Obj, Opcode, Ref,
-    ResolvableVarInt, Type, TypeDef, Virtual, Void, fieldRef, gIndex, tIndex,
+    Bytecode,
+    DynObj,
+    Enum,
+    Fun,
+    Function,
+    Native,
+    Obj,
+    Opcode,
+    Ref,
+    ResolvableVarInt,
+    Type,
+    TypeDef,
+    Virtual,
+    Void,
+    fieldRef,
+    gIndex,
+    tIndex,
 )
 from ...errors import DecompError
 from ...globals import DEBUG, dbg_print
 from ... import disasm
 from ...opcodes import arithmetic, conditionals, terminal, simple_calls
 from ..ir import (
-    IRStatement, IRExpression, IRBlock, IRLocal, IRArithmetic, IRNeg, IRNot,
-    IRTypeOf, IRTypeKind, IRAssign, IRCall, IRBoolExpr, IRConst, IRConditional,
-    IRPrimitiveLoop, IRBreak, IRContinue, IRReturn, IRThrow, IRTrace, IRTryCatch,
-    IRSwitch, IRPrimitiveJump, IRWhileLoop, IRForEachLoop, IRIntRangeLoop,
-    IRField, IRNew, IRNativeArrayNew, IRNativeMapNew, IRCast, IRArrayLiteral,
-    IRArrayAccess, IRRef, IREnumConstruct, IREnumIndex, IREnumField,
-    IRUnliftedOpcode, IRNativeStub, _get_type_in_code, _strip_ansi,
+    IRStatement,
+    IRExpression,
+    IRBlock,
+    IRLocal,
+    IRArithmetic,
+    IRNeg,
+    IRNot,
+    IRTypeOf,
+    IRTypeKind,
+    IRAssign,
+    IRCall,
+    IRBoolExpr,
+    IRConst,
+    IRConditional,
+    IRPrimitiveLoop,
+    IRBreak,
+    IRContinue,
+    IRReturn,
+    IRThrow,
+    IRTrace,
+    IRTryCatch,
+    IRSwitch,
+    IRPrimitiveJump,
+    IRWhileLoop,
+    IRForEachLoop,
+    IRIntRangeLoop,
+    IRField,
+    IRNew,
+    IRNativeArrayNew,
+    IRNativeMapNew,
+    IRCast,
+    IRArrayLiteral,
+    IRArrayAccess,
+    IRRef,
+    IREnumConstruct,
+    IREnumIndex,
+    IREnumField,
+    IRUnliftedOpcode,
+    IRNativeStub,
+    _get_type_in_code,
+    _strip_ansi,
 )
 from ..cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
 from . import (
-    IROptimizer, TraversingIROptimizer,
-    _ir_structurally_equal, _structurally_equal, _stmt_lists_structurally_equal,
-    _bytes_mem_kind, _int_const_value, _signed_i32,
+    IROptimizer,
+    TraversingIROptimizer,
+    _ir_structurally_equal,
+    _structurally_equal,
+    _stmt_lists_structurally_equal,
+    _bytes_mem_kind,
+    _int_const_value,
+    _signed_i32,
 )
 
 
@@ -86,6 +144,8 @@ class IRNativeArrayAllocOptimizer(TraversingIROptimizer):
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
+
+
 class IRArrayObjWrapperOptimizer(TraversingIROptimizer):
     """
     Folds stdlib ArrayObj/ArrayDyn wrapper calls into Haxe array literals.
@@ -180,6 +240,8 @@ class IRArrayObjWrapperOptimizer(TraversingIROptimizer):
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
+
+
 class IRNativeMapAllocOptimizer(TraversingIROptimizer):
     """
     Folds the no-arg native allocators backing HL's raw map abstracts into
@@ -238,6 +300,8 @@ class IRNativeMapAllocOptimizer(TraversingIROptimizer):
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
+
+
 class IRArrayPatternOptimizer(TraversingIROptimizer):
     """
     Recognise low-level HashLink array implementation patterns and rewrite them
@@ -1339,47 +1403,52 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
 
         pos = start + 1
         bytes_temp_name: Optional[str] = None
+        _s = stmts[pos] if pos < len(stmts) else None
         if (
-            pos < len(stmts)
-            and isinstance(stmts[pos], IRAssign)
-            and isinstance(stmts[pos].target, IRLocal)
-            and isinstance(stmts[pos].expr, IRField)
-            and stmts[pos].expr.field_name == "bytes"
-            and isinstance(stmts[pos].expr.target, IRLocal)
-            and stmts[pos].expr.target.name == arr_var.name
+            _s is not None
+            and isinstance(_s, IRAssign)
+            and isinstance(_s.target, IRLocal)
+            and isinstance(_s.expr, IRField)
+            and _s.expr.field_name == "bytes"
+            and isinstance(_s.expr.target, IRLocal)
+            and _s.expr.target.name == arr_var.name
         ):
             # `a.bytes` was hoisted into a temp before the write; look past it.
-            bytes_temp_name = stmts[pos].target.name
+            bytes_temp_name = _s.target.name
             pos += 1
 
         # A leftover dead store (e.g. loading the shift amount into a scratch
         # register that the actual shift below recomputes from constants
         # directly) can sit here too; skip over a bounded run of those.
-        while (
-            pos < len(stmts)
-            and isinstance(stmts[pos], IRAssign)
-            and isinstance(stmts[pos].target, IRLocal)
-            and isinstance(stmts[pos].expr, IRConst)
-            and pos + 1 < len(stmts)
-            and isinstance(stmts[pos + 1], IRAssign)
-            and isinstance(stmts[pos + 1].target, IRLocal)
-            and stmts[pos + 1].target.name == stmts[pos].target.name
-        ):
-            pos += 1
+        while pos < len(stmts) and pos + 1 < len(stmts):
+            _cur = stmts[pos]
+            _nxt = stmts[pos + 1]
+            if (
+                isinstance(_cur, IRAssign)
+                and isinstance(_cur.target, IRLocal)
+                and isinstance(_cur.expr, IRConst)
+                and isinstance(_nxt, IRAssign)
+                and isinstance(_nxt.target, IRLocal)
+                and _nxt.target.name == _cur.target.name
+            ):
+                pos += 1
+            else:
+                break
 
         # The `idx << 2` byte offset may also have been hoisted into its own temp
         # rather than appearing inline in the array access.
         idx_temp_expr: Optional[IRExpression] = None
+        _s2 = stmts[pos] if pos < len(stmts) else None
         if (
-            pos < len(stmts)
-            and isinstance(stmts[pos], IRAssign)
-            and isinstance(stmts[pos].target, IRLocal)
-            and isinstance(stmts[pos].expr, IRArithmetic)
-            and stmts[pos].expr.op.value == "<<"
-            and self._expr_eq(stmts[pos].expr.left, idx_expr)
-            and isinstance(stmts[pos].expr.right, IRConst)
+            _s2 is not None
+            and isinstance(_s2, IRAssign)
+            and isinstance(_s2.target, IRLocal)
+            and isinstance(_s2.expr, IRArithmetic)
+            and _s2.expr.op.value == "<<"
+            and self._expr_eq(_s2.expr.left, idx_expr)
+            and isinstance(_s2.expr.right, IRConst)
         ):
-            idx_temp_expr = stmts[pos].target
+            idx_temp_expr = _s2.target
             pos += 1
 
         if pos >= len(stmts):

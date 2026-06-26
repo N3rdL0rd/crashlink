@@ -1,35 +1,93 @@
 """
 Structural cleanup and dead-code elimination optimizers.
 """
+
 from __future__ import annotations
 
 import copy
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union, cast
+
+if TYPE_CHECKING:
+    from ..function import IRFunction
 
 from ...core import (
-    Bytecode, DynObj, Enum, Fun, Function, Native, Obj, Opcode, Ref,
-    ResolvableVarInt, Type, TypeDef, Virtual, Void, fieldRef, gIndex, tIndex,
+    Bytecode,
+    DynObj,
+    Enum,
+    Fun,
+    Function,
+    Native,
+    Obj,
+    Opcode,
+    Ref,
+    ResolvableVarInt,
+    Type,
+    TypeDef,
+    Virtual,
+    Void,
+    fieldRef,
+    gIndex,
+    tIndex,
 )
 from ...errors import DecompError
 from ...globals import DEBUG, dbg_print
 from ... import disasm
 from ...opcodes import arithmetic, conditionals, terminal, simple_calls
 from ..ir import (
-    IRStatement, IRExpression, IRBlock, IRLocal, IRArithmetic, IRNeg, IRNot,
-    IRTypeOf, IRTypeKind, IRAssign, IRCall, IRBoolExpr, IRConst, IRConditional,
-    IRPrimitiveLoop, IRBreak, IRContinue, IRReturn, IRThrow, IRTrace, IRTryCatch,
-    IRSwitch, IRPrimitiveJump, IRWhileLoop, IRForEachLoop, IRIntRangeLoop,
-    IRField, IRNew, IRNativeArrayNew, IRNativeMapNew, IRCast, IRArrayLiteral,
-    IRArrayAccess, IRRef, IREnumConstruct, IREnumIndex, IREnumField,
-    IRUnliftedOpcode, IRNativeStub, _get_type_in_code, _strip_ansi,
+    IRStatement,
+    IRExpression,
+    IRBlock,
+    IRLocal,
+    IRArithmetic,
+    IRNeg,
+    IRNot,
+    IRTypeOf,
+    IRTypeKind,
+    IRAssign,
+    IRCall,
+    IRBoolExpr,
+    IRConst,
+    IRConditional,
+    IRPrimitiveLoop,
+    IRBreak,
+    IRContinue,
+    IRReturn,
+    IRThrow,
+    IRTrace,
+    IRTryCatch,
+    IRSwitch,
+    IRPrimitiveJump,
+    IRWhileLoop,
+    IRForEachLoop,
+    IRIntRangeLoop,
+    IRField,
+    IRNew,
+    IRNativeArrayNew,
+    IRNativeMapNew,
+    IRCast,
+    IRArrayLiteral,
+    IRArrayAccess,
+    IRRef,
+    IREnumConstruct,
+    IREnumIndex,
+    IREnumField,
+    IRUnliftedOpcode,
+    IRNativeStub,
+    _get_type_in_code,
+    _strip_ansi,
 )
 from ..cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
 from . import (
-    IROptimizer, TraversingIROptimizer,
-    _ir_structurally_equal, _structurally_equal, _stmt_lists_structurally_equal,
-    _bytes_mem_kind, _int_const_value, _signed_i32,
+    IROptimizer,
+    TraversingIROptimizer,
+    _ir_structurally_equal,
+    _structurally_equal,
+    _stmt_lists_structurally_equal,
+    _bytes_mem_kind,
+    _int_const_value,
+    _signed_i32,
 )
 
 
@@ -125,7 +183,11 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
         remaining_setup: List[IRStatement] = []
 
         for i, stmt in enumerate(setup_statements_for_body):
-            if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRExpression):
+            if (
+                isinstance(stmt, IRAssign)
+                and isinstance(stmt.expr, IRExpression)
+                and isinstance(stmt.target, (IRLocal, IRField, IRArrayAccess))
+            ):
                 later_statements = list(setup_statements_for_body[i + 1 :]) + list(loop.body.statements)
                 reads_later = any(
                     self._statement_reads_target(later_stmt, stmt.target) for later_stmt in later_statements
@@ -159,6 +221,8 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
 
         dbg_print(f"IRLoopCondOpt: Converted IRPrimitiveLoop to IRWhileLoop. While condition: {loop_continuation_expr}")
         return new_while_loop
+
+
 class IRSelfAssignOptimizer(TraversingIROptimizer):
     """
     Optimizes away redundant assignments like `x = x`.
@@ -176,6 +240,8 @@ class IRSelfAssignOptimizer(TraversingIROptimizer):
             new_statements.append(stmt)
 
         block.statements = new_statements
+
+
 class IRArrayGrowGuardEliminator(TraversingIROptimizer):
     """
     Removes `if (idx >= arr.length) arr.__expand(idx);` guards.
@@ -217,6 +283,8 @@ class IRArrayGrowGuardEliminator(TraversingIROptimizer):
             new_statements.append(stmt)
 
         block.statements = new_statements
+
+
 class IRRedundantRecomputeEliminator(TraversingIROptimizer):
     """
     Rewrites `t1 = E; t2 = E;` (the same expression recomputed verbatim in the
@@ -236,18 +304,19 @@ class IRRedundantRecomputeEliminator(TraversingIROptimizer):
         stmts = block.statements
         while i < len(stmts):
             stmt = stmts[i]
+            nxt = stmts[i + 1] if i + 1 < len(stmts) else None
             if (
-                i + 1 < len(stmts)
+                nxt is not None
                 and isinstance(stmt, IRAssign)
                 and isinstance(stmt.target, IRLocal)
-                and isinstance(stmts[i + 1], IRAssign)
-                and isinstance(stmts[i + 1].target, IRLocal)
-                and stmts[i + 1].target != stmt.target
+                and isinstance(nxt, IRAssign)
+                and isinstance(nxt.target, IRLocal)
+                and nxt.target != stmt.target
                 and not isinstance(stmt.expr, (IRLocal, IRConst))
-                and _structurally_equal(stmt.expr, stmts[i + 1].expr)
+                and _structurally_equal(stmt.expr, nxt.expr)
             ):
                 new_statements.append(stmt)
-                new_statements.append(IRAssign(self.func.code, stmts[i + 1].target, stmt.target))
+                new_statements.append(IRAssign(self.func.code, nxt.target, stmt.target))
                 i += 2
                 continue
             # `t = E; return E;` (or throw) — the terminator re-evaluates E
@@ -257,19 +326,21 @@ class IRRedundantRecomputeEliminator(TraversingIROptimizer):
             # used elsewhere: a return ends this path, so nothing after it
             # on this path could have read t anyway.
             if (
-                i + 1 < len(stmts)
+                nxt is not None
                 and isinstance(stmt, IRAssign)
                 and isinstance(stmt.target, IRLocal)
                 and not isinstance(stmt.expr, (IRLocal, IRConst))
-                and isinstance(stmts[i + 1], (IRReturn, IRThrow))
-                and stmts[i + 1].value is not None
-                and _structurally_equal(stmt.expr, stmts[i + 1].value)
+                and isinstance(nxt, (IRReturn, IRThrow))
+                and nxt.value is not None
+                and _structurally_equal(stmt.expr, nxt.value)
             ):
                 i += 1
                 continue
             new_statements.append(stmt)
             i += 1
         block.statements = new_statements
+
+
 class IRBlockFlattener(TraversingIROptimizer):
     """
     Flattens nested IRBlock structures. For example, an IRBlock child of another IRBlock
@@ -301,6 +372,8 @@ class IRBlockFlattener(TraversingIROptimizer):
             dbg_print(
                 f"IRBlockFlattener: Processed block. Original item count: {len(original_statements)}, New item count: {len(new_statements)}"
             )
+
+
 class IRCommonBlockMerger(TraversingIROptimizer):
     """
     Finds IRConditional statements where both the true and false blocks end
@@ -379,6 +452,8 @@ class IRCommonBlockMerger(TraversingIROptimizer):
 
         if made_change:
             block.statements = new_statements
+
+
 class IRRedundantContinueEliminator(TraversingIROptimizer):
     """
     Removes redundant `else { continue; }` blocks that are the last statement
@@ -413,6 +488,8 @@ class IRRedundantContinueEliminator(TraversingIROptimizer):
                 last.false_block.statements = []
 
         super().visit_block(block)
+
+
 class IRVoidAssignOptimizer(TraversingIROptimizer):
     """
     Removes assignments to IRLocals of type Void, keeping the expression
@@ -443,6 +520,8 @@ class IRVoidAssignOptimizer(TraversingIROptimizer):
 
         if made_change_this_pass:
             block.statements = new_statements
+
+
 class IRDeadTempEliminator(IROptimizer):
     """Removes assignments to compiler-generated temp variables that are never read."""
 
@@ -640,6 +719,8 @@ class IRDeadTempEliminator(IROptimizer):
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self._remove_dead(child, user_names, user_regs, globally_used, _visited)
+
+
 class IRDeadCodeEliminator(TraversingIROptimizer):
     """Removes statements after terminators (return, break, continue) within the same block."""
 
@@ -660,11 +741,7 @@ class IRDeadCodeEliminator(TraversingIROptimizer):
         if isinstance(cond, IRBoolExpr):
             if cond.op == IRBoolExpr.CompareType.TRUE:
                 return True
-            if (
-                cond.op == IRBoolExpr.CompareType.ISTRUE
-                and isinstance(cond.left, IRConst)
-                and cond.left.value is True
-            ):
+            if cond.op == IRBoolExpr.CompareType.ISTRUE and isinstance(cond.left, IRConst) and cond.left.value is True:
                 return True
         return False
 
@@ -677,13 +754,19 @@ class IRDeadCodeEliminator(TraversingIROptimizer):
             new_stmts.append(stmt)
             if isinstance(stmt, (IRReturn, IRBreak, IRContinue, IRThrow)):
                 terminated = True
-            elif self._is_infinite_loop(stmt) and not self._body_has_break(stmt.body):
+            elif (
+                self._is_infinite_loop(stmt)
+                and isinstance(stmt, IRPrimitiveLoop)
+                and not self._body_has_break(stmt.body)
+            ):
                 terminated = True
         block.statements = new_stmts
         for stmt in block.statements:
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
+
+
 class IRDeadStoreEliminator(TraversingIROptimizer):
     """Removes local assignments that are overwritten before being read within a block."""
 
@@ -795,8 +878,15 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
 
             target = _written_local(stmt)
             if target is not None:
-                if target in pending and not _has_side_effects(new_stmts[pending[target]].expr):
-                    dead_idx = pending[target]
+                _pending_idx = pending.get(target)
+                _pending_s = new_stmts[_pending_idx] if _pending_idx is not None else None
+                if (
+                    _pending_idx is not None
+                    and _pending_s is not None
+                    and isinstance(_pending_s, IRAssign)
+                    and not _has_side_effects(_pending_s.expr)
+                ):
+                    dead_idx: int = _pending_idx
                     del new_stmts[dead_idx]
                     # adjust indices after removal
                     for loc, idx in list(pending.items()):
@@ -812,6 +902,8 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
+
+
 class IRSequentialTempFolder(TraversingIROptimizer):
     """Folds a simple local assignment into the very next assignment to the same local.
 
@@ -867,7 +959,9 @@ class IRSequentialTempFolder(TraversingIROptimizer):
     def _expr_uses_local(self, expr: IRExpression, local: IRLocal) -> bool:
         if expr == local:
             return True
-        return any(self._expr_uses_local(child, local) for child in expr.get_children() if isinstance(child, IRExpression))
+        return any(
+            self._expr_uses_local(child, local) for child in expr.get_children() if isinstance(child, IRExpression)
+        )
 
     def _replace_local_in_expr(self, expr: IRExpression, local: IRLocal, replacement: IRExpression) -> bool:
         if expr == local:
@@ -953,6 +1047,8 @@ class IRSequentialTempFolder(TraversingIROptimizer):
                     parent.constructor_args[j] = value
                     return True
         return False
+
+
 class IRDeadAssignmentEliminator(TraversingIROptimizer):
     """Removes assignments to locals that are never read before being redefined.
 
@@ -971,9 +1067,7 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
     def _local_name(self, local: IRLocal) -> str:
         return local.name
 
-    def _process_block(
-        self, block: IRBlock, live_out: Set[str], mutate: bool = True
-    ) -> Set[str]:
+    def _process_block(self, block: IRBlock, live_out: Set[str], mutate: bool = True) -> Set[str]:
         block_id = id(block)
         if mutate:
             cached = self._block_live.get(block_id)
@@ -1047,10 +1141,12 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
             uses.update(true_in)
             uses.update(false_in)
         elif isinstance(stmt, IRWhileLoop):
-            body_in = self._process_loop_body(stmt.body, live_after_stmt, self._locals_in_expr(stmt.condition), mutate=mutate)
+            body_in = self._process_loop_body(
+                stmt.body, live_after_stmt, self._locals_in_expr(stmt.condition), mutate=mutate
+            )
             uses.update(body_in)
         elif isinstance(stmt, IRPrimitiveLoop):
-            cond_uses = self._locals_in_expr(stmt.condition) if hasattr(stmt, "condition") else set()
+            cond_uses: Set[str] = set()
             body_in = self._process_loop_body(stmt.body, live_after_stmt, cond_uses, mutate=mutate)
             uses.update(body_in)
             uses.update(cond_uses)
@@ -1100,9 +1196,7 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
             child_out = next_out
         return self._process_block(body, child_out)
 
-    def _compute_block_live_in(
-        self, block: IRBlock, live_out: Set[str]
-    ) -> Set[str]:
+    def _compute_block_live_in(self, block: IRBlock, live_out: Set[str]) -> Set[str]:
         """Return the live-in set for ``block`` without mutating it."""
         live: Set[str] = set(live_out)
         for stmt in reversed(block.statements):
@@ -1183,17 +1277,30 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
         if any(s in name for s in ("ArrayAccess.getDyn", "ArrayAccess.get_length", "ArrayBase.indexOf")):
             return True
         # String read-only inspectors / factories whose result is unused.
-        if any(s in name for s in (
-            "String.substr", "String.substring", "String.charAt", "String.charCodeAt",
-            "String.indexOf", "String.lastIndexOf", "String.findChar",
-            "String.toUpperCase", "String.toLowerCase", "String.toString",
-            "String.__alloc__", "$String.__alloc__",
-        )):
+        if any(
+            s in name
+            for s in (
+                "String.substr",
+                "String.substring",
+                "String.charAt",
+                "String.charCodeAt",
+                "String.indexOf",
+                "String.lastIndexOf",
+                "String.findChar",
+                "String.toUpperCase",
+                "String.toLowerCase",
+                "String.toString",
+                "String.__alloc__",
+                "$String.__alloc__",
+            )
+        ):
             return True
         # Byte/string comparison/search helpers.
         if any(s in name for s in ("bytes_find", "bytes_compare", "ucs2_length", "ucs2_upper", "ucs2_lower")):
             return True
         return False
+
+
 class IRConstructorFolder(TraversingIROptimizer):
     """Folds `new X; __constructor__(x, args...)` into `new X(args...)`."""
 
@@ -1278,6 +1385,8 @@ class IRConstructorFolder(TraversingIROptimizer):
         if expr == local:
             return True
         return any(self._expr_uses_local(child, local) for child in expr.get_children())
+
+
 class IRShiftConstantOptimizer(TraversingIROptimizer):
     """
     Replaces shift-amount locals with their constant values when the local is
@@ -1320,7 +1429,8 @@ class IRShiftConstantOptimizer(TraversingIROptimizer):
         if isinstance(stmt, IRAssign):
             self._replace_shift_const(stmt.expr, const_map)
         elif isinstance(stmt, IRReturn):
-            self._replace_shift_const(stmt.value, const_map)
+            if stmt.value is not None:
+                self._replace_shift_const(stmt.value, const_map)
         elif isinstance(stmt, IRConditional):
             self._replace_shift_const(stmt.condition, const_map)
         elif isinstance(stmt, IRPrimitiveJump):
@@ -1348,6 +1458,8 @@ class IRShiftConstantOptimizer(TraversingIROptimizer):
                 # even though the bytecode result is equivalent.
                 if isinstance(stmt.expr, IRConst) and re.fullmatch(r"var\d+", target_local.name):
                     const_map[target_local] = stmt.expr
+
+
 class IRGuardOrMerger(TraversingIROptimizer):
     """Merge `if (A) { T } else { if (B) { T } else { W } } }` into a single
     `if (A || B) { T } else { W }` when both `T` branches perform the exact

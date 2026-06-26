@@ -1,6 +1,7 @@
 """
 IR node types for the decompilation pipeline.
 """
+
 from __future__ import annotations
 
 import re
@@ -10,8 +11,24 @@ from pprint import pformat
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
 
 from ..core import (
-    Bytecode, DynObj, Enum, Fun, Function, Native, Obj, Opcode, Ref, Reg,
-    ResolvableVarInt, Type, TypeDef, Virtual, Void, fieldRef, gIndex, tIndex,
+    Bytecode,
+    DynObj,
+    Enum,
+    Fun,
+    Function,
+    Native,
+    Obj,
+    Opcode,
+    Ref,
+    Reg,
+    ResolvableVarInt,
+    Type,
+    TypeDef,
+    Virtual,
+    Void,
+    fieldRef,
+    gIndex,
+    tIndex,
 )
 from .. import disasm
 from ..errors import DecompError

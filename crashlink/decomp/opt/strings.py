@@ -1,35 +1,93 @@
 """
 String-related IR optimizers.
 """
+
 from __future__ import annotations
 
 import copy
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union, cast
+
+if TYPE_CHECKING:
+    from ..function import IRFunction
 
 from ...core import (
-    Bytecode, DynObj, Enum, Fun, Function, Native, Obj, Opcode, Ref,
-    ResolvableVarInt, Type, TypeDef, Virtual, Void, fieldRef, gIndex, tIndex,
+    Bytecode,
+    DynObj,
+    Enum,
+    Fun,
+    Function,
+    Native,
+    Obj,
+    Opcode,
+    Ref,
+    ResolvableVarInt,
+    Type,
+    TypeDef,
+    Virtual,
+    Void,
+    fieldRef,
+    gIndex,
+    tIndex,
 )
 from ...errors import DecompError
 from ...globals import DEBUG, dbg_print
 from ... import disasm
 from ...opcodes import arithmetic, conditionals, terminal, simple_calls
 from ..ir import (
-    IRStatement, IRExpression, IRBlock, IRLocal, IRArithmetic, IRNeg, IRNot,
-    IRTypeOf, IRTypeKind, IRAssign, IRCall, IRBoolExpr, IRConst, IRConditional,
-    IRPrimitiveLoop, IRBreak, IRContinue, IRReturn, IRThrow, IRTrace, IRTryCatch,
-    IRSwitch, IRPrimitiveJump, IRWhileLoop, IRForEachLoop, IRIntRangeLoop,
-    IRField, IRNew, IRNativeArrayNew, IRNativeMapNew, IRCast, IRArrayLiteral,
-    IRArrayAccess, IRRef, IREnumConstruct, IREnumIndex, IREnumField,
-    IRUnliftedOpcode, IRNativeStub, _get_type_in_code, _strip_ansi,
+    IRStatement,
+    IRExpression,
+    IRBlock,
+    IRLocal,
+    IRArithmetic,
+    IRNeg,
+    IRNot,
+    IRTypeOf,
+    IRTypeKind,
+    IRAssign,
+    IRCall,
+    IRBoolExpr,
+    IRConst,
+    IRConditional,
+    IRPrimitiveLoop,
+    IRBreak,
+    IRContinue,
+    IRReturn,
+    IRThrow,
+    IRTrace,
+    IRTryCatch,
+    IRSwitch,
+    IRPrimitiveJump,
+    IRWhileLoop,
+    IRForEachLoop,
+    IRIntRangeLoop,
+    IRField,
+    IRNew,
+    IRNativeArrayNew,
+    IRNativeMapNew,
+    IRCast,
+    IRArrayLiteral,
+    IRArrayAccess,
+    IRRef,
+    IREnumConstruct,
+    IREnumIndex,
+    IREnumField,
+    IRUnliftedOpcode,
+    IRNativeStub,
+    _get_type_in_code,
+    _strip_ansi,
 )
 from ..cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
 from . import (
-    IROptimizer, TraversingIROptimizer,
-    _ir_structurally_equal, _structurally_equal, _stmt_lists_structurally_equal,
-    _bytes_mem_kind, _int_const_value, _signed_i32,
+    IROptimizer,
+    TraversingIROptimizer,
+    _ir_structurally_equal,
+    _structurally_equal,
+    _stmt_lists_structurally_equal,
+    _bytes_mem_kind,
+    _int_const_value,
+    _signed_i32,
 )
 
 
@@ -73,6 +131,8 @@ class IRGlobalStringOptimizer(TraversingIROptimizer):
 
             except (ValueError, TypeError):
                 pass
+
+
 class IRStringIntConcatOptimizer(TraversingIROptimizer):
     """
     Collapses the HashLink string+int lowering pattern at the IR level.
@@ -200,6 +260,8 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
         if self._consumed:
             block.statements = [s for s in block.statements if id(s) not in self._consumed]
             self._consumed = set()
+
+
 class IRStringAllocOptimizer(TraversingIROptimizer):
     """
     Folds the inlined body of `String.__alloc__(bytes, length)` back into a call.
@@ -361,7 +423,7 @@ class IRStringAllocOptimizer(TraversingIROptimizer):
                         if self._stmt_reassigns_any(block.statements[k], free_names):
                             safe = False
                             break
-                    if safe:
+                    if safe and isinstance(stmt, IRAssign):
                         target = IRConst(
                             self.func.code,
                             IRConst.ConstType.FUN,
@@ -386,6 +448,8 @@ class IRStringAllocOptimizer(TraversingIROptimizer):
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
+
+
 class IRTraceOptimizer(TraversingIROptimizer):
     """
     Finds the common `haxe.Log.trace` pattern with an anonymous object for
@@ -409,12 +473,8 @@ class IRTraceOptimizer(TraversingIROptimizer):
                     branched = self._try_branched_trace(stmt, block.statements, i)
                     if branched is not None:
                         true_tail, false_tail, msg_true, msg_false, pos_true, pos_false, consumed_after = branched
-                        stmt.true_block.statements = true_tail + [
-                            IRTrace(self.func.code, msg_true, pos_true)
-                        ]
-                        stmt.false_block.statements = false_tail + [
-                            IRTrace(self.func.code, msg_false, pos_false)
-                        ]
+                        stmt.true_block.statements = true_tail + [IRTrace(self.func.code, msg_true, pos_true)]
+                        stmt.false_block.statements = false_tail + [IRTrace(self.func.code, msg_false, pos_false)]
                         new_statements.append(stmt)
                         i += 1 + consumed_after
                         made_change = True
@@ -523,7 +583,8 @@ class IRTraceOptimizer(TraversingIROptimizer):
                             and new_statements[-1].target == msg_expr
                         ):
                             # inline if this is obviously compiler-generated (one use, right before the call, has no user assign)
-                            msg_expr = new_statements.pop().expr
+                            _popped = new_statements.pop()
+                            msg_expr = _popped.expr if isinstance(_popped, IRAssign) else msg_expr
                         resolved_pos: Dict[str, Any] = {}
                         for k, v in pos_info.items():
                             if isinstance(v, IRLocal):
@@ -618,7 +679,9 @@ class IRTraceOptimizer(TraversingIROptimizer):
 
     def _try_branched_trace(
         self, cond: "IRConditional", statements: List[IRStatement], idx: int
-    ) -> Optional[Tuple[List[IRStatement], List[IRStatement], IRExpression, IRExpression, Dict[str, Any], Dict[str, Any], int]]:
+    ) -> Optional[
+        Tuple[List[IRStatement], List[IRStatement], IRExpression, IRExpression, Dict[str, Any], Dict[str, Any], int]
+    ]:
         """
         Matches `trace(msg)` calls that got duplicated into each branch of an
         if/else by the Haxe/HL compiler, then merged back into a single shared
@@ -700,6 +763,8 @@ class IRTraceOptimizer(TraversingIROptimizer):
         final_pos_f = {**pos_f, **shared_pos}
         consumed_after = j - idx
         return true_tail, false_tail, msg_true, msg_false, final_pos_t, final_pos_f, consumed_after
+
+
 class IRStringConcatFolder(TraversingIROptimizer):
     """
     Folds chained string-concat temporaries into a single inline expression.

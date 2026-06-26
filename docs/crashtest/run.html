@@ -87,6 +87,7 @@ el.replaceWith(d);
     for name, orig_func in orig_funcs.items():
         orig_ops = [op.op for op in orig_func.ops if op.op is not None]
         orig_asm = to_asm_resolved(orig_func, original_code)
+        orig_lines = op_source_lines(orig_func)
         if name in recomp_funcs:
             recomp_func = recomp_funcs[name]
             recomp_ops = [op.op for op in recomp_func.ops if op.op is not None]
@@ -99,6 +100,8 @@ el.replaceWith(d);
                     recompiled_count=len(recomp_ops),
                     orig_disasm=orig_asm,
                     recomp_disasm=to_asm_resolved(recomp_func, recompiled_code),
+                    orig_lines=orig_lines,
+                    recomp_lines=op_source_lines(recomp_func),
                 )
             )
         else:
@@ -111,6 +114,7 @@ el.replaceWith(d);
                     orig_disasm=orig_asm,
                     recomp_disasm=&#34;&#34;,
                     error=&#34;Method not found in recompiled bytecode&#34;,
+                    orig_lines=orig_lines,
                 )
             )
 
@@ -260,6 +264,34 @@ Returns a tuple of (status_message, color_hex).</p>
     return SequenceMatcher(None, a, b).ratio()</code></pre>
 </details>
 <div class="desc"><p>Sequence similarity of two opcode name lists, 0.0-1.0.</p></div>
+</dd>
+<dt id="crashtest.run.op_source_lines"><code class="name flex">
+<span>def <span class="ident">op_source_lines</span></span>(<span>func: crashlink.core.Function) ‑> List[int]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def op_source_lines(func: Function) -&gt; List[int]:
+    &#34;&#34;&#34;
+    Per-op source line numbers (1-indexed), parallel to `to_asm_resolved`&#39;s output
+    line-for-line. Each op&#39;s debug entry points back into whatever source file was
+    compiled to produce this bytecode (the original .hx for the original function,
+    or the decompiled pseudocode .hx for the recompiled one) — this is what lets the
+    UI match a diffed opcode line up with the source line that produced it. -1 where
+    no debug info is available.
+    &#34;&#34;&#34;
+    if not func.has_debug or not func.debuginfo:
+        return [-1] * len(func.ops)
+    return [ref.line for ref in func.debuginfo.value]</code></pre>
+</details>
+<div class="desc"><p>Per-op source line numbers (1-indexed), parallel to <code><a title="crashtest.run.to_asm_resolved" href="#crashtest.run.to_asm_resolved">to_asm_resolved()</a></code>'s output
+line-for-line. Each op's debug entry points back into whatever source file was
+compiled to produce this bytecode (the original .hx for the original function,
+or the decompiled pseudocode .hx for the recompiled one) — this is what lets the
+UI match a diffed opcode line up with the source line that produced it. -1 where
+no debug info is available.</p></div>
 </dd>
 <dt id="crashtest.run.recompile_pseudo"><code class="name flex">
 <span>def <span class="ident">recompile_pseudo</span></span>(<span>pseudo_content: str, class_name: str) ‑> Tuple[crashlink.core.Bytecode | None, str | None]</span>
@@ -424,7 +456,7 @@ Returns a tuple of (status_message, color_hex).</p>
                 layers[func_name] = {
                     &#34;opcodes&#34;: static_method.opcodes,
                     &#34;cfg&#34;: cfg_data,
-                    &#34;steps&#34;: [{&#34;name&#34;: n, &#34;ir&#34;: ir} for n, ir in static_method.layer_snapshots],
+                    &#34;steps&#34;: [{&#34;name&#34;: n, &#34;ir&#34;: ir, &#34;ran&#34;: ran} for n, ir, ran in static_method.layer_snapshots],
                     &#34;pseudo&#34;: pseudo(static_method),
                 }
 
@@ -437,7 +469,7 @@ Returns a tuple of (status_message, color_hex).</p>
                 layers[func_name] = {
                     &#34;opcodes&#34;: method.opcodes,
                     &#34;cfg&#34;: cfg_data,
-                    &#34;steps&#34;: [{&#34;name&#34;: n, &#34;ir&#34;: ir} for n, ir in method.layer_snapshots],
+                    &#34;steps&#34;: [{&#34;name&#34;: n, &#34;ir&#34;: ir, &#34;ran&#34;: ran} for n, ir, ran in method.layer_snapshots],
                     &#34;pseudo&#34;: pseudo(method),
                 }
 
@@ -462,6 +494,7 @@ Returns a tuple of (status_message, color_hex).</p>
     similarity_failed = (
         opcode_comparison is not None and 0.0 &lt;= opcode_comparison.overall_similarity &lt; SIMILARITY_THRESHOLD
     )
+    recompile_failed = opcode_comparison is not None and opcode_comparison.recompile_error is not None
 
     return TestCase(
         original=TestFile(
@@ -473,7 +506,7 @@ Returns a tuple of (status_message, color_hex).</p>
             content=escape(pseudo_content),
         ),
         ir=TestFile(name=f&#34;{case.replace(&#39;.hx&#39;, &#39;&#39;)} (IR)&#34;, content=escape(ir_content)),
-        failed=bool(error_message) or similarity_failed,
+        failed=bool(error_message) or similarity_failed or recompile_failed,
         test_name=file_to_name(case),
         test_id=id,
         error=error_message,
@@ -597,6 +630,7 @@ then recompiles the pseudocode and compares opcodes with the original.</p></div>
 <li><code><a title="crashtest.run.gen_status" href="#crashtest.run.gen_status">gen_status</a></code></li>
 <li><code><a title="crashtest.run.get_repo_info" href="#crashtest.run.get_repo_info">get_repo_info</a></code></li>
 <li><code><a title="crashtest.run.op_similarity" href="#crashtest.run.op_similarity">op_similarity</a></code></li>
+<li><code><a title="crashtest.run.op_source_lines" href="#crashtest.run.op_source_lines">op_source_lines</a></code></li>
 <li><code><a title="crashtest.run.recompile_pseudo" href="#crashtest.run.recompile_pseudo">recompile_pseudo</a></code></li>
 <li><code><a title="crashtest.run.run" href="#crashtest.run.run">run</a></code></li>
 <li><code><a title="crashtest.run.run_case" href="#crashtest.run.run_case">run_case</a></code></li>

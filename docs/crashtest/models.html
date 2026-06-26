@@ -167,7 +167,7 @@ class GitInfo:
 </dd>
 <dt id="crashtest.models.MethodComparison"><code class="flex name class">
 <span>class <span class="ident">MethodComparison</span></span>
-<span>(</span><span>name: str,<br>similarity: float,<br>original_count: int,<br>recompiled_count: int,<br>orig_disasm: str = '',<br>recomp_disasm: str = '',<br>error: str | None = None)</span>
+<span>(</span><span>name: str,<br>similarity: float,<br>original_count: int,<br>recompiled_count: int,<br>orig_disasm: str = '',<br>recomp_disasm: str = '',<br>error: str | None = None,<br>orig_lines: List[int] = &lt;factory&gt;,<br>recomp_lines: List[int] = &lt;factory&gt;)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -185,6 +185,8 @@ class MethodComparison:
     orig_disasm: str = &#34;&#34;
     recomp_disasm: str = &#34;&#34;
     error: Optional[str] = None
+    orig_lines: List[int] = field(default_factory=list)
+    recomp_lines: List[int] = field(default_factory=list)
 
     def to_json(self) -&gt; dict:
         return asdict(self)
@@ -199,6 +201,8 @@ class MethodComparison:
             orig_disasm=data.get(&#34;orig_disasm&#34;, &#34;&#34;),
             recomp_disasm=data.get(&#34;recomp_disasm&#34;, &#34;&#34;),
             error=data.get(&#34;error&#34;),
+            orig_lines=data.get(&#34;orig_lines&#34;, []),
+            recomp_lines=data.get(&#34;recomp_lines&#34;, []),
         )</code></pre>
 </details>
 <div class="desc"><p>Opcode-level comparison result for a single method.</p></div>
@@ -225,11 +229,19 @@ class MethodComparison:
 <dd>
 <div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
+<dt id="crashtest.models.MethodComparison.orig_lines"><code class="name">var <span class="ident">orig_lines</span> : List[int]</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
 <dt id="crashtest.models.MethodComparison.original_count"><code class="name">var <span class="ident">original_count</span> : int</code></dt>
 <dd>
 <div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
 <dt id="crashtest.models.MethodComparison.recomp_disasm"><code class="name">var <span class="ident">recomp_disasm</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashtest.models.MethodComparison.recomp_lines"><code class="name">var <span class="ident">recomp_lines</span> : List[int]</code></dt>
 <dd>
 <div class="desc"><p>The type of the None singleton.</p></div>
 </dd>
@@ -769,8 +781,10 @@ class TestFile:
 <li><code><a title="crashtest.models.MethodComparison.from_json" href="#crashtest.models.MethodComparison.from_json">from_json</a></code></li>
 <li><code><a title="crashtest.models.MethodComparison.name" href="#crashtest.models.MethodComparison.name">name</a></code></li>
 <li><code><a title="crashtest.models.MethodComparison.orig_disasm" href="#crashtest.models.MethodComparison.orig_disasm">orig_disasm</a></code></li>
+<li><code><a title="crashtest.models.MethodComparison.orig_lines" href="#crashtest.models.MethodComparison.orig_lines">orig_lines</a></code></li>
 <li><code><a title="crashtest.models.MethodComparison.original_count" href="#crashtest.models.MethodComparison.original_count">original_count</a></code></li>
 <li><code><a title="crashtest.models.MethodComparison.recomp_disasm" href="#crashtest.models.MethodComparison.recomp_disasm">recomp_disasm</a></code></li>
+<li><code><a title="crashtest.models.MethodComparison.recomp_lines" href="#crashtest.models.MethodComparison.recomp_lines">recomp_lines</a></code></li>
 <li><code><a title="crashtest.models.MethodComparison.recompiled_count" href="#crashtest.models.MethodComparison.recompiled_count">recompiled_count</a></code></li>
 <li><code><a title="crashtest.models.MethodComparison.similarity" href="#crashtest.models.MethodComparison.similarity">similarity</a></code></li>
 <li><code><a title="crashtest.models.MethodComparison.to_json" href="#crashtest.models.MethodComparison.to_json">to_json</a></code></li>

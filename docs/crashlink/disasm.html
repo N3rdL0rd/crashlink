@@ -432,6 +432,8 @@ Returns Dict[relative_path, content]. Dynamic/static pairs are merged into one p
             return f&#34;reg{op.df[&#39;dst&#39;]} = {op.df[&#39;value&#39;].value}&#34;
         case &#34;String&#34;:
             return f&#39;reg{op.df[&#34;dst&#34;]} = &#34;{op.df[&#34;ptr&#34;].resolve(code)}&#34;&#39;
+        case &#34;Bytes&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = bytes@{op.df[&#39;ptr&#39;].resolve(code)}&#34;
         case &#34;Null&#34;:
             return f&#34;reg{op.df[&#39;dst&#39;]} = null&#34;
 
@@ -450,10 +452,16 @@ Returns Dict[relative_path, content]. Dynamic/static pairs are merged into one p
             return f&#34;if reg{op.df[&#39;cond&#39;]} is true: jump to {idx + (op.df[&#39;offset&#39;].value + 1)}&#34;
         case &#34;JSGte&#34;:
             return f&#34;if reg{op.df[&#39;a&#39;]} &gt;= reg{op.df[&#39;b&#39;]}: jump to {idx + (op.df[&#39;offset&#39;].value + 1)}&#34;
+        case &#34;JSLte&#34;:
+            return f&#34;if reg{op.df[&#39;a&#39;]} &lt;= reg{op.df[&#39;b&#39;]}: jump to {idx + (op.df[&#39;offset&#39;].value + 1)}&#34;
         case &#34;JULt&#34; | &#34;JSLt&#34;:
             return f&#34;if reg{op.df[&#39;a&#39;]} &lt; reg{op.df[&#39;b&#39;]}: jump to {idx + (op.df[&#39;offset&#39;].value + 1)}&#34;
+        case &#34;JUGte&#34;:
+            return f&#34;if reg{op.df[&#39;a&#39;]} &gt;=u reg{op.df[&#39;b&#39;]}: jump to {idx + (op.df[&#39;offset&#39;].value + 1)}&#34;
         case &#34;JNotLt&#34;:
             return f&#34;if reg{op.df[&#39;a&#39;]} &gt;= reg{op.df[&#39;b&#39;]}: jump to {idx + (op.df[&#39;offset&#39;].value + 1)}&#34;
+        case &#34;JNotGte&#34;:
+            return f&#34;if reg{op.df[&#39;a&#39;]} &lt; reg{op.df[&#39;b&#39;]}: jump to {idx + (op.df[&#39;offset&#39;].value + 1)}&#34;
         case &#34;JNotEq&#34;:
             return f&#34;if reg{op.df[&#39;a&#39;]} != reg{op.df[&#39;b&#39;]}: jump to {idx + (op.df[&#39;offset&#39;].value + 1)}&#34;
         case &#34;JSGt&#34;:
@@ -464,8 +472,14 @@ Returns Dict[relative_path, content]. Dynamic/static pairs are merged into one p
         # Arithmetic
         case &#34;Mul&#34;:
             return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;a&#39;]} * reg{op.df[&#39;b&#39;]}&#34;
+        case &#34;UDiv&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;a&#39;]} /u reg{op.df[&#39;b&#39;]}&#34;
         case &#34;SDiv&#34;:
             return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;a&#39;]} / reg{op.df[&#39;b&#39;]}&#34;
+        case &#34;UMod&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;a&#39;]} %u reg{op.df[&#39;b&#39;]}&#34;
+        case &#34;SMod&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;a&#39;]} % reg{op.df[&#39;b&#39;]}&#34;
         case &#34;Incr&#34;:
             return f&#34;reg{op.df[&#39;dst&#39;]}++&#34;
         case &#34;Decr&#34;:
@@ -476,10 +490,20 @@ Returns Dict[relative_path, content]. Dynamic/static pairs are merged into one p
             return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;a&#39;]} + reg{op.df[&#39;b&#39;]}&#34;
         case &#34;Shl&#34;:
             return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;a&#39;]} &lt;&lt; reg{op.df[&#39;b&#39;]}&#34;
-        case &#34;SMod&#34;:
-            return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;a&#39;]} % reg{op.df[&#39;b&#39;]}&#34;
+        case &#34;SShr&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;a&#39;]} &gt;&gt; reg{op.df[&#39;b&#39;]}&#34;
+        case &#34;UShr&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;a&#39;]} &gt;&gt;&gt; reg{op.df[&#39;b&#39;]}&#34;
+        case &#34;And&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;a&#39;]} &amp; reg{op.df[&#39;b&#39;]}&#34;
+        case &#34;Or&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;a&#39;]} | reg{op.df[&#39;b&#39;]}&#34;
         case &#34;Xor&#34;:
             return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;a&#39;]} ^ reg{op.df[&#39;b&#39;]}&#34;
+        case &#34;Neg&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = -reg{op.df[&#39;src&#39;]}&#34;
+        case &#34;Not&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = !reg{op.df[&#39;src&#39;]}&#34;
 
         # Memory/Object Operations
         case &#34;GetThis&#34;:
@@ -497,6 +521,9 @@ Returns Dict[relative_path, content]. Dynamic/static pairs are merged into one p
         case &#34;GetGlobal&#34;:
             glob = type_name(code, op.df[&#34;global&#34;].resolve(code))
             return f&#34;reg{op.df[&#39;dst&#39;]} = {glob} (g@{op.df[&#39;global&#39;]})&#34;
+        case &#34;SetGlobal&#34;:
+            glob = type_name(code, op.df[&#34;global&#34;].resolve(code))
+            return f&#34;{glob} (g@{op.df[&#39;global&#39;]}) = reg{op.df[&#39;src&#39;]}&#34;
         case &#34;Field&#34;:
             field = op.df[&#34;field&#34;].resolve_obj(code, regs[op.df[&#34;obj&#34;].value].resolve(code).definition)
             return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;obj&#39;]}.{field.name.resolve(code)}&#34;
@@ -514,6 +541,8 @@ Returns Dict[relative_path, content]. Dynamic/static pairs are merged into one p
             return f&#34;reg{op.df[&#39;dst&#39;]} = new {type_name(code, typ)}&#34;
         case &#34;DynSet&#34;:
             return f&#34;reg{op.df[&#39;obj&#39;]}.{op.df[&#39;field&#39;].resolve(code)} = reg{op.df[&#39;src&#39;]}&#34;
+        case &#34;DynGet&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;obj&#39;]}.{op.df[&#39;field&#39;].resolve(code)}&#34;
         case &#34;GetThis&#34;:
             if not func:
                 return f&#34;reg{op.df[&#39;dst&#39;]} = this.field{op.df[&#39;field&#39;]}&#34;
@@ -532,22 +561,52 @@ Returns Dict[relative_path, content]. Dynamic/static pairs are merged into one p
             return f&#34;this.{field.name.resolve(code)} = reg{op.df[&#39;src&#39;]}&#34;
         case &#34;InstanceClosure&#34;:
             return f&#34;reg{op.df[&#39;dst&#39;]} = f@{op.df[&#39;fun&#39;]} (as method of reg{op.df[&#39;obj&#39;]})&#34;
+        case &#34;StaticClosure&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = f@{op.df[&#39;fun&#39;]} (static closure)&#34;
+        case &#34;VirtualClosure&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;obj&#39;]}.field{op.df[&#39;field&#39;]} (virtual closure)&#34;
 
         # Type Conversions
         case &#34;ToSFloat&#34;:
             return f&#34;reg{op.df[&#39;dst&#39;]} = SFloat(reg{op.df[&#39;src&#39;]})&#34;
+        case &#34;ToUFloat&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = UFloat(reg{op.df[&#39;src&#39;]})&#34;
+        case &#34;ToInt&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = Int(reg{op.df[&#39;src&#39;]})&#34;
+        case &#34;ToDyn&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = Dyn(reg{op.df[&#39;src&#39;]})&#34;
         case &#34;ToVirtual&#34;:
             return f&#34;reg{op.df[&#39;dst&#39;]} = Virtual(reg{op.df[&#39;src&#39;]})&#34;
+        case &#34;Type&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = type {type_name(code, op.df[&#39;ty&#39;].resolve(code))}&#34;
+        case &#34;GetType&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = type(reg{op.df[&#39;src&#39;]})&#34;
+        case &#34;GetTID&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = tid(reg{op.df[&#39;src&#39;]})&#34;
         case &#34;Ref&#34;:
             return f&#34;reg{op.df[&#39;dst&#39;]} = &amp;reg{op.df[&#39;src&#39;]}&#34;
         case &#34;Unref&#34;:
             return f&#34;reg{op.df[&#39;dst&#39;]} = *reg{op.df[&#39;src&#39;]}&#34;
+        case &#34;Setref&#34;:
+            return f&#34;*reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;value&#39;]}&#34;
+        case &#34;RefData&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = data(reg{op.df[&#39;src&#39;]})&#34;
+        case &#34;RefOffset&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;reg&#39;]} + reg{op.df[&#39;offset&#39;]}&#34;
         case &#34;GetArray&#34;:
             return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;array&#39;]}[reg{op.df[&#39;index&#39;]}]&#34;
-        case &#34;SetMem&#34;:
-            return f&#34;reg{op.df[&#39;bytes&#39;]}[reg{op.df[&#39;index&#39;]}] = reg{op.df[&#39;src&#39;]}&#34;
         case &#34;GetMem&#34;:
             return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;bytes&#39;]}[reg{op.df[&#39;index&#39;]}]&#34;
+        case &#34;GetI8&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;bytes&#39;]}[reg{op.df[&#39;index&#39;]}] (i8)&#34;
+        case &#34;GetI16&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;bytes&#39;]}[reg{op.df[&#39;index&#39;]}] (i16)&#34;
+        case &#34;SetMem&#34;:
+            return f&#34;reg{op.df[&#39;bytes&#39;]}[reg{op.df[&#39;index&#39;]}] = reg{op.df[&#39;src&#39;]}&#34;
+        case &#34;SetI8&#34;:
+            return f&#34;reg{op.df[&#39;bytes&#39;]}[reg{op.df[&#39;index&#39;]}] = reg{op.df[&#39;src&#39;]} (i8)&#34;
+        case &#34;SetI16&#34;:
+            return f&#34;reg{op.df[&#39;bytes&#39;]}[reg{op.df[&#39;index&#39;]}] = reg{op.df[&#39;src&#39;]} (i16)&#34;
         case &#34;SafeCast&#34;:
             return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;src&#39;]} as {type_name(code, regs[op.df[&#39;dst&#39;].value].resolve(code))}&#34;
         case &#34;UnsafeCast&#34;:
@@ -592,12 +651,29 @@ Returns Dict[relative_path, content]. Dynamic/static pairs are merged into one p
         # Error Handling
         case &#34;NullCheck&#34;:
             return f&#34;if reg{op.df[&#39;reg&#39;]} is null: error&#34;
+        case &#34;Throw&#34;:
+            return f&#34;throw reg{op.df[&#39;exc&#39;]}&#34;
+        case &#34;Rethrow&#34;:
+            return f&#34;rethrow reg{op.df[&#39;exc&#39;]}&#34;
         case &#34;Trap&#34;:
             return f&#34;trap to reg{op.df[&#39;exc&#39;]} (end: {idx + (op.df[&#39;offset&#39;].value)})&#34;
         case &#34;EndTrap&#34;:
             return f&#34;end trap to reg{op.df[&#39;exc&#39;]}&#34;
         case &#34;Catch&#34;:
             return f&#34;catch to reg{op.df[&#39;global&#39;]}&#34;
+
+        # Enums
+        case &#34;MakeEnum&#34;:
+            args = &#34;, &#34;.join([f&#34;reg{arg}&#34; for arg in op.df[&#34;args&#34;].value])
+            return f&#34;reg{op.df[&#39;dst&#39;]} = construct{op.df[&#39;construct&#39;]}({args})&#34;
+        case &#34;EnumAlloc&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = alloc construct{op.df[&#39;construct&#39;]}&#34;
+        case &#34;EnumIndex&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = index(reg{op.df[&#39;value&#39;]})&#34;
+        case &#34;EnumField&#34;:
+            return f&#34;reg{op.df[&#39;dst&#39;]} = reg{op.df[&#39;value&#39;]}.field{op.df[&#39;field&#39;]} (construct{op.df[&#39;construct&#39;]})&#34;
+        case &#34;SetEnumField&#34;:
+            return f&#34;reg{op.df[&#39;value&#39;]}.field{op.df[&#39;field&#39;]} = reg{op.df[&#39;src&#39;]}&#34;
 
         # Switch
         case &#34;Switch&#34;:
@@ -620,6 +696,12 @@ Returns Dict[relative_path, content]. Dynamic/static pairs are merged into one p
             if type(regs[op.df[&#34;ret&#34;].value].resolve(code).definition) == Void:
                 return &#34;return&#34;
             return f&#34;return reg{op.df[&#39;ret&#39;]}&#34;
+
+        # Other
+        case &#34;Assert&#34;:
+            return &#34;assert&#34;
+        case &#34;Nop&#34;:
+            return &#34;nop&#34;
 
         # Unknown
         case _:
@@ -742,6 +824,7 @@ Ret. 1
         &#34;Dyn&#34;: &#34;Dynamic&#34;,
         &#34;DynObj&#34;: &#34;Dynamic&#34;,
         &#34;Fun&#34;: &#34;Dynamic&#34;,
+        &#34;TypeType&#34;: &#34;hl.Type&#34;,
     }
     if type.startswith(&#34;hl.types.ArrayBytes_&#34;):
         suffix = type[len(&#34;hl.types.ArrayBytes_&#34;) :]
@@ -760,6 +843,8 @@ Ret. 1
     if type in (&#34;Function&#34;, &#34;Native&#34;):
         return &#34;Dynamic&#34;
     if type == &#34;Null&#34;:
+        return &#34;Dynamic&#34;
+    if type.startswith(&#34;Virtual[&#34;):
         return &#34;Dynamic&#34;
     return destaticify(mapping.get(type, type))</code></pre>
 </details>

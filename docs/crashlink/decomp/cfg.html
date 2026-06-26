@@ -1,0 +1,1129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.6">
+<title>crashlink.decomp.cfg API documentation</title>
+<meta name="description" content="Control-flow graph construction and optimization.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>crashlink.decomp.cfg</code></h1>
+</header>
+<section id="section-intro">
+<p>Control-flow graph construction and optimization.</p>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="crashlink.decomp.cfg.CFDeadCodeEliminator"><code class="flex name class">
+<span>class <span class="ident">CFDeadCodeEliminator</span></span>
+<span>(</span><span>graph: "'<a title="crashlink.decomp.cfg.CFGraph" href="#crashlink.decomp.cfg.CFGraph">CFGraph</a>'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class CFDeadCodeEliminator(CFOptimizer):
+    &#34;&#34;&#34;
+    Remove unreachable code blocks
+    &#34;&#34;&#34;
+
+    def optimize(self) -&gt; None:
+        reachable: Set[CFNode] = set()
+        worklist = [self.graph.entry]
+
+        while worklist:
+            node = worklist.pop()
+            if node not in reachable and node:
+                reachable.add(node)
+                for next_node, _ in node.branches:
+                    worklist.append(next_node)
+
+        self.graph.nodes = [n for n in self.graph.nodes if n in reachable]</code></pre>
+</details>
+<div class="desc"><p>Remove unreachable code blocks</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.cfg.CFOptimizer" href="#crashlink.decomp.cfg.CFOptimizer">CFOptimizer</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.cfg.CFDeadCodeEliminator.optimize"><code class="name flex">
+<span>def <span class="ident">optimize</span></span>(<span>self) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def optimize(self) -&gt; None:
+    reachable: Set[CFNode] = set()
+    worklist = [self.graph.entry]
+
+    while worklist:
+        node = worklist.pop()
+        if node not in reachable and node:
+            reachable.add(node)
+            for next_node, _ in node.branches:
+                worklist.append(next_node)
+
+    self.graph.nodes = [n for n in self.graph.nodes if n in reachable]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.decomp.cfg.CFGraph"><code class="flex name class">
+<span>class <span class="ident">CFGraph</span></span>
+<span>(</span><span>func: Function)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class CFGraph:
+    &#34;&#34;&#34;
+    A control flow graph.
+    &#34;&#34;&#34;
+
+    def __init__(self, func: Function):
+        self.func = func
+        self.nodes: List[CFNode] = []
+        self.entry: Optional[CFNode] = None
+        self.applied_optimizers: List[CFOptimizer] = []
+
+        # Maps node -&gt; List[predecessor_node]
+        self.predecessors: Dict[CFNode, List[CFNode]] = {}
+        # Maps node -&gt; Set[dominator_nodes]
+        self.dominators: Dict[CFNode, Set[CFNode]] = {}
+        # Maps loop_header_node -&gt; Set[nodes_in_loop]
+        self.loops: Dict[CFNode, Set[CFNode]] = {}
+        # Maps node -&gt; Set[post_dominator_nodes]
+        self.post_dominators: Dict[CFNode, Set[CFNode]] = {}
+        # Maps node -&gt; immediate_post_dominator_node
+        self.immediate_post_dominators: Dict[CFNode, CFNode | None] = {}
+
+    def add_node(self, ops: List[Opcode], base_offset: int = 0) -&gt; CFNode:
+        node = CFNode(ops)
+        self.nodes.append(node)
+        node.base_offset = base_offset
+        return node
+
+    def add_branch(self, src: CFNode, dst: CFNode, edge_type: str) -&gt; None:
+        src.branches.append((dst, edge_type))
+
+    def build(self, do_optimize: bool = True) -&gt; None:
+        &#34;&#34;&#34;Build the control flow graph.&#34;&#34;&#34;
+        if not self.func.ops:
+            return
+
+        jump_targets = set()
+        for i, op in enumerate(self.func.ops):
+            # fmt: off
+            if op.op in [&#34;JTrue&#34;, &#34;JFalse&#34;, &#34;JNull&#34;, &#34;JNotNull&#34;, 
+                        &#34;JSLt&#34;, &#34;JSGte&#34;, &#34;JSGt&#34;, &#34;JSLte&#34;,
+                        &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;,
+                        &#34;JEq&#34;, &#34;JNotEq&#34;, &#34;JAlways&#34;, &#34;Trap&#34;]:
+            # fmt: on
+                jump_targets.add(i + op.df[&#34;offset&#34;].value + 1)
+
+        current_ops: List[Opcode] = []
+        current_start = 0
+        blocks: List[Tuple[int, List[Opcode]]] = []  # (start_idx, ops) tuples
+
+        for i, op in enumerate(self.func.ops):
+            if i in jump_targets and current_ops:
+                blocks.append((current_start, current_ops))
+                current_ops = []
+                current_start = i
+
+            current_ops.append(op)
+
+            # fmt: off
+            if op.op in [&#34;JTrue&#34;, &#34;JFalse&#34;, &#34;JNull&#34;, &#34;JNotNull&#34;,
+                        &#34;JSLt&#34;, &#34;JSGte&#34;, &#34;JSGt&#34;, &#34;JSLte&#34;, 
+                        &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;,
+                        &#34;JEq&#34;, &#34;JNotEq&#34;, &#34;JAlways&#34;, &#34;Switch&#34;, &#34;Ret&#34;,
+                        &#34;Trap&#34;, &#34;EndTrap&#34;]:
+            # fmt: on
+                blocks.append((current_start, current_ops))
+                current_ops = []
+                current_start = i + 1
+
+        if current_ops:
+            blocks.append((current_start, current_ops))
+
+        nodes_by_idx = {}
+        for start_idx, ops in blocks:
+            node = self.add_node(ops, start_idx)
+            nodes_by_idx[start_idx] = node
+            if start_idx == 0:
+                self.entry = node
+
+        for start_idx, ops in blocks:
+            src_node = nodes_by_idx[start_idx]
+            last_op = ops[-1]
+
+            next_idx = start_idx + len(ops)
+
+            # conditionals
+            # fmt: off
+            if last_op.op in [&#34;JTrue&#34;, &#34;JFalse&#34;, &#34;JNull&#34;, &#34;JNotNull&#34;,
+                            &#34;JSLt&#34;, &#34;JSGte&#34;, &#34;JSGt&#34;, &#34;JSLte&#34;,
+                            &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;, 
+                            &#34;JEq&#34;, &#34;JNotEq&#34;]:
+            # fmt: on
+
+                jump_idx = start_idx + len(ops) + last_op.df[&#34;offset&#34;].value
+
+                # - jump target is &#34;true&#34; branch
+                # - fall-through is &#34;false&#34; branch
+
+                if jump_idx in nodes_by_idx:
+                    edge_type = &#34;true&#34;
+                    self.add_branch(
+                        src_node, nodes_by_idx[jump_idx], edge_type)
+
+                if next_idx in nodes_by_idx:
+                    edge_type = &#34;false&#34;
+                    self.add_branch(
+                        src_node, nodes_by_idx[next_idx], edge_type)
+
+            elif last_op.op == &#34;Switch&#34;:
+                for i, offset in enumerate(last_op.df[&#39;offsets&#39;].value):
+                    if offset.value != 0:
+                        jump_idx = start_idx + len(ops) + offset.value
+                        self.add_branch(
+                            src_node, nodes_by_idx[jump_idx], f&#34;switch: case: {i} &#34;)
+                if next_idx in nodes_by_idx:
+                    self.add_branch(
+                        src_node, nodes_by_idx[next_idx], &#34;switch: default&#34;)
+
+            elif last_op.op == &#34;Trap&#34;:
+                jump_idx = start_idx + len(ops) + last_op.df[&#34;offset&#34;].value
+                if jump_idx in nodes_by_idx:
+                    self.add_branch(src_node, nodes_by_idx[jump_idx], &#34;trap&#34;)
+                if next_idx in nodes_by_idx:
+                    self.add_branch(
+                        src_node, nodes_by_idx[next_idx], &#34;fall-through&#34;)
+
+            elif last_op.op == &#34;EndTrap&#34;:
+                if next_idx in nodes_by_idx:
+                    self.add_branch(
+                        src_node, nodes_by_idx[next_idx], &#34;endtrap&#34;)
+
+            elif last_op.op == &#34;JAlways&#34;:
+                jump_idx = start_idx + len(ops) + last_op.df[&#34;offset&#34;].value
+                if jump_idx in nodes_by_idx:
+                    self.add_branch(
+                        src_node, nodes_by_idx[jump_idx], &#34;unconditional&#34;)
+            elif last_op.op != &#34;Ret&#34; and next_idx in nodes_by_idx:
+                self.add_branch(
+                    src_node, nodes_by_idx[next_idx], &#34;unconditional&#34;)
+
+        if do_optimize:
+            # fmt: off
+            self.optimize([
+                CFJumpThreader(self),
+                CFDeadCodeEliminator(self),
+            ])
+            # fmt: on
+        if self.entry:
+            self.analyze()
+
+    def analyze(self) -&gt; None:
+        &#34;&#34;&#34;
+        Performs a full structural analysis of the CFG to identify
+        dominators, post-dominators, and loops.
+        &#34;&#34;&#34;
+        if not self.entry:
+            return
+
+        self._compute_predecessors()
+        self._find_dominators()
+        self._find_loops()
+        self._find_post_dominators()
+        self._find_immediate_post_dominators()
+
+        if DEBUG:
+            dbg_print(&#34;--- CFG Analysis Complete ---&#34;)
+            for header, loop_nodes in self.loops.items():
+                dbg_print(
+                    f&#34;Loop found with header {header.base_offset}, containing nodes: {[n.base_offset for n in loop_nodes]}&#34;
+                )
+            for node, ipd in self.immediate_post_dominators.items():
+                if len(node.branches) &gt; 1:
+                    dbg_print(f&#34;Conditional node {node.base_offset} converges at {ipd.base_offset if ipd else &#39;None&#39;}&#34;)
+            dbg_print(&#34;-----------------------------&#34;)
+
+    def _compute_predecessors(self) -&gt; None:
+        &#34;&#34;&#34;Calculates the predecessors for every node in the graph.&#34;&#34;&#34;
+        self.predecessors = {node: [] for node in self.nodes}
+        for node in self.nodes:
+            for branch, _ in node.branches:
+                if branch in self.predecessors:
+                    self.predecessors[branch].append(node)
+
+    def _find_dominators(self) -&gt; None:
+        &#34;&#34;&#34;
+        Computes the dominator for each node using an iterative algorithm.
+        A node &#39;d&#39; dominates &#39;n&#39; if every path from entry to &#39;n&#39; must pass through &#39;d&#39;.
+        &#34;&#34;&#34;
+        if not self.entry:
+            return
+
+        all_nodes = self.nodes
+        # Initialize: The only dominator of the start_node is itself.
+        # Every other node is initially &#34;dominated&#34; by all nodes.
+        doms = {node: set(all_nodes) for node in all_nodes}
+        doms[self.entry] = {self.entry}
+
+        changed = True
+        while changed:
+            changed = False
+            # Iterate in a fixed order for deterministic results
+            for node in sorted(all_nodes, key=lambda n: n.base_offset):
+                if node == self.entry:
+                    continue
+
+                # Dom(n) = {n} U intersect(Dom(p) for p in preds(n))
+                preds = self.predecessors.get(node, [])
+                if not preds:
+                    continue  # Should not happen in a connected graph apart from entry
+
+                pred_doms_sets = [doms[p] for p in preds]
+                new_doms = {node}.union(set.intersection(*pred_doms_sets))
+
+                if new_doms != doms[node]:
+                    doms[node] = new_doms
+                    changed = True
+
+        self.dominators = doms
+
+    def _find_loops(self) -&gt; None:
+        &#34;&#34;&#34;
+        Finds loops by identifying back edges. A back edge is an edge (u, v)
+        where the destination &#39;v&#39; (header) dominates the source &#39;u&#39;.
+        &#34;&#34;&#34;
+        if not self.dominators:
+            return
+
+        self.loops = {}
+        for u in self.nodes:
+            for v, _ in u.branches:
+                # If the destination `v` dominates the source `u`, it&#39;s a back edge.
+                if v in self.dominators.get(u, set()):
+                    header = v
+                    # Build the natural loop for this back-edge. Only nodes dominated
+                    # by the header can belong to the loop body.
+                    loop_body = {header, u}
+                    stack = [u]
+                    processed_for_body = {u, header}
+
+                    while stack:
+                        current = stack.pop()
+                        for pred in self.predecessors.get(current, []):
+                            if pred not in processed_for_body and header in self.dominators.get(pred, set()):
+                                processed_for_body.add(pred)
+                                loop_body.add(pred)
+                                stack.append(pred)
+
+                    if header in self.loops:
+                        self.loops[header].update(loop_body)
+                    else:
+                        self.loops[header] = loop_body
+
+    def _find_post_dominators(self) -&gt; None:
+        &#34;&#34;&#34;
+        Computes post-dominators by running the dominator algorithm on the
+        reversed graph. Handles multiple exit points by creating a virtual exit.
+        A node &#39;p&#39; post-dominates &#39;n&#39; if all paths from &#39;n&#39; to exit pass through &#39;p&#39;.
+
+        In the reversed graph G&#39;, edges are reversed: u→v in G becomes v→u in G&#39;.
+        The virtual EXIT is the start of G&#39;. For the dominator algorithm on G&#39;:
+            preds_G&#39;(n) = successors_G(n)
+        Exit nodes (no successors in G) connect only to VIRTUAL_EXIT in G&#39;.
+        &#34;&#34;&#34;
+        all_nodes = self.nodes
+        exit_nodes = [n for n in all_nodes if not n.branches]
+
+        if not exit_nodes:
+            # Graph with an infinite loop and no exit
+            self.post_dominators = {}
+            return
+
+        # Use a virtual exit node to unify all original exit nodes.
+        VIRTUAL_EXIT = CFNode([])
+        nodes_for_pd_analysis = all_nodes + [VIRTUAL_EXIT]
+
+        # Run the iterative dominator algorithm on the reversed graph.
+        pd = {node: set(nodes_for_pd_analysis) for node in nodes_for_pd_analysis}
+        pd[VIRTUAL_EXIT] = {VIRTUAL_EXIT}
+
+        changed = True
+        while changed:
+            changed = False
+            for node in sorted(all_nodes, key=lambda n: n.base_offset):
+                # In G&#39;, predecessors of `node` = successors of `node` in G.
+                # Exit nodes (no successors in G) connect to VIRTUAL_EXIT in G&#39;.
+                preds_in_reversed_graph = [target for target, _ in node.branches]
+                if not preds_in_reversed_graph:
+                    preds_in_reversed_graph = [VIRTUAL_EXIT]
+
+                pred_pdom_sets = [pd[p] for p in preds_in_reversed_graph]
+                new_pd = {node}.union(set.intersection(*pred_pdom_sets))
+
+                if new_pd != pd[node]:
+                    pd[node] = new_pd
+                    changed = True
+
+        # Remove the virtual node from the results before storing
+        del pd[VIRTUAL_EXIT]
+        for node in pd:
+            pd[node].discard(VIRTUAL_EXIT)
+
+        self.post_dominators = pd
+
+    def _find_immediate_post_dominators(self) -&gt; None:
+        &#34;&#34;&#34;
+        Calculates the immediate post-dominator for each node.
+        The immediate post-dominator of &#39;n&#39; is the &#34;closest&#34; post-dominator
+        on any path from &#39;n&#39; to an exit. It&#39;s the parent in the post-dominator tree.
+        &#34;&#34;&#34;
+        if not self.post_dominators:
+            return
+
+        self.immediate_post_dominators = {}
+        for n in self.nodes:
+            pdoms_of_n = self.post_dominators.get(n, set())
+            # The immediate post-dominator is the one in the set (excluding n itself)
+            # that is post-dominated by all others.
+            # A simpler way is to find the one whose own post-dominator set has size |pdoms(n)| - 1.
+            idom = None
+            min_extra_pdoms = float(&#34;inf&#34;)
+
+            for p in pdoms_of_n:
+                if p == n:
+                    continue
+
+                pdoms_of_p = self.post_dominators.get(p, set())
+                # The immediate post-dominator of `n` is `p` if `pdoms(n) - {n}` is a superset of `pdoms(p)`.
+                # We find the `p` that has the largest set of post-dominators itself.
+                if pdoms_of_n.issuperset(pdoms_of_p):
+                    num_extra_pdoms = len(pdoms_of_n) - len(pdoms_of_p)
+                    if num_extra_pdoms &lt; min_extra_pdoms:
+                        min_extra_pdoms = num_extra_pdoms
+                        idom = p
+
+            self.immediate_post_dominators[n] = idom
+
+    def optimize(self, optimizers: List[CFOptimizer]) -&gt; None:
+        for optimizer in optimizers:
+            if optimizer not in self.applied_optimizers:
+                optimizer.optimize()
+                self.applied_optimizers.append(optimizer)
+
+    def style_node(self, node: CFNode) -&gt; str:
+        if node == self.entry:
+            return &#34;style=filled, fillcolor=pink1&#34;
+        for op in node.ops:
+            if op.op == &#34;Ret&#34;:
+                return &#34;style=filled, fillcolor=aquamarine&#34;
+        return &#34;style=filled, fillcolor=lightblue&#34;
+
+    def graph(self, code: Bytecode) -&gt; str:
+        &#34;&#34;&#34;Generate DOT format graph visualization with loops highlighted.&#34;&#34;&#34;
+        dot = [&#34;digraph G {&#34;]
+        dot.append(&#34;  compound=true;&#34;)
+        dot.append(&#39;  labelloc=&#34;t&#34;;&#39;)
+        dot.append(&#39;  label=&#34;CFG for %s&#34;;&#39; % disasm.func_header(code, self.func))
+        dot.append(&#39;  fontname=&#34;Arial&#34;;&#39;)
+        dot.append(&#34;  labelfontsize=20;&#34;)
+        dot.append(&#34;  forcelabels=true;&#34;)
+        dot.append(&#39;  node [shape=box, fontname=&#34;Courier&#34;];&#39;)
+        dot.append(&#39;  edge [fontname=&#34;Courier&#34;, fontsize=9];&#39;)
+
+        for node in self.nodes:
+            label = (
+                &#34;\n&#34;.join(
+                    [
+                        disasm.pseudo_from_op(op, node.base_offset + i, self.func.regs, code, terse=True)
+                        for i, op in enumerate(node.ops)
+                    ]
+                )
+                .replace(&#39;&#34;&#39;, &#39;\\&#34;&#39;)
+                .replace(&#34;\n&#34;, &#34;\\n&#34;)
+            )
+            style = self.style_node(node)
+            dot.append(f&#39;  node_{id(node)} [label=&#34;{label}&#34;, {style}, xlabel=&#34;{node.base_offset}.&#34;];&#39;)
+
+        loop_counter = 0
+        sorted_loops = sorted(self.loops.items(), key=lambda item: item[0].base_offset)
+        for header, nodes_in_loop in sorted_loops:
+            loop_counter += 1
+            dot.append(f&#34;  subgraph cluster_loop_{loop_counter} {{&#34;)
+            dot.append(&#39;    style=&#34;filled,rounded&#34;;&#39;)
+            dot.append(&#34;    color=grey90;&#34;)  # The background color of the box
+            dot.append(f&#39;   label=&#34;Loop (header: {header.base_offset})&#34;;&#39;)
+            dot.append(&#34;   fontcolor=grey50;&#34;)
+            dot.append(&#34;   fontsize=12;&#34;)
+            node_ids_in_loop = [f&#34;node_{id(n)}&#34; for n in nodes_in_loop]
+            dot.append(f&#34;   {&#39; &#39;.join(node_ids_in_loop)};&#34;)
+            dot.append(&#34;  }&#34;)
+
+        for node in self.nodes:
+            for branch, edge_type in node.branches:
+                if edge_type == &#34;true&#34;:
+                    style = &#39;color=&#34;green&#34;, label=&#34;true&#34;&#39;
+                elif edge_type == &#34;false&#34;:
+                    style = &#39;color=&#34;crimson&#34;, label=&#34;false&#34;&#39;
+                elif edge_type.startswith(&#34;switch: &#34;):
+                    style = f&#39;color=&#34;{&#34;purple&#34; if not edge_type.split(&#34;switch: &#34;)[1].strip() == &#34;default&#34; else &#34;crimson&#34;}&#34;, label=&#34;{edge_type.split(&#34;switch: &#34;)[1].strip()}&#34;&#39;
+                elif edge_type == &#34;trap&#34;:
+                    style = &#39;color=&#34;yellow3&#34;, label=&#34;trap&#34;&#39;
+                else:  # unconditionals and unmatched
+                    style = &#39;color=&#34;cornflowerblue&#34;&#39;
+
+                dot.append(f&#34;  node_{id(node)} -&gt; node_{id(branch)} [{style}];&#34;)
+
+        dot.append(&#34;}&#34;)
+        return &#34;\n&#34;.join(dot)</code></pre>
+</details>
+<div class="desc"><p>A control flow graph.</p></div>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.cfg.IsolatedCFGraph" href="#crashlink.decomp.cfg.IsolatedCFGraph">IsolatedCFGraph</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.cfg.CFGraph.add_branch"><code class="name flex">
+<span>def <span class="ident">add_branch</span></span>(<span>self,<br>src: <a title="crashlink.decomp.cfg.CFNode" href="#crashlink.decomp.cfg.CFNode">CFNode</a>,<br>dst: <a title="crashlink.decomp.cfg.CFNode" href="#crashlink.decomp.cfg.CFNode">CFNode</a>,<br>edge_type: str) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def add_branch(self, src: CFNode, dst: CFNode, edge_type: str) -&gt; None:
+    src.branches.append((dst, edge_type))</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.decomp.cfg.CFGraph.add_node"><code class="name flex">
+<span>def <span class="ident">add_node</span></span>(<span>self, ops: List[Opcode], base_offset: int = 0) ‑> <a title="crashlink.decomp.cfg.CFNode" href="#crashlink.decomp.cfg.CFNode">CFNode</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def add_node(self, ops: List[Opcode], base_offset: int = 0) -&gt; CFNode:
+    node = CFNode(ops)
+    self.nodes.append(node)
+    node.base_offset = base_offset
+    return node</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.decomp.cfg.CFGraph.analyze"><code class="name flex">
+<span>def <span class="ident">analyze</span></span>(<span>self) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def analyze(self) -&gt; None:
+    &#34;&#34;&#34;
+    Performs a full structural analysis of the CFG to identify
+    dominators, post-dominators, and loops.
+    &#34;&#34;&#34;
+    if not self.entry:
+        return
+
+    self._compute_predecessors()
+    self._find_dominators()
+    self._find_loops()
+    self._find_post_dominators()
+    self._find_immediate_post_dominators()
+
+    if DEBUG:
+        dbg_print(&#34;--- CFG Analysis Complete ---&#34;)
+        for header, loop_nodes in self.loops.items():
+            dbg_print(
+                f&#34;Loop found with header {header.base_offset}, containing nodes: {[n.base_offset for n in loop_nodes]}&#34;
+            )
+        for node, ipd in self.immediate_post_dominators.items():
+            if len(node.branches) &gt; 1:
+                dbg_print(f&#34;Conditional node {node.base_offset} converges at {ipd.base_offset if ipd else &#39;None&#39;}&#34;)
+        dbg_print(&#34;-----------------------------&#34;)</code></pre>
+</details>
+<div class="desc"><p>Performs a full structural analysis of the CFG to identify
+dominators, post-dominators, and loops.</p></div>
+</dd>
+<dt id="crashlink.decomp.cfg.CFGraph.build"><code class="name flex">
+<span>def <span class="ident">build</span></span>(<span>self, do_optimize: bool = True) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def build(self, do_optimize: bool = True) -&gt; None:
+    &#34;&#34;&#34;Build the control flow graph.&#34;&#34;&#34;
+    if not self.func.ops:
+        return
+
+    jump_targets = set()
+    for i, op in enumerate(self.func.ops):
+        # fmt: off
+        if op.op in [&#34;JTrue&#34;, &#34;JFalse&#34;, &#34;JNull&#34;, &#34;JNotNull&#34;, 
+                    &#34;JSLt&#34;, &#34;JSGte&#34;, &#34;JSGt&#34;, &#34;JSLte&#34;,
+                    &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;,
+                    &#34;JEq&#34;, &#34;JNotEq&#34;, &#34;JAlways&#34;, &#34;Trap&#34;]:
+        # fmt: on
+            jump_targets.add(i + op.df[&#34;offset&#34;].value + 1)
+
+    current_ops: List[Opcode] = []
+    current_start = 0
+    blocks: List[Tuple[int, List[Opcode]]] = []  # (start_idx, ops) tuples
+
+    for i, op in enumerate(self.func.ops):
+        if i in jump_targets and current_ops:
+            blocks.append((current_start, current_ops))
+            current_ops = []
+            current_start = i
+
+        current_ops.append(op)
+
+        # fmt: off
+        if op.op in [&#34;JTrue&#34;, &#34;JFalse&#34;, &#34;JNull&#34;, &#34;JNotNull&#34;,
+                    &#34;JSLt&#34;, &#34;JSGte&#34;, &#34;JSGt&#34;, &#34;JSLte&#34;, 
+                    &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;,
+                    &#34;JEq&#34;, &#34;JNotEq&#34;, &#34;JAlways&#34;, &#34;Switch&#34;, &#34;Ret&#34;,
+                    &#34;Trap&#34;, &#34;EndTrap&#34;]:
+        # fmt: on
+            blocks.append((current_start, current_ops))
+            current_ops = []
+            current_start = i + 1
+
+    if current_ops:
+        blocks.append((current_start, current_ops))
+
+    nodes_by_idx = {}
+    for start_idx, ops in blocks:
+        node = self.add_node(ops, start_idx)
+        nodes_by_idx[start_idx] = node
+        if start_idx == 0:
+            self.entry = node
+
+    for start_idx, ops in blocks:
+        src_node = nodes_by_idx[start_idx]
+        last_op = ops[-1]
+
+        next_idx = start_idx + len(ops)
+
+        # conditionals
+        # fmt: off
+        if last_op.op in [&#34;JTrue&#34;, &#34;JFalse&#34;, &#34;JNull&#34;, &#34;JNotNull&#34;,
+                        &#34;JSLt&#34;, &#34;JSGte&#34;, &#34;JSGt&#34;, &#34;JSLte&#34;,
+                        &#34;JULt&#34;, &#34;JUGte&#34;, &#34;JNotLt&#34;, &#34;JNotGte&#34;, 
+                        &#34;JEq&#34;, &#34;JNotEq&#34;]:
+        # fmt: on
+
+            jump_idx = start_idx + len(ops) + last_op.df[&#34;offset&#34;].value
+
+            # - jump target is &#34;true&#34; branch
+            # - fall-through is &#34;false&#34; branch
+
+            if jump_idx in nodes_by_idx:
+                edge_type = &#34;true&#34;
+                self.add_branch(
+                    src_node, nodes_by_idx[jump_idx], edge_type)
+
+            if next_idx in nodes_by_idx:
+                edge_type = &#34;false&#34;
+                self.add_branch(
+                    src_node, nodes_by_idx[next_idx], edge_type)
+
+        elif last_op.op == &#34;Switch&#34;:
+            for i, offset in enumerate(last_op.df[&#39;offsets&#39;].value):
+                if offset.value != 0:
+                    jump_idx = start_idx + len(ops) + offset.value
+                    self.add_branch(
+                        src_node, nodes_by_idx[jump_idx], f&#34;switch: case: {i} &#34;)
+            if next_idx in nodes_by_idx:
+                self.add_branch(
+                    src_node, nodes_by_idx[next_idx], &#34;switch: default&#34;)
+
+        elif last_op.op == &#34;Trap&#34;:
+            jump_idx = start_idx + len(ops) + last_op.df[&#34;offset&#34;].value
+            if jump_idx in nodes_by_idx:
+                self.add_branch(src_node, nodes_by_idx[jump_idx], &#34;trap&#34;)
+            if next_idx in nodes_by_idx:
+                self.add_branch(
+                    src_node, nodes_by_idx[next_idx], &#34;fall-through&#34;)
+
+        elif last_op.op == &#34;EndTrap&#34;:
+            if next_idx in nodes_by_idx:
+                self.add_branch(
+                    src_node, nodes_by_idx[next_idx], &#34;endtrap&#34;)
+
+        elif last_op.op == &#34;JAlways&#34;:
+            jump_idx = start_idx + len(ops) + last_op.df[&#34;offset&#34;].value
+            if jump_idx in nodes_by_idx:
+                self.add_branch(
+                    src_node, nodes_by_idx[jump_idx], &#34;unconditional&#34;)
+        elif last_op.op != &#34;Ret&#34; and next_idx in nodes_by_idx:
+            self.add_branch(
+                src_node, nodes_by_idx[next_idx], &#34;unconditional&#34;)
+
+    if do_optimize:
+        # fmt: off
+        self.optimize([
+            CFJumpThreader(self),
+            CFDeadCodeEliminator(self),
+        ])
+        # fmt: on
+    if self.entry:
+        self.analyze()</code></pre>
+</details>
+<div class="desc"><p>Build the control flow graph.</p></div>
+</dd>
+<dt id="crashlink.decomp.cfg.CFGraph.graph"><code class="name flex">
+<span>def <span class="ident">graph</span></span>(<span>self, code: Bytecode) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def graph(self, code: Bytecode) -&gt; str:
+    &#34;&#34;&#34;Generate DOT format graph visualization with loops highlighted.&#34;&#34;&#34;
+    dot = [&#34;digraph G {&#34;]
+    dot.append(&#34;  compound=true;&#34;)
+    dot.append(&#39;  labelloc=&#34;t&#34;;&#39;)
+    dot.append(&#39;  label=&#34;CFG for %s&#34;;&#39; % disasm.func_header(code, self.func))
+    dot.append(&#39;  fontname=&#34;Arial&#34;;&#39;)
+    dot.append(&#34;  labelfontsize=20;&#34;)
+    dot.append(&#34;  forcelabels=true;&#34;)
+    dot.append(&#39;  node [shape=box, fontname=&#34;Courier&#34;];&#39;)
+    dot.append(&#39;  edge [fontname=&#34;Courier&#34;, fontsize=9];&#39;)
+
+    for node in self.nodes:
+        label = (
+            &#34;\n&#34;.join(
+                [
+                    disasm.pseudo_from_op(op, node.base_offset + i, self.func.regs, code, terse=True)
+                    for i, op in enumerate(node.ops)
+                ]
+            )
+            .replace(&#39;&#34;&#39;, &#39;\\&#34;&#39;)
+            .replace(&#34;\n&#34;, &#34;\\n&#34;)
+        )
+        style = self.style_node(node)
+        dot.append(f&#39;  node_{id(node)} [label=&#34;{label}&#34;, {style}, xlabel=&#34;{node.base_offset}.&#34;];&#39;)
+
+    loop_counter = 0
+    sorted_loops = sorted(self.loops.items(), key=lambda item: item[0].base_offset)
+    for header, nodes_in_loop in sorted_loops:
+        loop_counter += 1
+        dot.append(f&#34;  subgraph cluster_loop_{loop_counter} {{&#34;)
+        dot.append(&#39;    style=&#34;filled,rounded&#34;;&#39;)
+        dot.append(&#34;    color=grey90;&#34;)  # The background color of the box
+        dot.append(f&#39;   label=&#34;Loop (header: {header.base_offset})&#34;;&#39;)
+        dot.append(&#34;   fontcolor=grey50;&#34;)
+        dot.append(&#34;   fontsize=12;&#34;)
+        node_ids_in_loop = [f&#34;node_{id(n)}&#34; for n in nodes_in_loop]
+        dot.append(f&#34;   {&#39; &#39;.join(node_ids_in_loop)};&#34;)
+        dot.append(&#34;  }&#34;)
+
+    for node in self.nodes:
+        for branch, edge_type in node.branches:
+            if edge_type == &#34;true&#34;:
+                style = &#39;color=&#34;green&#34;, label=&#34;true&#34;&#39;
+            elif edge_type == &#34;false&#34;:
+                style = &#39;color=&#34;crimson&#34;, label=&#34;false&#34;&#39;
+            elif edge_type.startswith(&#34;switch: &#34;):
+                style = f&#39;color=&#34;{&#34;purple&#34; if not edge_type.split(&#34;switch: &#34;)[1].strip() == &#34;default&#34; else &#34;crimson&#34;}&#34;, label=&#34;{edge_type.split(&#34;switch: &#34;)[1].strip()}&#34;&#39;
+            elif edge_type == &#34;trap&#34;:
+                style = &#39;color=&#34;yellow3&#34;, label=&#34;trap&#34;&#39;
+            else:  # unconditionals and unmatched
+                style = &#39;color=&#34;cornflowerblue&#34;&#39;
+
+            dot.append(f&#34;  node_{id(node)} -&gt; node_{id(branch)} [{style}];&#34;)
+
+    dot.append(&#34;}&#34;)
+    return &#34;\n&#34;.join(dot)</code></pre>
+</details>
+<div class="desc"><p>Generate DOT format graph visualization with loops highlighted.</p></div>
+</dd>
+<dt id="crashlink.decomp.cfg.CFGraph.optimize"><code class="name flex">
+<span>def <span class="ident">optimize</span></span>(<span>self,<br>optimizers: List[<a title="crashlink.decomp.cfg.CFOptimizer" href="#crashlink.decomp.cfg.CFOptimizer">CFOptimizer</a>]) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def optimize(self, optimizers: List[CFOptimizer]) -&gt; None:
+    for optimizer in optimizers:
+        if optimizer not in self.applied_optimizers:
+            optimizer.optimize()
+            self.applied_optimizers.append(optimizer)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.decomp.cfg.CFGraph.style_node"><code class="name flex">
+<span>def <span class="ident">style_node</span></span>(<span>self,<br>node: <a title="crashlink.decomp.cfg.CFNode" href="#crashlink.decomp.cfg.CFNode">CFNode</a>) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def style_node(self, node: CFNode) -&gt; str:
+    if node == self.entry:
+        return &#34;style=filled, fillcolor=pink1&#34;
+    for op in node.ops:
+        if op.op == &#34;Ret&#34;:
+            return &#34;style=filled, fillcolor=aquamarine&#34;
+    return &#34;style=filled, fillcolor=lightblue&#34;</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.decomp.cfg.CFJumpThreader"><code class="flex name class">
+<span>class <span class="ident">CFJumpThreader</span></span>
+<span>(</span><span>graph: "'<a title="crashlink.decomp.cfg.CFGraph" href="#crashlink.decomp.cfg.CFGraph">CFGraph</a>'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class CFJumpThreader(CFOptimizer):
+    &#34;&#34;&#34;
+    Thread jumps to reduce the number of nodes in the graph.
+    &#34;&#34;&#34;
+
+    def optimize(self) -&gt; None:
+        # map each node to its predecessors
+        predecessors: Dict[CFNode, List[CFNode]] = {}
+        for node in self.graph.nodes:
+            for branch, _ in node.branches:
+                predecessors.setdefault(branch, []).append(node)
+
+        nodes_to_remove = set()
+        for node in self.graph.nodes:
+            if len(node.ops) == 1 and node.ops[0].op == &#34;JAlways&#34;:
+                if len(node.branches) == 1:
+                    target_node, edge_type = node.branches[0]
+                    # redirect all predecessors to target_node
+                    for pred in predecessors.get(node, []):
+                        pred.branches = [
+                            (target_node if branch == node else branch, etype) for branch, etype in pred.branches
+                        ]
+                        predecessors.setdefault(target_node, []).append(pred)
+                    nodes_to_remove.add(node)
+
+        # remove nodes from graph
+        self.graph.nodes = [n for n in self.graph.nodes if n not in nodes_to_remove]</code></pre>
+</details>
+<div class="desc"><p>Thread jumps to reduce the number of nodes in the graph.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.cfg.CFOptimizer" href="#crashlink.decomp.cfg.CFOptimizer">CFOptimizer</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.cfg.CFJumpThreader.optimize"><code class="name flex">
+<span>def <span class="ident">optimize</span></span>(<span>self) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def optimize(self) -&gt; None:
+    # map each node to its predecessors
+    predecessors: Dict[CFNode, List[CFNode]] = {}
+    for node in self.graph.nodes:
+        for branch, _ in node.branches:
+            predecessors.setdefault(branch, []).append(node)
+
+    nodes_to_remove = set()
+    for node in self.graph.nodes:
+        if len(node.ops) == 1 and node.ops[0].op == &#34;JAlways&#34;:
+            if len(node.branches) == 1:
+                target_node, edge_type = node.branches[0]
+                # redirect all predecessors to target_node
+                for pred in predecessors.get(node, []):
+                    pred.branches = [
+                        (target_node if branch == node else branch, etype) for branch, etype in pred.branches
+                    ]
+                    predecessors.setdefault(target_node, []).append(pred)
+                nodes_to_remove.add(node)
+
+    # remove nodes from graph
+    self.graph.nodes = [n for n in self.graph.nodes if n not in nodes_to_remove]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.decomp.cfg.CFNode"><code class="flex name class">
+<span>class <span class="ident">CFNode</span></span>
+<span>(</span><span>ops: List[Opcode])</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class CFNode:
+    &#34;&#34;&#34;
+    A control flow node.
+    &#34;&#34;&#34;
+
+    def __init__(self, ops: List[Opcode]):
+        self.ops = ops
+        self.branches: List[Tuple[CFNode, str]] = []
+        self.base_offset: int = 0
+        self.original_node: Optional[CFNode] = None
+
+    def __repr__(self) -&gt; str:
+        return &#34;&lt;CFNode: %s&gt;&#34; % self.ops</code></pre>
+</details>
+<div class="desc"><p>A control flow node.</p></div>
+</dd>
+<dt id="crashlink.decomp.cfg.CFOptimizer"><code class="flex name class">
+<span>class <span class="ident">CFOptimizer</span></span>
+<span>(</span><span>graph: "'<a title="crashlink.decomp.cfg.CFGraph" href="#crashlink.decomp.cfg.CFGraph">CFGraph</a>'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class CFOptimizer(ABC):
+    &#34;&#34;&#34;
+    Base class for control flow graph optimizers.
+    &#34;&#34;&#34;
+
+    def __init__(self, graph: &#34;CFGraph&#34;):
+        self.graph = graph
+
+    @abstractmethod
+    def optimize(self) -&gt; None:
+        pass</code></pre>
+</details>
+<div class="desc"><p>Base class for control flow graph optimizers.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>abc.ABC</li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.cfg.CFDeadCodeEliminator" href="#crashlink.decomp.cfg.CFDeadCodeEliminator">CFDeadCodeEliminator</a></li>
+<li><a title="crashlink.decomp.cfg.CFJumpThreader" href="#crashlink.decomp.cfg.CFJumpThreader">CFJumpThreader</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.cfg.CFOptimizer.optimize"><code class="name flex">
+<span>def <span class="ident">optimize</span></span>(<span>self) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@abstractmethod
+def optimize(self) -&gt; None:
+    pass</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.decomp.cfg.IsolatedCFGraph"><code class="flex name class">
+<span>class <span class="ident">IsolatedCFGraph</span></span>
+<span>(</span><span>parent: <a title="crashlink.decomp.cfg.CFGraph" href="#crashlink.decomp.cfg.CFGraph">CFGraph</a>,<br>nodes_to_isolate: List[<a title="crashlink.decomp.cfg.CFNode" href="#crashlink.decomp.cfg.CFNode">CFNode</a>],<br>find_entry_intelligently: bool = True)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IsolatedCFGraph(CFGraph):
+    &#34;&#34;&#34;A control flow graph that contains only a subset of nodes from another graph.&#34;&#34;&#34;
+
+    def __init__(
+        self,
+        parent: CFGraph,
+        nodes_to_isolate: List[CFNode],
+        find_entry_intelligently: bool = True,
+    ):
+        &#34;&#34;&#34;Initialize from parent graph and list of nodes to isolate.&#34;&#34;&#34;
+        if not nodes_to_isolate:
+            super().__init__(parent.func)
+            self.entry = None
+            return
+
+        super().__init__(parent.func)
+
+        node_map: Dict[CFNode, CFNode] = {}
+
+        for original_cfg_node in nodes_to_isolate:
+            copied_node = self.add_node(original_cfg_node.ops, original_cfg_node.base_offset)
+            copied_node.original_node = original_cfg_node
+            node_map[original_cfg_node] = copied_node
+
+        if nodes_to_isolate:
+            self.entry = node_map.get(nodes_to_isolate[0])
+
+        for original_cfg_node in nodes_to_isolate:
+            copied_node_for_branching = node_map[original_cfg_node]
+            for target_in_original_cfg, edge_type in original_cfg_node.branches:
+                if target_in_original_cfg in node_map:
+                    self.add_branch(
+                        copied_node_for_branching,
+                        node_map[target_in_original_cfg],
+                        edge_type,
+                    )
+
+        if find_entry_intelligently and self.nodes:
+            entry_candidates = []
+            isolated_preds: Dict[CFNode, List[CFNode]] = {}
+            for n_src_copy in self.nodes:
+                for n_dst_copy, _ in n_src_copy.branches:
+                    isolated_preds.setdefault(n_dst_copy, []).append(n_src_copy)
+
+            for node_copy_in_isolated_graph in self.nodes:
+                if not isolated_preds.get(node_copy_in_isolated_graph):
+                    entry_candidates.append(node_copy_in_isolated_graph)
+
+            if len(entry_candidates) == 1:
+                self.entry = entry_candidates[0]
+            elif not self.entry and entry_candidates:
+                self.entry = entry_candidates[0]
+            elif not self.entry and self.nodes:
+                self.entry = self.nodes[0]</code></pre>
+</details>
+<div class="desc"><p>A control flow graph that contains only a subset of nodes from another graph.</p>
+<p>Initialize from parent graph and list of nodes to isolate.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.cfg.CFGraph" href="#crashlink.decomp.cfg.CFGraph">CFGraph</a></li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.cfg.CFGraph" href="#crashlink.decomp.cfg.CFGraph">CFGraph</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.cfg.CFGraph.analyze" href="#crashlink.decomp.cfg.CFGraph.analyze">analyze</a></code></li>
+<li><code><a title="crashlink.decomp.cfg.CFGraph.build" href="#crashlink.decomp.cfg.CFGraph.build">build</a></code></li>
+<li><code><a title="crashlink.decomp.cfg.CFGraph.graph" href="#crashlink.decomp.cfg.CFGraph.graph">graph</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashlink.decomp" href="index.html">crashlink.decomp</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="crashlink.decomp.cfg.CFDeadCodeEliminator" href="#crashlink.decomp.cfg.CFDeadCodeEliminator">CFDeadCodeEliminator</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.cfg.CFDeadCodeEliminator.optimize" href="#crashlink.decomp.cfg.CFDeadCodeEliminator.optimize">optimize</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.cfg.CFGraph" href="#crashlink.decomp.cfg.CFGraph">CFGraph</a></code></h4>
+<ul class="two-column">
+<li><code><a title="crashlink.decomp.cfg.CFGraph.add_branch" href="#crashlink.decomp.cfg.CFGraph.add_branch">add_branch</a></code></li>
+<li><code><a title="crashlink.decomp.cfg.CFGraph.add_node" href="#crashlink.decomp.cfg.CFGraph.add_node">add_node</a></code></li>
+<li><code><a title="crashlink.decomp.cfg.CFGraph.analyze" href="#crashlink.decomp.cfg.CFGraph.analyze">analyze</a></code></li>
+<li><code><a title="crashlink.decomp.cfg.CFGraph.build" href="#crashlink.decomp.cfg.CFGraph.build">build</a></code></li>
+<li><code><a title="crashlink.decomp.cfg.CFGraph.graph" href="#crashlink.decomp.cfg.CFGraph.graph">graph</a></code></li>
+<li><code><a title="crashlink.decomp.cfg.CFGraph.optimize" href="#crashlink.decomp.cfg.CFGraph.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.cfg.CFGraph.style_node" href="#crashlink.decomp.cfg.CFGraph.style_node">style_node</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.cfg.CFJumpThreader" href="#crashlink.decomp.cfg.CFJumpThreader">CFJumpThreader</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.cfg.CFJumpThreader.optimize" href="#crashlink.decomp.cfg.CFJumpThreader.optimize">optimize</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.cfg.CFNode" href="#crashlink.decomp.cfg.CFNode">CFNode</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.cfg.CFOptimizer" href="#crashlink.decomp.cfg.CFOptimizer">CFOptimizer</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.cfg.CFOptimizer.optimize" href="#crashlink.decomp.cfg.CFOptimizer.optimize">optimize</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.cfg.IsolatedCFGraph" href="#crashlink.decomp.cfg.IsolatedCFGraph">IsolatedCFGraph</a></code></h4>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
+</footer>
+</body>
+</html>
