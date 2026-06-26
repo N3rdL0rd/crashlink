@@ -737,6 +737,7 @@ class IRFunction:
         return None
 
     def _lift_ops_into_block(self, block: IRBlock, ops: List[Opcode]) -> None:
+        _debuginfo = self.func.debuginfo.value if (self.func.has_debug and self.func.debuginfo) else None
         for op in ops:
             op_idx = self._op_id_to_idx.get(id(op))
             # Capture the register-to-local mapping before any debug-name split.
@@ -751,6 +752,7 @@ class IRFunction:
                 self._check_assign(op_idx)
             if op.op == "Label":
                 continue
+            _prev_len = len(block.statements)
 
             if op.op == "Nop":
                 continue
@@ -1187,6 +1189,15 @@ class IRFunction:
                     )
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
+
+            # Tag the newly-appended statement(s) with source location
+            if _debuginfo is not None and op_idx is not None and len(block.statements) > _prev_len:
+                try:
+                    ref = _debuginfo[op_idx]
+                    block.statements[-1].src_line = ref.line
+                    block.statements[-1].src_file_idx = ref.value
+                except IndexError:
+                    pass
 
     def _shortest_distances(
         self,

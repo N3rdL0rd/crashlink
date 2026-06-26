@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING, Any, BinaryIO, Dict, List, Literal, Optional, 
 
 if TYPE_CHECKING:
     from .xref import XrefIndex
+    from .search import SearchIndex
+    from .srcloc import SourceMap
 
 T = TypeVar("T", bound="VarInt")  # easier than reimplementing deserialise for each subclass
 
@@ -1871,6 +1873,8 @@ class Bytecode(Serialisable):
         self._proto_owner_map: Dict[int, "Obj"] | None = None
         self._field_owner_map: Dict[int, "Obj"] | None = None
         self._xref_index: "Optional[XrefIndex]" = None
+        self._search_index: "Optional[SearchIndex]" = None
+        self._source_map: "Optional[SourceMap]" = None
 
         self.virtuals_built = False
 
@@ -2782,6 +2786,20 @@ class Bytecode(Serialisable):
             from .xref import XrefIndex
             self._xref_index = XrefIndex.build(self)
         return self._xref_index
+
+    def search_index(self) -> "SearchIndex":
+        """Build (or return cached) the function search index for this bytecode."""
+        if self._search_index is None:
+            from .search import SearchIndex
+            self._search_index = SearchIndex.build(self)
+        return self._search_index
+
+    def source_map(self) -> "SourceMap":
+        """Build (or return cached) the source-location map for this bytecode."""
+        if self._source_map is None:
+            from .srcloc import SourceMap
+            self._source_map = SourceMap.build(self)
+        return self._source_map
 
 
 __all__ = [

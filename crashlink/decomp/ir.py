@@ -66,6 +66,8 @@ class IRStatement(ABC):
     def __init__(self, code: Bytecode):
         self.code = code
         self.comment: str = ""
+        self.src_line: Optional[int] = None
+        self.src_file_idx: Optional[int] = None
 
     @abstractmethod
     def __repr__(self) -> str:

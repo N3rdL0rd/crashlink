@@ -1450,6 +1450,110 @@ class Commands(BaseCommands):
             print(f"Unknown xref kind: {kind!r}")
             print("  kinds: func, type, field, global, string, enum")
 
+    @alias("ff")
+    def findfunc(self, args: List[str]) -> None:
+        """Search functions by name substring, or list functions in a source file.
+
+        Usage:
+          findfunc <query>            — substring match against qualified name
+          findfunc file <filename>    — all functions from a source file
+          findfunc files              — list all known source files
+        """
+        if not args:
+            print("Usage: findfunc <query> | findfunc file <filename> | findfunc files")
+            return
+
+        si = self.code.search_index()
+
+        if args[0] == "files":
+            files = si.files()
+            if not files:
+                print("No debug file info available.")
+                return
+            for fname in sorted(files):
+                print(fname)
+            return
+
+        if args[0] == "file":
+            if len(args) < 2:
+                print("Usage: search file <filename>")
+                return
+            file_funcs = si.in_file(args[1])
+            if not file_funcs:
+                print(f"No functions found in {args[1]!r}.")
+                return
+            print(f"{len(file_funcs)} function(s) in {args[1]!r}:")
+            for func in file_funcs:
+                print(f"  {disasm.func_header(self.code, func)}")
+            return
+
+        query = " ".join(args)
+        results = si.search(query)
+        if not results:
+            print(f"No functions matching {query!r}.")
+            return
+        print(f"{len(results)} result(s) for {query!r}:")
+        for hit in results:
+            print(f"  {disasm.func_header(self.code, hit)}")
+
+    def srcloc(self, args: List[str]) -> None:
+        """Source location lookup.
+
+        Usage:
+          srcloc <findex> <op_idx>          — source location of a specific opcode
+          srcloc line <filename> <line>     — functions/opcodes at a source line
+          srcloc files                      — list all source files with debug info
+        """
+        if not args:
+            print("Usage: srcloc <findex> <op> | srcloc line <file> <line> | srcloc files")
+            return
+
+        sm = self.code.source_map()
+
+        if args[0] == "files":
+            for f in sorted(sm.files()):
+                print(f)
+            return
+
+        if args[0] == "line":
+            if len(args) < 3:
+                print("Usage: srcloc line <filename> <line>")
+                return
+            file_idx = sm.file_index(args[1])
+            if file_idx is None:
+                print(f"File {args[1]!r} not found in debug info.")
+                return
+            try:
+                line = int(args[2])
+            except ValueError:
+                print("Invalid line number.")
+                return
+            hits = sm.ops_at(file_idx, line)
+            if not hits:
+                print(f"No opcodes at {args[1]}:{line}.")
+                return
+            seen_funcs: Dict[int, object] = {}
+            print(f"{len(hits)} opcode(s) at {args[1]}:{line}:")
+            for func, op_idx in hits:
+                if func.findex.value not in seen_funcs:
+                    seen_funcs[func.findex.value] = func
+                    print(f"  {disasm.func_header(self.code, func)}")
+                print(f"    op#{op_idx}  {func.ops[op_idx].op}")
+            return
+
+        try:
+            findex = int(args[0])
+            op_idx = int(args[1]) if len(args) > 1 else 0
+        except ValueError:
+            print("Invalid arguments.")
+            return
+
+        loc = sm.loc_str(findex, op_idx)
+        if not loc:
+            print(f"No debug info for f@{findex} op#{op_idx}.")
+            return
+        print(loc)
+
     @alias("pkl")
     def pickle(self, args: List[str]) -> None:
         """Pickle the bytecode to a given path. `pickle <path>`"""
