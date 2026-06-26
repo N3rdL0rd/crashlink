@@ -12,15 +12,13 @@ from __future__ import annotations
 import ctypes
 import struct
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum as _Enum
-from io import BytesIO
-from typing import TYPE_CHECKING, Any, BinaryIO, Dict, List, Literal, Optional, Tuple, TypeVar
 
-if TYPE_CHECKING:
-    from .xref import XrefIndex
-    from .search import SearchIndex
-    from .srcloc import SourceMap
+_EnumBase = _Enum
+from io import BytesIO
+from typing import TYPE_CHECKING, Any, BinaryIO, Dict, List, Literal, Optional, Set, Tuple, TypeVar
 
 T = TypeVar("T", bound="VarInt")  # easier than reimplementing deserialise for each subclass
 
@@ -1872,9 +1870,9 @@ class Bytecode(Serialisable):
         self._field_map: Dict[int, "Field"] | None = None
         self._proto_owner_map: Dict[int, "Obj"] | None = None
         self._field_owner_map: Dict[int, "Obj"] | None = None
-        self._xref_index: "Optional[XrefIndex]" = None
-        self._search_index: "Optional[SearchIndex]" = None
-        self._source_map: "Optional[SourceMap]" = None
+        self._xref_index: Optional[XrefIndex] = None
+        self._search_index: Optional[SearchIndex] = None
+        self._source_map: Optional[SourceMap] = None
 
         self.virtuals_built = False
 
@@ -2783,23 +2781,486 @@ class Bytecode(Serialisable):
     def xref_index(self) -> "XrefIndex":
         """Build (or return cached) the full cross-reference index for this bytecode."""
         if self._xref_index is None:
-            from .xref import XrefIndex
             self._xref_index = XrefIndex.build(self)
         return self._xref_index
 
     def search_index(self) -> "SearchIndex":
         """Build (or return cached) the function search index for this bytecode."""
         if self._search_index is None:
-            from .search import SearchIndex
             self._search_index = SearchIndex.build(self)
         return self._search_index
 
     def source_map(self) -> "SourceMap":
         """Build (or return cached) the source-location map for this bytecode."""
         if self._source_map is None:
-            from .srcloc import SourceMap
             self._source_map = SourceMap.build(self)
         return self._source_map
+
+
+# ── Cross-reference index ──────────────────────────────────────────────────────
+
+
+class SourceKind(_EnumBase):
+    FUNCTION = "function"
+    TYPE = "type"
+    GLOBAL = "global"
+
+
+class TargetKind(_EnumBase):
+    FUNCTION = "function"
+    TYPE = "type"
+    FIELD = "field"
+    ENUM_CONSTRUCT = "enum_construct"
+    GLOBAL = "global"
+    STRING = "string"
+
+
+class RefKind(_EnumBase):
+    CALL = "call"
+    CALL_VIRTUAL = "call_virtual"
+    CLOSURE = "closure"
+    FIELD_READ = "field_read"
+    FIELD_WRITE = "field_write"
+    DYN_FIELD_READ = "dyn_field_read"
+    DYN_FIELD_WRITE = "dyn_field_write"
+    ALLOC = "alloc"
+    CAST = "cast"
+    TYPE_REF = "type_ref"
+    TYPE_CHECK = "type_check"
+    GLOBAL_READ = "global_read"
+    GLOBAL_WRITE = "global_write"
+    STRING_USE = "string_use"
+    ENUM_CONSTRUCT = "enum_construct"
+    ENUM_FIELD_READ = "enum_field_read"
+    ENUM_INDEX = "enum_index"
+    INHERITS = "inherits"
+    FIELD_DECL = "field_decl"
+    PROTO_DECL = "proto_decl"
+    BINDING_DECL = "binding_decl"
+    GLOBAL_TYPE = "global_type"
+    ENUM_PARAM_TYPE = "enum_param_type"
+    SIGNATURE_TYPE = "signature_type"
+
+
+@dataclass
+class XRef:
+    source_kind: SourceKind
+    source_index: int
+    target_kind: TargetKind
+    target_index: int
+    target_aux: Optional[int]
+    ref_kind: RefKind
+    opcode_index: Optional[int]
+
+
+_TargetKey = Tuple[TargetKind, int, Optional[int]]
+_SourceKey = Tuple[SourceKind, int]
+
+
+def _xref_target_key(ref: XRef) -> _TargetKey:
+    return (ref.target_kind, ref.target_index, ref.target_aux)
+
+
+def _xref_source_key(ref: XRef) -> _SourceKey:
+    return (ref.source_kind, ref.source_index)
+
+
+class XrefIndex:
+    """Bidirectional cross-reference index. Build once with `XrefIndex.build(code)`."""
+
+    def __init__(self) -> None:
+        self._to: Dict[_TargetKey, List[XRef]] = {}
+        self._from: Dict[_SourceKey, List[XRef]] = {}
+
+    def _add(self, ref: XRef) -> None:
+        self._to.setdefault(_xref_target_key(ref), []).append(ref)
+        self._from.setdefault(_xref_source_key(ref), []).append(ref)
+
+    def refs_to(self, target_kind: TargetKind, index: int, aux: Optional[int] = None) -> List[XRef]:
+        return self._to.get((target_kind, index, aux), [])
+
+    def refs_from(self, source_kind: SourceKind, index: int) -> List[XRef]:
+        return self._from.get((source_kind, index), [])
+
+    def callers_of(self, findex: int) -> List[XRef]:
+        return [r for r in self.refs_to(TargetKind.FUNCTION, findex)
+                if r.ref_kind in (RefKind.CALL, RefKind.CALL_VIRTUAL, RefKind.CLOSURE)]
+
+    def callees_of(self, findex: int) -> List[XRef]:
+        return [r for r in self.refs_from(SourceKind.FUNCTION, findex)
+                if r.ref_kind in (RefKind.CALL, RefKind.CALL_VIRTUAL, RefKind.CLOSURE)]
+
+    def field_reads(self, tindex: int, field_slot: int) -> List[XRef]:
+        return [r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot) if r.ref_kind == RefKind.FIELD_READ]
+
+    def field_writes(self, tindex: int, field_slot: int) -> List[XRef]:
+        return [r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot) if r.ref_kind == RefKind.FIELD_WRITE]
+
+    def all_field_accesses(self, tindex: int, field_slot: int) -> List[XRef]:
+        return [r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot)
+                if r.ref_kind in (RefKind.FIELD_READ, RefKind.FIELD_WRITE)]
+
+    def allocators_of(self, tindex: int) -> List[XRef]:
+        return [r for r in self.refs_to(TargetKind.TYPE, tindex) if r.ref_kind == RefKind.ALLOC]
+
+    def subtypes_of(self, tindex: int) -> List[XRef]:
+        return [r for r in self.refs_to(TargetKind.TYPE, tindex) if r.ref_kind == RefKind.INHERITS]
+
+    def construct_uses(self, tindex: int, construct_idx: int) -> List[XRef]:
+        return self.refs_to(TargetKind.ENUM_CONSTRUCT, tindex, construct_idx)
+
+    def global_reads(self, gindex: int) -> List[XRef]:
+        return [r for r in self.refs_to(TargetKind.GLOBAL, gindex) if r.ref_kind == RefKind.GLOBAL_READ]
+
+    def global_writes(self, gindex: int) -> List[XRef]:
+        return [r for r in self.refs_to(TargetKind.GLOBAL, gindex) if r.ref_kind == RefKind.GLOBAL_WRITE]
+
+    def string_uses(self, string_idx: int) -> List[XRef]:
+        return self.refs_to(TargetKind.STRING, string_idx)
+
+    def type_refs(self, tindex: int) -> List[XRef]:
+        return self.refs_to(TargetKind.TYPE, tindex)
+
+    @classmethod
+    def build(cls, code: "Bytecode") -> "XrefIndex":
+        idx = cls()
+
+        _defn_to_ti: Dict[int, int] = {id(t.definition): ti for ti, t in enumerate(code.types)}
+        _field_owner_cache: Dict[Tuple[int, int], Tuple[int, int]] = {}
+
+        for func in code.functions:
+            findex = func.findex.value
+            regs = func.regs
+
+            def _reg_tindex(reg_val: int) -> Optional[int]:
+                try:
+                    return regs[reg_val].value
+                except IndexError:
+                    return None
+
+            def _field_owner(flat_slot: int, tindex: int, obj: Obj) -> Tuple[int, int]:
+                cache_key = (tindex, flat_slot)
+                cached = _field_owner_cache.get(cache_key)
+                if cached is not None:
+                    return cached
+                chain: List[Obj] = []
+                visited: Set[int] = set()
+                cur: Optional[Obj] = obj
+                while cur is not None and id(cur) not in visited:
+                    visited.add(id(cur))
+                    chain.append(cur)
+                    if cur.super.value < 0:
+                        break
+                    s = cur.super.resolve(code).definition
+                    cur = s if isinstance(s, Obj) else None
+                chain.reverse()
+                offset = 0
+                result = (0, flat_slot)
+                for ancestor in chain:
+                    if flat_slot < offset + len(ancestor.fields):
+                        own_slot = flat_slot - offset
+                        owner_ti = _defn_to_ti.get(id(ancestor), 0)
+                        result = (owner_ti, own_slot)
+                        break
+                    offset += len(ancestor.fields)
+                _field_owner_cache[cache_key] = result
+                return result
+
+            for op_idx, op in enumerate(func.ops):
+                op_name = op.op
+                df = op.df
+
+                def _emit(tk: TargetKind, ti: int, rk: RefKind, aux: Optional[int] = None) -> None:
+                    idx._add(XRef(SourceKind.FUNCTION, findex, tk, ti, aux, rk, op_idx))
+
+                if op_name in ("Call0", "Call1", "Call2", "Call3", "Call4", "CallN"):
+                    _emit(TargetKind.FUNCTION, df["fun"].value, RefKind.CALL)
+
+                elif op_name in ("CallMethod", "CallThis"):
+                    pindex = df["field"].value
+                    if op_name == "CallThis":
+                        recv_t = _reg_tindex(0)
+                    else:
+                        args = df["args"].value
+                        recv_t = _reg_tindex(args[0].value) if args else None
+                    if recv_t is not None:
+                        t = code.types[recv_t]
+                        if isinstance(t.definition, Obj):
+                            proto = code.proto_by_pindex(t.definition, pindex)
+                            if proto is not None:
+                                _emit(TargetKind.FUNCTION, proto.findex.value, RefKind.CALL_VIRTUAL)
+
+                elif op_name in ("StaticClosure", "InstanceClosure"):
+                    _emit(TargetKind.FUNCTION, df["fun"].value, RefKind.CLOSURE)
+
+                elif op_name == "VirtualClosure":
+                    pindex = df["field"].value
+                    recv_t = _reg_tindex(df["obj"].value)
+                    if recv_t is not None:
+                        t = code.types[recv_t]
+                        if isinstance(t.definition, Obj):
+                            proto = code.proto_by_pindex(t.definition, pindex)
+                            if proto is not None:
+                                _emit(TargetKind.FUNCTION, proto.findex.value, RefKind.CLOSURE)
+
+                elif op_name == "Field":
+                    obj_t = _reg_tindex(df["obj"].value)
+                    if obj_t is not None:
+                        t = code.types[obj_t]
+                        if isinstance(t.definition, Obj):
+                            try:
+                                flat = df["field"].value
+                                owner_t, own_slot = _field_owner(flat, obj_t, t.definition)
+                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_READ, own_slot)
+                            except (IndexError, KeyError):
+                                pass
+
+                elif op_name == "GetThis":
+                    this_t = _reg_tindex(0)
+                    if this_t is not None:
+                        t = code.types[this_t]
+                        if isinstance(t.definition, Obj):
+                            try:
+                                flat = df["field"].value
+                                owner_t, own_slot = _field_owner(flat, this_t, t.definition)
+                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_READ, own_slot)
+                            except (IndexError, KeyError):
+                                pass
+
+                elif op_name == "SetField":
+                    obj_t = _reg_tindex(df["obj"].value)
+                    if obj_t is not None:
+                        t = code.types[obj_t]
+                        if isinstance(t.definition, Obj):
+                            try:
+                                flat = df["field"].value
+                                owner_t, own_slot = _field_owner(flat, obj_t, t.definition)
+                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_WRITE, own_slot)
+                            except (IndexError, KeyError):
+                                pass
+
+                elif op_name == "SetThis":
+                    this_t = _reg_tindex(0)
+                    if this_t is not None:
+                        t = code.types[this_t]
+                        if isinstance(t.definition, Obj):
+                            try:
+                                flat = df["field"].value
+                                owner_t, own_slot = _field_owner(flat, this_t, t.definition)
+                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_WRITE, own_slot)
+                            except (IndexError, KeyError):
+                                pass
+
+                elif op_name == "DynGet":
+                    _emit(TargetKind.STRING, df["field"].value, RefKind.DYN_FIELD_READ)
+                elif op_name == "DynSet":
+                    _emit(TargetKind.STRING, df["field"].value, RefKind.DYN_FIELD_WRITE)
+                elif op_name == "New":
+                    dst_t = _reg_tindex(df["dst"].value)
+                    if dst_t is not None:
+                        _emit(TargetKind.TYPE, dst_t, RefKind.ALLOC)
+                elif op_name in ("SafeCast", "UnsafeCast", "ToVirtual"):
+                    dst_t = _reg_tindex(df["dst"].value)
+                    if dst_t is not None:
+                        _emit(TargetKind.TYPE, dst_t, RefKind.CAST)
+                elif op_name == "GetGlobal":
+                    _emit(TargetKind.GLOBAL, df["global"].value, RefKind.GLOBAL_READ)
+                elif op_name == "SetGlobal":
+                    _emit(TargetKind.GLOBAL, df["global"].value, RefKind.GLOBAL_WRITE)
+                elif op_name == "String":
+                    _emit(TargetKind.STRING, df["ptr"].value, RefKind.STRING_USE)
+                elif op_name == "Type":
+                    _emit(TargetKind.TYPE, df["ty"].value, RefKind.TYPE_REF)
+                elif op_name in ("GetType", "GetTID"):
+                    src_t = _reg_tindex(df["src"].value)
+                    if src_t is not None:
+                        _emit(TargetKind.TYPE, src_t, RefKind.TYPE_CHECK)
+                elif op_name == "MakeEnum":
+                    dst_t = _reg_tindex(df["dst"].value)
+                    if dst_t is not None:
+                        _emit(TargetKind.ENUM_CONSTRUCT, dst_t, RefKind.ENUM_CONSTRUCT, df["construct"].value)
+                elif op_name == "EnumField":
+                    val_t = _reg_tindex(df["value"].value)
+                    if val_t is not None:
+                        _emit(TargetKind.ENUM_CONSTRUCT, val_t, RefKind.ENUM_FIELD_READ, df["construct"].value)
+                elif op_name == "EnumIndex":
+                    val_t = _reg_tindex(df["value"].value)
+                    if val_t is not None:
+                        _emit(TargetKind.TYPE, val_t, RefKind.ENUM_INDEX)
+
+        for tindex, t in enumerate(code.types):
+            defn = t.definition
+
+            def _struct(tk: TargetKind, ti: int, rk: RefKind, aux: Optional[int] = None) -> None:
+                idx._add(XRef(SourceKind.TYPE, tindex, tk, ti, aux, rk, None))
+
+            if isinstance(defn, Obj):
+                if defn.super.value >= 0:
+                    _struct(TargetKind.TYPE, defn.super.value, RefKind.INHERITS)
+                for f in defn.fields:
+                    _struct(TargetKind.TYPE, f.type.value, RefKind.FIELD_DECL)
+                for proto in defn.protos:
+                    _struct(TargetKind.FUNCTION, proto.findex.value, RefKind.PROTO_DECL)
+                for binding in defn.bindings:
+                    _struct(TargetKind.FUNCTION, binding.findex.value, RefKind.BINDING_DECL)
+            elif isinstance(defn, Enum):
+                for construct in defn.constructs:
+                    for param_t in construct.params:
+                        _struct(TargetKind.TYPE, param_t.value, RefKind.ENUM_PARAM_TYPE)
+            elif isinstance(defn, Fun):
+                for arg_t in defn.args:
+                    _struct(TargetKind.TYPE, arg_t.value, RefKind.SIGNATURE_TYPE)
+                _struct(TargetKind.TYPE, defn.ret.value, RefKind.SIGNATURE_TYPE)
+            elif isinstance(defn, Virtual):
+                for f in defn.fields:
+                    _struct(TargetKind.TYPE, f.type.value, RefKind.FIELD_DECL)
+
+        for gindex, gt in enumerate(code.global_types):
+            idx._add(XRef(SourceKind.GLOBAL, gindex, TargetKind.TYPE, gt.value, None, RefKind.GLOBAL_TYPE, None))
+
+        return idx
+
+
+# ── Function search index ──────────────────────────────────────────────────────
+
+
+class SearchIndex:
+    """Fast lookup index for functions and natives. Build once with `SearchIndex.build(code)`."""
+
+    def __init__(self) -> None:
+        self._full: Dict[str, List["Function | Native"]] = {}
+        self._partial: Dict[str, List["Function | Native"]] = {}
+        self._by_file: Dict[str, List["Function"]] = {}
+        self._by_type: Dict[int, List["Function | Native"]] = {}
+        self._all: List["Function | Native"] = []
+        self._findex_to_full: Dict[int, str] = {}
+
+    @classmethod
+    def build(cls, code: "Bytecode") -> "SearchIndex":
+        idx = cls()
+        defn_to_ti: Dict[int, int] = {id(t.definition): ti for ti, t in enumerate(code.types)}
+        _ = code.get_proto_map()
+
+        all_funcs: List[Function | Native] = [*code.functions, *code.natives]
+        for func in all_funcs:
+            full = code.full_func_name(func)
+            partial = code.partial_func_name(func)
+            findex = func.findex.value
+
+            idx._all.append(func)
+            idx._full.setdefault(full, []).append(func)
+            idx._partial.setdefault(partial, []).append(func)
+            idx._findex_to_full[findex] = full
+
+            owner_obj: Optional[Obj] = None
+            if code._proto_owner_map:
+                owner_obj = code._proto_owner_map.get(findex)
+            if owner_obj is None and code._field_owner_map:
+                owner_obj = code._field_owner_map.get(findex)
+            if owner_obj is not None:
+                ti = defn_to_ti.get(id(owner_obj))
+                if ti is not None:
+                    idx._by_type.setdefault(ti, []).append(func)
+
+            if isinstance(func, Function) and func.has_debug and func.debuginfo and func.debuginfo.value:
+                ref = func.debuginfo.value[0]
+                if code.debugfiles and ref.value < len(code.debugfiles.value):
+                    fname = code.debugfiles.value[ref.value]
+                    idx._by_file.setdefault(fname, []).append(func)
+
+        return idx
+
+    def find(self, query: str) -> List["Function | Native"]:
+        """Exact full-name match."""
+        return self._full.get(query, [])
+
+    def find_partial(self, query: str) -> List["Function | Native"]:
+        """Exact partial-name (method name only) match."""
+        return self._partial.get(query, [])
+
+    def search(self, query: str) -> List["Function | Native"]:
+        """Case-insensitive substring match against the full qualified name."""
+        q = query.lower()
+        return [f for f in self._all if q in self._findex_to_full.get(f.findex.value, "").lower()]
+
+    def in_file(self, filename: str) -> List["Function"]:
+        """All functions from `filename` (exact or trailing-suffix match)."""
+        exact = self._by_file.get(filename)
+        if exact is not None:
+            return exact
+        result: List[Function] = []
+        for k, v in self._by_file.items():
+            if k.endswith(filename) or k.endswith("/" + filename) or k.endswith("\\" + filename):
+                result.extend(v)
+        return result
+
+    def files(self) -> List[str]:
+        return list(self._by_file.keys())
+
+    def in_type(self, tindex: int) -> List["Function | Native"]:
+        return self._by_type.get(tindex, [])
+
+
+# ── Source location map ────────────────────────────────────────────────────────
+
+_LocKey = Tuple[int, int]
+_OpKey = Tuple[int, int]
+
+
+class SourceMap:
+    """Bidirectional source-location index. Build once with `SourceMap.build(code)`."""
+
+    def __init__(self) -> None:
+        self._by_op: Dict[_OpKey, fileRef] = {}
+        self._by_loc: Dict[_LocKey, List[Tuple[Function, int]]] = {}
+        self._file_names: Dict[int, str] = {}
+
+    @classmethod
+    def build(cls, code: "Bytecode") -> "SourceMap":
+        sm = cls()
+        if code.debugfiles:
+            sm._file_names = {i: name for i, name in enumerate(code.debugfiles.value)}
+        for func in code.functions:
+            if not isinstance(func, Function):
+                continue
+            if not func.has_debug or not func.debuginfo or not func.debuginfo.value:
+                continue
+            findex = func.findex.value
+            for op_idx, ref in enumerate(func.debuginfo.value):
+                sm._by_op[(findex, op_idx)] = ref
+                sm._by_loc.setdefault((ref.value, ref.line), []).append((func, op_idx))
+        return sm
+
+    def loc_of(self, findex: int, op_idx: int) -> Optional[fileRef]:
+        return self._by_op.get((findex, op_idx))
+
+    def loc_str(self, findex: int, op_idx: int) -> str:
+        ref = self._by_op.get((findex, op_idx))
+        if ref is None:
+            return ""
+        fname = self._file_names.get(ref.value, f"file#{ref.value}")
+        return f"{fname}:{ref.line}"
+
+    def ops_at(self, file_idx: int, line: int) -> List[Tuple[Function, int]]:
+        return self._by_loc.get((file_idx, line), [])
+
+    def funcs_at_line(self, file_idx: int, line: int) -> List[Function]:
+        seen: Dict[int, Function] = {}
+        for func, _ in self._by_loc.get((file_idx, line), []):
+            seen[func.findex.value] = func
+        return list(seen.values())
+
+    def file_index(self, filename: str) -> Optional[int]:
+        for idx, name in self._file_names.items():
+            if name == filename:
+                return idx
+        for idx, name in self._file_names.items():
+            if name.endswith(filename) or name.endswith("/" + filename) or name.endswith("\\" + filename):
+                return idx
+        return None
+
+    def files(self) -> List[str]:
+        return list(self._file_names.values())
 
 
 __all__ = [
@@ -2860,4 +3321,11 @@ __all__ = [
     "intRef",
     "strRef",
     "tIndex",
+    "RefKind",
+    "SearchIndex",
+    "SourceKind",
+    "SourceMap",
+    "TargetKind",
+    "XRef",
+    "XrefIndex",
 ]

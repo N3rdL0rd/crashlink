@@ -16,7 +16,7 @@ from mcp.server.fastmcp import FastMCP
 from . import decomp as _decomp
 from . import disasm as _disasm
 from .core import Bytecode, Function, Native, Obj, Enum, Fun, Virtual
-from .xref import XRef, TargetKind, SourceKind, RefKind
+from .core import XRef, TargetKind, SourceKind, RefKind
 from .hlc import code_to_c
 from .opcodes import opcode_docs, opcodes
 from .pseudo import pseudo
