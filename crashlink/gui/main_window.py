@@ -187,6 +187,7 @@ class MainWindow(QMainWindow):
         self._build_menu()
         self._apply_theme(self._theme)
         set_dbg_callback(self._log_panel.info)
+        self._log_panel.set_context(mw=self, code=None)
 
     # ── UI ────────────────────────────────────────────────────────────────────
 
@@ -325,6 +326,7 @@ class MainWindow(QMainWindow):
         self._db_cache.clear()
         self._log_panel.clear()
         self._code = None
+        self._log_panel.set_context(code=None, findex=None, func=None, irf=None)
         self._source_path = path
         self._worker.invalidate()
 
@@ -348,6 +350,7 @@ class MainWindow(QMainWindow):
         n = len(code.functions)
         self._status_label.setText(f"Loaded — {n} functions")
         self._log_panel.info(f"Loaded {n} functions")
+        self._log_panel.set_context(code=code)
         self._func_list.load(code)
 
         assert self._source_path is not None
@@ -584,6 +587,7 @@ class MainWindow(QMainWindow):
 
         if findex == self._cfg_findex:
             self._update_cfg_view(findex)
+            self._update_repl_focus(findex)
 
         if self._pending_op_scroll is not None and self._pending_op_scroll[0] == findex:
             pf, pop = self._pending_op_scroll
@@ -646,6 +650,12 @@ class MainWindow(QMainWindow):
     def _on_function_focused(self, findex: int) -> None:
         self._cfg_findex = findex
         self._update_cfg_view(findex)
+        self._update_repl_focus(findex)
+
+    def _update_repl_focus(self, findex: int) -> None:
+        """Keep the REPL's `findex`/`func`/`irf` pointed at the focused function."""
+        func = self._code.get_findex_map().get(findex) if self._code is not None else None
+        self._log_panel.set_context(findex=findex, func=func, irf=self._ir_cache.get(findex))
 
     def _on_cfg_dock_visibility(self, visible: bool) -> None:
         if visible and self._cfg_findex is not None:
@@ -711,6 +721,7 @@ class MainWindow(QMainWindow):
         self._opline_cache.pop(findex, None)
         if findex == self._cfg_findex:
             self._cfg_view.show_pending()
+            self._log_panel.set_context(irf=None)
 
         for class_key, fi_list in self._class_findices.items():
             if findex in fi_list:

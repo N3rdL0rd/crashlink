@@ -536,9 +536,10 @@ class IRTraceOptimizer(TraversingIROptimizer):
                             field_name = field_target.field_name
                             if isinstance(next_stmt.expr, IRConst):
                                 pos_info[field_name] = next_stmt.expr.value
-                                dbg_print(
-                                    f"[TraceOpt]  -> Collected const field: {field_name} = {next_stmt.expr.value!r}"
-                                )
+                                if DEBUG:
+                                    dbg_print(
+                                        f"[TraceOpt]  -> Collected const field: {field_name} = {next_stmt.expr.value!r}"
+                                    )
                                 j += 1
                                 continue
                             elif isinstance(next_stmt.expr, IRLocal):
@@ -567,7 +568,8 @@ class IRTraceOptimizer(TraversingIROptimizer):
 
                         is_trace_func = False
                         if isinstance(call_stmt.target, IRField) and call_stmt.target.field_name == "trace":
-                            dbg_print("[TraceOpt]  -> Call target is a field named 'trace'.")
+                            if DEBUG:
+                                dbg_print("[TraceOpt]  -> Call target is a field named 'trace'.")
                             target_obj = call_stmt.target.target
                             if (
                                 isinstance(target_obj, IRConst)
@@ -578,12 +580,13 @@ class IRTraceOptimizer(TraversingIROptimizer):
                                 if "haxe.$Log" in obj_name:
                                     is_trace_func = True
 
-                        dbg_print(f"[TraceOpt]  -> Is function 'haxe.Log.trace'? {is_trace_func}")
+                        if DEBUG:
+                            dbg_print(f"[TraceOpt]  -> Is function 'haxe.Log.trace'? {is_trace_func}")
 
                         if is_our_var and is_trace_func:
                             is_valid_trace_call = True
 
-                    else:
+                    elif DEBUG:
                         dbg_print(f"[TraceOpt]  -> FAILED: Statement is not an IRCall with 2 arguments.")
 
                     if is_valid_trace_call:
@@ -625,7 +628,7 @@ class IRTraceOptimizer(TraversingIROptimizer):
                         i = j + 1
                         made_change = True
                         continue
-                    else:
+                    elif DEBUG:
                         dbg_print(f"[TraceOpt] FAILED: Pattern did not match for trace call.")
 
                 new_statements.append(stmt)
