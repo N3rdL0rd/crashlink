@@ -149,8 +149,8 @@ You can use the following pre-defined commands with `just`:
   - [ ] More to address issues as they arise!
 - [x] Haxe pseudocode
 - [x] Cross-reference index
-- [ ] GUI prerequisites
-  - [ ] Workspace/project abstraction (wraps `Bytecode` with cached analysis state)
+- [x] GUI prerequisites
+  - [x] Workspace/project abstraction (wraps `Bytecode` with cached analysis state)
   - [x] Incremental/async analysis API (background decompile, progress callbacks)
   - [ ] Patch buffer (in-memory edits, dirty tracking, re-serialisation)
   - [x] Function search index (by name, file, type)
