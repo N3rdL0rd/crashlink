@@ -185,6 +185,7 @@ class FunctionList(QWidget):
             btn.setIcon(icon)
         if self._code is not None:
             self._rebuild_tree()
+            self._rebuild_file_tree()
 
     # ── Tree rebuild (package hierarchy) ──────────────────────
 
@@ -259,7 +260,12 @@ class FunctionList(QWidget):
         bold.setBold(True)
         italic = QFont()
         italic.setItalic(True)
+        regular = QFont()
         fmap = self._code.get_findex_map()
+
+        t = self._theme
+        dir_color = QColor(t.subtext) if t else None  # matches package nodes in By Class
+        file_color = QColor(t.teal) if t else None  # matches class nodes in By Class
 
         # Pre-filter to the set of files that actually have visible classes/methods,
         # keyed by full path so we can build a directory trie out of them.
@@ -294,7 +300,9 @@ class FunctionList(QWidget):
         def add_file_item(parent: Any, file_path: str) -> None:
             display_name = file_path.replace("\\", "/").split("/")[-1]
             file_item = QTreeWidgetItem([display_name])
-            file_item.setFont(0, bold)
+            file_item.setFont(0, regular)
+            if file_color:
+                file_item.setForeground(0, QBrush(file_color))
             file_item.setToolTip(0, file_path)
             file_item.setData(0, Qt.ItemDataRole.UserRole, None)
 
@@ -325,6 +333,8 @@ class FunctionList(QWidget):
 
             dir_item = QTreeWidgetItem(["/".join(label_parts)])
             dir_item.setFont(0, bold)
+            if dir_color:
+                dir_item.setForeground(0, QBrush(dir_color))
             dir_item.setData(0, Qt.ItemDataRole.UserRole, None)
             _add_item(parent, dir_item)
             dir_item.setExpanded(True)
