@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import List, Optional, cast
 
@@ -85,6 +86,26 @@ def resolve_targets(code: Bytecode, word: str) -> List[XrefGroup]:
 
     xi = code.xref_index()
     si = code.search_index()
+
+    # A literal "f@N" token (as rendered in disasm — this is the only way a
+    # native, or any anonymous/ambiguously-named function, ever shows up as
+    # text) resolves directly by findex instead of going through name search,
+    # which is otherwise useless for natives: many share the same partial
+    # name (or none at all) and can't be told apart by name alone.
+    fref_match = re.fullmatch(r"f@(\d+)", word)
+    if fref_match:
+        findex = int(fref_match.group(1))
+        target = code.get_findex_map().get(findex)
+        if target is not None:
+            callers = xi.callers_of(findex)
+            groups.append(
+                XrefGroup(
+                    label=f"function {_func_label(code, findex)}",
+                    kind="function",
+                    sites=[_site_from_ref(code, r) for r in callers],
+                )
+            )
+        return groups
 
     # Functions — partial (method) and full name matches, deduped by findex.
     seen_findex: set[int] = set()

@@ -5,14 +5,19 @@ from __future__ import annotations
 import re
 from typing import List, Optional, Tuple
 
-from PySide6.QtCore import Signal
-from PySide6.QtGui import QColor, QFont, QTextCharFormat, QTextDocument
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QFont, QKeyEvent, QTextCharFormat, QTextCursor, QTextDocument
 from PySide6.QtWidgets import QWidget
 
 from ... import disasm
 from ...core import Bytecode, Function
 from ..themes import Theme
 from .decomp_view import DecompHighlighter, DecompView
+
+# f@N / g@N / t@N / e@N reference tokens, exactly as disasm.py renders them —
+# Qt's default word-under-cursor selection splits these on the '@' and only
+# ever grabs "f" or "231" alone, so xref lookups need this instead.
+_REF_TOKEN_RX = re.compile(r"[a-z]@\d+")
 
 
 class _Rule:
@@ -125,6 +130,7 @@ class DisasmView(DecompView):
     """Renders opcodes for every method of a class, mapping each op to its line."""
 
     function_focused = Signal(int)  # findex when cursor moves to a new function
+    xref_requested = Signal(int, str)  # findex, word/ref-token under cursor
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -214,3 +220,23 @@ class DisasmView(DecompView):
         if findex is not None and findex != self._focused_findex:
             self._focused_findex = findex
             self.function_focused.emit(findex)
+
+    def _word_at_cursor(self) -> str:
+        c = self.textCursor()
+        if c.hasSelection():
+            return c.selectedText().strip()
+        text = c.block().text()
+        col = c.positionInBlock()
+        for m in _REF_TOKEN_RX.finditer(text):
+            if m.start() <= col <= m.end():
+                return m.group(0)
+        c.select(QTextCursor.SelectionType.WordUnderCursor)
+        return c.selectedText()
+
+    def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
+        if isinstance(event, QKeyEvent) and not event.modifiers() and event.key() == Qt.Key.Key_X:
+            findex = self.findex_at_cursor()
+            if findex is not None:
+                self.xref_requested.emit(findex, self._word_at_cursor())
+                return
+        super().keyPressEvent(event)

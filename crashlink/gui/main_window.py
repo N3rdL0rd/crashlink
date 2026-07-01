@@ -42,6 +42,7 @@ from .widgets.cfg_view import CfgView
 from .widgets.class_view import ClassView
 from .widgets.function_list import FunctionList
 from .widgets.log_panel import LogPanel
+from .widgets.natives_view import NativesView
 from .widgets.sync_view import DISASM, PSEUDO, SPLIT, SyncView
 from .widgets.xref_panel import XrefPopup, resolve_targets, XrefGroup, XrefSite, _func_label
 
@@ -489,6 +490,8 @@ class MainWindow(QMainWindow):
         vm.addAction("Cycle view (split/disasm/decompiled)\tTab", self._cycle_view_mode)
         vm.addSeparator()
         vm.addAction("Find…\tCtrl+F", self._open_find)
+        vm.addSeparator()
+        vm.addAction("Natives Table", self._open_natives_tab)
 
         wm = mb.addMenu("Window")
         wm.addAction(self._nav_dock.toggleViewAction())
@@ -779,6 +782,40 @@ class MainWindow(QMainWindow):
         all_fi = sorted(fi for fi, (o, _, _) in reg.items() if destaticify(o.name.resolve(self._code)) == canonical)
         return class_key, canonical, all_fi
 
+    # ── Natives table ────────────────────────────────────────────────────────
+
+    _NATIVES_TAB_KEY = "__natives__"
+
+    def _open_natives_tab(self) -> None:
+        if self._code is None:
+            self._log_panel.warn("Open a bytecode file first.")
+            return
+        key = self._NATIVES_TAB_KEY
+        if key in self._open_tabs:
+            self._tabs.setCurrentIndex(self._open_tabs[key])
+            return
+
+        view = NativesView()
+        view.setProperty("class_key", key)
+        view.set_theme(self._theme)
+        view.load(self._code)
+        view.xref_requested.connect(self._on_native_xref_requested)
+
+        idx = self._tabs.addTab(view, "Natives")
+        self._tabs.setTabToolTip(idx, f"{len(self._code.natives)} natives")
+        self._open_tabs[key] = idx
+        self._add_close_btn(idx, key)
+        self._tabs.setCurrentIndex(idx)
+
+    def _on_native_xref_requested(self, findex: int) -> None:
+        if self._code is None:
+            return
+        word = f"f@{findex}"
+        groups = resolve_targets(self._code, word)
+        at = self.mapToGlobal(self.rect().center())
+        self._xref_popup.show_results(word, groups, at)
+        self._log_panel.result(f"Xrefs for '{word}': {len(groups)} target(s)")
+
     def _open_class_tab(self, class_key: str, display_name: str, all_fi: List[int], jump_to: int) -> None:
         assert self._code is not None
 
@@ -805,6 +842,7 @@ class MainWindow(QMainWindow):
         view.class_view.rename_requested.connect(self._on_rename_hotkey)
         view.class_view.xref_requested.connect(self._on_xref_hotkey)
         view.disasm_view.function_focused.connect(self._on_function_focused)
+        view.disasm_view.xref_requested.connect(self._on_xref_hotkey)
         view.comment_requested.connect(self._on_comment_hotkey)
 
         placeholder = [
@@ -1094,9 +1132,9 @@ class MainWindow(QMainWindow):
         if local_group is not None:
             groups.insert(0, local_group)
 
-        view = self._current_class_view()
-        if isinstance(view, ClassView):
-            at = view.mapToGlobal(view.cursorRect().bottomLeft())
+        view = self._find_target_view()  # whichever pane (disasm or pseudo) is active
+        if view is not None:
+            at = view.mapToGlobal(view.cursorRect().bottomLeft())  # type: ignore[attr-defined]
         else:
             at = self.mapToGlobal(self.rect().center())
         self._xref_popup.show_results(word, groups, at)
@@ -1215,7 +1253,7 @@ class MainWindow(QMainWindow):
         self._cfg_view.set_theme(theme)
         for i in range(self._tabs.count()):
             view = self._tabs.widget(i)
-            if isinstance(view, SyncView):
+            if isinstance(view, (SyncView, NativesView)):
                 view.set_theme(theme)
 
     # ── Inspector ─────────────────────────────────────────────────────────────
