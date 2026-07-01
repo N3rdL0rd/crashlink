@@ -1223,13 +1223,15 @@ class MainWindow(QMainWindow):
     # ── Help ─────────────────────────────────────────────────────────────────
 
     def _show_about(self) -> None:
+        link_color = self._theme.accent
         QMessageBox.about(
             self,
             "About crashlink",
             f"<h3>crashlink {VERSION}</h3>"
             "<p>A pure-Python HashLink bytecode disassembler, decompiler, and analysis toolkit.</p>"
             "<p>Author: N3rdL0rd<br>"
-            '<a href="https://github.com/N3rdL0rd/crashlink">github.com/N3rdL0rd/crashlink</a></p>',
+            f'<a href="https://github.com/N3rdL0rd/crashlink" style="color: {link_color};">'
+            "github.com/N3rdL0rd/crashlink</a></p>",
         )
 
     def _show_shortcuts(self) -> None:
