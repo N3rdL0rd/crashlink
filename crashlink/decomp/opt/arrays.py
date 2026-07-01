@@ -431,6 +431,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             accesses = self._find_temp_accesses(use, temp, arr_expr, idx_temp_map)
             if accesses:
                 new_use = self._replace_temp_accesses(use, accesses)
+                new_use.adopt(stmt)  # `stmt` (the bytes-temp definition) is dropped below
                 # Drop only the temp definition itself; the statements between
                 # it and the use (start+1..j-1) must stay in their original
                 # relative order *before* the (now-collapsed) use — moving the
@@ -770,6 +771,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
 
         literal = IRArrayLiteral(self.func.code, values)
         self._replace_child(use_stmt, anon_call, literal)
+        use_stmt.adopt(*stmts[start:i])  # alloc + element/store statements are dropped
         return use_stmt, i - start + 1
 
     def _is_empty_alloc_array(self, expr: IRStatement) -> bool:
@@ -853,6 +855,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
 
         literal = IRArrayLiteral(self.func.code, [])
         new_assign = IRAssign(self.func.code, s1.target, literal)
+        new_assign.adopt(s0, s1)
         return new_assign, 2
 
     def _index_shift(self, idx: IRStatement, local: IRLocal) -> Optional[int]:
@@ -1124,9 +1127,11 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
 
         if return_target is not None:
             new_assign = IRAssign(self.func.code, return_target, literal)
+            new_assign.adopt(*stmts[start : i + 1])
             return new_assign, i - start + 1
         else:
             new_return = IRReturn(self.func.code, literal)
+            new_return.adopt(*stmts[start : i + 1])
             return new_return, i - start + 1
 
     def _array_literal_is_worth_recovering(self, arr_local: IRLocal, stmts: List[IRStatement], end_idx: int) -> bool:
@@ -1278,6 +1283,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         # If the length was loaded into a temp immediately before the guard, drop
         # that temp as well; otherwise later passes can leave a dead assignment.
         preceding_to_pop = start - length_assign_idx
+        new_assign.adopt(*stmts[length_assign_idx : start + 1])
         return new_assign, 1, preceding_to_pop
 
     def _recover_constant_index(
@@ -1346,7 +1352,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             true_ok = True
         if not true_ok:
             return None
-        return IRAssign(self.func.code, s.target, first_arg), 1
+        return cast(IRStatement, IRAssign(self.func.code, s.target, first_arg).adopt(s)), 1
 
     @staticmethod
     def _expr_eq(a: Optional[IRExpression], b: Optional[IRExpression]) -> bool:

@@ -198,6 +198,7 @@ class IRPrimitiveJumpLifter(TraversingIROptimizer):
             bool_condition_expr = IRBoolExpr(loop.code, condition_type, left=left_expr, right=right_expr)
 
         # Replace the last statement (IRPrimitiveJump) with the new IRBoolExpr
+        bool_condition_expr.adopt(last_cond_stmt)
         loop.condition.statements[-1] = bool_condition_expr
         dbg_print(f"IRPrimitiveJumpLifter: Lifted jump to {bool_condition_expr}")
 
@@ -503,6 +504,8 @@ class IRConditionInliner(TraversingIROptimizer):
                             assign_next_stmt.expr = modified_rhs_expr
                             if used_outside:
                                 new_statements.append(current_stmt)
+                            else:
+                                assign_next_stmt.adopt(current_stmt)  # current_stmt's opcode is dropped
                             new_statements.append(assign_next_stmt)
                             i += 2
                             inlined_something = True
@@ -514,6 +517,7 @@ class IRConditionInliner(TraversingIROptimizer):
                                 f"IRCondInliner: Inlining {expr_to_inline} into IRReturn value (direct) for {assigned_local}"
                             )
                             return_stmt.value = expr_to_inline
+                            return_stmt.adopt(current_stmt)  # current_stmt's opcode is dropped
                             new_statements.append(next_stmt)
                             i += 2
                             inlined_something = True
@@ -526,6 +530,7 @@ class IRConditionInliner(TraversingIROptimizer):
                                     f"IRCondInliner: Inlining {expr_to_inline} into IRReturn expression for {assigned_local}"
                                 )
                                 return_stmt.value = modified_ret_val
+                                return_stmt.adopt(current_stmt)  # current_stmt's opcode is dropped
                                 new_statements.append(next_stmt)
                                 i += 2
                                 inlined_something = True
@@ -538,6 +543,9 @@ class IRConditionInliner(TraversingIROptimizer):
                             dbg_print(
                                 f"IRCondInliner: Inlining {expr_to_inline} into IRExpression statement {next_stmt} (now {modified_next_expr}) for {assigned_local}"
                             )
+                            # modified_next_expr may be a brand-new node replacing next_stmt
+                            # outright, so both original opcodes need to be carried forward.
+                            modified_next_expr.adopt(current_stmt, next_stmt)
                             new_statements.append(modified_next_expr)
                             i += 2
                             inlined_something = True
@@ -1137,6 +1145,8 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                                     dbg_print(f"Conservatively inlining assignment for temporary '{temp_local.name}'.")
                                     if inside_loop_body:
                                         new_statements.append(current_stmt)
+                                    else:
+                                        next_stmt.adopt(current_stmt)  # current_stmt is dropped
                                     new_statements.append(next_stmt)
                                     i += 2
                                     inlined = True
@@ -1218,15 +1228,22 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                     continue
 
                 any_substituted = False
+                substituted_into: List[IRStatement] = []
                 for subsequent_stmt in remaining_statements:
                     if self._substitute_in_statement(subsequent_stmt, temp_local, expr_to_inline):
                         any_substituted = True
+                        substituted_into.append(subsequent_stmt)
 
                 if not any_substituted:
                     continue
 
                 dbg_print(f"Aggressively inlining safe expression from temporary '{temp_local.name}'.")
                 if not inside_loop_body:
+                    # stmt is dropped below; every site the expression got inlined
+                    # into inherits its opcode (setdefault means whichever renders
+                    # first in output wins, so adopting onto all of them is safe).
+                    for target_stmt in substituted_into:
+                        target_stmt.adopt(stmt)
                     statements_to_remove.append(stmt)
                 made_change_in_pass = True
                 break

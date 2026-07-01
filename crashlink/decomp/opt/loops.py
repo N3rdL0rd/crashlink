@@ -173,6 +173,11 @@ class IRLoopRerollOptimizer(TraversingIROptimizer):
         new_body = IRBlock(self.func.code)
         new_body.statements = list(body)
         loop = IRForEachLoop(self.func.code, elem_local, array_literal, new_body)
+        # Only the first iteration's header+body statements survive as objects
+        # (reused for new_body above, keeping their own src_op_idxs intact);
+        # every other iteration's header/body copy is discarded here, so adopt
+        # those onto the loop itself rather than double-claiming the first one's.
+        loop.adopt(stmts[start], *stmts[h1:run_end])
         return loop, run_end - start
 
     def _header_assign(self, stmt: IRStatement) -> Optional[Tuple[IRLocal, int]]:
@@ -490,7 +495,11 @@ class IRForEachLoopOptimizer(TraversingIROptimizer):
                 return None
         new_body = IRBlock(loop.code)
         new_body.statements = list(rest)
-        return IRForEachLoop(loop.code, elem, arr, new_body), idx
+        foreach = IRForEachLoop(loop.code, elem, arr, new_body)
+        # `loop` (the while) and the two discarded body statements (array-index
+        # read + idx++) are dropped in favor of `foreach` and `rest` above.
+        foreach.adopt(loop, first, body.statements[1])
+        return foreach, idx
 
     def visit_block(self, block: IRBlock) -> None:
         made_change = True
@@ -515,6 +524,7 @@ class IRForEachLoopOptimizer(TraversingIROptimizer):
                         prev = new_statements[j]
                         if isinstance(prev, IRAssign) and prev.target == idx:
                             if isinstance(prev.expr, IRConst) and not self._expr_reads_local(prev.expr, idx):
+                                foreach_loop.adopt(prev)
                                 del new_statements[j]
                             break
                         if self._stmt_reads_local(prev, idx):
@@ -546,6 +556,7 @@ class IRForEachLoopOptimizer(TraversingIROptimizer):
                             if self._stmt_assigns_local(foreach_loop.body, arr_local):
                                 break
                             foreach_loop.array = prev.expr
+                            foreach_loop.adopt(prev)
                             del new_statements[j]
                             break
 
@@ -710,7 +721,11 @@ class IRIntRangeLoopOptimizer(TraversingIROptimizer):
                     return None
         new_body = IRBlock(loop.code)
         new_body.statements = list(rest)
-        return IRIntRangeLoop(loop.code, elem, idx, end_expr, new_body), idx
+        range_loop = IRIntRangeLoop(loop.code, elem, idx, end_expr, new_body)
+        # `loop` (the while) and the two discarded body statements (elem = idx,
+        # idx++) are dropped in favor of `range_loop` and `rest` above.
+        range_loop.adopt(loop, first, body.statements[1])
+        return range_loop, idx
 
     def visit_block(self, block: IRBlock) -> None:
         made_change = True
@@ -735,6 +750,7 @@ class IRIntRangeLoopOptimizer(TraversingIROptimizer):
                         if isinstance(prev, IRAssign) and prev.target == idx:
                             if not self._expr_reads_local(prev.expr, idx):
                                 range_loop.start = prev.expr
+                                range_loop.adopt(prev)
                                 del new_statements[j]
                             break
                         if self._stmt_reads_local(prev, idx):

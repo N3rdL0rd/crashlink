@@ -319,7 +319,7 @@ class IRRedundantRecomputeEliminator(TraversingIROptimizer):
                 and _structurally_equal(stmt.expr, nxt.expr)
             ):
                 new_statements.append(stmt)
-                new_statements.append(IRAssign(self.func.code, nxt.target, stmt.target))
+                new_statements.append(IRAssign(self.func.code, nxt.target, stmt.target).adopt(nxt))
                 i += 2
                 continue
             # `t = E; return E;` (or throw) — the terminator re-evaluates E
@@ -337,6 +337,7 @@ class IRRedundantRecomputeEliminator(TraversingIROptimizer):
                 and nxt.value is not None
                 and _structurally_equal(stmt.expr, nxt.value)
             ):
+                nxt.adopt(stmt)  # stmt is dropped; nxt (return/throw) is kept as-is below
                 i += 1
                 continue
             new_statements.append(stmt)
@@ -516,6 +517,7 @@ class IRVoidAssignOptimizer(TraversingIROptimizer):
                             )
 
                         expr_being_kept = stmt.expr
+                        expr_being_kept.adopt(stmt)  # opcode was tagged on the assign, not its expr
                         new_statements.append(expr_being_kept)
                         made_change_this_pass = True
                         continue
@@ -714,6 +716,7 @@ class IRDeadTempEliminator(IROptimizer):
                     and isinstance(stmt.expr.target, IRConst)
                     and isinstance(stmt.expr.target.value, Function)
                 ):
+                    stmt.expr.adopt(stmt)  # opcode was tagged on the assign, not its expr
                     new_stmts.append(stmt.expr)
                 continue
             new_stmts.append(stmt)
@@ -944,6 +947,7 @@ class IRSequentialTempFolder(TraversingIROptimizer):
                     if not replaced:
                         i += 1
                         continue
+                nxt.adopt(stmt)  # stmt is dropped, folded into nxt's RHS
                 block.statements.pop(i)
                 changed = True
         for stmt in block.statements:
@@ -1093,6 +1097,7 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
             ):
                 if self._has_side_effects(stmt.expr):
                     # Keep the side effects as a bare expression statement.
+                    stmt.expr.adopt(stmt)  # opcode was tagged on the assign, not its expr
                     new_stmts.append(stmt.expr)
                     live.update(uses)
                 # else: drop the dead assignment entirely.
@@ -1515,7 +1520,9 @@ class IRGuardOrMerger(TraversingIROptimizer):
             return None
         if _stmt_lists_structurally_equal(outer_true, inner.true_block.statements):
             or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, stmt.condition, inner.condition)
-            return IRConditional(self.func.code, or_cond, inner.true_block, inner.false_block)
+            merged = IRConditional(self.func.code, or_cond, inner.true_block, inner.false_block)
+            merged.adopt(stmt, inner)
+            return merged
         return None
 
     def _try_merge_sibling(
@@ -1539,7 +1546,12 @@ class IRGuardOrMerger(TraversingIROptimizer):
         or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, not_a, inner.condition)
         rest_block = IRBlock(self.func.code)
         rest_block.statements = outer_true[1:]
-        return IRConditional(self.func.code, or_cond, inner.true_block, rest_block), len(inner_true)
+        merged = IRConditional(self.func.code, or_cond, inner.true_block, rest_block)
+        # The consumed parent-block siblings duplicate inner_true's *content*
+        # (that's the merge precondition) but are distinct compiled copies with
+        # their own opcodes, same as stmt/inner themselves being replaced.
+        merged.adopt(stmt, inner, *following[: len(inner_true)])
+        return merged, len(inner_true)
 
     def _try_merge_sibling_and(
         self, stmt: IRConditional, following: List[IRStatement]
@@ -1564,6 +1576,7 @@ class IRGuardOrMerger(TraversingIROptimizer):
             return None
         and_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.AND, stmt.condition, inner.condition)
         merged = IRConditional(self.func.code, and_cond, inner.true_block, inner.false_block)
+        merged.adopt(stmt, inner, *following[: len(wanted)])
         return merged, len(inner_false)
 
     def _invert(self, cond: IRExpression) -> IRExpression:

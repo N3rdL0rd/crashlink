@@ -128,7 +128,9 @@ class IRIntSwitchOptimizer(TraversingIROptimizer):
         default: Optional[IRBlock] = None
         local: Optional[IRLocal] = None
         current: Optional[IRStatement] = stmt
+        chain: List[IRStatement] = []
         while isinstance(current, IRConditional):
+            chain.append(current)
             cond = current.condition
             if not isinstance(cond, IRBoolExpr) or cond.op not in (
                 IRBoolExpr.CompareType.EQ,
@@ -170,7 +172,7 @@ class IRIntSwitchOptimizer(TraversingIROptimizer):
             return None
         if default is None:
             default = IRBlock(self.func.code)
-        return IRSwitch(self.func.code, local, cases, default)
+        return cast(IRSwitch, IRSwitch(self.func.code, local, cases, default).adopt(*chain))
 
 
 class IRStringSwitchOptimizer(TraversingIROptimizer):
@@ -211,6 +213,7 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
                             break
                         switch.cases.update(next_switch.cases)
                         switch.default = next_switch.default
+                        switch.adopt(next_switch)
                         tail = next_tail
                         i += 1
                     # Whatever's left once the chain stops matching is exactly
@@ -245,10 +248,12 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
         parsed = self._parse_compare_chain(len_cond.true_block, s_local, temp_local, collect_tail=True)
         if parsed is None:
             return None
-        cases, default, tail = parsed
+        cases, default, tail, consumed = parsed
         if not default.statements:
             default = stmt.false_block
-        return IRSwitch(self.func.code, s_local, cases, default), tail
+        new_switch = IRSwitch(self.func.code, s_local, cases, default)
+        new_switch.adopt(stmt, len_cond, *consumed)
+        return new_switch, tail
 
     def _match_null_check(self, cond: IRExpression) -> Optional[IRLocal]:
         if (
@@ -308,7 +313,7 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
         s_local: IRLocal,
         temp_local: IRLocal,
         collect_tail: bool = False,
-    ) -> Optional[Tuple[Dict[IRConst, IRBlock], IRBlock, List[IRStatement]]]:
+    ) -> Optional[Tuple[Dict[IRConst, IRBlock], IRBlock, List[IRStatement], List[IRStatement]]]:
         if not block.statements:
             return None
         compare_idx: Optional[int] = None
@@ -376,9 +381,9 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
                 default = inner_switch.default
                 if not tail and collect_tail:
                     tail = inner_tail
-                return cases, default, tail
+                return cases, default, tail, [assign, compare_cond, inner_switch]
         default = rest
-        return cases, default, tail
+        return cases, default, tail, [assign, compare_cond]
 
 
 class IREnumSwitchOptimizer(TraversingIROptimizer):
@@ -450,4 +455,5 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
             new_cases[new_case_val] = case_block
 
         new_switch = IRSwitch(self.func.code, enum_value, new_cases, next_stmt.default)
+        new_switch.adopt(stmt, next_stmt)
         return new_switch, 2

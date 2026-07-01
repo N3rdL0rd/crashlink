@@ -217,6 +217,7 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
         if count_ref_local.name == int_arg.name:
             if consumed_stmt is not None:
                 self._consumed.add(id(consumed_stmt))
+                self._target_stmt.adopt(consumed_stmt)
             return value_local
 
         # Indirect match: count_ref = &int_arg (before IRConditionInliner runs, the Ref
@@ -227,6 +228,7 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
                 if ref_defn.expr.target.name == int_arg.name:
                     if consumed_stmt is not None:
                         self._consumed.add(id(consumed_stmt))
+                        self._target_stmt.adopt(consumed_stmt)
                     return value_local
 
         return None
@@ -249,6 +251,7 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
                 if isinstance(stmt.target, IRLocal):
                     current_assigns[stmt.target.name] = stmt
                 if isinstance(stmt.expr, IRExpression):
+                    self._target_stmt = stmt
                     stmt.expr = self._rewrite_expr(stmt.expr, current_assigns)
 
         # A bytes-temp assignment fully consumed by a collapse above is now
@@ -435,6 +438,7 @@ class IRStringAllocOptimizer(TraversingIROptimizer):
                             target,
                             [bytes_expr, length_expr],
                         )
+                        stmt.adopt(block.statements[bytes_idx], block.statements[len_idx])
                         remove.add(bytes_idx)
                         remove.add(len_idx)
                         i = len_idx + 1
@@ -473,8 +477,18 @@ class IRTraceOptimizer(TraversingIROptimizer):
                     branched = self._try_branched_trace(stmt, block.statements, i)
                     if branched is not None:
                         true_tail, false_tail, msg_true, msg_false, pos_true, pos_false, consumed_after = branched
-                        stmt.true_block.statements = true_tail + [IRTrace(self.func.code, msg_true, pos_true)]
-                        stmt.false_block.statements = false_tail + [IRTrace(self.func.code, msg_false, pos_false)]
+                        old_true_stmts = stmt.true_block.statements
+                        old_false_stmts = stmt.false_block.statements
+                        true_trace = IRTrace(self.func.code, msg_true, pos_true)
+                        false_trace = IRTrace(self.func.code, msg_false, pos_false)
+                        true_trace.adopt(*old_true_stmts[len(true_tail) :])
+                        false_trace.adopt(*old_false_stmts[len(false_tail) :])
+                        stmt.true_block.statements = true_tail + [true_trace]
+                        stmt.false_block.statements = false_tail + [false_trace]
+                        # The shared position-field assigns + hoisted call after the
+                        # conditional are dropped outright; fold their opcodes onto
+                        # the conditional itself since neither branch alone owns them.
+                        stmt.adopt(*block.statements[i + 1 : i + 1 + consumed_after])
                         new_statements.append(stmt)
                         i += 1 + consumed_after
                         made_change = True
@@ -482,6 +496,7 @@ class IRTraceOptimizer(TraversingIROptimizer):
 
                 temp_local = None
                 start_idx = i
+                extra_adopt: List[IRStatement] = []
 
                 if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
                     if isinstance(stmt.expr, IRNew) and stmt.expr.get_type().definition.__class__ == DynObj:
@@ -584,6 +599,7 @@ class IRTraceOptimizer(TraversingIROptimizer):
                         ):
                             # inline if this is obviously compiler-generated (one use, right before the call, has no user assign)
                             _popped = new_statements.pop()
+                            extra_adopt.append(_popped)
                             msg_expr = _popped.expr if isinstance(_popped, IRAssign) else msg_expr
                         resolved_pos: Dict[str, Any] = {}
                         for k, v in pos_info.items():
@@ -603,6 +619,7 @@ class IRTraceOptimizer(TraversingIROptimizer):
                             else:
                                 resolved_pos[k] = v
                         trace_stmt = IRTrace(self.func.code, msg_expr, resolved_pos)
+                        trace_stmt.adopt(*block.statements[i : j + 1], *extra_adopt)
                         new_statements.append(trace_stmt)
 
                         i = j + 1
@@ -879,6 +896,7 @@ class IRStringConcatFolder(TraversingIROptimizer):
         else:
             return None
 
+        new_use.adopt(*statements[start : use_idx + 1])
         return new_use, use_idx - start + 1
 
     def _is_string_expr(self, expr: IRExpression) -> bool:
