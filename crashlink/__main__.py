@@ -57,6 +57,18 @@ from .opcodes import opcode_docs, opcodes
 from .pseudo import pseudo
 from hlrun.patch import Patch
 
+_SUBCOMMAND_HELP: Dict[str, str] = {
+    "gui": "Launch the graphical bytecode inspector",
+    "hlc": "Transpile HashLink bytecode to C and emit a matching build script",
+    "mcp": "Run crashlink as an MCP server for AI-assisted analysis",
+    "info": "Print summary information about a bytecode file",
+    "disasm": "Disassemble a function from a bytecode file",
+    "search": "Search strings in a bytecode file",
+    "funcs": "List functions in a bytecode file",
+    "decompile": "Decompile a function or class to pseudo-Haxe (EXPERIMENTAL)",
+    "db": "Work with .cldb analysis databases",
+}
+
 
 def _make_progress_cb() -> "Optional[ProgressCallback]":
     if not USE_TQDM:
@@ -2214,6 +2226,21 @@ def mcp_main(argv: List[str]) -> None:
     run_mcp_server(preload_path=preload)
 
 
+def _print_help_all(parser: "argparse.ArgumentParser", subcommands: Dict[str, Callable[[List[str]], None]]) -> None:
+    """Print the top-level help, then each subcommand's own -h output."""
+    print(parser.format_help())
+
+    for name in _SUBCOMMAND_HELP:
+        print(f"\n{'=' * 70}\ncrashlink {name}\n{'=' * 70}")
+        if name == "gui":
+            print("Launch the graphical bytecode inspector.\n\nusage: crashlink gui [file]")
+            continue
+        try:
+            subcommands[name](["-h"])
+        except SystemExit:
+            pass
+
+
 def main() -> None:
     """
     Main entrypoint.
@@ -2239,7 +2266,21 @@ def main() -> None:
         _subcommands[sys.argv[1]](sys.argv[2:])
         return
 
-    parser = argparse.ArgumentParser(description=f"crashlink CLI ({VERSION})", prog="crashlink")
+    epilog_lines = ["subcommands:"]
+    epilog_lines += [f"  {name:<11}{desc}" for name, desc in _SUBCOMMAND_HELP.items()]
+    epilog_lines += [
+        "",
+        "Run 'crashlink <subcommand> -h' for subcommand-specific help.",
+        "",
+        "Without a subcommand, 'file' is opened directly for the options below",
+        "(interactive REPL via -c, raw opcode patching via -p, assembly via -a).",
+    ]
+    parser = argparse.ArgumentParser(
+        description=f"crashlink CLI ({VERSION})",
+        prog="crashlink",
+        epilog="\n".join(epilog_lines),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument(
         "file",
         help="The file to operate on.",
@@ -2286,6 +2327,18 @@ def main() -> None:
         help="Extracts information about a compiled HL/C binary. Requires debug information (PDB for PE, DWARF for ELF)",
         action="store_true",
     )
+    parser.add_argument(
+        "--help-all",
+        help="Print this help plus the -h output for every subcommand, then exit",
+        action="store_true",
+    )
+
+    # --help-all needs handling before parse_args(): 'file' is otherwise required,
+    # so 'crashlink --help-all' alone would fail argparse's own validation first.
+    if "--help-all" in sys.argv:
+        _print_help_all(parser, _subcommands)
+        return
+
     args = parser.parse_args()
 
     if args.debug:
@@ -2313,7 +2366,7 @@ def main() -> None:
             from .dehlc import code_from_bin
 
             print(
-                "crashlink De-HL/C is IN DEVELOPMENT. Use at your own risk. Only x86 is well-supported, ARM is a work in progress."
+                "crashlink De-HL/C is EXPERIMENTAL. Use at your own risk. Only x86 is well-supported, ARM is a work in progress."
             )
             print(
                 "This will produce an in-memory bytecode image. If you want to work with any extracted information externally, use `save` to serialise it to the disk first."
