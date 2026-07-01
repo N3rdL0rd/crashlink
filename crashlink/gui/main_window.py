@@ -7,7 +7,7 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QRect, QRunnable, QSettings, QThread, QThreadPool, QTimer, Qt, Signal, QObject, QSize
-from PySide6.QtGui import QColor, QCursor, QKeyEvent, QPainter, QPalette, QTextCursor, QTextDocument
+from PySide6.QtGui import QColor, QPainter, QTextCursor, QTextDocument
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -489,8 +489,6 @@ class MainWindow(QMainWindow):
         vm.addAction("Cycle view (split/disasm/decompiled)\tTab", self._cycle_view_mode)
         vm.addSeparator()
         vm.addAction("Find…\tCtrl+F", self._open_find)
-        vm.addSeparator()
-        vm.addAction("Inspect widget under cursor\tCtrl+Shift+I", self._inspect_widget)
 
         wm = mb.addMenu("Window")
         wm.addAction(self._nav_dock.toggleViewAction())
@@ -1240,7 +1238,6 @@ class MainWindow(QMainWindow):
             ("Ctrl+S", "Save the analysis database (.cldb)"),
             ("Ctrl+F", "Find in the active disasm/pseudocode pane"),
             ("Ctrl+Q", "Quit"),
-            ("Ctrl+Shift+I", "Inspect widget under cursor"),
             ("Tab", "Cycle split / disassembly / decompiled view"),
             ("N", "Rename the local under the cursor (pseudocode pane)"),
             ("X", "Show cross-references for the word under the cursor"),
@@ -1248,45 +1245,13 @@ class MainWindow(QMainWindow):
             ("Up / Down", "REPL command history (when the REPL input is focused)"),
         ]
         rows_html = "".join(f"<tr><td><b>{key}</b></td><td>&nbsp;&nbsp;{desc}</td></tr>" for key, desc in rows)
-        QMessageBox.information(self, "Keyboard Shortcuts", f"<table>{rows_html}</table>")
-
-    def _inspect_widget(self) -> None:
-        pos = QCursor.pos()
-        widget = QApplication.widgetAt(pos)
-        if widget is None:
-            QMessageBox.information(self, "Inspector", "No widget under cursor.")
-            return
-
-        lines = []
-        w: Optional[QWidget] = widget
-        while w is not None:
-            pal = w.palette()
-            win_col = pal.color(QPalette.ColorRole.Window).name()
-            btn_col = pal.color(QPalette.ColorRole.Button).name()
-            lines.append(
-                f"{type(w).__name__}  name={w.objectName()!r}\n"
-                f"  geom={w.geometry()}  rect={w.rect()}\n"
-                f"  autoFill={w.autoFillBackground()}  WA_Styled={w.testAttribute(Qt.WidgetAttribute.WA_StyledBackground)}\n"
-                f"  palette.Window={win_col}  palette.Button={btn_col}\n"
-                f"  styleSheet={w.styleSheet()[:80]!r}"
-            )
-            parent = w.parent()
-            w = parent if isinstance(parent, QWidget) else None
-
-        msg = "\n─────\n".join(lines)
         box = QMessageBox(self)
-        box.setWindowTitle(f"Inspector @ {pos.x()},{pos.y()}")
-        box.setText(msg)
+        box.setWindowTitle("Keyboard Shortcuts")
+        box.setText(f"<table>{rows_html}</table>")
+        # QMessageBox ignores resize()/setFixedWidth() directly — widening its
+        # internal label is the standard way to give it a bit more breathing room.
+        box.setStyleSheet("QLabel{min-width: 400px;}")
         box.exec()
-
-    def keyPressEvent(self, event: object) -> None:
-        if isinstance(event, QKeyEvent):
-            if event.key() == Qt.Key.Key_I and event.modifiers() == (
-                Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
-            ):
-                self._inspect_widget()
-                return
-        super().keyPressEvent(event)  # type: ignore[arg-type]
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
