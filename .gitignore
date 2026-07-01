@@ -50,3 +50,8 @@ test_out/
 /decomp_sweep.py
 *.cldb
 /Heaps3D*
+res.pak
+steam_appid.txt
+save/
+logs/
+/hlboot
