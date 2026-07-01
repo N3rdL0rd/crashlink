@@ -490,13 +490,13 @@ class MainWindow(QMainWindow):
         vm.addAction("Cycle view (split/disasm/decompiled)\tTab", self._cycle_view_mode)
         vm.addSeparator()
         vm.addAction("Find…\tCtrl+F", self._open_find)
-        vm.addSeparator()
-        vm.addAction("Natives Table", self._open_natives_tab)
 
         wm = mb.addMenu("Window")
         wm.addAction(self._nav_dock.toggleViewAction())
         wm.addAction(self._log_dock.toggleViewAction())
         wm.addAction(self._cfg_dock.toggleViewAction())
+        wm.addSeparator()
+        wm.addAction("Natives Table", self._open_natives_tab)
 
         hm = mb.addMenu("Help")
         hm.addAction("Keyboard Shortcuts…", self._show_shortcuts)
