@@ -11,6 +11,7 @@ from PySide6.QtGui import QColor, QCursor, QKeyEvent, QPainter, QPalette
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
+    QDialog,
     QDockWidget,
     QFileDialog,
     QFrame,
@@ -25,6 +26,7 @@ from PySide6.QtWidgets import (
     QTabBar,
     QTabWidget,
     QToolButton,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -122,6 +124,31 @@ class _DecompRunnable(QRunnable):
             self.signals.error.emit(self._class_key, self._findex, str(e))
 
 
+class _IndexBuildSignals(QObject):
+    finished = Signal()
+    error = Signal(str)
+
+
+class _IndexBuildThread(QThread):
+    """Builds the xref/search/source-map indices off the UI thread — the first
+    access to any of them otherwise blocks the caller for however long the
+    (uncached) build takes, which for the xref index in particular walks
+    every opcode in every function."""
+
+    def __init__(self, worker: AnalysisWorker, code: Bytecode) -> None:
+        super().__init__()
+        self._worker = worker
+        self._code = code
+        self.signals = _IndexBuildSignals()
+
+    def run(self) -> None:
+        try:
+            self._worker.build_indices(self._code).result()
+            self.signals.finished.emit()
+        except Exception as e:
+            self.signals.error.emit(str(e))
+
+
 # ── Main window ───────────────────────────────────────────────────────────────
 
 
@@ -145,6 +172,62 @@ class _TabBar(QTabBar):
             p = QPainter(self)
             p.fillRect(QRect(empty_x, 0, self.width() - empty_x, self.height()), self._fill)
             p.end()
+
+
+class _WaitBox(QDialog):
+    """A small "Please wait…" popup with a one-line status message."""
+
+    def __init__(self, parent: Optional[QWidget]) -> None:
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
+        self.setModal(False)  # informational only — never block input to the app
+        self.setFixedSize(280, 70)
+
+        layout = QVBoxLayout(self)
+        self._label = QLabel("Please wait…")
+        self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self._label)
+
+    def set_action(self, action: str) -> None:
+        self._label.setText(f"Please wait…\n{action}")
+
+    def show(self) -> None:  # type: ignore[override]
+        super().show()
+        if self.parentWidget() is not None:
+            parent_center = self.parentWidget().geometry().center()
+            self.move(parent_center - self.rect().center())
+
+
+class _BusyIndicator:
+    """Shows a `_WaitBox` only if an operation is still running after `delay_ms`
+    (default 2s) — quick operations never flash a dialog at all."""
+
+    def __init__(self, parent: QWidget, delay_ms: int = 2000) -> None:
+        self._parent = parent
+        self._delay_ms = delay_ms
+        self._box: Optional[_WaitBox] = None
+        self._timer = QTimer(parent)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self._reveal)
+        self._pending_action = ""
+
+    def start(self, action: str) -> None:
+        self._pending_action = action
+        if self._box is not None and self._box.isVisible():
+            self._box.set_action(action)
+        else:
+            self._timer.start(self._delay_ms)
+
+    def stop(self) -> None:
+        self._timer.stop()
+        if self._box is not None:
+            self._box.hide()
+
+    def _reveal(self) -> None:
+        if self._box is None:
+            self._box = _WaitBox(self._parent)
+        self._box.set_action(self._pending_action)
+        self._box.show()
 
 
 class MainWindow(QMainWindow):
@@ -182,12 +265,17 @@ class MainWindow(QMainWindow):
         # to skip the "decompiling…" flash; a real decompile still runs to warm _ir_cache
         self._db_cache: Dict[int, Tuple[str, Dict[int, int]]] = {}
         self._db_load_thread: Optional[_DbLoadThread] = None
+        self._index_build_thread: Optional[_IndexBuildThread] = None
+        # Number of _DecompRunnables currently in flight, so the busy indicator
+        # only hides once every concurrent decompile in a batch has finished.
+        self._active_decompiles = 0
 
         self._build_ui()
         self._build_menu()
         self._apply_theme(self._theme)
         set_dbg_callback(self._log_panel.info)
         self._log_panel.set_context(mw=self, code=None)
+        self._busy = _BusyIndicator(self)
 
     # ── UI ────────────────────────────────────────────────────────────────────
 
@@ -333,6 +421,7 @@ class MainWindow(QMainWindow):
         self._progress_bar.setVisible(True)
         self._progress_bar.setValue(0)
         self._status_label.setText(f"Loading {path}…")
+        self._busy.start("Reading bytecode…")
 
         self._load_thread = _LoadThread(path)
         self._load_thread.signals.progress.connect(self._on_load_progress)
@@ -347,6 +436,7 @@ class MainWindow(QMainWindow):
     def _on_load_finished(self, code: Bytecode) -> None:
         self._code = code
         self._progress_bar.setVisible(False)
+        self._busy.stop()
         n = len(code.functions)
         self._status_label.setText(f"Loaded, {n} functions")
         self._log_panel.info(f"Loaded, {n} functions")
@@ -358,8 +448,17 @@ class MainWindow(QMainWindow):
         if os.path.exists(cldb_path):
             self._load_database_from(cldb_path)
 
+        # Pre-warm the xref/search/source-map indices in the background so the
+        # first 'X' lookup doesn't stall the UI thread building them on demand.
+        self._busy.start("Building xref table…")
+        self._index_build_thread = _IndexBuildThread(self._worker, code)
+        self._index_build_thread.signals.finished.connect(self._busy.stop)
+        self._index_build_thread.signals.error.connect(lambda msg: self._busy.stop())
+        self._index_build_thread.start()
+
     def _on_load_error(self, msg: str) -> None:
         self._progress_bar.setVisible(False)
+        self._busy.stop()
         self._status_label.setText(f"Error: {msg}")
 
     # ── Analysis database (.cldb) ───────────────────────────────────────────────
@@ -509,12 +608,23 @@ class MainWindow(QMainWindow):
 
         # Kick off decompile for every method concurrently
         for fi in all_fi:
-            r = _DecompRunnable(self._worker, self._code, class_key, fi)
-            r.signals.finished.connect(self._on_decompile_finished)
-            r.signals.error.connect(self._on_decompile_error)
-            QThreadPool.globalInstance().start(r)
+            self._start_decompile(class_key, fi)
 
         self._status_label.setText(f"Decompiling {display_name} ({len(all_fi)} methods)…")
+
+    def _start_decompile(self, class_key: str, findex: int) -> None:
+        assert self._code is not None
+        self._active_decompiles += 1
+        self._busy.start("Decompiling…")
+        r = _DecompRunnable(self._worker, self._code, class_key, findex)
+        r.signals.finished.connect(self._on_decompile_finished)
+        r.signals.error.connect(self._on_decompile_error)
+        QThreadPool.globalInstance().start(r)
+
+    def _decompile_batch_done(self) -> None:
+        self._active_decompiles = max(0, self._active_decompiles - 1)
+        if self._active_decompiles == 0:
+            self._busy.stop()
 
     def _add_close_btn(self, tab_idx: int, class_key: str) -> None:
         btn = QToolButton()
@@ -566,6 +676,7 @@ class MainWindow(QMainWindow):
     # ── Decompilation callbacks ───────────────────────────────────────────────
 
     def _on_decompile_finished(self, class_key: str, findex: int, ir: object) -> None:
+        self._decompile_batch_done()
         if not isinstance(ir, IRFunction):
             return
 
@@ -600,6 +711,7 @@ class MainWindow(QMainWindow):
             self._status_label.setText(f"{name}, {len(results)} methods")
 
     def _on_decompile_error(self, class_key: str, findex: int, msg: str) -> None:
+        self._decompile_batch_done()
         if class_key not in self._class_results:
             return
         err_text = f"class ? {{\n    // f@{findex} error: {msg}\n}}"
@@ -725,10 +837,7 @@ class MainWindow(QMainWindow):
             if findex in fi_list:
                 if class_key in self._class_results:
                     self._class_results[class_key][findex] = None
-                r = _DecompRunnable(self._worker, self._code, class_key, findex)
-                r.signals.finished.connect(self._on_decompile_finished)
-                r.signals.error.connect(self._on_decompile_error)
-                QThreadPool.globalInstance().start(r)
+                self._start_decompile(class_key, findex)
                 break
 
     # ── Comments (/) ─────────────────────────────────────────────────────────
