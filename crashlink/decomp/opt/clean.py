@@ -68,6 +68,7 @@ from ..ir import (
     IRNativeMapNew,
     IRCast,
     IRArrayLiteral,
+    IRObjectLiteral,
     IRArrayAccess,
     IRRef,
     IREnumConstruct,
@@ -1394,6 +1395,202 @@ class IRConstructorFolder(TraversingIROptimizer):
         if expr == local:
             return True
         return any(self._expr_uses_local(child, local) for child in expr.get_children())
+
+
+class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
+    """
+    Folds `temp = {}; temp.f1 = e1; temp.f2 = e2; ...; use(temp)` into
+    `use({f1: e1, f2: e2, ...})`, wherever the anonymous object has exactly
+    one further reference and it's the very next statement.
+
+    HashLink lowers every Haxe anonymous-object literal to a `{}` allocation
+    followed by one field-assignment per key. `IRTraceOptimizer` already
+    special-cases this for `trace()`'s implicit position argument; this pass
+    generalizes it to any consumer — most notably the same `?pos:haxe.
+    PosInfos` argument the compiler silently attaches to any function that
+    declares one (e.g. every `haxe.PosException` subclass constructor),
+    which otherwise bloats a two-line `throw new SomeException();` into six
+    lines of DynObj scaffolding.
+    """
+
+    TARGET_OPCODES = {"New"}
+
+    def visit_block(self, block: IRBlock) -> None:
+        made_change = True
+        while made_change:
+            made_change = False
+            new_statements: List[IRStatement] = []
+            i = 0
+            while i < len(block.statements):
+                match = self._try_fold(block.statements, i)
+                if match is not None:
+                    consumer, consumed = match
+                    new_statements.append(consumer)
+                    i += consumed
+                    made_change = True
+                    continue
+                new_statements.append(block.statements[i])
+                i += 1
+            block.statements = new_statements
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
+    def _try_fold(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int]]:
+        stmt = stmts[start]
+        if not isinstance(stmt, IRAssign) or not isinstance(stmt.target, IRLocal):
+            return None
+        if not isinstance(stmt.expr, IRNew) or stmt.expr.constructor_args:
+            return None
+        # Anonymous-object allocations show up as either a generic DynObj or,
+        # when the compiler can infer the exact field set statically (as it
+        # always can for the fixed fileName/lineNumber/className/methodName
+        # shape of `?pos:haxe.PosInfos`), a structural Virtual type. A real
+        # `new SomeClass()` allocation is always an Obj, never either of these.
+        alloc_defn = stmt.expr.get_type().definition
+        if not isinstance(alloc_defn, (DynObj, Virtual)):
+            return None
+        temp = stmt.target
+
+        fields: List[Tuple[str, IRExpression]] = []
+        j = start + 1
+        while j < len(stmts):
+            s = stmts[j]
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRField)
+                and s.target.target == temp
+                and isinstance(s.expr, IRExpression)
+                and not self._expr_uses_local(s.expr, temp)
+            ):
+                fields.append((s.target.field_name, s.expr))
+                j += 1
+                continue
+            break
+
+        if not fields or j >= len(stmts):
+            return None
+
+        use_stmt = stmts[j]
+        if self._count_local_refs(use_stmt, temp) != 1:
+            return None
+        for later in stmts[j + 1 :]:
+            if self._stmt_uses_local(later, temp):
+                return None
+
+        literal = IRObjectLiteral(self.func.code, fields)
+        if not self._substitute_use(use_stmt, temp, literal):
+            return None
+        use_stmt.adopt(*stmts[start:j])  # the alloc + field-assign statements are dropped
+        return use_stmt, j - start + 1
+
+    def _substitute_use(self, stmt: IRStatement, local: IRLocal, replacement: IRExpression) -> bool:
+        if isinstance(stmt, IRAssign):
+            changed = False
+            if stmt.expr == local:
+                stmt.expr = replacement
+                changed = True
+            elif isinstance(stmt.expr, IRExpression) and self._replace_in_expr(stmt.expr, local, replacement):
+                changed = True
+            if isinstance(stmt.target, IRExpression) and stmt.target != local:
+                if self._replace_in_expr(stmt.target, local, replacement):
+                    changed = True
+            return changed
+        if isinstance(stmt, (IRReturn, IRThrow)):
+            if stmt.value == local:
+                stmt.value = replacement
+                return True
+            if stmt.value is not None:
+                return self._replace_in_expr(stmt.value, local, replacement)
+            return False
+        if isinstance(stmt, IRExpression):
+            return self._replace_in_expr(stmt, local, replacement)
+        return False
+
+    def _replace_in_expr(self, expr: IRExpression, local: IRLocal, replacement: IRExpression) -> bool:
+        made_change = False
+        for i, child in enumerate(expr.get_children()):
+            if not isinstance(child, IRExpression):
+                continue
+            if child == local:
+                if self._set_child(expr, i, replacement):
+                    made_change = True
+                continue
+            if self._replace_in_expr(child, local, replacement):
+                made_change = True
+        return made_change
+
+    def _set_child(self, parent: IRExpression, index: int, value: IRExpression) -> bool:
+        children = parent.get_children()
+        if index >= len(children):
+            return False
+        child = children[index]
+        if isinstance(parent, (IRArithmetic, IRBoolExpr)):
+            if child is parent.left:
+                parent.left = value
+                return True
+            if child is parent.right:
+                parent.right = value
+                return True
+        elif isinstance(parent, IRCall):
+            if parent.target is child:
+                parent.target = cast(Any, value)
+                return True
+            for j, arg in enumerate(parent.args):
+                if arg is child:
+                    parent.args[j] = value
+                    return True
+        elif isinstance(parent, IRField):
+            if child is parent.target:
+                parent.target = value
+                return True
+        elif isinstance(parent, IRCast):
+            if child is parent.expr:
+                parent.expr = value
+                return True
+        elif isinstance(parent, IRArrayAccess):
+            if child is parent.array:
+                parent.array = value
+                return True
+            if child is parent.index:
+                parent.index = value
+                return True
+        elif isinstance(parent, IRNew):
+            for j, arg in enumerate(parent.constructor_args):
+                if arg is child:
+                    parent.constructor_args[j] = value
+                    return True
+        elif isinstance(parent, IREnumConstruct):
+            for j, arg in enumerate(parent.args):
+                if arg is child:
+                    parent.args[j] = value
+                    return True
+        elif isinstance(parent, IREnumField):
+            if child is parent.value:
+                parent.value = value
+                return True
+        elif isinstance(parent, IRArrayLiteral):
+            for j, element in enumerate(parent.elements):
+                if element is child:
+                    parent.elements[j] = value
+                    return True
+        elif isinstance(parent, IRRef):
+            if child is parent.target:
+                parent.target = value
+                return True
+        return False
+
+    def _count_local_refs(self, stmt: IRStatement, local: IRLocal) -> int:
+        if stmt == local:
+            return 1
+        return sum(self._count_local_refs(child, local) for child in stmt.get_children())
+
+    def _stmt_uses_local(self, stmt: IRStatement, local: IRLocal) -> bool:
+        return self._count_local_refs(stmt, local) > 0
+
+    def _expr_uses_local(self, expr: IRExpression, local: IRLocal) -> bool:
+        return self._count_local_refs(expr, local) > 0
 
 
 class IRShiftConstantOptimizer(TraversingIROptimizer):

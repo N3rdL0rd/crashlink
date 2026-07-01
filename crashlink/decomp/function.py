@@ -112,6 +112,7 @@ from .opt.clean import (
     IRSequentialTempFolder,
     IRDeadAssignmentEliminator,
     IRConstructorFolder,
+    IRAnonObjectLiteralOptimizer,
     IRShiftConstantOptimizer,
     IRGuardOrMerger,
 )
@@ -287,6 +288,7 @@ class IRFunction:
                 IRDeadCodeEliminator(self),
                 IRSelfAssignOptimizer(self),
                 IRTraceOptimizer(self),
+                IRAnonObjectLiteralOptimizer(self),
                 IRStringConcatFolder(self),
                 IRIntSwitchOptimizer(self),
                 IRStringSwitchOptimizer(self),

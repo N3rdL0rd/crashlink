@@ -40,6 +40,7 @@ from .decomp import (
     IRArrayAccess,
     IRRef,
     IRArrayLiteral,
+    IRObjectLiteral,
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
@@ -477,7 +478,12 @@ def _expression_to_haxe(
         elements = ", ".join(_expression_to_haxe(e, code, ir_function) for e in expr.elements)
         return f"[{elements}]"
 
+    elif isinstance(expr, IRObjectLiteral):
+        fields = ", ".join(f"{k}: {_expression_to_haxe(v, code, ir_function)}" for k, v in expr.fields)
+        return f"{{ {fields} }}" if fields else "{}"
+
     elif isinstance(expr, IRRef):
+        # TODO: handle IRRef more cleanly
         inner = _expression_to_haxe(expr.target, code, ir_function)
         return inner
 

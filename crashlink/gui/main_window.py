@@ -348,8 +348,8 @@ class MainWindow(QMainWindow):
         self._code = code
         self._progress_bar.setVisible(False)
         n = len(code.functions)
-        self._status_label.setText(f"Loaded — {n} functions")
-        self._log_panel.info(f"Loaded {n} functions")
+        self._status_label.setText(f"Loaded, {n} functions")
+        self._log_panel.info(f"Loaded, {n} functions")
         self._log_panel.set_context(code=code)
         self._func_list.load(code)
 
@@ -492,13 +492,11 @@ class MainWindow(QMainWindow):
         view.disasm_view.function_focused.connect(self._on_function_focused)
         view.comment_requested.connect(self._on_comment_hotkey)
 
-        # Render immediately — cached text where a .cldb supplied it, else a placeholder.
         placeholder = [
             (fi, self._class_results[class_key][fi] or f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}")
             for fi in all_fi
         ]
         view.load_pseudo(display_name, placeholder)
-        # Disasm needs no decompile — render straight from opcodes.
         findex_map = self._code.get_findex_map()
         view.load_disasm(self._code, [(fi, findex_map[fi]) for fi in all_fi if fi in findex_map])
 
@@ -599,7 +597,7 @@ class MainWindow(QMainWindow):
         pending = sum(1 for v in results.values() if v is None)
         if pending == 0:
             name = self._class_names.get(class_key, class_key)
-            self._status_label.setText(f"{name} — {len(results)} methods")
+            self._status_label.setText(f"{name}, {len(results)} methods")
 
     def _on_decompile_error(self, class_key: str, findex: int, msg: str) -> None:
         if class_key not in self._class_results:
@@ -687,7 +685,7 @@ class MainWindow(QMainWindow):
             return
         ir = self._ir_cache.get(findex)
         if not isinstance(ir, IRFunction):
-            self._log_panel.error("Cannot rename — function not yet decompiled")
+            self._log_panel.error("Cannot rename, function not yet decompiled")
             return
 
         # Find locals matching word under cursor

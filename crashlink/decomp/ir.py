@@ -1025,6 +1025,32 @@ class IRArrayLiteral(IRExpression):
         return f"<IRArrayLiteral: [{', '.join(repr(e) for e in self.elements)}]>"
 
 
+class IRObjectLiteral(IRExpression):
+    """Represents a Haxe anonymous object literal, e.g. `{ foo: 1, bar: "x" }`.
+
+    HashLink always lowers these to `{}` (an empty DynObj allocation) followed
+    by one field-assignment statement per key — including the `?pos:haxe.
+    PosInfos` argument the compiler silently attaches to functions that
+    declare one (most visibly `haxe.PosException` subclasses), so recovering
+    this at IRAnonObjectLiteralOptimizer time keeps e.g. `throw new
+    SomeException()` from ballooning into six lines of DynObj scaffolding.
+    """
+
+    def __init__(self, code: Bytecode, fields: List[Tuple[str, IRExpression]]):
+        super().__init__(code)
+        self.fields = fields
+
+    def get_type(self) -> Type:
+        return _get_type_in_code(self.code, "Dyn")
+
+    def get_children(self) -> List[IRStatement]:
+        return [v for _, v in self.fields]
+
+    def __repr__(self) -> str:
+        inner = ", ".join(f"{k}: {v!r}" for k, v in self.fields)
+        return f"<IRObjectLiteral: {{{inner}}}>"
+
+
 class IRArrayAccess(IRExpression):
     """Represents an array/memory access expression, e.g., `arr[idx]`"""
 
