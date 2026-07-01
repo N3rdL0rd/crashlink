@@ -71,29 +71,45 @@ _SUBCOMMAND_HELP: Dict[str, str] = {
 
 
 def _make_progress_cb() -> "Optional[ProgressCallback]":
-    if not USE_TQDM:
-        return None
-    try:
-        from tqdm import tqdm as _tqdm
+    if USE_TQDM:
+        try:
+            from tqdm import tqdm as _tqdm
 
-        bar = _tqdm(
-            total=100, desc="loading", unit="%", bar_format="{desc} {bar}| {n_fmt}/{total_fmt}% [{elapsed}<{remaining}]"
-        )
-        _last: List[int] = [0]
+            bar = _tqdm(
+                total=100,
+                desc="loading",
+                unit="%",
+                bar_format="{desc} {bar}| {n_fmt}/{total_fmt}% [{elapsed}<{remaining}]",
+            )
+            _last: List[int] = [0]
 
-        def _cb(frac: float, status: str) -> None:
-            pct = int(frac * 100)
-            bar.set_description_str(status, refresh=False)
-            delta = pct - _last[0]
-            if delta > 0:
-                bar.update(delta)
-                _last[0] = pct
-            if frac >= 1.0:
-                bar.close()
+            def _cb(frac: float, status: str) -> None:
+                pct = int(frac * 100)
+                bar.set_description_str(status, refresh=False)
+                delta = pct - _last[0]
+                if delta > 0:
+                    bar.update(delta)
+                    _last[0] = pct
+                if frac >= 1.0:
+                    bar.close()
 
-        return _cb
-    except Exception:
-        return None
+            return _cb
+        except Exception:
+            pass
+
+    # No tqdm available (it's an optional extra) — fall back to plain status lines
+    # so long-running operations (e.g. `hlc` on a large bytecode file) still show
+    # visible progress instead of appearing to hang.
+    _last_pct: List[int] = [-1]
+
+    def _plain_cb(frac: float, status: str) -> None:
+        pct = int(frac * 100)
+        if pct != _last_pct[0]:
+            _last_pct[0] = pct
+            end = "\n" if frac >= 1.0 else ""
+            print(f"\r[{pct:3d}%] {status}" + " " * 20 + end, end="", file=sys.stderr, flush=True)
+
+    return _plain_cb
 
 
 def _load_code_from_cli_path(path: str, no_constants: bool) -> Bytecode:
@@ -615,7 +631,7 @@ def hlc_main(argv: List[str]) -> None:
     hashlink_dir = Path(args.hashlink_dir).expanduser().resolve()
 
     with open(out_c, "w") as f:
-        f.write(code_to_c(code))
+        f.write(code_to_c(code, progress_cb=_make_progress_cb()))
 
     native_libs = _hlc_native_libs(code)
     script = _build_hlc_script(out_c, out_bin, native_libs, hashlink_dir, args.hdll_dir, args.clang, args.ccache)
@@ -1080,7 +1096,7 @@ class Commands(BaseCommands):
         output_path = args[0]
         print("Transpiling to cHL/C...")
         with open(output_path, "w") as f:
-            f.write(code_to_c(self.code))
+            f.write(code_to_c(self.code, progress_cb=_make_progress_cb()))
         print(f"cHL/C code written to {output_path}")
 
     @alias("strs")

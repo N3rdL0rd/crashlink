@@ -7,10 +7,19 @@ from crashlink.errors import MalformedBytecode
 from crashlink.globals import DEBUG, VERSION
 
 from .core import *
-from .core import USE_TQDM
 
-if USE_TQDM:
-    from tqdm import tqdm
+
+def _scaled_cb(
+    progress_cb: Optional[ProgressCallback], start: float, end: float
+) -> Optional[ProgressCallback]:
+    """Wrap `progress_cb` so a sub-phase's own [0, 1] fraction reports as [start, end] overall."""
+    if progress_cb is None:
+        return None
+
+    def _cb(frac: float, status: str) -> None:
+        progress_cb(start + (end - start) * frac, status)
+
+    return _cb
 
 
 KEYWORDS = {
@@ -397,7 +406,7 @@ def generate_structs(code: Bytecode) -> List[str]:
     res.append("")
 
     line("// Class/Struct definitions")
-    for i, typ in tqdm(sorted(struct_map.items())) if USE_TQDM else sorted(struct_map.items()):  # pyright: ignore[reportPossiblyUnboundVariable]
+    for i, typ in sorted(struct_map.items()):
         df = typ.definition
         assert isinstance(df, (Obj, Struct)), f"Expected definition to be Obj or Struct, got {type(df).__name__}."
         is_struct = isinstance(df, Struct)
@@ -428,7 +437,7 @@ def generate_structs(code: Bytecode) -> List[str]:
     return res
 
 
-def generate_types(code: Bytecode) -> List[str]:
+def generate_types(code: Bytecode, progress_cb: Optional[ProgressCallback] = None) -> List[str]:
     """Generates the C data and initializers for all hl_type instances."""
     res = []
     indent = Indenter()
@@ -439,11 +448,14 @@ def generate_types(code: Bytecode) -> List[str]:
     types = code.types
 
     line("// Type shells")
-    for i, typ in tqdm(enumerate(types), desc="Generating type shells") if USE_TQDM else enumerate(types):  # pyright: ignore[reportPossiblyUnboundVariable]
+    for i, typ in enumerate(types):
         line(f"hl_type t${i} = {{ {KIND_SHELLS[typ.kind.value]} }};")
 
     line("\n// Type data")
-    for i, typ in tqdm(enumerate(types), desc="Generating types") if USE_TQDM else enumerate(types):  # pyright: ignore[reportPossiblyUnboundVariable]
+    ntypes = len(types)
+    for i, typ in enumerate(types):
+        if progress_cb is not None and ntypes:
+            progress_cb(i / ntypes, f"generating type {i}/{ntypes}")
         df = typ.definition
         if isinstance(df, (Obj, Struct)):
             if df.fields:
@@ -563,7 +575,7 @@ def generate_globals(code: Bytecode) -> List[str]:
         c_type_str = ctype(code, g_type, all_types.index(g_type))
         line(f"{c_type_str} g${i} = 0;")
 
-    for const in tqdm(code.constants, desc="Generating global constants") if USE_TQDM else code.constants:  # pyright: ignore[reportPossiblyUnboundVariable]
+    for const in code.constants:
         obj = const._global.resolve(code).definition
         objIdx = const._global.partial_resolve(code).value
         assert isinstance(obj, Obj), (
@@ -617,7 +629,7 @@ def generate_globals(code: Bytecode) -> List[str]:
 
     line("\nvoid hl_init_roots() {")
     with indent:
-        for const in tqdm(code.constants, desc="Initializing global constants") if USE_TQDM else code.constants:  # pyright: ignore[reportPossiblyUnboundVariable]
+        for const in code.constants:
             line(f"g${const._global.value} = &const_g${const._global.value};")
         for i, g_type_ptr in enumerate(code.global_types):
             g_type = g_type_ptr.resolve(code)
@@ -736,7 +748,7 @@ def generate_reflection(code: Bytecode) -> List[str]:
             fun_by_args[nargs] = {}
         fun_by_args[nargs][(kinded_args, kinded_ret)] = None
 
-    for func in tqdm(code.functions, desc="Collecting function signatures") if USE_TQDM else code.functions:  # pyright: ignore[reportPossiblyUnboundVariable]
+    for func in code.functions:
         for op in func.ops:
             if op.op in {"SafeCast", "DynGet"}:
                 dst_type = func.regs[op.df["dst"].value].resolve(code)
@@ -765,7 +777,7 @@ def generate_reflection(code: Bytecode) -> List[str]:
         line("switch( t->fun->nargs ) {")
 
         sorted_arg_counts = sorted(fun_by_args.keys())
-        for nargs in tqdm(sorted_arg_counts, desc="Generating signatures") if USE_TQDM else sorted_arg_counts:  # pyright: ignore[reportPossiblyUnboundVariable]
+        for nargs in sorted_arg_counts:
             line(f"case {nargs}:")
             with indent:
                 if nargs > 9:
@@ -1014,7 +1026,7 @@ def enum_constr_type(code: Bytecode, e: Enum, cid: int) -> str:
     return f"{c_enum_name}_{c_constr_name}"
 
 
-def generate_functions(code: Bytecode) -> List[str]:
+def generate_functions(code: Bytecode, progress_cb: Optional[ProgressCallback] = None) -> List[str]:
     global unknown_ops
 
     res = []
@@ -1213,7 +1225,7 @@ def generate_functions(code: Bytecode) -> List[str]:
             return "i64"
         return "p"
 
-    for function in tqdm(code.functions, desc="Generating function prototypes") if USE_TQDM else code.functions:  # pyright: ignore[reportPossiblyUnboundVariable]
+    for function in code.functions:
         fun = function.type.resolve(code).definition
         assert isinstance(fun, Fun), (
             f"Expected function type to be Fun, got {type(fun).__name__}. This should never happen."
@@ -1224,7 +1236,10 @@ def generate_functions(code: Bytecode) -> List[str]:
         args_str = ", ".join(args) if args else "void"
         line(f"{ret_t} f${function.findex.value}({args_str}); /* t${function.type.value} */")
 
-    for function in tqdm(code.functions, desc="Generating functions") if USE_TQDM else code.functions:  # pyright: ignore[reportPossiblyUnboundVariable]
+    nfunctions = len(code.functions)
+    for fidx, function in enumerate(code.functions):
+        if progress_cb is not None and nfunctions:
+            progress_cb(fidx / nfunctions, f"generating function {fidx}/{nfunctions}")
         fun = function.type.resolve(code).definition
         assert isinstance(fun, Fun), (
             f"Expected function type to be Fun, got {type(fun).__name__}. This should never happen."
@@ -2152,9 +2167,13 @@ def generate_hashes(code: Bytecode) -> List[str]:
     return res_h
 
 
-def code_to_c(code: Bytecode) -> str:
+def code_to_c(code: Bytecode, progress_cb: Optional[ProgressCallback] = None) -> str:
     """
     Translates a loaded Bytecode object into a single C source file.
+
+    progress_cb, if provided, is called as ``progress_cb(fraction, status)`` at each
+    generation phase, where fraction is in [0, 1]. The two heaviest phases (type and
+    function generation) also report fine-grained per-item progress within their slice.
     """
     res = []
 
@@ -2163,6 +2182,10 @@ def code_to_c(code: Bytecode) -> str:
 
     sec: Callable[[str], None] = lambda section: res.append(f"\n\n/*---------- {section} ----------*/\n")
 
+    def _p(frac: float, status: str) -> None:
+        if progress_cb is not None:
+            progress_cb(frac, status)
+
     line(f"// Generated by crashlink {VERSION}{' (debug)' if DEBUG else ''}")
     line(
         "// Compile with `$(CC) <this_file.c> path/to/hashlink/bin/include/hlc_main.c -Wno-incompatible-pointer-types -Ipath/to/hashlink/bin/include -Lpath/to/hashlink/bin -lhl -ldbghelp` ;)"
@@ -2170,41 +2193,52 @@ def code_to_c(code: Bytecode) -> str:
     line("#include <hlc.h>")
 
     sec("Abstract Forward Declarations")
+    _p(0.00, "generating abstract forward declarations")
     res += generate_abstract_forwards(code)
 
     sec("Structs")
+    _p(0.02, "generating structs")
     res += generate_structs(code)
 
     sec("Natives & Abstracts Forward Declarations")
+    _p(0.05, "generating native declarations")
     res += generate_natives(code)
     res.append("void hl_entry_point();")
 
     sec("Types")
-    res += generate_types(code)
+    _p(0.07, "generating types")
+    res += generate_types(code, progress_cb=_scaled_cb(progress_cb, 0.07, 0.30))
 
     sec("Globals & Strings")
+    _p(0.30, "generating globals")
     res += generate_globals(code)
 
     sec("Dummy label call")
     line("// no-op")
 
     sec("Functions")
-    res += generate_functions(code)
+    _p(0.33, "generating functions")
+    res += generate_functions(code, progress_cb=_scaled_cb(progress_cb, 0.33, 0.90))
 
     sec("Reflection")
+    _p(0.90, "generating reflection")
     res += generate_reflection(code)
 
     sec("Function Tables")
+    _p(0.93, "generating function tables")
     res += generate_function_tables(code)
 
     sec("Hashes")
+    _p(0.95, "generating hashes")
     res += generate_hashes(code)
 
     sec("Entrypoint")
+    _p(0.97, "generating entrypoint")
     res += generate_entry(code)
 
     if unknown_ops:
         print(f"Warning: {len(unknown_ops)} unknown operations encountered during function generation.")
         print(unknown_ops)
 
+    _p(1.0, "done")
     return "\n".join(res)
