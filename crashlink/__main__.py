@@ -224,6 +224,7 @@ def _build_compile_command(
     extra_hdll_dirs: List[str],
     use_clang: bool,
     use_ccache: bool,
+    opt_level: str = "-O2",
 ) -> List[str]:
     search_dirs = _build_search_dirs(hashlink_dir, extra_hdll_dirs)
     cmd: List[str] = []
@@ -232,7 +233,7 @@ def _build_compile_command(
     cmd.append("clang" if use_clang else "cc")
     cmd.extend(
         [
-            "-O2",
+            opt_level,
             "-Wno-incompatible-pointer-types",
             f"-I{hashlink_dir / 'src'}",
             c_path,
@@ -282,6 +283,7 @@ def _build_hlc_script(
     extra_hdll_dirs: List[str],
     use_clang: bool,
     use_ccache: bool,
+    opt_level: str = "-O2",
 ) -> str:
     extra_dirs_literal = " ".join(f'"{d}"' for d in extra_hdll_dirs)
     script = [
@@ -294,6 +296,7 @@ def _build_hlc_script(
         f"EXTRA_HDLL_DIRS=({extra_dirs_literal})",
         f"USE_CLANG={'1' if use_clang else '0'}",
         f"USE_CCACHE={'1' if use_ccache else '0'}",
+        f'OPT_LEVEL="{opt_level}"',
         "",
         'if [ ! -f "$HASHLINK_DIR/build/bin/libhl.so" ]; then',
         '  echo "error: libhl.so not found under $HASHLINK_DIR/build/bin" >&2',
@@ -383,7 +386,7 @@ def _build_hlc_script(
         ]
     script += [
         "",
-        '"${CC_PREFIX[@]}" "$CC_BIN" -O2 -Wno-incompatible-pointer-types \\',
+        '"${CC_PREFIX[@]}" "$CC_BIN" "$OPT_LEVEL" -Wno-incompatible-pointer-types \\',
         '  -I"$HASHLINK_DIR/src" \\',
         '  "$C_FILE" "$HASHLINK_DIR/src/hlc_main.c" \\',
         '  "${HDLL_ARGS[@]}" \\',
@@ -606,6 +609,15 @@ def hlc_main(argv: List[str]) -> None:
     parser.add_argument("--clang", help="Use clang/clang++ instead of cc/c++", action="store_true")
     parser.add_argument("--ccache", help="Prefix compiler invocation with ccache", action="store_true")
     parser.add_argument(
+        "-O",
+        "--opt-level",
+        choices=["0", "1", "2", "3", "s", "z"],
+        default="2",
+        help="Compiler optimization level (default: 2). Use 0 for much faster dev builds; a single generated "
+        "C file can't be parallelized across cores, so lowering this is the main way to speed up --build "
+        "without splitting the output.",
+    )
+    parser.add_argument(
         "--hashlink-dir",
         help="HashLink source/build root to use for includes, libhl, and HDLL search",
         default=os.environ.get("HASHLINK_DIR", "/home/nerd/code/hashlink"),
@@ -633,8 +645,11 @@ def hlc_main(argv: List[str]) -> None:
     with open(out_c, "w") as f:
         f.write(code_to_c(code, progress_cb=_make_progress_cb()))
 
+    opt_level = f"-O{args.opt_level}"
     native_libs = _hlc_native_libs(code)
-    script = _build_hlc_script(out_c, out_bin, native_libs, hashlink_dir, args.hdll_dir, args.clang, args.ccache)
+    script = _build_hlc_script(
+        out_c, out_bin, native_libs, hashlink_dir, args.hdll_dir, args.clang, args.ccache, opt_level
+    )
     with open(build_script, "w") as f:
         f.write(script)
     os.chmod(build_script, 0o755)
@@ -664,6 +679,7 @@ def hlc_main(argv: List[str]) -> None:
             args.hdll_dir,
             args.clang,
             args.ccache,
+            opt_level,
         )
         print("Compiling:", " ".join(cmd))
         subprocess.run(cmd, check=True)
