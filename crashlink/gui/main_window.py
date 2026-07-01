@@ -175,27 +175,31 @@ class _TabBar(QTabBar):
 
 
 class _WaitBox(QDialog):
-    """A small "Please wait…" popup with a one-line status message."""
+    """A small popup with a native titlebar reading "Please wait…" and the
+    current action as its body — styled distinctly (see QDialog#waitBox in
+    themes.py) so it doesn't blend into the rest of the app's background."""
 
     def __init__(self, parent: Optional[QWidget]) -> None:
         super().__init__(parent)
-        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
+        self.setObjectName("waitBox")
+        self.setWindowTitle("Please wait…")
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowTitleHint)
         self.setModal(False)  # informational only — never block input to the app
         self.setFixedSize(280, 70)
 
         layout = QVBoxLayout(self)
-        self._label = QLabel("Please wait…")
+        self._label = QLabel()
         self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._label)
 
     def set_action(self, action: str) -> None:
-        self._label.setText(f"Please wait…\n{action}")
+        self._label.setText(action)
 
     def show(self) -> None:  # type: ignore[override]
         super().show()
         if self.parentWidget() is not None:
             parent_center = self.parentWidget().geometry().center()
-            self.move(parent_center - self.rect().center())
+            self.move(parent_center - self.frameGeometry().center())
 
 
 class _BusyIndicator:

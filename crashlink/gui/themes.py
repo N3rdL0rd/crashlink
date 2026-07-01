@@ -66,6 +66,17 @@ QMainWindow, QDialog, QWidget {{
     font-size: 13px;
 }}
 
+/* ── Wait box (busy indicator) ──────────────────────────── */
+QDialog#waitBox {{
+    background-color: {t.surface1};
+    border: 2px solid {t.accent};
+}}
+QDialog#waitBox QLabel {{
+    background: transparent;
+    color: {t.accent};
+    font-weight: 600;
+}}
+
 /* ── Menu bar ───────────────────────────────────────────── */
 QMenuBar {{
     background-color: {t.mantle};
