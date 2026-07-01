@@ -5,6 +5,7 @@ Pseudocode generation routines to create a Haxe representation of the decompiled
 from __future__ import annotations
 
 import re
+import weakref
 from abc import ABC, abstractmethod
 from typing import Optional, List, Set, Dict, Tuple, Union, cast, Any
 
@@ -79,14 +80,21 @@ class _PseudoClass:
         self.methods = methods
 
 
-_method_registry_cache: Dict[int, Dict[int, Tuple[Obj, str, bool]]] = {}
+# Keyed by id(code), but the value carries a weakref back to `code` so a lookup
+# can confirm the cached entry is still for *this* object. A plain id()-keyed
+# dict without that check is a latent bug: once `code` is GC'd, a later,
+# unrelated Bytecode can be allocated at the same address and silently get
+# served someone else's stale registry. `Bytecode` (via Serialisable.__eq__)
+# isn't hashable, so a WeakKeyDictionary keyed on `code` itself isn't an option.
+_method_registry_cache: Dict[int, Tuple["weakref.ReferenceType[Bytecode]", Dict[int, Tuple[Obj, str, bool]]]] = {}
 
 
 def _method_registry(code: Bytecode) -> Dict[int, Tuple[Obj, str, bool]]:
     """Map findex -> (class Obj, method name, is_instance) using Obj protos/bindings."""
     cache_key = id(code)
-    if cache_key in _method_registry_cache:
-        return _method_registry_cache[cache_key]
+    cached = _method_registry_cache.get(cache_key)
+    if cached is not None and cached[0]() is code:
+        return cached[1]
     registry: Dict[int, Tuple[Obj, str, bool]] = {}
     for t in code.types:
         if t.kind.value != Type.Kind.OBJ.value:
@@ -103,7 +111,7 @@ def _method_registry(code: Bytecode) -> Dict[int, Tuple[Obj, str, bool]]:
             if isinstance(fn, Function):
                 field = binding.field.resolve_obj(code, obj)
                 registry[fn.findex.value] = (obj, field.name.resolve(code), False)
-    _method_registry_cache[cache_key] = registry
+    _method_registry_cache[cache_key] = (weakref.ref(code), registry)
     return registry
 
 

@@ -48,3 +48,4 @@ test_out/
 /*.build.sh
 /deadcells
 /decomp_sweep.py
+*.cldb

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Dict, List, Optional, Tuple
 
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from crashlink.core import AnalysisWorker, Bytecode, Native, destaticify
+from crashlink.database import DatabaseLoadResult, SessionState, load_database, save_database
 from crashlink.decomp.function import IRFunction
 from crashlink.globals import set_dbg_callback
 from crashlink.pseudo import pseudo_oplines, _method_registry
@@ -70,6 +72,30 @@ class _LoadThread(QThread):
 
             code = Bytecode.from_path(self.path, progress_cb=_cb)
             self.signals.finished.emit(code)
+        except Exception as e:
+            self.signals.error.emit(str(e))
+
+
+class _DbLoadSignals(QObject):
+    finished = Signal(object)  # DatabaseLoadResult
+    error = Signal(str)
+
+
+class _DbLoadThread(QThread):
+    """Loads and validates a .cldb off the UI thread — hashing the source file to
+    check against SRCI can take a moment for larger bytecode."""
+
+    def __init__(self, cldb_path: str, code: Bytecode, source_path: str) -> None:
+        super().__init__()
+        self.cldb_path = cldb_path
+        self.code = code
+        self.source_path = source_path
+        self.signals = _DbLoadSignals()
+
+    def run(self) -> None:
+        try:
+            result = load_database(self.cldb_path, code=self.code, source_path=self.source_path)
+            self.signals.finished.emit(result)
         except Exception as e:
             self.signals.error.emit(str(e))
 
@@ -150,6 +176,12 @@ class MainWindow(QMainWindow):
         self._view_mode: int = PSEUDO
         # findex currently shown in the CFG dock, so decompile-finished can refresh it
         self._cfg_findex: Optional[int] = None
+        # path of the currently-open bytecode file, for the sibling .cldb and Save Database
+        self._source_path: Optional[str] = None
+        # findex → (pseudo_text, opline_map) loaded from a .cldb, consumed by _open_class_tab
+        # to skip the "decompiling…" flash; a real decompile still runs to warm _ir_cache
+        self._db_cache: Dict[int, Tuple[str, Dict[int, int]]] = {}
+        self._db_load_thread: Optional[_DbLoadThread] = None
 
         self._build_ui()
         self._build_menu()
@@ -252,6 +284,9 @@ class MainWindow(QMainWindow):
         fm = mb.addMenu("File")
         fm.addAction("Open…", self._open_file, "Ctrl+O")
         fm.addSeparator()
+        fm.addAction("Save Database", self._save_database, "Ctrl+S")
+        fm.addAction("Load Database…", self._open_database_file)
+        fm.addSeparator()
         fm.addAction("Quit", self.close, "Ctrl+Q")
         vm = mb.addMenu("View")
         tm = vm.addMenu("Theme")
@@ -287,8 +322,10 @@ class MainWindow(QMainWindow):
         self._pending_op_scroll = None
         self._cfg_findex = None
         self._cfg_view.clear_view()
+        self._db_cache.clear()
         self._log_panel.clear()
         self._code = None
+        self._source_path = path
         self._worker.invalidate()
 
         self._progress_bar.setVisible(True)
@@ -313,9 +350,94 @@ class MainWindow(QMainWindow):
         self._log_panel.info(f"Loaded {n} functions")
         self._func_list.load(code)
 
+        assert self._source_path is not None
+        cldb_path = self._source_path + ".cldb"
+        if os.path.exists(cldb_path):
+            self._load_database_from(cldb_path)
+
     def _on_load_error(self, msg: str) -> None:
         self._progress_bar.setVisible(False)
         self._status_label.setText(f"Error: {msg}")
+
+    # ── Analysis database (.cldb) ───────────────────────────────────────────────
+
+    def _open_database_file(self) -> None:
+        if self._code is None or self._source_path is None:
+            self._log_panel.warn("Open a bytecode file first.")
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Load analysis database", "", "crashlink database (*.cldb)")
+        if path:
+            self._load_database_from(path)
+
+    def _load_database_from(self, cldb_path: str) -> None:
+        assert self._code is not None and self._source_path is not None
+        self._db_load_thread = _DbLoadThread(cldb_path, self._code, self._source_path)
+        self._db_load_thread.signals.finished.connect(self._on_db_load_finished)
+        self._db_load_thread.signals.error.connect(
+            lambda msg: self._log_panel.error(f"Failed to load database: {msg}")
+        )
+        self._db_load_thread.start()
+
+    def _on_db_load_finished(self, result: DatabaseLoadResult) -> None:
+        for w in result.warnings:
+            self._log_panel.warn(w)
+        if not result.matched:
+            return
+
+        self._db_cache = dict(result.cache)
+        self._log_panel.success(
+            f"Loaded database: {result.renames_applied} renames, "
+            f"{result.comments_applied} comments, {len(result.cache)} cached functions"
+        )
+
+        session = result.session
+        if session is None:
+            return
+
+        theme = THEMES.get(session.theme_name)
+        if theme is not None:
+            self._apply_theme(theme)
+        if session.view_mode in _VIEW_MODE_NAMES:
+            self._set_view_mode(session.view_mode)
+        for findex in session.open_findices:
+            self._on_function_selected(findex)
+        if session.current_tab_index is not None and 0 <= session.current_tab_index < self._tabs.count():
+            self._tabs.setCurrentIndex(session.current_tab_index)
+
+    def _save_database(self) -> None:
+        if self._code is None or self._source_path is None:
+            self._log_panel.warn("Open a bytecode file first.")
+            return
+
+        open_findices: List[int] = []
+        for i in range(self._tabs.count()):
+            w = self._tabs.widget(i)
+            class_key = w.property("class_key") if w is not None else None
+            fi_list = self._class_findices.get(class_key) if class_key else None
+            if fi_list:
+                open_findices.append(fi_list[0])
+
+        session = SessionState(
+            view_mode=self._view_mode,
+            theme_name=self._theme.name,
+            open_findices=open_findices,
+            current_tab_index=self._tabs.currentIndex() if self._tabs.count() else None,
+        )
+
+        cldb_path = self._source_path + ".cldb"
+        try:
+            save_database(
+                cldb_path,
+                code=self._code,
+                source_path=self._source_path,
+                class_results=self._class_results,
+                opline_cache=self._opline_cache,
+                session=session,
+            )
+        except Exception as e:
+            self._log_panel.error(f"Failed to save database: {e}")
+            return
+        self._log_panel.success(f"Saved database to {cldb_path}")
 
     # ── Tab management ────────────────────────────────────────────────────────
 
@@ -346,6 +468,16 @@ class MainWindow(QMainWindow):
         self._class_names[class_key] = display_name
         self._class_results[class_key] = {fi: None for fi in all_fi}
 
+        # Seed from a loaded .cldb where available, so cached functions render
+        # immediately instead of flashing "decompiling…" — a real decompile still
+        # runs below to warm _ir_cache for rename/xref support.
+        for fi in all_fi:
+            cached = self._db_cache.get(fi)
+            if cached is not None:
+                text, opmap = cached
+                self._class_results[class_key][fi] = text
+                self._opline_cache[fi] = opmap
+
         view = SyncView(self._opline_cache)
         view.setProperty("class_key", class_key)
         view.set_theme(self._theme)
@@ -356,8 +488,11 @@ class MainWindow(QMainWindow):
         view.class_view.xref_requested.connect(self._on_xref_hotkey)
         view.disasm_view.function_focused.connect(self._on_function_focused)
 
-        # Render immediately with placeholders
-        placeholder = [(fi, f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}") for fi in all_fi]
+        # Render immediately — cached text where a .cldb supplied it, else a placeholder.
+        placeholder = [
+            (fi, self._class_results[class_key][fi] or f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}")
+            for fi in all_fi
+        ]
         view.load_pseudo(display_name, placeholder)
         # Disasm needs no decompile — render straight from opcodes.
         findex_map = self._code.get_findex_map()

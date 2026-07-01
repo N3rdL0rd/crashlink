@@ -425,6 +425,87 @@ def search_main(argv: List[str]) -> None:
         print(f"s@{i}: {s}")
 
 
+def db_main(argv: List[str]) -> None:
+    from . import database as db
+
+    parser = argparse.ArgumentParser(description="Work with .cldb analysis databases.", prog="crashlink db")
+    sub = parser.add_subparsers(dest="action", required=True)
+
+    p_info = sub.add_parser("info", help="Show summary info for a .cldb")
+    p_info.add_argument("cldb", help="Path to the .cldb file")
+
+    p_check = sub.add_parser("check", help="Validate a .cldb against a bytecode file")
+    p_check.add_argument("cldb", help="Path to the .cldb file")
+    p_check.add_argument("file", help="Bytecode (.hl/.dat) file to check against")
+    p_check.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
+
+    p_renames = sub.add_parser("renames", help="List renames stored in a .cldb")
+    p_renames.add_argument("cldb", help="Path to the .cldb file")
+
+    p_comments = sub.add_parser("comments", help="List comments stored in a .cldb")
+    p_comments.add_argument("cldb", help="Path to the .cldb file")
+
+    args = parser.parse_args(argv)
+
+    if args.action == "info":
+        try:
+            info = db.inspect_database(args.cldb)
+        except (db.DatabaseError, OSError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        print(f"Format version: {info.format_version}")
+        print(f"Source: {info.source_basename}  ({info.source_size} bytes, HL v{info.hl_version}, {info.nfunctions} functions)")
+        print(f"Source hash: {info.source_hash_hex}")
+        print(f"Renames: {len(info.renames)}")
+        print(f"Comments: {len(info.comments)}")
+        print(f"Cached functions: {len(info.cache_findices)}")
+        if info.session is not None:
+            s = info.session
+            print(f"Session: view_mode={s.view_mode}  theme={s.theme_name!r}  open_tabs={len(s.open_findices)}")
+        else:
+            print("Session: none")
+
+    elif args.action == "check":
+        code = _load_code_from_cli_path(args.file, args.no_constants)
+        try:
+            result = db.load_database(args.cldb, code=code, source_path=args.file)
+        except (db.DatabaseError, OSError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        if not result.matched:
+            for w in result.warnings:
+                print(f"MISMATCH: {w}")
+            sys.exit(1)
+        print(f"OK — {args.cldb} matches {args.file}")
+        print(
+            f"  {result.renames_applied} renames, {result.comments_applied} comments, "
+            f"{len(result.cache)} cached functions would apply"
+        )
+
+    elif args.action == "renames":
+        try:
+            info = db.inspect_database(args.cldb)
+        except (db.DatabaseError, OSError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        if not info.renames:
+            print("No renames.")
+        for findex, reg_idx, def_op, name in info.renames:
+            where = f"op {def_op}" if def_op is not None else "initial"
+            print(f"f@{findex}  reg{reg_idx} ({where})  ->  {name}")
+
+    elif args.action == "comments":
+        try:
+            info = db.inspect_database(args.cldb)
+        except (db.DatabaseError, OSError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        if not info.comments:
+            print("No comments.")
+        for findex, src_op_idx, text in info.comments:
+            print(f"f@{findex}  op {src_op_idx}:  {text}")
+
+
 def funcs_main(argv: List[str]) -> None:
     parser = argparse.ArgumentParser(description="List functions in a bytecode file.", prog="crashlink funcs")
     parser.add_argument("file", help="Input .hl / .dat file")
@@ -2150,6 +2231,7 @@ def main() -> None:
         "search": search_main,
         "funcs": funcs_main,
         "decompile": decompile_main,
+        "db": db_main,
     }
     if len(sys.argv) > 1 and sys.argv[1] in _subcommands:
         _subcommands[sys.argv[1]](sys.argv[2:])

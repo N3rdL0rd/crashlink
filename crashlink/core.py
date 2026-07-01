@@ -20,7 +20,7 @@ import threading
 
 _EnumBase = _Enum
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Dict, List, Literal, Optional, Set, Tuple, TypeVar
+from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Dict, ItemsView, List, Literal, Optional, Set, Tuple, TypeVar
 
 T = TypeVar("T", bound="VarInt")  # easier than reimplementing deserialise for each subclass
 
@@ -2882,6 +2882,14 @@ class AnnotationStore:
 
     def comments_for(self, findex: int) -> Dict[_CommentKey, str]:
         return {k: v for k, v in self._comments.items() if k[0] == findex}
+
+    # ── Bulk export (for serialising the store, e.g. to a database file) ───────
+
+    def iter_renames(self) -> ItemsView[_LocalKey, str]:
+        return self._renames.items()
+
+    def iter_comments(self) -> ItemsView[_CommentKey, str]:
+        return self._comments.items()
 
 
 # ── Cross-reference index ──────────────────────────────────────────────────────
