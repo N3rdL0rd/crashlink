@@ -5,7 +5,7 @@ Human-readable disassembly of opcodes and utilities to work at a relatively low 
 from __future__ import annotations
 
 from ast import literal_eval
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 
 try:
     from tqdm import tqdm
@@ -556,7 +556,7 @@ def fmt_op_compact(
     the `t@`/`f@`/`g@` convention.
     """
     df = op.df
-    schema = opcodes.get(op.op, {})
+    schema = opcodes.get(op.op or "", {})
     parts: List[str] = []
     for name, ptype in schema.items():
         val = df.get(name)
@@ -564,40 +564,40 @@ def fmt_op_compact(
             continue
         try:
             if ptype == "Reg":
-                parts.append(_reg_str(code, regs, val.value))  # type: ignore[attr-defined]
+                parts.append(_reg_str(code, regs, val.value))
             elif ptype == "Regs":
-                parts.append("(" + ", ".join(_reg_str(code, regs, r.value) for r in val.value) + ")")  # type: ignore[attr-defined]
+                parts.append("(" + ", ".join(_reg_str(code, regs, r.value) for r in val.value) + ")")
             elif ptype == "RefInt":
-                parts.append(f"{val.resolve(code).value} (int #{val.value})")  # type: ignore[attr-defined]
+                parts.append(f"{val.resolve(code).value} (int #{val.value})")
             elif ptype == "RefFloat":
-                parts.append(f"{val.resolve(code).value} (float #{val.value})")  # type: ignore[attr-defined]
+                parts.append(f"{val.resolve(code).value} (float #{val.value})")
             elif ptype == "RefBytes":
-                parts.append(f"bytes #{val.value} (len={len(val.resolve(code))})")  # type: ignore[attr-defined]
+                parts.append(f"bytes #{val.value} (len={len(val.resolve(code))})")
             elif ptype == "RefString":
-                parts.append(f'"{_escape_str(val.resolve(code))}" (str #{val.value})')  # type: ignore[attr-defined]
+                parts.append(f'"{_escape_str(val.resolve(code))}" (str #{val.value})')
             elif ptype == "RefFun":
-                parts.append(f"f@{val.value}")  # type: ignore[attr-defined]
+                parts.append(f"f@{val.value}")
             elif ptype == "RefGlobal":
-                parts.append(f"g@{val.value}")  # type: ignore[attr-defined]
+                parts.append(f"g@{val.value}")
             elif ptype == "RefType":
-                parts.append(f"t@{val.value}")  # type: ignore[attr-defined]
+                parts.append(f"t@{val.value}")
             elif ptype == "RefField":
-                parts.append(_field_label_compact(code, func, regs, op.op, df))
+                parts.append(_field_label_compact(code, func, regs, op.op or "", df))
             elif ptype == "RefEnumConstruct":
-                parts.append(f"e@{val.value}")  # type: ignore[attr-defined]
+                parts.append(f"e@{val.value}")
             elif ptype == "JumpOffset":
-                parts.append(f"-> {idx + 1 + val.value}")  # type: ignore[attr-defined]
+                parts.append(f"-> {idx + 1 + val.value}")
             elif ptype == "JumpOffsets":
                 targets = [
                     f"{i}:->{idx + 1 + o.value}"
-                    for i, o in enumerate(val.value)  # type: ignore[attr-defined]
+                    for i, o in enumerate(val.value)
                     if o.value != 0
                 ]
                 parts.append("[" + ", ".join(targets) + "]")
             elif ptype == "InlineBool":
-                parts.append("true" if val.value else "false")  # type: ignore[attr-defined]
+                parts.append("true" if val.value else "false")
             elif ptype == "InlineInt":
-                parts.append(str(val.value))  # type: ignore[attr-defined]
+                parts.append(str(val.value))
             else:
                 parts.append(str(val))
         except Exception as e:
@@ -1084,7 +1084,7 @@ def file_class_map(code: Bytecode) -> Dict[str, List[ClassEntry]]:
     fmap = code.get_findex_map()
 
     # (file_path, canonical_class) -> list of MethodEntry
-    _groups: Dict[tuple, List[MethodEntry]] = {}
+    _groups: Dict[Tuple[str, str], List[MethodEntry]] = {}
 
     for findex, func in fmap.items():
         if isinstance(func, Native):

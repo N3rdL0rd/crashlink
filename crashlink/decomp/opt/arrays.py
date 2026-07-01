@@ -1352,7 +1352,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             true_ok = True
         if not true_ok:
             return None
-        return cast(IRStatement, IRAssign(self.func.code, s.target, first_arg).adopt(s)), 1
+        return IRAssign(self.func.code, s.target, first_arg).adopt(s), 1
 
     @staticmethod
     def _expr_eq(a: Optional[IRExpression], b: Optional[IRExpression]) -> bool:

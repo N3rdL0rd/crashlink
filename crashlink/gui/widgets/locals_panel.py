@@ -20,7 +20,8 @@ from PySide6.QtWidgets import (
 
 import crashlink.disasm as disasm
 from crashlink.core import Bytecode
-from crashlink.decomp.function import IRFunction, IRLocal
+from crashlink.decomp.function import IRFunction
+from crashlink.decomp.ir import IRLocal
 
 
 class LocalsPanel(QWidget):
@@ -64,7 +65,7 @@ class LocalsPanel(QWidget):
         self._locals = list(ir.all_locals)
         self._table.setRowCount(0)
 
-        seen: set[tuple[int, object]] = set()
+        seen: set[tuple[Optional[int], Optional[int]]] = set()
         for loc in self._locals:
             key = (loc.reg_idx, loc.defining_op_idx)
             if key in seen:
@@ -104,7 +105,8 @@ class LocalsPanel(QWidget):
         if loc_item is None:
             return
         loc: IRLocal = loc_item.data(Qt.ItemDataRole.UserRole)
-        current_name = self._table.item(row, 1).text() if self._table.item(row, 1) else loc.name
+        name_item = self._table.item(row, 1)
+        current_name = name_item.text() if name_item else loc.name
 
         new_name, ok = QInputDialog.getText(self, "Rename local", f"New name for '{current_name}':", text=current_name)
         if ok and new_name and new_name != current_name:

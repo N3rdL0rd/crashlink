@@ -101,7 +101,7 @@ class ClassView(DecompView):
             self._focused_findex = findex
             self.function_focused.emit(findex)
 
-    def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
+    def keyPressEvent(self, event: object) -> None:
         if isinstance(event, QKeyEvent) and not event.modifiers():
             findex = self.findex_at_cursor()
             word = self._word_at_cursor()

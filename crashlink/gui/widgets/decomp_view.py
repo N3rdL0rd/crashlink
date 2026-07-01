@@ -196,12 +196,12 @@ class DecompView(QPlainTextEdit):
         self._word_sel = selections
         self._apply_selections()
 
-    def insertFromMimeData(self, source: object) -> None:  # type: ignore[override]
+    def insertFromMimeData(self, source: object) -> None:
         # Belt-and-suspenders: also blocks X11 middle-click paste, which bypasses
         # both keyPressEvent and the drag/drop guards above.
         pass
 
-    def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
+    def keyPressEvent(self, event: object) -> None:
         if not isinstance(event, QKeyEvent):
             return
         if (
@@ -212,7 +212,7 @@ class DecompView(QPlainTextEdit):
             super().keyPressEvent(event)
         # Drop all other keys (typing, paste, delete, etc.)
 
-    def contextMenuEvent(self, event: object) -> None:  # type: ignore[override]
+    def contextMenuEvent(self, event: object) -> None:
         if not isinstance(event, QContextMenuEvent):
             return
         menu = QMenu(self)

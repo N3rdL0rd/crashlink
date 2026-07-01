@@ -14,7 +14,10 @@ def main() -> None:
     import sys
     from .main_window import MainWindow
 
-    app = QApplication.instance() or QApplication(sys.argv)
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
+    assert isinstance(app, QApplication)
     app.setApplicationName("crashlink")
     app.setOrganizationName("N3rdL0rd")
     app.setCursorFlashTime(0)  # static cursor, no blinking

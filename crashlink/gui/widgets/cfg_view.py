@@ -17,11 +17,11 @@ from PySide6.QtWidgets import QGraphicsScene, QGraphicsView, QLabel, QStackedWid
 from ..themes import Theme
 
 try:
-    import graphviz
+    import graphviz  # type: ignore[import-untyped]
 
     GRAPHVIZ_IMPORT_ERROR: Optional[str] = None
 except ImportError as e:
-    graphviz = None  # type: ignore[assignment]
+    graphviz = None
     GRAPHVIZ_IMPORT_ERROR = str(e)
 
 _PAGE_MESSAGE = 0
@@ -39,7 +39,7 @@ class _GraphView(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
 
-    def wheelEvent(self, event: QWheelEvent) -> None:  # type: ignore[override]
+    def wheelEvent(self, event: QWheelEvent) -> None:
         factor = 1.25 if event.angleDelta().y() > 0 else 1 / 1.25
         self.scale(factor, factor)
 

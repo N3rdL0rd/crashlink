@@ -94,7 +94,7 @@ class SyncView(QWidget):
         self._mode = mode
         self._apply_mode()
 
-    def eventFilter(self, obj: object, event: object) -> bool:  # type: ignore[override]
+    def eventFilter(self, obj: object, event: object) -> bool:
         if isinstance(event, QKeyEvent) and event.type() == QEvent.Type.KeyPress and not event.modifiers():
             if event.key() == Qt.Key.Key_Tab:
                 self.cycle_requested.emit()

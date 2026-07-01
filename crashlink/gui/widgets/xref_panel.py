@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, cast
 
 from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QKeyEvent
@@ -315,7 +315,7 @@ class XrefPopup(QFrame):
         self.close()
         self.navigate_requested.emit(findex, op, line)
 
-    def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
+    def keyPressEvent(self, event: object) -> None:
         if isinstance(event, QKeyEvent):
             key = event.key()
             if key == Qt.Key.Key_Escape:
@@ -330,4 +330,4 @@ class XrefPopup(QFrame):
             if key == Qt.Key.Key_Down:
                 self._move(1)
                 return
-        super().keyPressEvent(event)
+        super().keyPressEvent(cast(QKeyEvent, event))

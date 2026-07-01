@@ -7,7 +7,7 @@ import sys
 import traceback
 from datetime import datetime
 from io import StringIO
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont, QKeyEvent, QTextCharFormat, QTextCursor
@@ -44,7 +44,7 @@ class _ReplLineEdit(QLineEdit):
     history_prev = Signal()
     history_next = Signal()
 
-    def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
+    def keyPressEvent(self, event: object) -> None:
         if isinstance(event, QKeyEvent):
             if event.key() == Qt.Key.Key_Up:
                 self.history_prev.emit()
@@ -52,7 +52,7 @@ class _ReplLineEdit(QLineEdit):
             if event.key() == Qt.Key.Key_Down:
                 self.history_next.emit()
                 return
-        super().keyPressEvent(event)
+        super().keyPressEvent(cast(QKeyEvent, event))
 
 
 class LogPanel(QWidget):

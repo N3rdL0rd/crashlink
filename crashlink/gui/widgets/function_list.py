@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from crashlink.core import Bytecode, Function, destaticify
+from crashlink.core import Bytecode, Function, Native, destaticify
 from crashlink.disasm import ClassEntry, MethodEntry, file_class_map
 from crashlink.pseudo import _method_registry
 from ..themes import Theme
@@ -496,7 +496,7 @@ def _make_tree() -> QTreeWidget:
     return t
 
 
-def _method_is_std(code: Bytecode, fmap: dict, findex: int) -> bool:
+def _method_is_std(code: Bytecode, fmap: "dict[int, Function | Native]", findex: int) -> bool:
     func = fmap.get(findex)
     return isinstance(func, Function) and disasm.is_std(code, func)
 

@@ -162,7 +162,7 @@ class _TabBar(QTabBar):
 
     _fill: QColor = QColor("#181825")
 
-    def paintEvent(self, event: object) -> None:  # type: ignore[override]
+    def paintEvent(self, event: object) -> None:
         super().paintEvent(event)  # type: ignore[arg-type]
         # Find where the last tab ends; fill everything to the right.
         empty_x = 0
@@ -195,10 +195,11 @@ class _WaitBox(QDialog):
     def set_action(self, action: str) -> None:
         self._label.setText(action)
 
-    def show(self) -> None:  # type: ignore[override]
+    def show(self) -> None:
         super().show()
-        if self.parentWidget() is not None:
-            parent_center = self.parentWidget().geometry().center()
+        parent = self.parentWidget()
+        if parent is not None:
+            parent_center = parent.geometry().center()
             self.move(parent_center - self.frameGeometry().center())
 
 
@@ -811,6 +812,7 @@ class MainWindow(QMainWindow):
             return
 
         loc = locals_matching[0]
+        assert loc.reg_idx is not None
         new_name, ok = QInputDialog.getText(self, "Rename", f"Rename '{word}' to:", text=word)
         if not ok or not new_name or new_name == word:
             return
@@ -818,10 +820,10 @@ class MainWindow(QMainWindow):
         self._apply_rename(findex, loc.reg_idx, loc.defining_op_idx, new_name)
         self._log_panel.success(f"Renamed '{word}' → '{new_name}' in f@{findex}")
 
-    def _apply_rename(self, findex: int, reg_idx: int, def_op: object, new_name: str) -> None:
+    def _apply_rename(self, findex: int, reg_idx: int, def_op: Optional[int], new_name: str) -> None:
         if self._code is None:
             return
-        def_op_int = int(def_op) if def_op is not None else None
+        def_op_int = def_op
         self._code.annotations.rename(findex, reg_idx, def_op_int, new_name)
         self._invalidate_and_redecompile(findex)
 
@@ -1030,7 +1032,7 @@ class MainWindow(QMainWindow):
         box.setText(msg)
         box.exec()
 
-    def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
+    def keyPressEvent(self, event: object) -> None:
         if isinstance(event, QKeyEvent):
             if event.key() == Qt.Key.Key_I and event.modifiers() == (
                 Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier

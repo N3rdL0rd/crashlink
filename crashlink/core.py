@@ -3398,6 +3398,8 @@ class AnalysisWorker:
         from .decomp.function import IRFunction  # lazy to avoid circular import
 
         func = code.get_findex_map()[findex]
+        if not isinstance(func, Function):
+            raise ValueError(f"findex {findex} refers to a Native, not a Function")
         ir = IRFunction(code, func)
         with self._cache_lock:
             self._cache[findex] = ir
