@@ -2783,6 +2783,11 @@ class Bytecode(Serialisable):
         """
         Generates a human-readable name for a function or native.
         """
+        if isinstance(func, Native):
+            # Natives are never a class proto/field (they're top-level native
+            # imports), but unlike a Function they carry their own real name
+            # directly — no indirection needed to recover it.
+            return f"{func.lib.resolve(self)}.{func.name.resolve(self)}"
         idx = func.findex.value
         proto = self.get_proto_map().get(idx)
         if proto:
@@ -2804,6 +2809,8 @@ class Bytecode(Serialisable):
         """
         Generates a human-readable name for a function or native. Does not qualify the name with the object it belongs to.
         """
+        if isinstance(func, Native):
+            return func.name.resolve(self)
         proto = self.get_proto_for(func.findex.value)
         if proto:
             return proto.name.resolve(self)
