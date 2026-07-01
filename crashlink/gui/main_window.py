@@ -377,6 +377,14 @@ class MainWindow(QMainWindow):
         settings.setValue("window/view_mode", self._view_mode)
         settings.setValue("recent_files", self._recent_files)
 
+    def _update_window_title(self) -> None:
+        if self._source_path is None:
+            self.setWindowTitle("crashlink")
+            return
+        name = os.path.basename(self._source_path)
+        star = "*" if self._dirty else ""
+        self.setWindowTitle(f"{name}{star} - crashlink")
+
     # ── UI ────────────────────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
@@ -581,6 +589,7 @@ class MainWindow(QMainWindow):
         self._code = None
         self._log_panel.set_context(code=None, findex=None, func=None, irf=None)
         self._source_path = path
+        self._update_window_title()
         self._worker.invalidate()
 
         self._progress_bar.setVisible(True)
@@ -758,6 +767,7 @@ class MainWindow(QMainWindow):
             self._log_panel.error(f"Failed to save database: {e}")
             return
         self._dirty = False
+        self._update_window_title()
         self._log_panel.success(f"Saved database to {cldb_path}")
 
     # ── Tab management ────────────────────────────────────────────────────────
@@ -1075,6 +1085,7 @@ class MainWindow(QMainWindow):
         def_op_int = def_op
         self._code.annotations.rename(findex, reg_idx, def_op_int, new_name)
         self._dirty = True
+        self._update_window_title()
         self._invalidate_and_redecompile(findex)
 
     def _invalidate_and_redecompile(self, findex: int) -> None:
@@ -1113,6 +1124,7 @@ class MainWindow(QMainWindow):
             self._code.annotations.clear_comment(findex, op_idx)
             self._log_panel.info(f"Cleared comment on op {op_idx} in f@{findex}")
         self._dirty = True
+        self._update_window_title()
 
         class_key, _, _ = self._class_key_for(findex)
         self._refresh_disasm_view(class_key)
