@@ -501,13 +501,7 @@ def generate_types(code: Bytecode) -> List[str]:
                     nparams = len(constr.params)
                     has_params = nparams > 0
 
-                    # OCaml uses `sizeof(venum)` if no params, but that's equivalent to 0 for `size`.
-                    # The `size` field in `hl_enum_construct` is used differently by the runtime.
-                    # We will follow the OCaml's output which seems to be sizeof(the_constructor_struct)
-                    # For now, let's use 0 for simplicity as the runtime might not need it for boot.
-                    # A more correct implementation would require generating the constructor struct first.
-                    # Let's use 0, as this field is mainly for the JIT.
-                    size_str = "0"
+                    size_str = f"sizeof({enum_constr_type(code, df, cid)})" if has_params else "0"
 
                     has_ptr = any(is_gc_ptr(p.resolve(code)) for p in constr.params)
 
@@ -965,11 +959,13 @@ def generate_function_tables(code: Bytecode) -> List[str]:
 
     total_functions = max_findex + 1
 
+    known_findexes = {f.findex.value for f in code.functions} | {n.findex.value for n in code.natives}
+
     line("void *hl_functions_ptrs[] = {")
     with indent:
         ptrs = []
         for i in range(total_functions):
-            ptrs.append(f"(void*)f${i}")
+            ptrs.append(f"(void*)f${i}" if i in known_findexes else "NULL")
         line(",\n".join(ptrs))
     line("};")
     line("")
@@ -2020,12 +2016,15 @@ def generate_functions(code: Bytecode) -> List[str]:
                         end_offset = df["end"].value
                         line(f"Op_{i}:")
                         with indent:
-                            for case_idx, offset_varint in enumerate(offsets):
-                                target_op_idx = i + 1 + offset_varint.value
-                                line(f"if (r{reg_to_switch} == {case_idx}) goto Op_{target_op_idx};")
+                            line(f"switch(r{reg_to_switch}) {{")
+                            with indent:
+                                for case_idx, offset_varint in enumerate(offsets):
+                                    target_op_idx = i + 1 + offset_varint.value
+                                    line(f"case {case_idx}: goto Op_{target_op_idx};")
 
-                            default_target_op_idx = i + 1
-                            line(f"goto Op_{default_target_op_idx}; // default")
+                                default_target_op_idx = i + 1
+                                line(f"default: goto Op_{default_target_op_idx};")
+                            line("}")
                         continue
                     case "NullCheck":
                         has_dst = False
