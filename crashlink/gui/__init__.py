@@ -13,7 +13,7 @@ def _install_excepthook(win: object) -> None:
     import traceback
 
     def _hook(exc_type: type, exc_value: BaseException, exc_tb: object) -> None:
-        tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb)) # type: ignore[call-overload]
         print(tb_text, file=sys.stderr)  # keep it visible in the terminal too
         log_panel = getattr(win, "_log_panel", None)
         if log_panel is None:
