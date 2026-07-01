@@ -251,6 +251,7 @@ el.replaceWith(d);
         self.cfg: Optional[CFGraph] = None
         self.block: IRBlock = IRBlock(code)
         self.locals: List[IRLocal] = []
+        self.all_locals: List[IRLocal] = []  # all created locals including superseded splits
         self.opcodes: str = &#34;&#34;
         self.cfg_data: Dict[str, List[Dict[str, Any]]] = {&#34;nodes&#34;: [], &#34;edges&#34;: []}
         self.layer_snapshots: List[Tuple[str, str, bool]] = []
@@ -296,6 +297,7 @@ el.replaceWith(d);
                 IRDeadCodeEliminator(self),
                 IRSelfAssignOptimizer(self),
                 IRTraceOptimizer(self),
+                IRAnonObjectLiteralOptimizer(self),
                 IRStringConcatFolder(self),
                 IRIntSwitchOptimizer(self),
                 IRStringSwitchOptimizer(self),
@@ -311,12 +313,15 @@ el.replaceWith(d);
                 IRRedundantRecomputeEliminator(self),
             ]
             self._optimize()
+            self.apply_annotations()
 
     def _lift(self, no_lift: bool = False) -&gt; None:
         &#34;&#34;&#34;Lift function to IR&#34;&#34;&#34;
         assert self.cfg is not None
         for i, reg in enumerate(self.func.regs):
-            self.locals.append(IRLocal(f&#34;var{i}&#34;, reg, code=self.code, reg_idx=i))
+            local = IRLocal(f&#34;var{i}&#34;, reg, code=self.code, reg_idx=i, defining_op_idx=None)
+            self.locals.append(local)
+            self.all_locals.append(local)
         self._build_assign_map()
         self._name_locals()
         if not no_lift:
@@ -381,7 +386,7 @@ el.replaceWith(d);
         &#34;&#34;&#34;Get the current IRLocal for a register, respecting SSA-esque name transitions.&#34;&#34;&#34;
         return self.locals[reg_idx]
 
-    def _split_local(self, reg_idx: int, name: str) -&gt; IRLocal:
+    def _split_local(self, reg_idx: int, name: str, defining_op_idx: Optional[int] = None) -&gt; IRLocal:
         &#34;&#34;&#34;Create a new IRLocal for a register with a specific name (SSA-esque split).&#34;&#34;&#34;
         reg_type = self.func.regs[reg_idx]
         new_type = reg_type.resolve(self.code)
@@ -394,8 +399,9 @@ el.replaceWith(d);
         while name in existing_names:
             name = f&#34;{base_name}{suffix}&#34;
             suffix += 1
-        new_local = IRLocal(name, reg_type, code=self.code, reg_idx=reg_idx)
+        new_local = IRLocal(name, reg_type, code=self.code, reg_idx=reg_idx, defining_op_idx=defining_op_idx)
         self.locals[reg_idx] = new_local
+        self.all_locals.append(new_local)
         # Cached blocks may still reference the old local object; force them to
         # be re-lifted so they pick up the new name.
         self._lift_cache.clear()
@@ -407,7 +413,32 @@ el.replaceWith(d);
             for reg_idx, name in self._op_assigns[op_idx].items():
                 current = self.locals[reg_idx]
                 if current.name != name:
-                    self._split_local(reg_idx, name)
+                    self._split_local(reg_idx, name, defining_op_idx=op_idx)
+
+    def apply_annotations(self) -&gt; None:
+        &#34;&#34;&#34;Apply renames and comments from code.annotations to this IR function in-place.&#34;&#34;&#34;
+        store = self.code.annotations
+        findex = self.func.findex.value
+        for local in self.all_locals:
+            if local.reg_idx is not None:
+                rename = store.get_rename(findex, local.reg_idx, local.defining_op_idx)
+                if rename is not None:
+                    local.name = rename
+
+        def _walk(block: IRBlock) -&gt; None:
+            for stmt in block.statements:
+                # A statement folded from several opcodes (see IRStatement.adopt)
+                # should surface a comment placed on any one of them.
+                for op_idx in sorted(stmt.src_op_idxs):
+                    comment = store.get_comment(findex, op_idx)
+                    if comment is not None:
+                        stmt.comment = comment
+                        break
+                for child in stmt.get_children():
+                    if isinstance(child, IRBlock):
+                        _walk(child)
+
+        _walk(self.block)
 
     def _optimize(self) -&gt; None:
         &#34;&#34;&#34;Optimize the IR&#34;&#34;&#34;
@@ -461,6 +492,15 @@ el.replaceWith(d);
                 if dst is not None:
                     edges.append({&#34;from&#34;: src, &#34;to&#34;: dst, &#34;type&#34;: edge_type})
         return {&#34;nodes&#34;: nodes, &#34;edges&#34;: edges, &#34;dot&#34;: self._cfg_to_dot(node_ids)}
+
+    def to_dot(self) -&gt; Optional[str]:
+        &#34;&#34;&#34;Render this function&#39;s CFG as Graphviz DOT source, or None for natives
+        (which have no bytecode/CFG). `self.cfg` is built unconditionally for
+        non-natives in `__init__`, so this works regardless of `capture_layers`.&#34;&#34;&#34;
+        if self.cfg is None:
+            return None
+        node_ids = {id(node): i for i, node in enumerate(self.cfg.nodes)}
+        return self._cfg_to_dot(node_ids)
 
     def _cfg_to_dot(self, node_ids: Dict[int, int]) -&gt; str:
         &#34;&#34;&#34;Produce a Graphviz DOT representation of the CFG.
@@ -747,6 +787,7 @@ el.replaceWith(d);
         return None
 
     def _lift_ops_into_block(self, block: IRBlock, ops: List[Opcode]) -&gt; None:
+        _debuginfo = self.func.debuginfo.value if (self.func.has_debug and self.func.debuginfo) else None
         for op in ops:
             op_idx = self._op_id_to_idx.get(id(op))
             # Capture the register-to-local mapping before any debug-name split.
@@ -761,6 +802,7 @@ el.replaceWith(d);
                 self._check_assign(op_idx)
             if op.op == &#34;Label&#34;:
                 continue
+            _prev_len = len(block.statements)
 
             if op.op == &#34;Nop&#34;:
                 continue
@@ -1197,6 +1239,18 @@ el.replaceWith(d);
                     )
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
+
+            # Tag the newly-appended statement with source location and opcode index
+            if op_idx is not None and len(block.statements) &gt; _prev_len:
+                stmt = block.statements[-1]
+                stmt.src_op_idx = op_idx
+                if _debuginfo is not None:
+                    try:
+                        ref = _debuginfo[op_idx]
+                        stmt.src_line = ref.line
+                        stmt.src_file_idx = ref.value
+                    except IndexError:
+                        pass
 
     def _shortest_distances(
         self,
@@ -1693,6 +1747,41 @@ el.replaceWith(d);
 <div class="desc"><p>Intermediate representation of a function.</p></div>
 <h3>Methods</h3>
 <dl>
+<dt id="crashlink.decomp.function.IRFunction.apply_annotations"><code class="name flex">
+<span>def <span class="ident">apply_annotations</span></span>(<span>self) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def apply_annotations(self) -&gt; None:
+    &#34;&#34;&#34;Apply renames and comments from code.annotations to this IR function in-place.&#34;&#34;&#34;
+    store = self.code.annotations
+    findex = self.func.findex.value
+    for local in self.all_locals:
+        if local.reg_idx is not None:
+            rename = store.get_rename(findex, local.reg_idx, local.defining_op_idx)
+            if rename is not None:
+                local.name = rename
+
+    def _walk(block: IRBlock) -&gt; None:
+        for stmt in block.statements:
+            # A statement folded from several opcodes (see IRStatement.adopt)
+            # should surface a comment placed on any one of them.
+            for op_idx in sorted(stmt.src_op_idxs):
+                comment = store.get_comment(findex, op_idx)
+                if comment is not None:
+                    stmt.comment = comment
+                    break
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    _walk(child)
+
+    _walk(self.block)</code></pre>
+</details>
+<div class="desc"><p>Apply renames and comments from code.annotations to this IR function in-place.</p></div>
+</dd>
 <dt id="crashlink.decomp.function.IRFunction.print"><code class="name flex">
 <span>def <span class="ident">print</span></span>(<span>self) ‑> None</span>
 </code></dt>
@@ -1705,6 +1794,27 @@ el.replaceWith(d);
     print(self.block.pprint())</code></pre>
 </details>
 <div class="desc"></div>
+</dd>
+<dt id="crashlink.decomp.function.IRFunction.to_dot"><code class="name flex">
+<span>def <span class="ident">to_dot</span></span>(<span>self) ‑> str | None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def to_dot(self) -&gt; Optional[str]:
+    &#34;&#34;&#34;Render this function&#39;s CFG as Graphviz DOT source, or None for natives
+    (which have no bytecode/CFG). `self.cfg` is built unconditionally for
+    non-natives in `__init__`, so this works regardless of `capture_layers`.&#34;&#34;&#34;
+    if self.cfg is None:
+        return None
+    node_ids = {id(node): i for i, node in enumerate(self.cfg.nodes)}
+    return self._cfg_to_dot(node_ids)</code></pre>
+</details>
+<div class="desc"><p>Render this function's CFG as Graphviz DOT source, or None for natives
+(which have no bytecode/CFG). <code>self.cfg</code> is built unconditionally for
+non-natives in <code>__init__</code>, so this works regardless of <code>capture_layers</code>.</p></div>
 </dd>
 </dl>
 </dd>
@@ -1735,7 +1845,9 @@ el.replaceWith(d);
 <li>
 <h4><code><a title="crashlink.decomp.function.IRFunction" href="#crashlink.decomp.function.IRFunction">IRFunction</a></code></h4>
 <ul class="">
+<li><code><a title="crashlink.decomp.function.IRFunction.apply_annotations" href="#crashlink.decomp.function.IRFunction.apply_annotations">apply_annotations</a></code></li>
 <li><code><a title="crashlink.decomp.function.IRFunction.print" href="#crashlink.decomp.function.IRFunction.print">print</a></code></li>
+<li><code><a title="crashlink.decomp.function.IRFunction.to_dot" href="#crashlink.decomp.function.IRFunction.to_dot">to_dot</a></code></li>
 </ul>
 </li>
 </ul>

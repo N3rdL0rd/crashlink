@@ -1052,6 +1052,251 @@ def optimize(self) -&gt; None:
 </dd>
 </dl>
 </dd>
+<dt id="crashlink.decomp.IRAnonObjectLiteralOptimizer"><code class="flex name class">
+<span>class <span class="ident">IRAnonObjectLiteralOptimizer</span></span>
+<span>(</span><span>function: "'<a title="crashlink.decomp.IRFunction" href="#crashlink.decomp.IRFunction">IRFunction</a>'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
+    &#34;&#34;&#34;
+    Folds `temp = {}; temp.f1 = e1; temp.f2 = e2; ...; use(temp)` into
+    `use({f1: e1, f2: e2, ...})`, wherever the anonymous object has exactly
+    one further reference and it&#39;s the very next statement.
+
+    HashLink lowers every Haxe anonymous-object literal to a `{}` allocation
+    followed by one field-assignment per key. `IRTraceOptimizer` already
+    special-cases this for `trace()`&#39;s implicit position argument; this pass
+    generalizes it to any consumer — most notably the same `?pos:haxe.
+    PosInfos` argument the compiler silently attaches to any function that
+    declares one (e.g. every `haxe.PosException` subclass constructor),
+    which otherwise bloats a two-line `throw new SomeException();` into six
+    lines of DynObj scaffolding.
+    &#34;&#34;&#34;
+
+    TARGET_OPCODES = {&#34;New&#34;}
+
+    def visit_block(self, block: IRBlock) -&gt; None:
+        made_change = True
+        while made_change:
+            made_change = False
+            new_statements: List[IRStatement] = []
+            i = 0
+            while i &lt; len(block.statements):
+                match = self._try_fold(block.statements, i)
+                if match is not None:
+                    consumer, consumed = match
+                    new_statements.append(consumer)
+                    i += consumed
+                    made_change = True
+                    continue
+                new_statements.append(block.statements[i])
+                i += 1
+            block.statements = new_statements
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
+    def _try_fold(self, stmts: List[IRStatement], start: int) -&gt; Optional[Tuple[IRStatement, int]]:
+        stmt = stmts[start]
+        if not isinstance(stmt, IRAssign) or not isinstance(stmt.target, IRLocal):
+            return None
+        if not isinstance(stmt.expr, IRNew) or stmt.expr.constructor_args:
+            return None
+        # Anonymous-object allocations show up as either a generic DynObj or,
+        # when the compiler can infer the exact field set statically (as it
+        # always can for the fixed fileName/lineNumber/className/methodName
+        # shape of `?pos:haxe.PosInfos`), a structural Virtual type. A real
+        # `new SomeClass()` allocation is always an Obj, never either of these.
+        alloc_defn = stmt.expr.get_type().definition
+        if not isinstance(alloc_defn, (DynObj, Virtual)):
+            return None
+        temp = stmt.target
+
+        fields: List[Tuple[str, IRExpression]] = []
+        j = start + 1
+        while j &lt; len(stmts):
+            s = stmts[j]
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRField)
+                and s.target.target == temp
+                and isinstance(s.expr, IRExpression)
+                and not self._expr_uses_local(s.expr, temp)
+            ):
+                fields.append((s.target.field_name, s.expr))
+                j += 1
+                continue
+            break
+
+        if not fields or j &gt;= len(stmts):
+            return None
+
+        use_stmt = stmts[j]
+        if self._count_local_refs(use_stmt, temp) != 1:
+            return None
+        for later in stmts[j + 1 :]:
+            if self._stmt_uses_local(later, temp):
+                return None
+
+        literal = IRObjectLiteral(self.func.code, fields)
+        if not self._substitute_use(use_stmt, temp, literal):
+            return None
+        use_stmt.adopt(*stmts[start:j])  # the alloc + field-assign statements are dropped
+        return use_stmt, j - start + 1
+
+    def _substitute_use(self, stmt: IRStatement, local: IRLocal, replacement: IRExpression) -&gt; bool:
+        if isinstance(stmt, IRAssign):
+            changed = False
+            if stmt.expr == local:
+                stmt.expr = replacement
+                changed = True
+            elif isinstance(stmt.expr, IRExpression) and self._replace_in_expr(stmt.expr, local, replacement):
+                changed = True
+            if isinstance(stmt.target, IRExpression) and stmt.target != local:
+                if self._replace_in_expr(stmt.target, local, replacement):
+                    changed = True
+            return changed
+        if isinstance(stmt, (IRReturn, IRThrow)):
+            if stmt.value == local:
+                stmt.value = replacement
+                return True
+            if stmt.value is not None:
+                return self._replace_in_expr(stmt.value, local, replacement)
+            return False
+        if isinstance(stmt, IRExpression):
+            return self._replace_in_expr(stmt, local, replacement)
+        return False
+
+    def _replace_in_expr(self, expr: IRExpression, local: IRLocal, replacement: IRExpression) -&gt; bool:
+        made_change = False
+        for i, child in enumerate(expr.get_children()):
+            if not isinstance(child, IRExpression):
+                continue
+            if child == local:
+                if self._set_child(expr, i, replacement):
+                    made_change = True
+                continue
+            if self._replace_in_expr(child, local, replacement):
+                made_change = True
+        return made_change
+
+    def _set_child(self, parent: IRExpression, index: int, value: IRExpression) -&gt; bool:
+        children = parent.get_children()
+        if index &gt;= len(children):
+            return False
+        child = children[index]
+        if isinstance(parent, (IRArithmetic, IRBoolExpr)):
+            if child is parent.left:
+                parent.left = value
+                return True
+            if child is parent.right:
+                parent.right = value
+                return True
+        elif isinstance(parent, IRCall):
+            if parent.target is child:
+                parent.target = cast(Any, value)
+                return True
+            for j, arg in enumerate(parent.args):
+                if arg is child:
+                    parent.args[j] = value
+                    return True
+        elif isinstance(parent, IRField):
+            if child is parent.target:
+                parent.target = value
+                return True
+        elif isinstance(parent, IRCast):
+            if child is parent.expr:
+                parent.expr = value
+                return True
+        elif isinstance(parent, IRArrayAccess):
+            if child is parent.array:
+                parent.array = value
+                return True
+            if child is parent.index:
+                parent.index = value
+                return True
+        elif isinstance(parent, IRNew):
+            for j, arg in enumerate(parent.constructor_args):
+                if arg is child:
+                    parent.constructor_args[j] = value
+                    return True
+        elif isinstance(parent, IREnumConstruct):
+            for j, arg in enumerate(parent.args):
+                if arg is child:
+                    parent.args[j] = value
+                    return True
+        elif isinstance(parent, IREnumField):
+            if child is parent.value:
+                parent.value = value
+                return True
+        elif isinstance(parent, IRArrayLiteral):
+            for j, element in enumerate(parent.elements):
+                if element is child:
+                    parent.elements[j] = value
+                    return True
+        elif isinstance(parent, IRRef):
+            if child is parent.target:
+                parent.target = value
+                return True
+        return False
+
+    def _count_local_refs(self, stmt: IRStatement, local: IRLocal) -&gt; int:
+        if stmt == local:
+            return 1
+        return sum(self._count_local_refs(child, local) for child in stmt.get_children())
+
+    def _stmt_uses_local(self, stmt: IRStatement, local: IRLocal) -&gt; bool:
+        return self._count_local_refs(stmt, local) &gt; 0
+
+    def _expr_uses_local(self, expr: IRExpression, local: IRLocal) -&gt; bool:
+        return self._count_local_refs(expr, local) &gt; 0</code></pre>
+</details>
+<div class="desc"><p>Folds <code>temp = {}; temp.f1 = e1; temp.f2 = e2; ...; use(temp)</code> into
+<code>use({f1: e1, f2: e2, ...})</code>, wherever the anonymous object has exactly
+one further reference and it's the very next statement.</p>
+<p>HashLink lowers every Haxe anonymous-object literal to a <code>{}</code> allocation
+followed by one field-assignment per key. <code><a title="crashlink.decomp.IRTraceOptimizer" href="#crashlink.decomp.IRTraceOptimizer">IRTraceOptimizer</a></code> already
+special-cases this for <code>trace()</code>'s implicit position argument; this pass
+generalizes it to any consumer — most notably the same <code>?pos:haxe.
+PosInfos</code> argument the compiler silently attaches to any function that
+declares one (e.g. every <code>haxe.PosException</code> subclass constructor),
+which otherwise bloats a two-line <code>throw new SomeException();</code> into six
+lines of DynObj scaffolding.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.opt.TraversingIROptimizer" href="opt/index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></li>
+<li><a title="crashlink.decomp.opt.IROptimizer" href="opt/index.html#crashlink.decomp.opt.IROptimizer">IROptimizer</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.opt.TraversingIROptimizer" href="opt/index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.TARGET_OPCODES" href="opt/index.html#crashlink.decomp.opt.IROptimizer.TARGET_OPCODES">TARGET_OPCODES</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement" href="opt/index.html#crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement">after_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement" href="opt/index.html#crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement">before_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.optimize" href="opt/index.html#crashlink.decomp.opt.TraversingIROptimizer.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.should_run" href="opt/index.html#crashlink.decomp.opt.IROptimizer.should_run">should_run</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit" href="opt/index.html#crashlink.decomp.opt.TraversingIROptimizer.visit">visit</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_assign" href="opt/index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_assign">visit_assign</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_block" href="opt/index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_block">visit_block</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_break" href="opt/index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_break">visit_break</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_conditional" href="opt/index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_conditional">visit_conditional</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_continue" href="opt/index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_continue">visit_continue</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_expression" href="opt/index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_expression">visit_expression</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop" href="opt/index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop">visit_primitive_loop</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_return" href="opt/index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_return">visit_return</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_switch" href="opt/index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_switch">visit_switch</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch" href="opt/index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch">visit_try_catch</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
 <dt id="crashlink.decomp.IRArithmetic"><code class="flex name class">
 <span>class <span class="ident">IRArithmetic</span></span>
 <span>(</span><span>code: Bytecode,<br>left: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>right: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>op: "'<a title="crashlink.decomp.IRArithmetic.ArithmeticType" href="#crashlink.decomp.IRArithmetic.ArithmeticType">IRArithmetic.ArithmeticType</a>'")</span>
@@ -1173,7 +1418,9 @@ attributes &ndash; see the documentation for details.</p></div>
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -1243,7 +1490,9 @@ attributes &ndash; see the documentation for details.</p></div>
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -1393,7 +1642,9 @@ render it.</p></div>
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -1677,6 +1928,7 @@ source idiom.</p></div>
             accesses = self._find_temp_accesses(use, temp, arr_expr, idx_temp_map)
             if accesses:
                 new_use = self._replace_temp_accesses(use, accesses)
+                new_use.adopt(stmt)  # `stmt` (the bytes-temp definition) is dropped below
                 # Drop only the temp definition itself; the statements between
                 # it and the use (start+1..j-1) must stay in their original
                 # relative order *before* the (now-collapsed) use — moving the
@@ -2016,6 +2268,7 @@ source idiom.</p></div>
 
         literal = IRArrayLiteral(self.func.code, values)
         self._replace_child(use_stmt, anon_call, literal)
+        use_stmt.adopt(*stmts[start:i])  # alloc + element/store statements are dropped
         return use_stmt, i - start + 1
 
     def _is_empty_alloc_array(self, expr: IRStatement) -&gt; bool:
@@ -2099,6 +2352,7 @@ source idiom.</p></div>
 
         literal = IRArrayLiteral(self.func.code, [])
         new_assign = IRAssign(self.func.code, s1.target, literal)
+        new_assign.adopt(s0, s1)
         return new_assign, 2
 
     def _index_shift(self, idx: IRStatement, local: IRLocal) -&gt; Optional[int]:
@@ -2370,9 +2624,11 @@ source idiom.</p></div>
 
         if return_target is not None:
             new_assign = IRAssign(self.func.code, return_target, literal)
+            new_assign.adopt(*stmts[start : i + 1])
             return new_assign, i - start + 1
         else:
             new_return = IRReturn(self.func.code, literal)
+            new_return.adopt(*stmts[start : i + 1])
             return new_return, i - start + 1
 
     def _array_literal_is_worth_recovering(self, arr_local: IRLocal, stmts: List[IRStatement], end_idx: int) -&gt; bool:
@@ -2524,6 +2780,7 @@ source idiom.</p></div>
         # If the length was loaded into a temp immediately before the guard, drop
         # that temp as well; otherwise later passes can leave a dead assignment.
         preceding_to_pop = start - length_assign_idx
+        new_assign.adopt(*stmts[length_assign_idx : start + 1])
         return new_assign, 1, preceding_to_pop
 
     def _recover_constant_index(
@@ -2592,7 +2849,7 @@ source idiom.</p></div>
             true_ok = True
         if not true_ok:
             return None
-        return IRAssign(self.func.code, s.target, first_arg), 1
+        return IRAssign(self.func.code, s.target, first_arg).adopt(s), 1
 
     @staticmethod
     def _expr_eq(a: Optional[IRExpression], b: Optional[IRExpression]) -&gt; bool:
@@ -2839,6 +3096,15 @@ unconditionally.</p></div>
 <div class="desc"></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRStatement.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRStatement.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRBlock"><code class="flex name class">
 <span>class <span class="ident">IRBlock</span></span>
@@ -2980,6 +3246,15 @@ unconditionally.</p></div>
 <div class="desc"></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRStatement.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRStatement.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRBlockFlattener"><code class="flex name class">
 <span>class <span class="ident">IRBlockFlattener</span></span>
@@ -3282,7 +3557,9 @@ attributes &ndash; see the documentation for details.</p></div>
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -3330,6 +3607,15 @@ attributes &ndash; see the documentation for details.</p></div>
 <div class="desc"></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRStatement.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRStatement.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRCall"><code class="flex name class">
 <span>class <span class="ident">IRCall</span></span>
@@ -3471,7 +3757,9 @@ attributes &ndash; see the documentation for details.</p></div>
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -3530,7 +3818,9 @@ attributes &ndash; see the documentation for details.</p></div>
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -4039,6 +4329,8 @@ common_code();</p></div>
                             conditional_stmt.condition = expr_to_inline
                             if used_outside:
                                 new_statements.append(current_stmt)
+                            else:
+                                conditional_stmt.adopt(current_stmt)  # current_stmt&#39;s opcode is dropped
                             new_statements.append(next_stmt)
                             i += 2
                             inlined_something = True
@@ -4059,6 +4351,8 @@ common_code();</p></div>
                                 conditional_stmt.condition = modified_bool_expr
                                 if used_outside:
                                     new_statements.append(current_stmt)
+                                else:
+                                    conditional_stmt.adopt(current_stmt)  # current_stmt&#39;s opcode is dropped
                                 new_statements.append(next_stmt)
                                 i += 2
                                 inlined_something = True
@@ -4079,6 +4373,8 @@ common_code();</p></div>
                             while_loop_stmt.condition = expr_to_inline
                             if used_outside:
                                 new_statements.append(current_stmt)
+                            else:
+                                while_loop_stmt.adopt(current_stmt)  # current_stmt&#39;s opcode is dropped
                             new_statements.append(next_stmt)
                             i += 2
                             inlined_something = True
@@ -4099,6 +4395,8 @@ common_code();</p></div>
                                 while_loop_stmt.condition = modified_bool_expr
                                 if used_outside:
                                     new_statements.append(current_stmt)
+                                else:
+                                    while_loop_stmt.adopt(current_stmt)  # current_stmt&#39;s opcode is dropped
                                 new_statements.append(next_stmt)
                                 i += 2
                                 inlined_something = True
@@ -4147,6 +4445,8 @@ common_code();</p></div>
                             assign_next_stmt.expr = modified_rhs_expr
                             if used_outside:
                                 new_statements.append(current_stmt)
+                            else:
+                                assign_next_stmt.adopt(current_stmt)  # current_stmt&#39;s opcode is dropped
                             new_statements.append(assign_next_stmt)
                             i += 2
                             inlined_something = True
@@ -4158,6 +4458,7 @@ common_code();</p></div>
                                 f&#34;IRCondInliner: Inlining {expr_to_inline} into IRReturn value (direct) for {assigned_local}&#34;
                             )
                             return_stmt.value = expr_to_inline
+                            return_stmt.adopt(current_stmt)  # current_stmt&#39;s opcode is dropped
                             new_statements.append(next_stmt)
                             i += 2
                             inlined_something = True
@@ -4170,6 +4471,7 @@ common_code();</p></div>
                                     f&#34;IRCondInliner: Inlining {expr_to_inline} into IRReturn expression for {assigned_local}&#34;
                                 )
                                 return_stmt.value = modified_ret_val
+                                return_stmt.adopt(current_stmt)  # current_stmt&#39;s opcode is dropped
                                 new_statements.append(next_stmt)
                                 i += 2
                                 inlined_something = True
@@ -4182,6 +4484,9 @@ common_code();</p></div>
                             dbg_print(
                                 f&#34;IRCondInliner: Inlining {expr_to_inline} into IRExpression statement {next_stmt} (now {modified_next_expr}) for {assigned_local}&#34;
                             )
+                            # modified_next_expr may be a brand-new node replacing next_stmt
+                            # outright, so both original opcodes need to be carried forward.
+                            modified_next_expr.adopt(current_stmt, next_stmt)
                             new_statements.append(modified_next_expr)
                             i += 2
                             inlined_something = True
@@ -4431,6 +4736,15 @@ conditional statement (IRConditional, IRWhileLoop) or another expression.</p>
 <div class="desc"></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRStatement.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRStatement.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRConst"><code class="flex name class">
 <span>class <span class="ident">IRConst</span></span>
@@ -4587,7 +4901,9 @@ attributes &ndash; see the documentation for details.</p></div>
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -4629,6 +4945,7 @@ attributes &ndash; see the documentation for details.</p></div>
                             # constructor call (e.g. initializers for constructor
                             # arguments), and place the folded `new` after them.
                             stmt.expr.constructor_args = ctor_args
+                            stmt.adopt(next_stmt)  # constructor-call opcode is dropped below
                             new_statements.extend(block.statements[i + 1 : j])
                             new_statements.append(stmt)
                             i = j + 1
@@ -4760,6 +5077,15 @@ attributes &ndash; see the documentation for details.</p></div>
 <div class="desc"></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRStatement.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRStatement.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRCopyPropOptimizer"><code class="flex name class">
 <span>class <span class="ident">IRCopyPropOptimizer</span></span>
@@ -5148,6 +5474,7 @@ until <code>temp</code> is redefined.</p></div>
             ):
                 if self._has_side_effects(stmt.expr):
                     # Keep the side effects as a bare expression statement.
+                    stmt.expr.adopt(stmt)  # opcode was tagged on the assign, not its expr
                     new_stmts.append(stmt.expr)
                     live.update(uses)
                 # else: drop the dead assignment entirely.
@@ -5853,6 +6180,7 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
                     and isinstance(stmt.expr.target, IRConst)
                     and isinstance(stmt.expr.target.value, Function)
                 ):
+                    stmt.expr.adopt(stmt)  # opcode was tagged on the assign, not its expr
                     new_stmts.append(stmt.expr)
                 continue
             new_stmts.append(stmt)
@@ -5954,7 +6282,9 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -6013,7 +6343,9 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -6070,7 +6402,9 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -6153,6 +6487,7 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
             new_cases[new_case_val] = case_block
 
         new_switch = IRSwitch(self.func.code, enum_value, new_cases, next_stmt.default)
+        new_switch.adopt(stmt, next_stmt)
         return new_switch, 2</code></pre>
 </details>
 <div class="desc"><p>Transform switches on enum indices into switches on the enum value itself,
@@ -6235,6 +6570,7 @@ using enum constructor names for the cases.</p></div>
 <li><a title="crashlink.decomp.ir.IRNeg" href="ir.html#crashlink.decomp.ir.IRNeg">IRNeg</a></li>
 <li><a title="crashlink.decomp.ir.IRNew" href="ir.html#crashlink.decomp.ir.IRNew">IRNew</a></li>
 <li><a title="crashlink.decomp.ir.IRNot" href="ir.html#crashlink.decomp.ir.IRNot">IRNot</a></li>
+<li><a title="crashlink.decomp.ir.IRObjectLiteral" href="ir.html#crashlink.decomp.ir.IRObjectLiteral">IRObjectLiteral</a></li>
 <li><a title="crashlink.decomp.ir.IRPrimitiveJump" href="ir.html#crashlink.decomp.ir.IRPrimitiveJump">IRPrimitiveJump</a></li>
 <li><a title="crashlink.decomp.ir.IRRef" href="ir.html#crashlink.decomp.ir.IRRef">IRRef</a></li>
 <li><a title="crashlink.decomp.ir.IRTypeKind" href="ir.html#crashlink.decomp.ir.IRTypeKind">IRTypeKind</a></li>
@@ -6272,6 +6608,15 @@ def get_type(self) -&gt; Type:
 <div class="desc"><p>Get the type of value this expression produces</p></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRStatement.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRStatement.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRField"><code class="flex name class">
 <span>class <span class="ident">IRField</span></span>
@@ -6334,7 +6679,9 @@ def get_type(self) -&gt; Type:
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -6411,6 +6758,15 @@ def get_type(self) -&gt; Type:
 <div class="desc"></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRStatement.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRStatement.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRForEachLoopOptimizer"><code class="flex name class">
 <span>class <span class="ident">IRForEachLoopOptimizer</span></span>
@@ -6595,7 +6951,11 @@ def get_type(self) -&gt; Type:
                 return None
         new_body = IRBlock(loop.code)
         new_body.statements = list(rest)
-        return IRForEachLoop(loop.code, elem, arr, new_body), idx
+        foreach = IRForEachLoop(loop.code, elem, arr, new_body)
+        # `loop` (the while) and the two discarded body statements (array-index
+        # read + idx++) are dropped in favor of `foreach` and `rest` above.
+        foreach.adopt(loop, first, body.statements[1])
+        return foreach, idx
 
     def visit_block(self, block: IRBlock) -&gt; None:
         made_change = True
@@ -6620,6 +6980,7 @@ def get_type(self) -&gt; Type:
                         prev = new_statements[j]
                         if isinstance(prev, IRAssign) and prev.target == idx:
                             if isinstance(prev.expr, IRConst) and not self._expr_reads_local(prev.expr, idx):
+                                foreach_loop.adopt(prev)
                                 del new_statements[j]
                             break
                         if self._stmt_reads_local(prev, idx):
@@ -6651,6 +7012,7 @@ def get_type(self) -&gt; Type:
                             if self._stmt_assigns_local(foreach_loop.body, arr_local):
                                 break
                             foreach_loop.array = prev.expr
+                            foreach_loop.adopt(prev)
                             del new_statements[j]
                             break
 
@@ -6736,6 +7098,7 @@ User-written
         self.cfg: Optional[CFGraph] = None
         self.block: IRBlock = IRBlock(code)
         self.locals: List[IRLocal] = []
+        self.all_locals: List[IRLocal] = []  # all created locals including superseded splits
         self.opcodes: str = &#34;&#34;
         self.cfg_data: Dict[str, List[Dict[str, Any]]] = {&#34;nodes&#34;: [], &#34;edges&#34;: []}
         self.layer_snapshots: List[Tuple[str, str, bool]] = []
@@ -6781,6 +7144,7 @@ User-written
                 IRDeadCodeEliminator(self),
                 IRSelfAssignOptimizer(self),
                 IRTraceOptimizer(self),
+                IRAnonObjectLiteralOptimizer(self),
                 IRStringConcatFolder(self),
                 IRIntSwitchOptimizer(self),
                 IRStringSwitchOptimizer(self),
@@ -6796,12 +7160,15 @@ User-written
                 IRRedundantRecomputeEliminator(self),
             ]
             self._optimize()
+            self.apply_annotations()
 
     def _lift(self, no_lift: bool = False) -&gt; None:
         &#34;&#34;&#34;Lift function to IR&#34;&#34;&#34;
         assert self.cfg is not None
         for i, reg in enumerate(self.func.regs):
-            self.locals.append(IRLocal(f&#34;var{i}&#34;, reg, code=self.code, reg_idx=i))
+            local = IRLocal(f&#34;var{i}&#34;, reg, code=self.code, reg_idx=i, defining_op_idx=None)
+            self.locals.append(local)
+            self.all_locals.append(local)
         self._build_assign_map()
         self._name_locals()
         if not no_lift:
@@ -6866,7 +7233,7 @@ User-written
         &#34;&#34;&#34;Get the current IRLocal for a register, respecting SSA-esque name transitions.&#34;&#34;&#34;
         return self.locals[reg_idx]
 
-    def _split_local(self, reg_idx: int, name: str) -&gt; IRLocal:
+    def _split_local(self, reg_idx: int, name: str, defining_op_idx: Optional[int] = None) -&gt; IRLocal:
         &#34;&#34;&#34;Create a new IRLocal for a register with a specific name (SSA-esque split).&#34;&#34;&#34;
         reg_type = self.func.regs[reg_idx]
         new_type = reg_type.resolve(self.code)
@@ -6879,8 +7246,9 @@ User-written
         while name in existing_names:
             name = f&#34;{base_name}{suffix}&#34;
             suffix += 1
-        new_local = IRLocal(name, reg_type, code=self.code, reg_idx=reg_idx)
+        new_local = IRLocal(name, reg_type, code=self.code, reg_idx=reg_idx, defining_op_idx=defining_op_idx)
         self.locals[reg_idx] = new_local
+        self.all_locals.append(new_local)
         # Cached blocks may still reference the old local object; force them to
         # be re-lifted so they pick up the new name.
         self._lift_cache.clear()
@@ -6892,7 +7260,32 @@ User-written
             for reg_idx, name in self._op_assigns[op_idx].items():
                 current = self.locals[reg_idx]
                 if current.name != name:
-                    self._split_local(reg_idx, name)
+                    self._split_local(reg_idx, name, defining_op_idx=op_idx)
+
+    def apply_annotations(self) -&gt; None:
+        &#34;&#34;&#34;Apply renames and comments from code.annotations to this IR function in-place.&#34;&#34;&#34;
+        store = self.code.annotations
+        findex = self.func.findex.value
+        for local in self.all_locals:
+            if local.reg_idx is not None:
+                rename = store.get_rename(findex, local.reg_idx, local.defining_op_idx)
+                if rename is not None:
+                    local.name = rename
+
+        def _walk(block: IRBlock) -&gt; None:
+            for stmt in block.statements:
+                # A statement folded from several opcodes (see IRStatement.adopt)
+                # should surface a comment placed on any one of them.
+                for op_idx in sorted(stmt.src_op_idxs):
+                    comment = store.get_comment(findex, op_idx)
+                    if comment is not None:
+                        stmt.comment = comment
+                        break
+                for child in stmt.get_children():
+                    if isinstance(child, IRBlock):
+                        _walk(child)
+
+        _walk(self.block)
 
     def _optimize(self) -&gt; None:
         &#34;&#34;&#34;Optimize the IR&#34;&#34;&#34;
@@ -6946,6 +7339,15 @@ User-written
                 if dst is not None:
                     edges.append({&#34;from&#34;: src, &#34;to&#34;: dst, &#34;type&#34;: edge_type})
         return {&#34;nodes&#34;: nodes, &#34;edges&#34;: edges, &#34;dot&#34;: self._cfg_to_dot(node_ids)}
+
+    def to_dot(self) -&gt; Optional[str]:
+        &#34;&#34;&#34;Render this function&#39;s CFG as Graphviz DOT source, or None for natives
+        (which have no bytecode/CFG). `self.cfg` is built unconditionally for
+        non-natives in `__init__`, so this works regardless of `capture_layers`.&#34;&#34;&#34;
+        if self.cfg is None:
+            return None
+        node_ids = {id(node): i for i, node in enumerate(self.cfg.nodes)}
+        return self._cfg_to_dot(node_ids)
 
     def _cfg_to_dot(self, node_ids: Dict[int, int]) -&gt; str:
         &#34;&#34;&#34;Produce a Graphviz DOT representation of the CFG.
@@ -7232,6 +7634,7 @@ User-written
         return None
 
     def _lift_ops_into_block(self, block: IRBlock, ops: List[Opcode]) -&gt; None:
+        _debuginfo = self.func.debuginfo.value if (self.func.has_debug and self.func.debuginfo) else None
         for op in ops:
             op_idx = self._op_id_to_idx.get(id(op))
             # Capture the register-to-local mapping before any debug-name split.
@@ -7246,6 +7649,7 @@ User-written
                 self._check_assign(op_idx)
             if op.op == &#34;Label&#34;:
                 continue
+            _prev_len = len(block.statements)
 
             if op.op == &#34;Nop&#34;:
                 continue
@@ -7682,6 +8086,18 @@ User-written
                     )
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
+
+            # Tag the newly-appended statement with source location and opcode index
+            if op_idx is not None and len(block.statements) &gt; _prev_len:
+                stmt = block.statements[-1]
+                stmt.src_op_idx = op_idx
+                if _debuginfo is not None:
+                    try:
+                        ref = _debuginfo[op_idx]
+                        stmt.src_line = ref.line
+                        stmt.src_file_idx = ref.value
+                    except IndexError:
+                        pass
 
     def _shortest_distances(
         self,
@@ -8178,6 +8594,41 @@ User-written
 <div class="desc"><p>Intermediate representation of a function.</p></div>
 <h3>Methods</h3>
 <dl>
+<dt id="crashlink.decomp.IRFunction.apply_annotations"><code class="name flex">
+<span>def <span class="ident">apply_annotations</span></span>(<span>self) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def apply_annotations(self) -&gt; None:
+    &#34;&#34;&#34;Apply renames and comments from code.annotations to this IR function in-place.&#34;&#34;&#34;
+    store = self.code.annotations
+    findex = self.func.findex.value
+    for local in self.all_locals:
+        if local.reg_idx is not None:
+            rename = store.get_rename(findex, local.reg_idx, local.defining_op_idx)
+            if rename is not None:
+                local.name = rename
+
+    def _walk(block: IRBlock) -&gt; None:
+        for stmt in block.statements:
+            # A statement folded from several opcodes (see IRStatement.adopt)
+            # should surface a comment placed on any one of them.
+            for op_idx in sorted(stmt.src_op_idxs):
+                comment = store.get_comment(findex, op_idx)
+                if comment is not None:
+                    stmt.comment = comment
+                    break
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    _walk(child)
+
+    _walk(self.block)</code></pre>
+</details>
+<div class="desc"><p>Apply renames and comments from code.annotations to this IR function in-place.</p></div>
+</dd>
 <dt id="crashlink.decomp.IRFunction.print"><code class="name flex">
 <span>def <span class="ident">print</span></span>(<span>self) ‑> None</span>
 </code></dt>
@@ -8190,6 +8641,27 @@ User-written
     print(self.block.pprint())</code></pre>
 </details>
 <div class="desc"></div>
+</dd>
+<dt id="crashlink.decomp.IRFunction.to_dot"><code class="name flex">
+<span>def <span class="ident">to_dot</span></span>(<span>self) ‑> str | None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def to_dot(self) -&gt; Optional[str]:
+    &#34;&#34;&#34;Render this function&#39;s CFG as Graphviz DOT source, or None for natives
+    (which have no bytecode/CFG). `self.cfg` is built unconditionally for
+    non-natives in `__init__`, so this works regardless of `capture_layers`.&#34;&#34;&#34;
+    if self.cfg is None:
+        return None
+    node_ids = {id(node): i for i, node in enumerate(self.cfg.nodes)}
+    return self._cfg_to_dot(node_ids)</code></pre>
+</details>
+<div class="desc"><p>Render this function's CFG as Graphviz DOT source, or None for natives
+(which have no bytecode/CFG). <code>self.cfg</code> is built unconditionally for
+non-natives in <code>__init__</code>, so this works regardless of <code>capture_layers</code>.</p></div>
 </dd>
 </dl>
 </dd>
@@ -8340,7 +8812,9 @@ reg = <IRConst type=GLOBAL_STRING, value="the actual string"></p></div>
             return None
         if _stmt_lists_structurally_equal(outer_true, inner.true_block.statements):
             or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, stmt.condition, inner.condition)
-            return IRConditional(self.func.code, or_cond, inner.true_block, inner.false_block)
+            merged = IRConditional(self.func.code, or_cond, inner.true_block, inner.false_block)
+            merged.adopt(stmt, inner)
+            return merged
         return None
 
     def _try_merge_sibling(
@@ -8364,7 +8838,12 @@ reg = <IRConst type=GLOBAL_STRING, value="the actual string"></p></div>
         or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, not_a, inner.condition)
         rest_block = IRBlock(self.func.code)
         rest_block.statements = outer_true[1:]
-        return IRConditional(self.func.code, or_cond, inner.true_block, rest_block), len(inner_true)
+        merged = IRConditional(self.func.code, or_cond, inner.true_block, rest_block)
+        # The consumed parent-block siblings duplicate inner_true&#39;s *content*
+        # (that&#39;s the merge precondition) but are distinct compiled copies with
+        # their own opcodes, same as stmt/inner themselves being replaced.
+        merged.adopt(stmt, inner, *following[: len(inner_true)])
+        return merged, len(inner_true)
 
     def _try_merge_sibling_and(
         self, stmt: IRConditional, following: List[IRStatement]
@@ -8389,6 +8868,7 @@ reg = <IRConst type=GLOBAL_STRING, value="the actual string"></p></div>
             return None
         and_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.AND, stmt.condition, inner.condition)
         merged = IRConditional(self.func.code, and_cond, inner.true_block, inner.false_block)
+        merged.adopt(stmt, inner, *following[: len(wanted)])
         return merged, len(inner_false)
 
     def _invert(self, cond: IRExpression) -&gt; IRExpression:
@@ -8525,6 +9005,15 @@ which recompiles to different (larger) bytecode than the original.</p></div>
 <div class="desc"></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRStatement.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRStatement.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRIntRangeLoopOptimizer"><code class="flex name class">
 <span>class <span class="ident">IRIntRangeLoopOptimizer</span></span>
@@ -8683,7 +9172,11 @@ which recompiles to different (larger) bytecode than the original.</p></div>
                     return None
         new_body = IRBlock(loop.code)
         new_body.statements = list(rest)
-        return IRIntRangeLoop(loop.code, elem, idx, end_expr, new_body), idx
+        range_loop = IRIntRangeLoop(loop.code, elem, idx, end_expr, new_body)
+        # `loop` (the while) and the two discarded body statements (elem = idx,
+        # idx++) are dropped in favor of `range_loop` and `rest` above.
+        range_loop.adopt(loop, first, body.statements[1])
+        return range_loop, idx
 
     def visit_block(self, block: IRBlock) -&gt; None:
         made_change = True
@@ -8708,6 +9201,7 @@ which recompiles to different (larger) bytecode than the original.</p></div>
                         if isinstance(prev, IRAssign) and prev.target == idx:
                             if not self._expr_reads_local(prev.expr, idx):
                                 range_loop.start = prev.expr
+                                range_loop.adopt(prev)
                                 del new_statements[j]
                             break
                         if self._stmt_reads_local(prev, idx):
@@ -8813,7 +9307,9 @@ of integers, not an array's contents.</p></div>
         default: Optional[IRBlock] = None
         local: Optional[IRLocal] = None
         current: Optional[IRStatement] = stmt
+        chain: List[IRStatement] = []
         while isinstance(current, IRConditional):
+            chain.append(current)
             cond = current.condition
             if not isinstance(cond, IRBoolExpr) or cond.op not in (
                 IRBoolExpr.CompareType.EQ,
@@ -8855,7 +9351,7 @@ of integers, not an array's contents.</p></div>
             return None
         if default is None:
             default = IRBlock(self.func.code)
-        return IRSwitch(self.func.code, local, cases, default)</code></pre>
+        return cast(IRSwitch, IRSwitch(self.func.code, local, cases, default).adopt(*chain))</code></pre>
 </details>
 <div class="desc"><p>Recover IRSwitch statements from lowered chains of integer equality/inequality
 conditionals. HashLink compiles sparse or negative integer switches as nested
@@ -8893,7 +9389,7 @@ back into a switch.</p></div>
 </dd>
 <dt id="crashlink.decomp.IRLocal"><code class="flex name class">
 <span>class <span class="ident">IRLocal</span></span>
-<span>(</span><span>name: str, type: tIndex, code: Bytecode, reg_idx: Optional[int] = None)</span>
+<span>(</span><span>name: str,<br>type: tIndex,<br>code: Bytecode,<br>reg_idx: Optional[int] = None,<br>defining_op_idx: Optional[int] = None)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -8901,11 +9397,19 @@ back into a switch.</p></div>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class IRLocal(IRExpression):
-    def __init__(self, name: str, type: tIndex, code: Bytecode, reg_idx: Optional[int] = None):
+    def __init__(
+        self,
+        name: str,
+        type: tIndex,
+        code: Bytecode,
+        reg_idx: Optional[int] = None,
+        defining_op_idx: Optional[int] = None,
+    ):
         super().__init__(code)
         self.name = name
         self.type = type
         self.reg_idx = reg_idx
+        self.defining_op_idx: Optional[int] = defining_op_idx
         # Set by IRNativeArrayAllocOptimizer when this local is bound to a
         # `Native.alloc_array(ty, size)` result: the bytecode&#39;s own &#34;Array&#34; kind
         # carries no element-type info, but Haxe&#39;s hl.NativeArray&lt;T&gt; needs one,
@@ -8974,7 +9478,9 @@ back into a switch.</p></div>
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -9001,7 +9507,7 @@ back into a switch.</p></div>
     &#34;&#34;&#34;
 
     def _clone_bool_expr(self, expr: IRBoolExpr) -&gt; IRBoolExpr:
-        return IRBoolExpr(expr.code, expr.op, expr.left, expr.right)
+        return cast(IRBoolExpr, IRBoolExpr(expr.code, expr.op, expr.left, expr.right).adopt(expr))
 
     def _inline_into_boolexpr(
         self, bool_expr: IRBoolExpr, target: IRLocal | IRField | IRArrayAccess, expr_to_inline: IRExpression
@@ -9050,6 +9556,7 @@ back into a switch.</p></div>
 
         new_while_loop = IRWhileLoop(loop.code, true_loop_condition, new_body_block)
         new_while_loop.comment = loop.comment
+        new_while_loop.adopt(loop, exit_condition_expr)
         return new_while_loop
 
     def visit_block(self, block: IRBlock) -&gt; None:
@@ -9096,6 +9603,7 @@ back into a switch.</p></div>
 
                 inlined = self._inline_into_boolexpr(working_exit_condition, stmt.target, stmt.expr)
                 if inlined:
+                    working_exit_condition.adopt(stmt)  # stmt itself is dropped below
                     continue
             remaining_setup.append(stmt)
 
@@ -9115,6 +9623,7 @@ back into a switch.</p></div>
         new_while_loop = IRWhileLoop(loop.code, loop_continuation_expr, new_body_block)
 
         new_while_loop.comment = loop.comment
+        new_while_loop.adopt(loop, loop_continuation_expr)
 
         dbg_print(f&#34;IRLoopCondOpt: Converted IRPrimitiveLoop to IRWhileLoop. While condition: {loop_continuation_expr}&#34;)
         return new_while_loop</code></pre>
@@ -9247,6 +9756,11 @@ are prepended to the new IRWhileLoop's body.</p></div>
         new_body = IRBlock(self.func.code)
         new_body.statements = list(body)
         loop = IRForEachLoop(self.func.code, elem_local, array_literal, new_body)
+        # Only the first iteration&#39;s header+body statements survive as objects
+        # (reused for new_body above, keeping their own src_op_idxs intact);
+        # every other iteration&#39;s header/body copy is discarded here, so adopt
+        # those onto the loop itself rather than double-claiming the first one&#39;s.
+        loop.adopt(stmts[start], *stmts[h1:run_end])
         return loop, run_end - start
 
     def _header_assign(self, stmt: IRStatement) -&gt; Optional[Tuple[IRLocal, int]]:
@@ -9599,7 +10113,9 @@ rest of the array-handling IR (GetArray/SetArray/ArraySize all expect it);
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -9786,7 +10302,9 @@ actual bytecode type, kept for type compatibility with the rest of the IR.</p></
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -9851,6 +10369,15 @@ actual bytecode type, kept for type compatibility with the rest of the IR.</p></
 <div class="desc"></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRStatement.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRStatement.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRNeg"><code class="flex name class">
 <span>class <span class="ident">IRNeg</span></span>
@@ -9904,7 +10431,9 @@ actual bytecode type, kept for type compatibility with the rest of the IR.</p></
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -9966,7 +10495,9 @@ actual bytecode type, kept for type compatibility with the rest of the IR.</p></
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -10023,7 +10554,83 @@ actual bytecode type, kept for type compatibility with the rest of the IR.</p></
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.IRObjectLiteral"><code class="flex name class">
+<span>class <span class="ident">IRObjectLiteral</span></span>
+<span>(</span><span>code: Bytecode,<br>fields: List[Tuple[str, <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>]])</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRObjectLiteral(IRExpression):
+    &#34;&#34;&#34;Represents a Haxe anonymous object literal, e.g. `{ foo: 1, bar: &#34;x&#34; }`.
+
+    HashLink always lowers these to `{}` (an empty DynObj allocation) followed
+    by one field-assignment statement per key — including the `?pos:haxe.
+    PosInfos` argument the compiler silently attaches to functions that
+    declare one (most visibly `haxe.PosException` subclasses), so recovering
+    this at IRAnonObjectLiteralOptimizer time keeps e.g. `throw new
+    SomeException()` from ballooning into six lines of DynObj scaffolding.
+    &#34;&#34;&#34;
+
+    def __init__(self, code: Bytecode, fields: List[Tuple[str, IRExpression]]):
+        super().__init__(code)
+        self.fields = fields
+
+    def get_type(self) -&gt; Type:
+        return _get_type_in_code(self.code, &#34;Dyn&#34;)
+
+    def get_children(self) -&gt; List[IRStatement]:
+        return [v for _, v in self.fields]
+
+    def __repr__(self) -&gt; str:
+        inner = &#34;, &#34;.join(f&#34;{k}: {v!r}&#34; for k, v in self.fields)
+        return f&#34;&lt;IRObjectLiteral: {{{inner}}}&gt;&#34;</code></pre>
+</details>
+<div class="desc"><p>Represents a Haxe anonymous object literal, e.g. <code>{ foo: 1, bar: "x" }</code>.</p>
+<p>HashLink always lowers these to <code>{}</code> (an empty DynObj allocation) followed
+by one field-assignment statement per key — including the <code>?pos:haxe.
+PosInfos</code> argument the compiler silently attaches to functions that
+declare one (most visibly <code>haxe.PosException</code> subclasses), so recovering
+this at IRAnonObjectLiteralOptimizer time keeps e.g. <code>throw new
+SomeException()</code> from ballooning into six lines of DynObj scaffolding.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></li>
+<li><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRObjectLiteral.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    return [v for _, v in self.fields]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -10155,7 +10762,9 @@ def optimize(self) -&gt; None:
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -10276,6 +10885,7 @@ def optimize(self) -&gt; None:
             bool_condition_expr = IRBoolExpr(loop.code, condition_type, left=left_expr, right=right_expr)
 
         # Replace the last statement (IRPrimitiveJump) with the new IRBoolExpr
+        bool_condition_expr.adopt(last_cond_stmt)
         loop.condition.statements[-1] = bool_condition_expr
         dbg_print(f&#34;IRPrimitiveJumpLifter: Lifted jump to {bool_condition_expr}&#34;)</code></pre>
 </details>
@@ -10397,6 +11007,7 @@ to operate on the boolean logic.</p></div>
         bool_condition_expr = IRBoolExpr(loop.code, condition_type, left=left_expr, right=right_expr)
 
     # Replace the last statement (IRPrimitiveJump) with the new IRBoolExpr
+    bool_condition_expr.adopt(last_cond_stmt)
     loop.condition.statements[-1] = bool_condition_expr
     dbg_print(f&#34;IRPrimitiveJumpLifter: Lifted jump to {bool_condition_expr}&#34;)</code></pre>
 </details>
@@ -10471,6 +11082,15 @@ to operate on the boolean logic.</p></div>
 <div class="desc"></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRStatement.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRStatement.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRRedundantContinueEliminator"><code class="flex name class">
 <span>class <span class="ident">IRRedundantContinueEliminator</span></span>
@@ -10590,7 +11210,7 @@ explicit else-continue is just noise.</p></div>
                 and _structurally_equal(stmt.expr, nxt.expr)
             ):
                 new_statements.append(stmt)
-                new_statements.append(IRAssign(self.func.code, nxt.target, stmt.target))
+                new_statements.append(IRAssign(self.func.code, nxt.target, stmt.target).adopt(nxt))
                 i += 2
                 continue
             # `t = E; return E;` (or throw) — the terminator re-evaluates E
@@ -10608,6 +11228,7 @@ explicit else-continue is just noise.</p></div>
                 and nxt.value is not None
                 and _structurally_equal(stmt.expr, nxt.value)
             ):
+                nxt.adopt(stmt)  # stmt is dropped; nxt (return/throw) is kept as-is below
                 i += 1
                 continue
             new_statements.append(stmt)
@@ -10704,7 +11325,9 @@ produces extra opcodes that don't exist in the original bytecode.</p></div>
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -10753,6 +11376,15 @@ produces extra opcodes that don't exist in the original bytecode.</p></div>
 <div class="desc"></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRStatement.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRStatement.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRSelfAssignOptimizer"><code class="flex name class">
 <span>class <span class="ident">IRSelfAssignOptimizer</span></span>
@@ -10858,6 +11490,7 @@ produces extra opcodes that don't exist in the original bytecode.</p></div>
                     if not replaced:
                         i += 1
                         continue
+                nxt.adopt(stmt)  # stmt is dropped, folded into nxt&#39;s RHS
                 block.statements.pop(i)
                 changed = True
         for stmt in block.statements:
@@ -11128,6 +11761,31 @@ propagation.</p></div>
     def __init__(self, code: Bytecode):
         self.code = code
         self.comment: str = &#34;&#34;
+        self.src_line: Optional[int] = None
+        self.src_file_idx: Optional[int] = None
+        # All original opcode indices this statement represents. Populated with a
+        # single index at initial lift time; when an optimizer folds several
+        # statements into one, it should call `.adopt(*originals)` so every
+        # constituent opcode still resolves back to the resulting line (for
+        # disasm&lt;-&gt;pseudocode sync and per-opcode comments) instead of only
+        # whichever one happened to seed the replacement statement.
+        self.src_op_idxs: Set[int] = set()
+
+    @property
+    def src_op_idx(self) -&gt; Optional[int]:
+        &#34;&#34;&#34;Primary (lowest) source opcode index. Prefer `src_op_idxs` for anything
+        that needs to account for statements folded from multiple opcodes.&#34;&#34;&#34;
+        return min(self.src_op_idxs) if self.src_op_idxs else None
+
+    @src_op_idx.setter
+    def src_op_idx(self, value: Optional[int]) -&gt; None:
+        self.src_op_idxs = {value} if value is not None else set()
+
+    def adopt(self, *others: &#34;IRStatement&#34;) -&gt; &#34;IRStatement&#34;:
+        &#34;&#34;&#34;Merge in the source-opcode indices of statement(s) this one replaces.&#34;&#34;&#34;
+        for o in others:
+            self.src_op_idxs |= o.src_op_idxs
+        return self
 
     @abstractmethod
     def __repr__(self) -&gt; str:
@@ -11165,8 +11823,42 @@ inheritance.</p></div>
 <li><a title="crashlink.decomp.ir.IRTryCatch" href="ir.html#crashlink.decomp.ir.IRTryCatch">IRTryCatch</a></li>
 <li><a title="crashlink.decomp.ir.IRWhileLoop" href="ir.html#crashlink.decomp.ir.IRWhileLoop">IRWhileLoop</a></li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.decomp.IRStatement.src_op_idx"><code class="name">prop <span class="ident">src_op_idx</span> : Optional[int]</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@property
+def src_op_idx(self) -&gt; Optional[int]:
+    &#34;&#34;&#34;Primary (lowest) source opcode index. Prefer `src_op_idxs` for anything
+    that needs to account for statements folded from multiple opcodes.&#34;&#34;&#34;
+    return min(self.src_op_idxs) if self.src_op_idxs else None</code></pre>
+</details>
+<div class="desc"><p>Primary (lowest) source opcode index. Prefer <code>src_op_idxs</code> for anything
+that needs to account for statements folded from multiple opcodes.</p></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
+<dt id="crashlink.decomp.IRStatement.adopt"><code class="name flex">
+<span>def <span class="ident">adopt</span></span>(<span>self,<br>*others: "'<a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a>'") ‑> <a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def adopt(self, *others: &#34;IRStatement&#34;) -&gt; &#34;IRStatement&#34;:
+    &#34;&#34;&#34;Merge in the source-opcode indices of statement(s) this one replaces.&#34;&#34;&#34;
+    for o in others:
+        self.src_op_idxs |= o.src_op_idxs
+    return self</code></pre>
+</details>
+<div class="desc"><p>Merge in the source-opcode indices of statement(s) this one replaces.</p></div>
+</dd>
 <dt id="crashlink.decomp.IRStatement.get_children"><code class="name flex">
 <span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a>]</span>
 </code></dt>
@@ -11365,6 +12057,7 @@ def get_children(self) -&gt; List[IRStatement]:
                             target,
                             [bytes_expr, length_expr],
                         )
+                        stmt.adopt(block.statements[bytes_idx], block.statements[len_idx])
                         remove.add(bytes_idx)
                         remove.add(len_idx)
                         i = len_idx + 1
@@ -11540,6 +12233,7 @@ source idiom <code>__alloc__(bytes, length)</code> inside the String class.</p><
         else:
             return None
 
+        new_use.adopt(*statements[start : use_idx + 1])
         return new_use, use_idx - start + 1
 
     def _is_string_expr(self, expr: IRExpression) -&gt; bool:
@@ -11811,6 +12505,7 @@ the pseudocode printer then renders with Haxe's <code>+</code> operator.</p></di
         if count_ref_local.name == int_arg.name:
             if consumed_stmt is not None:
                 self._consumed.add(id(consumed_stmt))
+                self._target_stmt.adopt(consumed_stmt)
             return value_local
 
         # Indirect match: count_ref = &amp;int_arg (before IRConditionInliner runs, the Ref
@@ -11821,6 +12516,7 @@ the pseudocode printer then renders with Haxe's <code>+</code> operator.</p></di
                 if ref_defn.expr.target.name == int_arg.name:
                     if consumed_stmt is not None:
                         self._consumed.add(id(consumed_stmt))
+                        self._target_stmt.adopt(consumed_stmt)
                     return value_local
 
         return None
@@ -11843,6 +12539,7 @@ the pseudocode printer then renders with Haxe's <code>+</code> operator.</p></di
                 if isinstance(stmt.target, IRLocal):
                     current_assigns[stmt.target.name] = stmt
                 if isinstance(stmt.expr, IRExpression):
+                    self._target_stmt = stmt
                     stmt.expr = self._rewrite_expr(stmt.expr, current_assigns)
 
         # A bytes-temp assignment fully consumed by a collapse above is now
@@ -11945,6 +12642,7 @@ nested inside <strong>add</strong> are collapsed to the plain integer local.</p>
                             break
                         switch.cases.update(next_switch.cases)
                         switch.default = next_switch.default
+                        switch.adopt(next_switch)
                         tail = next_tail
                         i += 1
                     # Whatever&#39;s left once the chain stops matching is exactly
@@ -11979,10 +12677,12 @@ nested inside <strong>add</strong> are collapsed to the plain integer local.</p>
         parsed = self._parse_compare_chain(len_cond.true_block, s_local, temp_local, collect_tail=True)
         if parsed is None:
             return None
-        cases, default, tail = parsed
+        cases, default, tail, consumed = parsed
         if not default.statements:
             default = stmt.false_block
-        return IRSwitch(self.func.code, s_local, cases, default), tail
+        new_switch = IRSwitch(self.func.code, s_local, cases, default)
+        new_switch.adopt(stmt, len_cond, *consumed)
+        return new_switch, tail
 
     def _match_null_check(self, cond: IRExpression) -&gt; Optional[IRLocal]:
         if (
@@ -12042,7 +12742,7 @@ nested inside <strong>add</strong> are collapsed to the plain integer local.</p>
         s_local: IRLocal,
         temp_local: IRLocal,
         collect_tail: bool = False,
-    ) -&gt; Optional[Tuple[Dict[IRConst, IRBlock], IRBlock, List[IRStatement]]]:
+    ) -&gt; Optional[Tuple[Dict[IRConst, IRBlock], IRBlock, List[IRStatement], List[IRStatement]]]:
         if not block.statements:
             return None
         compare_idx: Optional[int] = None
@@ -12110,9 +12810,9 @@ nested inside <strong>add</strong> are collapsed to the plain integer local.</p>
                 default = inner_switch.default
                 if not tail and collect_tail:
                     tail = inner_tail
-                return cases, default, tail
+                return cases, default, tail, [assign, compare_cond, inner_switch]
         default = rest
-        return cases, default, tail</code></pre>
+        return cases, default, tail, [assign, compare_cond]</code></pre>
 </details>
 <div class="desc"><p>Recover IRSwitch statements from HashLink's string-switch lowering.</p>
 <p>HashLink compiles <code>switch (s) { case "foo": ...; case "bar": ...; }</code> into a
@@ -12205,6 +12905,15 @@ string local.</p></div>
 <div class="desc"></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRStatement.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRStatement.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRTempAssignmentInliner"><code class="flex name class">
 <span>class <span class="ident">IRTempAssignmentInliner</span></span>
@@ -12694,6 +13403,8 @@ string local.</p></div>
                                     dbg_print(f&#34;Conservatively inlining assignment for temporary &#39;{temp_local.name}&#39;.&#34;)
                                     if inside_loop_body:
                                         new_statements.append(current_stmt)
+                                    else:
+                                        next_stmt.adopt(current_stmt)  # current_stmt is dropped
                                     new_statements.append(next_stmt)
                                     i += 2
                                     inlined = True
@@ -12775,15 +13486,22 @@ string local.</p></div>
                     continue
 
                 any_substituted = False
+                substituted_into: List[IRStatement] = []
                 for subsequent_stmt in remaining_statements:
                     if self._substitute_in_statement(subsequent_stmt, temp_local, expr_to_inline):
                         any_substituted = True
+                        substituted_into.append(subsequent_stmt)
 
                 if not any_substituted:
                     continue
 
                 dbg_print(f&#34;Aggressively inlining safe expression from temporary &#39;{temp_local.name}&#39;.&#34;)
                 if not inside_loop_body:
+                    # stmt is dropped below; every site the expression got inlined
+                    # into inherits its opcode (setdefault means whichever renders
+                    # first in output wins, so adopting onto all of them is safe).
+                    for target_stmt in substituted_into:
+                        target_stmt.adopt(stmt)
                     statements_to_remove.append(stmt)
                 made_change_in_pass = True
                 break
@@ -12978,6 +13696,15 @@ without changing the program's semantics.</p></div>
 <div class="desc"></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRStatement.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRStatement.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRTrace"><code class="flex name class">
 <span>class <span class="ident">IRTrace</span></span>
@@ -13025,6 +13752,15 @@ without changing the program's semantics.</p></div>
 <div class="desc"></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRStatement.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRStatement.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRTraceOptimizer"><code class="flex name class">
 <span>class <span class="ident">IRTraceOptimizer</span></span>
@@ -13058,8 +13794,18 @@ without changing the program's semantics.</p></div>
                     branched = self._try_branched_trace(stmt, block.statements, i)
                     if branched is not None:
                         true_tail, false_tail, msg_true, msg_false, pos_true, pos_false, consumed_after = branched
-                        stmt.true_block.statements = true_tail + [IRTrace(self.func.code, msg_true, pos_true)]
-                        stmt.false_block.statements = false_tail + [IRTrace(self.func.code, msg_false, pos_false)]
+                        old_true_stmts = stmt.true_block.statements
+                        old_false_stmts = stmt.false_block.statements
+                        true_trace = IRTrace(self.func.code, msg_true, pos_true)
+                        false_trace = IRTrace(self.func.code, msg_false, pos_false)
+                        true_trace.adopt(*old_true_stmts[len(true_tail) :])
+                        false_trace.adopt(*old_false_stmts[len(false_tail) :])
+                        stmt.true_block.statements = true_tail + [true_trace]
+                        stmt.false_block.statements = false_tail + [false_trace]
+                        # The shared position-field assigns + hoisted call after the
+                        # conditional are dropped outright; fold their opcodes onto
+                        # the conditional itself since neither branch alone owns them.
+                        stmt.adopt(*block.statements[i + 1 : i + 1 + consumed_after])
                         new_statements.append(stmt)
                         i += 1 + consumed_after
                         made_change = True
@@ -13067,6 +13813,7 @@ without changing the program's semantics.</p></div>
 
                 temp_local = None
                 start_idx = i
+                extra_adopt: List[IRStatement] = []
 
                 if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
                     if isinstance(stmt.expr, IRNew) and stmt.expr.get_type().definition.__class__ == DynObj:
@@ -13106,9 +13853,10 @@ without changing the program's semantics.</p></div>
                             field_name = field_target.field_name
                             if isinstance(next_stmt.expr, IRConst):
                                 pos_info[field_name] = next_stmt.expr.value
-                                dbg_print(
-                                    f&#34;[TraceOpt]  -&gt; Collected const field: {field_name} = {next_stmt.expr.value!r}&#34;
-                                )
+                                if DEBUG:
+                                    dbg_print(
+                                        f&#34;[TraceOpt]  -&gt; Collected const field: {field_name} = {next_stmt.expr.value!r}&#34;
+                                    )
                                 j += 1
                                 continue
                             elif isinstance(next_stmt.expr, IRLocal):
@@ -13137,7 +13885,8 @@ without changing the program's semantics.</p></div>
 
                         is_trace_func = False
                         if isinstance(call_stmt.target, IRField) and call_stmt.target.field_name == &#34;trace&#34;:
-                            dbg_print(&#34;[TraceOpt]  -&gt; Call target is a field named &#39;trace&#39;.&#34;)
+                            if DEBUG:
+                                dbg_print(&#34;[TraceOpt]  -&gt; Call target is a field named &#39;trace&#39;.&#34;)
                             target_obj = call_stmt.target.target
                             if (
                                 isinstance(target_obj, IRConst)
@@ -13148,12 +13897,13 @@ without changing the program's semantics.</p></div>
                                 if &#34;haxe.$Log&#34; in obj_name:
                                     is_trace_func = True
 
-                        dbg_print(f&#34;[TraceOpt]  -&gt; Is function &#39;haxe.Log.trace&#39;? {is_trace_func}&#34;)
+                        if DEBUG:
+                            dbg_print(f&#34;[TraceOpt]  -&gt; Is function &#39;haxe.Log.trace&#39;? {is_trace_func}&#34;)
 
                         if is_our_var and is_trace_func:
                             is_valid_trace_call = True
 
-                    else:
+                    elif DEBUG:
                         dbg_print(f&#34;[TraceOpt]  -&gt; FAILED: Statement is not an IRCall with 2 arguments.&#34;)
 
                     if is_valid_trace_call:
@@ -13169,6 +13919,7 @@ without changing the program's semantics.</p></div>
                         ):
                             # inline if this is obviously compiler-generated (one use, right before the call, has no user assign)
                             _popped = new_statements.pop()
+                            extra_adopt.append(_popped)
                             msg_expr = _popped.expr if isinstance(_popped, IRAssign) else msg_expr
                         resolved_pos: Dict[str, Any] = {}
                         for k, v in pos_info.items():
@@ -13188,12 +13939,13 @@ without changing the program's semantics.</p></div>
                             else:
                                 resolved_pos[k] = v
                         trace_stmt = IRTrace(self.func.code, msg_expr, resolved_pos)
+                        trace_stmt.adopt(*block.statements[i : j + 1], *extra_adopt)
                         new_statements.append(trace_stmt)
 
                         i = j + 1
                         made_change = True
                         continue
-                    else:
+                    elif DEBUG:
                         dbg_print(f&#34;[TraceOpt] FAILED: Pattern did not match for trace call.&#34;)
 
                 new_statements.append(stmt)
@@ -13445,6 +14197,15 @@ position and collapses it into a single IRTrace statement.</p></div>
 <div class="desc"></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRStatement.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRStatement.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRTypeKind"><code class="flex name class">
 <span>class <span class="ident">IRTypeKind</span></span>
@@ -13499,7 +14260,9 @@ position and collapses it into a single IRTrace statement.</p></div>
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -13557,7 +14320,9 @@ position and collapses it into a single IRTrace statement.</p></div>
 <ul class="hlist">
 <li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
 <ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 </ul>
@@ -13634,6 +14399,15 @@ position and collapses it into a single IRTrace statement.</p></div>
 <div class="desc"><p>Returns the type of the destination register, or Void if not applicable.</p></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IRVoidAssignOptimizer"><code class="flex name class">
 <span>class <span class="ident">IRVoidAssignOptimizer</span></span>
@@ -13667,6 +14441,7 @@ position and collapses it into a single IRTrace statement.</p></div>
                             )
 
                         expr_being_kept = stmt.expr
+                        expr_being_kept.adopt(stmt)  # opcode was tagged on the assign, not its expr
                         new_statements.append(expr_being_kept)
                         made_change_this_pass = True
                         continue
@@ -13789,6 +14564,15 @@ E.g., <code>var_void_local:Void = some_call();</code> becomes <code>some_call();
 <div class="desc"></div>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRStatement.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRStatement.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 <dt id="crashlink.decomp.IsolatedCFGraph"><code class="flex name class">
 <span>class <span class="ident">IsolatedCFGraph</span></span>
@@ -14000,6 +14784,7 @@ E.g., <code>var_void_local:Void = some_call();</code> becomes <code>some_call();
 <li><a title="crashlink.decomp.opt.arrays.IRArrayPatternOptimizer" href="opt/arrays.html#crashlink.decomp.opt.arrays.IRArrayPatternOptimizer">IRArrayPatternOptimizer</a></li>
 <li><a title="crashlink.decomp.opt.arrays.IRNativeArrayAllocOptimizer" href="opt/arrays.html#crashlink.decomp.opt.arrays.IRNativeArrayAllocOptimizer">IRNativeArrayAllocOptimizer</a></li>
 <li><a title="crashlink.decomp.opt.arrays.IRNativeMapAllocOptimizer" href="opt/arrays.html#crashlink.decomp.opt.arrays.IRNativeMapAllocOptimizer">IRNativeMapAllocOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRAnonObjectLiteralOptimizer" href="opt/clean.html#crashlink.decomp.opt.clean.IRAnonObjectLiteralOptimizer">IRAnonObjectLiteralOptimizer</a></li>
 <li><a title="crashlink.decomp.opt.clean.IRArrayGrowGuardEliminator" href="opt/clean.html#crashlink.decomp.opt.clean.IRArrayGrowGuardEliminator">IRArrayGrowGuardEliminator</a></li>
 <li><a title="crashlink.decomp.opt.clean.IRBlockFlattener" href="opt/clean.html#crashlink.decomp.opt.clean.IRBlockFlattener">IRBlockFlattener</a></li>
 <li><a title="crashlink.decomp.opt.clean.IRCommonBlockMerger" href="opt/clean.html#crashlink.decomp.opt.clean.IRCommonBlockMerger">IRCommonBlockMerger</a></li>
@@ -14364,6 +15149,9 @@ heavily-converging control flow.</p></div>
 </ul>
 </li>
 <li>
+<h4><code><a title="crashlink.decomp.IRAnonObjectLiteralOptimizer" href="#crashlink.decomp.IRAnonObjectLiteralOptimizer">IRAnonObjectLiteralOptimizer</a></code></h4>
+</li>
+<li>
 <h4><code><a title="crashlink.decomp.IRArithmetic" href="#crashlink.decomp.IRArithmetic">IRArithmetic</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.decomp.IRArithmetic.ArithmeticType" href="#crashlink.decomp.IRArithmetic.ArithmeticType">ArithmeticType</a></code></li>
@@ -14540,7 +15328,9 @@ heavily-converging control flow.</p></div>
 <li>
 <h4><code><a title="crashlink.decomp.IRFunction" href="#crashlink.decomp.IRFunction">IRFunction</a></code></h4>
 <ul class="">
+<li><code><a title="crashlink.decomp.IRFunction.apply_annotations" href="#crashlink.decomp.IRFunction.apply_annotations">apply_annotations</a></code></li>
 <li><code><a title="crashlink.decomp.IRFunction.print" href="#crashlink.decomp.IRFunction.print">print</a></code></li>
+<li><code><a title="crashlink.decomp.IRFunction.to_dot" href="#crashlink.decomp.IRFunction.to_dot">to_dot</a></code></li>
 </ul>
 </li>
 <li>
@@ -14624,6 +15414,12 @@ heavily-converging control flow.</p></div>
 </ul>
 </li>
 <li>
+<h4><code><a title="crashlink.decomp.IRObjectLiteral" href="#crashlink.decomp.IRObjectLiteral">IRObjectLiteral</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRObjectLiteral.get_children" href="#crashlink.decomp.IRObjectLiteral.get_children">get_children</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="crashlink.decomp.IROptimizer" href="#crashlink.decomp.IROptimizer">IROptimizer</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.decomp.IROptimizer.TARGET_OPCODES" href="#crashlink.decomp.IROptimizer.TARGET_OPCODES">TARGET_OPCODES</a></code></li>
@@ -14676,7 +15472,9 @@ heavily-converging control flow.</p></div>
 <li>
 <h4><code><a title="crashlink.decomp.IRStatement" href="#crashlink.decomp.IRStatement">IRStatement</a></code></h4>
 <ul class="">
+<li><code><a title="crashlink.decomp.IRStatement.adopt" href="#crashlink.decomp.IRStatement.adopt">adopt</a></code></li>
 <li><code><a title="crashlink.decomp.IRStatement.get_children" href="#crashlink.decomp.IRStatement.get_children">get_children</a></code></li>
+<li><code><a title="crashlink.decomp.IRStatement.src_op_idx" href="#crashlink.decomp.IRStatement.src_op_idx">src_op_idx</a></code></li>
 </ul>
 </li>
 <li>

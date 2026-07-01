@@ -47,6 +47,103 @@ el.replaceWith(d);
 <section>
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
+<dt id="crashlink.disasm.file_class_map"><code class="name flex">
+<span>def <span class="ident">file_class_map</span></span>(<span>code: Bytecode) ‑> Dict[str, List[<a title="crashlink.disasm.ClassEntry" href="#crashlink.disasm.ClassEntry">ClassEntry</a>]]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def file_class_map(code: Bytecode) -&gt; Dict[str, List[ClassEntry]]:
+    &#34;&#34;&#34;Return source-file → ordered class list with per-method line info.
+
+    Heuristic: for each function with debug info, take the minimum
+    non-zero line number across all its opcodes as its &#34;start line&#34;.
+    Classes are identified via the pseudo method registry (static + instance
+    unified by destaticify).  Within each file, classes are sorted by their
+    earliest start line; methods within each class are sorted the same way.
+    Functions not registered to any class appear under the synthetic class
+    name &#34;(standalone)&#34;.
+
+    Returns {} if the bytecode has no debug info.
+    &#34;&#34;&#34;
+    from .pseudo import _method_registry
+    from .core import destaticify
+
+    if not code.has_debug_info:
+        return {}
+
+    reg = _method_registry(code)
+    fmap = code.get_findex_map()
+
+    # (file_path, canonical_class) -&gt; list of MethodEntry
+    _groups: Dict[Tuple[str, str], List[MethodEntry]] = {}
+
+    for findex, func in fmap.items():
+        if isinstance(func, Native):
+            continue
+        if not func.has_debug or not func.debuginfo or not func.debuginfo.value:
+            continue
+
+        # Minimum non-zero line across all ops = best proxy for declaration line
+        lines = [ref.line for ref in func.debuginfo.value if ref.line &gt; 0]
+        if not lines:
+            continue
+        first_line = min(lines)
+
+        try:
+            file_path = func.resolve_file(code)
+        except Exception:
+            continue
+
+        if findex in reg:
+            obj, method_name, _ = reg[findex]
+            canonical = destaticify(obj.name.resolve(code))
+        else:
+            method_name = full_func_name_str(code, func)
+            canonical = &#34;(standalone)&#34;
+
+        key = (file_path, canonical)
+        _groups.setdefault(key, []).append(MethodEntry(findex=findex, method_name=method_name, first_line=first_line))
+
+    # Sort methods within each class by first_line
+    for entries in _groups.values():
+        entries.sort(key=lambda e: e.first_line)
+
+    # Group by file, then build ClassEntry list sorted by earliest method line
+    file_map: Dict[str, Dict[str, ClassEntry]] = {}
+    for (file_path, canonical), entries in _groups.items():
+        class_first_line = entries[0].first_line
+        if file_path not in file_map:
+            file_map[file_path] = {}
+        if canonical not in file_map[file_path]:
+            file_map[file_path][canonical] = ClassEntry(
+                canonical_name=canonical,
+                first_line=class_first_line,
+                methods=entries,
+            )
+        else:
+            # Merge if the same class appears in the same file (static + instance split)
+            existing = file_map[file_path][canonical]
+            existing.methods.extend(entries)
+            existing.methods.sort(key=lambda e: e.first_line)
+            existing.first_line = min(existing.first_line, class_first_line)
+
+    # Sort classes within each file by first_line
+    return {fp: sorted(classes.values(), key=lambda c: c.first_line) for fp, classes in sorted(file_map.items())}</code></pre>
+</details>
+<div class="desc"><p>Return source-file → ordered class list with per-method line info.</p>
+<p>Heuristic: for each function with debug info, take the minimum
+non-zero line number across all its opcodes as its "start line".
+Classes are identified via the pseudo method registry (static + instance
+unified by destaticify).
+Within each file, classes are sorted by their
+earliest start line; methods within each class are sorted the same way.
+Functions not registered to any class appear under the synthetic class
+name "(standalone)".</p>
+<p>Returns {} if the bytecode has no debug info.</p></div>
+</dd>
 <dt id="crashlink.disasm.fmt_op"><code class="name flex">
 <span>def <span class="ident">fmt_op</span></span>(<span>code: Bytecode,<br>regs: List[Reg] | List[tIndex],<br>op: Opcode,<br>idx: int,<br>width: int = 15,<br>debug: Optional[List[fileRef]] = None,<br>func: Optional[Function] = None) ‑> str</span>
 </code></dt>
@@ -109,6 +206,24 @@ el.replaceWith(d);
     return ops</code></pre>
 </details>
 <div class="desc"><p>Reads and parses a list of opcodes from a human-readable(-ish) assembly format. See <code><a title="crashlink.disasm.to_asm" href="#crashlink.disasm.to_asm">to_asm()</a></code>.</p></div>
+</dd>
+<dt id="crashlink.disasm.full_func_name_str"><code class="name flex">
+<span>def <span class="ident">full_func_name_str</span></span>(<span>code: Bytecode, func: Function) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def full_func_name_str(code: Bytecode, func: Function) -&gt; str:
+    &#34;&#34;&#34;Safe full_func_name that never raises.&#34;&#34;&#34;
+    try:
+        name = code.full_func_name(func)
+        return name if name else f&#34;f@{func.findex.value}&#34;
+    except Exception:
+        return f&#34;f@{func.findex.value}&#34;</code></pre>
+</details>
+<div class="desc"><p>Safe full_func_name that never raises.</p></div>
 </dd>
 <dt id="crashlink.disasm.func"><code class="name flex">
 <span>def <span class="ident">func</span></span>(<span>code: Bytecode, func: Function | Native) ‑> str</span>
@@ -853,6 +968,73 @@ Ret. 1
 </dl>
 </section>
 <section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="crashlink.disasm.ClassEntry"><code class="flex name class">
+<span>class <span class="ident">ClassEntry</span></span>
+<span>(</span><span>canonical_name: str,<br>first_line: int,<br>methods: List[<a title="crashlink.disasm.MethodEntry" href="#crashlink.disasm.MethodEntry">MethodEntry</a>] = &lt;factory&gt;)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dataclass
+class ClassEntry:
+    canonical_name: str
+    first_line: int
+    methods: List[MethodEntry] = dc_field(default_factory=list)</code></pre>
+</details>
+<div class="desc"><p>ClassEntry(canonical_name: 'str', first_line: 'int', methods: 'List[MethodEntry]' = <factory>)</p></div>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.disasm.ClassEntry.canonical_name"><code class="name">var <span class="ident">canonical_name</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.disasm.ClassEntry.first_line"><code class="name">var <span class="ident">first_line</span> : int</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.disasm.ClassEntry.methods"><code class="name">var <span class="ident">methods</span> : List[<a title="crashlink.disasm.MethodEntry" href="#crashlink.disasm.MethodEntry">MethodEntry</a>]</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.disasm.MethodEntry"><code class="flex name class">
+<span>class <span class="ident">MethodEntry</span></span>
+<span>(</span><span>findex: int, method_name: str, first_line: int)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dataclass
+class MethodEntry:
+    findex: int
+    method_name: str
+    first_line: int</code></pre>
+</details>
+<div class="desc"><p>MethodEntry(findex: 'int', method_name: 'str', first_line: 'int')</p></div>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.disasm.MethodEntry.findex"><code class="name">var <span class="ident">findex</span> : int</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.disasm.MethodEntry.first_line"><code class="name">var <span class="ident">first_line</span> : int</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.disasm.MethodEntry.method_name"><code class="name">var <span class="ident">method_name</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+</dl>
+</dd>
+</dl>
 </section>
 </article>
 <nav id="sidebar">
@@ -867,8 +1049,10 @@ Ret. 1
 </li>
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="two-column">
+<li><code><a title="crashlink.disasm.file_class_map" href="#crashlink.disasm.file_class_map">file_class_map</a></code></li>
 <li><code><a title="crashlink.disasm.fmt_op" href="#crashlink.disasm.fmt_op">fmt_op</a></code></li>
 <li><code><a title="crashlink.disasm.from_asm" href="#crashlink.disasm.from_asm">from_asm</a></code></li>
+<li><code><a title="crashlink.disasm.full_func_name_str" href="#crashlink.disasm.full_func_name_str">full_func_name_str</a></code></li>
 <li><code><a title="crashlink.disasm.func" href="#crashlink.disasm.func">func</a></code></li>
 <li><code><a title="crashlink.disasm.func_header" href="#crashlink.disasm.func_header">func_header</a></code></li>
 <li><code><a title="crashlink.disasm.gen_mkdocs" href="#crashlink.disasm.gen_mkdocs">gen_mkdocs</a></code></li>
@@ -879,6 +1063,26 @@ Ret. 1
 <li><code><a title="crashlink.disasm.to_asm" href="#crashlink.disasm.to_asm">to_asm</a></code></li>
 <li><code><a title="crashlink.disasm.type_name" href="#crashlink.disasm.type_name">type_name</a></code></li>
 <li><code><a title="crashlink.disasm.type_to_haxe" href="#crashlink.disasm.type_to_haxe">type_to_haxe</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="crashlink.disasm.ClassEntry" href="#crashlink.disasm.ClassEntry">ClassEntry</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.disasm.ClassEntry.canonical_name" href="#crashlink.disasm.ClassEntry.canonical_name">canonical_name</a></code></li>
+<li><code><a title="crashlink.disasm.ClassEntry.first_line" href="#crashlink.disasm.ClassEntry.first_line">first_line</a></code></li>
+<li><code><a title="crashlink.disasm.ClassEntry.methods" href="#crashlink.disasm.ClassEntry.methods">methods</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.disasm.MethodEntry" href="#crashlink.disasm.MethodEntry">MethodEntry</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.disasm.MethodEntry.findex" href="#crashlink.disasm.MethodEntry.findex">findex</a></code></li>
+<li><code><a title="crashlink.disasm.MethodEntry.first_line" href="#crashlink.disasm.MethodEntry.first_line">first_line</a></code></li>
+<li><code><a title="crashlink.disasm.MethodEntry.method_name" href="#crashlink.disasm.MethodEntry.method_name">method_name</a></code></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>

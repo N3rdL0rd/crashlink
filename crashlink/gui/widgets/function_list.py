@@ -327,7 +327,7 @@ class FunctionList(QWidget):
             # e.g. /a/b/c.hx and /a/b/d.hx share a single "a/b" expand level.
             label_parts = [name]
             while not node.files and len(node.children) == 1:
-                (child_name, child_node), = node.children.items()
+                ((child_name, child_node),) = node.children.items()
                 label_parts.append(child_name)
                 node = child_node
 

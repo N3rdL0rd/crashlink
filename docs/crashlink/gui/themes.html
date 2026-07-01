@@ -1,0 +1,687 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.6">
+<title>crashlink.gui.themes API documentation</title>
+<meta name="description" content="Theme definitions and QSS generation for the crashlink GUI.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>crashlink.gui.themes</code></h1>
+</header>
+<section id="section-intro">
+<p>Theme definitions and QSS generation for the crashlink GUI.</p>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="crashlink.gui.themes.generate_qss"><code class="name flex">
+<span>def <span class="ident">generate_qss</span></span>(<span>t: <a title="crashlink.gui.themes.Theme" href="#crashlink.gui.themes.Theme">Theme</a>) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def generate_qss(t: Theme) -&gt; str:
+    arr_right, arr_down = _arrow_urls(t.overlay)
+    return f&#34;&#34;&#34;
+/* ── Base ──────────────────────────────────────────────── */
+QMainWindow, QDialog, QWidget {{
+    background-color: {t.base};
+    color: {t.text};
+    font-family: &#34;JetBrains Mono&#34;, &#34;Fira Code&#34;, &#34;Cascadia Code&#34;, monospace;
+    font-size: 13px;
+}}
+
+/* ── Wait box (busy indicator) ──────────────────────────── */
+QDialog#waitBox {{
+    background-color: {t.surface1};
+    border: 2px solid {t.accent};
+}}
+QDialog#waitBox QLabel {{
+    background: transparent;
+    color: {t.accent};
+    font-weight: 600;
+}}
+
+/* ── Menu bar ───────────────────────────────────────────── */
+QMenuBar {{
+    background-color: {t.mantle};
+    color: {t.text};
+    border-bottom: 1px solid {t.surface0};
+    padding: 2px;
+}}
+QMenuBar::item:selected {{
+    background-color: {t.surface1};
+    border-radius: 4px;
+}}
+QFrame#viewModeBar {{
+    background: transparent;
+    border: none;
+}}
+QPushButton#modeBtnIcon {{
+    background-color: {t.surface0};
+    color: {t.subtext};
+    border: 1px solid {t.surface1};
+    border-left: none;
+    border-radius: 0px;
+    padding: 2px 0px;
+    font-size: 13px;
+}}
+QPushButton#modeBtnIcon[segment=&#34;first&#34;] {{
+    border-left: 1px solid {t.surface1};
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+}}
+QPushButton#modeBtnIcon[segment=&#34;last&#34;] {{
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+}}
+QPushButton#modeBtnIcon:checked {{
+    background-color: {t.surface2};
+    color: {t.accent};
+}}
+QPushButton#modeBtnIcon:hover:!checked {{
+    background-color: {t.surface1};
+    color: {t.text};
+}}
+QMenu {{
+    background-color: {t.mantle};
+    color: {t.text};
+    border: 1px solid {t.surface0};
+    border-radius: 6px;
+    padding: 4px;
+}}
+QMenu::item:selected {{
+    background-color: {t.surface2};
+    border-radius: 4px;
+}}
+QMenu::separator {{
+    height: 1px;
+    background: {t.surface0};
+    margin: 4px 8px;
+}}
+
+/* ── Splitter ───────────────────────────────────────────── */
+QSplitter::handle {{
+    background-color: {t.surface0};
+}}
+QSplitter::handle:horizontal {{ width: 1px; }}
+QSplitter::handle:vertical   {{ height: 1px; }}
+
+/* ── Panels / frames ────────────────────────────────────── */
+QFrame#sidebar {{
+    background-color: {t.mantle};
+    border-right: 1px solid {t.surface0};
+}}
+QFrame#bottomPanel {{
+    background-color: {t.mantle};
+    border-top: 1px solid {t.surface0};
+}}
+
+/* ── Labels ─────────────────────────────────────────────── */
+QLabel {{
+    color: {t.text};
+    background: transparent;
+}}
+QMainWindow::separator {{
+    background-color: {t.overlay};
+    width: 2px;
+    height: 2px;
+}}
+QMainWindow::separator:hover {{
+    background-color: {t.accent};
+    width: 2px;
+    height: 2px;
+}}
+QDockWidget {{
+    color: {t.text};
+    titlebar-close-icon: none;
+    titlebar-normal-icon: none;
+}}
+QDockWidget::title {{
+    background-color: {t.mantle};
+    color: {t.subtext};
+    padding: 5px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid {t.surface1};
+}}
+QDockWidget::close-button, QDockWidget::float-button {{
+    background: transparent;
+    border: none;
+    padding: 2px;
+}}
+QDockWidget::close-button:hover, QDockWidget::float-button:hover {{
+    background-color: {t.surface1};
+    border-radius: 3px;
+}}
+QFrame#panelHeaderBar {{
+    background-color: {t.mantle};
+    border-bottom: 1px solid {t.surface1};
+}}
+QLabel#panelHeader {{
+    color: {t.subtext};
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    padding: 6px 8px;
+    background: transparent;
+}}
+
+/* ── Search / line edit ─────────────────────────────────── */
+QLineEdit {{
+    background-color: {t.surface0};
+    color: {t.text};
+    border: 1px solid {t.surface1};
+    border-radius: 6px;
+    padding: 4px 8px;
+    selection-background-color: {t.accent};
+    selection-color: {t.base};
+}}
+QLineEdit:focus {{
+    border-color: {t.accent};
+}}
+QLineEdit::placeholder {{
+    color: {t.overlay};
+}}
+
+/* ── Tree widget ─────────────────────────────────────────── */
+QTreeWidget {{
+    background-color: transparent;
+    color: {t.text};
+    border: none;
+    outline: none;
+}}
+QTreeWidget::item {{
+    padding: 3px 4px;
+    min-height: 20px;
+}}
+QTreeWidget::item:hover {{
+    background-color: {t.surface0};
+}}
+QTreeWidget::item:selected {{
+    background-color: {t.surface2};
+    color: {t.text};
+}}
+QTreeWidget::branch:selected {{
+    background-color: {t.surface2};
+}}
+QTreeWidget::branch:has-children:!has-siblings:closed,
+QTreeWidget::branch:closed:has-children:has-siblings {{
+    image: url({arr_right});
+}}
+QTreeWidget::branch:open:has-children:!has-siblings,
+QTreeWidget::branch:open:has-children:has-siblings {{
+    image: url({arr_down});
+}}
+
+/* ── List widget ─────────────────────────────────────────── */
+QListWidget {{
+    background-color: transparent;
+    color: {t.text};
+    border: none;
+    outline: none;
+}}
+QListWidget::item {{
+    padding: 4px 8px;
+    border-radius: 4px;
+}}
+QListWidget::item:hover {{
+    background-color: {t.surface0};
+}}
+QListWidget::item:selected {{
+    background-color: {t.surface2};
+    color: {t.text};
+}}
+
+/* ── Table widget ────────────────────────────────────────── */
+QTableWidget {{
+    background-color: transparent;
+    color: {t.text};
+    border: none;
+    outline: none;
+    gridline-color: {t.surface0};
+}}
+QTableWidget::item {{
+    padding: 3px 6px;
+}}
+QTableWidget::item:selected {{
+    background-color: {t.surface2};
+    color: {t.text};
+}}
+QHeaderView {{
+    background-color: {t.surface0};
+}}
+QHeaderView::section {{
+    background-color: {t.surface0};
+    color: {t.subtext};
+    border: none;
+    border-right: 1px solid {t.surface1};
+    border-bottom: 1px solid {t.surface1};
+    padding: 4px 8px;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+}}
+QHeaderView::section:last {{
+    border-right: none;
+}}
+
+/* ── Tab widget ──────────────────────────────────────────── */
+QTabWidget {{
+    background-color: {t.mantle};
+    border: none;
+}}
+QTabWidget::pane {{
+    border: none;
+    border-top: 1px solid {t.surface0};
+    background-color: {t.base};
+}}
+QTabBar {{
+    background-color: {t.mantle};
+    border: none;
+    border-bottom: 1px solid {t.surface0};
+}}
+QTabBar::scroller {{
+    background-color: {t.mantle};
+}}
+QTabBar::tab {{
+    background-color: {t.mantle};
+    color: {t.subtext};
+    border: none;
+    border-right: 1px solid {t.surface0};
+    padding: 5px 10px 5px 14px;
+    font-size: 12px;
+}}
+QTabBar::tab:selected {{
+    background-color: {t.base};
+    color: {t.text};
+    border-bottom: 2px solid {t.accent};
+}}
+QTabBar::tab:hover:!selected {{
+    background-color: {t.surface0};
+    color: {t.text};
+}}
+QTabBar::close-button {{
+    subcontrol-position: right;
+    padding: 0;
+}}
+
+/* ── Tab close button ────────────────────────────────────── */
+QToolButton#tabCloseBtn {{
+    background: transparent;
+    border: none;
+    color: {t.overlay};
+    font-size: 14px;
+    font-weight: bold;
+    padding: 0px 2px;
+    margin: 0;
+}}
+QToolButton#tabCloseBtn:hover {{
+    color: {t.red};
+    background-color: {t.surface0};
+    border-radius: 3px;
+}}
+
+/* ── Checkbox ────────────────────────────────────────────── */
+QCheckBox {{
+    color: {t.subtext};
+    spacing: 4px;
+    font-size: 11px;
+    background: transparent;
+}}
+QCheckBox::indicator {{
+    width: 12px;
+    height: 12px;
+    border: 1px solid {t.surface2};
+    border-radius: 2px;
+    background-color: {t.surface0};
+}}
+QCheckBox::indicator:checked {{
+    background-color: {t.accent};
+    border-color: {t.accent};
+}}
+QCheckBox::indicator:hover {{
+    border-color: {t.text};
+}}
+
+/* ── Plain text / code view ─────────────────────────────── */
+QPlainTextEdit {{
+    background-color: {t.base};
+    color: {t.text};
+    border: none;
+    selection-background-color: {t.surface2};
+    selection-color: {t.text};
+    padding: 8px;
+}}
+
+/* ── Scrollbars ──────────────────────────────────────────── */
+QScrollBar:vertical {{
+    background: transparent;
+    width: 8px;
+    margin: 0;
+}}
+QScrollBar::handle:vertical {{
+    background: {t.surface1};
+    border-radius: 4px;
+    min-height: 20px;
+}}
+QScrollBar::handle:vertical:hover {{
+    background: {t.surface2};
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar:horizontal {{
+    background: transparent;
+    height: 8px;
+    margin: 0;
+}}
+QScrollBar::handle:horizontal {{
+    background: {t.surface1};
+    border-radius: 4px;
+    min-width: 20px;
+}}
+QScrollBar::handle:horizontal:hover {{
+    background: {t.surface2};
+}}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
+
+/* ── Status bar ──────────────────────────────────────────── */
+QStatusBar {{
+    background-color: {t.crust};
+    color: {t.subtext};
+    border-top: 1px solid {t.surface0};
+    font-size: 11px;
+}}
+QStatusBar::item {{ border: none; }}
+
+/* ── Progress bar ────────────────────────────────────────── */
+QProgressBar {{
+    background-color: {t.surface0};
+    border: none;
+    border-radius: 3px;
+    height: 4px;
+    text-align: center;
+    color: transparent;
+}}
+QProgressBar::chunk {{
+    background-color: {t.accent};
+    border-radius: 3px;
+}}
+
+/* ── Push buttons ────────────────────────────────────────── */
+QPushButton {{
+    background-color: {t.surface0};
+    color: {t.text};
+    border: 1px solid {t.surface1};
+    border-radius: 6px;
+    padding: 4px 12px;
+}}
+QPushButton:hover {{
+    background-color: {t.surface1};
+    border-color: {t.accent};
+}}
+QPushButton:pressed {{
+    background-color: {t.surface2};
+}}
+QPushButton#smallBtn {{
+    background: transparent;
+    border: none;
+    color: {t.overlay};
+    font-size: 14px;
+    padding: 0px;
+}}
+QPushButton#smallBtn:hover {{
+    color: {t.accent};
+    background: transparent;
+}}
+QPushButton#modeBtn {{
+    background-color: {t.surface0};
+    color: {t.subtext};
+    border: 1px solid {t.surface1};
+    border-radius: 4px;
+    padding: 2px 10px;
+    font-size: 11px;
+}}
+QPushButton#modeBtn:checked {{
+    background-color: {t.surface2};
+    color: {t.text};
+    border-color: {t.accent};
+}}
+QPushButton#modeBtn:hover:!checked {{
+    background-color: {t.surface1};
+    color: {t.text};
+}}
+QFrame#modeBar {{
+    background-color: {t.mantle};
+    border-bottom: 1px solid {t.surface0};
+}}
+
+/* ── Combo box ───────────────────────────────────────────── */
+QComboBox {{
+    background-color: {t.surface0};
+    color: {t.text};
+    border: 1px solid {t.surface1};
+    border-radius: 6px;
+    padding: 3px 8px;
+    min-width: 120px;
+}}
+QComboBox:focus {{ border-color: {t.accent}; }}
+QComboBox QAbstractItemView {{
+    background-color: {t.mantle};
+    color: {t.text};
+    border: 1px solid {t.surface0};
+    selection-background-color: {t.surface2};
+}}
+QComboBox::drop-down {{ border: none; width: 20px; }}
+
+/* ── Tool tips ───────────────────────────────────────────── */
+QToolTip {{
+    background-color: {t.mantle};
+    color: {t.text};
+    border: 1px solid {t.surface0};
+    border-radius: 4px;
+    padding: 4px 8px;
+}}
+&#34;&#34;&#34;</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="crashlink.gui.themes.Theme"><code class="flex name class">
+<span>class <span class="ident">Theme</span></span>
+<span>(</span><span>name: str,<br>base: str,<br>mantle: str,<br>crust: str,<br>surface0: str,<br>surface1: str,<br>surface2: str,<br>text: str,<br>subtext: str,<br>overlay: str,<br>accent: str,<br>green: str,<br>yellow: str,<br>red: str,<br>teal: str,<br>mauve: str,<br>peach: str,<br>pink: str)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dataclass
+class Theme:
+    name: str
+    base: str  # main window / editor background
+    mantle: str  # sidebar / panel background
+    crust: str  # status bar / deepest background
+    surface0: str  # widget backgrounds (list items, table rows)
+    surface1: str  # hover state
+    surface2: str  # selection / active
+    text: str  # primary text
+    subtext: str  # secondary / dimmed text
+    overlay: str  # placeholders / disabled
+    accent: str  # highlights, active tabs, focus rings
+    green: str  # identifiers / success
+    yellow: str  # literals / warnings
+    red: str  # errors / keywords
+    teal: str  # types
+    mauve: str  # keywords
+    peach: str  # numbers / constants
+    pink: str  # methods</code></pre>
+</details>
+<div class="desc"><p>Theme(name: 'str', base: 'str', mantle: 'str', crust: 'str', surface0: 'str', surface1: 'str', surface2: 'str', text: 'str', subtext: 'str', overlay: 'str', accent: 'str', green: 'str', yellow: 'str', red: 'str', teal: 'str', mauve: 'str', peach: 'str', pink: 'str')</p></div>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.gui.themes.Theme.accent"><code class="name">var <span class="ident">accent</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.themes.Theme.base"><code class="name">var <span class="ident">base</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.themes.Theme.crust"><code class="name">var <span class="ident">crust</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.themes.Theme.green"><code class="name">var <span class="ident">green</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.themes.Theme.mantle"><code class="name">var <span class="ident">mantle</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.themes.Theme.mauve"><code class="name">var <span class="ident">mauve</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.themes.Theme.name"><code class="name">var <span class="ident">name</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.themes.Theme.overlay"><code class="name">var <span class="ident">overlay</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.themes.Theme.peach"><code class="name">var <span class="ident">peach</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.themes.Theme.pink"><code class="name">var <span class="ident">pink</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.themes.Theme.red"><code class="name">var <span class="ident">red</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.themes.Theme.subtext"><code class="name">var <span class="ident">subtext</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.themes.Theme.surface0"><code class="name">var <span class="ident">surface0</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.themes.Theme.surface1"><code class="name">var <span class="ident">surface1</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.themes.Theme.surface2"><code class="name">var <span class="ident">surface2</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.themes.Theme.teal"><code class="name">var <span class="ident">teal</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.themes.Theme.text"><code class="name">var <span class="ident">text</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.themes.Theme.yellow"><code class="name">var <span class="ident">yellow</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashlink.gui" href="index.html">crashlink.gui</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="crashlink.gui.themes.generate_qss" href="#crashlink.gui.themes.generate_qss">generate_qss</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="crashlink.gui.themes.Theme" href="#crashlink.gui.themes.Theme">Theme</a></code></h4>
+<ul class="two-column">
+<li><code><a title="crashlink.gui.themes.Theme.accent" href="#crashlink.gui.themes.Theme.accent">accent</a></code></li>
+<li><code><a title="crashlink.gui.themes.Theme.base" href="#crashlink.gui.themes.Theme.base">base</a></code></li>
+<li><code><a title="crashlink.gui.themes.Theme.crust" href="#crashlink.gui.themes.Theme.crust">crust</a></code></li>
+<li><code><a title="crashlink.gui.themes.Theme.green" href="#crashlink.gui.themes.Theme.green">green</a></code></li>
+<li><code><a title="crashlink.gui.themes.Theme.mantle" href="#crashlink.gui.themes.Theme.mantle">mantle</a></code></li>
+<li><code><a title="crashlink.gui.themes.Theme.mauve" href="#crashlink.gui.themes.Theme.mauve">mauve</a></code></li>
+<li><code><a title="crashlink.gui.themes.Theme.name" href="#crashlink.gui.themes.Theme.name">name</a></code></li>
+<li><code><a title="crashlink.gui.themes.Theme.overlay" href="#crashlink.gui.themes.Theme.overlay">overlay</a></code></li>
+<li><code><a title="crashlink.gui.themes.Theme.peach" href="#crashlink.gui.themes.Theme.peach">peach</a></code></li>
+<li><code><a title="crashlink.gui.themes.Theme.pink" href="#crashlink.gui.themes.Theme.pink">pink</a></code></li>
+<li><code><a title="crashlink.gui.themes.Theme.red" href="#crashlink.gui.themes.Theme.red">red</a></code></li>
+<li><code><a title="crashlink.gui.themes.Theme.subtext" href="#crashlink.gui.themes.Theme.subtext">subtext</a></code></li>
+<li><code><a title="crashlink.gui.themes.Theme.surface0" href="#crashlink.gui.themes.Theme.surface0">surface0</a></code></li>
+<li><code><a title="crashlink.gui.themes.Theme.surface1" href="#crashlink.gui.themes.Theme.surface1">surface1</a></code></li>
+<li><code><a title="crashlink.gui.themes.Theme.surface2" href="#crashlink.gui.themes.Theme.surface2">surface2</a></code></li>
+<li><code><a title="crashlink.gui.themes.Theme.teal" href="#crashlink.gui.themes.Theme.teal">teal</a></code></li>
+<li><code><a title="crashlink.gui.themes.Theme.text" href="#crashlink.gui.themes.Theme.text">text</a></code></li>
+<li><code><a title="crashlink.gui.themes.Theme.yellow" href="#crashlink.gui.themes.Theme.yellow">yellow</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
+</footer>
+</body>
+</html>

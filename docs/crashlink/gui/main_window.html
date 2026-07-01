@@ -1,244 +1,66 @@
-"""Main application window."""
-
-from __future__ import annotations
-
-import os
-import re
-from typing import Dict, List, Optional, Tuple
-
-from PySide6.QtCore import QRect, QRunnable, QThread, QThreadPool, QTimer, Qt, Signal, QObject, QSize
-from PySide6.QtGui import QColor, QCursor, QKeyEvent, QPainter, QPalette
-from PySide6.QtWidgets import (
-    QApplication,
-    QButtonGroup,
-    QDialog,
-    QDockWidget,
-    QFileDialog,
-    QFrame,
-    QHBoxLayout,
-    QInputDialog,
-    QLabel,
-    QMainWindow,
-    QMessageBox,
-    QProgressBar,
-    QPushButton,
-    QStatusBar,
-    QTabBar,
-    QTabWidget,
-    QToolButton,
-    QVBoxLayout,
-    QWidget,
-)
-
-from crashlink.core import AnalysisWorker, Bytecode, Native, destaticify
-from crashlink.database import DatabaseLoadResult, SessionState, load_database, save_database
-from crashlink.decomp.function import IRFunction
-from crashlink.globals import set_dbg_callback
-from crashlink.pseudo import pseudo_oplines, _method_registry
-
-from .themes import DEFAULT_THEME, THEMES, Theme, generate_qss
-from .widgets.cfg_view import CfgView
-from .widgets.class_view import ClassView
-from .widgets.function_list import FunctionList
-from .widgets.log_panel import LogPanel
-from .widgets.sync_view import DISASM, PSEUDO, SPLIT, SyncView
-from .widgets.xref_panel import XrefPopup, resolve_targets, XrefGroup, XrefSite, _func_label
-
-
-# View mode cycling: Tab steps through split → disassembly → decompiled → …
-_VIEW_MODE_CYCLE = [SPLIT, DISASM, PSEUDO]
-_VIEW_MODE_NAMES = {SPLIT: "Split", DISASM: "Disassembly", PSEUDO: "Decompiled"}
-_VIEW_MODE_GLYPHS = {SPLIT: "◧", DISASM: "⚙", PSEUDO: "{ }"}
-
-
-# ── Async helpers ─────────────────────────────────────────────────────────────
-
-
-class _LoadSignals(QObject):
-    progress = Signal(float, str)
-    finished = Signal(object)
-    error = Signal(str)
-
-
-class _LoadThread(QThread):
-    def __init__(self, path: str) -> None:
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.6">
+<title>crashlink.gui.main_window API documentation</title>
+<meta name="description" content="Main application window.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>crashlink.gui.main_window</code></h1>
+</header>
+<section id="section-intro">
+<p>Main application window.</p>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="crashlink.gui.main_window.MainWindow"><code class="flex name class">
+<span>class <span class="ident">MainWindow</span></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class MainWindow(QMainWindow):
+    def __init__(self) -&gt; None:
         super().__init__()
-        self.path = path
-        self.signals = _LoadSignals()
-
-    def run(self) -> None:
-        try:
-
-            def _cb(frac: float, status: str) -> None:
-                self.signals.progress.emit(frac, status)
-
-            code = Bytecode.from_path(self.path, progress_cb=_cb)
-            self.signals.finished.emit(code)
-        except Exception as e:
-            self.signals.error.emit(str(e))
-
-
-class _DbLoadSignals(QObject):
-    finished = Signal(object)  # DatabaseLoadResult
-    error = Signal(str)
-
-
-class _DbLoadThread(QThread):
-    """Loads and validates a .cldb off the UI thread — hashing the source file to
-    check against SRCI can take a moment for larger bytecode."""
-
-    def __init__(self, cldb_path: str, code: Bytecode, source_path: str) -> None:
-        super().__init__()
-        self.cldb_path = cldb_path
-        self.code = code
-        self.source_path = source_path
-        self.signals = _DbLoadSignals()
-
-    def run(self) -> None:
-        try:
-            result = load_database(self.cldb_path, code=self.code, source_path=self.source_path)
-            self.signals.finished.emit(result)
-        except Exception as e:
-            self.signals.error.emit(str(e))
-
-
-class _DecompSignals(QObject):
-    finished = Signal(str, int, object)  # class_key, findex, IRFunction
-    error = Signal(str, int, str)  # class_key, findex, message
-
-
-class _DecompRunnable(QRunnable):
-    def __init__(self, worker: AnalysisWorker, code: Bytecode, class_key: str, findex: int) -> None:
-        super().__init__()
-        self._worker = worker
-        self._code = code
-        self._class_key = class_key
-        self._findex = findex
-        self.signals = _DecompSignals()
-
-    def run(self) -> None:
-        try:
-            ir = self._worker.decompile(self._code, self._findex).result()
-            self.signals.finished.emit(self._class_key, self._findex, ir)
-        except Exception as e:
-            self.signals.error.emit(self._class_key, self._findex, str(e))
-
-
-class _IndexBuildSignals(QObject):
-    finished = Signal()
-    error = Signal(str)
-
-
-class _IndexBuildThread(QThread):
-    """Builds the xref/search/source-map indices off the UI thread — the first
-    access to any of them otherwise blocks the caller for however long the
-    (uncached) build takes, which for the xref index in particular walks
-    every opcode in every function."""
-
-    def __init__(self, worker: AnalysisWorker, code: Bytecode) -> None:
-        super().__init__()
-        self._worker = worker
-        self._code = code
-        self.signals = _IndexBuildSignals()
-
-    def run(self) -> None:
-        try:
-            self._worker.build_indices(self._code).result()
-            self.signals.finished.emit()
-        except Exception as e:
-            self.signals.error.emit(str(e))
-
-
-# ── Main window ───────────────────────────────────────────────────────────────
-
-
-class _TabBar(QTabBar):
-    """QTabBar that paints the empty area to the right of the last tab.
-
-    Qt's style engine repaints the tab bar background (including the empty
-    area) after our pre-fill, overriding it.  Painting only the uncovered
-    region AFTER super() wins the z-order race.
-    """
-
-    _fill: QColor = QColor("#181825")
-
-    def paintEvent(self, event: object) -> None:
-        super().paintEvent(event)  # type: ignore[arg-type]
-        # Find where the last tab ends; fill everything to the right.
-        empty_x = 0
-        for i in range(self.count()):
-            empty_x = max(empty_x, self.tabRect(i).right() + 1)
-        if empty_x < self.width():
-            p = QPainter(self)
-            p.fillRect(QRect(empty_x, 0, self.width() - empty_x, self.height()), self._fill)
-            p.end()
-
-
-class _WaitBox(QDialog):
-    """A small popup with a native titlebar reading "Please wait…" and the
-    current action as its body — styled distinctly (see QDialog#waitBox in
-    themes.py) so it doesn't blend into the rest of the app's background."""
-
-    def __init__(self, parent: Optional[QWidget]) -> None:
-        super().__init__(parent)
-        self.setObjectName("waitBox")
-        self.setWindowTitle("Please wait…")
-        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowTitleHint)
-        self.setModal(False)  # informational only — never block input to the app
-        self.setFixedSize(280, 70)
-
-        layout = QVBoxLayout(self)
-        self._label = QLabel()
-        self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self._label)
-
-    def set_action(self, action: str) -> None:
-        self._label.setText(action)
-
-    def show(self) -> None:
-        super().show()
-        parent = self.parentWidget()
-        if parent is not None:
-            parent_center = parent.geometry().center()
-            self.move(parent_center - self.frameGeometry().center())
-
-
-class _BusyIndicator:
-    """Shows a `_WaitBox` only if an operation is still running after `delay_ms`
-    (default 2s) — quick operations never flash a dialog at all."""
-
-    def __init__(self, parent: QWidget, delay_ms: int = 2000) -> None:
-        self._parent = parent
-        self._delay_ms = delay_ms
-        self._box: Optional[_WaitBox] = None
-        self._timer = QTimer(parent)
-        self._timer.setSingleShot(True)
-        self._timer.timeout.connect(self._reveal)
-        self._pending_action = ""
-
-    def start(self, action: str) -> None:
-        self._pending_action = action
-        if self._box is not None and self._box.isVisible():
-            self._box.set_action(action)
-        else:
-            self._timer.start(self._delay_ms)
-
-    def stop(self) -> None:
-        self._timer.stop()
-        if self._box is not None:
-            self._box.hide()
-
-    def _reveal(self) -> None:
-        if self._box is None:
-            self._box = _WaitBox(self._parent)
-        self._box.set_action(self._pending_action)
-        self._box.show()
-
-
-class MainWindow(QMainWindow):
-    def __init__(self) -> None:
-        super().__init__()
-        self.setWindowTitle("crashlink")
+        self.setWindowTitle(&#34;crashlink&#34;)
         self.resize(1400, 900)
 
         self._code: Optional[Bytecode] = None
@@ -258,7 +80,7 @@ class MainWindow(QMainWindow):
         self._ir_cache: Dict[int, object] = {}
         # findex → {opcode_index: body-relative pseudocode line}
         self._opline_cache: Dict[int, Dict[int, int]] = {}
-        # deferred navigation when the target's op map isn't cached yet
+        # deferred navigation when the target&#39;s op map isn&#39;t cached yet
         self._pending_op_scroll: Optional[Tuple[int, int]] = None
         # global view mode (split/disasm/decompiled), applied to every open tab
         self._view_mode: int = PSEUDO
@@ -267,7 +89,7 @@ class MainWindow(QMainWindow):
         # path of the currently-open bytecode file, for the sibling .cldb and Save Database
         self._source_path: Optional[str] = None
         # findex → (pseudo_text, opline_map) loaded from a .cldb, consumed by _open_class_tab
-        # to skip the "decompiling…" flash; a real decompile still runs to warm _ir_cache
+        # to skip the &#34;decompiling…&#34; flash; a real decompile still runs to warm _ir_cache
         self._db_cache: Dict[int, Tuple[str, Dict[int, int]]] = {}
         self._db_load_thread: Optional[_DbLoadThread] = None
         self._index_build_thread: Optional[_IndexBuildThread] = None
@@ -284,11 +106,11 @@ class MainWindow(QMainWindow):
 
     # ── UI ────────────────────────────────────────────────────────────────────
 
-    def _build_ui(self) -> None:
+    def _build_ui(self) -&gt; None:
         # ── View mode toggle (top-right, always visible) ──────
         self._view_mode_bar = QFrame()
         mode_bar = self._view_mode_bar
-        mode_bar.setObjectName("viewModeBar")
+        mode_bar.setObjectName(&#34;viewModeBar&#34;)
         mode_row = QHBoxLayout(mode_bar)
         mode_row.setContentsMargins(0, 0, 10, 0)
         mode_row.setSpacing(0)
@@ -298,11 +120,11 @@ class MainWindow(QMainWindow):
         self._view_mode_buttons: Dict[int, QPushButton] = {}
         for i, mode in enumerate(_VIEW_MODE_CYCLE):
             btn = QPushButton(_VIEW_MODE_GLYPHS[mode])
-            btn.setObjectName("modeBtnIcon")
-            btn.setProperty("segment", "first" if i == 0 else "last" if i == len(_VIEW_MODE_CYCLE) - 1 else "mid")
+            btn.setObjectName(&#34;modeBtnIcon&#34;)
+            btn.setProperty(&#34;segment&#34;, &#34;first&#34; if i == 0 else &#34;last&#34; if i == len(_VIEW_MODE_CYCLE) - 1 else &#34;mid&#34;)
             btn.setCheckable(True)
             btn.setFixedWidth(32)
-            btn.setToolTip(f"{_VIEW_MODE_NAMES[mode]} view  (Tab to cycle)")
+            btn.setToolTip(f&#34;{_VIEW_MODE_NAMES[mode]} view  (Tab to cycle)&#34;)
             mode_row.addWidget(btn)
             self._view_mode_group.addButton(btn, mode)
             self._view_mode_buttons[mode] = btn
@@ -329,24 +151,24 @@ class MainWindow(QMainWindow):
 
         # ── Left dock: navigator ──────────────────────────────
         self._func_list = FunctionList()
-        self._nav_dock = QDockWidget("Navigator", self)
-        self._nav_dock.setObjectName("navDock")
+        self._nav_dock = QDockWidget(&#34;Navigator&#34;, self)
+        self._nav_dock.setObjectName(&#34;navDock&#34;)
         self._nav_dock.setWidget(self._func_list)
         self._nav_dock.setMinimumWidth(220)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._nav_dock)
 
         # ── Bottom dock: log ──────────────────────────────────
         self._log_panel = LogPanel()
-        self._log_dock = QDockWidget("Log", self)
-        self._log_dock.setObjectName("logDock")
+        self._log_dock = QDockWidget(&#34;Log&#34;, self)
+        self._log_dock.setObjectName(&#34;logDock&#34;)
         self._log_dock.setWidget(self._log_panel)
         self._log_dock.setMinimumHeight(80)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._log_dock)
 
         # ── Right dock: CFG viewer (off by default — opt in via Window menu) ──
         self._cfg_view = CfgView()
-        self._cfg_dock = QDockWidget("CFG", self)
-        self._cfg_dock.setObjectName("cfgDock")
+        self._cfg_dock = QDockWidget(&#34;CFG&#34;, self)
+        self._cfg_dock.setObjectName(&#34;cfgDock&#34;)
         self._cfg_dock.setWidget(self._cfg_view)
         self._cfg_dock.setMinimumWidth(220)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._cfg_dock)
@@ -360,7 +182,7 @@ class MainWindow(QMainWindow):
         # ── Status bar ────────────────────────────────────────
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
-        self._status_label = QLabel("No file loaded")
+        self._status_label = QLabel(&#34;No file loaded&#34;)
         self._progress_bar = QProgressBar()
         self._progress_bar.setFixedWidth(180)
         self._progress_bar.setFixedHeight(6)
@@ -373,39 +195,39 @@ class MainWindow(QMainWindow):
         self._func_list.function_selected.connect(self._on_function_selected)
         self._tabs.currentChanged.connect(self._on_tab_changed)
 
-    def _build_menu(self) -> None:
+    def _build_menu(self) -&gt; None:
         mb = self.menuBar()
-        fm = mb.addMenu("File")
-        fm.addAction("Open…", self._open_file, "Ctrl+O")
+        fm = mb.addMenu(&#34;File&#34;)
+        fm.addAction(&#34;Open…&#34;, self._open_file, &#34;Ctrl+O&#34;)
         fm.addSeparator()
-        fm.addAction("Save Database", self._save_database, "Ctrl+S")
-        fm.addAction("Load Database…", self._open_database_file)
+        fm.addAction(&#34;Save Database&#34;, self._save_database, &#34;Ctrl+S&#34;)
+        fm.addAction(&#34;Load Database…&#34;, self._open_database_file)
         fm.addSeparator()
-        fm.addAction("Quit", self.close, "Ctrl+Q")
-        vm = mb.addMenu("View")
-        tm = vm.addMenu("Theme")
+        fm.addAction(&#34;Quit&#34;, self.close, &#34;Ctrl+Q&#34;)
+        vm = mb.addMenu(&#34;View&#34;)
+        tm = vm.addMenu(&#34;Theme&#34;)
         for name in THEMES:
             tm.addAction(name, lambda n=name: self._apply_theme(THEMES[n]))
         vm.addSeparator()
-        vm.addAction("Cycle view (split/disasm/decompiled)\tTab", self._cycle_view_mode)
+        vm.addAction(&#34;Cycle view (split/disasm/decompiled)\tTab&#34;, self._cycle_view_mode)
         vm.addSeparator()
-        vm.addAction("Inspect widget under cursor\tCtrl+Shift+I", self._inspect_widget)
+        vm.addAction(&#34;Inspect widget under cursor\tCtrl+Shift+I&#34;, self._inspect_widget)
 
-        wm = mb.addMenu("Window")
+        wm = mb.addMenu(&#34;Window&#34;)
         wm.addAction(self._nav_dock.toggleViewAction())
         wm.addAction(self._log_dock.toggleViewAction())
         wm.addAction(self._cfg_dock.toggleViewAction())
 
     # ── File loading ──────────────────────────────────────────────────────────
 
-    def _open_file(self) -> None:
+    def _open_file(self) -&gt; None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open HashLink bytecode", "", "HashLink files (*.hl *.dat);;All files (*)"
+            self, &#34;Open HashLink bytecode&#34;, &#34;&#34;, &#34;HashLink files (*.hl *.dat);;All files (*)&#34;
         )
         if path:
             self._load_file(path)
 
-    def _load_file(self, path: str) -> None:
+    def _load_file(self, path: str) -&gt; None:
         self._tabs.clear()
         self._open_tabs.clear()
         self._class_findices.clear()
@@ -425,8 +247,8 @@ class MainWindow(QMainWindow):
 
         self._progress_bar.setVisible(True)
         self._progress_bar.setValue(0)
-        self._status_label.setText(f"Loading {path}…")
-        self._busy.start("Reading bytecode…")
+        self._status_label.setText(f&#34;Loading {path}…&#34;)
+        self._busy.start(&#34;Reading bytecode…&#34;)
 
         self._load_thread = _LoadThread(path)
         self._load_thread.signals.progress.connect(self._on_load_progress)
@@ -434,56 +256,56 @@ class MainWindow(QMainWindow):
         self._load_thread.signals.error.connect(self._on_load_error)
         self._load_thread.start()
 
-    def _on_load_progress(self, frac: float, status: str) -> None:
+    def _on_load_progress(self, frac: float, status: str) -&gt; None:
         self._progress_bar.setValue(int(frac * 100))
         self._status_label.setText(status)
 
-    def _on_load_finished(self, code: Bytecode) -> None:
+    def _on_load_finished(self, code: Bytecode) -&gt; None:
         self._code = code
         self._progress_bar.setVisible(False)
         self._busy.stop()
         n = len(code.functions)
-        self._status_label.setText(f"Loaded, {n} functions")
-        self._log_panel.info(f"Loaded, {n} functions")
+        self._status_label.setText(f&#34;Loaded, {n} functions&#34;)
+        self._log_panel.info(f&#34;Loaded, {n} functions&#34;)
         self._log_panel.set_context(code=code)
         self._func_list.load(code)
 
         assert self._source_path is not None
-        cldb_path = self._source_path + ".cldb"
+        cldb_path = self._source_path + &#34;.cldb&#34;
         if os.path.exists(cldb_path):
             self._load_database_from(cldb_path)
 
         # Pre-warm the xref/search/source-map indices in the background so the
-        # first 'X' lookup doesn't stall the UI thread building them on demand.
-        self._busy.start("Building xref table…")
+        # first &#39;X&#39; lookup doesn&#39;t stall the UI thread building them on demand.
+        self._busy.start(&#34;Building xref table…&#34;)
         self._index_build_thread = _IndexBuildThread(self._worker, code)
         self._index_build_thread.signals.finished.connect(self._busy.stop)
         self._index_build_thread.signals.error.connect(lambda msg: self._busy.stop())
         self._index_build_thread.start()
 
-    def _on_load_error(self, msg: str) -> None:
+    def _on_load_error(self, msg: str) -&gt; None:
         self._progress_bar.setVisible(False)
         self._busy.stop()
-        self._status_label.setText(f"Error: {msg}")
+        self._status_label.setText(f&#34;Error: {msg}&#34;)
 
     # ── Analysis database (.cldb) ───────────────────────────────────────────────
 
-    def _open_database_file(self) -> None:
+    def _open_database_file(self) -&gt; None:
         if self._code is None or self._source_path is None:
-            self._log_panel.warn("Open a bytecode file first.")
+            self._log_panel.warn(&#34;Open a bytecode file first.&#34;)
             return
-        path, _ = QFileDialog.getOpenFileName(self, "Load analysis database", "", "crashlink database (*.cldb)")
+        path, _ = QFileDialog.getOpenFileName(self, &#34;Load analysis database&#34;, &#34;&#34;, &#34;crashlink database (*.cldb)&#34;)
         if path:
             self._load_database_from(path)
 
-    def _load_database_from(self, cldb_path: str) -> None:
+    def _load_database_from(self, cldb_path: str) -&gt; None:
         assert self._code is not None and self._source_path is not None
         self._db_load_thread = _DbLoadThread(cldb_path, self._code, self._source_path)
         self._db_load_thread.signals.finished.connect(self._on_db_load_finished)
-        self._db_load_thread.signals.error.connect(lambda msg: self._log_panel.error(f"Failed to load database: {msg}"))
+        self._db_load_thread.signals.error.connect(lambda msg: self._log_panel.error(f&#34;Failed to load database: {msg}&#34;))
         self._db_load_thread.start()
 
-    def _on_db_load_finished(self, result: DatabaseLoadResult) -> None:
+    def _on_db_load_finished(self, result: DatabaseLoadResult) -&gt; None:
         for w in result.warnings:
             self._log_panel.warn(w)
         if not result.matched:
@@ -491,8 +313,8 @@ class MainWindow(QMainWindow):
 
         self._db_cache = dict(result.cache)
         self._log_panel.success(
-            f"Loaded database: {result.renames_applied} renames, "
-            f"{result.comments_applied} comments, {len(result.cache)} cached functions"
+            f&#34;Loaded database: {result.renames_applied} renames, &#34;
+            f&#34;{result.comments_applied} comments, {len(result.cache)} cached functions&#34;
         )
 
         session = result.session
@@ -506,18 +328,18 @@ class MainWindow(QMainWindow):
             self._set_view_mode(session.view_mode)
         for findex in session.open_findices:
             self._on_function_selected(findex)
-        if session.current_tab_index is not None and 0 <= session.current_tab_index < self._tabs.count():
+        if session.current_tab_index is not None and 0 &lt;= session.current_tab_index &lt; self._tabs.count():
             self._tabs.setCurrentIndex(session.current_tab_index)
 
-    def _save_database(self) -> None:
+    def _save_database(self) -&gt; None:
         if self._code is None or self._source_path is None:
-            self._log_panel.warn("Open a bytecode file first.")
+            self._log_panel.warn(&#34;Open a bytecode file first.&#34;)
             return
 
         open_findices: List[int] = []
         for i in range(self._tabs.count()):
             w = self._tabs.widget(i)
-            class_key = w.property("class_key") if w is not None else None
+            class_key = w.property(&#34;class_key&#34;) if w is not None else None
             fi_list = self._class_findices.get(class_key) if class_key else None
             if fi_list:
                 open_findices.append(fi_list[0])
@@ -529,7 +351,7 @@ class MainWindow(QMainWindow):
             current_tab_index=self._tabs.currentIndex() if self._tabs.count() else None,
         )
 
-        cldb_path = self._source_path + ".cldb"
+        cldb_path = self._source_path + &#34;.cldb&#34;
         try:
             save_database(
                 cldb_path,
@@ -540,33 +362,33 @@ class MainWindow(QMainWindow):
                 session=session,
             )
         except Exception as e:
-            self._log_panel.error(f"Failed to save database: {e}")
+            self._log_panel.error(f&#34;Failed to save database: {e}&#34;)
             return
-        self._log_panel.success(f"Saved database to {cldb_path}")
+        self._log_panel.success(f&#34;Saved database to {cldb_path}&#34;)
 
     # ── Tab management ────────────────────────────────────────────────────────
 
-    def _class_key_for(self, findex: int) -> Tuple[str, str, List[int]]:
-        """
+    def _class_key_for(self, findex: int) -&gt; Tuple[str, str, List[int]]:
+        &#34;&#34;&#34;
         Returns (class_key, display_name, all_findices_for_class).
         Uses destaticify to unify static $Foo and instance Foo into one class.
         Falls back to a standalone key for unregistered functions.
-        """
+        &#34;&#34;&#34;
         assert self._code is not None
         reg = _method_registry(self._code)
         if findex not in reg:
-            return f"func:{findex}", f"f@{findex}", [findex]
+            return f&#34;func:{findex}&#34;, f&#34;f@{findex}&#34;, [findex]
 
         obj, _, _ = reg[findex]
         raw_name = obj.name.resolve(self._code)
         canonical = destaticify(raw_name)
-        class_key = f"class:{canonical}"
+        class_key = f&#34;class:{canonical}&#34;
 
         # Gather all findices that belong to this canonical class (static + instance)
         all_fi = sorted(fi for fi, (o, _, _) in reg.items() if destaticify(o.name.resolve(self._code)) == canonical)
         return class_key, canonical, all_fi
 
-    def _open_class_tab(self, class_key: str, display_name: str, all_fi: List[int], jump_to: int) -> None:
+    def _open_class_tab(self, class_key: str, display_name: str, all_fi: List[int], jump_to: int) -&gt; None:
         assert self._code is not None
 
         self._class_findices[class_key] = all_fi
@@ -574,7 +396,7 @@ class MainWindow(QMainWindow):
         self._class_results[class_key] = {fi: None for fi in all_fi}
 
         # Seed from a loaded .cldb where available, so cached functions render
-        # immediately instead of flashing "decompiling…" — a real decompile still
+        # immediately instead of flashing &#34;decompiling…&#34; — a real decompile still
         # runs below to warm _ir_cache for rename/xref support.
         for fi in all_fi:
             cached = self._db_cache.get(fi)
@@ -584,7 +406,7 @@ class MainWindow(QMainWindow):
                 self._opline_cache[fi] = opmap
 
         view = SyncView(self._opline_cache)
-        view.setProperty("class_key", class_key)
+        view.setProperty(&#34;class_key&#34;, class_key)
         view.set_theme(self._theme)
         view.set_mode(self._view_mode)
         view.cycle_requested.connect(self._cycle_view_mode)
@@ -595,7 +417,7 @@ class MainWindow(QMainWindow):
         view.comment_requested.connect(self._on_comment_hotkey)
 
         placeholder = [
-            (fi, self._class_results[class_key][fi] or f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}")
+            (fi, self._class_results[class_key][fi] or f&#34;class {display_name} {{\n    // f@{fi}  decompiling…\n}}&#34;)
             for fi in all_fi
         ]
         view.load_pseudo(display_name, placeholder)
@@ -613,32 +435,32 @@ class MainWindow(QMainWindow):
         for fi in all_fi:
             self._start_decompile(class_key, fi)
 
-        self._status_label.setText(f"Decompiling {display_name} ({len(all_fi)} methods)…")
+        self._status_label.setText(f&#34;Decompiling {display_name} ({len(all_fi)} methods)…&#34;)
 
-    def _start_decompile(self, class_key: str, findex: int) -> None:
+    def _start_decompile(self, class_key: str, findex: int) -&gt; None:
         assert self._code is not None
         self._active_decompiles += 1
-        self._busy.start("Decompiling…")
+        self._busy.start(&#34;Decompiling…&#34;)
         r = _DecompRunnable(self._worker, self._code, class_key, findex)
         r.signals.finished.connect(self._on_decompile_finished)
         r.signals.error.connect(self._on_decompile_error)
         QThreadPool.globalInstance().start(r)
 
-    def _decompile_batch_done(self) -> None:
+    def _decompile_batch_done(self) -&gt; None:
         self._active_decompiles = max(0, self._active_decompiles - 1)
         if self._active_decompiles == 0:
             self._busy.stop()
 
-    def _add_close_btn(self, tab_idx: int, class_key: str) -> None:
+    def _add_close_btn(self, tab_idx: int, class_key: str) -&gt; None:
         btn = QToolButton()
-        btn.setObjectName("tabCloseBtn")
-        btn.setText("×")
+        btn.setObjectName(&#34;tabCloseBtn&#34;)
+        btn.setText(&#34;×&#34;)
         btn.setFixedSize(QSize(18, 18))
-        btn.setToolTip("Close tab")
+        btn.setToolTip(&#34;Close tab&#34;)
         btn.clicked.connect(lambda: QTimer.singleShot(0, lambda: self._close_tab_by_key(class_key)))
         self._tabs.tabBar().setTabButton(tab_idx, QTabBar.ButtonPosition.RightSide, btn)
 
-    def _close_tab_by_key(self, class_key: str) -> None:
+    def _close_tab_by_key(self, class_key: str) -&gt; None:
         idx = self._open_tabs.pop(class_key, None)
         if idx is None:
             return
@@ -648,21 +470,21 @@ class MainWindow(QMainWindow):
         self._tabs.removeTab(idx)
         self._rebuild_tab_map()
 
-    def _rebuild_tab_map(self) -> None:
+    def _rebuild_tab_map(self) -&gt; None:
         self._open_tabs = {}
         for i in range(self._tabs.count()):
             w = self._tabs.widget(i)
             if w is not None:
-                key = w.property("class_key")
+                key = w.property(&#34;class_key&#34;)
                 if key:
                     self._open_tabs[key] = i
 
-    def _on_tab_changed(self, _idx: int) -> None:
+    def _on_tab_changed(self, _idx: int) -&gt; None:
         pass  # log panel needs no per-tab update
 
     # ── Function selection ────────────────────────────────────────────────────
 
-    def _on_function_selected(self, findex: int) -> None:
+    def _on_function_selected(self, findex: int) -&gt; None:
         if self._code is None:
             return
         class_key, display_name, all_fi = self._class_key_for(findex)
@@ -678,7 +500,7 @@ class MainWindow(QMainWindow):
 
     # ── Decompilation callbacks ───────────────────────────────────────────────
 
-    def _on_decompile_finished(self, class_key: str, findex: int, ir: object) -> None:
+    def _on_decompile_finished(self, class_key: str, findex: int, ir: object) -&gt; None:
         self._decompile_batch_done()
         if not isinstance(ir, IRFunction):
             return
@@ -692,7 +514,7 @@ class MainWindow(QMainWindow):
             text, opmap = pseudo_oplines(ir)
             self._opline_cache[findex] = opmap
         except Exception as e:
-            text = f"class ? {{\n    // f@{findex} error: {e}\n}}"
+            text = f&#34;class ? {{\n    // f@{findex} error: {e}\n}}&#34;
 
         self._class_results[class_key][findex] = text
         self._refresh_class_view(class_key)
@@ -711,17 +533,17 @@ class MainWindow(QMainWindow):
         pending = sum(1 for v in results.values() if v is None)
         if pending == 0:
             name = self._class_names.get(class_key, class_key)
-            self._status_label.setText(f"{name}, {len(results)} methods")
+            self._status_label.setText(f&#34;{name}, {len(results)} methods&#34;)
 
-    def _on_decompile_error(self, class_key: str, findex: int, msg: str) -> None:
+    def _on_decompile_error(self, class_key: str, findex: int, msg: str) -&gt; None:
         self._decompile_batch_done()
         if class_key not in self._class_results:
             return
-        err_text = f"class ? {{\n    // f@{findex} error: {msg}\n}}"
+        err_text = f&#34;class ? {{\n    // f@{findex} error: {msg}\n}}&#34;
         self._class_results[class_key][findex] = err_text
         self._refresh_class_view(class_key)
 
-    def _refresh_class_view(self, class_key: str) -> None:
+    def _refresh_class_view(self, class_key: str) -&gt; None:
         idx = self._open_tabs.get(class_key)
         if idx is None:
             return
@@ -729,7 +551,7 @@ class MainWindow(QMainWindow):
         if not isinstance(view, SyncView):
             return
 
-        display_name = self._class_names.get(class_key, "?")
+        display_name = self._class_names.get(class_key, &#34;?&#34;)
         all_fi = self._class_findices.get(class_key, [])
         results = self._class_results.get(class_key, {})
 
@@ -737,15 +559,15 @@ class MainWindow(QMainWindow):
         for fi in all_fi:
             text = results.get(fi)
             if text is None:
-                text = f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}"
+                text = f&#34;class {display_name} {{\n    // f@{fi}  decompiling…\n}}&#34;
             methods.append((fi, text))
 
         view.load_pseudo(display_name, methods)
 
-    def _refresh_disasm_view(self, class_key: str) -> None:
-        """Disasm rendering needs no decompile — re-render straight from opcodes so
+    def _refresh_disasm_view(self, class_key: str) -&gt; None:
+        &#34;&#34;&#34;Disasm rendering needs no decompile — re-render straight from opcodes so
         an annotation change (e.g. a comment) shows up immediately, no waiting on
-        the background redecompile that updates the pseudocode pane."""
+        the background redecompile that updates the pseudocode pane.&#34;&#34;&#34;
         if self._code is None:
             return
         idx = self._open_tabs.get(class_key)
@@ -760,21 +582,21 @@ class MainWindow(QMainWindow):
 
     # ── Focus tracking ────────────────────────────────────────────────────────
 
-    def _on_function_focused(self, findex: int) -> None:
+    def _on_function_focused(self, findex: int) -&gt; None:
         self._cfg_findex = findex
         self._update_cfg_view(findex)
         self._update_repl_focus(findex)
 
-    def _update_repl_focus(self, findex: int) -> None:
-        """Keep the REPL's `findex`/`func`/`irf` pointed at the focused function."""
+    def _update_repl_focus(self, findex: int) -&gt; None:
+        &#34;&#34;&#34;Keep the REPL&#39;s `findex`/`func`/`irf` pointed at the focused function.&#34;&#34;&#34;
         func = self._code.get_findex_map().get(findex) if self._code is not None else None
         self._log_panel.set_context(findex=findex, func=func, irf=self._ir_cache.get(findex))
 
-    def _on_cfg_dock_visibility(self, visible: bool) -> None:
+    def _on_cfg_dock_visibility(self, visible: bool) -&gt; None:
         if visible and self._cfg_findex is not None:
             self._update_cfg_view(self._cfg_findex)
 
-    def _update_cfg_view(self, findex: int) -> None:
+    def _update_cfg_view(self, findex: int) -&gt; None:
         if self._code is None or not self._cfg_dock.isVisible():
             return
         func = self._code.get_findex_map().get(findex)
@@ -795,39 +617,39 @@ class MainWindow(QMainWindow):
 
     # ── Rename (N) ────────────────────────────────────────────────────────────
 
-    def _on_rename_hotkey(self, findex: int, word: str) -> None:
+    def _on_rename_hotkey(self, findex: int, word: str) -&gt; None:
         if self._code is None:
             return
         ir = self._ir_cache.get(findex)
         if not isinstance(ir, IRFunction):
-            self._log_panel.error("Cannot rename, function not yet decompiled")
+            self._log_panel.error(&#34;Cannot rename, function not yet decompiled&#34;)
             return
 
         # Find locals matching word under cursor
         locals_matching = [loc for loc in ir.all_locals if loc.name == word and loc.reg_idx is not None]
         if not locals_matching:
-            self._log_panel.warn(f"No local named '{word}' in f@{findex}")
+            self._log_panel.warn(f&#34;No local named &#39;{word}&#39; in f@{findex}&#34;)
             return
 
         loc = locals_matching[0]
         assert loc.reg_idx is not None
-        new_name, ok = QInputDialog.getText(self, "Rename", f"Rename '{word}' to:", text=word)
+        new_name, ok = QInputDialog.getText(self, &#34;Rename&#34;, f&#34;Rename &#39;{word}&#39; to:&#34;, text=word)
         if not ok or not new_name or new_name == word:
             return
 
         self._apply_rename(findex, loc.reg_idx, loc.defining_op_idx, new_name)
-        self._log_panel.success(f"Renamed '{word}' → '{new_name}' in f@{findex}")
+        self._log_panel.success(f&#34;Renamed &#39;{word}&#39; → &#39;{new_name}&#39; in f@{findex}&#34;)
 
-    def _apply_rename(self, findex: int, reg_idx: int, def_op: Optional[int], new_name: str) -> None:
+    def _apply_rename(self, findex: int, reg_idx: int, def_op: Optional[int], new_name: str) -&gt; None:
         if self._code is None:
             return
         def_op_int = def_op
         self._code.annotations.rename(findex, reg_idx, def_op_int, new_name)
         self._invalidate_and_redecompile(findex)
 
-    def _invalidate_and_redecompile(self, findex: int) -> None:
-        """After an annotation (rename/comment) changes, drop every cache that was
-        derived from the old IR for this function and kick off a fresh decompile."""
+    def _invalidate_and_redecompile(self, findex: int) -&gt; None:
+        &#34;&#34;&#34;After an annotation (rename/comment) changes, drop every cache that was
+        derived from the old IR for this function and kick off a fresh decompile.&#34;&#34;&#34;
         if self._code is None:
             return
         self._worker.invalidate(findex)
@@ -846,20 +668,20 @@ class MainWindow(QMainWindow):
 
     # ── Comments (/) ─────────────────────────────────────────────────────────
 
-    def _on_comment_hotkey(self, findex: int, op_idx: int) -> None:
+    def _on_comment_hotkey(self, findex: int, op_idx: int) -&gt; None:
         if self._code is None:
             return
-        existing = self._code.annotations.get_comment(findex, op_idx) or ""
-        text, ok = QInputDialog.getText(self, "Comment", f"Comment on op {op_idx} in f@{findex}:", text=existing)
+        existing = self._code.annotations.get_comment(findex, op_idx) or &#34;&#34;
+        text, ok = QInputDialog.getText(self, &#34;Comment&#34;, f&#34;Comment on op {op_idx} in f@{findex}:&#34;, text=existing)
         if not ok:
             return
         text = text.strip()
         if text:
             self._code.annotations.set_comment(findex, op_idx, text)
-            self._log_panel.success(f"Commented op {op_idx} in f@{findex}")
+            self._log_panel.success(f&#34;Commented op {op_idx} in f@{findex}&#34;)
         else:
             self._code.annotations.clear_comment(findex, op_idx)
-            self._log_panel.info(f"Cleared comment on op {op_idx} in f@{findex}")
+            self._log_panel.info(f&#34;Cleared comment on op {op_idx} in f@{findex}&#34;)
 
         class_key, _, _ = self._class_key_for(findex)
         self._refresh_disasm_view(class_key)
@@ -867,7 +689,7 @@ class MainWindow(QMainWindow):
 
     # ── Xrefs (X) ────────────────────────────────────────────────────────────
 
-    def _on_xref_hotkey(self, findex: int, word: str) -> None:
+    def _on_xref_hotkey(self, findex: int, word: str) -&gt; None:
         if self._code is None:
             return
         word = word.strip()
@@ -885,11 +707,11 @@ class MainWindow(QMainWindow):
         else:
             at = self.mapToGlobal(self.rect().center())
         self._xref_popup.show_results(word, groups, at)
-        self._log_panel.result(f"Xrefs for '{word}': {len(groups)} target(s)")
+        self._log_panel.result(f&#34;Xrefs for &#39;{word}&#39;: {len(groups)} target(s)&#34;)
 
-    def _resolve_locals(self, findex: int, word: str) -> Optional[XrefGroup]:
-        """Build a group of every occurrence of `word` (a local) in the focused
-        function's displayed pseudocode, each site carrying its body-relative line."""
+    def _resolve_locals(self, findex: int, word: str) -&gt; Optional[XrefGroup]:
+        &#34;&#34;&#34;Build a group of every occurrence of `word` (a local) in the focused
+        function&#39;s displayed pseudocode, each site carrying its body-relative line.&#34;&#34;&#34;
         ir = self._ir_cache.get(findex)
         if not isinstance(ir, IRFunction):
             return None
@@ -901,14 +723,14 @@ class MainWindow(QMainWindow):
         if not text:
             return None
 
-        func_lines = text.split("\n")
-        if len(func_lines) >= 3 and func_lines[0].startswith("class ") and func_lines[-1].strip() == "}":
+        func_lines = text.split(&#34;\n&#34;)
+        if len(func_lines) &gt;= 3 and func_lines[0].startswith(&#34;class &#34;) and func_lines[-1].strip() == &#34;}&#34;:
             content = func_lines[1:-1]
         else:
             content = func_lines
 
-        pat = re.compile(rf"\b{re.escape(word)}\b")
-        label = _func_label(self._code, findex) if self._code else f"f@{findex}"
+        pat = re.compile(rf&#34;\b{re.escape(word)}\b&#34;)
+        label = _func_label(self._code, findex) if self._code else f&#34;f@{findex}&#34;
         sites: List[XrefSite] = []
         for j, line in enumerate(content):
             if pat.search(line):
@@ -918,14 +740,14 @@ class MainWindow(QMainWindow):
                         source_label=label,
                         opcode_index=None,
                         body_line=j,
-                        ref_kind="use",
+                        ref_kind=&#34;use&#34;,
                     )
                 )
         if not sites:
             return None
-        return XrefGroup(label=f"local '{word}'", kind="local", sites=sites)
+        return XrefGroup(label=f&#34;local &#39;{word}&#39;&#34;, kind=&#34;local&#34;, sites=sites)
 
-    def _navigate_to_xref(self, findex: int, op_idx: int, body_line: int) -> None:
+    def _navigate_to_xref(self, findex: int, op_idx: int, body_line: int) -&gt; None:
         if self._code is None:
             return
 
@@ -936,11 +758,11 @@ class MainWindow(QMainWindow):
             return
 
         # Local site: body line is known directly.
-        if body_line >= 0:
+        if body_line &gt;= 0:
             view.scroll_to_op_line(findex, body_line)
             return
 
-        if op_idx < 0:
+        if op_idx &lt; 0:
             view.scroll_to_findex(findex)
             return
 
@@ -953,24 +775,24 @@ class MainWindow(QMainWindow):
         line = opmap.get(op_idx)
         if line is None:
             # Nearest preceding mapped op.
-            preceding = [v for k, v in opmap.items() if k <= op_idx]
+            preceding = [v for k, v in opmap.items() if k &lt;= op_idx]
             line = max(preceding) if preceding else None
         if line is None:
             view.scroll_to_findex(findex)
         else:
             view.scroll_to_op_line(findex, line)
 
-    def _current_class_view(self) -> Optional[ClassView]:
+    def _current_class_view(self) -&gt; Optional[ClassView]:
         w = self._tabs.currentWidget()
         if isinstance(w, SyncView):
             return w.class_view
         return None
 
-    def _cycle_view_mode(self) -> None:
+    def _cycle_view_mode(self) -&gt; None:
         next_idx = (_VIEW_MODE_CYCLE.index(self._view_mode) + 1) % len(_VIEW_MODE_CYCLE)
         self._set_view_mode(_VIEW_MODE_CYCLE[next_idx])
 
-    def _set_view_mode(self, mode: int) -> None:
+    def _set_view_mode(self, mode: int) -&gt; None:
         self._view_mode = mode
         for i in range(self._tabs.count()):
             view = self._tabs.widget(i)
@@ -978,14 +800,14 @@ class MainWindow(QMainWindow):
                 view.set_mode(mode)
         self._update_view_mode_label()
 
-    def _update_view_mode_label(self) -> None:
+    def _update_view_mode_label(self) -&gt; None:
         btn = self._view_mode_buttons.get(self._view_mode)
         if btn is not None:
             btn.setChecked(True)
 
     # ── Theme ─────────────────────────────────────────────────────────────────
 
-    def _apply_theme(self, theme: Theme) -> None:
+    def _apply_theme(self, theme: Theme) -&gt; None:
         self._theme = theme
         self.setStyleSheet(generate_qss(theme))
         self._tab_bar._fill = QColor(theme.mantle)
@@ -1001,11 +823,11 @@ class MainWindow(QMainWindow):
 
     # ── Inspector ─────────────────────────────────────────────────────────────
 
-    def _inspect_widget(self) -> None:
+    def _inspect_widget(self) -&gt; None:
         pos = QCursor.pos()
         widget = QApplication.widgetAt(pos)
         if widget is None:
-            QMessageBox.information(self, "Inspector", "No widget under cursor.")
+            QMessageBox.information(self, &#34;Inspector&#34;, &#34;No widget under cursor.&#34;)
             return
 
         lines = []
@@ -1015,22 +837,22 @@ class MainWindow(QMainWindow):
             win_col = pal.color(QPalette.ColorRole.Window).name()
             btn_col = pal.color(QPalette.ColorRole.Button).name()
             lines.append(
-                f"{type(w).__name__}  name={w.objectName()!r}\n"
-                f"  geom={w.geometry()}  rect={w.rect()}\n"
-                f"  autoFill={w.autoFillBackground()}  WA_Styled={w.testAttribute(Qt.WidgetAttribute.WA_StyledBackground)}\n"
-                f"  palette.Window={win_col}  palette.Button={btn_col}\n"
-                f"  styleSheet={w.styleSheet()[:80]!r}"
+                f&#34;{type(w).__name__}  name={w.objectName()!r}\n&#34;
+                f&#34;  geom={w.geometry()}  rect={w.rect()}\n&#34;
+                f&#34;  autoFill={w.autoFillBackground()}  WA_Styled={w.testAttribute(Qt.WidgetAttribute.WA_StyledBackground)}\n&#34;
+                f&#34;  palette.Window={win_col}  palette.Button={btn_col}\n&#34;
+                f&#34;  styleSheet={w.styleSheet()[:80]!r}&#34;
             )
             parent = w.parent()
             w = parent if isinstance(parent, QWidget) else None
 
-        msg = "\n─────\n".join(lines)
+        msg = &#34;\n─────\n&#34;.join(lines)
         box = QMessageBox(self)
-        box.setWindowTitle(f"Inspector @ {pos.x()},{pos.y()}")
+        box.setWindowTitle(f&#34;Inspector @ {pos.x()},{pos.y()}&#34;)
         box.setText(msg)
         box.exec()
 
-    def keyPressEvent(self, event: object) -> None:
+    def keyPressEvent(self, event: object) -&gt; None:
         if isinstance(event, QKeyEvent):
             if event.key() == Qt.Key.Key_I and event.modifiers() == (
                 Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
@@ -1041,20 +863,95 @@ class MainWindow(QMainWindow):
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
-    def closeEvent(self, event: object) -> None:
+    def closeEvent(self, event: object) -&gt; None:
         set_dbg_callback(None)
         self._worker.shutdown(wait=False)
-        super().closeEvent(event)  # type: ignore[arg-type]
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-
-def _tab_label(canonical_name: str, max_len: int = 28) -> str:
-    """haxe.ds.ObjectMap → h.d.ObjectMap (abbreviated namespace prefix)."""
-    parts = canonical_name.split(".")
-    if len(parts) <= 2 or len(canonical_name) <= max_len:
-        return canonical_name
-    class_part = parts[-1]
-    abbrev = ".".join(p[0] for p in parts[:-1])
-    return f"{abbrev}.{class_part}"
+        super().closeEvent(event)  # type: ignore[arg-type]</code></pre>
+</details>
+<div class="desc"><p>QMainWindow(self, /, parent: PySide6.QtWidgets.QWidget | None = None, flags: PySide6.QtCore.Qt.WindowType = Default(Qt.WindowFlags), *, iconSize: PySide6.QtCore.QSize | None = None, toolButtonStyle: PySide6.QtCore.Qt.ToolButtonStyle | None = None, animated: bool | None = None, documentMode: bool | None = None, tabShape: PySide6.QtWidgets.QTabWidget.TabShape | None = None, dockNestingEnabled: bool | None = None, dockOptions: PySide6.QtWidgets.QMainWindow.DockOption | None = None, unifiedTitleAndToolBarOnMac: bool | None = None) -&gt; None</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>PySide6.QtWidgets.QMainWindow</li>
+<li>PySide6.QtWidgets.QWidget</li>
+<li>PySide6.QtCore.QObject</li>
+<li>PySide6.QtGui.QPaintDevice</li>
+<li>Shiboken.Object</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashlink.gui.main_window.MainWindow.staticMetaObject"><code class="name">var <span class="ident">staticMetaObject</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.gui.main_window.MainWindow.closeEvent"><code class="name flex">
+<span>def <span class="ident">closeEvent</span></span>(<span>self, event: object) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def closeEvent(self, event: object) -&gt; None:
+    set_dbg_callback(None)
+    self._worker.shutdown(wait=False)
+    super().closeEvent(event)  # type: ignore[arg-type]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.gui.main_window.MainWindow.keyPressEvent"><code class="name flex">
+<span>def <span class="ident">keyPressEvent</span></span>(<span>self, event: object) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def keyPressEvent(self, event: object) -&gt; None:
+    if isinstance(event, QKeyEvent):
+        if event.key() == Qt.Key.Key_I and event.modifiers() == (
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+        ):
+            self._inspect_widget()
+            return
+    super().keyPressEvent(event)  # type: ignore[arg-type]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashlink.gui" href="index.html">crashlink.gui</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="crashlink.gui.main_window.MainWindow" href="#crashlink.gui.main_window.MainWindow">MainWindow</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.gui.main_window.MainWindow.closeEvent" href="#crashlink.gui.main_window.MainWindow.closeEvent">closeEvent</a></code></li>
+<li><code><a title="crashlink.gui.main_window.MainWindow.keyPressEvent" href="#crashlink.gui.main_window.MainWindow.keyPressEvent">keyPressEvent</a></code></li>
+<li><code><a title="crashlink.gui.main_window.MainWindow.staticMetaObject" href="#crashlink.gui.main_window.MainWindow.staticMetaObject">staticMetaObject</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
+</footer>
+</body>
+</html>

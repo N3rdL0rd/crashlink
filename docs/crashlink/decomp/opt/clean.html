@@ -49,6 +49,251 @@ el.replaceWith(d);
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
 <dl>
+<dt id="crashlink.decomp.opt.clean.IRAnonObjectLiteralOptimizer"><code class="flex name class">
+<span>class <span class="ident">IRAnonObjectLiteralOptimizer</span></span>
+<span>(</span><span>function: "'IRFunction'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
+    &#34;&#34;&#34;
+    Folds `temp = {}; temp.f1 = e1; temp.f2 = e2; ...; use(temp)` into
+    `use({f1: e1, f2: e2, ...})`, wherever the anonymous object has exactly
+    one further reference and it&#39;s the very next statement.
+
+    HashLink lowers every Haxe anonymous-object literal to a `{}` allocation
+    followed by one field-assignment per key. `IRTraceOptimizer` already
+    special-cases this for `trace()`&#39;s implicit position argument; this pass
+    generalizes it to any consumer — most notably the same `?pos:haxe.
+    PosInfos` argument the compiler silently attaches to any function that
+    declares one (e.g. every `haxe.PosException` subclass constructor),
+    which otherwise bloats a two-line `throw new SomeException();` into six
+    lines of DynObj scaffolding.
+    &#34;&#34;&#34;
+
+    TARGET_OPCODES = {&#34;New&#34;}
+
+    def visit_block(self, block: IRBlock) -&gt; None:
+        made_change = True
+        while made_change:
+            made_change = False
+            new_statements: List[IRStatement] = []
+            i = 0
+            while i &lt; len(block.statements):
+                match = self._try_fold(block.statements, i)
+                if match is not None:
+                    consumer, consumed = match
+                    new_statements.append(consumer)
+                    i += consumed
+                    made_change = True
+                    continue
+                new_statements.append(block.statements[i])
+                i += 1
+            block.statements = new_statements
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
+    def _try_fold(self, stmts: List[IRStatement], start: int) -&gt; Optional[Tuple[IRStatement, int]]:
+        stmt = stmts[start]
+        if not isinstance(stmt, IRAssign) or not isinstance(stmt.target, IRLocal):
+            return None
+        if not isinstance(stmt.expr, IRNew) or stmt.expr.constructor_args:
+            return None
+        # Anonymous-object allocations show up as either a generic DynObj or,
+        # when the compiler can infer the exact field set statically (as it
+        # always can for the fixed fileName/lineNumber/className/methodName
+        # shape of `?pos:haxe.PosInfos`), a structural Virtual type. A real
+        # `new SomeClass()` allocation is always an Obj, never either of these.
+        alloc_defn = stmt.expr.get_type().definition
+        if not isinstance(alloc_defn, (DynObj, Virtual)):
+            return None
+        temp = stmt.target
+
+        fields: List[Tuple[str, IRExpression]] = []
+        j = start + 1
+        while j &lt; len(stmts):
+            s = stmts[j]
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRField)
+                and s.target.target == temp
+                and isinstance(s.expr, IRExpression)
+                and not self._expr_uses_local(s.expr, temp)
+            ):
+                fields.append((s.target.field_name, s.expr))
+                j += 1
+                continue
+            break
+
+        if not fields or j &gt;= len(stmts):
+            return None
+
+        use_stmt = stmts[j]
+        if self._count_local_refs(use_stmt, temp) != 1:
+            return None
+        for later in stmts[j + 1 :]:
+            if self._stmt_uses_local(later, temp):
+                return None
+
+        literal = IRObjectLiteral(self.func.code, fields)
+        if not self._substitute_use(use_stmt, temp, literal):
+            return None
+        use_stmt.adopt(*stmts[start:j])  # the alloc + field-assign statements are dropped
+        return use_stmt, j - start + 1
+
+    def _substitute_use(self, stmt: IRStatement, local: IRLocal, replacement: IRExpression) -&gt; bool:
+        if isinstance(stmt, IRAssign):
+            changed = False
+            if stmt.expr == local:
+                stmt.expr = replacement
+                changed = True
+            elif isinstance(stmt.expr, IRExpression) and self._replace_in_expr(stmt.expr, local, replacement):
+                changed = True
+            if isinstance(stmt.target, IRExpression) and stmt.target != local:
+                if self._replace_in_expr(stmt.target, local, replacement):
+                    changed = True
+            return changed
+        if isinstance(stmt, (IRReturn, IRThrow)):
+            if stmt.value == local:
+                stmt.value = replacement
+                return True
+            if stmt.value is not None:
+                return self._replace_in_expr(stmt.value, local, replacement)
+            return False
+        if isinstance(stmt, IRExpression):
+            return self._replace_in_expr(stmt, local, replacement)
+        return False
+
+    def _replace_in_expr(self, expr: IRExpression, local: IRLocal, replacement: IRExpression) -&gt; bool:
+        made_change = False
+        for i, child in enumerate(expr.get_children()):
+            if not isinstance(child, IRExpression):
+                continue
+            if child == local:
+                if self._set_child(expr, i, replacement):
+                    made_change = True
+                continue
+            if self._replace_in_expr(child, local, replacement):
+                made_change = True
+        return made_change
+
+    def _set_child(self, parent: IRExpression, index: int, value: IRExpression) -&gt; bool:
+        children = parent.get_children()
+        if index &gt;= len(children):
+            return False
+        child = children[index]
+        if isinstance(parent, (IRArithmetic, IRBoolExpr)):
+            if child is parent.left:
+                parent.left = value
+                return True
+            if child is parent.right:
+                parent.right = value
+                return True
+        elif isinstance(parent, IRCall):
+            if parent.target is child:
+                parent.target = cast(Any, value)
+                return True
+            for j, arg in enumerate(parent.args):
+                if arg is child:
+                    parent.args[j] = value
+                    return True
+        elif isinstance(parent, IRField):
+            if child is parent.target:
+                parent.target = value
+                return True
+        elif isinstance(parent, IRCast):
+            if child is parent.expr:
+                parent.expr = value
+                return True
+        elif isinstance(parent, IRArrayAccess):
+            if child is parent.array:
+                parent.array = value
+                return True
+            if child is parent.index:
+                parent.index = value
+                return True
+        elif isinstance(parent, IRNew):
+            for j, arg in enumerate(parent.constructor_args):
+                if arg is child:
+                    parent.constructor_args[j] = value
+                    return True
+        elif isinstance(parent, IREnumConstruct):
+            for j, arg in enumerate(parent.args):
+                if arg is child:
+                    parent.args[j] = value
+                    return True
+        elif isinstance(parent, IREnumField):
+            if child is parent.value:
+                parent.value = value
+                return True
+        elif isinstance(parent, IRArrayLiteral):
+            for j, element in enumerate(parent.elements):
+                if element is child:
+                    parent.elements[j] = value
+                    return True
+        elif isinstance(parent, IRRef):
+            if child is parent.target:
+                parent.target = value
+                return True
+        return False
+
+    def _count_local_refs(self, stmt: IRStatement, local: IRLocal) -&gt; int:
+        if stmt == local:
+            return 1
+        return sum(self._count_local_refs(child, local) for child in stmt.get_children())
+
+    def _stmt_uses_local(self, stmt: IRStatement, local: IRLocal) -&gt; bool:
+        return self._count_local_refs(stmt, local) &gt; 0
+
+    def _expr_uses_local(self, expr: IRExpression, local: IRLocal) -&gt; bool:
+        return self._count_local_refs(expr, local) &gt; 0</code></pre>
+</details>
+<div class="desc"><p>Folds <code>temp = {}; temp.f1 = e1; temp.f2 = e2; ...; use(temp)</code> into
+<code>use({f1: e1, f2: e2, ...})</code>, wherever the anonymous object has exactly
+one further reference and it's the very next statement.</p>
+<p>HashLink lowers every Haxe anonymous-object literal to a <code>{}</code> allocation
+followed by one field-assignment per key. <code>IRTraceOptimizer</code> already
+special-cases this for <code>trace()</code>'s implicit position argument; this pass
+generalizes it to any consumer — most notably the same <code>?pos:haxe.
+PosInfos</code> argument the compiler silently attaches to any function that
+declares one (e.g. every <code>haxe.PosException</code> subclass constructor),
+which otherwise bloats a two-line <code>throw new SomeException();</code> into six
+lines of DynObj scaffolding.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></li>
+<li><a title="crashlink.decomp.opt.IROptimizer" href="index.html#crashlink.decomp.opt.IROptimizer">IROptimizer</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.TARGET_OPCODES" href="index.html#crashlink.decomp.opt.IROptimizer.TARGET_OPCODES">TARGET_OPCODES</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement">after_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement">before_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.optimize" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.should_run" href="index.html#crashlink.decomp.opt.IROptimizer.should_run">should_run</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit">visit</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_assign" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_assign">visit_assign</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_block" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_block">visit_block</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_break" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_break">visit_break</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_conditional" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_conditional">visit_conditional</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_continue" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_continue">visit_continue</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_expression" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_expression">visit_expression</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop">visit_primitive_loop</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_return" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_return">visit_return</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_switch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_switch">visit_switch</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch">visit_try_catch</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
 <dt id="crashlink.decomp.opt.clean.IRArrayGrowGuardEliminator"><code class="flex name class">
 <span>class <span class="ident">IRArrayGrowGuardEliminator</span></span>
 <span>(</span><span>function: "'IRFunction'")</span>
@@ -389,6 +634,7 @@ common_code();</p></div>
                             # constructor call (e.g. initializers for constructor
                             # arguments), and place the folded `new` after them.
                             stmt.expr.constructor_args = ctor_args
+                            stmt.adopt(next_stmt)  # constructor-call opcode is dropped below
                             new_statements.extend(block.statements[i + 1 : j])
                             new_statements.append(stmt)
                             i = j + 1
@@ -527,6 +773,7 @@ common_code();</p></div>
             ):
                 if self._has_side_effects(stmt.expr):
                     # Keep the side effects as a bare expression statement.
+                    stmt.expr.adopt(stmt)  # opcode was tagged on the assign, not its expr
                     new_stmts.append(stmt.expr)
                     live.update(uses)
                 # else: drop the dead assignment entirely.
@@ -1232,6 +1479,7 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
                     and isinstance(stmt.expr.target, IRConst)
                     and isinstance(stmt.expr.target.value, Function)
                 ):
+                    stmt.expr.adopt(stmt)  # opcode was tagged on the assign, not its expr
                     new_stmts.append(stmt.expr)
                 continue
             new_stmts.append(stmt)
@@ -1338,7 +1586,9 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
             return None
         if _stmt_lists_structurally_equal(outer_true, inner.true_block.statements):
             or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, stmt.condition, inner.condition)
-            return IRConditional(self.func.code, or_cond, inner.true_block, inner.false_block)
+            merged = IRConditional(self.func.code, or_cond, inner.true_block, inner.false_block)
+            merged.adopt(stmt, inner)
+            return merged
         return None
 
     def _try_merge_sibling(
@@ -1362,7 +1612,12 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
         or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, not_a, inner.condition)
         rest_block = IRBlock(self.func.code)
         rest_block.statements = outer_true[1:]
-        return IRConditional(self.func.code, or_cond, inner.true_block, rest_block), len(inner_true)
+        merged = IRConditional(self.func.code, or_cond, inner.true_block, rest_block)
+        # The consumed parent-block siblings duplicate inner_true&#39;s *content*
+        # (that&#39;s the merge precondition) but are distinct compiled copies with
+        # their own opcodes, same as stmt/inner themselves being replaced.
+        merged.adopt(stmt, inner, *following[: len(inner_true)])
+        return merged, len(inner_true)
 
     def _try_merge_sibling_and(
         self, stmt: IRConditional, following: List[IRStatement]
@@ -1387,6 +1642,7 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
             return None
         and_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.AND, stmt.condition, inner.condition)
         merged = IRConditional(self.func.code, and_cond, inner.true_block, inner.false_block)
+        merged.adopt(stmt, inner, *following[: len(wanted)])
         return merged, len(inner_false)
 
     def _invert(self, cond: IRExpression) -&gt; IRExpression:
@@ -1467,7 +1723,7 @@ which recompiles to different (larger) bytecode than the original.</p></div>
     &#34;&#34;&#34;
 
     def _clone_bool_expr(self, expr: IRBoolExpr) -&gt; IRBoolExpr:
-        return IRBoolExpr(expr.code, expr.op, expr.left, expr.right)
+        return cast(IRBoolExpr, IRBoolExpr(expr.code, expr.op, expr.left, expr.right).adopt(expr))
 
     def _inline_into_boolexpr(
         self, bool_expr: IRBoolExpr, target: IRLocal | IRField | IRArrayAccess, expr_to_inline: IRExpression
@@ -1516,6 +1772,7 @@ which recompiles to different (larger) bytecode than the original.</p></div>
 
         new_while_loop = IRWhileLoop(loop.code, true_loop_condition, new_body_block)
         new_while_loop.comment = loop.comment
+        new_while_loop.adopt(loop, exit_condition_expr)
         return new_while_loop
 
     def visit_block(self, block: IRBlock) -&gt; None:
@@ -1562,6 +1819,7 @@ which recompiles to different (larger) bytecode than the original.</p></div>
 
                 inlined = self._inline_into_boolexpr(working_exit_condition, stmt.target, stmt.expr)
                 if inlined:
+                    working_exit_condition.adopt(stmt)  # stmt itself is dropped below
                     continue
             remaining_setup.append(stmt)
 
@@ -1581,6 +1839,7 @@ which recompiles to different (larger) bytecode than the original.</p></div>
         new_while_loop = IRWhileLoop(loop.code, loop_continuation_expr, new_body_block)
 
         new_while_loop.comment = loop.comment
+        new_while_loop.adopt(loop, loop_continuation_expr)
 
         dbg_print(f&#34;IRLoopCondOpt: Converted IRPrimitiveLoop to IRWhileLoop. While condition: {loop_continuation_expr}&#34;)
         return new_while_loop</code></pre>
@@ -1740,7 +1999,7 @@ explicit else-continue is just noise.</p></div>
                 and _structurally_equal(stmt.expr, nxt.expr)
             ):
                 new_statements.append(stmt)
-                new_statements.append(IRAssign(self.func.code, nxt.target, stmt.target))
+                new_statements.append(IRAssign(self.func.code, nxt.target, stmt.target).adopt(nxt))
                 i += 2
                 continue
             # `t = E; return E;` (or throw) — the terminator re-evaluates E
@@ -1758,6 +2017,7 @@ explicit else-continue is just noise.</p></div>
                 and nxt.value is not None
                 and _structurally_equal(stmt.expr, nxt.value)
             ):
+                nxt.adopt(stmt)  # stmt is dropped; nxt (return/throw) is kept as-is below
                 i += 1
                 continue
             new_statements.append(stmt)
@@ -1906,6 +2166,7 @@ produces extra opcodes that don't exist in the original bytecode.</p></div>
                     if not replaced:
                         i += 1
                         continue
+                nxt.adopt(stmt)  # stmt is dropped, folded into nxt&#39;s RHS
                 block.statements.pop(i)
                 changed = True
         for stmt in block.statements:
@@ -2195,6 +2456,7 @@ propagation.</p></div>
                             )
 
                         expr_being_kept = stmt.expr
+                        expr_being_kept.adopt(stmt)  # opcode was tagged on the assign, not its expr
                         new_statements.append(expr_being_kept)
                         made_change_this_pass = True
                         continue
@@ -2251,6 +2513,9 @@ E.g., <code>var_void_local:Void = some_call();</code> becomes <code>some_call();
 </li>
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
+<li>
+<h4><code><a title="crashlink.decomp.opt.clean.IRAnonObjectLiteralOptimizer" href="#crashlink.decomp.opt.clean.IRAnonObjectLiteralOptimizer">IRAnonObjectLiteralOptimizer</a></code></h4>
+</li>
 <li>
 <h4><code><a title="crashlink.decomp.opt.clean.IRArrayGrowGuardEliminator" href="#crashlink.decomp.opt.clean.IRArrayGrowGuardEliminator">IRArrayGrowGuardEliminator</a></code></h4>
 </li>

@@ -38,9 +38,7 @@ def test_round_trip_decompile_cache(tmp_path):
     opline_cache = {findex: {0: 0, 1: 1, 2: 1}}
 
     cldb_path = str(tmp_path / "test.cldb")
-    db.save_database(
-        cldb_path, code=code, source_path=SAMPLE, class_results=class_results, opline_cache=opline_cache
-    )
+    db.save_database(cldb_path, code=code, source_path=SAMPLE, class_results=class_results, opline_cache=opline_cache)
 
     fresh = _fresh_code()
     result = db.load_database(cldb_path, code=fresh, source_path=SAMPLE)
@@ -91,9 +89,7 @@ def test_session_round_trip(tmp_path):
     session = db.SessionState(view_mode=2, theme_name="Mocha", open_findices=[findex], current_tab_index=0)
 
     cldb_path = str(tmp_path / "test.cldb")
-    db.save_database(
-        cldb_path, code=code, source_path=SAMPLE, class_results={}, opline_cache={}, session=session
-    )
+    db.save_database(cldb_path, code=code, source_path=SAMPLE, class_results={}, opline_cache={}, session=session)
 
     fresh = _fresh_code()
     result = db.load_database(cldb_path, code=fresh, source_path=SAMPLE)
@@ -129,9 +125,7 @@ def test_hash_mismatch_rejects_everything(tmp_path):
     class_results = {"class:Foo": {findex: "shouldNotApply either"}}
 
     cldb_path = str(tmp_path / "test.cldb")
-    db.save_database(
-        cldb_path, code=code, source_path=SAMPLE, class_results=class_results, opline_cache={}
-    )
+    db.save_database(cldb_path, code=code, source_path=SAMPLE, class_results=class_results, opline_cache={})
 
     other_sample = "tests/haxe/Enums.hl"
     fresh = Bytecode.from_path(other_sample)

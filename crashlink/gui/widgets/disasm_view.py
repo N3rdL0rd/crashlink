@@ -174,9 +174,7 @@ class DisasmView(DecompView):
         # lines up without ballooning the gap for classes with only short filenames.
         prefix_width = max((len(e[0]) for e in entries if isinstance(e, tuple)), default=0)
 
-        lines: List[str] = [
-            f"{e[0].ljust(prefix_width)} {e[1]}" if isinstance(e, tuple) else e for e in entries
-        ]
+        lines: List[str] = [f"{e[0].ljust(prefix_width)} {e[1]}" if isinstance(e, tuple) else e for e in entries]
 
         self.setPlainText("\n".join(lines))
 

@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.6">
+<title>crashlink.gui.widgets.log_panel API documentation</title>
+<meta name="description" content="Log panel — timestamped, coloured output for GUI events, plus a Python REPL.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>crashlink.gui.widgets.log_panel</code></h1>
+</header>
+<section id="section-intro">
+<p>Log panel — timestamped, coloured output for GUI events, plus a Python REPL.</p>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="crashlink.gui.widgets.log_panel.LogPanel"><code class="flex name class">
+<span>class <span class="ident">LogPanel</span></span>
+<span>(</span><span>parent: Optional[QWidget] = None)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class LogPanel(QWidget):
+    # Internal: marshals appends onto the GUI thread. dbg_print may fire from
+    # worker threads (e.g. the load thread), and QTextEdit is not thread-safe.
+    _append_requested = Signal(str, str, str)  # level, msg, color
+
+    def __init__(self, parent: Optional[QWidget] = None) -&gt; None:
+        super().__init__(parent)
+        self._theme: Optional[Theme] = None
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._output = QTextEdit()
+        self._output.setReadOnly(True)
+        self._output.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self._output.document().setMaximumBlockCount(2000)
+        font = QFont(&#34;JetBrains Mono&#34;, 11)
+        font.setStyleHint(QFont.StyleHint.Monospace)
+        self._output.setFont(font)
+        layout.addWidget(self._output)
+
+        # ── REPL input row ──────────────────────────────────────
+        repl_row = QHBoxLayout()
+        repl_row.setContentsMargins(4, 2, 4, 2)
+        repl_row.setSpacing(4)
+
+        self._prompt_label = QLabel(&#34;&gt;&gt;&gt;&#34;)
+        self._prompt_label.setFont(font)
+        repl_row.addWidget(self._prompt_label)
+
+        self._repl_input = _ReplLineEdit()
+        self._repl_input.setFont(font)
+        self._repl_input.setPlaceholderText(&#34;Python REPL (.help for help)&#34;)
+        self._repl_input.returnPressed.connect(self._on_repl_submit)
+        self._repl_input.history_prev.connect(self._on_history_prev)
+        self._repl_input.history_next.connect(self._on_history_next)
+        repl_row.addWidget(self._repl_input, 1)
+
+        layout.addLayout(repl_row)
+
+        self._append_requested.connect(self._do_append, Qt.ConnectionType.QueuedConnection)
+
+        # ── REPL state ──────────────────────────────────────────
+        self._repl_namespace: Dict[str, Any] = {
+            &#34;code&#34;: None,
+            &#34;mw&#34;: None,
+            &#34;findex&#34;: None,
+            &#34;func&#34;: None,
+            &#34;irf&#34;: None,
+            &#34;disasm&#34;: disasm,
+            &#34;pseudo&#34;: pseudo,
+            &#34;IRFunction&#34;: IRFunction,
+            &#34;IRClass&#34;: IRClass,
+            &#34;Bytecode&#34;: Bytecode,
+            &#34;Function&#34;: Function,
+            &#34;Native&#34;: Native,
+            &#34;Opcode&#34;: Opcode,
+        }
+        self._interpreter = _pyconsole.InteractiveInterpreter(self._repl_namespace)
+        self._continuation_lines: List[str] = []
+        self._history: List[str] = []
+        self._history_idx = 0
+        self._history_pending = &#34;&#34;
+
+    def set_theme(self, theme: Theme) -&gt; None:
+        self._theme = theme
+
+    # ── REPL context ─────────────────────────────────────────────────────────
+
+    def set_context(self, **kwargs: Any) -&gt; None:
+        &#34;&#34;&#34;Update variables visible to the REPL, e.g. set_context(code=bytecode).&#34;&#34;&#34;
+        self._repl_namespace.update(kwargs)
+
+    # ── Public log methods ────────────────────────────────────────────────────
+
+    def info(self, msg: str) -&gt; None:
+        self._append(&#34;INFO&#34;, msg, self._col(&#34;subtext&#34;))
+
+    def success(self, msg: str) -&gt; None:
+        self._append(&#34;OK  &#34;, msg, self._col(&#34;green&#34;))
+
+    def warn(self, msg: str) -&gt; None:
+        self._append(&#34;WARN&#34;, msg, self._col(&#34;yellow&#34;))
+
+    def error(self, msg: str) -&gt; None:
+        self._append(&#34;ERR &#34;, msg, self._col(&#34;red&#34;))
+
+    def result(self, msg: str) -&gt; None:
+        &#34;&#34;&#34;Used for xref / rename results — stands out without being an error.&#34;&#34;&#34;
+        self._append(&#34;&gt;&gt;  &#34;, msg, self._col(&#34;accent&#34;))
+
+    def clear(self) -&gt; None:
+        self._output.clear()
+
+    # ── REPL execution ───────────────────────────────────────────────────────
+
+    def _on_repl_submit(self) -&gt; None:
+        line = self._repl_input.text()
+        self._repl_input.clear()
+
+        if line.strip():
+            self._history.append(line)
+        self._history_idx = len(self._history)
+        self._history_pending = &#34;&#34;
+
+        prompt = &#34;...&#34; if self._continuation_lines else &#34;&gt;&gt;&gt;&#34;
+        self._append_raw(f&#34;{prompt} {line}&#34;, self._col(&#34;text&#34;))
+
+        # Meta-commands (never valid Python, so no ambiguity) are only
+        # recognized outside of a continuation block.
+        if not self._continuation_lines and line.strip().startswith(&#34;.&#34;):
+            self._run_repl_command(line.strip())
+            return
+
+        self._continuation_lines.append(line)
+        # A blank line always ends a continuation, even if runsource would
+        # otherwise keep waiting (e.g. a trailing comment-only block).
+        force_finish = not line.strip() and len(self._continuation_lines) &gt; 1
+        source = &#34;\n&#34;.join(self._continuation_lines)
+
+        out_buf, err_buf = StringIO(), StringIO()
+        old_out, old_err = sys.stdout, sys.stderr
+        sys.stdout, sys.stderr = out_buf, err_buf
+        try:
+            needs_more = self._interpreter.runsource(source, &#34;&lt;repl&gt;&#34;) and not force_finish
+        except Exception:
+            err_buf.write(traceback.format_exc())
+            needs_more = False
+        finally:
+            sys.stdout, sys.stderr = old_out, old_err
+
+        for out_line in out_buf.getvalue().splitlines():
+            self._append_raw(out_line, self._col(&#34;text&#34;))
+        for err_line in err_buf.getvalue().splitlines():
+            self._append_raw(err_line, self._col(&#34;red&#34;))
+
+        if needs_more:
+            self._prompt_label.setText(&#34;...&#34;)
+        else:
+            self._continuation_lines = []
+            self._prompt_label.setText(&#34;&gt;&gt;&gt;&#34;)
+
+    def _run_repl_command(self, cmd_line: str) -&gt; None:
+        cmd, *args = cmd_line.split()
+        if cmd in (&#34;.help&#34;, &#34;.h&#34;):
+            self._print_help()
+        elif cmd == &#34;.clear&#34;:
+            self.clear()
+        elif cmd == &#34;.vars&#34;:
+            self._print_vars()
+        elif cmd == &#34;.goto&#34;:
+            self._cmd_goto(args)
+        elif cmd == &#34;.disasm&#34;:
+            self._cmd_disasm(args)
+        elif cmd == &#34;.pseudo&#34;:
+            self._cmd_pseudo(args)
+        elif cmd == &#34;.save&#34;:
+            self._cmd_save()
+        else:
+            self._append_raw(f&#34;Unknown command: {cmd} (try .help)&#34;, self._col(&#34;yellow&#34;))
+
+    def _print_help(self) -&gt; None:
+        self._append_raw(&#34;Built-in variables:&#34;, self._col(&#34;accent&#34;))
+        for name, desc in _REPL_VAR_HELP.items():
+            val = self._repl_namespace.get(name)
+            type_name = type(val).__name__ if val is not None else &#34;None&#34;
+            self._append_raw(f&#34;  {name:&lt;10} ({type_name}) - {desc}&#34;, self._col(&#34;text&#34;))
+        self._print_vars(header=&#34;Your variables:&#34;, empty_msg=None)
+        self._append_raw(
+            &#34;Commands: .help  .clear  .vars  .goto &lt;findex&gt;  .disasm [findex]  .pseudo [findex]  .save&#34;,
+            self._col(&#34;subtext&#34;),
+        )
+
+    def _print_vars(self, header: str = &#34;Your variables:&#34;, empty_msg: Optional[str] = &#34;(none)&#34;) -&gt; None:
+        extra = sorted(
+            k
+            for k in self._repl_namespace
+            if k not in _REPL_VAR_HELP and k != &#34;__builtins__&#34; and not k.startswith(&#34;__&#34;)
+        )
+        if not extra:
+            if empty_msg is not None:
+                self._append_raw(empty_msg, self._col(&#34;subtext&#34;))
+            return
+        self._append_raw(header, self._col(&#34;accent&#34;))
+        for name in extra:
+            try:
+                val_repr = repr(self._repl_namespace[name])
+            except Exception as e:
+                val_repr = f&#34;&lt;repr failed: {e}&gt;&#34;
+            if len(val_repr) &gt; 100:
+                val_repr = val_repr[:100] + &#34;…&#34;
+            self._append_raw(f&#34;  {name} = {val_repr}&#34;, self._col(&#34;text&#34;))
+
+    def _resolve_findex(self, args: List[str]) -&gt; Optional[int]:
+        if args:
+            try:
+                return int(args[0])
+            except ValueError:
+                self._append_raw(f&#34;Invalid findex: {args[0]!r}&#34;, self._col(&#34;red&#34;))
+                return None
+        fi = self._repl_namespace.get(&#34;findex&#34;)
+        if fi is None:
+            self._append_raw(&#34;No function focused, and no findex given.&#34;, self._col(&#34;yellow&#34;))
+        return fi
+
+    def _cmd_goto(self, args: List[str]) -&gt; None:
+        fi = self._resolve_findex(args)
+        if fi is None:
+            return
+        mw = self._repl_namespace.get(&#34;mw&#34;)
+        if mw is None:
+            self._append_raw(&#34;`mw` is not available.&#34;, self._col(&#34;red&#34;))
+            return
+        try:
+            mw._on_function_selected(fi)
+        except Exception:
+            self._append_raw(traceback.format_exc(), self._col(&#34;red&#34;))
+
+    def _cmd_disasm(self, args: List[str]) -&gt; None:
+        fi = self._resolve_findex(args)
+        if fi is None:
+            return
+        bc = self._repl_namespace.get(&#34;code&#34;)
+        if bc is None:
+            self._append_raw(&#34;No bytecode loaded.&#34;, self._col(&#34;yellow&#34;))
+            return
+        target = bc.get_findex_map().get(fi)
+        if target is None:
+            self._append_raw(f&#34;f@{fi} not found.&#34;, self._col(&#34;red&#34;))
+            return
+        try:
+            text = disasm.func(bc, target)
+        except Exception:
+            self._append_raw(traceback.format_exc(), self._col(&#34;red&#34;))
+            return
+        for line in text.splitlines():
+            self._append_raw(line, self._col(&#34;text&#34;))
+
+    def _cmd_pseudo(self, args: List[str]) -&gt; None:
+        fi = self._resolve_findex(args)
+        if fi is None:
+            return
+        bc = self._repl_namespace.get(&#34;code&#34;)
+        if bc is None:
+            self._append_raw(&#34;No bytecode loaded.&#34;, self._col(&#34;yellow&#34;))
+            return
+        # Reuse the already-decompiled IR for the focused function; otherwise
+        # decompile a throwaway copy just for this printout.
+        ir = self._repl_namespace.get(&#34;irf&#34;) if self._repl_namespace.get(&#34;findex&#34;) == fi else None
+        if ir is None:
+            target = bc.get_findex_map().get(fi)
+            if target is None:
+                self._append_raw(f&#34;f@{fi} not found.&#34;, self._col(&#34;red&#34;))
+                return
+            try:
+                ir = IRFunction(bc, target)
+            except Exception:
+                self._append_raw(traceback.format_exc(), self._col(&#34;red&#34;))
+                return
+        try:
+            text = pseudo.pseudo(ir)
+        except Exception:
+            self._append_raw(traceback.format_exc(), self._col(&#34;red&#34;))
+            return
+        for line in text.splitlines():
+            self._append_raw(line, self._col(&#34;text&#34;))
+
+    def _cmd_save(self) -&gt; None:
+        mw = self._repl_namespace.get(&#34;mw&#34;)
+        if mw is None:
+            self._append_raw(&#34;`mw` is not available.&#34;, self._col(&#34;red&#34;))
+            return
+        try:
+            mw._save_database()
+        except Exception:
+            self._append_raw(traceback.format_exc(), self._col(&#34;red&#34;))
+
+    def _on_history_prev(self) -&gt; None:
+        if not self._history:
+            return
+        if self._history_idx == len(self._history):
+            self._history_pending = self._repl_input.text()
+        if self._history_idx &gt; 0:
+            self._history_idx -= 1
+            self._repl_input.setText(self._history[self._history_idx])
+
+    def _on_history_next(self) -&gt; None:
+        if self._history_idx &gt;= len(self._history):
+            return
+        self._history_idx += 1
+        if self._history_idx == len(self._history):
+            self._repl_input.setText(self._history_pending)
+        else:
+            self._repl_input.setText(self._history[self._history_idx])
+
+    # ── Internal ──────────────────────────────────────────────────────────────
+
+    def _col(self, attr: str) -&gt; str:
+        if self._theme:
+            return getattr(self._theme, attr, self._theme.text)
+        _fallbacks = {
+            &#34;subtext&#34;: &#34;#a6adc8&#34;,
+            &#34;green&#34;: &#34;#a6e3a1&#34;,
+            &#34;yellow&#34;: &#34;#f9e2af&#34;,
+            &#34;red&#34;: &#34;#f38ba8&#34;,
+            &#34;accent&#34;: &#34;#b4befe&#34;,
+            &#34;text&#34;: &#34;#cdd6f4&#34;,
+        }
+        return _fallbacks.get(attr, &#34;#cdd6f4&#34;)
+
+    def _append(self, level: str, msg: str, color: str) -&gt; None:
+        # Always hop to the GUI thread; callers may be on worker threads.
+        self._append_requested.emit(level, msg, color)
+
+    def _do_append(self, level: str, msg: str, color: str) -&gt; None:
+        ts = datetime.now().strftime(&#34;%H:%M:%S&#34;)
+        cursor = self._output.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+
+        ts_fmt = QTextCharFormat()
+        ts_fmt.setForeground(QColor(self._col(&#34;overlay&#34;) if self._theme else &#34;#6c7086&#34;))
+
+        level_fmt = QTextCharFormat()
+        level_fmt.setForeground(QColor(color))
+        level_fmt.setFontWeight(QFont.Weight.Bold)
+
+        msg_fmt = QTextCharFormat()
+        msg_fmt.setForeground(QColor(self._col(&#34;text&#34;)))
+
+        cursor.insertText(f&#34;{ts} &#34;, ts_fmt)
+        cursor.insertText(f&#34;[{level}]&#34;, level_fmt)
+        cursor.insertText(f&#34;  {msg}\n&#34;, msg_fmt)
+
+        self._output.setTextCursor(cursor)
+        self._output.ensureCursorVisible()
+
+    def _append_raw(self, text: str, color: str) -&gt; None:
+        &#34;&#34;&#34;Append a line with no timestamp/level prefix — used for REPL echo/output.&#34;&#34;&#34;
+        cursor = self._output.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor(color))
+        cursor.insertText(text + &#34;\n&#34;, fmt)
+        self._output.setTextCursor(cursor)
+        self._output.ensureCursorVisible()</code></pre>
+</details>
+<div class="desc"><p>QWidget(self, /, parent: PySide6.QtWidgets.QWidget | None = None, f: PySide6.QtCore.Qt.WindowType = Default(Qt.WindowFlags), *, modal: bool | None = None, windowModality: PySide6.QtCore.Qt.WindowModality | None = None, enabled: bool | None = None, geometry: PySide6.QtCore.QRect | None = None, frameGeometry: PySide6.QtCore.QRect | None = None, normalGeometry: PySide6.QtCore.QRect | None = None, x: int | None = None, y: int | None = None, pos: PySide6.QtCore.QPoint | None = None, frameSize: PySide6.QtCore.QSize | None = None, size: PySide6.QtCore.QSize | None = None, width: int | None = None, height: int | None = None, rect: PySide6.QtCore.QRect | None = None, childrenRect: PySide6.QtCore.QRect | None = None, childrenRegion: PySide6.QtGui.QRegion | None = None, sizePolicy: PySide6.QtWidgets.QSizePolicy | None = None, minimumSize: PySide6.QtCore.QSize | None = None, maximumSize: PySide6.QtCore.QSize | None = None, minimumWidth: int | None = None, minimumHeight: int | None = None, maximumWidth: int | None = None, maximumHeight: int | None = None, sizeIncrement: PySide6.QtCore.QSize | None = None, baseSize: PySide6.QtCore.QSize | None = None, palette: PySide6.QtGui.QPalette | None = None, font: PySide6.QtGui.QFont | None = None, cursor: PySide6.QtGui.QCursor | None = None, mouseTracking: bool | None = None, tabletTracking: bool | None = None, isActiveWindow: bool | None = None, focusPolicy: PySide6.QtCore.Qt.FocusPolicy | None = None, focus: bool | None = None, contextMenuPolicy: PySide6.QtCore.Qt.ContextMenuPolicy | None = None, updatesEnabled: bool | None = None, visible: bool | None = None, minimized: bool | None = None, maximized: bool | None = None, fullScreen: bool | None = None, sizeHint: PySide6.QtCore.QSize | None = None, minimumSizeHint: PySide6.QtCore.QSize | None = None, acceptDrops: bool | None = None, windowTitle: str | None = None, windowIcon: PySide6.QtGui.QIcon | None = None, windowIconText: str | None = None, windowOpacity: float | None = None, windowModified: bool | None = None, toolTip: str | None = None, toolTipDuration: int | None = None, statusTip: str | None = None, whatsThis: str | None = None, accessibleName: str | None = None, accessibleDescription: str | None = None, accessibleIdentifier: str | None = None, layoutDirection: PySide6.QtCore.Qt.LayoutDirection | None = None, autoFillBackground: bool | None = None, styleSheet: str | None = None, locale: PySide6.QtCore.QLocale | None = None, windowFilePath: str | None = None, inputMethodHints: PySide6.QtCore.Qt.InputMethodHint | None = None) -&gt; None</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>PySide6.QtWidgets.QWidget</li>
+<li>PySide6.QtCore.QObject</li>
+<li>PySide6.QtGui.QPaintDevice</li>
+<li>Shiboken.Object</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashlink.gui.widgets.log_panel.LogPanel.staticMetaObject"><code class="name">var <span class="ident">staticMetaObject</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.gui.widgets.log_panel.LogPanel.clear"><code class="name flex">
+<span>def <span class="ident">clear</span></span>(<span>self) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def clear(self) -&gt; None:
+    self._output.clear()</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.gui.widgets.log_panel.LogPanel.error"><code class="name flex">
+<span>def <span class="ident">error</span></span>(<span>self, msg: str) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def error(self, msg: str) -&gt; None:
+    self._append(&#34;ERR &#34;, msg, self._col(&#34;red&#34;))</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.gui.widgets.log_panel.LogPanel.info"><code class="name flex">
+<span>def <span class="ident">info</span></span>(<span>self, msg: str) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def info(self, msg: str) -&gt; None:
+    self._append(&#34;INFO&#34;, msg, self._col(&#34;subtext&#34;))</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.gui.widgets.log_panel.LogPanel.result"><code class="name flex">
+<span>def <span class="ident">result</span></span>(<span>self, msg: str) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def result(self, msg: str) -&gt; None:
+    &#34;&#34;&#34;Used for xref / rename results — stands out without being an error.&#34;&#34;&#34;
+    self._append(&#34;&gt;&gt;  &#34;, msg, self._col(&#34;accent&#34;))</code></pre>
+</details>
+<div class="desc"><p>Used for xref / rename results — stands out without being an error.</p></div>
+</dd>
+<dt id="crashlink.gui.widgets.log_panel.LogPanel.set_context"><code class="name flex">
+<span>def <span class="ident">set_context</span></span>(<span>self, **kwargs: Any) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_context(self, **kwargs: Any) -&gt; None:
+    &#34;&#34;&#34;Update variables visible to the REPL, e.g. set_context(code=bytecode).&#34;&#34;&#34;
+    self._repl_namespace.update(kwargs)</code></pre>
+</details>
+<div class="desc"><p>Update variables visible to the REPL, e.g. set_context(code=bytecode).</p></div>
+</dd>
+<dt id="crashlink.gui.widgets.log_panel.LogPanel.set_theme"><code class="name flex">
+<span>def <span class="ident">set_theme</span></span>(<span>self, theme: Theme) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_theme(self, theme: Theme) -&gt; None:
+    self._theme = theme</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.gui.widgets.log_panel.LogPanel.success"><code class="name flex">
+<span>def <span class="ident">success</span></span>(<span>self, msg: str) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def success(self, msg: str) -&gt; None:
+    self._append(&#34;OK  &#34;, msg, self._col(&#34;green&#34;))</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.gui.widgets.log_panel.LogPanel.warn"><code class="name flex">
+<span>def <span class="ident">warn</span></span>(<span>self, msg: str) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def warn(self, msg: str) -&gt; None:
+    self._append(&#34;WARN&#34;, msg, self._col(&#34;yellow&#34;))</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashlink.gui.widgets" href="index.html">crashlink.gui.widgets</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="crashlink.gui.widgets.log_panel.LogPanel" href="#crashlink.gui.widgets.log_panel.LogPanel">LogPanel</a></code></h4>
+<ul class="two-column">
+<li><code><a title="crashlink.gui.widgets.log_panel.LogPanel.clear" href="#crashlink.gui.widgets.log_panel.LogPanel.clear">clear</a></code></li>
+<li><code><a title="crashlink.gui.widgets.log_panel.LogPanel.error" href="#crashlink.gui.widgets.log_panel.LogPanel.error">error</a></code></li>
+<li><code><a title="crashlink.gui.widgets.log_panel.LogPanel.info" href="#crashlink.gui.widgets.log_panel.LogPanel.info">info</a></code></li>
+<li><code><a title="crashlink.gui.widgets.log_panel.LogPanel.result" href="#crashlink.gui.widgets.log_panel.LogPanel.result">result</a></code></li>
+<li><code><a title="crashlink.gui.widgets.log_panel.LogPanel.set_context" href="#crashlink.gui.widgets.log_panel.LogPanel.set_context">set_context</a></code></li>
+<li><code><a title="crashlink.gui.widgets.log_panel.LogPanel.set_theme" href="#crashlink.gui.widgets.log_panel.LogPanel.set_theme">set_theme</a></code></li>
+<li><code><a title="crashlink.gui.widgets.log_panel.LogPanel.staticMetaObject" href="#crashlink.gui.widgets.log_panel.LogPanel.staticMetaObject">staticMetaObject</a></code></li>
+<li><code><a title="crashlink.gui.widgets.log_panel.LogPanel.success" href="#crashlink.gui.widgets.log_panel.LogPanel.success">success</a></code></li>
+<li><code><a title="crashlink.gui.widgets.log_panel.LogPanel.warn" href="#crashlink.gui.widgets.log_panel.LogPanel.warn">warn</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
+</footer>
+</body>
+</html>

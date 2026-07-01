@@ -454,7 +454,9 @@ def db_main(argv: List[str]) -> None:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
         print(f"Format version: {info.format_version}")
-        print(f"Source: {info.source_basename}  ({info.source_size} bytes, HL v{info.hl_version}, {info.nfunctions} functions)")
+        print(
+            f"Source: {info.source_basename}  ({info.source_size} bytes, HL v{info.hl_version}, {info.nfunctions} functions)"
+        )
         print(f"Source hash: {info.source_hash_hex}")
         print(f"Renames: {len(info.renames)}")
         print(f"Comments: {len(info.comments)}")

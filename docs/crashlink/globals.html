@@ -71,13 +71,14 @@ el.replaceWith(d);
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def dbg_print(*args: Any, **kwargs: Any) -&gt; None:
-    &#34;&#34;&#34;
-    Print a message if DEBUG is True.
-    &#34;&#34;&#34;
-    if DEBUG:
-        print(*args, **kwargs)</code></pre>
+    &#34;&#34;&#34;Print if DEBUG is True; always forward to the GUI callback when one is registered.&#34;&#34;&#34;
+    msg = &#34; &#34;.join(str(a) for a in args)
+    if _dbg_callback is not None:
+        _dbg_callback(msg)
+    elif DEBUG:
+        print(msg, **kwargs)</code></pre>
 </details>
-<div class="desc"><p>Print a message if DEBUG is True.</p></div>
+<div class="desc"><p>Print if DEBUG is True; always forward to the GUI callback when one is registered.</p></div>
 </dd>
 <dt id="crashlink.globals.fmt_bytes"><code class="name flex">
 <span>def <span class="ident">fmt_bytes</span></span>(<span>bytes: int | float) ‑> str</span>

@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.6">
+<title>crashlink.gui.widgets.xref_panel API documentation</title>
+<meta name="description" content="Xrefs panel: resolves a word to all matching targets and lists references grouped by target.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>crashlink.gui.widgets.xref_panel</code></h1>
+</header>
+<section id="section-intro">
+<p>Xrefs panel: resolves a word to all matching targets and lists references grouped by target.</p>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="crashlink.gui.widgets.xref_panel.resolve_targets"><code class="name flex">
+<span>def <span class="ident">resolve_targets</span></span>(<span>code: Bytecode, word: str) ‑> List[<a title="crashlink.gui.widgets.xref_panel.XrefGroup" href="#crashlink.gui.widgets.xref_panel.XrefGroup">XrefGroup</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def resolve_targets(code: Bytecode, word: str) -&gt; List[XrefGroup]:
+    &#34;&#34;&#34;Resolve `word` to every matching program-wide target (functions, types, fields,
+    enum constructs, strings) and gather their references. Locals are handled by the caller.&#34;&#34;&#34;
+    word = word.strip()
+    groups: List[XrefGroup] = []
+    if not word:
+        return groups
+
+    xi = code.xref_index()
+    si = code.search_index()
+
+    # Functions — partial (method) and full name matches, deduped by findex.
+    seen_findex: set[int] = set()
+    for func in [*si.find_partial(word), *si.find(word)]:
+        findex = func.findex.value
+        if findex in seen_findex:
+            continue
+        seen_findex.add(findex)
+        callers = xi.callers_of(findex)
+        groups.append(
+            XrefGroup(
+                label=f&#34;function {_func_label(code, findex)}&#34;,
+                kind=&#34;function&#34;,
+                sites=[_site_from_ref(code, r) for r in callers],
+            )
+        )
+
+    # Types, fields, enum constructs.
+    for ti, t in enumerate(code.types):
+        defn = t.definition
+        if isinstance(defn, (Obj, Enum, Abstract)):
+            try:
+                tname = defn.name.resolve(code)
+            except Exception:
+                tname = None
+            if tname == word:
+                refs = xi.type_refs(ti)
+                groups.append(
+                    XrefGroup(
+                        label=f&#34;type {disasm.type_name(code, t)}&#34;,
+                        kind=&#34;type&#34;,
+                        sites=[_site_from_ref(code, r) for r in refs],
+                    )
+                )
+
+        if isinstance(defn, Obj):
+            for slot, fld in enumerate(defn.fields):
+                try:
+                    fname = fld.name.resolve(code)
+                except Exception:
+                    continue
+                if fname != word:
+                    continue
+                refs = xi.all_field_accesses(ti, slot)
+                groups.append(
+                    XrefGroup(
+                        label=f&#34;field {disasm.type_name(code, t)}.{fname}&#34;,
+                        kind=&#34;field&#34;,
+                        sites=[_site_from_ref(code, r) for r in refs],
+                    )
+                )
+
+        if isinstance(defn, Enum):
+            for ci, construct in enumerate(defn.constructs):
+                try:
+                    cname = construct.name.resolve(code)
+                except Exception:
+                    continue
+                if cname != word:
+                    continue
+                refs = xi.construct_uses(ti, ci)
+                groups.append(
+                    XrefGroup(
+                        label=f&#34;enum {disasm.type_name(code, t)}.{cname}&#34;,
+                        kind=&#34;enum&#34;,
+                        sites=[_site_from_ref(code, r) for r in refs],
+                    )
+                )
+
+    # Strings — exact full-string match (cheap, rarely fires).
+    try:
+        strings = code.strings.value
+    except Exception:
+        strings = []
+    for i, s in enumerate(strings):
+        if s == word:
+            refs = xi.string_uses(i)
+            groups.append(
+                XrefGroup(
+                    label=f&#34;string {s!r}&#34;,
+                    kind=&#34;string&#34;,
+                    sites=[_site_from_ref(code, r) for r in refs],
+                )
+            )
+
+    return groups</code></pre>
+</details>
+<div class="desc"><p>Resolve <code>word</code> to every matching program-wide target (functions, types, fields,
+enum constructs, strings) and gather their references. Locals are handled by the caller.</p></div>
+</dd>
+</dl>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="crashlink.gui.widgets.xref_panel.XrefGroup"><code class="flex name class">
+<span>class <span class="ident">XrefGroup</span></span>
+<span>(</span><span>label: str,<br>kind: str,<br>sites: List[<a title="crashlink.gui.widgets.xref_panel.XrefSite" href="#crashlink.gui.widgets.xref_panel.XrefSite">XrefSite</a>] = &lt;factory&gt;)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dataclass
+class XrefGroup:
+    &#34;&#34;&#34;A resolved target and all of its reference sites.&#34;&#34;&#34;
+
+    label: str
+    kind: str  # &#34;function&#34; | &#34;type&#34; | &#34;field&#34; | &#34;enum&#34; | &#34;string&#34; | &#34;local&#34;
+    sites: List[XrefSite] = field(default_factory=list)</code></pre>
+</details>
+<div class="desc"><p>A resolved target and all of its reference sites.</p></div>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.gui.widgets.xref_panel.XrefGroup.kind"><code class="name">var <span class="ident">kind</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.widgets.xref_panel.XrefGroup.label"><code class="name">var <span class="ident">label</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.widgets.xref_panel.XrefGroup.sites"><code class="name">var <span class="ident">sites</span> : List[<a title="crashlink.gui.widgets.xref_panel.XrefSite" href="#crashlink.gui.widgets.xref_panel.XrefSite">XrefSite</a>]</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.gui.widgets.xref_panel.XrefPopup"><code class="flex name class">
+<span>class <span class="ident">XrefPopup</span></span>
+<span>(</span><span>parent: Optional[QWidget] = None)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class XrefPopup(QFrame):
+    &#34;&#34;&#34;Frameless popup of xref sites. Esc dismisses, Enter jumps, arrows move.&#34;&#34;&#34;
+
+    # (findex, opcode_index_or_-1, body_line_or_-1)
+    navigate_requested = Signal(int, int, int)
+
+    def __init__(self, parent: Optional[QWidget] = None) -&gt; None:
+        super().__init__(parent, Qt.WindowType.Popup)
+        self._theme: Optional[Theme] = None
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setSpacing(0)
+
+        self._title = QLabel()
+        self._title.setObjectName(&#34;panelHeader&#34;)
+        font = QFont()
+        font.setBold(True)
+        self._title.setFont(font)
+        layout.addWidget(self._title)
+
+        self._list = QListWidget()
+        self._list.setUniformItemSizes(True)
+        self._list.itemActivated.connect(self._on_item_activated)
+        self._list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        layout.addWidget(self._list)
+
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def set_theme(self, theme: Theme) -&gt; None:
+        self._theme = theme
+        self.setStyleSheet(
+            f&#34;QFrame {{ background: {theme.mantle}; border: 1px solid {theme.overlay}; }}&#34;
+            f&#34;QLabel#panelHeader {{ color: {theme.subtext}; padding: 4px 6px; }}&#34;
+            f&#34;QListWidget {{ background: {theme.mantle}; border: none; padding: 2px; }}&#34;
+            f&#34;QListWidget::item:selected {{ background: {theme.accent}; color: {theme.base}; }}&#34;
+        )
+
+    def show_results(self, word: str, groups: List[XrefGroup], at: QPoint) -&gt; None:
+        self._list.clear()
+        t = self._theme
+
+        total = sum(len(g.sites) for g in groups)
+        self._title.setText(f&#34;Xrefs for &#39;{word}&#39; — {total} site(s)&#34;)
+
+        bold = QFont()
+        bold.setBold(True)
+
+        for group in groups:
+            head = QListWidgetItem(f&#34;{group.label}  ({_ref_summary(group)})&#34;)
+            head.setFlags(Qt.ItemFlag.NoItemFlags)
+            head.setFont(bold)
+            if t:
+                head.setForeground(QBrush(QColor(getattr(t, _KIND_COLOR.get(group.kind, &#34;text&#34;), t.text))))
+            self._list.addItem(head)
+
+            for site in group.sites:
+                if site.body_line is not None:
+                    loc = f&#34;line {site.body_line}&#34;
+                elif site.opcode_index is not None:
+                    loc = f&#34;op@{site.opcode_index}&#34;
+                else:
+                    loc = &#34;&#34;
+                text = f&#34;    {site.source_label}   {site.ref_kind}  {loc}&#34;.rstrip()
+                item = QListWidgetItem(text)
+                if t:
+                    item.setForeground(QBrush(QColor(t.subtext)))
+                findex = site.source_findex if site.source_findex is not None else -1
+                op = site.opcode_index if site.opcode_index is not None else -1
+                line = site.body_line if site.body_line is not None else -1
+                item.setData(Qt.ItemDataRole.UserRole, (findex, op, line))
+                self._list.addItem(item)
+
+        if total == 0:
+            empty = QListWidgetItem(f&#34;no xrefs for &#39;{word}&#39;&#34;)
+            empty.setFlags(Qt.ItemFlag.NoItemFlags)
+            if t:
+                empty.setForeground(QBrush(QColor(t.overlay)))
+            self._list.addItem(empty)
+
+        self.adjustSize()
+        self.resize(max(self.width(), 360), min(self.sizeHint().height(), 480))
+        self.move(at)
+        self.show()
+        self._select_first()
+        self.setFocus()
+
+    def _select_first(self) -&gt; None:
+        for row in range(self._list.count()):
+            if self._list.item(row).flags() &amp; Qt.ItemFlag.ItemIsSelectable:
+                self._list.setCurrentRow(row)
+                return
+
+    def _move(self, delta: int) -&gt; None:
+        count = self._list.count()
+        row = self._list.currentRow() + delta
+        while 0 &lt;= row &lt; count:
+            if self._list.item(row).flags() &amp; Qt.ItemFlag.ItemIsSelectable:
+                self._list.setCurrentRow(row)
+                return
+            row += delta
+
+    def _activate_current(self) -&gt; None:
+        item = self._list.currentItem()
+        if item is not None:
+            self._on_item_activated(item)
+
+    def _on_item_activated(self, item: QListWidgetItem) -&gt; None:
+        data = item.data(Qt.ItemDataRole.UserRole)
+        if not data:
+            return
+        findex, op, line = data
+        if findex &lt; 0:
+            return
+        self.close()
+        self.navigate_requested.emit(findex, op, line)
+
+    def keyPressEvent(self, event: object) -&gt; None:
+        if isinstance(event, QKeyEvent):
+            key = event.key()
+            if key == Qt.Key.Key_Escape:
+                self.close()
+                return
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                self._activate_current()
+                return
+            if key == Qt.Key.Key_Up:
+                self._move(-1)
+                return
+            if key == Qt.Key.Key_Down:
+                self._move(1)
+                return
+        super().keyPressEvent(cast(QKeyEvent, event))</code></pre>
+</details>
+<div class="desc"><p>Frameless popup of xref sites. Esc dismisses, Enter jumps, arrows move.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>PySide6.QtWidgets.QFrame</li>
+<li>PySide6.QtWidgets.QWidget</li>
+<li>PySide6.QtCore.QObject</li>
+<li>PySide6.QtGui.QPaintDevice</li>
+<li>Shiboken.Object</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashlink.gui.widgets.xref_panel.XrefPopup.staticMetaObject"><code class="name">var <span class="ident">staticMetaObject</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.gui.widgets.xref_panel.XrefPopup.keyPressEvent"><code class="name flex">
+<span>def <span class="ident">keyPressEvent</span></span>(<span>self, event: object) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def keyPressEvent(self, event: object) -&gt; None:
+    if isinstance(event, QKeyEvent):
+        key = event.key()
+        if key == Qt.Key.Key_Escape:
+            self.close()
+            return
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self._activate_current()
+            return
+        if key == Qt.Key.Key_Up:
+            self._move(-1)
+            return
+        if key == Qt.Key.Key_Down:
+            self._move(1)
+            return
+    super().keyPressEvent(cast(QKeyEvent, event))</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.gui.widgets.xref_panel.XrefPopup.navigate_requested"><code class="name flex">
+<span>def <span class="ident">navigate_requested</span></span>(<span>...)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.gui.widgets.xref_panel.XrefPopup.set_theme"><code class="name flex">
+<span>def <span class="ident">set_theme</span></span>(<span>self, theme: Theme) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_theme(self, theme: Theme) -&gt; None:
+    self._theme = theme
+    self.setStyleSheet(
+        f&#34;QFrame {{ background: {theme.mantle}; border: 1px solid {theme.overlay}; }}&#34;
+        f&#34;QLabel#panelHeader {{ color: {theme.subtext}; padding: 4px 6px; }}&#34;
+        f&#34;QListWidget {{ background: {theme.mantle}; border: none; padding: 2px; }}&#34;
+        f&#34;QListWidget::item:selected {{ background: {theme.accent}; color: {theme.base}; }}&#34;
+    )</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.gui.widgets.xref_panel.XrefPopup.show_results"><code class="name flex">
+<span>def <span class="ident">show_results</span></span>(<span>self,<br>word: str,<br>groups: List[<a title="crashlink.gui.widgets.xref_panel.XrefGroup" href="#crashlink.gui.widgets.xref_panel.XrefGroup">XrefGroup</a>],<br>at: QPoint) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def show_results(self, word: str, groups: List[XrefGroup], at: QPoint) -&gt; None:
+    self._list.clear()
+    t = self._theme
+
+    total = sum(len(g.sites) for g in groups)
+    self._title.setText(f&#34;Xrefs for &#39;{word}&#39; — {total} site(s)&#34;)
+
+    bold = QFont()
+    bold.setBold(True)
+
+    for group in groups:
+        head = QListWidgetItem(f&#34;{group.label}  ({_ref_summary(group)})&#34;)
+        head.setFlags(Qt.ItemFlag.NoItemFlags)
+        head.setFont(bold)
+        if t:
+            head.setForeground(QBrush(QColor(getattr(t, _KIND_COLOR.get(group.kind, &#34;text&#34;), t.text))))
+        self._list.addItem(head)
+
+        for site in group.sites:
+            if site.body_line is not None:
+                loc = f&#34;line {site.body_line}&#34;
+            elif site.opcode_index is not None:
+                loc = f&#34;op@{site.opcode_index}&#34;
+            else:
+                loc = &#34;&#34;
+            text = f&#34;    {site.source_label}   {site.ref_kind}  {loc}&#34;.rstrip()
+            item = QListWidgetItem(text)
+            if t:
+                item.setForeground(QBrush(QColor(t.subtext)))
+            findex = site.source_findex if site.source_findex is not None else -1
+            op = site.opcode_index if site.opcode_index is not None else -1
+            line = site.body_line if site.body_line is not None else -1
+            item.setData(Qt.ItemDataRole.UserRole, (findex, op, line))
+            self._list.addItem(item)
+
+    if total == 0:
+        empty = QListWidgetItem(f&#34;no xrefs for &#39;{word}&#39;&#34;)
+        empty.setFlags(Qt.ItemFlag.NoItemFlags)
+        if t:
+            empty.setForeground(QBrush(QColor(t.overlay)))
+        self._list.addItem(empty)
+
+    self.adjustSize()
+    self.resize(max(self.width(), 360), min(self.sizeHint().height(), 480))
+    self.move(at)
+    self.show()
+    self._select_first()
+    self.setFocus()</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.gui.widgets.xref_panel.XrefSite"><code class="flex name class">
+<span>class <span class="ident">XrefSite</span></span>
+<span>(</span><span>source_findex: Optional[int],<br>source_label: str,<br>opcode_index: Optional[int],<br>body_line: Optional[int],<br>ref_kind: str)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dataclass
+class XrefSite:
+    &#34;&#34;&#34;A single reference location.&#34;&#34;&#34;
+
+    source_findex: Optional[int]  # function the reference lives in (None for non-function sources)
+    source_label: str
+    opcode_index: Optional[int]  # opcode within the source function, if known
+    body_line: Optional[int]  # body-relative pseudocode line, for locals (resolved directly)
+    ref_kind: str  # human label for the kind of reference</code></pre>
+</details>
+<div class="desc"><p>A single reference location.</p></div>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.gui.widgets.xref_panel.XrefSite.body_line"><code class="name">var <span class="ident">body_line</span> : int | None</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.widgets.xref_panel.XrefSite.opcode_index"><code class="name">var <span class="ident">opcode_index</span> : int | None</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.widgets.xref_panel.XrefSite.ref_kind"><code class="name">var <span class="ident">ref_kind</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.widgets.xref_panel.XrefSite.source_findex"><code class="name">var <span class="ident">source_findex</span> : int | None</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.gui.widgets.xref_panel.XrefSite.source_label"><code class="name">var <span class="ident">source_label</span> : str</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashlink.gui.widgets" href="index.html">crashlink.gui.widgets</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="crashlink.gui.widgets.xref_panel.resolve_targets" href="#crashlink.gui.widgets.xref_panel.resolve_targets">resolve_targets</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="crashlink.gui.widgets.xref_panel.XrefGroup" href="#crashlink.gui.widgets.xref_panel.XrefGroup">XrefGroup</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.gui.widgets.xref_panel.XrefGroup.kind" href="#crashlink.gui.widgets.xref_panel.XrefGroup.kind">kind</a></code></li>
+<li><code><a title="crashlink.gui.widgets.xref_panel.XrefGroup.label" href="#crashlink.gui.widgets.xref_panel.XrefGroup.label">label</a></code></li>
+<li><code><a title="crashlink.gui.widgets.xref_panel.XrefGroup.sites" href="#crashlink.gui.widgets.xref_panel.XrefGroup.sites">sites</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.gui.widgets.xref_panel.XrefPopup" href="#crashlink.gui.widgets.xref_panel.XrefPopup">XrefPopup</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.gui.widgets.xref_panel.XrefPopup.keyPressEvent" href="#crashlink.gui.widgets.xref_panel.XrefPopup.keyPressEvent">keyPressEvent</a></code></li>
+<li><code><a title="crashlink.gui.widgets.xref_panel.XrefPopup.navigate_requested" href="#crashlink.gui.widgets.xref_panel.XrefPopup.navigate_requested">navigate_requested</a></code></li>
+<li><code><a title="crashlink.gui.widgets.xref_panel.XrefPopup.set_theme" href="#crashlink.gui.widgets.xref_panel.XrefPopup.set_theme">set_theme</a></code></li>
+<li><code><a title="crashlink.gui.widgets.xref_panel.XrefPopup.show_results" href="#crashlink.gui.widgets.xref_panel.XrefPopup.show_results">show_results</a></code></li>
+<li><code><a title="crashlink.gui.widgets.xref_panel.XrefPopup.staticMetaObject" href="#crashlink.gui.widgets.xref_panel.XrefPopup.staticMetaObject">staticMetaObject</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.gui.widgets.xref_panel.XrefSite" href="#crashlink.gui.widgets.xref_panel.XrefSite">XrefSite</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.gui.widgets.xref_panel.XrefSite.body_line" href="#crashlink.gui.widgets.xref_panel.XrefSite.body_line">body_line</a></code></li>
+<li><code><a title="crashlink.gui.widgets.xref_panel.XrefSite.opcode_index" href="#crashlink.gui.widgets.xref_panel.XrefSite.opcode_index">opcode_index</a></code></li>
+<li><code><a title="crashlink.gui.widgets.xref_panel.XrefSite.ref_kind" href="#crashlink.gui.widgets.xref_panel.XrefSite.ref_kind">ref_kind</a></code></li>
+<li><code><a title="crashlink.gui.widgets.xref_panel.XrefSite.source_findex" href="#crashlink.gui.widgets.xref_panel.XrefSite.source_findex">source_findex</a></code></li>
+<li><code><a title="crashlink.gui.widgets.xref_panel.XrefSite.source_label" href="#crashlink.gui.widgets.xref_panel.XrefSite.source_label">source_label</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
+</footer>
+</body>
+</html>

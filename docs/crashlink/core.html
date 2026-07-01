@@ -158,6 +158,422 @@ you.</p>
 </dd>
 </dl>
 </dd>
+<dt id="crashlink.core.AnalysisWorker"><code class="flex name class">
+<span>class <span class="ident">AnalysisWorker</span></span>
+<span>(</span><span>max_workers: int = 2)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class AnalysisWorker:
+    &#34;&#34;&#34;
+    Thread-pool backed worker for off-thread bytecode analysis.
+
+    One instance per loaded file. All public methods are thread-safe.
+    Callers receive standard :class:`concurrent.futures.Future` objects and can
+    integrate with any event loop or signal system.
+    &#34;&#34;&#34;
+
+    def __init__(self, max_workers: int = 2) -&gt; None:
+        self._pool = ThreadPoolExecutor(max_workers=max_workers)
+        self._cache: Dict[int, Any] = {}  # findex → IRFunction (Any avoids circular import)
+        self._cache_lock = threading.Lock()
+
+    def decompile(self, code: &#34;Bytecode&#34;, findex: int) -&gt; &#34;Future[Any]&#34;:
+        &#34;&#34;&#34;Return a Future[IRFunction], served from cache if available.&#34;&#34;&#34;
+        with self._cache_lock:
+            cached = self._cache.get(findex)
+        if cached is not None:
+            f: Future[Any] = Future()
+            f.set_result(cached)
+            return f
+        return self._pool.submit(self._do_decompile, code, findex)
+
+    def _do_decompile(self, code: &#34;Bytecode&#34;, findex: int) -&gt; Any:
+        from .decomp.function import IRFunction  # lazy to avoid circular import
+
+        func = code.get_findex_map()[findex]
+        if not isinstance(func, Function):
+            raise ValueError(f&#34;findex {findex} refers to a Native, not a Function&#34;)
+        ir = IRFunction(code, func)
+        with self._cache_lock:
+            self._cache[findex] = ir
+        return ir
+
+    def invalidate(self, findex: Optional[int] = None) -&gt; None:
+        &#34;&#34;&#34;Evict decompile cache entries. Omit findex to clear all.&#34;&#34;&#34;
+        with self._cache_lock:
+            if findex is None:
+                self._cache.clear()
+            else:
+                self._cache.pop(findex, None)
+
+    def build_indices(
+        self,
+        code: &#34;Bytecode&#34;,
+        progress_cb: Optional[ProgressCallback] = None,
+    ) -&gt; &#34;Future[None]&#34;:
+        &#34;&#34;&#34;Build xref, search, and source map indices in a background thread.&#34;&#34;&#34;
+        return self._pool.submit(self._do_build_indices, code, progress_cb)
+
+    def _do_build_indices(
+        self,
+        code: &#34;Bytecode&#34;,
+        progress_cb: Optional[ProgressCallback],
+    ) -&gt; None:
+        def _p(frac: float, status: str) -&gt; None:
+            if progress_cb is not None:
+                progress_cb(frac, status)
+
+        _p(0.0, &#34;building xref index&#34;)
+        code.xref_index()
+        _p(0.33, &#34;building search index&#34;)
+        code.search_index()
+        _p(0.66, &#34;building source map&#34;)
+        code.source_map()
+        _p(1.0, &#34;done&#34;)
+
+    def build_xref(self, code: &#34;Bytecode&#34;) -&gt; &#34;Future[XrefIndex]&#34;:
+        &#34;&#34;&#34;Build (or return cached) the xref index in a background thread.&#34;&#34;&#34;
+        return self._pool.submit(code.xref_index)
+
+    def build_search(self, code: &#34;Bytecode&#34;) -&gt; &#34;Future[SearchIndex]&#34;:
+        &#34;&#34;&#34;Build (or return cached) the search index in a background thread.&#34;&#34;&#34;
+        return self._pool.submit(code.search_index)
+
+    def build_source_map(self, code: &#34;Bytecode&#34;) -&gt; &#34;Future[SourceMap]&#34;:
+        &#34;&#34;&#34;Build (or return cached) the source map in a background thread.&#34;&#34;&#34;
+        return self._pool.submit(code.source_map)
+
+    def shutdown(self, wait: bool = True) -&gt; None:
+        &#34;&#34;&#34;Shut down the thread pool. Call when the GUI closes.&#34;&#34;&#34;
+        self._pool.shutdown(wait=wait)
+
+    def __enter__(self) -&gt; &#34;AnalysisWorker&#34;:
+        return self
+
+    def __exit__(self, *_: object) -&gt; None:
+        self.shutdown()</code></pre>
+</details>
+<div class="desc"><p>Thread-pool backed worker for off-thread bytecode analysis.</p>
+<p>One instance per loaded file. All public methods are thread-safe.
+Callers receive standard :class:<code>concurrent.futures.Future</code> objects and can
+integrate with any event loop or signal system.</p></div>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.AnalysisWorker.build_indices"><code class="name flex">
+<span>def <span class="ident">build_indices</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'",<br>progress_cb: Optional[ProgressCallback] = None) ‑> concurrent.futures._base.Future[None]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def build_indices(
+    self,
+    code: &#34;Bytecode&#34;,
+    progress_cb: Optional[ProgressCallback] = None,
+) -&gt; &#34;Future[None]&#34;:
+    &#34;&#34;&#34;Build xref, search, and source map indices in a background thread.&#34;&#34;&#34;
+    return self._pool.submit(self._do_build_indices, code, progress_cb)</code></pre>
+</details>
+<div class="desc"><p>Build xref, search, and source map indices in a background thread.</p></div>
+</dd>
+<dt id="crashlink.core.AnalysisWorker.build_search"><code class="name flex">
+<span>def <span class="ident">build_search</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> concurrent.futures._base.Future[<a title="crashlink.core.SearchIndex" href="#crashlink.core.SearchIndex">SearchIndex</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def build_search(self, code: &#34;Bytecode&#34;) -&gt; &#34;Future[SearchIndex]&#34;:
+    &#34;&#34;&#34;Build (or return cached) the search index in a background thread.&#34;&#34;&#34;
+    return self._pool.submit(code.search_index)</code></pre>
+</details>
+<div class="desc"><p>Build (or return cached) the search index in a background thread.</p></div>
+</dd>
+<dt id="crashlink.core.AnalysisWorker.build_source_map"><code class="name flex">
+<span>def <span class="ident">build_source_map</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> concurrent.futures._base.Future[<a title="crashlink.core.SourceMap" href="#crashlink.core.SourceMap">SourceMap</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def build_source_map(self, code: &#34;Bytecode&#34;) -&gt; &#34;Future[SourceMap]&#34;:
+    &#34;&#34;&#34;Build (or return cached) the source map in a background thread.&#34;&#34;&#34;
+    return self._pool.submit(code.source_map)</code></pre>
+</details>
+<div class="desc"><p>Build (or return cached) the source map in a background thread.</p></div>
+</dd>
+<dt id="crashlink.core.AnalysisWorker.build_xref"><code class="name flex">
+<span>def <span class="ident">build_xref</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> concurrent.futures._base.Future[<a title="crashlink.core.XrefIndex" href="#crashlink.core.XrefIndex">XrefIndex</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def build_xref(self, code: &#34;Bytecode&#34;) -&gt; &#34;Future[XrefIndex]&#34;:
+    &#34;&#34;&#34;Build (or return cached) the xref index in a background thread.&#34;&#34;&#34;
+    return self._pool.submit(code.xref_index)</code></pre>
+</details>
+<div class="desc"><p>Build (or return cached) the xref index in a background thread.</p></div>
+</dd>
+<dt id="crashlink.core.AnalysisWorker.decompile"><code class="name flex">
+<span>def <span class="ident">decompile</span></span>(<span>self,<br>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'",<br>findex: int) ‑> concurrent.futures._base.Future[typing.Any]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def decompile(self, code: &#34;Bytecode&#34;, findex: int) -&gt; &#34;Future[Any]&#34;:
+    &#34;&#34;&#34;Return a Future[IRFunction], served from cache if available.&#34;&#34;&#34;
+    with self._cache_lock:
+        cached = self._cache.get(findex)
+    if cached is not None:
+        f: Future[Any] = Future()
+        f.set_result(cached)
+        return f
+    return self._pool.submit(self._do_decompile, code, findex)</code></pre>
+</details>
+<div class="desc"><p>Return a Future[IRFunction], served from cache if available.</p></div>
+</dd>
+<dt id="crashlink.core.AnalysisWorker.invalidate"><code class="name flex">
+<span>def <span class="ident">invalidate</span></span>(<span>self, findex: Optional[int] = None) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def invalidate(self, findex: Optional[int] = None) -&gt; None:
+    &#34;&#34;&#34;Evict decompile cache entries. Omit findex to clear all.&#34;&#34;&#34;
+    with self._cache_lock:
+        if findex is None:
+            self._cache.clear()
+        else:
+            self._cache.pop(findex, None)</code></pre>
+</details>
+<div class="desc"><p>Evict decompile cache entries. Omit findex to clear all.</p></div>
+</dd>
+<dt id="crashlink.core.AnalysisWorker.shutdown"><code class="name flex">
+<span>def <span class="ident">shutdown</span></span>(<span>self, wait: bool = True) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def shutdown(self, wait: bool = True) -&gt; None:
+    &#34;&#34;&#34;Shut down the thread pool. Call when the GUI closes.&#34;&#34;&#34;
+    self._pool.shutdown(wait=wait)</code></pre>
+</details>
+<div class="desc"><p>Shut down the thread pool. Call when the GUI closes.</p></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.AnnotationStore"><code class="flex name class">
+<span>class <span class="ident">AnnotationStore</span></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class AnnotationStore:
+    &#34;&#34;&#34;
+    Persistent user annotations (renames, comments) keyed on stable bytecode
+    positions rather than IR object identity, so they survive re-decompilation.
+
+    Renames are keyed on (findex, reg_idx, defining_op_idx) where
+    defining_op_idx=None identifies the initial (pre-split) local for a register.
+    Comments are keyed on (findex, src_op_idx).
+    &#34;&#34;&#34;
+
+    def __init__(self) -&gt; None:
+        self._renames: Dict[_LocalKey, str] = {}
+        self._comments: Dict[_CommentKey, str] = {}
+
+    # ── Renames ───────────────────────────────────────────────────────────────
+
+    def rename(self, findex: int, reg_idx: int, defining_op_idx: Optional[int], name: str) -&gt; None:
+        self._renames[(findex, reg_idx, defining_op_idx)] = name
+
+    def get_rename(self, findex: int, reg_idx: int, defining_op_idx: Optional[int]) -&gt; Optional[str]:
+        return self._renames.get((findex, reg_idx, defining_op_idx))
+
+    def clear_rename(self, findex: int, reg_idx: int, defining_op_idx: Optional[int]) -&gt; None:
+        self._renames.pop((findex, reg_idx, defining_op_idx), None)
+
+    def renames_for(self, findex: int) -&gt; Dict[_LocalKey, str]:
+        return {k: v for k, v in self._renames.items() if k[0] == findex}
+
+    # ── Comments ──────────────────────────────────────────────────────────────
+
+    def set_comment(self, findex: int, src_op_idx: int, text: str) -&gt; None:
+        self._comments[(findex, src_op_idx)] = text
+
+    def get_comment(self, findex: int, src_op_idx: int) -&gt; Optional[str]:
+        return self._comments.get((findex, src_op_idx))
+
+    def clear_comment(self, findex: int, src_op_idx: int) -&gt; None:
+        self._comments.pop((findex, src_op_idx), None)
+
+    def comments_for(self, findex: int) -&gt; Dict[_CommentKey, str]:
+        return {k: v for k, v in self._comments.items() if k[0] == findex}
+
+    # ── Bulk export (for serialising the store, e.g. to a database file) ───────
+
+    def iter_renames(self) -&gt; ItemsView[_LocalKey, str]:
+        return self._renames.items()
+
+    def iter_comments(self) -&gt; ItemsView[_CommentKey, str]:
+        return self._comments.items()</code></pre>
+</details>
+<div class="desc"><p>Persistent user annotations (renames, comments) keyed on stable bytecode
+positions rather than IR object identity, so they survive re-decompilation.</p>
+<p>Renames are keyed on (findex, reg_idx, defining_op_idx) where
+defining_op_idx=None identifies the initial (pre-split) local for a register.
+Comments are keyed on (findex, src_op_idx).</p></div>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.AnnotationStore.clear_comment"><code class="name flex">
+<span>def <span class="ident">clear_comment</span></span>(<span>self, findex: int, src_op_idx: int) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def clear_comment(self, findex: int, src_op_idx: int) -&gt; None:
+    self._comments.pop((findex, src_op_idx), None)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.AnnotationStore.clear_rename"><code class="name flex">
+<span>def <span class="ident">clear_rename</span></span>(<span>self, findex: int, reg_idx: int, defining_op_idx: Optional[int]) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def clear_rename(self, findex: int, reg_idx: int, defining_op_idx: Optional[int]) -&gt; None:
+    self._renames.pop((findex, reg_idx, defining_op_idx), None)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.AnnotationStore.comments_for"><code class="name flex">
+<span>def <span class="ident">comments_for</span></span>(<span>self, findex: int) ‑> Dict[Tuple[int, int], str]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def comments_for(self, findex: int) -&gt; Dict[_CommentKey, str]:
+    return {k: v for k, v in self._comments.items() if k[0] == findex}</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.AnnotationStore.get_comment"><code class="name flex">
+<span>def <span class="ident">get_comment</span></span>(<span>self, findex: int, src_op_idx: int) ‑> str | None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_comment(self, findex: int, src_op_idx: int) -&gt; Optional[str]:
+    return self._comments.get((findex, src_op_idx))</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.AnnotationStore.get_rename"><code class="name flex">
+<span>def <span class="ident">get_rename</span></span>(<span>self, findex: int, reg_idx: int, defining_op_idx: Optional[int]) ‑> str | None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_rename(self, findex: int, reg_idx: int, defining_op_idx: Optional[int]) -&gt; Optional[str]:
+    return self._renames.get((findex, reg_idx, defining_op_idx))</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.AnnotationStore.iter_comments"><code class="name flex">
+<span>def <span class="ident">iter_comments</span></span>(<span>self) ‑> ItemsView[Tuple[int, int], str]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def iter_comments(self) -&gt; ItemsView[_CommentKey, str]:
+    return self._comments.items()</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.AnnotationStore.iter_renames"><code class="name flex">
+<span>def <span class="ident">iter_renames</span></span>(<span>self) ‑> ItemsView[Tuple[int, int, int | None], str]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def iter_renames(self) -&gt; ItemsView[_LocalKey, str]:
+    return self._renames.items()</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.AnnotationStore.rename"><code class="name flex">
+<span>def <span class="ident">rename</span></span>(<span>self, findex: int, reg_idx: int, defining_op_idx: Optional[int], name: str) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def rename(self, findex: int, reg_idx: int, defining_op_idx: Optional[int], name: str) -&gt; None:
+    self._renames[(findex, reg_idx, defining_op_idx)] = name</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.AnnotationStore.renames_for"><code class="name flex">
+<span>def <span class="ident">renames_for</span></span>(<span>self, findex: int) ‑> Dict[Tuple[int, int, int | None], str]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def renames_for(self, findex: int) -&gt; Dict[_LocalKey, str]:
+    return {k: v for k, v in self._renames.items() if k[0] == findex}</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.AnnotationStore.set_comment"><code class="name flex">
+<span>def <span class="ident">set_comment</span></span>(<span>self, findex: int, src_op_idx: int, text: str) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_comment(self, findex: int, src_op_idx: int, text: str) -&gt; None:
+    self._comments[(findex, src_op_idx)] = text</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
 <dt id="crashlink.core.Array"><code class="flex name class">
 <span>class <span class="ident">Array</span></span>
 </code></dt>
@@ -405,6 +821,13 @@ you.</p>
         self._field_map: Dict[int, &#34;Field&#34;] | None = None
         self._proto_owner_map: Dict[int, &#34;Obj&#34;] | None = None
         self._field_owner_map: Dict[int, &#34;Obj&#34;] | None = None
+        self._xref_index: Optional[XrefIndex] = None
+        self._search_index: Optional[SearchIndex] = None
+        self._source_map: Optional[SourceMap] = None
+        self._xref_lock = threading.Lock()
+        self._search_lock = threading.Lock()
+        self._source_map_lock = threading.Lock()
+        self.annotations: AnnotationStore = AnnotationStore()
 
         self.virtuals_built = False
 
@@ -579,22 +1002,26 @@ you.</p>
             offset += buffer_size
 
     @classmethod
-    def from_path(cls, path: str, search_magic: bool = True) -&gt; &#34;Bytecode&#34;:
+    def from_path(
+        cls, path: str, search_magic: bool = True, progress_cb: Optional[ProgressCallback] = None
+    ) -&gt; &#34;Bytecode&#34;:
         &#34;&#34;&#34;
         Create a new Bytecode instance from a file path.
         &#34;&#34;&#34;
         f = open(path, &#34;rb&#34;)
-        instance = cls().deserialise(f, search_magic=search_magic)
+        instance = cls().deserialise(f, search_magic=search_magic, progress_cb=progress_cb)
         f.close()
         return instance
 
     @classmethod
-    def from_bytes(cls, data: bytes, search_magic: bool = True) -&gt; &#34;Bytecode&#34;:
+    def from_bytes(
+        cls, data: bytes, search_magic: bool = True, progress_cb: Optional[ProgressCallback] = None
+    ) -&gt; &#34;Bytecode&#34;:
         &#34;&#34;&#34;
         Create a new Bytecode instance from a `bytes` object.
         &#34;&#34;&#34;
         f = BytesIO(data)
-        instance = cls().deserialise(f, search_magic=search_magic)
+        instance = cls().deserialise(f, search_magic=search_magic, progress_cb=progress_cb)
         f.close()
         return instance
 
@@ -645,15 +1072,24 @@ you.</p>
         f: BinaryIO | BytesIO,
         search_magic: bool = True,
         init_globals: bool = True,
+        progress_cb: Optional[ProgressCallback] = None,
     ) -&gt; &#34;Bytecode&#34;:
         &#34;&#34;&#34;
         Deserialise the bytecode in-place from an open binary file handle or a BytesIO object. By default will search for the bytecode magic (b&#39;HLB&#39;) anywhere in the file, pass `search_magic=False` to disable.
+
+        progress_cb, if provided, is called as ``progress_cb(fraction, status)`` at each parse milestone, where fraction is in [0, 1].
         &#34;&#34;&#34;
+
+        def _progress(frac: float, status: str) -&gt; None:
+            if progress_cb is not None:
+                progress_cb(frac, status)
+
         start_time = datetime.now()
         dbg_print(&#34;---- Deserialise ----&#34;)
         if search_magic:
             dbg_print(&#34;Searching for magic...&#34;)
             self._find_magic(f)
+        _progress(0.00, &#34;parsing header&#34;)
         self.track_section(f, &#34;magic&#34;)
         self.magic.deserialise(f)
         assert self.magic.value == b&#34;HLB&#34;, &#34;Incorrect magic found!&#34;
@@ -698,6 +1134,7 @@ you.</p>
         self.entrypoint.deserialise(f)
         dbg_print(f&#34;Entrypoint: f@{self.entrypoint.value}&#34;)
 
+        _progress(0.02, &#34;parsing ints and floats&#34;)
         self.track_section(f, &#34;ints&#34;)
         for i in range(self.nints.value):
             self.track_section(f, f&#34;int {i}&#34;)
@@ -708,6 +1145,7 @@ you.</p>
             self.track_section(f, f&#34;float {i}&#34;)
             self.floats.append(SerialisableF64().deserialise(f))
 
+        _progress(0.04, &#34;parsing strings&#34;)
         dbg_print(f&#34;Strings section starts at {tell(f)}&#34;)
         self.track_section(f, &#34;strings&#34;)
         self.strings.deserialise(f, self.nstrings.value)
@@ -721,6 +1159,7 @@ you.</p>
         else:
             self.bytes = None
 
+        _progress(0.06, &#34;parsing debug files&#34;)
         if self.has_debug_info and self.ndebugfiles and self.debugfiles:
             dbg_print(f&#34;Deserialising debug files... (at {tell(f)})&#34;)
             self.track_section(f, &#34;ndebugfiles&#34;)
@@ -735,30 +1174,37 @@ you.</p>
         dbg_print(f&#34;Starting main blobs at {tell(f)}&#34;)
         dbg_print(f&#34;Types starting at {tell(f)}&#34;)
         self.track_section(f, &#34;types&#34;)
-        for i in range(self.ntypes.value):
+        _ntypes = self.ntypes.value
+        _report_every_type = max(1, _ntypes // 100)
+        for i in range(_ntypes):
             self.track_section(f, f&#34;type {i}&#34;)
             self.types.append(Type().deserialise(f))
+            if i % _report_every_type == 0:
+                _progress(0.07 + (i / _ntypes) * 0.13, &#34;parsing types&#34;)
         dbg_print(f&#34;Globals starting at {tell(f)}&#34;)
+        _progress(0.20, &#34;parsing globals&#34;)
         self.track_section(f, &#34;globals&#34;)
         for i in range(self.nglobals.value):
             self.track_section(f, f&#34;global {i}&#34;)
             self.global_types.append(tIndex().deserialise(f))
         dbg_print(f&#34;Natives starting at {tell(f)}&#34;)
+        _progress(0.22, &#34;parsing natives&#34;)
         self.track_section(f, &#34;natives&#34;)
         for i in range(self.nnatives.value):
             self.track_section(f, f&#34;native {i}&#34;)
             self.natives.append(Native().deserialise(f))
         dbg_print(f&#34;Functions starting at {tell(f)}&#34;)
+        _progress(0.23, &#34;parsing functions&#34;)
         self.track_section(f, &#34;functions&#34;)
-        if not USE_TQDM or self.nfunctions.value &lt; 1000:
-            for i in range(self.nfunctions.value):
-                self.track_section(f, f&#34;function {i}&#34;)
-                self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
-        else:
-            for i in tqdm(range(self.nfunctions.value), desc=&#34;Reading functions&#34;):
-                self.track_section(f, f&#34;function {i}&#34;)
-                self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
+        _nfunctions = self.nfunctions.value
+        _report_every_func = max(1, _nfunctions // 200)
+        for i in range(_nfunctions):
+            self.track_section(f, f&#34;function {i}&#34;)
+            self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
+            if i % _report_every_func == 0:
+                _progress(0.23 + (i / _nfunctions) * 0.65, &#34;parsing functions&#34;)
         if self.nconstants is not None:
+            _progress(0.88, &#34;parsing constants&#34;)
             dbg_print(f&#34;Constants starting at {tell(f)}&#34;)
             self.track_section(f, &#34;constants&#34;)
             for i in range(self.nconstants.value):
@@ -767,12 +1213,16 @@ you.</p>
         dbg_print(f&#34;Bytecode end at {tell(f)}.&#34;)
         self.deserialised = True
         if init_globals:
+            _progress(0.90, &#34;initializing globals&#34;)
             dbg_print(&#34;Initializing globals...&#34;)
             self.init_globals()
+            _progress(0.95, &#34;building virtual tables&#34;)
             dbg_print(&#34;Building virtual tables...&#34;)
             self._build_virtual_tables()
+            _progress(0.98, &#34;mapping statics&#34;)
             dbg_print(&#34;Mapping statics...&#34;)
             self.map_statics()
+        _progress(1.00, &#34;done&#34;)
         dbg_print(f&#34;{(datetime.now() - start_time).total_seconds()}s elapsed.&#34;)
         return self
 
@@ -1308,7 +1758,28 @@ you.</p>
             field = self.get_field_for(func.findex.value)
             if field:
                 return field.name.resolve(self)
-        return &#34;&lt;none&gt;&#34;</code></pre>
+        return &#34;&lt;none&gt;&#34;
+
+    def xref_index(self) -&gt; &#34;XrefIndex&#34;:
+        &#34;&#34;&#34;Build (or return cached) the full cross-reference index for this bytecode.&#34;&#34;&#34;
+        with self._xref_lock:
+            if self._xref_index is None:
+                self._xref_index = XrefIndex.build(self)
+            return self._xref_index
+
+    def search_index(self) -&gt; &#34;SearchIndex&#34;:
+        &#34;&#34;&#34;Build (or return cached) the function search index for this bytecode.&#34;&#34;&#34;
+        with self._search_lock:
+            if self._search_index is None:
+                self._search_index = SearchIndex.build(self)
+            return self._search_index
+
+    def source_map(self) -&gt; &#34;SourceMap&#34;:
+        &#34;&#34;&#34;Build (or return cached) the source-location map for this bytecode.&#34;&#34;&#34;
+        with self._source_map_lock:
+            if self._source_map is None:
+                self._source_map = SourceMap.build(self)
+            return self._source_map</code></pre>
 </details>
 <div class="desc"><p>The main bytecode class. To read a bytecode file, use the <code>from_path</code> class method.</p>
 <p>For more information about the overall structure, see <a href="https://n3rdl0rd.github.io/ModDocCE/files/hlboot">here</a></p></div>
@@ -1333,13 +1804,13 @@ you.</p>
 <p>Optionally, it can be created with only the Void type defined by passing <code>no_extra_types=True</code>. Note that for the bytecode to be valid and executable, there must be at least a single function, and this function must have a valid return type, meaning that the bytecode must contain <strong>at least</strong> 1 type.</p></div>
 </dd>
 <dt id="crashlink.core.Bytecode.from_bytes"><code class="name flex">
-<span>def <span class="ident">from_bytes</span></span>(<span>data: bytes, search_magic: bool = True) ‑> <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></span>
+<span>def <span class="ident">from_bytes</span></span>(<span>data: bytes,<br>search_magic: bool = True,<br>progress_cb: Optional[ProgressCallback] = None) ‑> <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></span>
 </code></dt>
 <dd>
 <div class="desc"><p>Create a new Bytecode instance from a <code>bytes</code> object.</p></div>
 </dd>
 <dt id="crashlink.core.Bytecode.from_path"><code class="name flex">
-<span>def <span class="ident">from_path</span></span>(<span>path: str, search_magic: bool = True) ‑> <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></span>
+<span>def <span class="ident">from_path</span></span>(<span>path: str,<br>search_magic: bool = True,<br>progress_cb: Optional[ProgressCallback] = None) ‑> <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></span>
 </code></dt>
 <dd>
 <div class="desc"><p>Create a new Bytecode instance from a file path.</p></div>
@@ -1433,7 +1904,7 @@ you.</p>
 <div class="desc"><p>Gets the value of an initialized global constant <code>String</code>.</p></div>
 </dd>
 <dt id="crashlink.core.Bytecode.deserialise"><code class="name flex">
-<span>def <span class="ident">deserialise</span></span>(<span>self, f: BinaryIO | BytesIO, search_magic: bool = True, init_globals: bool = True) ‑> <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></span>
+<span>def <span class="ident">deserialise</span></span>(<span>self,<br>f: BinaryIO | BytesIO,<br>search_magic: bool = True,<br>init_globals: bool = True,<br>progress_cb: Optional[ProgressCallback] = None) ‑> <a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a></span>
 </code></dt>
 <dd>
 <details class="source">
@@ -1445,15 +1916,24 @@ you.</p>
     f: BinaryIO | BytesIO,
     search_magic: bool = True,
     init_globals: bool = True,
+    progress_cb: Optional[ProgressCallback] = None,
 ) -&gt; &#34;Bytecode&#34;:
     &#34;&#34;&#34;
     Deserialise the bytecode in-place from an open binary file handle or a BytesIO object. By default will search for the bytecode magic (b&#39;HLB&#39;) anywhere in the file, pass `search_magic=False` to disable.
+
+    progress_cb, if provided, is called as ``progress_cb(fraction, status)`` at each parse milestone, where fraction is in [0, 1].
     &#34;&#34;&#34;
+
+    def _progress(frac: float, status: str) -&gt; None:
+        if progress_cb is not None:
+            progress_cb(frac, status)
+
     start_time = datetime.now()
     dbg_print(&#34;---- Deserialise ----&#34;)
     if search_magic:
         dbg_print(&#34;Searching for magic...&#34;)
         self._find_magic(f)
+    _progress(0.00, &#34;parsing header&#34;)
     self.track_section(f, &#34;magic&#34;)
     self.magic.deserialise(f)
     assert self.magic.value == b&#34;HLB&#34;, &#34;Incorrect magic found!&#34;
@@ -1498,6 +1978,7 @@ you.</p>
     self.entrypoint.deserialise(f)
     dbg_print(f&#34;Entrypoint: f@{self.entrypoint.value}&#34;)
 
+    _progress(0.02, &#34;parsing ints and floats&#34;)
     self.track_section(f, &#34;ints&#34;)
     for i in range(self.nints.value):
         self.track_section(f, f&#34;int {i}&#34;)
@@ -1508,6 +1989,7 @@ you.</p>
         self.track_section(f, f&#34;float {i}&#34;)
         self.floats.append(SerialisableF64().deserialise(f))
 
+    _progress(0.04, &#34;parsing strings&#34;)
     dbg_print(f&#34;Strings section starts at {tell(f)}&#34;)
     self.track_section(f, &#34;strings&#34;)
     self.strings.deserialise(f, self.nstrings.value)
@@ -1521,6 +2003,7 @@ you.</p>
     else:
         self.bytes = None
 
+    _progress(0.06, &#34;parsing debug files&#34;)
     if self.has_debug_info and self.ndebugfiles and self.debugfiles:
         dbg_print(f&#34;Deserialising debug files... (at {tell(f)})&#34;)
         self.track_section(f, &#34;ndebugfiles&#34;)
@@ -1535,30 +2018,37 @@ you.</p>
     dbg_print(f&#34;Starting main blobs at {tell(f)}&#34;)
     dbg_print(f&#34;Types starting at {tell(f)}&#34;)
     self.track_section(f, &#34;types&#34;)
-    for i in range(self.ntypes.value):
+    _ntypes = self.ntypes.value
+    _report_every_type = max(1, _ntypes // 100)
+    for i in range(_ntypes):
         self.track_section(f, f&#34;type {i}&#34;)
         self.types.append(Type().deserialise(f))
+        if i % _report_every_type == 0:
+            _progress(0.07 + (i / _ntypes) * 0.13, &#34;parsing types&#34;)
     dbg_print(f&#34;Globals starting at {tell(f)}&#34;)
+    _progress(0.20, &#34;parsing globals&#34;)
     self.track_section(f, &#34;globals&#34;)
     for i in range(self.nglobals.value):
         self.track_section(f, f&#34;global {i}&#34;)
         self.global_types.append(tIndex().deserialise(f))
     dbg_print(f&#34;Natives starting at {tell(f)}&#34;)
+    _progress(0.22, &#34;parsing natives&#34;)
     self.track_section(f, &#34;natives&#34;)
     for i in range(self.nnatives.value):
         self.track_section(f, f&#34;native {i}&#34;)
         self.natives.append(Native().deserialise(f))
     dbg_print(f&#34;Functions starting at {tell(f)}&#34;)
+    _progress(0.23, &#34;parsing functions&#34;)
     self.track_section(f, &#34;functions&#34;)
-    if not USE_TQDM or self.nfunctions.value &lt; 1000:
-        for i in range(self.nfunctions.value):
-            self.track_section(f, f&#34;function {i}&#34;)
-            self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
-    else:
-        for i in tqdm(range(self.nfunctions.value), desc=&#34;Reading functions&#34;):
-            self.track_section(f, f&#34;function {i}&#34;)
-            self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
+    _nfunctions = self.nfunctions.value
+    _report_every_func = max(1, _nfunctions // 200)
+    for i in range(_nfunctions):
+        self.track_section(f, f&#34;function {i}&#34;)
+        self.functions.append(Function().deserialise(f, self.has_debug_info, self.version.value))
+        if i % _report_every_func == 0:
+            _progress(0.23 + (i / _nfunctions) * 0.65, &#34;parsing functions&#34;)
     if self.nconstants is not None:
+        _progress(0.88, &#34;parsing constants&#34;)
         dbg_print(f&#34;Constants starting at {tell(f)}&#34;)
         self.track_section(f, &#34;constants&#34;)
         for i in range(self.nconstants.value):
@@ -1567,16 +2057,21 @@ you.</p>
     dbg_print(f&#34;Bytecode end at {tell(f)}.&#34;)
     self.deserialised = True
     if init_globals:
+        _progress(0.90, &#34;initializing globals&#34;)
         dbg_print(&#34;Initializing globals...&#34;)
         self.init_globals()
+        _progress(0.95, &#34;building virtual tables&#34;)
         dbg_print(&#34;Building virtual tables...&#34;)
         self._build_virtual_tables()
+        _progress(0.98, &#34;mapping statics&#34;)
         dbg_print(&#34;Mapping statics...&#34;)
         self.map_statics()
+    _progress(1.00, &#34;done&#34;)
     dbg_print(f&#34;{(datetime.now() - start_time).total_seconds()}s elapsed.&#34;)
     return self</code></pre>
 </details>
-<div class="desc"><p>Deserialise the bytecode in-place from an open binary file handle or a BytesIO object. By default will search for the bytecode magic (b'HLB') anywhere in the file, pass <code>search_magic=False</code> to disable.</p></div>
+<div class="desc"><p>Deserialise the bytecode in-place from an open binary file handle or a BytesIO object. By default will search for the bytecode magic (b'HLB') anywhere in the file, pass <code>search_magic=False</code> to disable.</p>
+<p>progress_cb, if provided, is called as <code>progress_cb(fraction, status)</code> at each parse milestone, where fraction is in [0, 1].</p></div>
 </dd>
 <dt id="crashlink.core.Bytecode.find_prim_type"><code class="name flex">
 <span>def <span class="ident">find_prim_type</span></span>(<span>self,<br>kind: <a title="crashlink.core.Type.Kind" href="#crashlink.core.Type.Kind">Type.Kind</a>) ‑> <a title="crashlink.core.tIndex" href="#crashlink.core.tIndex">tIndex</a></span>
@@ -2232,6 +2727,23 @@ up by walking from the most-derived class up through its superclasses
 </details>
 <div class="desc"><p>Alternate notation for code.set_meta() for the purpose of clarity.</p></div>
 </dd>
+<dt id="crashlink.core.Bytecode.search_index"><code class="name flex">
+<span>def <span class="ident">search_index</span></span>(<span>self) ‑> <a title="crashlink.core.SearchIndex" href="#crashlink.core.SearchIndex">SearchIndex</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def search_index(self) -&gt; &#34;SearchIndex&#34;:
+    &#34;&#34;&#34;Build (or return cached) the function search index for this bytecode.&#34;&#34;&#34;
+    with self._search_lock:
+        if self._search_index is None:
+            self._search_index = SearchIndex.build(self)
+        return self._search_index</code></pre>
+</details>
+<div class="desc"><p>Build (or return cached) the function search index for this bytecode.</p></div>
+</dd>
 <dt id="crashlink.core.Bytecode.section_at"><code class="name flex">
 <span>def <span class="ident">section_at</span></span>(<span>self, offset: int) ‑> str | None</span>
 </code></dt>
@@ -2356,6 +2868,23 @@ up by walking from the most-derived class up through its superclasses
 </details>
 <div class="desc"><p>Sets bytecode metadata automatically.</p></div>
 </dd>
+<dt id="crashlink.core.Bytecode.source_map"><code class="name flex">
+<span>def <span class="ident">source_map</span></span>(<span>self) ‑> <a title="crashlink.core.SourceMap" href="#crashlink.core.SourceMap">SourceMap</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def source_map(self) -&gt; &#34;SourceMap&#34;:
+    &#34;&#34;&#34;Build (or return cached) the source-location map for this bytecode.&#34;&#34;&#34;
+    with self._source_map_lock:
+        if self._source_map is None:
+            self._source_map = SourceMap.build(self)
+        return self._source_map</code></pre>
+</details>
+<div class="desc"><p>Build (or return cached) the source-location map for this bytecode.</p></div>
+</dd>
 <dt id="crashlink.core.Bytecode.t"><code class="name flex">
 <span>def <span class="ident">t</span></span>(<span>self, tindex: int) ‑> <a title="crashlink.core.Type" href="#crashlink.core.Type">Type</a></span>
 </code></dt>
@@ -2387,6 +2916,23 @@ up by walking from the most-derived class up through its superclasses
     self.section_offsets[section_name] = f.tell()</code></pre>
 </details>
 <div class="desc"><p>Internal helper function to denote the location of a data section at a given offset.</p></div>
+</dd>
+<dt id="crashlink.core.Bytecode.xref_index"><code class="name flex">
+<span>def <span class="ident">xref_index</span></span>(<span>self) ‑> <a title="crashlink.core.XrefIndex" href="#crashlink.core.XrefIndex">XrefIndex</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def xref_index(self) -&gt; &#34;XrefIndex&#34;:
+    &#34;&#34;&#34;Build (or return cached) the full cross-reference index for this bytecode.&#34;&#34;&#34;
+    with self._xref_lock:
+        if self._xref_index is None:
+            self._xref_index = XrefIndex.build(self)
+        return self._xref_index</code></pre>
+</details>
+<div class="desc"><p>Build (or return cached) the full cross-reference index for this bytecode.</p></div>
 </dd>
 </dl>
 </dd>
@@ -10046,6 +10592,195 @@ Where a is field 0 and b is field 1.</p></div>
 </dd>
 </dl>
 </dd>
+<dt id="crashlink.core.RefKind"><code class="flex name class">
+<span>class <span class="ident">RefKind</span></span>
+<span>(</span><span>*args, **kwds)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class RefKind(_EnumBase):
+    CALL = &#34;call&#34;
+    CALL_VIRTUAL = &#34;call_virtual&#34;
+    CLOSURE = &#34;closure&#34;
+    FIELD_READ = &#34;field_read&#34;
+    FIELD_WRITE = &#34;field_write&#34;
+    DYN_FIELD_READ = &#34;dyn_field_read&#34;
+    DYN_FIELD_WRITE = &#34;dyn_field_write&#34;
+    ALLOC = &#34;alloc&#34;
+    CAST = &#34;cast&#34;
+    TYPE_REF = &#34;type_ref&#34;
+    TYPE_CHECK = &#34;type_check&#34;
+    GLOBAL_READ = &#34;global_read&#34;
+    GLOBAL_WRITE = &#34;global_write&#34;
+    STRING_USE = &#34;string_use&#34;
+    ENUM_CONSTRUCT = &#34;enum_construct&#34;
+    ENUM_FIELD_READ = &#34;enum_field_read&#34;
+    ENUM_INDEX = &#34;enum_index&#34;
+    INHERITS = &#34;inherits&#34;
+    FIELD_DECL = &#34;field_decl&#34;
+    PROTO_DECL = &#34;proto_decl&#34;
+    BINDING_DECL = &#34;binding_decl&#34;
+    GLOBAL_TYPE = &#34;global_type&#34;
+    ENUM_PARAM_TYPE = &#34;enum_param_type&#34;
+    SIGNATURE_TYPE = &#34;signature_type&#34;</code></pre>
+</details>
+<div class="desc"><p>Create a collection of name/value pairs.</p>
+<p>Example enumeration:</p>
+<pre><code class="language-python-repl">&gt;&gt;&gt; class Color(Enum):
+...     RED = 1
+...     BLUE = 2
+...     GREEN = 3
+</code></pre>
+<p>Access them by:</p>
+<ul>
+<li>attribute access:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color.RED
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<ul>
+<li>value lookup:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color(1)
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<ul>
+<li>name lookup:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color['RED']
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<p>Enumerations can be iterated over, and know how many members they have:</p>
+<pre><code class="language-python-repl">&gt;&gt;&gt; len(Color)
+3
+</code></pre>
+<pre><code class="language-python-repl">&gt;&gt;&gt; list(Color)
+[&lt;Color.RED: 1&gt;, &lt;Color.BLUE: 2&gt;, &lt;Color.GREEN: 3&gt;]
+</code></pre>
+<p>Methods can be added to enumerations, and members can have their own
+attributes &ndash; see the documentation for details.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>enum.Enum</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashlink.core.RefKind.ALLOC"><code class="name">var <span class="ident">ALLOC</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.BINDING_DECL"><code class="name">var <span class="ident">BINDING_DECL</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.CALL"><code class="name">var <span class="ident">CALL</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.CALL_VIRTUAL"><code class="name">var <span class="ident">CALL_VIRTUAL</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.CAST"><code class="name">var <span class="ident">CAST</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.CLOSURE"><code class="name">var <span class="ident">CLOSURE</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.DYN_FIELD_READ"><code class="name">var <span class="ident">DYN_FIELD_READ</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.DYN_FIELD_WRITE"><code class="name">var <span class="ident">DYN_FIELD_WRITE</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.ENUM_CONSTRUCT"><code class="name">var <span class="ident">ENUM_CONSTRUCT</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.ENUM_FIELD_READ"><code class="name">var <span class="ident">ENUM_FIELD_READ</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.ENUM_INDEX"><code class="name">var <span class="ident">ENUM_INDEX</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.ENUM_PARAM_TYPE"><code class="name">var <span class="ident">ENUM_PARAM_TYPE</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.FIELD_DECL"><code class="name">var <span class="ident">FIELD_DECL</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.FIELD_READ"><code class="name">var <span class="ident">FIELD_READ</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.FIELD_WRITE"><code class="name">var <span class="ident">FIELD_WRITE</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.GLOBAL_READ"><code class="name">var <span class="ident">GLOBAL_READ</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.GLOBAL_TYPE"><code class="name">var <span class="ident">GLOBAL_TYPE</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.GLOBAL_WRITE"><code class="name">var <span class="ident">GLOBAL_WRITE</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.INHERITS"><code class="name">var <span class="ident">INHERITS</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.PROTO_DECL"><code class="name">var <span class="ident">PROTO_DECL</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.SIGNATURE_TYPE"><code class="name">var <span class="ident">SIGNATURE_TYPE</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.STRING_USE"><code class="name">var <span class="ident">STRING_USE</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.TYPE_CHECK"><code class="name">var <span class="ident">TYPE_CHECK</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.RefKind.TYPE_REF"><code class="name">var <span class="ident">TYPE_REF</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+</dl>
+</dd>
 <dt id="crashlink.core.Reg"><code class="flex name class">
 <span>class <span class="ident">Reg</span></span>
 <span>(</span><span>value: int = 0)</span>
@@ -10273,6 +11008,194 @@ def resolve(self, code: &#34;Bytecode&#34;) -&gt; Any:
     pass</code></pre>
 </details>
 <div class="desc"><p>Resolve this reference to a specific reference in the bytecode.</p></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.SearchIndex"><code class="flex name class">
+<span>class <span class="ident">SearchIndex</span></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class SearchIndex:
+    &#34;&#34;&#34;Fast lookup index for functions and natives. Build once with `SearchIndex.build(code)`.&#34;&#34;&#34;
+
+    def __init__(self) -&gt; None:
+        self._full: Dict[str, List[&#34;Function | Native&#34;]] = {}
+        self._partial: Dict[str, List[&#34;Function | Native&#34;]] = {}
+        self._by_file: Dict[str, List[&#34;Function&#34;]] = {}
+        self._by_type: Dict[int, List[&#34;Function | Native&#34;]] = {}
+        self._all: List[&#34;Function | Native&#34;] = []
+        self._findex_to_full: Dict[int, str] = {}
+
+    @classmethod
+    def build(cls, code: &#34;Bytecode&#34;) -&gt; &#34;SearchIndex&#34;:
+        idx = cls()
+        defn_to_ti: Dict[int, int] = {id(t.definition): ti for ti, t in enumerate(code.types)}
+        _ = code.get_proto_map()
+
+        all_funcs: List[Function | Native] = [*code.functions, *code.natives]
+        for func in all_funcs:
+            full = code.full_func_name(func)
+            partial = code.partial_func_name(func)
+            findex = func.findex.value
+
+            idx._all.append(func)
+            idx._full.setdefault(full, []).append(func)
+            idx._partial.setdefault(partial, []).append(func)
+            idx._findex_to_full[findex] = full
+
+            owner_obj: Optional[Obj] = None
+            if code._proto_owner_map:
+                owner_obj = code._proto_owner_map.get(findex)
+            if owner_obj is None and code._field_owner_map:
+                owner_obj = code._field_owner_map.get(findex)
+            if owner_obj is not None:
+                ti = defn_to_ti.get(id(owner_obj))
+                if ti is not None:
+                    idx._by_type.setdefault(ti, []).append(func)
+
+            if isinstance(func, Function) and func.has_debug and func.debuginfo and func.debuginfo.value:
+                ref = func.debuginfo.value[0]
+                if code.debugfiles and ref.value &lt; len(code.debugfiles.value):
+                    fname = code.debugfiles.value[ref.value]
+                    idx._by_file.setdefault(fname, []).append(func)
+
+        return idx
+
+    def find(self, query: str) -&gt; List[&#34;Function | Native&#34;]:
+        &#34;&#34;&#34;Exact full-name match.&#34;&#34;&#34;
+        return self._full.get(query, [])
+
+    def find_partial(self, query: str) -&gt; List[&#34;Function | Native&#34;]:
+        &#34;&#34;&#34;Exact partial-name (method name only) match.&#34;&#34;&#34;
+        return self._partial.get(query, [])
+
+    def search(self, query: str) -&gt; List[&#34;Function | Native&#34;]:
+        &#34;&#34;&#34;Case-insensitive substring match against the full qualified name.&#34;&#34;&#34;
+        q = query.lower()
+        return [f for f in self._all if q in self._findex_to_full.get(f.findex.value, &#34;&#34;).lower()]
+
+    def in_file(self, filename: str) -&gt; List[&#34;Function&#34;]:
+        &#34;&#34;&#34;All functions from `filename` (exact or trailing-suffix match).&#34;&#34;&#34;
+        exact = self._by_file.get(filename)
+        if exact is not None:
+            return exact
+        result: List[Function] = []
+        for k, v in self._by_file.items():
+            if k.endswith(filename) or k.endswith(&#34;/&#34; + filename) or k.endswith(&#34;\\&#34; + filename):
+                result.extend(v)
+        return result
+
+    def files(self) -&gt; List[str]:
+        return list(self._by_file.keys())
+
+    def in_type(self, tindex: int) -&gt; List[&#34;Function | Native&#34;]:
+        return self._by_type.get(tindex, [])</code></pre>
+</details>
+<div class="desc"><p>Fast lookup index for functions and natives. Build once with <code><a title="crashlink.core.SearchIndex.build" href="#crashlink.core.SearchIndex.build">SearchIndex.build()</a>(code)</code>.</p></div>
+<h3>Static methods</h3>
+<dl>
+<dt id="crashlink.core.SearchIndex.build"><code class="name flex">
+<span>def <span class="ident">build</span></span>(<span>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> <a title="crashlink.core.SearchIndex" href="#crashlink.core.SearchIndex">SearchIndex</a></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.SearchIndex.files"><code class="name flex">
+<span>def <span class="ident">files</span></span>(<span>self) ‑> List[str]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def files(self) -&gt; List[str]:
+    return list(self._by_file.keys())</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.SearchIndex.find"><code class="name flex">
+<span>def <span class="ident">find</span></span>(<span>self, query: str) ‑> List[<a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a> | <a title="crashlink.core.Native" href="#crashlink.core.Native">Native</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def find(self, query: str) -&gt; List[&#34;Function | Native&#34;]:
+    &#34;&#34;&#34;Exact full-name match.&#34;&#34;&#34;
+    return self._full.get(query, [])</code></pre>
+</details>
+<div class="desc"><p>Exact full-name match.</p></div>
+</dd>
+<dt id="crashlink.core.SearchIndex.find_partial"><code class="name flex">
+<span>def <span class="ident">find_partial</span></span>(<span>self, query: str) ‑> List[<a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a> | <a title="crashlink.core.Native" href="#crashlink.core.Native">Native</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def find_partial(self, query: str) -&gt; List[&#34;Function | Native&#34;]:
+    &#34;&#34;&#34;Exact partial-name (method name only) match.&#34;&#34;&#34;
+    return self._partial.get(query, [])</code></pre>
+</details>
+<div class="desc"><p>Exact partial-name (method name only) match.</p></div>
+</dd>
+<dt id="crashlink.core.SearchIndex.in_file"><code class="name flex">
+<span>def <span class="ident">in_file</span></span>(<span>self, filename: str) ‑> List[<a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def in_file(self, filename: str) -&gt; List[&#34;Function&#34;]:
+    &#34;&#34;&#34;All functions from `filename` (exact or trailing-suffix match).&#34;&#34;&#34;
+    exact = self._by_file.get(filename)
+    if exact is not None:
+        return exact
+    result: List[Function] = []
+    for k, v in self._by_file.items():
+        if k.endswith(filename) or k.endswith(&#34;/&#34; + filename) or k.endswith(&#34;\\&#34; + filename):
+            result.extend(v)
+    return result</code></pre>
+</details>
+<div class="desc"><p>All functions from <code>filename</code> (exact or trailing-suffix match).</p></div>
+</dd>
+<dt id="crashlink.core.SearchIndex.in_type"><code class="name flex">
+<span>def <span class="ident">in_type</span></span>(<span>self, tindex: int) ‑> List[<a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a> | <a title="crashlink.core.Native" href="#crashlink.core.Native">Native</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def in_type(self, tindex: int) -&gt; List[&#34;Function | Native&#34;]:
+    return self._by_type.get(tindex, [])</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.SearchIndex.search"><code class="name flex">
+<span>def <span class="ident">search</span></span>(<span>self, query: str) ‑> List[<a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a> | <a title="crashlink.core.Native" href="#crashlink.core.Native">Native</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def search(self, query: str) -&gt; List[&#34;Function | Native&#34;]:
+    &#34;&#34;&#34;Case-insensitive substring match against the full qualified name.&#34;&#34;&#34;
+    q = query.lower()
+    return [f for f in self._all if q in self._findex_to_full.get(f.findex.value, &#34;&#34;).lower()]</code></pre>
+</details>
+<div class="desc"><p>Case-insensitive substring match against the full qualified name.</p></div>
 </dd>
 </dl>
 </dd>
@@ -10826,6 +11749,258 @@ def serialise(self) -&gt; bytes:
 </dd>
 </dl>
 </dd>
+<dt id="crashlink.core.SourceKind"><code class="flex name class">
+<span>class <span class="ident">SourceKind</span></span>
+<span>(</span><span>*args, **kwds)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class SourceKind(_EnumBase):
+    FUNCTION = &#34;function&#34;
+    TYPE = &#34;type&#34;
+    GLOBAL = &#34;global&#34;</code></pre>
+</details>
+<div class="desc"><p>Create a collection of name/value pairs.</p>
+<p>Example enumeration:</p>
+<pre><code class="language-python-repl">&gt;&gt;&gt; class Color(Enum):
+...     RED = 1
+...     BLUE = 2
+...     GREEN = 3
+</code></pre>
+<p>Access them by:</p>
+<ul>
+<li>attribute access:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color.RED
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<ul>
+<li>value lookup:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color(1)
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<ul>
+<li>name lookup:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color['RED']
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<p>Enumerations can be iterated over, and know how many members they have:</p>
+<pre><code class="language-python-repl">&gt;&gt;&gt; len(Color)
+3
+</code></pre>
+<pre><code class="language-python-repl">&gt;&gt;&gt; list(Color)
+[&lt;Color.RED: 1&gt;, &lt;Color.BLUE: 2&gt;, &lt;Color.GREEN: 3&gt;]
+</code></pre>
+<p>Methods can be added to enumerations, and members can have their own
+attributes &ndash; see the documentation for details.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>enum.Enum</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashlink.core.SourceKind.FUNCTION"><code class="name">var <span class="ident">FUNCTION</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.SourceKind.GLOBAL"><code class="name">var <span class="ident">GLOBAL</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.SourceKind.TYPE"><code class="name">var <span class="ident">TYPE</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.SourceMap"><code class="flex name class">
+<span>class <span class="ident">SourceMap</span></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class SourceMap:
+    &#34;&#34;&#34;Bidirectional source-location index. Build once with `SourceMap.build(code)`.&#34;&#34;&#34;
+
+    def __init__(self) -&gt; None:
+        self._by_op: Dict[_OpKey, fileRef] = {}
+        self._by_loc: Dict[_LocKey, List[Tuple[Function, int]]] = {}
+        self._file_names: Dict[int, str] = {}
+
+    @classmethod
+    def build(cls, code: &#34;Bytecode&#34;) -&gt; &#34;SourceMap&#34;:
+        sm = cls()
+        if code.debugfiles:
+            sm._file_names = {i: name for i, name in enumerate(code.debugfiles.value)}
+        for func in code.functions:
+            if not isinstance(func, Function):
+                continue
+            if not func.has_debug or not func.debuginfo or not func.debuginfo.value:
+                continue
+            findex = func.findex.value
+            for op_idx, ref in enumerate(func.debuginfo.value):
+                sm._by_op[(findex, op_idx)] = ref
+                sm._by_loc.setdefault((ref.value, ref.line), []).append((func, op_idx))
+        return sm
+
+    def loc_of(self, findex: int, op_idx: int) -&gt; Optional[fileRef]:
+        return self._by_op.get((findex, op_idx))
+
+    def loc_str(self, findex: int, op_idx: int) -&gt; str:
+        ref = self._by_op.get((findex, op_idx))
+        if ref is None:
+            return &#34;&#34;
+        fname = self._file_names.get(ref.value, f&#34;file#{ref.value}&#34;)
+        return f&#34;{fname}:{ref.line}&#34;
+
+    def ops_at(self, file_idx: int, line: int) -&gt; List[Tuple[Function, int]]:
+        return self._by_loc.get((file_idx, line), [])
+
+    def funcs_at_line(self, file_idx: int, line: int) -&gt; List[Function]:
+        seen: Dict[int, Function] = {}
+        for func, _ in self._by_loc.get((file_idx, line), []):
+            seen[func.findex.value] = func
+        return list(seen.values())
+
+    def file_index(self, filename: str) -&gt; Optional[int]:
+        for idx, name in self._file_names.items():
+            if name == filename:
+                return idx
+        for idx, name in self._file_names.items():
+            if name.endswith(filename) or name.endswith(&#34;/&#34; + filename) or name.endswith(&#34;\\&#34; + filename):
+                return idx
+        return None
+
+    def files(self) -&gt; List[str]:
+        return list(self._file_names.values())</code></pre>
+</details>
+<div class="desc"><p>Bidirectional source-location index. Build once with <code><a title="crashlink.core.SourceMap.build" href="#crashlink.core.SourceMap.build">SourceMap.build()</a>(code)</code>.</p></div>
+<h3>Static methods</h3>
+<dl>
+<dt id="crashlink.core.SourceMap.build"><code class="name flex">
+<span>def <span class="ident">build</span></span>(<span>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> <a title="crashlink.core.SourceMap" href="#crashlink.core.SourceMap">SourceMap</a></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.SourceMap.file_index"><code class="name flex">
+<span>def <span class="ident">file_index</span></span>(<span>self, filename: str) ‑> int | None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def file_index(self, filename: str) -&gt; Optional[int]:
+    for idx, name in self._file_names.items():
+        if name == filename:
+            return idx
+    for idx, name in self._file_names.items():
+        if name.endswith(filename) or name.endswith(&#34;/&#34; + filename) or name.endswith(&#34;\\&#34; + filename):
+            return idx
+    return None</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.SourceMap.files"><code class="name flex">
+<span>def <span class="ident">files</span></span>(<span>self) ‑> List[str]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def files(self) -&gt; List[str]:
+    return list(self._file_names.values())</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.SourceMap.funcs_at_line"><code class="name flex">
+<span>def <span class="ident">funcs_at_line</span></span>(<span>self, file_idx: int, line: int) ‑> List[<a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def funcs_at_line(self, file_idx: int, line: int) -&gt; List[Function]:
+    seen: Dict[int, Function] = {}
+    for func, _ in self._by_loc.get((file_idx, line), []):
+        seen[func.findex.value] = func
+    return list(seen.values())</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.SourceMap.loc_of"><code class="name flex">
+<span>def <span class="ident">loc_of</span></span>(<span>self, findex: int, op_idx: int) ‑> <a title="crashlink.core.fileRef" href="#crashlink.core.fileRef">fileRef</a> | None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def loc_of(self, findex: int, op_idx: int) -&gt; Optional[fileRef]:
+    return self._by_op.get((findex, op_idx))</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.SourceMap.loc_str"><code class="name flex">
+<span>def <span class="ident">loc_str</span></span>(<span>self, findex: int, op_idx: int) ‑> str</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def loc_str(self, findex: int, op_idx: int) -&gt; str:
+    ref = self._by_op.get((findex, op_idx))
+    if ref is None:
+        return &#34;&#34;
+    fname = self._file_names.get(ref.value, f&#34;file#{ref.value}&#34;)
+    return f&#34;{fname}:{ref.line}&#34;</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.SourceMap.ops_at"><code class="name flex">
+<span>def <span class="ident">ops_at</span></span>(<span>self, file_idx: int, line: int) ‑> List[Tuple[<a title="crashlink.core.Function" href="#crashlink.core.Function">Function</a>, int]]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def ops_at(self, file_idx: int, line: int) -&gt; List[Tuple[Function, int]]:
+    return self._by_loc.get((file_idx, line), [])</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
 <dt id="crashlink.core.StringsBlock"><code class="flex name class">
 <span>class <span class="ident">StringsBlock</span></span>
 </code></dt>
@@ -11273,6 +12448,105 @@ def serialise(self) -&gt; bytes:
 </ul>
 </li>
 </ul>
+</dd>
+<dt id="crashlink.core.TargetKind"><code class="flex name class">
+<span>class <span class="ident">TargetKind</span></span>
+<span>(</span><span>*args, **kwds)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class TargetKind(_EnumBase):
+    FUNCTION = &#34;function&#34;
+    TYPE = &#34;type&#34;
+    FIELD = &#34;field&#34;
+    ENUM_CONSTRUCT = &#34;enum_construct&#34;
+    GLOBAL = &#34;global&#34;
+    STRING = &#34;string&#34;</code></pre>
+</details>
+<div class="desc"><p>Create a collection of name/value pairs.</p>
+<p>Example enumeration:</p>
+<pre><code class="language-python-repl">&gt;&gt;&gt; class Color(Enum):
+...     RED = 1
+...     BLUE = 2
+...     GREEN = 3
+</code></pre>
+<p>Access them by:</p>
+<ul>
+<li>attribute access:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color.RED
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<ul>
+<li>value lookup:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color(1)
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<ul>
+<li>name lookup:</li>
+</ul>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Color['RED']
+<Color.RED: 1></p>
+</blockquote>
+</blockquote>
+</blockquote>
+<p>Enumerations can be iterated over, and know how many members they have:</p>
+<pre><code class="language-python-repl">&gt;&gt;&gt; len(Color)
+3
+</code></pre>
+<pre><code class="language-python-repl">&gt;&gt;&gt; list(Color)
+[&lt;Color.RED: 1&gt;, &lt;Color.BLUE: 2&gt;, &lt;Color.GREEN: 3&gt;]
+</code></pre>
+<p>Methods can be added to enumerations, and members can have their own
+attributes &ndash; see the documentation for details.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>enum.Enum</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashlink.core.TargetKind.ENUM_CONSTRUCT"><code class="name">var <span class="ident">ENUM_CONSTRUCT</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.TargetKind.FIELD"><code class="name">var <span class="ident">FIELD</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.TargetKind.FUNCTION"><code class="name">var <span class="ident">FUNCTION</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.TargetKind.GLOBAL"><code class="name">var <span class="ident">GLOBAL</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.TargetKind.STRING"><code class="name">var <span class="ident">STRING</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.TargetKind.TYPE"><code class="name">var <span class="ident">TYPE</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+</dl>
 </dd>
 <dt id="crashlink.core.Type"><code class="flex name class">
 <span>class <span class="ident">Type</span></span>
@@ -12494,6 +13768,538 @@ attributes &ndash; see the documentation for details.</p></div>
 <li>abc.ABC</li>
 </ul>
 </dd>
+<dt id="crashlink.core.XRef"><code class="flex name class">
+<span>class <span class="ident">XRef</span></span>
+<span>(</span><span>source_kind: <a title="crashlink.core.SourceKind" href="#crashlink.core.SourceKind">SourceKind</a>,<br>source_index: int,<br>target_kind: <a title="crashlink.core.TargetKind" href="#crashlink.core.TargetKind">TargetKind</a>,<br>target_index: int,<br>target_aux: Optional[int],<br>ref_kind: <a title="crashlink.core.RefKind" href="#crashlink.core.RefKind">RefKind</a>,<br>opcode_index: Optional[int])</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dataclass
+class XRef:
+    source_kind: SourceKind
+    source_index: int
+    target_kind: TargetKind
+    target_index: int
+    target_aux: Optional[int]
+    ref_kind: RefKind
+    opcode_index: Optional[int]</code></pre>
+</details>
+<div class="desc"><p>XRef(source_kind: 'SourceKind', source_index: 'int', target_kind: 'TargetKind', target_index: 'int', target_aux: 'Optional[int]', ref_kind: 'RefKind', opcode_index: 'Optional[int]')</p></div>
+<h3>Instance variables</h3>
+<dl>
+<dt id="crashlink.core.XRef.opcode_index"><code class="name">var <span class="ident">opcode_index</span> : int | None</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.XRef.ref_kind"><code class="name">var <span class="ident">ref_kind</span> : <a title="crashlink.core.RefKind" href="#crashlink.core.RefKind">RefKind</a></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.XRef.source_index"><code class="name">var <span class="ident">source_index</span> : int</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.XRef.source_kind"><code class="name">var <span class="ident">source_kind</span> : <a title="crashlink.core.SourceKind" href="#crashlink.core.SourceKind">SourceKind</a></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.XRef.target_aux"><code class="name">var <span class="ident">target_aux</span> : int | None</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.XRef.target_index"><code class="name">var <span class="ident">target_index</span> : int</code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+<dt id="crashlink.core.XRef.target_kind"><code class="name">var <span class="ident">target_kind</span> : <a title="crashlink.core.TargetKind" href="#crashlink.core.TargetKind">TargetKind</a></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+</dl>
+</dd>
+<dt id="crashlink.core.XrefIndex"><code class="flex name class">
+<span>class <span class="ident">XrefIndex</span></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class XrefIndex:
+    &#34;&#34;&#34;Bidirectional cross-reference index. Build once with `XrefIndex.build(code)`.&#34;&#34;&#34;
+
+    def __init__(self) -&gt; None:
+        self._to: Dict[_TargetKey, List[XRef]] = {}
+        self._from: Dict[_SourceKey, List[XRef]] = {}
+
+    def _add(self, ref: XRef) -&gt; None:
+        self._to.setdefault(_xref_target_key(ref), []).append(ref)
+        self._from.setdefault(_xref_source_key(ref), []).append(ref)
+
+    def refs_to(self, target_kind: TargetKind, index: int, aux: Optional[int] = None) -&gt; List[XRef]:
+        return self._to.get((target_kind, index, aux), [])
+
+    def refs_from(self, source_kind: SourceKind, index: int) -&gt; List[XRef]:
+        return self._from.get((source_kind, index), [])
+
+    def callers_of(self, findex: int) -&gt; List[XRef]:
+        return [
+            r
+            for r in self.refs_to(TargetKind.FUNCTION, findex)
+            if r.ref_kind in (RefKind.CALL, RefKind.CALL_VIRTUAL, RefKind.CLOSURE)
+        ]
+
+    def callees_of(self, findex: int) -&gt; List[XRef]:
+        return [
+            r
+            for r in self.refs_from(SourceKind.FUNCTION, findex)
+            if r.ref_kind in (RefKind.CALL, RefKind.CALL_VIRTUAL, RefKind.CLOSURE)
+        ]
+
+    def field_reads(self, tindex: int, field_slot: int) -&gt; List[XRef]:
+        return [r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot) if r.ref_kind == RefKind.FIELD_READ]
+
+    def field_writes(self, tindex: int, field_slot: int) -&gt; List[XRef]:
+        return [r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot) if r.ref_kind == RefKind.FIELD_WRITE]
+
+    def all_field_accesses(self, tindex: int, field_slot: int) -&gt; List[XRef]:
+        return [
+            r
+            for r in self.refs_to(TargetKind.FIELD, tindex, field_slot)
+            if r.ref_kind in (RefKind.FIELD_READ, RefKind.FIELD_WRITE)
+        ]
+
+    def allocators_of(self, tindex: int) -&gt; List[XRef]:
+        return [r for r in self.refs_to(TargetKind.TYPE, tindex) if r.ref_kind == RefKind.ALLOC]
+
+    def subtypes_of(self, tindex: int) -&gt; List[XRef]:
+        return [r for r in self.refs_to(TargetKind.TYPE, tindex) if r.ref_kind == RefKind.INHERITS]
+
+    def construct_uses(self, tindex: int, construct_idx: int) -&gt; List[XRef]:
+        return self.refs_to(TargetKind.ENUM_CONSTRUCT, tindex, construct_idx)
+
+    def global_reads(self, gindex: int) -&gt; List[XRef]:
+        return [r for r in self.refs_to(TargetKind.GLOBAL, gindex) if r.ref_kind == RefKind.GLOBAL_READ]
+
+    def global_writes(self, gindex: int) -&gt; List[XRef]:
+        return [r for r in self.refs_to(TargetKind.GLOBAL, gindex) if r.ref_kind == RefKind.GLOBAL_WRITE]
+
+    def string_uses(self, string_idx: int) -&gt; List[XRef]:
+        return self.refs_to(TargetKind.STRING, string_idx)
+
+    def type_refs(self, tindex: int) -&gt; List[XRef]:
+        return self.refs_to(TargetKind.TYPE, tindex)
+
+    @classmethod
+    def build(cls, code: &#34;Bytecode&#34;) -&gt; &#34;XrefIndex&#34;:
+        idx = cls()
+
+        _defn_to_ti: Dict[int, int] = {id(t.definition): ti for ti, t in enumerate(code.types)}
+        _field_owner_cache: Dict[Tuple[int, int], Tuple[int, int]] = {}
+
+        for func in code.functions:
+            findex = func.findex.value
+            regs = func.regs
+
+            def _reg_tindex(reg_val: int) -&gt; Optional[int]:
+                try:
+                    return regs[reg_val].value
+                except IndexError:
+                    return None
+
+            def _field_owner(flat_slot: int, tindex: int, obj: Obj) -&gt; Tuple[int, int]:
+                cache_key = (tindex, flat_slot)
+                cached = _field_owner_cache.get(cache_key)
+                if cached is not None:
+                    return cached
+                chain: List[Obj] = []
+                visited: Set[int] = set()
+                cur: Optional[Obj] = obj
+                while cur is not None and id(cur) not in visited:
+                    visited.add(id(cur))
+                    chain.append(cur)
+                    if cur.super.value &lt; 0:
+                        break
+                    s = cur.super.resolve(code).definition
+                    cur = s if isinstance(s, Obj) else None
+                chain.reverse()
+                offset = 0
+                result = (0, flat_slot)
+                for ancestor in chain:
+                    if flat_slot &lt; offset + len(ancestor.fields):
+                        own_slot = flat_slot - offset
+                        owner_ti = _defn_to_ti.get(id(ancestor), 0)
+                        result = (owner_ti, own_slot)
+                        break
+                    offset += len(ancestor.fields)
+                _field_owner_cache[cache_key] = result
+                return result
+
+            for op_idx, op in enumerate(func.ops):
+                op_name = op.op
+                df = op.df
+
+                def _emit(tk: TargetKind, ti: int, rk: RefKind, aux: Optional[int] = None) -&gt; None:
+                    idx._add(XRef(SourceKind.FUNCTION, findex, tk, ti, aux, rk, op_idx))
+
+                if op_name in (&#34;Call0&#34;, &#34;Call1&#34;, &#34;Call2&#34;, &#34;Call3&#34;, &#34;Call4&#34;, &#34;CallN&#34;):
+                    _emit(TargetKind.FUNCTION, df[&#34;fun&#34;].value, RefKind.CALL)
+
+                elif op_name in (&#34;CallMethod&#34;, &#34;CallThis&#34;):
+                    pindex = df[&#34;field&#34;].value
+                    if op_name == &#34;CallThis&#34;:
+                        recv_t = _reg_tindex(0)
+                    else:
+                        args = df[&#34;args&#34;].value
+                        recv_t = _reg_tindex(args[0].value) if args else None
+                    if recv_t is not None:
+                        t = code.types[recv_t]
+                        if isinstance(t.definition, Obj):
+                            proto = code.proto_by_pindex(t.definition, pindex)
+                            if proto is not None:
+                                _emit(TargetKind.FUNCTION, proto.findex.value, RefKind.CALL_VIRTUAL)
+
+                elif op_name in (&#34;StaticClosure&#34;, &#34;InstanceClosure&#34;):
+                    _emit(TargetKind.FUNCTION, df[&#34;fun&#34;].value, RefKind.CLOSURE)
+
+                elif op_name == &#34;VirtualClosure&#34;:
+                    pindex = df[&#34;field&#34;].value
+                    recv_t = _reg_tindex(df[&#34;obj&#34;].value)
+                    if recv_t is not None:
+                        t = code.types[recv_t]
+                        if isinstance(t.definition, Obj):
+                            proto = code.proto_by_pindex(t.definition, pindex)
+                            if proto is not None:
+                                _emit(TargetKind.FUNCTION, proto.findex.value, RefKind.CLOSURE)
+
+                elif op_name == &#34;Field&#34;:
+                    obj_t = _reg_tindex(df[&#34;obj&#34;].value)
+                    if obj_t is not None:
+                        t = code.types[obj_t]
+                        if isinstance(t.definition, Obj):
+                            try:
+                                flat = df[&#34;field&#34;].value
+                                owner_t, own_slot = _field_owner(flat, obj_t, t.definition)
+                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_READ, own_slot)
+                            except (IndexError, KeyError):
+                                pass
+
+                elif op_name == &#34;GetThis&#34;:
+                    this_t = _reg_tindex(0)
+                    if this_t is not None:
+                        t = code.types[this_t]
+                        if isinstance(t.definition, Obj):
+                            try:
+                                flat = df[&#34;field&#34;].value
+                                owner_t, own_slot = _field_owner(flat, this_t, t.definition)
+                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_READ, own_slot)
+                            except (IndexError, KeyError):
+                                pass
+
+                elif op_name == &#34;SetField&#34;:
+                    obj_t = _reg_tindex(df[&#34;obj&#34;].value)
+                    if obj_t is not None:
+                        t = code.types[obj_t]
+                        if isinstance(t.definition, Obj):
+                            try:
+                                flat = df[&#34;field&#34;].value
+                                owner_t, own_slot = _field_owner(flat, obj_t, t.definition)
+                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_WRITE, own_slot)
+                            except (IndexError, KeyError):
+                                pass
+
+                elif op_name == &#34;SetThis&#34;:
+                    this_t = _reg_tindex(0)
+                    if this_t is not None:
+                        t = code.types[this_t]
+                        if isinstance(t.definition, Obj):
+                            try:
+                                flat = df[&#34;field&#34;].value
+                                owner_t, own_slot = _field_owner(flat, this_t, t.definition)
+                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_WRITE, own_slot)
+                            except (IndexError, KeyError):
+                                pass
+
+                elif op_name == &#34;DynGet&#34;:
+                    _emit(TargetKind.STRING, df[&#34;field&#34;].value, RefKind.DYN_FIELD_READ)
+                elif op_name == &#34;DynSet&#34;:
+                    _emit(TargetKind.STRING, df[&#34;field&#34;].value, RefKind.DYN_FIELD_WRITE)
+                elif op_name == &#34;New&#34;:
+                    dst_t = _reg_tindex(df[&#34;dst&#34;].value)
+                    if dst_t is not None:
+                        _emit(TargetKind.TYPE, dst_t, RefKind.ALLOC)
+                elif op_name in (&#34;SafeCast&#34;, &#34;UnsafeCast&#34;, &#34;ToVirtual&#34;):
+                    dst_t = _reg_tindex(df[&#34;dst&#34;].value)
+                    if dst_t is not None:
+                        _emit(TargetKind.TYPE, dst_t, RefKind.CAST)
+                elif op_name == &#34;GetGlobal&#34;:
+                    _emit(TargetKind.GLOBAL, df[&#34;global&#34;].value, RefKind.GLOBAL_READ)
+                elif op_name == &#34;SetGlobal&#34;:
+                    _emit(TargetKind.GLOBAL, df[&#34;global&#34;].value, RefKind.GLOBAL_WRITE)
+                elif op_name == &#34;String&#34;:
+                    _emit(TargetKind.STRING, df[&#34;ptr&#34;].value, RefKind.STRING_USE)
+                elif op_name == &#34;Type&#34;:
+                    _emit(TargetKind.TYPE, df[&#34;ty&#34;].value, RefKind.TYPE_REF)
+                elif op_name in (&#34;GetType&#34;, &#34;GetTID&#34;):
+                    src_t = _reg_tindex(df[&#34;src&#34;].value)
+                    if src_t is not None:
+                        _emit(TargetKind.TYPE, src_t, RefKind.TYPE_CHECK)
+                elif op_name == &#34;MakeEnum&#34;:
+                    dst_t = _reg_tindex(df[&#34;dst&#34;].value)
+                    if dst_t is not None:
+                        _emit(TargetKind.ENUM_CONSTRUCT, dst_t, RefKind.ENUM_CONSTRUCT, df[&#34;construct&#34;].value)
+                elif op_name == &#34;EnumField&#34;:
+                    val_t = _reg_tindex(df[&#34;value&#34;].value)
+                    if val_t is not None:
+                        _emit(TargetKind.ENUM_CONSTRUCT, val_t, RefKind.ENUM_FIELD_READ, df[&#34;construct&#34;].value)
+                elif op_name == &#34;EnumIndex&#34;:
+                    val_t = _reg_tindex(df[&#34;value&#34;].value)
+                    if val_t is not None:
+                        _emit(TargetKind.TYPE, val_t, RefKind.ENUM_INDEX)
+
+        for tindex, t in enumerate(code.types):
+            defn = t.definition
+
+            def _struct(tk: TargetKind, ti: int, rk: RefKind, aux: Optional[int] = None) -&gt; None:
+                idx._add(XRef(SourceKind.TYPE, tindex, tk, ti, aux, rk, None))
+
+            if isinstance(defn, Obj):
+                if defn.super.value &gt;= 0:
+                    _struct(TargetKind.TYPE, defn.super.value, RefKind.INHERITS)
+                for f in defn.fields:
+                    _struct(TargetKind.TYPE, f.type.value, RefKind.FIELD_DECL)
+                for proto in defn.protos:
+                    _struct(TargetKind.FUNCTION, proto.findex.value, RefKind.PROTO_DECL)
+                for binding in defn.bindings:
+                    _struct(TargetKind.FUNCTION, binding.findex.value, RefKind.BINDING_DECL)
+            elif isinstance(defn, Enum):
+                for construct in defn.constructs:
+                    for param_t in construct.params:
+                        _struct(TargetKind.TYPE, param_t.value, RefKind.ENUM_PARAM_TYPE)
+            elif isinstance(defn, Fun):
+                for arg_t in defn.args:
+                    _struct(TargetKind.TYPE, arg_t.value, RefKind.SIGNATURE_TYPE)
+                _struct(TargetKind.TYPE, defn.ret.value, RefKind.SIGNATURE_TYPE)
+            elif isinstance(defn, Virtual):
+                for f in defn.fields:
+                    _struct(TargetKind.TYPE, f.type.value, RefKind.FIELD_DECL)
+
+        for gindex, gt in enumerate(code.global_types):
+            idx._add(XRef(SourceKind.GLOBAL, gindex, TargetKind.TYPE, gt.value, None, RefKind.GLOBAL_TYPE, None))
+
+        return idx</code></pre>
+</details>
+<div class="desc"><p>Bidirectional cross-reference index. Build once with <code><a title="crashlink.core.XrefIndex.build" href="#crashlink.core.XrefIndex.build">XrefIndex.build()</a>(code)</code>.</p></div>
+<h3>Static methods</h3>
+<dl>
+<dt id="crashlink.core.XrefIndex.build"><code class="name flex">
+<span>def <span class="ident">build</span></span>(<span>code: "'<a title="crashlink.core.Bytecode" href="#crashlink.core.Bytecode">Bytecode</a>'") ‑> <a title="crashlink.core.XrefIndex" href="#crashlink.core.XrefIndex">XrefIndex</a></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.core.XrefIndex.all_field_accesses"><code class="name flex">
+<span>def <span class="ident">all_field_accesses</span></span>(<span>self, tindex: int, field_slot: int) ‑> List[<a title="crashlink.core.XRef" href="#crashlink.core.XRef">XRef</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def all_field_accesses(self, tindex: int, field_slot: int) -&gt; List[XRef]:
+    return [
+        r
+        for r in self.refs_to(TargetKind.FIELD, tindex, field_slot)
+        if r.ref_kind in (RefKind.FIELD_READ, RefKind.FIELD_WRITE)
+    ]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.XrefIndex.allocators_of"><code class="name flex">
+<span>def <span class="ident">allocators_of</span></span>(<span>self, tindex: int) ‑> List[<a title="crashlink.core.XRef" href="#crashlink.core.XRef">XRef</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def allocators_of(self, tindex: int) -&gt; List[XRef]:
+    return [r for r in self.refs_to(TargetKind.TYPE, tindex) if r.ref_kind == RefKind.ALLOC]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.XrefIndex.callees_of"><code class="name flex">
+<span>def <span class="ident">callees_of</span></span>(<span>self, findex: int) ‑> List[<a title="crashlink.core.XRef" href="#crashlink.core.XRef">XRef</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def callees_of(self, findex: int) -&gt; List[XRef]:
+    return [
+        r
+        for r in self.refs_from(SourceKind.FUNCTION, findex)
+        if r.ref_kind in (RefKind.CALL, RefKind.CALL_VIRTUAL, RefKind.CLOSURE)
+    ]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.XrefIndex.callers_of"><code class="name flex">
+<span>def <span class="ident">callers_of</span></span>(<span>self, findex: int) ‑> List[<a title="crashlink.core.XRef" href="#crashlink.core.XRef">XRef</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def callers_of(self, findex: int) -&gt; List[XRef]:
+    return [
+        r
+        for r in self.refs_to(TargetKind.FUNCTION, findex)
+        if r.ref_kind in (RefKind.CALL, RefKind.CALL_VIRTUAL, RefKind.CLOSURE)
+    ]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.XrefIndex.construct_uses"><code class="name flex">
+<span>def <span class="ident">construct_uses</span></span>(<span>self, tindex: int, construct_idx: int) ‑> List[<a title="crashlink.core.XRef" href="#crashlink.core.XRef">XRef</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def construct_uses(self, tindex: int, construct_idx: int) -&gt; List[XRef]:
+    return self.refs_to(TargetKind.ENUM_CONSTRUCT, tindex, construct_idx)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.XrefIndex.field_reads"><code class="name flex">
+<span>def <span class="ident">field_reads</span></span>(<span>self, tindex: int, field_slot: int) ‑> List[<a title="crashlink.core.XRef" href="#crashlink.core.XRef">XRef</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def field_reads(self, tindex: int, field_slot: int) -&gt; List[XRef]:
+    return [r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot) if r.ref_kind == RefKind.FIELD_READ]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.XrefIndex.field_writes"><code class="name flex">
+<span>def <span class="ident">field_writes</span></span>(<span>self, tindex: int, field_slot: int) ‑> List[<a title="crashlink.core.XRef" href="#crashlink.core.XRef">XRef</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def field_writes(self, tindex: int, field_slot: int) -&gt; List[XRef]:
+    return [r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot) if r.ref_kind == RefKind.FIELD_WRITE]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.XrefIndex.global_reads"><code class="name flex">
+<span>def <span class="ident">global_reads</span></span>(<span>self, gindex: int) ‑> List[<a title="crashlink.core.XRef" href="#crashlink.core.XRef">XRef</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def global_reads(self, gindex: int) -&gt; List[XRef]:
+    return [r for r in self.refs_to(TargetKind.GLOBAL, gindex) if r.ref_kind == RefKind.GLOBAL_READ]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.XrefIndex.global_writes"><code class="name flex">
+<span>def <span class="ident">global_writes</span></span>(<span>self, gindex: int) ‑> List[<a title="crashlink.core.XRef" href="#crashlink.core.XRef">XRef</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def global_writes(self, gindex: int) -&gt; List[XRef]:
+    return [r for r in self.refs_to(TargetKind.GLOBAL, gindex) if r.ref_kind == RefKind.GLOBAL_WRITE]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.XrefIndex.refs_from"><code class="name flex">
+<span>def <span class="ident">refs_from</span></span>(<span>self,<br>source_kind: <a title="crashlink.core.SourceKind" href="#crashlink.core.SourceKind">SourceKind</a>,<br>index: int) ‑> List[<a title="crashlink.core.XRef" href="#crashlink.core.XRef">XRef</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def refs_from(self, source_kind: SourceKind, index: int) -&gt; List[XRef]:
+    return self._from.get((source_kind, index), [])</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.XrefIndex.refs_to"><code class="name flex">
+<span>def <span class="ident">refs_to</span></span>(<span>self,<br>target_kind: <a title="crashlink.core.TargetKind" href="#crashlink.core.TargetKind">TargetKind</a>,<br>index: int,<br>aux: Optional[int] = None) ‑> List[<a title="crashlink.core.XRef" href="#crashlink.core.XRef">XRef</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def refs_to(self, target_kind: TargetKind, index: int, aux: Optional[int] = None) -&gt; List[XRef]:
+    return self._to.get((target_kind, index, aux), [])</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.XrefIndex.string_uses"><code class="name flex">
+<span>def <span class="ident">string_uses</span></span>(<span>self, string_idx: int) ‑> List[<a title="crashlink.core.XRef" href="#crashlink.core.XRef">XRef</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def string_uses(self, string_idx: int) -&gt; List[XRef]:
+    return self.refs_to(TargetKind.STRING, string_idx)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.XrefIndex.subtypes_of"><code class="name flex">
+<span>def <span class="ident">subtypes_of</span></span>(<span>self, tindex: int) ‑> List[<a title="crashlink.core.XRef" href="#crashlink.core.XRef">XRef</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def subtypes_of(self, tindex: int) -&gt; List[XRef]:
+    return [r for r in self.refs_to(TargetKind.TYPE, tindex) if r.ref_kind == RefKind.INHERITS]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.core.XrefIndex.type_refs"><code class="name flex">
+<span>def <span class="ident">type_refs</span></span>(<span>self, tindex: int) ‑> List[<a title="crashlink.core.XRef" href="#crashlink.core.XRef">XRef</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def type_refs(self, tindex: int) -&gt; List[XRef]:
+    return self.refs_to(TargetKind.TYPE, tindex)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
 <dt id="crashlink.core.bytesRef"><code class="flex name class">
 <span>class <span class="ident">bytesRef</span></span>
 <span>(</span><span>value: int = 0)</span>
@@ -13063,6 +14869,33 @@ attributes &ndash; see the documentation for details.</p></div>
 </ul>
 </li>
 <li>
+<h4><code><a title="crashlink.core.AnalysisWorker" href="#crashlink.core.AnalysisWorker">AnalysisWorker</a></code></h4>
+<ul class="two-column">
+<li><code><a title="crashlink.core.AnalysisWorker.build_indices" href="#crashlink.core.AnalysisWorker.build_indices">build_indices</a></code></li>
+<li><code><a title="crashlink.core.AnalysisWorker.build_search" href="#crashlink.core.AnalysisWorker.build_search">build_search</a></code></li>
+<li><code><a title="crashlink.core.AnalysisWorker.build_source_map" href="#crashlink.core.AnalysisWorker.build_source_map">build_source_map</a></code></li>
+<li><code><a title="crashlink.core.AnalysisWorker.build_xref" href="#crashlink.core.AnalysisWorker.build_xref">build_xref</a></code></li>
+<li><code><a title="crashlink.core.AnalysisWorker.decompile" href="#crashlink.core.AnalysisWorker.decompile">decompile</a></code></li>
+<li><code><a title="crashlink.core.AnalysisWorker.invalidate" href="#crashlink.core.AnalysisWorker.invalidate">invalidate</a></code></li>
+<li><code><a title="crashlink.core.AnalysisWorker.shutdown" href="#crashlink.core.AnalysisWorker.shutdown">shutdown</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.AnnotationStore" href="#crashlink.core.AnnotationStore">AnnotationStore</a></code></h4>
+<ul class="two-column">
+<li><code><a title="crashlink.core.AnnotationStore.clear_comment" href="#crashlink.core.AnnotationStore.clear_comment">clear_comment</a></code></li>
+<li><code><a title="crashlink.core.AnnotationStore.clear_rename" href="#crashlink.core.AnnotationStore.clear_rename">clear_rename</a></code></li>
+<li><code><a title="crashlink.core.AnnotationStore.comments_for" href="#crashlink.core.AnnotationStore.comments_for">comments_for</a></code></li>
+<li><code><a title="crashlink.core.AnnotationStore.get_comment" href="#crashlink.core.AnnotationStore.get_comment">get_comment</a></code></li>
+<li><code><a title="crashlink.core.AnnotationStore.get_rename" href="#crashlink.core.AnnotationStore.get_rename">get_rename</a></code></li>
+<li><code><a title="crashlink.core.AnnotationStore.iter_comments" href="#crashlink.core.AnnotationStore.iter_comments">iter_comments</a></code></li>
+<li><code><a title="crashlink.core.AnnotationStore.iter_renames" href="#crashlink.core.AnnotationStore.iter_renames">iter_renames</a></code></li>
+<li><code><a title="crashlink.core.AnnotationStore.rename" href="#crashlink.core.AnnotationStore.rename">rename</a></code></li>
+<li><code><a title="crashlink.core.AnnotationStore.renames_for" href="#crashlink.core.AnnotationStore.renames_for">renames_for</a></code></li>
+<li><code><a title="crashlink.core.AnnotationStore.set_comment" href="#crashlink.core.AnnotationStore.set_comment">set_comment</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="crashlink.core.Array" href="#crashlink.core.Array">Array</a></code></h4>
 </li>
 <li>
@@ -13109,11 +14942,14 @@ attributes &ndash; see the documentation for details.</p></div>
 <li><code><a title="crashlink.core.Bytecode.partial_func_name" href="#crashlink.core.Bytecode.partial_func_name">partial_func_name</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.proto_by_pindex" href="#crashlink.core.Bytecode.proto_by_pindex">proto_by_pindex</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.repair" href="#crashlink.core.Bytecode.repair">repair</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.search_index" href="#crashlink.core.Bytecode.search_index">search_index</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.section_at" href="#crashlink.core.Bytecode.section_at">section_at</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.serialise" href="#crashlink.core.Bytecode.serialise">serialise</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.set_meta" href="#crashlink.core.Bytecode.set_meta">set_meta</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.source_map" href="#crashlink.core.Bytecode.source_map">source_map</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.t" href="#crashlink.core.Bytecode.t">t</a></code></li>
 <li><code><a title="crashlink.core.Bytecode.track_section" href="#crashlink.core.Bytecode.track_section">track_section</a></code></li>
+<li><code><a title="crashlink.core.Bytecode.xref_index" href="#crashlink.core.Bytecode.xref_index">xref_index</a></code></li>
 </ul>
 </li>
 <li>
@@ -13336,6 +15172,35 @@ attributes &ndash; see the documentation for details.</p></div>
 </ul>
 </li>
 <li>
+<h4><code><a title="crashlink.core.RefKind" href="#crashlink.core.RefKind">RefKind</a></code></h4>
+<ul class="two-column">
+<li><code><a title="crashlink.core.RefKind.ALLOC" href="#crashlink.core.RefKind.ALLOC">ALLOC</a></code></li>
+<li><code><a title="crashlink.core.RefKind.BINDING_DECL" href="#crashlink.core.RefKind.BINDING_DECL">BINDING_DECL</a></code></li>
+<li><code><a title="crashlink.core.RefKind.CALL" href="#crashlink.core.RefKind.CALL">CALL</a></code></li>
+<li><code><a title="crashlink.core.RefKind.CALL_VIRTUAL" href="#crashlink.core.RefKind.CALL_VIRTUAL">CALL_VIRTUAL</a></code></li>
+<li><code><a title="crashlink.core.RefKind.CAST" href="#crashlink.core.RefKind.CAST">CAST</a></code></li>
+<li><code><a title="crashlink.core.RefKind.CLOSURE" href="#crashlink.core.RefKind.CLOSURE">CLOSURE</a></code></li>
+<li><code><a title="crashlink.core.RefKind.DYN_FIELD_READ" href="#crashlink.core.RefKind.DYN_FIELD_READ">DYN_FIELD_READ</a></code></li>
+<li><code><a title="crashlink.core.RefKind.DYN_FIELD_WRITE" href="#crashlink.core.RefKind.DYN_FIELD_WRITE">DYN_FIELD_WRITE</a></code></li>
+<li><code><a title="crashlink.core.RefKind.ENUM_CONSTRUCT" href="#crashlink.core.RefKind.ENUM_CONSTRUCT">ENUM_CONSTRUCT</a></code></li>
+<li><code><a title="crashlink.core.RefKind.ENUM_FIELD_READ" href="#crashlink.core.RefKind.ENUM_FIELD_READ">ENUM_FIELD_READ</a></code></li>
+<li><code><a title="crashlink.core.RefKind.ENUM_INDEX" href="#crashlink.core.RefKind.ENUM_INDEX">ENUM_INDEX</a></code></li>
+<li><code><a title="crashlink.core.RefKind.ENUM_PARAM_TYPE" href="#crashlink.core.RefKind.ENUM_PARAM_TYPE">ENUM_PARAM_TYPE</a></code></li>
+<li><code><a title="crashlink.core.RefKind.FIELD_DECL" href="#crashlink.core.RefKind.FIELD_DECL">FIELD_DECL</a></code></li>
+<li><code><a title="crashlink.core.RefKind.FIELD_READ" href="#crashlink.core.RefKind.FIELD_READ">FIELD_READ</a></code></li>
+<li><code><a title="crashlink.core.RefKind.FIELD_WRITE" href="#crashlink.core.RefKind.FIELD_WRITE">FIELD_WRITE</a></code></li>
+<li><code><a title="crashlink.core.RefKind.GLOBAL_READ" href="#crashlink.core.RefKind.GLOBAL_READ">GLOBAL_READ</a></code></li>
+<li><code><a title="crashlink.core.RefKind.GLOBAL_TYPE" href="#crashlink.core.RefKind.GLOBAL_TYPE">GLOBAL_TYPE</a></code></li>
+<li><code><a title="crashlink.core.RefKind.GLOBAL_WRITE" href="#crashlink.core.RefKind.GLOBAL_WRITE">GLOBAL_WRITE</a></code></li>
+<li><code><a title="crashlink.core.RefKind.INHERITS" href="#crashlink.core.RefKind.INHERITS">INHERITS</a></code></li>
+<li><code><a title="crashlink.core.RefKind.PROTO_DECL" href="#crashlink.core.RefKind.PROTO_DECL">PROTO_DECL</a></code></li>
+<li><code><a title="crashlink.core.RefKind.SIGNATURE_TYPE" href="#crashlink.core.RefKind.SIGNATURE_TYPE">SIGNATURE_TYPE</a></code></li>
+<li><code><a title="crashlink.core.RefKind.STRING_USE" href="#crashlink.core.RefKind.STRING_USE">STRING_USE</a></code></li>
+<li><code><a title="crashlink.core.RefKind.TYPE_CHECK" href="#crashlink.core.RefKind.TYPE_CHECK">TYPE_CHECK</a></code></li>
+<li><code><a title="crashlink.core.RefKind.TYPE_REF" href="#crashlink.core.RefKind.TYPE_REF">TYPE_REF</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="crashlink.core.Reg" href="#crashlink.core.Reg">Reg</a></code></h4>
 </li>
 <li>
@@ -13351,6 +15216,18 @@ attributes &ndash; see the documentation for details.</p></div>
 <h4><code><a title="crashlink.core.ResolvableVarInt" href="#crashlink.core.ResolvableVarInt">ResolvableVarInt</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.core.ResolvableVarInt.resolve" href="#crashlink.core.ResolvableVarInt.resolve">resolve</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.SearchIndex" href="#crashlink.core.SearchIndex">SearchIndex</a></code></h4>
+<ul class="two-column">
+<li><code><a title="crashlink.core.SearchIndex.build" href="#crashlink.core.SearchIndex.build">build</a></code></li>
+<li><code><a title="crashlink.core.SearchIndex.files" href="#crashlink.core.SearchIndex.files">files</a></code></li>
+<li><code><a title="crashlink.core.SearchIndex.find" href="#crashlink.core.SearchIndex.find">find</a></code></li>
+<li><code><a title="crashlink.core.SearchIndex.find_partial" href="#crashlink.core.SearchIndex.find_partial">find_partial</a></code></li>
+<li><code><a title="crashlink.core.SearchIndex.in_file" href="#crashlink.core.SearchIndex.in_file">in_file</a></code></li>
+<li><code><a title="crashlink.core.SearchIndex.in_type" href="#crashlink.core.SearchIndex.in_type">in_type</a></code></li>
+<li><code><a title="crashlink.core.SearchIndex.search" href="#crashlink.core.SearchIndex.search">search</a></code></li>
 </ul>
 </li>
 <li>
@@ -13381,6 +15258,26 @@ attributes &ndash; see the documentation for details.</p></div>
 </ul>
 </li>
 <li>
+<h4><code><a title="crashlink.core.SourceKind" href="#crashlink.core.SourceKind">SourceKind</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.core.SourceKind.FUNCTION" href="#crashlink.core.SourceKind.FUNCTION">FUNCTION</a></code></li>
+<li><code><a title="crashlink.core.SourceKind.GLOBAL" href="#crashlink.core.SourceKind.GLOBAL">GLOBAL</a></code></li>
+<li><code><a title="crashlink.core.SourceKind.TYPE" href="#crashlink.core.SourceKind.TYPE">TYPE</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.SourceMap" href="#crashlink.core.SourceMap">SourceMap</a></code></h4>
+<ul class="two-column">
+<li><code><a title="crashlink.core.SourceMap.build" href="#crashlink.core.SourceMap.build">build</a></code></li>
+<li><code><a title="crashlink.core.SourceMap.file_index" href="#crashlink.core.SourceMap.file_index">file_index</a></code></li>
+<li><code><a title="crashlink.core.SourceMap.files" href="#crashlink.core.SourceMap.files">files</a></code></li>
+<li><code><a title="crashlink.core.SourceMap.funcs_at_line" href="#crashlink.core.SourceMap.funcs_at_line">funcs_at_line</a></code></li>
+<li><code><a title="crashlink.core.SourceMap.loc_of" href="#crashlink.core.SourceMap.loc_of">loc_of</a></code></li>
+<li><code><a title="crashlink.core.SourceMap.loc_str" href="#crashlink.core.SourceMap.loc_str">loc_str</a></code></li>
+<li><code><a title="crashlink.core.SourceMap.ops_at" href="#crashlink.core.SourceMap.ops_at">ops_at</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="crashlink.core.StringsBlock" href="#crashlink.core.StringsBlock">StringsBlock</a></code></h4>
 <ul class="two-column">
 <li><code><a title="crashlink.core.StringsBlock.deserialise" href="#crashlink.core.StringsBlock.deserialise">deserialise</a></code></li>
@@ -13393,6 +15290,17 @@ attributes &ndash; see the documentation for details.</p></div>
 </li>
 <li>
 <h4><code><a title="crashlink.core.Struct" href="#crashlink.core.Struct">Struct</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.TargetKind" href="#crashlink.core.TargetKind">TargetKind</a></code></h4>
+<ul class="two-column">
+<li><code><a title="crashlink.core.TargetKind.ENUM_CONSTRUCT" href="#crashlink.core.TargetKind.ENUM_CONSTRUCT">ENUM_CONSTRUCT</a></code></li>
+<li><code><a title="crashlink.core.TargetKind.FIELD" href="#crashlink.core.TargetKind.FIELD">FIELD</a></code></li>
+<li><code><a title="crashlink.core.TargetKind.FUNCTION" href="#crashlink.core.TargetKind.FUNCTION">FUNCTION</a></code></li>
+<li><code><a title="crashlink.core.TargetKind.GLOBAL" href="#crashlink.core.TargetKind.GLOBAL">GLOBAL</a></code></li>
+<li><code><a title="crashlink.core.TargetKind.STRING" href="#crashlink.core.TargetKind.STRING">STRING</a></code></li>
+<li><code><a title="crashlink.core.TargetKind.TYPE" href="#crashlink.core.TargetKind.TYPE">TYPE</a></code></li>
+</ul>
 </li>
 <li>
 <h4><code><a title="crashlink.core.Type" href="#crashlink.core.Type">Type</a></code></h4>
@@ -13447,6 +15355,38 @@ attributes &ndash; see the documentation for details.</p></div>
 </li>
 <li>
 <h4><code><a title="crashlink.core.Void" href="#crashlink.core.Void">Void</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.core.XRef" href="#crashlink.core.XRef">XRef</a></code></h4>
+<ul class="two-column">
+<li><code><a title="crashlink.core.XRef.opcode_index" href="#crashlink.core.XRef.opcode_index">opcode_index</a></code></li>
+<li><code><a title="crashlink.core.XRef.ref_kind" href="#crashlink.core.XRef.ref_kind">ref_kind</a></code></li>
+<li><code><a title="crashlink.core.XRef.source_index" href="#crashlink.core.XRef.source_index">source_index</a></code></li>
+<li><code><a title="crashlink.core.XRef.source_kind" href="#crashlink.core.XRef.source_kind">source_kind</a></code></li>
+<li><code><a title="crashlink.core.XRef.target_aux" href="#crashlink.core.XRef.target_aux">target_aux</a></code></li>
+<li><code><a title="crashlink.core.XRef.target_index" href="#crashlink.core.XRef.target_index">target_index</a></code></li>
+<li><code><a title="crashlink.core.XRef.target_kind" href="#crashlink.core.XRef.target_kind">target_kind</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.core.XrefIndex" href="#crashlink.core.XrefIndex">XrefIndex</a></code></h4>
+<ul class="two-column">
+<li><code><a title="crashlink.core.XrefIndex.all_field_accesses" href="#crashlink.core.XrefIndex.all_field_accesses">all_field_accesses</a></code></li>
+<li><code><a title="crashlink.core.XrefIndex.allocators_of" href="#crashlink.core.XrefIndex.allocators_of">allocators_of</a></code></li>
+<li><code><a title="crashlink.core.XrefIndex.build" href="#crashlink.core.XrefIndex.build">build</a></code></li>
+<li><code><a title="crashlink.core.XrefIndex.callees_of" href="#crashlink.core.XrefIndex.callees_of">callees_of</a></code></li>
+<li><code><a title="crashlink.core.XrefIndex.callers_of" href="#crashlink.core.XrefIndex.callers_of">callers_of</a></code></li>
+<li><code><a title="crashlink.core.XrefIndex.construct_uses" href="#crashlink.core.XrefIndex.construct_uses">construct_uses</a></code></li>
+<li><code><a title="crashlink.core.XrefIndex.field_reads" href="#crashlink.core.XrefIndex.field_reads">field_reads</a></code></li>
+<li><code><a title="crashlink.core.XrefIndex.field_writes" href="#crashlink.core.XrefIndex.field_writes">field_writes</a></code></li>
+<li><code><a title="crashlink.core.XrefIndex.global_reads" href="#crashlink.core.XrefIndex.global_reads">global_reads</a></code></li>
+<li><code><a title="crashlink.core.XrefIndex.global_writes" href="#crashlink.core.XrefIndex.global_writes">global_writes</a></code></li>
+<li><code><a title="crashlink.core.XrefIndex.refs_from" href="#crashlink.core.XrefIndex.refs_from">refs_from</a></code></li>
+<li><code><a title="crashlink.core.XrefIndex.refs_to" href="#crashlink.core.XrefIndex.refs_to">refs_to</a></code></li>
+<li><code><a title="crashlink.core.XrefIndex.string_uses" href="#crashlink.core.XrefIndex.string_uses">string_uses</a></code></li>
+<li><code><a title="crashlink.core.XrefIndex.subtypes_of" href="#crashlink.core.XrefIndex.subtypes_of">subtypes_of</a></code></li>
+<li><code><a title="crashlink.core.XrefIndex.type_refs" href="#crashlink.core.XrefIndex.type_refs">type_refs</a></code></li>
+</ul>
 </li>
 <li>
 <h4><code><a title="crashlink.core.bytesRef" href="#crashlink.core.bytesRef">bytesRef</a></code></h4>

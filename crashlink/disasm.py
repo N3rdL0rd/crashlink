@@ -588,11 +588,7 @@ def fmt_op_compact(
             elif ptype == "JumpOffset":
                 parts.append(f"-> {idx + 1 + val.value}")
             elif ptype == "JumpOffsets":
-                targets = [
-                    f"{i}:->{idx + 1 + o.value}"
-                    for i, o in enumerate(val.value)
-                    if o.value != 0
-                ]
+                targets = [f"{i}:->{idx + 1 + o.value}" for i, o in enumerate(val.value) if o.value != 0]
                 parts.append("[" + ", ".join(targets) + "]")
             elif ptype == "InlineBool":
                 parts.append("true" if val.value else "false")

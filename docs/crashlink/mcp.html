@@ -612,43 +612,51 @@ def get_type(tindex: int) -&gt; str:
 <pre><code class="python">@mcp.tool()
 def get_xrefs(findex: int) -&gt; str:
     &#34;&#34;&#34;
-    Find all functions that call the given function (cross-references).
+    Find all cross-references to a function: callers (direct calls, virtual calls, and closures),
+    plus structural references (proto/binding declarations in type definitions).
 
     Args:
-        findex: The function index to find callers of
+        findex: The function index to find references to
     &#34;&#34;&#34;
     code = _require_code()
-    target: Optional[Function | Native] = None
-    for func in code.functions:
-        if func.findex.value == findex:
-            target = func
-            break
-    if target is None:
-        for native in code.natives:
-            if native.findex.value == findex:
-                target = native
-                break
-    if target is None:
+    func_map = code.get_findex_map()
+    if findex not in func_map:
         raise RuntimeError(f&#34;Function f@{findex} not found.&#34;)
+    target = func_map[findex]
 
-    xrefs = target.called_by(code)
-    if not xrefs:
-        return f&#34;No callers found for f@{findex}.&#34;
+    xi = code.xref_index()
+    refs = xi.refs_to(TargetKind.FUNCTION, findex)
+    if not refs:
+        return f&#34;No xrefs found for f@{findex} ({code.full_func_name(target)}).&#34;
 
-    lines = [f&#34;Callers of f@{findex} ({code.full_func_name(target)}):&#34;]
-    for i, caller_findex in enumerate(xrefs):
-        try:
-            caller = caller_findex.resolve(code)
-            lines.append(f&#34;  {i}. {_disasm.func_header(code, caller)}&#34;)
-        except Exception:
-            lines.append(f&#34;  {i}. f@{caller_findex.value} (error resolving)&#34;)
+    lines = [f&#34;Xrefs to f@{findex} ({code.full_func_name(target)}) [{len(refs)} total]:&#34;]
+    by_kind: dict[str, list[XRef]] = {}
+    for r in refs:
+        by_kind.setdefault(r.ref_kind.value, []).append(r)
+
+    for rk in sorted(by_kind):
+        group = by_kind[rk]
+        lines.append(f&#34;  [{rk}] ({len(group)})&#34;)
+        for r in group[:20]:
+            loc = f&#34; op#{r.opcode_index}&#34; if r.opcode_index is not None else &#34;&#34;
+            if r.source_kind == SourceKind.FUNCTION:
+                try:
+                    src = func_map[r.source_index]
+                    lines.append(f&#34;    {_disasm.func_header(code, src)}{loc}&#34;)
+                except Exception:
+                    lines.append(f&#34;    f@{r.source_index}{loc}&#34;)
+            else:
+                lines.append(f&#34;    {r.source_kind.value}@{r.source_index}{loc}&#34;)
+        if len(group) &gt; 20:
+            lines.append(f&#34;    ... and {len(group) - 20} more&#34;)
     return _trim(&#34;\n&#34;.join(lines))</code></pre>
 </details>
-<div class="desc"><p>Find all functions that call the given function (cross-references).</p>
+<div class="desc"><p>Find all cross-references to a function: callers (direct calls, virtual calls, and closures),
+plus structural references (proto/binding declarations in type definitions).</p>
 <h2 id="args">Args</h2>
 <dl>
 <dt><strong><code>findex</code></strong></dt>
-<dd>The function index to find callers of</dd>
+<dd>The function index to find references to</dd>
 </dl></div>
 </dd>
 <dt id="crashlink.mcp.list_debug_files"><code class="name flex">
