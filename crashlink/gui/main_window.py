@@ -6,7 +6,7 @@ import os
 import re
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QRect, QRunnable, QThread, QThreadPool, QTimer, Qt, Signal, QObject, QSize
+from PySide6.QtCore import QRect, QRunnable, QSettings, QThread, QThreadPool, QTimer, Qt, Signal, QObject, QSize
 from PySide6.QtGui import QColor, QCursor, QKeyEvent, QPainter, QPalette
 from PySide6.QtWidgets import (
     QApplication,
@@ -281,6 +281,37 @@ class MainWindow(QMainWindow):
         set_dbg_callback(self._log_panel.info)
         self._log_panel.set_context(mw=self, code=None)
         self._busy = _BusyIndicator(self)
+        self._restore_settings()
+
+    # ── Settings (window geometry/layout/theme/view mode) ───────────────────────
+
+    def _restore_settings(self) -> None:
+        settings = QSettings("N3rdL0rd", "crashlink")
+        geometry = settings.value("window/geometry")
+        if geometry is not None:
+            self.restoreGeometry(geometry)
+        state = settings.value("window/state")
+        if state is not None:
+            self.restoreState(state)
+
+        theme_name = settings.value("window/theme")
+        if isinstance(theme_name, str) and theme_name in THEMES:
+            self._apply_theme(THEMES[theme_name])
+
+        view_mode = settings.value("window/view_mode")
+        try:
+            mode = int(view_mode) if view_mode is not None else None
+        except (TypeError, ValueError):
+            mode = None
+        if mode is not None and mode in _VIEW_MODE_NAMES:
+            self._set_view_mode(mode)
+
+    def _save_settings(self) -> None:
+        settings = QSettings("N3rdL0rd", "crashlink")
+        settings.setValue("window/geometry", self.saveGeometry())
+        settings.setValue("window/state", self.saveState())
+        settings.setValue("window/theme", self._theme.name)
+        settings.setValue("window/view_mode", self._view_mode)
 
     # ── UI ────────────────────────────────────────────────────────────────────
 
@@ -1042,6 +1073,7 @@ class MainWindow(QMainWindow):
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
     def closeEvent(self, event: object) -> None:
+        self._save_settings()
         set_dbg_callback(None)
         self._worker.shutdown(wait=False)
         super().closeEvent(event)  # type: ignore[arg-type]
