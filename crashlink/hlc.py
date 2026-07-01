@@ -1108,8 +1108,9 @@ def generate_functions(code: Bytecode, progress_cb: Optional[ProgressCallback] =
 
         # -- HType --
         if isinstance(type_a_def, TypeType) and isinstance(type_b_def, TypeType):
-            # hl_same_type returns 0 for equality.
-            return False, True, f"if (hl_same_type({reg_a}, {reg_b}) {comp_op_str} 0) goto {label};"
+            # hl_same_type returns a bool: nonzero (true) when the types ARE equal.
+            same_type_op = "!=" if op_name == "JEq" else "=="
+            return False, True, f"if (hl_same_type({reg_a}, {reg_b}) {same_type_op} 0) goto {label};"
 
         # -- HNull<T> --
         if isinstance(type_a_def, Null) and isinstance(type_b_def, Null):
@@ -1574,11 +1575,18 @@ def generate_functions(code: Bytecode, progress_cb: Optional[ProgressCallback] =
                         )
                         fid = df["field"].value
                         func_ptr = f"r{df['obj']}->$type->vobj_proto[{fid}]"
-                        fun_t = function.regs[df["dst"].value]
-                        assert isinstance(fun_t.resolve(code).definition, Fun), (
-                            f"VirtualClosure destination is not a function type at op {i} in function {function.findex}"
+                        # `fid` indexes the vtable by proto pindex, not the dst register's
+                        # (already-bound, this-dropped) type -- hl_alloc_closure_ptr needs the
+                        # method's own full/unbound signature to know how to drop `this`.
+                        proto = code.proto_by_pindex(objdef, fid)
+                        assert proto is not None, (
+                            f"VirtualClosure: no proto with pindex {fid} on {objdef} at op {i} in function {function.findex}"
                         )
-                        rhs = f"hl_alloc_closure_ptr(&t${fun_t.value}, {func_ptr}, r{df['obj']})"
+                        method_type = proto.findex.resolve(code).type
+                        assert isinstance(method_type.resolve(code).definition, Fun), (
+                            f"VirtualClosure target is not a function type at op {i} in function {function.findex}"
+                        )
+                        rhs = f"hl_alloc_closure_ptr(&t${method_type.value}, {func_ptr}, r{df['obj']})"
                     case "GetGlobal":
                         dst_reg = df["dst"].value
                         dst = ctype(code, function.regs[dst_reg].resolve(code), function.regs[dst_reg].value)
