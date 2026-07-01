@@ -49,3 +49,4 @@ test_out/
 /deadcells
 /decomp_sweep.py
 *.cldb
+/Heaps3D*
