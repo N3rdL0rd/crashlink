@@ -274,6 +274,9 @@ class MainWindow(QMainWindow):
         # Number of _DecompRunnables currently in flight, so the busy indicator
         # only hides once every concurrent decompile in a batch has finished.
         self._active_decompiles = 0
+        # True once a rename/comment has been applied since the last save/load,
+        # so closing/opening another file can prompt instead of discarding silently.
+        self._dirty = False
 
         self._build_ui()
         self._build_menu()
@@ -433,8 +436,29 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(
             self, "Open HashLink bytecode", "", "HashLink files (*.hl *.dat);;All files (*)"
         )
-        if path:
+        if path and self._confirm_discard_changes():
             self._load_file(path)
+
+    def _confirm_discard_changes(self) -> bool:
+        """Ask to save unsaved renames/comments before discarding them (opening a
+        different file or closing the app). Returns True if it's OK to proceed."""
+        if not self._dirty:
+            return True
+        box = QMessageBox(self)
+        box.setWindowTitle("Unsaved changes")
+        box.setText("You have unsaved renames/comments. Save the analysis database before continuing?")
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel
+        )
+        box.setDefaultButton(QMessageBox.StandardButton.Save)
+        choice = box.exec()
+        if choice == QMessageBox.StandardButton.Cancel:
+            return False
+        if choice == QMessageBox.StandardButton.Save:
+            self._save_database()
+        return True
 
     def _load_file(self, path: str) -> None:
         self._tabs.clear()
@@ -449,6 +473,7 @@ class MainWindow(QMainWindow):
         self._cfg_view.clear_view()
         self._db_cache.clear()
         self._log_panel.clear()
+        self._dirty = False
         self._code = None
         self._log_panel.set_context(code=None, findex=None, func=None, irf=None)
         self._source_path = path
@@ -573,6 +598,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self._log_panel.error(f"Failed to save database: {e}")
             return
+        self._dirty = False
         self._log_panel.success(f"Saved database to {cldb_path}")
 
     # ── Tab management ────────────────────────────────────────────────────────
@@ -854,6 +880,7 @@ class MainWindow(QMainWindow):
             return
         def_op_int = def_op
         self._code.annotations.rename(findex, reg_idx, def_op_int, new_name)
+        self._dirty = True
         self._invalidate_and_redecompile(findex)
 
     def _invalidate_and_redecompile(self, findex: int) -> None:
@@ -891,6 +918,7 @@ class MainWindow(QMainWindow):
         else:
             self._code.annotations.clear_comment(findex, op_idx)
             self._log_panel.info(f"Cleared comment on op {op_idx} in f@{findex}")
+        self._dirty = True
 
         class_key, _, _ = self._class_key_for(findex)
         self._refresh_disasm_view(class_key)
@@ -1073,6 +1101,9 @@ class MainWindow(QMainWindow):
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
     def closeEvent(self, event: object) -> None:
+        if not self._confirm_discard_changes():
+            event.ignore()  # type: ignore[attr-defined]
+            return
         self._save_settings()
         set_dbg_callback(None)
         self._worker.shutdown(wait=False)
