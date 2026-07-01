@@ -65,7 +65,7 @@ _SUBCOMMAND_HELP: Dict[str, str] = {
     "disasm": "Disassemble a function from a bytecode file",
     "search": "Search strings in a bytecode file",
     "funcs": "List functions in a bytecode file",
-    "decompile": "Decompile a function or class to pseudo-Haxe (EXPERIMENTAL)",
+    "decompile": "Decompile a function or class to pseudo-Haxe (INCOMPLETE, usually functional)",
     "db": "Work with .cldb analysis databases",
 }
 
@@ -560,7 +560,7 @@ def funcs_main(argv: List[str]) -> None:
 
 def decompile_main(argv: List[str]) -> None:
     parser = argparse.ArgumentParser(
-        description="Decompile a function or class to pseudo-Haxe. EXPERIMENTAL.",
+        description="Decompile a function or class to pseudo-Haxe. INCOMPLETE — usually functional, but a work in progress.",
         prog="crashlink decompile",
     )
     parser.add_argument("file", help="Input .hl / .dat file")
@@ -570,7 +570,7 @@ def decompile_main(argv: List[str]) -> None:
     )
     parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
     args = parser.parse_args(argv)
-    print("[warning] Decompiler is EXPERIMENTAL — output may be incorrect or incomplete.", file=sys.stderr)
+    print("[warning] Decompiler is a work in progress — usually functional, but output may be incorrect or incomplete for some functions.", file=sys.stderr)
     code = _load_code_from_cli_path(args.file, args.no_constants)
 
     if args.is_class:

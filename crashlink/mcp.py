@@ -34,7 +34,7 @@ mcp = FastMCP(
         "\n"
         "Module maturity:\n"
         "  - disasm (disassemble_function, list_functions, get_type, etc.): STABLE\n"
-        "  - decomp / pseudo (decompile_function, decompile_class, get_ir): EXPERIMENTAL — may crash or produce wrong output for complex functions\n"
+        "  - decomp / pseudo (decompile_function, decompile_class, get_ir): INCOMPLETE — usually functional, but some complex functions may decompile imperfectly or raise\n"
         "  - hlc (to_hlc): STABLE — generated C compiles and links against the real HashLink C runtime; validated against a full commercial game's boot bytecode (37k+ functions)\n"
     ),
 )
@@ -161,9 +161,9 @@ def decompile_function(findex: int) -> str:
     """
     Decompile a function to pseudo-Haxe source code.
 
-    ⚠ EXPERIMENTAL: The decompiler is a work in progress. Output may be wrong,
-    incomplete, or this call may raise an exception for complex functions.
-    Use disassemble_function for reliable output.
+    ⚠ INCOMPLETE: The decompiler is usually functional but still a work in progress —
+    some complex functions may decompile imperfectly or raise an exception. Fall back
+    to disassemble_function if a specific function looks wrong.
 
     Args:
         findex: The function index to decompile
@@ -187,8 +187,9 @@ def decompile_class(tindex: int) -> str:
     """
     Decompile an entire class (Obj type) to pseudo-Haxe source.
 
-    ⚠ EXPERIMENTAL: Same caveats as decompile_function — output may be wrong
-    or incomplete. The class decompiler calls decompile_function for each method.
+    ⚠ INCOMPLETE: Same caveats as decompile_function — usually functional but some
+    methods may decompile imperfectly. The class decompiler calls decompile_function
+    for each method.
 
     Args:
         tindex: The type index (tIndex) of the class
