@@ -16,6 +16,7 @@ from PySide6.QtGui import (
     QTextCharFormat,
     QTextCursor,
     QTextDocument,
+    QTextFormat,
 )
 from PySide6.QtWidgets import QMenu, QPlainTextEdit, QTextEdit, QWidget
 
@@ -97,12 +98,18 @@ class DecompView(QPlainTextEdit):
         # Do NOT setReadOnly — it hides the cursor. Block editing in keyPressEvent instead.
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.setCursorWidth(2)
+        # These views are display-only; without this, dragging a selection out of one
+        # (or pasting one into the other) silently inserts editable text and corrupts
+        # the rendered disassembly/pseudocode.
+        self.setAcceptDrops(False)
         font = QFont("JetBrains Mono", 13)
         font.setStyleHint(QFont.StyleHint.Monospace)
         self.setFont(font)
         self._highlighter: Optional[DecompHighlighter] = None
         self._theme: Optional[Theme] = None
         self._last_highlight_word: str = ""
+        self._word_sel: List[QTextEdit.ExtraSelection] = []
+        self._sync_sel: List[QTextEdit.ExtraSelection] = []
         self.cursorPositionChanged.connect(self._update_highlights)
 
     def set_theme(self, theme: Theme) -> None:
@@ -117,8 +124,35 @@ class DecompView(QPlainTextEdit):
 
     def clear_view(self) -> None:
         self.setPlainText("")
+        self._word_sel = []
+        self._sync_sel = []
         self.setExtraSelections([])
         self._last_highlight_word = ""
+
+    def _apply_selections(self) -> None:
+        # Sync-line layer underneath the word-highlight layer.
+        self.setExtraSelections(self._sync_sel + self._word_sel)
+
+    def set_sync_line(self, block_no: Optional[int]) -> None:
+        """Highlight a whole line (op↔pseudo sync), or clear it when block_no is None."""
+        if block_no is None or block_no < 0:
+            if self._sync_sel:
+                self._sync_sel = []
+                self._apply_selections()
+            return
+        accent = self._theme.surface1 if self._theme else "#313244"
+        fmt = QTextCharFormat()
+        fmt.setBackground(QColor(accent))
+        fmt.setProperty(QTextFormat.Property.FullWidthSelection, True)
+        block = self.document().findBlockByNumber(block_no)
+        if not block.isValid():
+            return
+        cursor = QTextCursor(block)
+        sel = QTextEdit.ExtraSelection()
+        sel.cursor = cursor
+        sel.format = fmt
+        self._sync_sel = [sel]
+        self._apply_selections()
 
     def _update_highlights(self) -> None:
         cursor = self.textCursor()
@@ -132,7 +166,8 @@ class DecompView(QPlainTextEdit):
 
         if not word or not word.isidentifier():
             if self._last_highlight_word:
-                self.setExtraSelections([])
+                self._word_sel = []
+                self._apply_selections()
                 self._last_highlight_word = ""
             return
 
@@ -156,7 +191,13 @@ class DecompView(QPlainTextEdit):
             selections.append(sel)
             c = self.document().find(word, c, flags)
 
-        self.setExtraSelections(selections)
+        self._word_sel = selections
+        self._apply_selections()
+
+    def insertFromMimeData(self, source: object) -> None:  # type: ignore[override]
+        # Belt-and-suspenders: also blocks X11 middle-click paste, which bypasses
+        # both keyPressEvent and the drag/drop guards above.
+        pass
 
     def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
         if not isinstance(event, QKeyEvent):

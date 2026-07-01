@@ -489,6 +489,127 @@ def fmt_op(
     return f"{file_info}{idx:>3}. {op.op:<{width}} {str(defn):<{48}} {pseudo_from_op(op, idx, regs, code, func=func):<{width}}"
 
 
+def _reg_str(code: Bytecode, regs: List[Reg] | List[tIndex], reg_idx: int) -> str:
+    try:
+        t = type_name(code, regs[reg_idx].resolve(code))
+    except Exception:
+        t = "?"
+    return f"reg{reg_idx}<{t}>"
+
+
+def _escape_str(s: str) -> str:
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _field_label_compact(
+    code: Bytecode,
+    func: Optional[Function],
+    regs: List[Reg] | List[tIndex],
+    op_name: str,
+    df: Dict[str, object],
+) -> str:
+    """Best-effort human-readable name for a `RefField` operand, by opcode."""
+    field_ref = df["field"]
+    fidx = field_ref.value  # type: ignore[attr-defined]
+    try:
+        if op_name in ("Field", "SetField"):
+            owner = regs[df["obj"].value].resolve(code)  # type: ignore[attr-defined]
+            field = field_ref.resolve_obj(code, owner.definition)  # type: ignore[attr-defined]
+            return f'"{field.name.resolve(code)}"'
+        if op_name in ("GetThis", "SetThis") and func is not None:
+            owner = func.regs[0].resolve(code)
+            field = field_ref.resolve_obj(code, owner.definition)  # type: ignore[attr-defined]
+            return f'"{field.name.resolve(code)}"'
+        if op_name == "CallThis" and func is not None:
+            method = _method_name_for_field(code, func.regs[0].resolve(code), fidx)
+            return f'"{method}"'
+        if op_name == "CallMethod":
+            args = df["args"].value  # type: ignore[attr-defined]
+            if args:
+                obj_reg = args[0].value
+                method = _method_name_for_field(code, regs[obj_reg].resolve(code), fidx)
+                return f'"{method}"'
+        if op_name in ("EnumField", "SetEnumField"):
+            value_reg = df["value"].value  # type: ignore[attr-defined]
+            enum_def = regs[value_reg].resolve(code).definition
+            construct = enum_def.constructs[df["construct"].value]  # type: ignore[attr-defined]
+            ptype = type_name(code, construct.params[fidx].resolve(code))
+            return f"field{fidx}<{ptype}>"
+    except Exception:
+        pass
+    return f"field#{fidx}"
+
+
+def fmt_op_compact(
+    code: Bytecode,
+    regs: List[Reg] | List[tIndex],
+    op: Opcode,
+    idx: int,
+    debug: Optional[List[fileRef]] = None,
+    func: Optional[Function] = None,
+) -> str:
+    """
+    Formats an opcode as a single compact line: mnemonic followed by its
+    operands inlined (no separate raw-dict column). Registers are annotated
+    with their resolved type (`regN<Type>`), constant-pool refs are resolved
+    but keep their index (`15 (int #1)`), and type/function/global refs use
+    the `t@`/`f@`/`g@` convention.
+    """
+    df = op.df
+    schema = opcodes.get(op.op, {})
+    parts: List[str] = []
+    for name, ptype in schema.items():
+        val = df.get(name)
+        if val is None:
+            continue
+        try:
+            if ptype == "Reg":
+                parts.append(_reg_str(code, regs, val.value))  # type: ignore[attr-defined]
+            elif ptype == "Regs":
+                parts.append("(" + ", ".join(_reg_str(code, regs, r.value) for r in val.value) + ")")  # type: ignore[attr-defined]
+            elif ptype == "RefInt":
+                parts.append(f"{val.resolve(code).value} (int #{val.value})")  # type: ignore[attr-defined]
+            elif ptype == "RefFloat":
+                parts.append(f"{val.resolve(code).value} (float #{val.value})")  # type: ignore[attr-defined]
+            elif ptype == "RefBytes":
+                parts.append(f"bytes #{val.value} (len={len(val.resolve(code))})")  # type: ignore[attr-defined]
+            elif ptype == "RefString":
+                parts.append(f'"{_escape_str(val.resolve(code))}" (str #{val.value})')  # type: ignore[attr-defined]
+            elif ptype == "RefFun":
+                parts.append(f"f@{val.value}")  # type: ignore[attr-defined]
+            elif ptype == "RefGlobal":
+                parts.append(f"g@{val.value}")  # type: ignore[attr-defined]
+            elif ptype == "RefType":
+                parts.append(f"t@{val.value}")  # type: ignore[attr-defined]
+            elif ptype == "RefField":
+                parts.append(_field_label_compact(code, func, regs, op.op, df))
+            elif ptype == "RefEnumConstruct":
+                parts.append(f"e@{val.value}")  # type: ignore[attr-defined]
+            elif ptype == "JumpOffset":
+                parts.append(f"-> {idx + 1 + val.value}")  # type: ignore[attr-defined]
+            elif ptype == "JumpOffsets":
+                targets = [
+                    f"{i}:->{idx + 1 + o.value}"
+                    for i, o in enumerate(val.value)  # type: ignore[attr-defined]
+                    if o.value != 0
+                ]
+                parts.append("[" + ", ".join(targets) + "]")
+            elif ptype == "InlineBool":
+                parts.append("true" if val.value else "false")  # type: ignore[attr-defined]
+            elif ptype == "InlineInt":
+                parts.append(str(val.value))  # type: ignore[attr-defined]
+            else:
+                parts.append(str(val))
+        except Exception as e:
+            parts.append(f"<{name} err: {e}>")
+
+    file_info = ""
+    if debug:
+        file_info = f"[{debug[idx].resolve_pretty(code)}] "
+    args_str = (" " + " ".join(parts)) if parts else ""
+    return f"{file_info}{idx:>3}. {op.op}{args_str}"
+
+
 def func(code: Bytecode, func: Function | Native) -> str:
     """
     Generates a human-readable printout and disassembly of a function or native.

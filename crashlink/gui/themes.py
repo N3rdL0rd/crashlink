@@ -77,6 +77,36 @@ QMenuBar::item:selected {{
     background-color: {t.surface1};
     border-radius: 4px;
 }}
+QFrame#viewModeBar {{
+    background: transparent;
+    border: none;
+}}
+QPushButton#modeBtnIcon {{
+    background-color: {t.surface0};
+    color: {t.subtext};
+    border: 1px solid {t.surface1};
+    border-left: none;
+    border-radius: 0px;
+    padding: 2px 0px;
+    font-size: 13px;
+}}
+QPushButton#modeBtnIcon[segment="first"] {{
+    border-left: 1px solid {t.surface1};
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+}}
+QPushButton#modeBtnIcon[segment="last"] {{
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+}}
+QPushButton#modeBtnIcon:checked {{
+    background-color: {t.surface2};
+    color: {t.accent};
+}}
+QPushButton#modeBtnIcon:hover:!checked {{
+    background-color: {t.surface1};
+    color: {t.text};
+}}
 QMenu {{
     background-color: {t.mantle};
     color: {t.text};

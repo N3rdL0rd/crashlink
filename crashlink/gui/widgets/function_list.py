@@ -47,6 +47,14 @@ class _PkgNode:
     canonical: Optional[str] = None  # full dotted name for class nodes
 
 
+@dataclass
+class _DirNode:
+    """Trie node for a directory tree: subfolders plus files that live directly in it."""
+
+    children: Dict[str, "_DirNode"] = field(default_factory=dict)
+    files: List[str] = field(default_factory=list)  # full file_path keys into self._file_map
+
+
 class FunctionList(QWidget):
     function_selected = Signal(int)
 
@@ -253,6 +261,9 @@ class FunctionList(QWidget):
         italic.setItalic(True)
         fmap = self._code.get_findex_map()
 
+        # Pre-filter to the set of files that actually have visible classes/methods,
+        # keyed by full path so we can build a directory trie out of them.
+        visible_files: Dict[str, List[Tuple[ClassEntry, List[MethodEntry]]]] = {}
         for file_path, classes in self._file_map.items():
             is_std_file = "std" in file_path
             if is_std_file and not self._show_std:
@@ -266,16 +277,28 @@ class FunctionList(QWidget):
                 if methods:
                     visible_classes.append((cls, methods))
 
-            if not visible_classes:
-                continue
+            if visible_classes:
+                visible_files[file_path] = visible_classes
 
-            display_name = file_path.split("/")[-1].split("\\")[-1]
+        # Build a directory trie so shared parent folders (e.g. /a/b containing
+        # both c.hx and d.hx) collapse into a single expand level.
+        root = _DirNode()
+        for file_path in visible_files:
+            parts = file_path.replace("\\", "/").split("/")
+            dirs, filename = parts[:-1], parts[-1]
+            node = root
+            for part in dirs:
+                node = node.children.setdefault(part, _DirNode())
+            node.files.append(file_path)
+
+        def add_file_item(parent: Any, file_path: str) -> None:
+            display_name = file_path.replace("\\", "/").split("/")[-1]
             file_item = QTreeWidgetItem([display_name])
             file_item.setFont(0, bold)
             file_item.setToolTip(0, file_path)
             file_item.setData(0, Qt.ItemDataRole.UserRole, None)
 
-            for cls, methods in visible_classes:
+            for cls, methods in visible_files[file_path]:
                 cls_item = QTreeWidgetItem([cls.canonical_name])
                 cls_item.setFont(0, italic)
                 cls_item.setData(0, Qt.ItemDataRole.UserRole, methods[0].findex)
@@ -288,8 +311,33 @@ class FunctionList(QWidget):
                 file_item.addChild(cls_item)
                 cls_item.setExpanded(True)
 
-            self._file_tree.addTopLevelItem(file_item)
+            _add_item(parent, file_item)
             file_item.setExpanded(True)
+
+        def add_dir_items(parent: Any, node: _DirNode, name: str) -> None:
+            # Collapse runs of single-child, file-less directories into one label,
+            # e.g. /a/b/c.hx and /a/b/d.hx share a single "a/b" expand level.
+            label_parts = [name]
+            while not node.files and len(node.children) == 1:
+                (child_name, child_node), = node.children.items()
+                label_parts.append(child_name)
+                node = child_node
+
+            dir_item = QTreeWidgetItem(["/".join(label_parts)])
+            dir_item.setFont(0, bold)
+            dir_item.setData(0, Qt.ItemDataRole.UserRole, None)
+            _add_item(parent, dir_item)
+            dir_item.setExpanded(True)
+
+            for child_name in sorted(node.children):
+                add_dir_items(dir_item, node.children[child_name], child_name)
+            for file_path in sorted(node.files):
+                add_file_item(dir_item, file_path)
+
+        for dir_name in sorted(root.children):
+            add_dir_items(self._file_tree, root.children[dir_name], dir_name)
+        for file_path in sorted(root.files):
+            add_file_item(self._file_tree, file_path)
 
     # ── Search ────────────────────────────────────────────────
 

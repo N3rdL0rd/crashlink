@@ -40,7 +40,8 @@ dev = [
   "lief",
   "capstone",
   "mcp",
-  "PySide6"
+  "PySide6",
+  "graphviz"
 ]
 extras = [
   "tqdm",
@@ -50,9 +51,12 @@ extras = [
   "lief",
   "capstone",
   "mcp",
+  "PySide6",
+  "graphviz"
 ]
 gui = [
   "PySide6",
+  "graphviz",
 ]
 
 [build-system]

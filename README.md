@@ -151,25 +151,27 @@ You can use the following pre-defined commands with `just`:
 - [x] Cross-reference index
 - [ ] GUI prerequisites
   - [ ] Workspace/project abstraction (wraps `Bytecode` with cached analysis state)
-  - [ ] Incremental/async analysis API (background decompile, progress callbacks)
+  - [x] Incremental/async analysis API (background decompile, progress callbacks)
   - [ ] Patch buffer (in-memory edits, dirty tracking, re-serialisation)
   - [x] Function search index (by name, file, type)
   - [x] Source location API (debug file + line → function/opcode, and reverse)
 - [ ] GUI (probably qt6 at this point)
-  - [ ] Graphical disassembler
-  - [ ] Embedded CFG viewer through some Graphviz bindings
-  - [ ] Decompiler and patching interface
+  - [x] Graphical disassembler
+  - [x] Embedded CFG viewer through some Graphviz bindings
+  - [x] Decompiler
+  - [x] Basic local name patching
+  - [ ] Other direct patching
+  - [ ] Rename other symbols
+  - [ ] Persistent patching/export modified bytecode
   - [ ] IR layer viewer
-- [ ] Opcode patching in GUI
 - [ ] Partial recompilation (against stubs of other functions)
 
 ## Portability
 
 crashlink is written in pure typed Python with a minimum version of 3.10 (for the `|` operator and `match` statement). It should run on any modern platform, and has been tested heavily on Windows, Linux, and MacOS. As well as this, it is portable to many interpreters:
 
-- CPython 3.10+ is the main target - deserialising Dead Cells v35 takes 103.16s and 4.6gb of RAM
-- PyPy just works - the same benchmark takes 26s and 2.9gb of RAM
-  - tqdm displays broken progress bars, but this is a PyPy issue and it still works.
+- CPython 3.10+ is the main target
+- PyPy also just works
 - IronPython and Jython are not supported due to their earlier Python version targets.
 - RustPython would work, but it doesn't support `match` statements.
 

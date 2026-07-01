@@ -479,6 +479,15 @@ class IRFunction:
                     edges.append({"from": src, "to": dst, "type": edge_type})
         return {"nodes": nodes, "edges": edges, "dot": self._cfg_to_dot(node_ids)}
 
+    def to_dot(self) -> Optional[str]:
+        """Render this function's CFG as Graphviz DOT source, or None for natives
+        (which have no bytecode/CFG). `self.cfg` is built unconditionally for
+        non-natives in `__init__`, so this works regardless of `capture_layers`."""
+        if self.cfg is None:
+            return None
+        node_ids = {id(node): i for i, node in enumerate(self.cfg.nodes)}
+        return self._cfg_to_dot(node_ids)
+
     def _cfg_to_dot(self, node_ids: Dict[int, int]) -> str:
         """Produce a Graphviz DOT representation of the CFG.
 
