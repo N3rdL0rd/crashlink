@@ -45,7 +45,7 @@ class XrefGroup:
     """A resolved target and all of its reference sites."""
 
     label: str
-    kind: str  # "function" | "type" | "field" | "enum" | "string" | "local"
+    kind: str  # "function" | "type" | "field" | "enum" | "string" | "local" | "global"
     sites: List[XrefSite] = field(default_factory=list)
 
 
@@ -103,6 +103,27 @@ def resolve_targets(code: Bytecode, word: str) -> List[XrefGroup]:
                     label=f"function {_func_label(code, findex)}",
                     kind="function",
                     sites=[_site_from_ref(code, r) for r in callers],
+                )
+            )
+        return groups
+
+    # A "g@N" (disasm) or "globalN" (pseudocode's `untyped $globalN(...)`
+    # idiom for a raw HL global with no source-level name — see
+    # pseudo.global_name) token resolves directly by global index.
+    gref_match = re.fullmatch(r"g@(\d+)", word) or re.fullmatch(r"global(\d+)", word)
+    if gref_match:
+        gindex = int(gref_match.group(1))
+        if 0 <= gindex < len(code.global_types):
+            try:
+                type_label = disasm.type_name(code, code.global_types[gindex].resolve(code))
+            except Exception:
+                type_label = "?"
+            refs = xi.global_reads(gindex) + xi.global_writes(gindex)
+            groups.append(
+                XrefGroup(
+                    label=f"global g@{gindex} ({type_label})",
+                    kind="global",
+                    sites=[_site_from_ref(code, r) for r in refs],
                 )
             )
         return groups
@@ -202,6 +223,10 @@ def _ref_summary(group: XrefGroup) -> str:
         reads = sum(1 for s in group.sites if s.ref_kind == "field_read")
         writes = sum(1 for s in group.sites if s.ref_kind == "field_write")
         return f"{reads} read, {writes} write"
+    if group.kind == "global":
+        reads = sum(1 for s in group.sites if s.ref_kind == "global_read")
+        writes = sum(1 for s in group.sites if s.ref_kind == "global_write")
+        return f"{reads} read, {writes} write"
     n = len(group.sites)
     if group.kind == "function":
         return f"{n} caller" + ("s" if n != 1 else "")
@@ -215,6 +240,7 @@ _KIND_COLOR = {
     "enum": "mauve",
     "string": "green",
     "local": "peach",
+    "global": "accent",
 }
 
 
