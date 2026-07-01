@@ -27,6 +27,7 @@ class SyncView(QWidget):
     """
 
     cycle_requested = Signal()
+    comment_requested = Signal(int, int)  # findex, op_idx — from either pane, via ';'
 
     def __init__(self, opline_cache: Dict[int, Dict[int, int]], parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -98,7 +99,31 @@ class SyncView(QWidget):
             if event.key() == Qt.Key.Key_Tab:
                 self.cycle_requested.emit()
                 return True
+            if event.key() == Qt.Key.Key_Slash:
+                self._request_comment(obj)
+                return True
         return super().eventFilter(obj, event)  # type: ignore[arg-type]
+
+    def _request_comment(self, obj: object) -> None:
+        """Resolve (findex, op_idx) for the current cursor in whichever pane sent
+        the ';' key and emit comment_requested — reusing the same op<->line
+        machinery as the sync engine below, so it always agrees with what's synced."""
+        if obj is self.disasm_view:
+            at = self.disasm_view.op_at_cursor()
+            if at is not None:
+                self.comment_requested.emit(*at)
+            return
+        if obj is self.class_view:
+            findex = self.class_view.findex_at_cursor()
+            if findex is None:
+                return
+            line = self.class_view.textCursor().blockNumber()
+            start = next((s for s, _, fi in self.class_view._line_ranges if fi == findex), None)
+            if start is None:
+                return
+            op_idx = self._reverse_map(findex).get(line - start)
+            if op_idx is not None:
+                self.comment_requested.emit(findex, op_idx)
 
     # ── Sync engine ─────────────────────────────────────────────────────────────
 

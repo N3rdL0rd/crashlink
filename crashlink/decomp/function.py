@@ -416,10 +416,13 @@ class IRFunction:
 
         def _walk(block: IRBlock) -> None:
             for stmt in block.statements:
-                if stmt.src_op_idx is not None:
-                    comment = store.get_comment(findex, stmt.src_op_idx)
+                # A statement folded from several opcodes (see IRStatement.adopt)
+                # should surface a comment placed on any one of them.
+                for op_idx in sorted(stmt.src_op_idxs):
+                    comment = store.get_comment(findex, op_idx)
                     if comment is not None:
                         stmt.comment = comment
+                        break
                 for child in stmt.get_children():
                     if isinstance(child, IRBlock):
                         _walk(child)

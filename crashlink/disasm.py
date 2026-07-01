@@ -607,7 +607,14 @@ def fmt_op_compact(
     if debug:
         file_info = f"[{debug[idx].resolve_pretty(code)}] "
     args_str = (" " + " ".join(parts)) if parts else ""
-    return f"{file_info}{idx:>3}. {op.op}{args_str}"
+
+    comment_str = ""
+    if func is not None:
+        comment = code.annotations.get_comment(func.findex.value, idx)
+        if comment:
+            comment_str = f"  ; {comment}"
+
+    return f"{file_info}{idx:>3}. {op.op}{args_str}{comment_str}"
 
 
 def func(code: Bytecode, func: Function | Native) -> str:

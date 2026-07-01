@@ -68,7 +68,29 @@ class IRStatement(ABC):
         self.comment: str = ""
         self.src_line: Optional[int] = None
         self.src_file_idx: Optional[int] = None
-        self.src_op_idx: Optional[int] = None
+        # All original opcode indices this statement represents. Populated with a
+        # single index at initial lift time; when an optimizer folds several
+        # statements into one, it should call `.adopt(*originals)` so every
+        # constituent opcode still resolves back to the resulting line (for
+        # disasm<->pseudocode sync and per-opcode comments) instead of only
+        # whichever one happened to seed the replacement statement.
+        self.src_op_idxs: Set[int] = set()
+
+    @property
+    def src_op_idx(self) -> Optional[int]:
+        """Primary (lowest) source opcode index. Prefer `src_op_idxs` for anything
+        that needs to account for statements folded from multiple opcodes."""
+        return min(self.src_op_idxs) if self.src_op_idxs else None
+
+    @src_op_idx.setter
+    def src_op_idx(self, value: Optional[int]) -> None:
+        self.src_op_idxs = {value} if value is not None else set()
+
+    def adopt(self, *others: "IRStatement") -> "IRStatement":
+        """Merge in the source-opcode indices of statement(s) this one replaces."""
+        for o in others:
+            self.src_op_idxs |= o.src_op_idxs
+        return self
 
     @abstractmethod
     def __repr__(self) -> str:

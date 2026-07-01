@@ -23,14 +23,11 @@ class _Rule:
 
 
 # Applied in order; later rules win where ranges overlap, so put the most
-# specific / important tokens last.
+# specific / important tokens last. All "comment"-tagged rules are last of all,
+# so nothing inside them (e.g. digits in "[file:9]" or "(int #0)") gets
+# re-painted as a number/type by a later, more generic rule.
 _DISASM_RULES: List[_Rule] = [
     _Rule(r'"(?:[^"\\]|\\.)*"', "string"),
-    _Rule(r"\(from [^)]*\)", "comment"),
-    _Rule(r"\[native\]", "comment"),
-    _Rule(r"^\[[^\]]*\]", "comment"),  # [file:line] prefix
-    _Rule(r"\((?:int|float|str) #\d+\)", "comment"),  # constant-pool index annotation
-    _Rule(r"\(len=\d+\)", "comment"),
     _Rule(r"(?<![\w@])-?\d+(?:\.\d+)?\b", "number"),
     _Rule(r"<[^<>]+>", "type_name"),  # reg<Type> / field<Type> annotation
     _Rule(r"\b(Int|Float|Bool|String|Dynamic|Void|Array|Bytes|Any|Dyn)\b", "type_name"),
@@ -46,6 +43,12 @@ _DISASM_RULES: List[_Rule] = [
     _Rule(r"\breg\d+\b", "reg"),
     _Rule(r"^\s*(?:\[[^\]]*\]\s*)?\d+\.\s+(\w+)", "opcode", group=1),
     _Rule(r"^\s*(?:\[[^\]]*\]\s*)?(\d+)\.", "index", group=1),
+    _Rule(r"\(from [^)]*\)", "comment"),
+    _Rule(r"\[native\]", "comment"),
+    _Rule(r"^\[[^\]]*\]", "comment"),  # [file:line] prefix
+    _Rule(r"\((?:int|float|str) #\d+\)", "comment"),  # constant-pool index annotation
+    _Rule(r"\(len=\d+\)", "comment"),
+    _Rule(r";.*$", "comment"),  # trailing user comment — dim over everything inside it
 ]
 
 

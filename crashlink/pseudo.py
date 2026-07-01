@@ -1433,11 +1433,14 @@ def _generate_statements(
         else:
             output_lines.append(f"{indent}// <Unhandled IRStatement: {type(stmt).__name__}> {str(stmt)[:50]}...")
 
-        # Map this statement's source opcode to the first line it produced (absolute
-        # in the function body). Child statements record their own ops via _gen.
-        src_op = getattr(stmt, "src_op_idx", None)
-        if src_op is not None and len(output_lines) > stmt_start_line:
-            op_to_line.setdefault(src_op, base_offset + stmt_start_line)
+        # Map every opcode this statement represents to the first line it produced
+        # (absolute in the function body) — a statement folded from several opcodes
+        # (see IRStatement.adopt) registers all of them, not just one, so disasm<->
+        # pseudocode sync and per-opcode comments resolve for any of the originals.
+        # Child statements record their own ops via _gen.
+        if len(output_lines) > stmt_start_line:
+            for src_op in getattr(stmt, "src_op_idxs", ()):
+                op_to_line.setdefault(src_op, base_offset + stmt_start_line)
 
         # After rendering this statement, drop substitutions that are invalidated by
         # any assignment it performs (including in nested blocks) or by calls inside it.

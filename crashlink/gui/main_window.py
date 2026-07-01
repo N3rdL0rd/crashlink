@@ -487,6 +487,7 @@ class MainWindow(QMainWindow):
         view.class_view.rename_requested.connect(self._on_rename_hotkey)
         view.class_view.xref_requested.connect(self._on_xref_hotkey)
         view.disasm_view.function_focused.connect(self._on_function_focused)
+        view.comment_requested.connect(self._on_comment_hotkey)
 
         # Render immediately — cached text where a .cldb supplied it, else a placeholder.
         placeholder = [
@@ -624,6 +625,22 @@ class MainWindow(QMainWindow):
 
         view.load_pseudo(display_name, methods)
 
+    def _refresh_disasm_view(self, class_key: str) -> None:
+        """Disasm rendering needs no decompile — re-render straight from opcodes so
+        an annotation change (e.g. a comment) shows up immediately, no waiting on
+        the background redecompile that updates the pseudocode pane."""
+        if self._code is None:
+            return
+        idx = self._open_tabs.get(class_key)
+        if idx is None:
+            return
+        view = self._tabs.widget(idx)
+        if not isinstance(view, SyncView):
+            return
+        all_fi = self._class_findices.get(class_key, [])
+        findex_map = self._code.get_findex_map()
+        view.load_disasm(self._code, [(fi, findex_map[fi]) for fi in all_fi if fi in findex_map])
+
     # ── Focus tracking ────────────────────────────────────────────────────────
 
     def _on_function_focused(self, findex: int) -> None:
@@ -682,6 +699,13 @@ class MainWindow(QMainWindow):
             return
         def_op_int = int(def_op) if def_op is not None else None
         self._code.annotations.rename(findex, reg_idx, def_op_int, new_name)
+        self._invalidate_and_redecompile(findex)
+
+    def _invalidate_and_redecompile(self, findex: int) -> None:
+        """After an annotation (rename/comment) changes, drop every cache that was
+        derived from the old IR for this function and kick off a fresh decompile."""
+        if self._code is None:
+            return
         self._worker.invalidate(findex)
         self._ir_cache.pop(findex, None)
         self._opline_cache.pop(findex, None)
@@ -697,6 +721,27 @@ class MainWindow(QMainWindow):
                 r.signals.error.connect(self._on_decompile_error)
                 QThreadPool.globalInstance().start(r)
                 break
+
+    # ── Comments (/) ─────────────────────────────────────────────────────────
+
+    def _on_comment_hotkey(self, findex: int, op_idx: int) -> None:
+        if self._code is None:
+            return
+        existing = self._code.annotations.get_comment(findex, op_idx) or ""
+        text, ok = QInputDialog.getText(self, "Comment", f"Comment on op {op_idx} in f@{findex}:", text=existing)
+        if not ok:
+            return
+        text = text.strip()
+        if text:
+            self._code.annotations.set_comment(findex, op_idx, text)
+            self._log_panel.success(f"Commented op {op_idx} in f@{findex}")
+        else:
+            self._code.annotations.clear_comment(findex, op_idx)
+            self._log_panel.info(f"Cleared comment on op {op_idx} in f@{findex}")
+
+        class_key, _, _ = self._class_key_for(findex)
+        self._refresh_disasm_view(class_key)
+        self._invalidate_and_redecompile(findex)
 
     # ── Xrefs (X) ────────────────────────────────────────────────────────────
 

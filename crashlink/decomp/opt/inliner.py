@@ -387,6 +387,8 @@ class IRConditionInliner(TraversingIROptimizer):
                             conditional_stmt.condition = expr_to_inline
                             if used_outside:
                                 new_statements.append(current_stmt)
+                            else:
+                                conditional_stmt.adopt(current_stmt)  # current_stmt's opcode is dropped
                             new_statements.append(next_stmt)
                             i += 2
                             inlined_something = True
@@ -407,6 +409,8 @@ class IRConditionInliner(TraversingIROptimizer):
                                 conditional_stmt.condition = modified_bool_expr
                                 if used_outside:
                                     new_statements.append(current_stmt)
+                                else:
+                                    conditional_stmt.adopt(current_stmt)  # current_stmt's opcode is dropped
                                 new_statements.append(next_stmt)
                                 i += 2
                                 inlined_something = True
@@ -427,6 +431,8 @@ class IRConditionInliner(TraversingIROptimizer):
                             while_loop_stmt.condition = expr_to_inline
                             if used_outside:
                                 new_statements.append(current_stmt)
+                            else:
+                                while_loop_stmt.adopt(current_stmt)  # current_stmt's opcode is dropped
                             new_statements.append(next_stmt)
                             i += 2
                             inlined_something = True
@@ -447,6 +453,8 @@ class IRConditionInliner(TraversingIROptimizer):
                                 while_loop_stmt.condition = modified_bool_expr
                                 if used_outside:
                                     new_statements.append(current_stmt)
+                                else:
+                                    while_loop_stmt.adopt(current_stmt)  # current_stmt's opcode is dropped
                                 new_statements.append(next_stmt)
                                 i += 2
                                 inlined_something = True

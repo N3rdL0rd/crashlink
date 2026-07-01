@@ -104,7 +104,7 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
     """
 
     def _clone_bool_expr(self, expr: IRBoolExpr) -> IRBoolExpr:
-        return IRBoolExpr(expr.code, expr.op, expr.left, expr.right)
+        return cast(IRBoolExpr, IRBoolExpr(expr.code, expr.op, expr.left, expr.right).adopt(expr))
 
     def _inline_into_boolexpr(
         self, bool_expr: IRBoolExpr, target: IRLocal | IRField | IRArrayAccess, expr_to_inline: IRExpression
@@ -153,6 +153,7 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
 
         new_while_loop = IRWhileLoop(loop.code, true_loop_condition, new_body_block)
         new_while_loop.comment = loop.comment
+        new_while_loop.adopt(loop, exit_condition_expr)
         return new_while_loop
 
     def visit_block(self, block: IRBlock) -> None:
@@ -199,6 +200,7 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
 
                 inlined = self._inline_into_boolexpr(working_exit_condition, stmt.target, stmt.expr)
                 if inlined:
+                    working_exit_condition.adopt(stmt)  # stmt itself is dropped below
                     continue
             remaining_setup.append(stmt)
 
@@ -218,6 +220,7 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
         new_while_loop = IRWhileLoop(loop.code, loop_continuation_expr, new_body_block)
 
         new_while_loop.comment = loop.comment
+        new_while_loop.adopt(loop, loop_continuation_expr)
 
         dbg_print(f"IRLoopCondOpt: Converted IRPrimitiveLoop to IRWhileLoop. While condition: {loop_continuation_expr}")
         return new_while_loop
@@ -1329,6 +1332,7 @@ class IRConstructorFolder(TraversingIROptimizer):
                             # constructor call (e.g. initializers for constructor
                             # arguments), and place the folded `new` after them.
                             stmt.expr.constructor_args = ctor_args
+                            stmt.adopt(next_stmt)  # constructor-call opcode is dropped below
                             new_statements.extend(block.statements[i + 1 : j])
                             new_statements.append(stmt)
                             i = j + 1

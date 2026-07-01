@@ -30,7 +30,6 @@ class _Rule:
 
 
 _RULES: List[_Rule] = [
-    _Rule(r"//[^\n]*", "comment"),
     _Rule(r'"(?:[^"\\]|\\.)*"', "string"),
     _Rule(
         r"\b(function|var|if|else|while|for|return|new|this|true|false|null|"
@@ -41,6 +40,9 @@ _RULES: List[_Rule] = [
     _Rule(r"\b(Int|Float|Bool|String|Dynamic|Void|Array|Bytes|haxe\.io\.Bytes|Any)\b", "type_name"),
     _Rule(r"\b\d+(?:\.\d+)?\b", "number"),
     _Rule(r"\b([a-z_]\w*)\s*(?=\()", "func_call"),
+    # Applied last so it wins over anything else matched inside the comment text
+    # (e.g. digits/quotes that would otherwise get re-painted as number/string).
+    _Rule(r"//[^\n]*", "comment"),
 ]
 
 _NAV_KEYS = {
