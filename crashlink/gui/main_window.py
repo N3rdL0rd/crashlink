@@ -7,7 +7,7 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QRect, QRunnable, QSettings, QThread, QThreadPool, QTimer, Qt, Signal, QObject, QSize
-from PySide6.QtGui import QColor, QCursor, QKeyEvent, QPainter, QPalette
+from PySide6.QtGui import QColor, QCursor, QKeyEvent, QPainter, QPalette, QTextCursor, QTextDocument
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QProgressBar,
@@ -33,7 +34,7 @@ from PySide6.QtWidgets import (
 from crashlink.core import AnalysisWorker, Bytecode, Native, destaticify
 from crashlink.database import DatabaseLoadResult, SessionState, load_database, save_database
 from crashlink.decomp.function import IRFunction
-from crashlink.globals import set_dbg_callback
+from crashlink.globals import VERSION, set_dbg_callback
 from crashlink.pseudo import pseudo_oplines, _method_registry
 
 from .themes import DEFAULT_THEME, THEMES, Theme, generate_qss
@@ -235,6 +236,55 @@ class _BusyIndicator:
         self._box.show()
 
 
+class _FindDialog(QDialog):
+    """A small non-modal find bar for whichever disasm/pseudocode pane is
+    active — kept as one persistent instance and re-targeted on every Ctrl+F
+    rather than rebuilt, so it remembers the last search term."""
+
+    def __init__(self, parent: Optional[QWidget]) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Find")
+        self.setModal(False)
+        self._target: Optional[QWidget] = None
+
+        layout = QHBoxLayout(self)
+        self._input = QLineEdit()
+        self._input.returnPressed.connect(self._find_next)
+        layout.addWidget(self._input, 1)
+        next_btn = QPushButton("Next")
+        next_btn.clicked.connect(self._find_next)
+        layout.addWidget(next_btn)
+        prev_btn = QPushButton("Previous")
+        prev_btn.clicked.connect(self._find_prev)
+        layout.addWidget(prev_btn)
+        self.resize(380, 60)
+
+    def set_target(self, target: QWidget) -> None:
+        self._target = target
+        self._input.setFocus()
+        self._input.selectAll()
+
+    def _find_next(self) -> None:
+        self._find(QTextDocument.FindFlag(0))
+
+    def _find_prev(self) -> None:
+        self._find(QTextDocument.FindFlag.FindBackward)
+
+    def _find(self, flags: "QTextDocument.FindFlag") -> None:
+        text = self._input.text()
+        if self._target is None or not text:
+            return
+        found = self._target.find(text, flags)  # type: ignore[attr-defined]
+        if found:
+            return
+        # No match from the current position — wrap around and retry once.
+        cursor = self._target.textCursor()  # type: ignore[attr-defined]
+        backward = bool(flags & QTextDocument.FindFlag.FindBackward)
+        cursor.movePosition(QTextCursor.MoveOperation.End if backward else QTextCursor.MoveOperation.Start)
+        self._target.setTextCursor(cursor)  # type: ignore[attr-defined]
+        self._target.find(text, flags)  # type: ignore[attr-defined]
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -277,6 +327,8 @@ class MainWindow(QMainWindow):
         # True once a rename/comment has been applied since the last save/load,
         # so closing/opening another file can prompt instead of discarding silently.
         self._dirty = False
+        self._recent_files: List[str] = []
+        self._find_dialog: Optional[_FindDialog] = None
 
         self._build_ui()
         self._build_menu()
@@ -309,12 +361,20 @@ class MainWindow(QMainWindow):
         if mode is not None and mode in _VIEW_MODE_NAMES:
             self._set_view_mode(mode)
 
+        recent = settings.value("recent_files")
+        if isinstance(recent, list):
+            self._recent_files = [p for p in recent if isinstance(p, str)]
+        elif isinstance(recent, str):  # QSettings collapses a 1-item list to a bare string
+            self._recent_files = [recent]
+        self._rebuild_recent_menu()
+
     def _save_settings(self) -> None:
         settings = QSettings("N3rdL0rd", "crashlink")
         settings.setValue("window/geometry", self.saveGeometry())
         settings.setValue("window/state", self.saveState())
         settings.setValue("window/theme", self._theme.name)
         settings.setValue("window/view_mode", self._view_mode)
+        settings.setValue("recent_files", self._recent_files)
 
     # ── UI ────────────────────────────────────────────────────────────────────
 
@@ -411,9 +471,14 @@ class MainWindow(QMainWindow):
         mb = self.menuBar()
         fm = mb.addMenu("File")
         fm.addAction("Open…", self._open_file, "Ctrl+O")
+        self._recent_menu = fm.addMenu("Open Recent")
+        self._rebuild_recent_menu()
         fm.addSeparator()
         fm.addAction("Save Database", self._save_database, "Ctrl+S")
         fm.addAction("Load Database…", self._open_database_file)
+        fm.addSeparator()
+        fm.addAction("Export Disassembly…", self._export_disasm)
+        fm.addAction("Export Pseudocode…", self._export_pseudo)
         fm.addSeparator()
         fm.addAction("Quit", self.close, "Ctrl+Q")
         vm = mb.addMenu("View")
@@ -423,12 +488,18 @@ class MainWindow(QMainWindow):
         vm.addSeparator()
         vm.addAction("Cycle view (split/disasm/decompiled)\tTab", self._cycle_view_mode)
         vm.addSeparator()
+        vm.addAction("Find…\tCtrl+F", self._open_find)
+        vm.addSeparator()
         vm.addAction("Inspect widget under cursor\tCtrl+Shift+I", self._inspect_widget)
 
         wm = mb.addMenu("Window")
         wm.addAction(self._nav_dock.toggleViewAction())
         wm.addAction(self._log_dock.toggleViewAction())
         wm.addAction(self._cfg_dock.toggleViewAction())
+
+        hm = mb.addMenu("Help")
+        hm.addAction("Keyboard Shortcuts…", self._show_shortcuts)
+        hm.addAction("About crashlink…", self._show_about)
 
     # ── File loading ──────────────────────────────────────────────────────────
 
@@ -438,6 +509,38 @@ class MainWindow(QMainWindow):
         )
         if path and self._confirm_discard_changes():
             self._load_file(path)
+
+    def _open_recent(self, path: str) -> None:
+        if not os.path.isfile(path):
+            self._log_panel.warn(f"No longer exists: {path}")
+            self._recent_files = [p for p in self._recent_files if p != path]
+            self._rebuild_recent_menu()
+            return
+        if self._confirm_discard_changes():
+            self._load_file(path)
+
+    def _add_recent_file(self, path: str) -> None:
+        path = os.path.abspath(path)
+        self._recent_files = [path] + [p for p in self._recent_files if p != path]
+        del self._recent_files[10:]
+        self._rebuild_recent_menu()
+        QSettings("N3rdL0rd", "crashlink").setValue("recent_files", self._recent_files)
+
+    def _rebuild_recent_menu(self) -> None:
+        self._recent_menu.clear()
+        if not self._recent_files:
+            action = self._recent_menu.addAction("(none yet)")
+            action.setEnabled(False)
+            return
+        for path in self._recent_files:
+            self._recent_menu.addAction(path, lambda p=path: self._open_recent(p))
+        self._recent_menu.addSeparator()
+        self._recent_menu.addAction("Clear Recent Files", self._clear_recent_files)
+
+    def _clear_recent_files(self) -> None:
+        self._recent_files = []
+        self._rebuild_recent_menu()
+        QSettings("N3rdL0rd", "crashlink").setValue("recent_files", self._recent_files)
 
     def _confirm_discard_changes(self) -> bool:
         """Ask to save unsaved renames/comments before discarding them (opening a
@@ -498,6 +601,8 @@ class MainWindow(QMainWindow):
         self._code = code
         self._progress_bar.setVisible(False)
         self._busy.stop()
+        assert self._source_path is not None
+        self._add_recent_file(self._source_path)
         n = len(code.functions)
         self._status_label.setText(f"Loaded, {n} functions")
         self._log_panel.info(f"Loaded, {n} functions")
@@ -531,6 +636,59 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(self, "Load analysis database", "", "crashlink database (*.cldb)")
         if path:
             self._load_database_from(path)
+
+    # ── Export ───────────────────────────────────────────────────────────────
+
+    def _export_disasm(self) -> None:
+        view = self._current_sync_view()
+        if view is None:
+            self._log_panel.warn("No class tab open to export.")
+            return
+        self._export_text(view.disasm_view.toPlainText(), "Export Disassembly", "disasm.txt")
+
+    def _export_pseudo(self) -> None:
+        view = self._current_sync_view()
+        if view is None:
+            self._log_panel.warn("No class tab open to export.")
+            return
+        self._export_text(view.class_view.toPlainText(), "Export Pseudocode", "pseudo.hx")
+
+    def _export_text(self, text: str, title: str, default_name: str) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, title, default_name, "Text files (*.txt *.hx);;All files (*)")
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+        except OSError as e:
+            self._log_panel.error(f"Failed to export: {e}")
+            return
+        self._log_panel.success(f"Exported to {path}")
+
+    # ── Find (Ctrl+F) ────────────────────────────────────────────────────────
+
+    def _find_target_view(self) -> Optional[QWidget]:
+        sv = self._current_sync_view()
+        if sv is None:
+            return None
+        if self._view_mode == DISASM:
+            return sv.disasm_view
+        if self._view_mode == PSEUDO:
+            return sv.class_view
+        # SPLIT: search whichever pane currently has focus, default to pseudo.
+        return sv.disasm_view if sv.disasm_view.hasFocus() else sv.class_view
+
+    def _open_find(self) -> None:
+        target = self._find_target_view()
+        if target is None:
+            self._log_panel.warn("No disasm/pseudocode view open to search.")
+            return
+        if self._find_dialog is None:
+            self._find_dialog = _FindDialog(self)
+        self._find_dialog.set_target(target)
+        self._find_dialog.show()
+        self._find_dialog.raise_()
+        self._find_dialog.activateWindow()
 
     def _load_database_from(self, cldb_path: str) -> None:
         assert self._code is not None and self._source_path is not None
@@ -1025,6 +1183,10 @@ class MainWindow(QMainWindow):
             return w.class_view
         return None
 
+    def _current_sync_view(self) -> Optional[SyncView]:
+        w = self._tabs.currentWidget()
+        return w if isinstance(w, SyncView) else None
+
     def _cycle_view_mode(self) -> None:
         next_idx = (_VIEW_MODE_CYCLE.index(self._view_mode) + 1) % len(_VIEW_MODE_CYCLE)
         self._set_view_mode(_VIEW_MODE_CYCLE[next_idx])
@@ -1059,6 +1221,34 @@ class MainWindow(QMainWindow):
                 view.set_theme(theme)
 
     # ── Inspector ─────────────────────────────────────────────────────────────
+
+    # ── Help ─────────────────────────────────────────────────────────────────
+
+    def _show_about(self) -> None:
+        QMessageBox.about(
+            self,
+            "About crashlink",
+            f"<h3>crashlink {VERSION}</h3>"
+            "<p>A pure-Python HashLink bytecode disassembler, decompiler, and analysis toolkit.</p>"
+            "<p>Author: N3rdL0rd<br>"
+            '<a href="https://github.com/N3rdL0rd/crashlink">github.com/N3rdL0rd/crashlink</a></p>',
+        )
+
+    def _show_shortcuts(self) -> None:
+        rows = [
+            ("Ctrl+O", "Open a bytecode file"),
+            ("Ctrl+S", "Save the analysis database (.cldb)"),
+            ("Ctrl+F", "Find in the active disasm/pseudocode pane"),
+            ("Ctrl+Q", "Quit"),
+            ("Ctrl+Shift+I", "Inspect widget under cursor"),
+            ("Tab", "Cycle split / disassembly / decompiled view"),
+            ("N", "Rename the local under the cursor (pseudocode pane)"),
+            ("X", "Show cross-references for the word under the cursor"),
+            ("/", "Add/edit a comment on the opcode under the cursor"),
+            ("Up / Down", "REPL command history (when the REPL input is focused)"),
+        ]
+        rows_html = "".join(f"<tr><td><b>{key}</b></td><td>&nbsp;&nbsp;{desc}</td></tr>" for key, desc in rows)
+        QMessageBox.information(self, "Keyboard Shortcuts", f"<table>{rows_html}</table>")
 
     def _inspect_widget(self) -> None:
         pos = QCursor.pos()
