@@ -570,7 +570,10 @@ def decompile_main(argv: List[str]) -> None:
     )
     parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
     args = parser.parse_args(argv)
-    print("[warning] Decompiler is a work in progress — usually functional, but output may be incorrect or incomplete for some functions.", file=sys.stderr)
+    print(
+        "[warning] Decompiler is a work in progress — usually functional, but output may be incorrect or incomplete for some functions.",
+        file=sys.stderr,
+    )
     code = _load_code_from_cli_path(args.file, args.no_constants)
 
     if args.is_class:

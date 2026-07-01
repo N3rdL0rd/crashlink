@@ -1730,6 +1730,11 @@ Comments are keyed on (findex, src_op_idx).</p></div>
         &#34;&#34;&#34;
         Generates a human-readable name for a function or native.
         &#34;&#34;&#34;
+        if isinstance(func, Native):
+            # Natives are never a class proto/field (they&#39;re top-level native
+            # imports), but unlike a Function they carry their own real name
+            # directly — no indirection needed to recover it.
+            return f&#34;{func.lib.resolve(self)}.{func.name.resolve(self)}&#34;
         idx = func.findex.value
         proto = self.get_proto_map().get(idx)
         if proto:
@@ -1751,6 +1756,8 @@ Comments are keyed on (findex, src_op_idx).</p></div>
         &#34;&#34;&#34;
         Generates a human-readable name for a function or native. Does not qualify the name with the object it belongs to.
         &#34;&#34;&#34;
+        if isinstance(func, Native):
+            return func.name.resolve(self)
         proto = self.get_proto_for(func.findex.value)
         if proto:
             return proto.name.resolve(self)
@@ -2139,6 +2146,11 @@ Comments are keyed on (findex, src_op_idx).</p></div>
     &#34;&#34;&#34;
     Generates a human-readable name for a function or native.
     &#34;&#34;&#34;
+    if isinstance(func, Native):
+        # Natives are never a class proto/field (they&#39;re top-level native
+        # imports), but unlike a Function they carry their own real name
+        # directly — no indirection needed to recover it.
+        return f&#34;{func.lib.resolve(self)}.{func.name.resolve(self)}&#34;
     idx = func.findex.value
     proto = self.get_proto_map().get(idx)
     if proto:
@@ -2665,6 +2677,8 @@ Obj type/method a standalone function index belongs to.</p></div>
     &#34;&#34;&#34;
     Generates a human-readable name for a function or native. Does not qualify the name with the object it belongs to.
     &#34;&#34;&#34;
+    if isinstance(func, Native):
+        return func.name.resolve(self)
     proto = self.get_proto_for(func.findex.value)
     if proto:
         return proto.name.resolve(self)

@@ -190,6 +190,7 @@ el.replaceWith(d);
     &#34;&#34;&#34;Renders opcodes for every method of a class, mapping each op to its line.&#34;&#34;&#34;
 
     function_focused = Signal(int)  # findex when cursor moves to a new function
+    xref_requested = Signal(int, str)  # findex, word/ref-token under cursor
 
     def __init__(self, parent: Optional[QWidget] = None) -&gt; None:
         super().__init__(parent)
@@ -278,7 +279,27 @@ el.replaceWith(d);
         findex = self.findex_at_cursor()
         if findex is not None and findex != self._focused_findex:
             self._focused_findex = findex
-            self.function_focused.emit(findex)</code></pre>
+            self.function_focused.emit(findex)
+
+    def _word_at_cursor(self) -&gt; str:
+        c = self.textCursor()
+        if c.hasSelection():
+            return c.selectedText().strip()
+        text = c.block().text()
+        col = c.positionInBlock()
+        for m in _REF_TOKEN_RX.finditer(text):
+            if m.start() &lt;= col &lt;= m.end():
+                return m.group(0)
+        c.select(QTextCursor.SelectionType.WordUnderCursor)
+        return c.selectedText()
+
+    def keyPressEvent(self, event: object) -&gt; None:
+        if isinstance(event, QKeyEvent) and not event.modifiers() and event.key() == Qt.Key.Key_X:
+            findex = self.findex_at_cursor()
+            if findex is not None:
+                self.xref_requested.emit(findex, self._word_at_cursor())
+                return
+        super().keyPressEvent(event)</code></pre>
 </details>
 <div class="desc"><p>Renders opcodes for every method of a class, mapping each op to its line.</p></div>
 <h3>Ancestors</h3>
@@ -334,6 +355,24 @@ el.replaceWith(d);
 <span>def <span class="ident">function_focused</span></span>(<span>...)</span>
 </code></dt>
 <dd>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.gui.widgets.disasm_view.DisasmView.keyPressEvent"><code class="name flex">
+<span>def <span class="ident">keyPressEvent</span></span>(<span>self, event: object) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def keyPressEvent(self, event: object) -&gt; None:
+    if isinstance(event, QKeyEvent) and not event.modifiers() and event.key() == Qt.Key.Key_X:
+        findex = self.findex_at_cursor()
+        if findex is not None:
+            self.xref_requested.emit(findex, self._word_at_cursor())
+            return
+    super().keyPressEvent(event)</code></pre>
+</details>
 <div class="desc"></div>
 </dd>
 <dt id="crashlink.gui.widgets.disasm_view.DisasmView.load"><code class="name flex">
@@ -427,6 +466,12 @@ el.replaceWith(d);
 </details>
 <div class="desc"></div>
 </dd>
+<dt id="crashlink.gui.widgets.disasm_view.DisasmView.xref_requested"><code class="name flex">
+<span>def <span class="ident">xref_requested</span></span>(<span>...)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
 </dl>
 <h3>Inherited members</h3>
 <ul class="hlist">
@@ -466,9 +511,11 @@ el.replaceWith(d);
 <li><code><a title="crashlink.gui.widgets.disasm_view.DisasmView.combined_line_for_op" href="#crashlink.gui.widgets.disasm_view.DisasmView.combined_line_for_op">combined_line_for_op</a></code></li>
 <li><code><a title="crashlink.gui.widgets.disasm_view.DisasmView.findex_at_cursor" href="#crashlink.gui.widgets.disasm_view.DisasmView.findex_at_cursor">findex_at_cursor</a></code></li>
 <li><code><a title="crashlink.gui.widgets.disasm_view.DisasmView.function_focused" href="#crashlink.gui.widgets.disasm_view.DisasmView.function_focused">function_focused</a></code></li>
+<li><code><a title="crashlink.gui.widgets.disasm_view.DisasmView.keyPressEvent" href="#crashlink.gui.widgets.disasm_view.DisasmView.keyPressEvent">keyPressEvent</a></code></li>
 <li><code><a title="crashlink.gui.widgets.disasm_view.DisasmView.load" href="#crashlink.gui.widgets.disasm_view.DisasmView.load">load</a></code></li>
 <li><code><a title="crashlink.gui.widgets.disasm_view.DisasmView.op_at_cursor" href="#crashlink.gui.widgets.disasm_view.DisasmView.op_at_cursor">op_at_cursor</a></code></li>
 <li><code><a title="crashlink.gui.widgets.disasm_view.DisasmView.set_theme" href="#crashlink.gui.widgets.disasm_view.DisasmView.set_theme">set_theme</a></code></li>
+<li><code><a title="crashlink.gui.widgets.disasm_view.DisasmView.xref_requested" href="#crashlink.gui.widgets.disasm_view.DisasmView.xref_requested">xref_requested</a></code></li>
 </ul>
 </li>
 </ul>

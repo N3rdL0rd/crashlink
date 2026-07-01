@@ -9,9 +9,7 @@ from crashlink.globals import DEBUG, VERSION
 from .core import *
 
 
-def _scaled_cb(
-    progress_cb: Optional[ProgressCallback], start: float, end: float
-) -> Optional[ProgressCallback]:
+def _scaled_cb(progress_cb: Optional[ProgressCallback], start: float, end: float) -> Optional[ProgressCallback]:
     """Wrap `progress_cb` so a sub-phase's own [0, 1] fraction reports as [start, end] overall."""
     if progress_cb is None:
         return None

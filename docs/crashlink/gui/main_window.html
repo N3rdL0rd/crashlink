@@ -96,6 +96,11 @@ el.replaceWith(d);
         # Number of _DecompRunnables currently in flight, so the busy indicator
         # only hides once every concurrent decompile in a batch has finished.
         self._active_decompiles = 0
+        # True once a rename/comment has been applied since the last save/load,
+        # so closing/opening another file can prompt instead of discarding silently.
+        self._dirty = False
+        self._recent_files: List[str] = []
+        self._find_dialog: Optional[_FindDialog] = None
 
         self._build_ui()
         self._build_menu()
@@ -103,6 +108,53 @@ el.replaceWith(d);
         set_dbg_callback(self._log_panel.info)
         self._log_panel.set_context(mw=self, code=None)
         self._busy = _BusyIndicator(self)
+        self._restore_settings()
+
+    # ── Settings (window geometry/layout/theme/view mode) ───────────────────────
+
+    def _restore_settings(self) -&gt; None:
+        settings = QSettings(&#34;N3rdL0rd&#34;, &#34;crashlink&#34;)
+        geometry = settings.value(&#34;window/geometry&#34;)
+        if geometry is not None:
+            self.restoreGeometry(geometry)
+        state = settings.value(&#34;window/state&#34;)
+        if state is not None:
+            self.restoreState(state)
+
+        theme_name = settings.value(&#34;window/theme&#34;)
+        if isinstance(theme_name, str) and theme_name in THEMES:
+            self._apply_theme(THEMES[theme_name])
+
+        view_mode = settings.value(&#34;window/view_mode&#34;)
+        try:
+            mode = int(view_mode) if view_mode is not None else None
+        except (TypeError, ValueError):
+            mode = None
+        if mode is not None and mode in _VIEW_MODE_NAMES:
+            self._set_view_mode(mode)
+
+        recent = settings.value(&#34;recent_files&#34;)
+        if isinstance(recent, list):
+            self._recent_files = [p for p in recent if isinstance(p, str)]
+        elif isinstance(recent, str):  # QSettings collapses a 1-item list to a bare string
+            self._recent_files = [recent]
+        self._rebuild_recent_menu()
+
+    def _save_settings(self) -&gt; None:
+        settings = QSettings(&#34;N3rdL0rd&#34;, &#34;crashlink&#34;)
+        settings.setValue(&#34;window/geometry&#34;, self.saveGeometry())
+        settings.setValue(&#34;window/state&#34;, self.saveState())
+        settings.setValue(&#34;window/theme&#34;, self._theme.name)
+        settings.setValue(&#34;window/view_mode&#34;, self._view_mode)
+        settings.setValue(&#34;recent_files&#34;, self._recent_files)
+
+    def _update_window_title(self) -&gt; None:
+        if self._source_path is None:
+            self.setWindowTitle(&#34;crashlink&#34;)
+            return
+        name = os.path.basename(self._source_path)
+        star = &#34;*&#34; if self._dirty else &#34;&#34;
+        self.setWindowTitle(f&#34;{name}{star} - crashlink&#34;)
 
     # ── UI ────────────────────────────────────────────────────────────────────
 
@@ -199,9 +251,14 @@ el.replaceWith(d);
         mb = self.menuBar()
         fm = mb.addMenu(&#34;File&#34;)
         fm.addAction(&#34;Open…&#34;, self._open_file, &#34;Ctrl+O&#34;)
+        self._recent_menu = fm.addMenu(&#34;Open Recent&#34;)
+        self._rebuild_recent_menu()
         fm.addSeparator()
         fm.addAction(&#34;Save Database&#34;, self._save_database, &#34;Ctrl+S&#34;)
         fm.addAction(&#34;Load Database…&#34;, self._open_database_file)
+        fm.addSeparator()
+        fm.addAction(&#34;Export Disassembly…&#34;, self._export_disasm)
+        fm.addAction(&#34;Export Pseudocode…&#34;, self._export_pseudo)
         fm.addSeparator()
         fm.addAction(&#34;Quit&#34;, self.close, &#34;Ctrl+Q&#34;)
         vm = mb.addMenu(&#34;View&#34;)
@@ -211,12 +268,18 @@ el.replaceWith(d);
         vm.addSeparator()
         vm.addAction(&#34;Cycle view (split/disasm/decompiled)\tTab&#34;, self._cycle_view_mode)
         vm.addSeparator()
-        vm.addAction(&#34;Inspect widget under cursor\tCtrl+Shift+I&#34;, self._inspect_widget)
+        vm.addAction(&#34;Find…\tCtrl+F&#34;, self._open_find)
 
         wm = mb.addMenu(&#34;Window&#34;)
         wm.addAction(self._nav_dock.toggleViewAction())
         wm.addAction(self._log_dock.toggleViewAction())
         wm.addAction(self._cfg_dock.toggleViewAction())
+        wm.addSeparator()
+        wm.addAction(&#34;Natives Table&#34;, self._open_natives_tab)
+
+        hm = mb.addMenu(&#34;Help&#34;)
+        hm.addAction(&#34;Keyboard Shortcuts…&#34;, self._show_shortcuts)
+        hm.addAction(&#34;About crashlink…&#34;, self._show_about)
 
     # ── File loading ──────────────────────────────────────────────────────────
 
@@ -224,8 +287,59 @@ el.replaceWith(d);
         path, _ = QFileDialog.getOpenFileName(
             self, &#34;Open HashLink bytecode&#34;, &#34;&#34;, &#34;HashLink files (*.hl *.dat);;All files (*)&#34;
         )
-        if path:
+        if path and self._confirm_discard_changes():
             self._load_file(path)
+
+    def _open_recent(self, path: str) -&gt; None:
+        if not os.path.isfile(path):
+            self._log_panel.warn(f&#34;No longer exists: {path}&#34;)
+            self._recent_files = [p for p in self._recent_files if p != path]
+            self._rebuild_recent_menu()
+            return
+        if self._confirm_discard_changes():
+            self._load_file(path)
+
+    def _add_recent_file(self, path: str) -&gt; None:
+        path = os.path.abspath(path)
+        self._recent_files = [path] + [p for p in self._recent_files if p != path]
+        del self._recent_files[10:]
+        self._rebuild_recent_menu()
+        QSettings(&#34;N3rdL0rd&#34;, &#34;crashlink&#34;).setValue(&#34;recent_files&#34;, self._recent_files)
+
+    def _rebuild_recent_menu(self) -&gt; None:
+        self._recent_menu.clear()
+        if not self._recent_files:
+            action = self._recent_menu.addAction(&#34;(none yet)&#34;)
+            action.setEnabled(False)
+            return
+        for path in self._recent_files:
+            self._recent_menu.addAction(path, lambda p=path: self._open_recent(p))
+        self._recent_menu.addSeparator()
+        self._recent_menu.addAction(&#34;Clear Recent Files&#34;, self._clear_recent_files)
+
+    def _clear_recent_files(self) -&gt; None:
+        self._recent_files = []
+        self._rebuild_recent_menu()
+        QSettings(&#34;N3rdL0rd&#34;, &#34;crashlink&#34;).setValue(&#34;recent_files&#34;, self._recent_files)
+
+    def _confirm_discard_changes(self) -&gt; bool:
+        &#34;&#34;&#34;Ask to save unsaved renames/comments before discarding them (opening a
+        different file or closing the app). Returns True if it&#39;s OK to proceed.&#34;&#34;&#34;
+        if not self._dirty:
+            return True
+        box = QMessageBox(self)
+        box.setWindowTitle(&#34;Unsaved changes&#34;)
+        box.setText(&#34;You have unsaved renames/comments. Save the analysis database before continuing?&#34;)
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel
+        )
+        box.setDefaultButton(QMessageBox.StandardButton.Save)
+        choice = box.exec()
+        if choice == QMessageBox.StandardButton.Cancel:
+            return False
+        if choice == QMessageBox.StandardButton.Save:
+            self._save_database()
+        return True
 
     def _load_file(self, path: str) -&gt; None:
         self._tabs.clear()
@@ -240,9 +354,11 @@ el.replaceWith(d);
         self._cfg_view.clear_view()
         self._db_cache.clear()
         self._log_panel.clear()
+        self._dirty = False
         self._code = None
         self._log_panel.set_context(code=None, findex=None, func=None, irf=None)
         self._source_path = path
+        self._update_window_title()
         self._worker.invalidate()
 
         self._progress_bar.setVisible(True)
@@ -264,6 +380,8 @@ el.replaceWith(d);
         self._code = code
         self._progress_bar.setVisible(False)
         self._busy.stop()
+        assert self._source_path is not None
+        self._add_recent_file(self._source_path)
         n = len(code.functions)
         self._status_label.setText(f&#34;Loaded, {n} functions&#34;)
         self._log_panel.info(f&#34;Loaded, {n} functions&#34;)
@@ -297,6 +415,59 @@ el.replaceWith(d);
         path, _ = QFileDialog.getOpenFileName(self, &#34;Load analysis database&#34;, &#34;&#34;, &#34;crashlink database (*.cldb)&#34;)
         if path:
             self._load_database_from(path)
+
+    # ── Export ───────────────────────────────────────────────────────────────
+
+    def _export_disasm(self) -&gt; None:
+        view = self._current_sync_view()
+        if view is None:
+            self._log_panel.warn(&#34;No class tab open to export.&#34;)
+            return
+        self._export_text(view.disasm_view.toPlainText(), &#34;Export Disassembly&#34;, &#34;disasm.txt&#34;)
+
+    def _export_pseudo(self) -&gt; None:
+        view = self._current_sync_view()
+        if view is None:
+            self._log_panel.warn(&#34;No class tab open to export.&#34;)
+            return
+        self._export_text(view.class_view.toPlainText(), &#34;Export Pseudocode&#34;, &#34;pseudo.hx&#34;)
+
+    def _export_text(self, text: str, title: str, default_name: str) -&gt; None:
+        path, _ = QFileDialog.getSaveFileName(self, title, default_name, &#34;Text files (*.txt *.hx);;All files (*)&#34;)
+        if not path:
+            return
+        try:
+            with open(path, &#34;w&#34;, encoding=&#34;utf-8&#34;) as f:
+                f.write(text)
+        except OSError as e:
+            self._log_panel.error(f&#34;Failed to export: {e}&#34;)
+            return
+        self._log_panel.success(f&#34;Exported to {path}&#34;)
+
+    # ── Find (Ctrl+F) ────────────────────────────────────────────────────────
+
+    def _find_target_view(self) -&gt; Optional[QPlainTextEdit]:
+        sv = self._current_sync_view()
+        if sv is None:
+            return None
+        if self._view_mode == DISASM:
+            return sv.disasm_view
+        if self._view_mode == PSEUDO:
+            return sv.class_view
+        # SPLIT: search whichever pane currently has focus, default to pseudo.
+        return sv.disasm_view if sv.disasm_view.hasFocus() else sv.class_view
+
+    def _open_find(self) -&gt; None:
+        target = self._find_target_view()
+        if target is None:
+            self._log_panel.warn(&#34;No disasm/pseudocode view open to search.&#34;)
+            return
+        if self._find_dialog is None:
+            self._find_dialog = _FindDialog(self)
+        self._find_dialog.set_target(target)
+        self._find_dialog.show()
+        self._find_dialog.raise_()
+        self._find_dialog.activateWindow()
 
     def _load_database_from(self, cldb_path: str) -&gt; None:
         assert self._code is not None and self._source_path is not None
@@ -364,6 +535,8 @@ el.replaceWith(d);
         except Exception as e:
             self._log_panel.error(f&#34;Failed to save database: {e}&#34;)
             return
+        self._dirty = False
+        self._update_window_title()
         self._log_panel.success(f&#34;Saved database to {cldb_path}&#34;)
 
     # ── Tab management ────────────────────────────────────────────────────────
@@ -387,6 +560,40 @@ el.replaceWith(d);
         # Gather all findices that belong to this canonical class (static + instance)
         all_fi = sorted(fi for fi, (o, _, _) in reg.items() if destaticify(o.name.resolve(self._code)) == canonical)
         return class_key, canonical, all_fi
+
+    # ── Natives table ────────────────────────────────────────────────────────
+
+    _NATIVES_TAB_KEY = &#34;__natives__&#34;
+
+    def _open_natives_tab(self) -&gt; None:
+        if self._code is None:
+            self._log_panel.warn(&#34;Open a bytecode file first.&#34;)
+            return
+        key = self._NATIVES_TAB_KEY
+        if key in self._open_tabs:
+            self._tabs.setCurrentIndex(self._open_tabs[key])
+            return
+
+        view = NativesView()
+        view.setProperty(&#34;class_key&#34;, key)
+        view.set_theme(self._theme)
+        view.load(self._code)
+        view.xref_requested.connect(self._on_native_xref_requested)
+
+        idx = self._tabs.addTab(view, &#34;Natives&#34;)
+        self._tabs.setTabToolTip(idx, f&#34;{len(self._code.natives)} natives&#34;)
+        self._open_tabs[key] = idx
+        self._add_close_btn(idx, key)
+        self._tabs.setCurrentIndex(idx)
+
+    def _on_native_xref_requested(self, findex: int) -&gt; None:
+        if self._code is None:
+            return
+        word = f&#34;f@{findex}&#34;
+        groups = resolve_targets(self._code, word)
+        at = self.mapToGlobal(self.rect().center())
+        self._xref_popup.show_results(word, groups, at)
+        self._log_panel.result(f&#34;Xrefs for &#39;{word}&#39;: {len(groups)} target(s)&#34;)
 
     def _open_class_tab(self, class_key: str, display_name: str, all_fi: List[int], jump_to: int) -&gt; None:
         assert self._code is not None
@@ -414,6 +621,7 @@ el.replaceWith(d);
         view.class_view.rename_requested.connect(self._on_rename_hotkey)
         view.class_view.xref_requested.connect(self._on_xref_hotkey)
         view.disasm_view.function_focused.connect(self._on_function_focused)
+        view.disasm_view.xref_requested.connect(self._on_xref_hotkey)
         view.comment_requested.connect(self._on_comment_hotkey)
 
         placeholder = [
@@ -645,6 +853,8 @@ el.replaceWith(d);
             return
         def_op_int = def_op
         self._code.annotations.rename(findex, reg_idx, def_op_int, new_name)
+        self._dirty = True
+        self._update_window_title()
         self._invalidate_and_redecompile(findex)
 
     def _invalidate_and_redecompile(self, findex: int) -&gt; None:
@@ -682,6 +892,8 @@ el.replaceWith(d);
         else:
             self._code.annotations.clear_comment(findex, op_idx)
             self._log_panel.info(f&#34;Cleared comment on op {op_idx} in f@{findex}&#34;)
+        self._dirty = True
+        self._update_window_title()
 
         class_key, _, _ = self._class_key_for(findex)
         self._refresh_disasm_view(class_key)
@@ -701,8 +913,8 @@ el.replaceWith(d);
         if local_group is not None:
             groups.insert(0, local_group)
 
-        view = self._current_class_view()
-        if isinstance(view, ClassView):
+        view = self._find_target_view()  # whichever pane (disasm or pseudo) is active
+        if view is not None:
             at = view.mapToGlobal(view.cursorRect().bottomLeft())
         else:
             at = self.mapToGlobal(self.rect().center())
@@ -788,6 +1000,10 @@ el.replaceWith(d);
             return w.class_view
         return None
 
+    def _current_sync_view(self) -&gt; Optional[SyncView]:
+        w = self._tabs.currentWidget()
+        return w if isinstance(w, SyncView) else None
+
     def _cycle_view_mode(self) -&gt; None:
         next_idx = (_VIEW_MODE_CYCLE.index(self._view_mode) + 1) % len(_VIEW_MODE_CYCLE)
         self._set_view_mode(_VIEW_MODE_CYCLE[next_idx])
@@ -818,52 +1034,53 @@ el.replaceWith(d);
         self._cfg_view.set_theme(theme)
         for i in range(self._tabs.count()):
             view = self._tabs.widget(i)
-            if isinstance(view, SyncView):
+            if isinstance(view, (SyncView, NativesView)):
                 view.set_theme(theme)
 
     # ── Inspector ─────────────────────────────────────────────────────────────
 
-    def _inspect_widget(self) -&gt; None:
-        pos = QCursor.pos()
-        widget = QApplication.widgetAt(pos)
-        if widget is None:
-            QMessageBox.information(self, &#34;Inspector&#34;, &#34;No widget under cursor.&#34;)
-            return
+    # ── Help ─────────────────────────────────────────────────────────────────
 
-        lines = []
-        w: Optional[QWidget] = widget
-        while w is not None:
-            pal = w.palette()
-            win_col = pal.color(QPalette.ColorRole.Window).name()
-            btn_col = pal.color(QPalette.ColorRole.Button).name()
-            lines.append(
-                f&#34;{type(w).__name__}  name={w.objectName()!r}\n&#34;
-                f&#34;  geom={w.geometry()}  rect={w.rect()}\n&#34;
-                f&#34;  autoFill={w.autoFillBackground()}  WA_Styled={w.testAttribute(Qt.WidgetAttribute.WA_StyledBackground)}\n&#34;
-                f&#34;  palette.Window={win_col}  palette.Button={btn_col}\n&#34;
-                f&#34;  styleSheet={w.styleSheet()[:80]!r}&#34;
-            )
-            parent = w.parent()
-            w = parent if isinstance(parent, QWidget) else None
+    def _show_about(self) -&gt; None:
+        link_color = self._theme.accent
+        QMessageBox.about(
+            self,
+            &#34;About crashlink&#34;,
+            f&#34;&lt;h3&gt;crashlink {VERSION}&lt;/h3&gt;&#34;
+            &#34;&lt;p&gt;A pure-Python HashLink bytecode disassembler, decompiler, and analysis toolkit.&lt;/p&gt;&#34;
+            &#34;&lt;p&gt;Author: N3rdL0rd&lt;br&gt;&#34;
+            f&#39;&lt;a href=&#34;https://github.com/N3rdL0rd/crashlink&#34; style=&#34;color: {link_color};&#34;&gt;&#39;
+            &#34;github.com/N3rdL0rd/crashlink&lt;/a&gt;&lt;/p&gt;&#34;,
+        )
 
-        msg = &#34;\n─────\n&#34;.join(lines)
+    def _show_shortcuts(self) -&gt; None:
+        rows = [
+            (&#34;Ctrl+O&#34;, &#34;Open a bytecode file&#34;),
+            (&#34;Ctrl+S&#34;, &#34;Save the analysis database (.cldb)&#34;),
+            (&#34;Ctrl+F&#34;, &#34;Find in the active disasm/pseudocode pane&#34;),
+            (&#34;Ctrl+Q&#34;, &#34;Quit&#34;),
+            (&#34;Tab&#34;, &#34;Cycle split / disassembly / decompiled view&#34;),
+            (&#34;N&#34;, &#34;Rename the local under the cursor (pseudocode pane)&#34;),
+            (&#34;X&#34;, &#34;Show cross-references for the word under the cursor&#34;),
+            (&#34;/&#34;, &#34;Add/edit a comment on the opcode under the cursor&#34;),
+            (&#34;Up / Down&#34;, &#34;REPL command history (when the REPL input is focused)&#34;),
+        ]
+        rows_html = &#34;&#34;.join(f&#34;&lt;tr&gt;&lt;td&gt;&lt;b&gt;{key}&lt;/b&gt;&lt;/td&gt;&lt;td&gt;&amp;nbsp;&amp;nbsp;{desc}&lt;/td&gt;&lt;/tr&gt;&#34; for key, desc in rows)
         box = QMessageBox(self)
-        box.setWindowTitle(f&#34;Inspector @ {pos.x()},{pos.y()}&#34;)
-        box.setText(msg)
+        box.setWindowTitle(&#34;Keyboard Shortcuts&#34;)
+        box.setText(f&#34;&lt;table&gt;{rows_html}&lt;/table&gt;&#34;)
+        # QMessageBox ignores resize()/setFixedWidth() directly — widening its
+        # internal label is the standard way to give it a bit more breathing room.
+        box.setStyleSheet(&#34;QLabel{min-width: 400px;}&#34;)
         box.exec()
-
-    def keyPressEvent(self, event: object) -&gt; None:
-        if isinstance(event, QKeyEvent):
-            if event.key() == Qt.Key.Key_I and event.modifiers() == (
-                Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
-            ):
-                self._inspect_widget()
-                return
-        super().keyPressEvent(event)  # type: ignore[arg-type]
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
     def closeEvent(self, event: object) -&gt; None:
+        if not self._confirm_discard_changes():
+            event.ignore()  # type: ignore[attr-defined]
+            return
+        self._save_settings()
         set_dbg_callback(None)
         self._worker.shutdown(wait=False)
         super().closeEvent(event)  # type: ignore[arg-type]</code></pre>
@@ -895,28 +1112,13 @@ el.replaceWith(d);
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def closeEvent(self, event: object) -&gt; None:
+    if not self._confirm_discard_changes():
+        event.ignore()  # type: ignore[attr-defined]
+        return
+    self._save_settings()
     set_dbg_callback(None)
     self._worker.shutdown(wait=False)
     super().closeEvent(event)  # type: ignore[arg-type]</code></pre>
-</details>
-<div class="desc"></div>
-</dd>
-<dt id="crashlink.gui.main_window.MainWindow.keyPressEvent"><code class="name flex">
-<span>def <span class="ident">keyPressEvent</span></span>(<span>self, event: object) ‑> None</span>
-</code></dt>
-<dd>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def keyPressEvent(self, event: object) -&gt; None:
-    if isinstance(event, QKeyEvent):
-        if event.key() == Qt.Key.Key_I and event.modifiers() == (
-            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
-        ):
-            self._inspect_widget()
-            return
-    super().keyPressEvent(event)  # type: ignore[arg-type]</code></pre>
 </details>
 <div class="desc"></div>
 </dd>
@@ -941,7 +1143,6 @@ el.replaceWith(d);
 <h4><code><a title="crashlink.gui.main_window.MainWindow" href="#crashlink.gui.main_window.MainWindow">MainWindow</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.gui.main_window.MainWindow.closeEvent" href="#crashlink.gui.main_window.MainWindow.closeEvent">closeEvent</a></code></li>
-<li><code><a title="crashlink.gui.main_window.MainWindow.keyPressEvent" href="#crashlink.gui.main_window.MainWindow.keyPressEvent">keyPressEvent</a></code></li>
 <li><code><a title="crashlink.gui.main_window.MainWindow.staticMetaObject" href="#crashlink.gui.main_window.MainWindow.staticMetaObject">staticMetaObject</a></code></li>
 </ul>
 </li>

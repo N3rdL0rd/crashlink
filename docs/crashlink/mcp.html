@@ -61,8 +61,9 @@ def decompile_class(tindex: int) -&gt; str:
     &#34;&#34;&#34;
     Decompile an entire class (Obj type) to pseudo-Haxe source.
 
-    ⚠ EXPERIMENTAL: Same caveats as decompile_function — output may be wrong
-    or incomplete. The class decompiler calls decompile_function for each method.
+    ⚠ INCOMPLETE: Same caveats as decompile_function — usually functional but some
+    methods may decompile imperfectly. The class decompiler calls decompile_function
+    for each method.
 
     Args:
         tindex: The type index (tIndex) of the class
@@ -85,8 +86,9 @@ def decompile_class(tindex: int) -&gt; str:
         )</code></pre>
 </details>
 <div class="desc"><p>Decompile an entire class (Obj type) to pseudo-Haxe source.</p>
-<p>⚠ EXPERIMENTAL: Same caveats as decompile_function — output may be wrong
-or incomplete. The class decompiler calls decompile_function for each method.</p>
+<p>⚠ INCOMPLETE: Same caveats as decompile_function — usually functional but some
+methods may decompile imperfectly. The class decompiler calls decompile_function
+for each method.</p>
 <h2 id="args">Args</h2>
 <dl>
 <dt><strong><code>tindex</code></strong></dt>
@@ -106,9 +108,9 @@ def decompile_function(findex: int) -&gt; str:
     &#34;&#34;&#34;
     Decompile a function to pseudo-Haxe source code.
 
-    ⚠ EXPERIMENTAL: The decompiler is a work in progress. Output may be wrong,
-    incomplete, or this call may raise an exception for complex functions.
-    Use disassemble_function for reliable output.
+    ⚠ INCOMPLETE: The decompiler is usually functional but still a work in progress —
+    some complex functions may decompile imperfectly or raise an exception. Fall back
+    to disassemble_function if a specific function looks wrong.
 
     Args:
         findex: The function index to decompile
@@ -127,9 +129,9 @@ def decompile_function(findex: int) -&gt; str:
     raise RuntimeError(f&#34;Function f@{findex} not found (only non-native functions can be decompiled).&#34;)</code></pre>
 </details>
 <div class="desc"><p>Decompile a function to pseudo-Haxe source code.</p>
-<p>⚠ EXPERIMENTAL: The decompiler is a work in progress. Output may be wrong,
-incomplete, or this call may raise an exception for complex functions.
-Use disassemble_function for reliable output.</p>
+<p>⚠ INCOMPLETE: The decompiler is usually functional but still a work in progress —
+some complex functions may decompile imperfectly or raise an exception. Fall back
+to disassemble_function if a specific function looks wrong.</p>
 <h2 id="args">Args</h2>
 <dl>
 <dt><strong><code>findex</code></strong></dt>
@@ -1005,9 +1007,10 @@ def to_hlc() -&gt; str:
     &#34;&#34;&#34;
     Transpile the loaded bytecode to cHL/C source code.
 
-    ⚠ VERY EXPERIMENTAL: The generated C targets the HashLink C runtime (hlc) and is
-    not standard portable C. Expect missing symbols, broken control flow, and compiler
-    errors without patching. Use as a rough reference only — not production output.
+    STABLE: The generated C targets the HashLink C runtime (hlc) and compiles/links
+    directly against it, matching real hl2c/genhl.ml behavior. Validated end-to-end
+    against a full commercial game&#39;s boot bytecode (37k+ functions) — compiles, links,
+    and runs correctly (asset loading, Steam init, shader loading, closures/enums/etc).
 
     Returns the first MAX_OUTPUT_CHARS characters of the generated C. For large
     bytecode files the output will be truncated — save to a file via the CLI instead.
@@ -1020,9 +1023,10 @@ def to_hlc() -&gt; str:
         raise RuntimeError(f&#34;cHL/C transpilation failed: {e}&#34;)</code></pre>
 </details>
 <div class="desc"><p>Transpile the loaded bytecode to cHL/C source code.</p>
-<p>⚠ VERY EXPERIMENTAL: The generated C targets the HashLink C runtime (hlc) and is
-not standard portable C. Expect missing symbols, broken control flow, and compiler
-errors without patching. Use as a rough reference only — not production output.</p>
+<p>STABLE: The generated C targets the HashLink C runtime (hlc) and compiles/links
+directly against it, matching real hl2c/genhl.ml behavior. Validated end-to-end
+against a full commercial game's boot bytecode (37k+ functions) — compiles, links,
+and runs correctly (asset loading, Steam init, shader loading, closures/enums/etc).</p>
 <p>Returns the first MAX_OUTPUT_CHARS characters of the generated C. For large
 bytecode files the output will be truncated — save to a file via the CLI instead.</p></div>
 </dd>

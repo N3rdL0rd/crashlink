@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
+    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QStatusBar,
@@ -246,7 +247,7 @@ class _FindDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Find")
         self.setModal(False)
-        self._target: Optional[QWidget] = None
+        self._target: Optional[QPlainTextEdit] = None
 
         layout = QHBoxLayout(self)
         self._input = QLineEdit()
@@ -260,7 +261,7 @@ class _FindDialog(QDialog):
         layout.addWidget(prev_btn)
         self.resize(380, 60)
 
-    def set_target(self, target: QWidget) -> None:
+    def set_target(self, target: QPlainTextEdit) -> None:
         self._target = target
         self._input.setFocus()
         self._input.selectAll()
@@ -275,15 +276,15 @@ class _FindDialog(QDialog):
         text = self._input.text()
         if self._target is None or not text:
             return
-        found = self._target.find(text, flags)  # type: ignore[attr-defined]
+        found = self._target.find(text, flags)
         if found:
             return
         # No match from the current position — wrap around and retry once.
-        cursor = self._target.textCursor()  # type: ignore[attr-defined]
+        cursor = self._target.textCursor()
         backward = bool(flags & QTextDocument.FindFlag.FindBackward)
         cursor.movePosition(QTextCursor.MoveOperation.End if backward else QTextCursor.MoveOperation.Start)
-        self._target.setTextCursor(cursor)  # type: ignore[attr-defined]
-        self._target.find(text, flags)  # type: ignore[attr-defined]
+        self._target.setTextCursor(cursor)
+        self._target.find(text, flags)
 
 
 class MainWindow(QMainWindow):
@@ -560,9 +561,7 @@ class MainWindow(QMainWindow):
         box.setWindowTitle("Unsaved changes")
         box.setText("You have unsaved renames/comments. Save the analysis database before continuing?")
         box.setStandardButtons(
-            QMessageBox.StandardButton.Save
-            | QMessageBox.StandardButton.Discard
-            | QMessageBox.StandardButton.Cancel
+            QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel
         )
         box.setDefaultButton(QMessageBox.StandardButton.Save)
         choice = box.exec()
@@ -677,7 +676,7 @@ class MainWindow(QMainWindow):
 
     # ── Find (Ctrl+F) ────────────────────────────────────────────────────────
 
-    def _find_target_view(self) -> Optional[QWidget]:
+    def _find_target_view(self) -> Optional[QPlainTextEdit]:
         sv = self._current_sync_view()
         if sv is None:
             return None
@@ -1146,7 +1145,7 @@ class MainWindow(QMainWindow):
 
         view = self._find_target_view()  # whichever pane (disasm or pseudo) is active
         if view is not None:
-            at = view.mapToGlobal(view.cursorRect().bottomLeft())  # type: ignore[attr-defined]
+            at = view.mapToGlobal(view.cursorRect().bottomLeft())
         else:
             at = self.mapToGlobal(self.rect().center())
         self._xref_popup.show_results(word, groups, at)

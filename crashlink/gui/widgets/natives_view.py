@@ -30,7 +30,7 @@ class _NumericItem(QTableWidgetItem):
         super().__init__(str(value))
         self._value = value
 
-    def __lt__(self, other: object) -> bool:  # type: ignore[override]
+    def __lt__(self, other: "QTableWidgetItem") -> bool:
         if isinstance(other, _NumericItem):
             return self._value < other._value
         return super().__lt__(other)
@@ -90,7 +90,9 @@ class NativesView(QWidget):
             self._table.setItem(row, 2, QTableWidgetItem(name))
             self._table.setItem(row, 3, QTableWidgetItem(sig))
             self._table.setItem(row, 4, QTableWidgetItem("yes" if is_std else ""))
-            self._table.item(row, 0).setData(Qt.ItemDataRole.UserRole, findex)
+            findex_item = self._table.item(row, 0)
+            assert findex_item is not None
+            findex_item.setData(Qt.ItemDataRole.UserRole, findex)
 
         self._table.setSortingEnabled(True)
         self._table.resizeColumnsToContents()
@@ -102,11 +104,8 @@ class NativesView(QWidget):
             if not query:
                 self._table.setRowHidden(row, False)
                 continue
-            hay = " ".join(
-                self._table.item(row, col).text().lower()
-                for col in range(self._table.columnCount())
-                if self._table.item(row, col) is not None
-            )
+            cells = (self._table.item(row, col) for col in range(self._table.columnCount()))
+            hay = " ".join(cell.text().lower() for cell in cells if cell is not None)
             self._table.setRowHidden(row, query not in hay)
 
     def _on_activated(self, item: QTableWidgetItem) -> None:
@@ -117,7 +116,7 @@ class NativesView(QWidget):
         if findex is not None:
             self.xref_requested.emit(findex)
 
-    def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
+    def keyPressEvent(self, event: object) -> None:
         if isinstance(event, QKeyEvent) and not event.modifiers() and event.key() == Qt.Key.Key_X:
             item = self._table.currentItem()
             if item is not None:

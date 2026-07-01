@@ -233,7 +233,7 @@ class DisasmView(DecompView):
         c.select(QTextCursor.SelectionType.WordUnderCursor)
         return c.selectedText()
 
-    def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
+    def keyPressEvent(self, event: object) -> None:
         if isinstance(event, QKeyEvent) and not event.modifiers() and event.key() == Qt.Key.Key_X:
             findex = self.findex_at_cursor()
             if findex is not None:

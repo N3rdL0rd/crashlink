@@ -66,6 +66,47 @@ el.replaceWith(d);
     xi = code.xref_index()
     si = code.search_index()
 
+    # A literal &#34;f@N&#34; token (as rendered in disasm — this is the only way a
+    # native, or any anonymous/ambiguously-named function, ever shows up as
+    # text) resolves directly by findex instead of going through name search,
+    # which is otherwise useless for natives: many share the same partial
+    # name (or none at all) and can&#39;t be told apart by name alone.
+    fref_match = re.fullmatch(r&#34;f@(\d+)&#34;, word)
+    if fref_match:
+        findex = int(fref_match.group(1))
+        target = code.get_findex_map().get(findex)
+        if target is not None:
+            callers = xi.callers_of(findex)
+            groups.append(
+                XrefGroup(
+                    label=f&#34;function {_func_label(code, findex)}&#34;,
+                    kind=&#34;function&#34;,
+                    sites=[_site_from_ref(code, r) for r in callers],
+                )
+            )
+        return groups
+
+    # A &#34;g@N&#34; (disasm) or &#34;globalN&#34; (pseudocode&#39;s `untyped $globalN(...)`
+    # idiom for a raw HL global with no source-level name — see
+    # pseudo.global_name) token resolves directly by global index.
+    gref_match = re.fullmatch(r&#34;g@(\d+)&#34;, word) or re.fullmatch(r&#34;global(\d+)&#34;, word)
+    if gref_match:
+        gindex = int(gref_match.group(1))
+        if 0 &lt;= gindex &lt; len(code.global_types):
+            try:
+                type_label = disasm.type_name(code, code.global_types[gindex].resolve(code))
+            except Exception:
+                type_label = &#34;?&#34;
+            refs = xi.global_reads(gindex) + xi.global_writes(gindex)
+            groups.append(
+                XrefGroup(
+                    label=f&#34;global g@{gindex} ({type_label})&#34;,
+                    kind=&#34;global&#34;,
+                    sites=[_site_from_ref(code, r) for r in refs],
+                )
+            )
+        return groups
+
     # Functions — partial (method) and full name matches, deduped by findex.
     seen_findex: set[int] = set()
     for func in [*si.find_partial(word), *si.find(word)]:
@@ -174,7 +215,7 @@ class XrefGroup:
     &#34;&#34;&#34;A resolved target and all of its reference sites.&#34;&#34;&#34;
 
     label: str
-    kind: str  # &#34;function&#34; | &#34;type&#34; | &#34;field&#34; | &#34;enum&#34; | &#34;string&#34; | &#34;local&#34;
+    kind: str  # &#34;function&#34; | &#34;type&#34; | &#34;field&#34; | &#34;enum&#34; | &#34;string&#34; | &#34;local&#34; | &#34;global&#34;
     sites: List[XrefSite] = field(default_factory=list)</code></pre>
 </details>
 <div class="desc"><p>A resolved target and all of its reference sites.</p></div>

@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.6">
+<title>crashlink.gui.widgets.natives_view API documentation</title>
+<meta name="description" content="Natives table: every native function in the bytecode, sortable by column.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script type="text/x-mathjax-config">MathJax.Hub.Config({ tex2jax: { inlineMath: [ ['$','$'], ["\\(","\\)"] ], processEscapes: true } });</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_CHTML" integrity="sha256-kZafAc6mZvK3W3v1pHOcUix30OHQN6pU/NO2oFkqZVw=" crossorigin></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>crashlink.gui.widgets.natives_view</code></h1>
+</header>
+<section id="section-intro">
+<p>Natives table: every native function in the bytecode, sortable by column.</p>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="crashlink.gui.widgets.natives_view.NativesView"><code class="flex name class">
+<span>class <span class="ident">NativesView</span></span>
+<span>(</span><span>parent: Optional[QWidget] = None)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class NativesView(QWidget):
+    &#34;&#34;&#34;Sortable table of every native, with &#39;X&#39; or double-click to see its xrefs.&#34;&#34;&#34;
+
+    xref_requested = Signal(int)  # native findex
+
+    def __init__(self, parent: Optional[QWidget] = None) -&gt; None:
+        super().__init__(parent)
+        self._theme: Optional[Theme] = None
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._search = QLineEdit()
+        self._search.setPlaceholderText(&#34;Filter natives…&#34;)
+        self._search.setClearButtonEnabled(True)
+        self._search.textChanged.connect(self._apply_filter)
+        layout.addWidget(self._search)
+
+        self._table = QTableWidget()
+        self._table.setColumnCount(len(_COLUMNS))
+        self._table.setHorizontalHeaderLabels(_COLUMNS)
+        self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._table.verticalHeader().setVisible(False)
+        self._table.setSortingEnabled(True)
+        self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self._table.itemActivated.connect(self._on_activated)
+        layout.addWidget(self._table)
+
+    def set_theme(self, theme: Theme) -&gt; None:
+        self._theme = theme
+
+    def load(self, code: Bytecode) -&gt; None:
+        self._table.setSortingEnabled(False)
+        self._table.setRowCount(len(code.natives))
+        for row, native in enumerate(code.natives):
+            findex = native.findex.value
+            lib = native.lib.resolve(code)
+            name = native.name.resolve(code)
+            fun_defn = native.type.resolve(code).definition
+            if isinstance(fun_defn, Fun):
+                args = &#34;, &#34;.join(disasm.type_name(code, a.resolve(code)) for a in fun_defn.args)
+                ret = disasm.type_name(code, fun_defn.ret.resolve(code))
+                sig = f&#34;({args}) -&gt; {ret}&#34;
+            else:
+                sig = &#34;(no signature found)&#34;
+            is_std = disasm.is_std(code, native)
+
+            self._table.setItem(row, 0, _NumericItem(findex))
+            self._table.setItem(row, 1, QTableWidgetItem(lib))
+            self._table.setItem(row, 2, QTableWidgetItem(name))
+            self._table.setItem(row, 3, QTableWidgetItem(sig))
+            self._table.setItem(row, 4, QTableWidgetItem(&#34;yes&#34; if is_std else &#34;&#34;))
+            findex_item = self._table.item(row, 0)
+            assert findex_item is not None
+            findex_item.setData(Qt.ItemDataRole.UserRole, findex)
+
+        self._table.setSortingEnabled(True)
+        self._table.resizeColumnsToContents()
+        self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+
+    def _apply_filter(self, query: str) -&gt; None:
+        query = query.lower()
+        for row in range(self._table.rowCount()):
+            if not query:
+                self._table.setRowHidden(row, False)
+                continue
+            cells = (self._table.item(row, col) for col in range(self._table.columnCount()))
+            hay = &#34; &#34;.join(cell.text().lower() for cell in cells if cell is not None)
+            self._table.setRowHidden(row, query not in hay)
+
+    def _on_activated(self, item: QTableWidgetItem) -&gt; None:
+        findex_item = self._table.item(item.row(), 0)
+        if findex_item is None:
+            return
+        findex = findex_item.data(Qt.ItemDataRole.UserRole)
+        if findex is not None:
+            self.xref_requested.emit(findex)
+
+    def keyPressEvent(self, event: object) -&gt; None:
+        if isinstance(event, QKeyEvent) and not event.modifiers() and event.key() == Qt.Key.Key_X:
+            item = self._table.currentItem()
+            if item is not None:
+                self._on_activated(item)
+                return
+        super().keyPressEvent(event)  # type: ignore[arg-type]</code></pre>
+</details>
+<div class="desc"><p>Sortable table of every native, with 'X' or double-click to see its xrefs.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>PySide6.QtWidgets.QWidget</li>
+<li>PySide6.QtCore.QObject</li>
+<li>PySide6.QtGui.QPaintDevice</li>
+<li>Shiboken.Object</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="crashlink.gui.widgets.natives_view.NativesView.staticMetaObject"><code class="name">var <span class="ident">staticMetaObject</span></code></dt>
+<dd>
+<div class="desc"><p>The type of the None singleton.</p></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.gui.widgets.natives_view.NativesView.keyPressEvent"><code class="name flex">
+<span>def <span class="ident">keyPressEvent</span></span>(<span>self, event: object) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def keyPressEvent(self, event: object) -&gt; None:
+    if isinstance(event, QKeyEvent) and not event.modifiers() and event.key() == Qt.Key.Key_X:
+        item = self._table.currentItem()
+        if item is not None:
+            self._on_activated(item)
+            return
+    super().keyPressEvent(event)  # type: ignore[arg-type]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.gui.widgets.natives_view.NativesView.load"><code class="name flex">
+<span>def <span class="ident">load</span></span>(<span>self, code: Bytecode) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def load(self, code: Bytecode) -&gt; None:
+    self._table.setSortingEnabled(False)
+    self._table.setRowCount(len(code.natives))
+    for row, native in enumerate(code.natives):
+        findex = native.findex.value
+        lib = native.lib.resolve(code)
+        name = native.name.resolve(code)
+        fun_defn = native.type.resolve(code).definition
+        if isinstance(fun_defn, Fun):
+            args = &#34;, &#34;.join(disasm.type_name(code, a.resolve(code)) for a in fun_defn.args)
+            ret = disasm.type_name(code, fun_defn.ret.resolve(code))
+            sig = f&#34;({args}) -&gt; {ret}&#34;
+        else:
+            sig = &#34;(no signature found)&#34;
+        is_std = disasm.is_std(code, native)
+
+        self._table.setItem(row, 0, _NumericItem(findex))
+        self._table.setItem(row, 1, QTableWidgetItem(lib))
+        self._table.setItem(row, 2, QTableWidgetItem(name))
+        self._table.setItem(row, 3, QTableWidgetItem(sig))
+        self._table.setItem(row, 4, QTableWidgetItem(&#34;yes&#34; if is_std else &#34;&#34;))
+        findex_item = self._table.item(row, 0)
+        assert findex_item is not None
+        findex_item.setData(Qt.ItemDataRole.UserRole, findex)
+
+    self._table.setSortingEnabled(True)
+    self._table.resizeColumnsToContents()
+    self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.gui.widgets.natives_view.NativesView.set_theme"><code class="name flex">
+<span>def <span class="ident">set_theme</span></span>(<span>self, theme: Theme) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_theme(self, theme: Theme) -&gt; None:
+    self._theme = theme</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.gui.widgets.natives_view.NativesView.xref_requested"><code class="name flex">
+<span>def <span class="ident">xref_requested</span></span>(<span>...)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="crashlink.gui.widgets" href="index.html">crashlink.gui.widgets</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="crashlink.gui.widgets.natives_view.NativesView" href="#crashlink.gui.widgets.natives_view.NativesView">NativesView</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.gui.widgets.natives_view.NativesView.keyPressEvent" href="#crashlink.gui.widgets.natives_view.NativesView.keyPressEvent">keyPressEvent</a></code></li>
+<li><code><a title="crashlink.gui.widgets.natives_view.NativesView.load" href="#crashlink.gui.widgets.natives_view.NativesView.load">load</a></code></li>
+<li><code><a title="crashlink.gui.widgets.natives_view.NativesView.set_theme" href="#crashlink.gui.widgets.natives_view.NativesView.set_theme">set_theme</a></code></li>
+<li><code><a title="crashlink.gui.widgets.natives_view.NativesView.staticMetaObject" href="#crashlink.gui.widgets.natives_view.NativesView.staticMetaObject">staticMetaObject</a></code></li>
+<li><code><a title="crashlink.gui.widgets.natives_view.NativesView.xref_requested" href="#crashlink.gui.widgets.natives_view.NativesView.xref_requested">xref_requested</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.6</a>.</p>
+</footer>
+</body>
+</html>

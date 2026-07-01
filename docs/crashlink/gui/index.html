@@ -90,6 +90,7 @@ el.replaceWith(d);
     app.setCursorFlashTime(0)  # static cursor, no blinking
 
     win = MainWindow()
+    _install_excepthook(win)
     win.show()
 
     # Open a file from the command line if provided
