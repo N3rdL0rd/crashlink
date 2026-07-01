@@ -24,7 +24,7 @@ from ..themes import Theme
 
 
 class _Rule:
-    def __init__(self, pattern: str, fmt_attr: str, flags: re.RegexFlag = re.NOFLAG) -> None:
+    def __init__(self, pattern: str, fmt_attr: str, flags: re.RegexFlag = re.RegexFlag(0)) -> None:
         self.rx = re.compile(pattern, flags)
         self.fmt_attr = fmt_attr
 
