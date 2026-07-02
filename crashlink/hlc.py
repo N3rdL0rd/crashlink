@@ -80,6 +80,12 @@ KEYWORDS = {
     "dllexport",
     "naked",
     "thread",
+    # MSVC UCRT defines these as function-like macros (e.g. `#define stdin (__acrt_iob_func(0))`),
+    # so using them as raw struct field names only breaks on MSVC, not glibc/clang libc.
+    "stdin",
+    "stdout",
+    "stderr",
+    "errno",
     # Reserved by HLC itself
     "t",
 }
@@ -458,13 +464,13 @@ def generate_types(code: Bytecode, progress_cb: Optional[ProgressCallback] = Non
         if isinstance(df, (Obj, Struct)):
             if df.fields:
                 vals = ", ".join(
-                    f'{{(const uchar*)USTR("{f.name.resolve(code)}"), &t${f.type.value}, {hl_hash_utf8(f.name.resolve(code))}}}'
+                    f'{{(const uchar*)USTR("{c_escape_string(f.name.resolve(code))}"), &t${f.type.value}, {hl_hash_utf8(f.name.resolve(code))}}}'
                     for f in df.fields
                 )
                 line(f"static hl_obj_field fieldst${i}[] = {{{vals}}};")
             if df.protos:
                 vals = ", ".join(
-                    f'{{(const uchar*)USTR("{p.name.resolve(code)}"), {p.findex.value}, {p.pindex.value}, {hl_hash_utf8(p.name.resolve(code))}}}'
+                    f'{{(const uchar*)USTR("{c_escape_string(p.name.resolve(code))}"), {p.findex.value}, {p.pindex.value}, {hl_hash_utf8(p.name.resolve(code))}}}'
                     for p in df.protos
                 )
                 line(f"static hl_obj_proto protot${i}[] = {{{vals}}};")
@@ -474,7 +480,7 @@ def generate_types(code: Bytecode, progress_cb: Optional[ProgressCallback] = Non
             line(f"static hl_type_obj objt${i} = {{")
             with indent:
                 line(f"{df.nfields}, {df.nprotos}, {df.nbindings},")
-                line(f'(const uchar*)USTR("{df.name.resolve(code)}"),')
+                line(f'(const uchar*)USTR("{c_escape_string(df.name.resolve(code))}"),')
                 line(f"&t${df.super.value}," if df.super.value >= 0 else "NULL,")
                 line(f"fieldst${i}," if df.fields else "NULL,")
                 line(f"protot${i}," if df.protos else "NULL,")
@@ -489,7 +495,7 @@ def generate_types(code: Bytecode, progress_cb: Optional[ProgressCallback] = Non
         elif isinstance(df, Virtual):
             if df.fields:
                 vals = ", ".join(
-                    f'{{(const uchar*)USTR("{f.name.resolve(code)}"), &t${f.type.value}, {hl_hash_utf8(f.name.resolve(code))}}}'
+                    f'{{(const uchar*)USTR("{c_escape_string(f.name.resolve(code))}"), &t${f.type.value}, {hl_hash_utf8(f.name.resolve(code))}}}'
                     for f in df.fields
                 )
                 line(f"static hl_obj_field vfieldst${i}[] = {{{vals}}};")
@@ -507,7 +513,7 @@ def generate_types(code: Bytecode, progress_cb: Optional[ProgressCallback] = Non
             if df.constructs:
                 construct_data_list = []
                 for cid, constr in enumerate(df.constructs):
-                    constr_name_str = constr.name.resolve(code)
+                    constr_name_str = c_escape_string(constr.name.resolve(code))
                     nparams = len(constr.params)
                     has_params = nparams > 0
 
@@ -527,7 +533,7 @@ def generate_types(code: Bytecode, progress_cb: Optional[ProgressCallback] = Non
 
             line(f"static hl_type_enum enumt${i} = {{")
             with indent:
-                enum_name = df.name.resolve(code)
+                enum_name = c_escape_string(df.name.resolve(code))
                 line(f'(const uchar*)USTR("{enum_name}"),')
                 line(f"{df.nconstructs},")
                 line(f"econstructs{i}" if df.constructs else "NULL")
