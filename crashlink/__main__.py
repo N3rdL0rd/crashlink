@@ -645,7 +645,7 @@ def hlc_main(argv: List[str]) -> None:
     build_script = str(Path(out_c).with_suffix(".build.sh"))
     hashlink_dir = Path(args.hashlink_dir).expanduser().resolve()
 
-    with open(out_c, "w") as f:
+    with open(out_c, "w", encoding="utf-8") as f:
         f.write(code_to_c(code, progress_cb=_make_progress_cb()))
 
     opt_level = f"-O{args.opt_level}"
@@ -1114,7 +1114,7 @@ class Commands(BaseCommands):
             return
         output_path = args[0]
         print("Transpiling to cHL/C...")
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(code_to_c(self.code, progress_cb=_make_progress_cb()))
         print(f"cHL/C code written to {output_path}")
 
@@ -2040,7 +2040,7 @@ class Commands(BaseCommands):
         for file, content in docs.items():
             try:
                 os.makedirs(os.path.join(path, os.path.dirname(file)), exist_ok=True)
-                with open(os.path.join(path, file), "w") as f:
+                with open(os.path.join(path, file), "w", encoding="utf-8") as f:
                     f.write(content)
             except OSError:
                 print(f"Failed to write to {os.path.join(path, file)}")
@@ -2439,7 +2439,7 @@ def main() -> None:
                 args.output = args.file + ".patch"
             with open(args.output, "wb") as f:
                 f.write(code.serialise())
-            with open(os.path.join(os.path.dirname(args.output), "crashlink_patch.py"), "w") as f:
+            with open(os.path.join(os.path.dirname(args.output), "crashlink_patch.py"), "w", encoding="utf-8") as f:
                 f.write(content)
         except ImportError as e:
             print(f"Failed to import patch module: {e}")
