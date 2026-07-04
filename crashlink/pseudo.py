@@ -790,38 +790,50 @@ def _count_local_reads_and_writes(root: IRStatement, name: str) -> Tuple[int, in
     A write is an IRAssign whose target is exactly that local; every other
     occurrence (including as the array/field base of a write, which is itself
     a read of the base pointer) counts as a read.
+
+    Callers look this up once per candidate temp var, and there can be many
+    candidates per function, so a single full-subtree walk tallying every name
+    at once (cached as an attribute on root, tied to its lifetime) avoids a
+    walk-per-name O(n*m) blowup.
     """
-    reads = 0
-    writes = 0
-    seen: Set[int] = set()
+    cache = getattr(root, "_rw_counts_cache", None)
+    if cache is None:
+        cache = {}
+        counts: Dict[str, List[int]] = {}
+        seen: Set[int] = set()
 
-    def walk(s: Optional[IRStatement]) -> None:
-        nonlocal reads, writes
-        if s is None or id(s) in seen:
-            return
-        seen.add(id(s))
-        if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target.name == name:
-            writes += 1
-            walk(s.expr)
-            return
-        if isinstance(s, IRLocal) and s.name == name:
-            reads += 1
-        # IRArithmetic doesn't expose left/right via get_children (several
-        # passes rely on that to avoid auto-recursing into operands), so walk
-        # them explicitly here instead.
-        if isinstance(s, IRArithmetic):
-            walk(s.left)
-            walk(s.right)
-            return
-        for child in s.get_children():
-            if isinstance(child, IRBlock):
-                for child_stmt in child.statements:
-                    walk(child_stmt)
-            else:
-                walk(child)
+        def walk(s: Optional[IRStatement]) -> None:
+            if s is None or id(s) in seen:
+                return
+            seen.add(id(s))
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal):
+                counts.setdefault(s.target.name, [0, 0])[1] += 1
+                walk(s.expr)
+                return
+            if isinstance(s, IRLocal):
+                counts.setdefault(s.name, [0, 0])[0] += 1
+            # IRArithmetic doesn't expose left/right via get_children (several
+            # passes rely on that to avoid auto-recursing into operands), so walk
+            # them explicitly here instead.
+            if isinstance(s, IRArithmetic):
+                walk(s.left)
+                walk(s.right)
+                return
+            for child in s.get_children():
+                if isinstance(child, IRBlock):
+                    for child_stmt in child.statements:
+                        walk(child_stmt)
+                else:
+                    walk(child)
 
-    walk(root)
-    return reads, writes
+        walk(root)
+        for local_name, (reads, writes) in counts.items():
+            cache[local_name] = (reads, writes)
+        try:
+            root._rw_counts_cache = cache  # type: ignore[attr-defined]
+        except AttributeError:
+            pass
+    return cache.get(name, (0, 0))
 
 
 def _redefined_locals(stmt: IRStatement) -> Set[IRLocal]:

@@ -1160,6 +1160,9 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         for stmt in block.statements:
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
+                    if id(child) in self._visited_ids:
+                        continue
+                    self._visited_ids.add(id(child))
                     self._visit_block_conservative(
                         child, inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child)
                     )
@@ -1246,7 +1249,6 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                         target_stmt.adopt(stmt)
                     statements_to_remove.append(stmt)
                 made_change_in_pass = True
-                break
 
             if statements_to_remove:
                 block.statements = [s for s in block.statements if s not in statements_to_remove]
@@ -1254,6 +1256,9 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         for stmt in block.statements:
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
+                    if id(child) in self._visited_ids:
+                        continue
+                    self._visited_ids.add(id(child))
                     self._visit_block_aggressive(
                         child, inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child)
                     )
