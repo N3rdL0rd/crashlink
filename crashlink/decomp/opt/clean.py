@@ -416,6 +416,12 @@ class IRCommonBlockMerger(TraversingIROptimizer):
                     new_statements.append(stmt)
                     continue
 
+                # stmt is already privately owned (a block-statement-list element),
+                # but its true_block/false_block are only shallow-copied along with
+                # it (see decomp.opt.cow), so they could still be shared -- privatize
+                # them before truncating their .statements below.
+                stmt.true_block = cast(IRBlock, cow(stmt.true_block))
+                stmt.false_block = cast(IRBlock, cow(stmt.false_block))
                 true_stmts = stmt.true_block.statements
                 false_stmts = stmt.false_block.statements
 
@@ -440,6 +446,15 @@ class IRCommonBlockMerger(TraversingIROptimizer):
                         f_idx -= 1
                     else:
                         break
+
+                # A lone hoisted `return`/`throw` doesn't reduce anything -- each
+                # branch already terminates there, so hoisting it just replaces a
+                # direct `return expr` with an extra temp assignment plus a shared
+                # `return temp`. Only hoist single-statement suffixes when there's
+                # an actual reduction to be had (i.e. more than one statement).
+                if len(common_suffix) == 1 and isinstance(common_suffix[0], (IRReturn, IRThrow)):
+                    common_suffix = []
+                    t_idx, f_idx = len(true_stmts) - 1, len(false_stmts) - 1
 
                 if common_suffix:
                     dbg_print(f"IRCommonBlockMerger: Found {len(common_suffix)} common statements to merge.")

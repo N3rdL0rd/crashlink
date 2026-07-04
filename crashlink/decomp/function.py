@@ -261,6 +261,7 @@ class IRFunction:
         self._lift(no_lift=no_lift)
         if do_optimize:
             self.optimizers: List[IROptimizer] = [
+                IRCommonBlockMerger(self),
                 IRBlockFlattener(self),
                 IRConstructorFolder(self),
                 IRPrimitiveJumpLifter(self),
@@ -295,6 +296,7 @@ class IRFunction:
                 IREnumSwitchOptimizer(self),
                 IRDeadTempEliminator(self),
                 IRDeadCodeEliminator(self),
+                IRCommonBlockMerger(self),
                 IRBlockFlattener(self),
                 IRLoopRerollOptimizer(self),
                 IRForEachLoopOptimizer(self),
