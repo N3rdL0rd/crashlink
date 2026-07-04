@@ -452,7 +452,19 @@ def _build_hlc_script(
 
 def info_main(argv: List[str]) -> None:
     parser = argparse.ArgumentParser(
-        description="Print summary information about a bytecode file.", prog="crashlink info"
+        description="Print summary information about a bytecode file.",
+        prog="crashlink info",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="\n".join(
+            [
+                "examples:",
+                "  crashlink info game.hl",
+                "      Print version, function/type/string counts, etc.",
+                "",
+                "  crashlink info game.hl -N",
+                "      Same, but skip constant resolution (useful for malformed files).",
+            ]
+        ),
     )
     parser.add_argument("file", help="Input .hl / .dat file")
     parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
@@ -471,7 +483,19 @@ def info_main(argv: List[str]) -> None:
 
 def disasm_main(argv: List[str]) -> None:
     parser = argparse.ArgumentParser(
-        description="Disassemble a function from a bytecode file.", prog="crashlink disasm"
+        description="Disassemble a function from a bytecode file.",
+        prog="crashlink disasm",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="\n".join(
+            [
+                "examples:",
+                "  crashlink disasm game.hl 42",
+                "      Disassemble the function with findex 42 (use 'crashlink funcs' to find indexes).",
+                "",
+                "  crashlink disasm game.hl 42 -N",
+                "      Disassemble without resolving constants first.",
+            ]
+        ),
     )
     parser.add_argument("file", help="Input .hl / .dat file")
     parser.add_argument("findex", type=int, help="Function index to disassemble")
@@ -491,7 +515,21 @@ def disasm_main(argv: List[str]) -> None:
 
 
 def search_main(argv: List[str]) -> None:
-    parser = argparse.ArgumentParser(description="Search strings in a bytecode file.", prog="crashlink search")
+    parser = argparse.ArgumentParser(
+        description="Search strings in a bytecode file.",
+        prog="crashlink search",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="\n".join(
+            [
+                "examples:",
+                "  crashlink search game.hl password",
+                "      Print every string containing 'password' (case-insensitive), with its s@ index.",
+                "",
+                "  crashlink search game.hl \"http://\"",
+                "      Find embedded URLs.",
+            ]
+        ),
+    )
     parser.add_argument("file", help="Input .hl / .dat file")
     parser.add_argument("query", help="Substring to search for (case-insensitive)")
     parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
@@ -507,21 +545,59 @@ def search_main(argv: List[str]) -> None:
 def db_main(argv: List[str]) -> None:
     from . import database as db
 
-    parser = argparse.ArgumentParser(description="Work with .cldb analysis databases.", prog="crashlink db")
+    parser = argparse.ArgumentParser(
+        description="Work with .cldb analysis databases.",
+        prog="crashlink db",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="\n".join(
+            [
+                "examples:",
+                "  crashlink db info game.cldb",
+                "      Show format version, source hash, and counts of renames/comments/cached functions.",
+                "",
+                "  crashlink db check game.cldb game.hl",
+                "      Verify game.cldb still matches game.hl before trusting its cached data.",
+                "",
+                "  crashlink db renames game.cldb",
+                "  crashlink db comments game.cldb",
+                "      List the individual renames or comments stored in the database.",
+            ]
+        ),
+    )
     sub = parser.add_subparsers(dest="action", required=True)
 
-    p_info = sub.add_parser("info", help="Show summary info for a .cldb")
+    p_info = sub.add_parser(
+        "info",
+        help="Show summary info for a .cldb",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="example:\n  crashlink db info game.cldb",
+    )
     p_info.add_argument("cldb", help="Path to the .cldb file")
 
-    p_check = sub.add_parser("check", help="Validate a .cldb against a bytecode file")
+    p_check = sub.add_parser(
+        "check",
+        help="Validate a .cldb against a bytecode file",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="example:\n  crashlink db check game.cldb game.hl",
+    )
     p_check.add_argument("cldb", help="Path to the .cldb file")
     p_check.add_argument("file", help="Bytecode (.hl/.dat) file to check against")
     p_check.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
 
-    p_renames = sub.add_parser("renames", help="List renames stored in a .cldb")
+    p_renames = sub.add_parser(
+        "renames",
+        help="List renames stored in a .cldb",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="example:\n  crashlink db renames game.cldb",
+    )
     p_renames.add_argument("cldb", help="Path to the .cldb file")
 
-    p_comments = sub.add_parser("comments", help="List comments stored in a .cldb")
+    p_comments = sub.add_parser(
+        "comments",
+        help="List comments stored in a .cldb",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="example:\n  crashlink db comments game.cldb",
+    )
     p_comments.add_argument("cldb", help="Path to the .cldb file")
 
     args = parser.parse_args(argv)
@@ -588,7 +664,24 @@ def db_main(argv: List[str]) -> None:
 
 
 def funcs_main(argv: List[str]) -> None:
-    parser = argparse.ArgumentParser(description="List functions in a bytecode file.", prog="crashlink funcs")
+    parser = argparse.ArgumentParser(
+        description="List functions in a bytecode file.",
+        prog="crashlink funcs",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="\n".join(
+            [
+                "examples:",
+                "  crashlink funcs game.hl",
+                "      List user-code functions (stdlib and natives hidden by default).",
+                "",
+                "  crashlink funcs game.hl --std --natives",
+                "      Include stdlib functions and native stubs too.",
+                "",
+                "  crashlink funcs game.hl | grep -i update",
+                "      Find a function by name to get its findex for 'crashlink disasm'/'decompile'.",
+            ]
+        ),
+    )
     parser.add_argument("file", help="Input .hl / .dat file")
     parser.add_argument("--std", action="store_true", help="Include stdlib functions")
     parser.add_argument("--natives", action="store_true", help="Include native stubs")
@@ -610,6 +703,20 @@ def decompile_main(argv: List[str]) -> None:
     parser = argparse.ArgumentParser(
         description="Decompile a function or class to pseudo-Haxe. INCOMPLETE — usually functional, but a work in progress.",
         prog="crashlink decompile",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="\n".join(
+            [
+                "examples:",
+                "  crashlink decompile game.hl 42",
+                "      Decompile the function with findex 42 to pseudo-Haxe.",
+                "",
+                "  crashlink decompile game.hl 17 --class",
+                "      Decompile the whole class at tIndex 17 (all of its methods).",
+                "",
+                "  crashlink funcs game.hl | grep -i MyClass",
+                "      Find the findex/tIndex to pass in, by name.",
+            ]
+        ),
     )
     parser.add_argument("file", help="Input .hl / .dat file")
     parser.add_argument("index", type=int, help="findex for a function, or tIndex with --class")
@@ -652,7 +759,27 @@ def decompile_main(argv: List[str]) -> None:
 
 def hlc_main(argv: List[str]) -> None:
     parser = argparse.ArgumentParser(
-        description="Transpile HashLink bytecode to C and emit a matching build script.", prog="crashlink hlc"
+        description="Transpile HashLink bytecode to C and emit a matching build script.",
+        prog="crashlink hlc",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="\n".join(
+            [
+                "examples:",
+                "  crashlink hlc game.hl",
+                "      Emit game.c and a build script next to it, but don't compile.",
+                "",
+                "  crashlink hlc game.hl --build",
+                "      Emit and immediately compile/link against libhl (uses $HASHLINK_DIR or --hashlink-dir).",
+                "",
+                "  crashlink hlc game.hl --build -O0",
+                "      Faster dev builds: skip most C compiler optimization (a single generated",
+                "      file can't be parallelized across cores, so this is the main speed lever).",
+                "",
+                "  crashlink hlc game.hl --build --split 8 --hdll-dir ./hdll",
+                "      Split the generated C into 8 translation units for parallel compilation,",
+                "      and look in ./hdll for any HDLLs the bytecode depends on.",
+            ]
+        ),
     )
     parser.add_argument("file", help="Input .hl / .dat / Haxe source file")
     parser.add_argument("-o", "--output", help="Output C filename")
@@ -2401,10 +2528,36 @@ def main() -> None:
     epilog_lines += [f"  {name:<11}{desc}" for name, desc in _SUBCOMMAND_HELP.items()]
     epilog_lines += [
         "",
-        "Run 'crashlink <subcommand> -h' for subcommand-specific help.",
+        "Run 'crashlink <subcommand> -h' for subcommand-specific help and examples,",
+        "or 'crashlink --help-all' to print every subcommand's help at once.",
         "",
         "Without a subcommand, 'file' is opened directly for the options below",
         "(interactive REPL via -c, raw opcode patching via -p, assembly via -a).",
+        "",
+        "examples:",
+        "  crashlink funcs game.hl",
+        "      Quick look: list the functions in a bytecode file.",
+        "",
+        "  crashlink disasm game.hl 42",
+        "      Disassemble function f@42.",
+        "",
+        "  crashlink decompile game.hl 42",
+        "      Decompile function f@42 to pseudo-Haxe.",
+        "",
+        "  crashlink game.hl -c 'funcs'",
+        "      Open game.hl and immediately run the interactive REPL command 'funcs'.",
+        "",
+        "  crashlink game.hl -c ''",
+        "      Open game.hl and drop into the interactive REPL.",
+        "",
+        "  crashlink game.hl -p patch.txt -o patched.hl",
+        "      Apply patch.txt to game.hl and write the result to patched.hl.",
+        "",
+        "  crashlink game.asm -a -o game.hl",
+        "      Assemble a crashlink assembly file into bytecode.",
+        "",
+        "  crashlink hlc game.hl --build",
+        "      Transpile to C and compile it against libhl (see 'crashlink hlc -h').",
     ]
     parser = argparse.ArgumentParser(
         description=f"crashlink CLI ({VERSION})",
