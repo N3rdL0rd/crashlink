@@ -955,38 +955,73 @@ class BaseCommands:
             return cmd, " ".join(s)
         return s[1], s[0]
 
+    def _short_desc(self, desc: str) -> str:
+        """Collapses a (possibly multi-line/multi-paragraph) description to a single summary line."""
+        first_para = textwrap.dedent(desc).strip().split("\n\n")[0]
+        return " ".join(first_para.split())
+
     def exit(self, args: List[str]) -> None:
         """Exit the program"""
         sys.exit()
 
     def help(self, args: List[str]) -> None:
-        """Prints this help message or information on a specific command. `help (command)`"""
+        """Prints this help message, or details on a specific command. `help [command]`"""
         commands = self._get_commands()
+        command_aliases = self._get_command_aliases()
+        term_width = shutil.get_terminal_size(fallback=(100, 24)).columns
+
         if args:
             for command in args:
-                if command in commands:
-                    doc: str = commands[command].__doc__ or ""
-                    usage, desc = self._format_help(doc, command)
-                    print(f"{usage} - {desc}")
-                else:
+                if command not in commands:
                     print(f"Unknown command: {command}")
+                    continue
+                doc: str = commands[command].__doc__ or ""
+                usage, desc = self._format_help(doc, command)
+                primary = getattr(commands[command], "_primary_alias", None) or command
+                aliases = command_aliases.get(primary, [])
+                print(f"usage: {usage}")
+                if aliases:
+                    print(f"aliases: {', '.join(sorted(aliases))}")
+                cleaned = textwrap.dedent(desc).strip()
+                if "\n" in cleaned:
+                    # Multi-line docstrings (e.g. with a worked-out "Usage:" block) are already
+                    # hand-formatted, so print them as-is instead of re-wrapping.
+                    print(cleaned)
+                else:
+                    for line in textwrap.wrap(cleaned, width=max(40, term_width - 2)) or [""]:
+                        print(line)
+                print()
             return
 
         print("Available commands:")
+        print()
 
         # Group commands by their primary name (avoid showing aliases as separate entries)
         primary_commands = self._get_primary_commands()
-        command_aliases = self._get_command_aliases()
 
+        rows: List[Tuple[str, str]] = []
         for cmd, func in sorted(primary_commands.items()):
             usage, desc = self._format_help(func.__doc__ or "", cmd)
             aliases = command_aliases.get(cmd, [])
-            if aliases:
-                alias_str = f" (aliases: {', '.join(sorted(aliases))})"
-                print(f"\t{usage}{alias_str} - {desc}")
+            label = usage if not aliases else f"{usage}  ({', '.join(sorted(aliases))})"
+            rows.append((label, self._short_desc(desc)))
+
+        label_width = min(max((len(label) for label, _ in rows), default=0) + 2, 36)
+        desc_width = max(30, term_width - label_width - 4)
+        for label, desc in rows:
+            wrapped = textwrap.wrap(desc, width=desc_width) or [""]
+            if len(label) >= label_width:
+                print(f"  {label}")
+                for cont in wrapped:
+                    print(f"  {'':<{label_width}}{cont}")
             else:
-                print(f"\t{usage} - {desc}")
-        print("Type 'help <command>' for information on a specific command.")
+                print(f"  {label:<{label_width}}{wrapped[0]}")
+                for cont in wrapped[1:]:
+                    print(f"  {'':<{label_width}}{cont}")
+
+        print()
+        print("Type 'help <command>' for details on a specific command.")
+        print("Up/down arrows browse command history; 'history' lists it; 'clear' clears the screen.")
 
     def _get_commands(self) -> Dict[str, Callable[[List[str]], None]]:
         """Get all command methods using reflection, including primary aliases and other aliases."""
@@ -1050,6 +1085,31 @@ class Commands(BaseCommands):
     def exit(self, args: List[str]) -> None:
         """Exit the program"""
         sys.exit()
+
+    def clear(self, args: List[str]) -> None:
+        """Clears the terminal screen."""
+        os.system("cls" if platform.system() == "Windows" else "clear")
+
+    @alias("hist")
+    def history(self, args: List[str]) -> None:
+        """Shows recently run REPL commands. `history [count]`"""
+        try:
+            import readline
+        except ImportError:
+            print("readline is not available on this platform, so no history is kept.")
+            return
+        try:
+            count = int(args[0]) if args else 20
+        except ValueError:
+            print("Invalid count.")
+            return
+        length = readline.get_current_history_length()
+        if length == 0:
+            print("No history yet.")
+            return
+        start = max(1, length - count + 1)
+        for i in range(start, length + 1):
+            print(f"{i:>4}  {readline.get_history_item(i)}")
 
     def wiki(self, args: List[str]) -> None:
         """Open the ModDocCE wiki page on Hashlink bytecode in your default browser"""
@@ -2471,6 +2531,36 @@ def handle_cmd(code: Bytecode, cmd: str) -> None:
         print("Unknown command.")
 
 
+_HISTORY_FILE = Path.home() / ".crashlink_history"
+
+
+def _setup_repl_readline(code: Bytecode) -> None:
+    """Enables persistent history (up/down arrows) and tab-completion of command names for the REPL."""
+    try:
+        import readline
+    except ImportError:
+        # Not available on stock Windows Python; the REPL still works, just without history/completion.
+        return
+
+    try:
+        readline.read_history_file(_HISTORY_FILE)
+    except (FileNotFoundError, OSError):
+        pass
+    readline.set_history_length(1000)
+    atexit.register(lambda: readline.write_history_file(_HISTORY_FILE))
+
+    command_names = sorted(Commands(code)._get_commands().keys())
+
+    def _completer(text: str, state: int) -> Optional[str]:
+        matches = [c for c in command_names if c.startswith(text)]
+        return matches[state] if state < len(matches) else None
+
+    readline.set_completer(_completer)
+    delims = readline.get_completer_delims().replace("-", "")
+    readline.set_completer_delims(delims)
+    readline.parse_and_bind("tab: complete")
+
+
 def mcp_main(argv: List[str]) -> None:
     try:
         from .mcp import run_mcp_server
@@ -2705,12 +2795,17 @@ def main() -> None:
     if args.command:
         handle_cmd(code, args.command)
     else:
+        _setup_repl_readline(code)
         while True:
             try:
-                handle_cmd(code, input("crashlink> "))
+                line = input("crashlink> ")
             except KeyboardInterrupt:
                 print()
                 continue
+            except EOFError:
+                print()
+                break
+            handle_cmd(code, line)
 
 
 if __name__ == "__main__":
