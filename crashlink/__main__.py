@@ -641,17 +641,24 @@ def hlc_main(argv: List[str]) -> None:
 
     code = _load_code_from_cli_path(args.file, args.no_constants)
     out_c = args.output or _default_hlc_output(args.file)
-    out_bin = str(Path(out_c).with_suffix(""))
+    out_dir = str(Path(out_c).with_suffix("")) + ".d"
+    os.makedirs(out_dir, exist_ok=True)
+    out_build_c = str(Path(out_c).with_suffix(""))
+    out_bin = out_build_c
     build_script = str(Path(out_c).with_suffix(".build.sh"))
     hashlink_dir = Path(args.hashlink_dir).expanduser().resolve()
 
-    with open(out_c, "w", encoding="utf-8") as f:
-        f.write(code_to_c(code, progress_cb=_make_progress_cb()))
+    files = code_to_c(code, progress_cb=_make_progress_cb(), split_files=True)
+    for fname, fcontent in files.items():
+        fpath = os.path.join(out_dir, fname)
+        with open(fpath, "w", encoding="utf-8") as f:
+            f.write(fcontent)
+    build_c_path = os.path.join(out_dir, "build.c")
 
     opt_level = f"-O{args.opt_level}"
     native_libs = _hlc_native_libs(code)
     script = _build_hlc_script(
-        out_c, out_bin, native_libs, hashlink_dir, args.hdll_dir, args.clang, args.ccache, opt_level
+        build_c_path, out_bin, native_libs, hashlink_dir, args.hdll_dir, args.clang, args.ccache, opt_level
     )
     with open(build_script, "w") as f:
         f.write(script)
@@ -659,7 +666,7 @@ def hlc_main(argv: List[str]) -> None:
 
     resolved_hdlls, missing_hdlls = _resolve_native_hdlls(native_libs, hashlink_dir, args.hdll_dir)
 
-    print(f"Wrote C output: {out_c}")
+    print(f"Wrote {len(files)} C source files to: {out_dir}")
     print(f"Wrote build script: {build_script}")
     if native_libs:
         print("Native libraries:", ", ".join(native_libs))
@@ -674,7 +681,7 @@ def hlc_main(argv: List[str]) -> None:
             print("Cannot build: missing required HDLLs")
             sys.exit(1)
         cmd = _build_compile_command(
-            out_c,
+            build_c_path,
             out_bin,
             hashlink_dir,
             [resolved_hdlls[lib] for lib in native_libs],
@@ -1113,10 +1120,15 @@ class Commands(BaseCommands):
             print("Usage: hlc <output path>")
             return
         output_path = args[0]
+        out_dir = str(Path(output_path).with_suffix("")) + ".d"
+        os.makedirs(out_dir, exist_ok=True)
         print("Transpiling to cHL/C...")
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(code_to_c(self.code, progress_cb=_make_progress_cb()))
-        print(f"cHL/C code written to {output_path}")
+        files = code_to_c(self.code, progress_cb=_make_progress_cb(), split_files=True)
+        for fname, fcontent in files.items():
+            fpath = os.path.join(out_dir, fname)
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(fcontent)
+        print(f"Wrote {len(files)} C source files to {out_dir}/")
 
     @alias("strs")
     def strings(self, args: List[str]) -> None:
