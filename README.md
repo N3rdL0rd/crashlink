@@ -3,7 +3,7 @@
 ![workflow](https://github.com/N3rdL0rd/crashlink/actions/workflows/python-package.yml/badge.svg) ![wakatime](https://wakatime.com/badge/user/959c37b8-6a50-4f37-8cc5-e2b14b687b80/project/7ce1f674-75d5-4525-88f2-ea4e5532e73a.svg) ![PyPI - Version](https://img.shields.io/pypi/v/crashlink)
  ![PyPI - Downloads](https://img.shields.io/pypi/dd/crashlink)
 
-Pure-Python HashLink bytecode Swiss Army knife.
+The pure-Python HashLink bytecode Swiss Army knife.
 
 > [!WARNING]
 > This project is under active development. Breaking changes may be made to APIs with zero notice.
@@ -12,23 +12,27 @@ Join the [Hashlink Modding Community Discord](https://discord.gg/Es8ZpVkPey) for
 
 ## Features
 
-- Pure Python with zero dependencies, integrates nicely in a lot of places (IDAPython compatible!)
-- Deserialisation, disassembly, and (currently limited) decompilation of HashLink bytecode
+- Pure Python with zero dependencies, integrates nicely in a lot of places
+- Deserialisation, disassembly, and (currently incomplete, but usually functional) decompilation of HashLink bytecode
 - Reserialisation and first-class support for patching bytecode assembly
+- A GUI with a graphical disassembler/decompiler, embedded CFG viewer, source-location lookups, and in-place patching
 - A bytecode assembler for creating HashLink bytecode from scratch
+- An HL/C reimplementation to transpile HashLink bytecode straight to C and build it against libhl
+- A full-featured CLI (`crashlink`) with both one-shot subcommands and a batteries-included interactive REPL (60+ commands!)
+- Xref indexing and source-location mapping
+- (Experimental) Tools to extract debug info from compiled HL/C binaries (PDB/DWARF) back into a navigable bytecode image
 - A scriptable interface for easy integration into other tools
-- A little CLI similar to [hlbc](https://github.com/Gui-Yom/hlbc)
 
 ## Installation
 
 ```bash
-pip install crashlink
+uvx crashlink # or pip install crashlink
 ```
 
-Optionally, install `[extras]` for progress bars when parsing large files and faster bytecode save/load in-memory:
+Optionally, install `[extras]` for a bunch of additional goodies, including a GUI:
 
 ```bash
-pip install crashlink[extras]
+uv tool install crashlink[extras] # or pip install crashlink[extras]
 ```
 
 Or, for bleeding-edge features, see the [Development](#development) section.
@@ -82,6 +86,55 @@ elif code.fn(240):
 # >   0. Ret             {'ret': 0}                                       return
 ```
 
+### CLI basics
+
+Running `crashlink <file>` with no subcommand opens the file directly and drops you into the interactive REPL (see below), or runs a single command with `-c`, e.g. `crashlink game.hl -c funcs`. A few flags are useful here:
+
+- `-N` / `--no-constants`: skip constant resolution on load - helpful for malformed or unusually large files
+- `-a` / `--assemble`: treat `file` as crashlink assembly and assemble it to bytecode (`-o` sets the output path)
+- `-p` / `--patch`: apply a patch module to `file` (see `-o` for where to write the result)
+- `-d` / `--debug`: enable extra debug output; `-t` / `--traceback`: print full tracebacks on error
+
+For everything that doesn't need a live session, there are one-shot subcommands instead - each with its own `-h` for detailed usage and examples:
+
+```txt
+$ crashlink funcs game.hl              # list functions
+$ crashlink disasm game.hl 42          # disassemble f@42
+$ crashlink decompile game.hl 42       # decompile f@42 to pseudo-Haxe
+$ crashlink info game.hl               # summary info (version, counts, etc.)
+$ crashlink search game.hl "password"  # search strings by substring
+$ crashlink db info game.cldb          # inspect a .cldb debug-info database
+$ crashlink hlc game.hl --build        # transpile to C and compile it
+$ crashlink mcp                        # run as an MCP server
+```
+
+Run `crashlink --help-all` to print the top-level help plus every subcommand's `-h` output in one go.
+
+### REPL basics
+
+Bytecode objects, functions, and types are addressed by index - `f@<findex>` for functions/natives, `t@<tIndex>` for types, `g@<gIndex>` for globals, `s@<index>` for strings - the same notation used throughout disassembly output and crashlink assembly. A typical session looks like:
+
+```txt
+$ crashlink game.hl
+crashlink> funcs
+f@22 static Clazz.main () -> Void (from Clazz.hx)
+f@23 Clazz.method (Clazz) -> I32 (from Clazz.hx)
+crashlink> findfunc method          # search by name substring (alias: ff)
+f@23 Clazz.method (Clazz) -> I32 (from Clazz.hx)
+crashlink> fn 23                    # disassemble a function (alias: f)
+f@23 Clazz.method (Clazz) -> I32 (from Clazz.hx)
+...
+crashlink> decomp 23                # decompile to pseudo-Haxe (aliases: d, pseudo)
+...
+crashlink> cfg 23                   # render a control flow graph and open it
+crashlink> xref func 23             # find every caller of f@23
+crashlink> rename 23 0 _ localName  # rename a local for readability
+crashlink> save game_patched.hl     # write out your changes
+crashlink> exit
+```
+
+`help` lists every command grouped with its aliases, and `help <command>` gives its usage and a longer description. Up/down arrows browse command history (persisted across sessions in `~/.crashlink_history`), tab completes command names, and `clear`/`history`/`exit` do what you'd expect.
+
 Read the [API documentation](https://n3rdl0rd.github.io/crashlink/crashlink) for more information.
 
 ## Development
@@ -116,9 +169,6 @@ You can use the following pre-defined commands with `just`:
 - `just profile`: Run the test suite with cProfile and then open the results in a browser.
 - `just serve-docs`: Serve the documentation locally.
 
-> [!NOTE]
-> A lot of very WIP development is done on `dev`. If you want to see the latest and greatest, checkout that branch. If you want something semi-stable, checkout `main` instead.
-
 ### `crashtest` CLI
 
 `crashtest` is a built-in testing system that is used to score the decompiler's output against the original source code. It is used to ensure that the decompiler is working correctly, that the output is correct, that the decompiler is not regressing, and to allow those interested in the project to easily see the state of the decompiler without installing it or running the test suite themselves. You can call it with `crashtest auto` (or `python -m crashtest auto`). Make sure you call it from the root of the repository, since it uses relative paths to find the test files and the output directory.
@@ -126,9 +176,6 @@ You can use the following pre-defined commands with `just`:
 ## Architecture
 
 ![Architecture](docs/static/flow.svg)
-
-> [!NOTE]
-> IR and the IR optimization layers have not yet been fully implemented.
 
 ## Roadmap
 
@@ -168,12 +215,13 @@ You can use the following pre-defined commands with `just`:
 
 ## Portability
 
-crashlink is written in pure typed Python with a minimum version of 3.10 (for the `|` operator and `match` statement). It should run on any modern platform, and has been tested heavily on Windows, Linux, and MacOS. As well as this, it is portable to many interpreters:
+crashlink is written in pure typed Python with a minimum version of 3.10 (for the `|` operator and `match` statement). It should run on any modern platform, and has been tested heavily on Windows, Linux, and has been tested, but less heavily, on MacOS. As well as this, it is portable to many Python interpreters:
 
 - CPython 3.10+ is the main target
 - PyPy also just works
 - IronPython and Jython are not supported due to their earlier Python version targets.
 - RustPython would work, but it doesn't support `match` statements.
+- Pyodide works and you can see a live demo [here](https://n3rdl0rd.github.io/crashlink/demo)
 
 ## Credits
 
