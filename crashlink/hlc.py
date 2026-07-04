@@ -338,38 +338,70 @@ def generate_abstract_forwards(code: Bytecode) -> List[str]:
     return res
 
 
-def generate_natives(code: Bytecode) -> List[str]:
-    """Generates native function prototypes and wrapper functions."""
-    res = []
-    indent = Indenter()
-
-    def line(*args: Any) -> None:
-        res.append(indent.current_indent + " ".join(str(arg) for arg in args))
-
-    line("// Native function prototypes")
+def _native_signatures(code: Bytecode) -> List[Tuple[Any, str, str, List[str]]]:
+    """Yields (native, c_func_name, ret_type_str, arg_types) for every emittable native,
+    in a stable order, skipping built-ins we don't want to redefine."""
+    out = []
     sorted_natives = sorted(code.natives, key=lambda n: (n.lib.resolve(code), n.name.resolve(code)))
-
     for native in sorted_natives:
         func_type = native.type.resolve(code)
         if not isinstance(func_type.definition, Fun):
             continue
         fun_def = func_type.definition
-
         lib_name = native.lib.resolve(code).lstrip("?")
         c_func_name = f"{'hl' if lib_name == 'std' else lib_name}_{native.name.resolve(code)}"
+        if c_func_name in {"hl_tls_set"}:  # filter out built-ins we don't want to redefine
+            continue
         ret_type_str = ctype(code, fun_def.ret.resolve(code), fun_def.ret.value)
         arg_types = [ctype(code, arg.resolve(code), arg.value) for arg in fun_def.args]
-        args_str = ", ".join(arg_types) if arg_types else "void"
+        out.append((native, c_func_name, ret_type_str, arg_types))
+    return out
 
-        if c_func_name not in {"hl_tls_set"}:  # filter out built-ins we don't want to redefine
-            line(f"HL_API {ret_type_str} {c_func_name}({args_str});")
-            args_with_names = (
-                ", ".join(f"{arg_type} r{i}" for i, arg_type in enumerate(arg_types)) if arg_types else "void"
-            )
-            line(f"{ret_type_str} f${native.findex.value}({args_with_names}){{")
-            with indent:
-                line(f"return {c_func_name}({', '.join(f'r{i}' for i in range(len(arg_types))) if arg_types else ''});")
-            line("}")
+
+def generate_native_prototypes(code: Bytecode) -> List[str]:
+    """Generates prototypes only: the HL_API native declarations plus the f$N wrapper
+    prototypes (whose definitions come from generate_native_wrappers)."""
+    res = ["// Native function prototypes"]
+    for native, c_func_name, ret_type_str, arg_types in _native_signatures(code):
+        args_str = ", ".join(arg_types) if arg_types else "void"
+        res.append(f"HL_API {ret_type_str} {c_func_name}({args_str});")
+        res.append(f"{ret_type_str} f${native.findex.value}({args_str});")
+    return res
+
+
+def generate_native_wrappers(code: Bytecode) -> List[str]:
+    """Generates the f$N wrapper function definitions that forward to natives."""
+    res = ["// Native function wrappers"]
+    indent = Indenter()
+
+    def line(*args: Any) -> None:
+        res.append(indent.current_indent + " ".join(str(arg) for arg in args))
+
+    for native, c_func_name, ret_type_str, arg_types in _native_signatures(code):
+        args_with_names = ", ".join(f"{arg_type} r{i}" for i, arg_type in enumerate(arg_types)) if arg_types else "void"
+        line(f"{ret_type_str} f${native.findex.value}({args_with_names}){{")
+        with indent:
+            line(f"return {c_func_name}({', '.join(f'r{i}' for i in range(len(arg_types))) if arg_types else ''});")
+        line("}")
+    return res
+
+
+def generate_natives(code: Bytecode) -> List[str]:
+    """Generates native function prototypes and wrapper functions (single-file layout)."""
+    res = ["// Native function prototypes"]
+    indent = Indenter()
+
+    def line(*args: Any) -> None:
+        res.append(indent.current_indent + " ".join(str(arg) for arg in args))
+
+    for native, c_func_name, ret_type_str, arg_types in _native_signatures(code):
+        args_str = ", ".join(arg_types) if arg_types else "void"
+        line(f"HL_API {ret_type_str} {c_func_name}({args_str});")
+        args_with_names = ", ".join(f"{arg_type} r{i}" for i, arg_type in enumerate(arg_types)) if arg_types else "void"
+        line(f"{ret_type_str} f${native.findex.value}({args_with_names}){{")
+        with indent:
+            line(f"return {c_func_name}({', '.join(f'r{i}' for i in range(len(arg_types))) if arg_types else ''});")
+        line("}")
     return res
 
 
@@ -1030,7 +1062,34 @@ def enum_constr_type(code: Bytecode, e: Enum, cid: int) -> str:
     return f"{c_enum_name}_{c_constr_name}"
 
 
-def generate_functions(code: Bytecode, progress_cb: Optional[ProgressCallback] = None) -> List[str]:
+def generate_function_prototypes(code: Bytecode) -> List[str]:
+    """Generates `f$N` prototypes for all bytecode (non-native) functions."""
+    res = []
+    for function in code.functions:
+        fun = function.type.resolve(code).definition
+        assert isinstance(fun, Fun), (
+            f"Expected function type to be Fun, got {type(fun).__name__}. This should never happen."
+        )
+        ret_t = ctype(code, fun.ret.resolve(code), fun.ret.value)
+        args_t = [ctype(code, arg.resolve(code), arg.value) for arg in fun.args]
+        args_str = ", ".join(args_t) if args_t else "void"
+        res.append(f"{ret_t} f${function.findex.value}({args_str}); /* t${function.type.value} */")
+    return res
+
+
+def generate_functions(
+    code: Bytecode,
+    progress_cb: Optional[ProgressCallback] = None,
+    functions: Optional[List[Function]] = None,
+    include_prototypes: bool = True,
+) -> List[str]:
+    """Generates C definitions for bytecode functions.
+
+    functions restricts which function *definitions* are emitted (default: all) --
+    used to split output across translation units. include_prototypes controls
+    whether prototypes for all functions are emitted first (single-file layout);
+    split layouts put those in a shared header instead.
+    """
     global unknown_ops
 
     res = []
@@ -1230,19 +1289,12 @@ def generate_functions(code: Bytecode, progress_cb: Optional[ProgressCallback] =
             return "i64"
         return "p"
 
-    for function in code.functions:
-        fun = function.type.resolve(code).definition
-        assert isinstance(fun, Fun), (
-            f"Expected function type to be Fun, got {type(fun).__name__}. This should never happen."
-        )
-        ret_t = ctype(code, fun.ret.resolve(code), fun.ret.value)
-        args_t = [ctype(code, arg.resolve(code), arg.value) for arg in fun.args]
-        args = [f"{t}" for t in args_t]
-        args_str = ", ".join(args) if args else "void"
-        line(f"{ret_t} f${function.findex.value}({args_str}); /* t${function.type.value} */")
+    if include_prototypes:
+        res += generate_function_prototypes(code)
 
-    nfunctions = len(code.functions)
-    for fidx, function in enumerate(code.functions):
+    emit_functions = functions if functions is not None else code.functions
+    nfunctions = len(emit_functions)
+    for fidx, function in enumerate(emit_functions):
         if progress_cb is not None and nfunctions:
             progress_cb(fidx / nfunctions, f"generating function {fidx}/{nfunctions}")
         fun = function.type.resolve(code).definition
@@ -2254,3 +2306,144 @@ def code_to_c(code: Bytecode, progress_cb: Optional[ProgressCallback] = None) ->
 
     _p(1.0, "done")
     return "\n".join(res)
+
+
+def generate_type_externs(code: Bytecode) -> List[str]:
+    """`extern` declarations for the hl_type shells, for the split-output shared header."""
+    return ["// Type shells (defined in the data translation unit)"] + [
+        f"extern hl_type t${i};" for i in range(len(code.types))
+    ]
+
+
+def generate_global_externs(code: Bytecode) -> List[str]:
+    """`extern` declarations for the g$N globals, for the split-output shared header."""
+    res = ["// Globals (defined in the data translation unit)"]
+    all_types = code.types
+    for i, g_type_ptr in enumerate(code.global_types):
+        g_type = g_type_ptr.resolve(code)
+        c_type_str = ctype(code, g_type, all_types.index(g_type))
+        res.append(f"extern {c_type_str} g${i};")
+    return res
+
+
+def _split_functions_evenly(code: Bytecode, parts: int) -> List[List[Function]]:
+    """Partitions code.functions into `parts` contiguous chunks of roughly equal
+    total opcode count (a good proxy for generated-C size / compile time)."""
+    total_ops = sum(len(f.ops) for f in code.functions)
+    target = max(1, total_ops // parts)
+    chunks: List[List[Function]] = []
+    current: List[Function] = []
+    current_ops = 0
+    for f in code.functions:
+        current.append(f)
+        current_ops += len(f.ops)
+        if current_ops >= target and len(chunks) < parts - 1:
+            chunks.append(current)
+            current, current_ops = [], 0
+    if current or not chunks:
+        chunks.append(current)
+    return chunks
+
+
+def code_to_c_files(
+    code: Bytecode,
+    parts: int,
+    basename: str = "hlc",
+    progress_cb: Optional[ProgressCallback] = None,
+) -> Dict[str, str]:
+    """
+    Translates a loaded Bytecode object into multiple C translation units so large
+    programs can be compiled in parallel (and per-TU limits like huge single-file
+    memory use are avoided):
+
+    - ``<basename>.h``       -- shared header: includes, struct/abstract decls, native
+      prototypes, extern type shells & globals, and all f$N prototypes.
+    - ``<basename>.c``       -- the "data" TU: native wrappers, type data, globals,
+      reflection, function tables, hashes, and the entry point.
+    - ``<basename>.p<NN>.c`` -- ``parts`` TUs of function definitions, balanced by
+      opcode count.
+
+    Returns a dict of relative filename -> file content. All files must be compiled
+    and linked together. With parts <= 1, falls back to a single ``<basename>.c``
+    containing the classic single-file output.
+    """
+    if parts <= 1:
+        return {f"{basename}.c": code_to_c(code, progress_cb=progress_cb)}
+
+    def _p(frac: float, status: str) -> None:
+        if progress_cb is not None:
+            progress_cb(frac, status)
+
+    banner = f"// Generated by crashlink {VERSION}{' (debug)' if DEBUG else ''} (split into {parts} parts)"
+    header_name = f"{basename}.h"
+
+    header: List[str] = [banner, "#pragma once", "#include <hlc.h>"]
+    header.append("\n/*---------- Abstract Forward Declarations ----------*/\n")
+    _p(0.00, "generating abstract forward declarations")
+    header += generate_abstract_forwards(code)
+    header.append("\n/*---------- Structs ----------*/\n")
+    _p(0.02, "generating structs")
+    header += generate_structs(code)
+    header.append("\n/*---------- Native Prototypes ----------*/\n")
+    _p(0.05, "generating native declarations")
+    header += generate_native_prototypes(code)
+    header.append("\n/*---------- Type & Global Externs ----------*/\n")
+    header += generate_type_externs(code)
+    header += generate_global_externs(code)
+    header.append("\n/*---------- Runtime Entry Points ----------*/\n")
+    header += [
+        "extern void *hl_functions_ptrs[];",
+        "extern hl_type *hl_functions_types[];",
+        "void hl_init_types( hl_module_context *ctx );",
+        "void hl_init_hashes();",
+        "void hl_init_roots();",
+        "void hl_entry_point();",
+    ]
+    header.append("\n/*---------- Function Prototypes ----------*/\n")
+    _p(0.07, "generating function prototypes")
+    header += generate_function_prototypes(code)
+
+    files: Dict[str, str] = {}
+
+    data: List[str] = [banner, f'#include "{header_name}"']
+    data.append("\n/*---------- Native Wrappers ----------*/\n")
+    data += generate_native_wrappers(code)
+    data.append("\n/*---------- Types ----------*/\n")
+    _p(0.10, "generating types")
+    data += generate_types(code, progress_cb=_scaled_cb(progress_cb, 0.10, 0.25))
+    data.append("\n/*---------- Globals & Strings ----------*/\n")
+    _p(0.25, "generating globals")
+    data += generate_globals(code)
+    data.append("\n/*---------- Reflection ----------*/\n")
+    _p(0.27, "generating reflection")
+    data += generate_reflection(code)
+    data.append("\n/*---------- Function Tables ----------*/\n")
+    _p(0.29, "generating function tables")
+    data += generate_function_tables(code)
+    data.append("\n/*---------- Hashes ----------*/\n")
+    data += generate_hashes(code)
+    data.append("\n/*---------- Entrypoint ----------*/\n")
+    data += generate_entry(code)
+
+    chunks = _split_functions_evenly(code, parts)
+    nchunks = len(chunks)
+    for ci, chunk in enumerate(chunks):
+        _p(0.30 + 0.70 * (ci / nchunks), f"generating functions (part {ci + 1}/{nchunks})")
+        part: List[str] = [banner, f'#include "{header_name}"', ""]
+        part += generate_functions(
+            code,
+            progress_cb=_scaled_cb(progress_cb, 0.30 + 0.70 * (ci / nchunks), 0.30 + 0.70 * ((ci + 1) / nchunks)),
+            functions=chunk,
+            include_prototypes=False,
+        )
+        files[f"{basename}.p{ci:02d}.c"] = "\n".join(part)
+
+    files[header_name] = "\n".join(header)
+    files[f"{basename}.c"] = "\n".join(data)
+
+    if unknown_ops:
+        print(f"Warning: {len(unknown_ops)} unknown operations encountered during function generation.")
+        print(unknown_ops)
+
+    _p(1.0, "done")
+    return files

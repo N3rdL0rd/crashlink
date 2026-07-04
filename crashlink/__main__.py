@@ -5,20 +5,23 @@ Entrypoint for the crashlink CLI.
 from __future__ import annotations
 
 import argparse
+import atexit
 import importlib
 import inspect
 import os
 import platform
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import traceback
 import webbrowser
 from typing import Callable, Dict, List, Optional, Tuple, Set, cast
 from functools import wraps
 
-from crashlink.hlc import code_to_c
+from crashlink.hlc import code_to_c, code_to_c_files
 
 from . import decomp, disasm, globals
 from .core import (
@@ -215,8 +218,35 @@ def _resolve_native_hdlls(
     return resolved, missing
 
 
+def _compile_objects_parallel(
+    c_paths: List[str],
+    hashlink_dir: Path,
+    use_clang: bool,
+    use_ccache: bool,
+    opt_level: str,
+    obj_dir: Path,
+) -> List[str]:
+    """Compiles each C file to an object file, in parallel across cores.
+    Returns the object paths. Raises on the first compile failure."""
+    import concurrent.futures
+
+    obj_dir.mkdir(parents=True, exist_ok=True)
+    cc: List[str] = (["ccache"] if use_ccache else []) + ["clang" if use_clang else "cc"]
+    base_flags = [opt_level, "-Wno-incompatible-pointer-types", f"-I{hashlink_dir / 'src'}"]
+
+    def compile_one(c_path: str) -> str:
+        obj = str(obj_dir / (Path(c_path).stem + ".o"))
+        cmd = cc + base_flags + ["-c", c_path, "-o", obj]
+        print("Compiling:", " ".join(cmd))
+        subprocess.run(cmd, check=True)
+        return obj
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count()) as pool:
+        return list(pool.map(compile_one, c_paths))
+
+
 def _build_compile_command(
-    c_path: str,
+    c_paths: List[str],
     bin_path: str,
     hashlink_dir: Path,
     hdll_paths: List[Path],
@@ -225,6 +255,7 @@ def _build_compile_command(
     use_clang: bool,
     use_ccache: bool,
     opt_level: str = "-O2",
+    include_hlc_main: bool = True,
 ) -> List[str]:
     search_dirs = _build_search_dirs(hashlink_dir, extra_hdll_dirs)
     cmd: List[str] = []
@@ -236,10 +267,11 @@ def _build_compile_command(
             opt_level,
             "-Wno-incompatible-pointer-types",
             f"-I{hashlink_dir / 'src'}",
-            c_path,
-            str(hashlink_dir / "src" / "hlc_main.c"),
+            *c_paths,
         ]
     )
+    if include_hlc_main:
+        cmd.append(str(hashlink_dir / "src" / "hlc_main.c"))
     cmd.extend(str(p) for p in hdll_paths)
     if "uv" in native_libs:
         explicit_uv = _find_any_shared_lib(["libuv.so", "libuv.so.1"], search_dirs)
@@ -276,7 +308,7 @@ def _build_compile_command(
 
 
 def _build_hlc_script(
-    c_path: str,
+    c_paths: List[str],
     bin_path: str,
     native_libs: List[str],
     hashlink_dir: Path,
@@ -286,12 +318,13 @@ def _build_hlc_script(
     opt_level: str = "-O2",
 ) -> str:
     extra_dirs_literal = " ".join(f'"{d}"' for d in extra_hdll_dirs)
+    c_files_literal = " ".join(f'"{p}"' for p in c_paths)
     script = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
         "",
         f'HASHLINK_DIR="${{HASHLINK_DIR:-{hashlink_dir}}}"',
-        f'C_FILE="{c_path}"',
+        f"C_FILES=({c_files_literal})",
         f'OUT_FILE="{bin_path}"',
         f"EXTRA_HDLL_DIRS=({extra_dirs_literal})",
         f"USE_CLANG={'1' if use_clang else '0'}",
@@ -386,9 +419,24 @@ def _build_hlc_script(
         ]
     script += [
         "",
-        '"${CC_PREFIX[@]}" "$CC_BIN" "$OPT_LEVEL" -Wno-incompatible-pointer-types \\',
-        '  -I"$HASHLINK_DIR/src" \\',
-        '  "$C_FILE" "$HASHLINK_DIR/src/hlc_main.c" \\',
+        "# Compile each translation unit to an object file, in parallel across cores,",
+        "# then link. (With a single generated C file this is one compile job; with",
+        "# --split N it's N+2, which is the whole point of splitting.)",
+        'NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)',
+        'OBJ_DIR=$(mktemp -d)',
+        'trap \'rm -rf "$OBJ_DIR"\' EXIT',
+        "OBJS=()",
+        'for c in "${C_FILES[@]}" "$HASHLINK_DIR/src/hlc_main.c"; do',
+        '  obj="$OBJ_DIR/$(basename "$c").o"',
+        '  OBJS+=("$obj")',
+        '  "${CC_PREFIX[@]}" "$CC_BIN" "$OPT_LEVEL" -Wno-incompatible-pointer-types \\',
+        '    -I"$HASHLINK_DIR/src" -c "$c" -o "$obj" &',
+        '  while [ "$(jobs -rp | wc -l)" -ge "$NPROC" ]; do wait -n; done',
+        "done",
+        "wait",
+        "",
+        '"${CC_PREFIX[@]}" "$CC_BIN" "$OPT_LEVEL" \\',
+        '  "${OBJS[@]}" \\',
         '  "${HDLL_ARGS[@]}" \\',
         "  ${EXTRA_LINK_ARGS[@]} \\",
         '  -L"$HASHLINK_DIR/build/bin" -lhl -lm -ldl -lpthread \\',
@@ -637,7 +685,19 @@ def hlc_main(argv: List[str]) -> None:
         help="Don't resolve constants during deserialisation",
         action="store_true",
     )
+    parser.add_argument(
+        "-j",
+        "--split",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Split the generated C into N function translation units (plus a shared "
+        "header and a data/entry TU) so compilation can run in parallel across cores. "
+        "Default 1 = classic single-file output.",
+    )
     args = parser.parse_args(argv)
+    if args.split < 1:
+        parser.error("--split must be >= 1")
 
     code = _load_code_from_cli_path(args.file, args.no_constants)
     out_c = args.output or _default_hlc_output(args.file)
@@ -645,13 +705,23 @@ def hlc_main(argv: List[str]) -> None:
     build_script = str(Path(out_c).with_suffix(".build.sh"))
     hashlink_dir = Path(args.hashlink_dir).expanduser().resolve()
 
-    with open(out_c, "w", encoding="utf-8") as f:
-        f.write(code_to_c(code, progress_cb=_make_progress_cb()))
+    out_dir = Path(out_c).resolve().parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+    basename = Path(out_c).stem
+    files = code_to_c_files(code, parts=args.split, basename=basename, progress_cb=_make_progress_cb())
+    c_files: List[str] = []
+    for rel_name, content in files.items():
+        path = out_dir / rel_name
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+        if rel_name.endswith(".c"):
+            c_files.append(str(path))
+    c_files.sort()  # data TU first, then parts (basename.c < basename.pNN.c)
 
     opt_level = f"-O{args.opt_level}"
     native_libs = _hlc_native_libs(code)
     script = _build_hlc_script(
-        out_c, out_bin, native_libs, hashlink_dir, args.hdll_dir, args.clang, args.ccache, opt_level
+        c_files, out_bin, native_libs, hashlink_dir, args.hdll_dir, args.clang, args.ccache, opt_level
     )
     with open(build_script, "w") as f:
         f.write(script)
@@ -659,7 +729,10 @@ def hlc_main(argv: List[str]) -> None:
 
     resolved_hdlls, missing_hdlls = _resolve_native_hdlls(native_libs, hashlink_dir, args.hdll_dir)
 
-    print(f"Wrote C output: {out_c}")
+    if len(c_files) == 1:
+        print(f"Wrote C output: {out_c}")
+    else:
+        print(f"Wrote C output: {len(c_files)} translation units + {basename}.h in {out_dir}")
     print(f"Wrote build script: {build_script}")
     if native_libs:
         print("Native libraries:", ", ".join(native_libs))
@@ -673,17 +746,40 @@ def hlc_main(argv: List[str]) -> None:
         if missing_hdlls:
             print("Cannot build: missing required HDLLs")
             sys.exit(1)
-        cmd = _build_compile_command(
-            out_c,
-            out_bin,
-            hashlink_dir,
-            [resolved_hdlls[lib] for lib in native_libs],
-            native_libs,
-            args.hdll_dir,
-            args.clang,
-            args.ccache,
-            opt_level,
-        )
+        if len(c_files) > 1:
+            # parallel per-TU compile, then a link-only invocation over the objects
+            objs = _compile_objects_parallel(
+                c_files + [str(hashlink_dir / "src" / "hlc_main.c")],
+                hashlink_dir,
+                args.clang,
+                args.ccache,
+                opt_level,
+                out_dir / f"{basename}.objs",
+            )
+            cmd = _build_compile_command(
+                objs,
+                out_bin,
+                hashlink_dir,
+                [resolved_hdlls[lib] for lib in native_libs],
+                native_libs,
+                args.hdll_dir,
+                args.clang,
+                args.ccache,
+                opt_level,
+                include_hlc_main=False,
+            )
+        else:
+            cmd = _build_compile_command(
+                c_files,
+                out_bin,
+                hashlink_dir,
+                [resolved_hdlls[lib] for lib in native_libs],
+                native_libs,
+                args.hdll_dir,
+                args.clang,
+                args.ccache,
+                opt_level,
+            )
         print("Compiling:", " ".join(cmd))
         subprocess.run(cmd, check=True)
         print(f"Built binary: {out_bin}")
