@@ -24,15 +24,20 @@ from .core import (
     Dyn,
     Fun,
     Function,
+    InlineBool,
     Native,
     Opcode,
     Reg,
     ResolvableVarInt,
+    SerialisableF64,
+    SerialisableInt,
     Type,
     TypeType,
+    VarInt,
     Void,
     bytesRef,
     fIndex,
+    floatRef,
     gIndex,
     intRef,
     strRef,
@@ -67,6 +72,8 @@ class AsmFile:
         self.content = content
         self.raw_sections: Dict[str, AsmSection] = {}
         self.strings: List[str] = []
+        self.ints: List[int] = []
+        self.floats: List[float] = []
         self._parse()
 
     @classmethod
@@ -75,12 +82,24 @@ class AsmFile:
             content = file.read()
         return cls(content)
 
+    @staticmethod
+    def _strip_comment(line: str) -> str:
+        """Strips a trailing `# ...` comment, ignoring '#' characters inside quoted strings."""
+        in_quotes = False
+        for i, char in enumerate(line):
+            if char == '"':
+                in_quotes = not in_quotes
+            elif char == "#" and not in_quotes:
+                return line[:i]
+        return line
+
     def _parse(self) -> None:
         self.content = self.content.replace("    ", "\t")  # for consistency
         lines = self.content.splitlines()
         section_stack: List[AsmSection] = []
-        for line in lines:
-            if not line.strip() or line.strip().startswith("#"):
+        for raw_line in lines:
+            line = self._strip_comment(raw_line).rstrip()
+            if not line.strip():
                 continue
             indent_level = len(line) - len(line.lstrip("\t"))
             # pop extra sections if we decreased the indent level
@@ -137,7 +156,6 @@ class AsmFile:
             GUID: 23,
         }
         for val in section.value:
-            print(val.value)
             if not isinstance(val, AsmValueStr):
                 continue
             parts = val.value.split()
@@ -150,7 +168,6 @@ class AsmFile:
                 code.types.append(typ)
                 code.invalidate_proto_field_cache()
             elif parts[0] == "Fun":
-                print("Adding Fun...")
                 fun = Fun()
                 tokens = re.findall(r"\([^)]*\)|\S+", val.value)
                 _, args, _, ret = tokens
@@ -166,7 +183,7 @@ class AsmFile:
                     fun.args = a  # type: ignore
                 typ = Type()
                 typ.kind.value = 10  # Fun
-                typ.definition = m_def  # pyright: ignore[reportPossiblyUnboundVariable]
+                typ.definition = fun
                 code.types.append(typ)
                 code.invalidate_proto_field_cache()
 
@@ -188,26 +205,45 @@ class AsmFile:
                 return bytesRef(int(val[2:]))
         raise SyntaxError(f"Unknown prefix '{val[0]}'!")
 
-    def _parse_opcode_ref(self, val: str) -> Any:
-        if val[1] != "@":
-            if val[0] == '"':
-                return self._get_str_idx(val[1:-1])
-            elif val.startswith("reg"):
-                return Reg(int(val[3:]))
-        match val[0]:  # TODO: float, field support
-            case "f":
-                return fIndex(int(val[2:]))
-            case "t":
-                return tIndex(int(val[2:]))
-            case "s":
-                return strRef(int(val[2:]))
-            case "g":
-                return gIndex(int(val[2:]))
-            case "i":
-                return intRef(int(val[2:]))
-            case "b":
-                return bytesRef(int(val[2:]))
-        raise SyntaxError(f"Unknown prefix '{val[0]}'!")
+    def _parse_opcode_ref(self, val: str, expected: type) -> Any:
+        if val[0] == '"':
+            return self._get_str_idx(val[1:-1])
+        if val.startswith("reg"):
+            return Reg(int(val[3:]))
+        if expected is InlineBool and val in ("true", "false"):
+            inline_bool = InlineBool()
+            inline_bool.value = val == "true"
+            return inline_bool
+
+        # Bare numeric literals: jump offsets and other InlineInt-style operands are embedded
+        # directly, while RefInt/RefFloat operands are pool references, so the literal gets
+        # auto-interned (mirroring how quoted string literals are auto-interned above).
+        if re.fullmatch(r"-?\d+", val):
+            if expected is intRef:
+                return self._get_int_idx(int(val))
+            if expected is floatRef:
+                return self._get_float_idx(float(val))
+            return VarInt(int(val))
+        if re.fullmatch(r"-?\d+\.\d+", val) and expected is floatRef:
+            return self._get_float_idx(float(val))
+
+        if len(val) > 1 and val[1] == "@":
+            match val[0]:  # TODO: field support
+                case "f":
+                    return fIndex(int(val[2:]))
+                case "t":
+                    return tIndex(int(val[2:]))
+                case "s":
+                    return strRef(int(val[2:]))
+                case "g":
+                    return gIndex(int(val[2:]))
+                case "i":
+                    return intRef(int(val[2:]))
+                case "b":
+                    return bytesRef(int(val[2:]))
+            raise SyntaxError(f"Unknown prefix '{val[0]}'!")
+
+        raise SyntaxError(f"Could not parse operand '{val}' as a {expected.__name__}!")
 
     def _get_single_val(self, name: str) -> str:
         if len(self.raw_sections[name].value) != 1:
@@ -221,6 +257,16 @@ class AsmFile:
         if val not in self.strings:
             self.strings.append(val)
         return strRef(self.strings.index(val))
+
+    def _get_int_idx(self, val: int) -> intRef:
+        if val not in self.ints:
+            self.ints.append(val)
+        return intRef(self.ints.index(val))
+
+    def _get_float_idx(self, val: float) -> floatRef:
+        if val not in self.floats:
+            self.floats.append(val)
+        return floatRef(self.floats.index(val))
 
     def _validate(self, code: Bytecode) -> None:
         if not code.entrypoint:
@@ -280,11 +326,37 @@ class AsmFile:
             if i + 1 >= len(parts):
                 raise SyntaxError(f"Not enough arguments for opcode {name}, expected {k}")
             typ = Opcode.TYPE_MAP[v]
-            parsed = self._parse_opcode_ref(parts[i + 1])
+            parsed = self._parse_opcode_ref(parts[i + 1], typ)
             assert isinstance(parsed, typ), f"Expected type {typ} for argument {k} of opcode {name}, got {type(parsed)}"
             op.df[k] = parsed
 
         return op
+
+    def _intern_fun_type(self, code: Bytecode, args: List[tIndex], ret: tIndex) -> tIndex:
+        """
+        Finds an existing `Fun` type matching this exact signature, or appends a new one.
+        Mirrors how string/int/float literals get auto-interned rather than requiring the
+        assembly source to declare a pool entry by hand.
+        """
+        for i, existing in enumerate(code.types):
+            defn = existing.definition
+            if (
+                existing.kind.value == 10
+                and isinstance(defn, Fun)
+                and [a.value for a in defn.args] == [a.value for a in args]
+                and defn.ret.value == ret.value
+            ):
+                return tIndex(i)
+
+        fun = Fun()
+        fun.args = args
+        fun.ret = ret
+        typ = Type()
+        typ.kind.value = 10  # Fun
+        typ.definition = fun
+        code.types.append(typ)
+        code.invalidate_proto_field_cache()
+        return tIndex(len(code.types) - 1)
 
     def _add_functions(self, code: Bytecode) -> None:
         for section in self.raw_sections.values():
@@ -292,12 +364,11 @@ class AsmFile:
                 func = Function()
                 returns_section = section.get("returns")
                 if isinstance(returns_section.value[0], AsmValueStr):
-                    typ = self._parse_ref(returns_section.value[0].value)
+                    ret = self._parse_ref(returns_section.value[0].value)
                 else:
                     raise SyntaxError("Return type must be a string reference!")
+                assert isinstance(ret, tIndex), "Return type must be a type reference!"
 
-                assert isinstance(typ, tIndex), "Return type must be a type reference!"
-                func.type = typ
                 findex = self._parse_ref(section.name)
                 assert isinstance(findex, fIndex), "Function index must be a function reference!"
                 func.findex = findex
@@ -314,6 +385,18 @@ class AsmFile:
 
                 assert all(isinstance(r, tIndex) for r in regs), "All registers must be types!"
                 func.regs = regs
+
+                # `.args <n>` declares how many of the leading registers are parameters
+                # (default 0, i.e. a no-argument function like a typical entrypoint).
+                nargs = 0
+                try:
+                    args_section = section.get("args")
+                    if args_section.value and isinstance(args_section.value[0], AsmValueStr):
+                        nargs = int(args_section.value[0].value)
+                except KeyError:
+                    pass
+                assert nargs <= len(regs), "More args than declared registers!"
+                func.type = self._intern_fun_type(code, regs[:nargs], ret)
 
                 ops_section = section.get("ops")
                 ops = []
@@ -333,6 +416,18 @@ class AsmFile:
         for s in self.strings:
             code.strings.value.append(s)
 
+    def _add_ints(self, code: Bytecode) -> None:
+        for n in self.ints:
+            si = SerialisableInt()
+            si.value = n
+            code.ints.append(si)
+
+    def _add_floats(self, code: Bytecode) -> None:
+        for n in self.floats:
+            sf = SerialisableF64()
+            sf.value = n
+            code.floats.append(sf)
+
     def assemble(self) -> Bytecode:
         required = ["version", "types", "entrypoint"]
         for req in required:
@@ -349,6 +444,8 @@ class AsmFile:
             self._add_natives(code, self.raw_sections["natives"])
         self._add_functions(code)
         self._add_strings(code)
+        self._add_ints(code)
+        self._add_floats(code)
         self._validate(code)
         return code
 
