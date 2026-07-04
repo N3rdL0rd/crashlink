@@ -88,6 +88,8 @@ from . import (
     _bytes_mem_kind,
     _int_const_value,
     _signed_i32,
+    cow,
+    deep_cow,
 )
 
 
@@ -398,6 +400,12 @@ class IRConditionInliner(TraversingIROptimizer):
                                 new_statements.append(current_stmt)
                                 i += 1
                                 continue
+                            # conditional_stmt is already privately owned (a block-
+                            # statement-list element), but its own condition expression
+                            # is only shallow-copied along with it, so anything nested
+                            # inside could still be shared -- deep_cow privatizes the
+                            # whole subtree before the helpers below mutate it in place.
+                            conditional_stmt.condition = cast(IRBoolExpr, deep_cow(conditional_stmt.condition))
                             modified_bool_expr = self._try_inline_into_boolexpr(
                                 conditional_stmt.condition,
                                 assigned_local,
@@ -442,6 +450,7 @@ class IRConditionInliner(TraversingIROptimizer):
                                 new_statements.append(current_stmt)
                                 i += 1
                                 continue
+                            while_loop_stmt.condition = cast(IRBoolExpr, deep_cow(while_loop_stmt.condition))
                             modified_bool_expr = self._try_inline_into_boolexpr(
                                 while_loop_stmt.condition,
                                 assigned_local,
@@ -493,6 +502,7 @@ class IRConditionInliner(TraversingIROptimizer):
                             new_statements.append(current_stmt)
                             i += 1
                             continue
+                        assign_next_stmt.expr = cast(IRExpression, deep_cow(assign_next_stmt.expr))
                         modified_rhs_expr = self._try_inline_into_generic_expr(
                             assign_next_stmt.expr, assigned_local, expr_to_inline
                         )
@@ -522,6 +532,7 @@ class IRConditionInliner(TraversingIROptimizer):
                             i += 2
                             inlined_something = True
                         elif isinstance(return_stmt.value, IRExpression):
+                            return_stmt.value = cast(IRExpression, deep_cow(return_stmt.value))
                             modified_ret_val = self._try_inline_into_generic_expr(
                                 return_stmt.value, assigned_local, expr_to_inline
                             )
@@ -536,6 +547,7 @@ class IRConditionInliner(TraversingIROptimizer):
                                 inlined_something = True
 
                     elif not inlined_something and isinstance(next_stmt, IRExpression):
+                        next_stmt = cast(IRExpression, deep_cow(next_stmt))
                         modified_next_expr = self._try_inline_into_generic_expr(
                             next_stmt, assigned_local, expr_to_inline
                         )
@@ -842,20 +854,36 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             return False
         _visited.add(id(stmt))
 
+        # This method does its own manual recursion into nested blocks below
+        # (bypassing the generic dispatcher's traversal, which would otherwise
+        # privatize block-typed children automatically), so privatize `stmt`'s
+        # own block-typed children here first.
+        self._cow_children(stmt)
+
         made_change = False
 
         if isinstance(stmt, IRAssign):
             if stmt.target != target and isinstance(stmt.target, IRExpression):
+                stmt.target = cast(IRExpression, deep_cow(stmt.target))
                 _, changed = self._substitute_in_expr(stmt.target, target, replacement)
                 made_change = made_change or changed
             if isinstance(stmt.expr, IRExpression):
+                stmt.expr = cast(IRExpression, deep_cow(stmt.expr))
                 stmt.expr, changed = self._substitute_in_expr(stmt.expr, target, replacement)
                 made_change = made_change or changed
         elif isinstance(stmt, IRExpression):
+            # Not deep_cow'd: the replacement value from a wholesale `stmt == target`
+            # match is already discarded here (assigned to `_`), independent of
+            # sharing, so there's nothing this substitution actually writes back in
+            # that case; `_substitute_in_expr`'s in-place field mutations for the
+            # non-wholesale-match case still need `stmt` itself to already be
+            # privately owned, which callers guarantee (block-statement-list
+            # elements are cow'd by `_cow_children` before reaching here).
             _, changed = self._substitute_in_expr(stmt, target, replacement)
             made_change = made_change or changed
         elif isinstance(stmt, IRReturn):
             if stmt.value:
+                stmt.value = cast(IRExpression, deep_cow(stmt.value))
                 stmt.value, changed = self._substitute_in_expr(stmt.value, target, replacement)
                 made_change = made_change or changed
 
@@ -868,6 +896,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                     if id(child) in _visited:
                         continue
                     _visited.add(id(child))
+                    self._cow_children(child)
                     for sub_stmt in child.statements:
                         if id(sub_stmt) in _visited:
                             continue
@@ -889,19 +918,24 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         made_change = False
         if isinstance(stmt, IRAssign):
             if stmt.target != target and isinstance(stmt.target, IRExpression):
+                stmt.target = cast(IRExpression, deep_cow(stmt.target))
                 _, changed = self._substitute_in_expr(stmt.target, target, replacement)
                 made_change = made_change or changed
             if isinstance(stmt.expr, IRExpression):
+                stmt.expr = cast(IRExpression, deep_cow(stmt.expr))
                 stmt.expr, changed = self._substitute_in_expr(stmt.expr, target, replacement)
                 made_change = made_change or changed
         elif isinstance(stmt, IRExpression):
+            # Not deep_cow'd: see the matching comment in _substitute_in_statement.
             _, changed = self._substitute_in_expr(stmt, target, replacement)
             made_change = made_change or changed
         elif isinstance(stmt, IRReturn):
             if stmt.value:
+                stmt.value = cast(IRExpression, deep_cow(stmt.value))
                 stmt.value, changed = self._substitute_in_expr(stmt.value, target, replacement)
                 made_change = made_change or changed
         elif isinstance(stmt, IRConditional):
+            stmt.condition = cast(IRExpression, deep_cow(stmt.condition))
             stmt.condition, changed = self._substitute_in_expr(stmt.condition, target, replacement)
             made_change = made_change or changed
         elif isinstance(stmt, IRWhileLoop):
@@ -911,6 +945,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             # from before the loop would freeze it to a stale snapshot (e.g. turning
             # `idx = 0; while (idx < n)` into the loop-invariant `while (0 < n)`).
             if not self._is_local_redefined(target, stmt.body.statements):
+                stmt.condition = cast(IRExpression, deep_cow(stmt.condition))
                 stmt.condition, changed = self._substitute_in_expr(stmt.condition, target, replacement)
                 made_change = made_change or changed
         return made_change
@@ -1158,6 +1193,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         block.statements = new_statements
 
         for stmt in block.statements:
+            self._cow_children(stmt)
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     if id(child) in self._visited_ids:
@@ -1254,6 +1290,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 block.statements = [s for s in block.statements if s not in statements_to_remove]
 
         for stmt in block.statements:
+            self._cow_children(stmt)
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     if id(child) in self._visited_ids:
@@ -1445,53 +1482,77 @@ class IRCopyPropOptimizer(TraversingIROptimizer):
         return None
 
     def _replace_local_shallow(self, stmt: IRStatement, target: IRLocal, replacement: IRLocal) -> bool:
-        """Replace reads of target with replacement only at the top level of stmt."""
+        """Replace reads of target with replacement only at the top level of stmt.
+
+        `stmt` is already privately owned (a block-statement-list element, cow'd by
+        the generic traversal), but its own expression-typed fields are only
+        shallow-copied along with it, so they (and anything nested inside them)
+        could still be shared -- deep_cow privatizes each whole root expression
+        before _replace_local_in_expr mutates nested nodes in place.
+        """
         made_change = False
         if isinstance(stmt, IRAssign):
             if isinstance(stmt.target, IRExpression) and stmt.target != target:
+                stmt.target = cast(IRExpression, deep_cow(stmt.target))
                 _, changed = self._replace_local_in_expr(stmt.target, target, replacement)
                 made_change = made_change or changed
             if isinstance(stmt.expr, IRExpression):
+                stmt.expr = cast(IRExpression, deep_cow(stmt.expr))
                 stmt.expr, changed = self._replace_local_in_expr(stmt.expr, target, replacement)
                 made_change = made_change or changed
         elif isinstance(stmt, IRExpression):
+            # Not deep_cow'd: see the matching comment in _substitute_in_statement.
             _, changed = self._replace_local_in_expr(stmt, target, replacement)
             made_change = made_change or changed
         elif isinstance(stmt, IRReturn):
             if stmt.value:
+                stmt.value = cast(IRExpression, deep_cow(stmt.value))
                 stmt.value, changed = self._replace_local_in_expr(stmt.value, target, replacement)
                 made_change = made_change or changed
         elif isinstance(stmt, IRConditional):
+            stmt.condition = cast(IRExpression, deep_cow(stmt.condition))
             stmt.condition, changed = self._replace_local_in_expr(stmt.condition, target, replacement)
             made_change = made_change or changed
         elif isinstance(stmt, IRWhileLoop):
+            stmt.condition = cast(IRExpression, deep_cow(stmt.condition))
             stmt.condition, changed = self._replace_local_in_expr(stmt.condition, target, replacement)
             made_change = made_change or changed
         elif isinstance(stmt, IRSwitch):
+            stmt.value = cast(IRExpression, deep_cow(stmt.value))
             stmt.value, changed = self._replace_local_in_expr(stmt.value, target, replacement)
             made_change = made_change or changed
         return made_change
 
     def _replace_local_in_statement(self, stmt: IRStatement, target: IRLocal, replacement: IRLocal) -> bool:
+        # This method does its own manual recursion into child statements below
+        # (bypassing the generic dispatcher), so privatize block-typed children
+        # of `stmt` first, and deep_cow each expression-typed field before mutating.
+        self._cow_children(stmt)
         made_change = False
         if isinstance(stmt, IRAssign):
             if isinstance(stmt.target, IRExpression) and stmt.target != target:
+                stmt.target = cast(IRExpression, deep_cow(stmt.target))
                 _, changed = self._replace_local_in_expr(stmt.target, target, replacement)
                 made_change = made_change or changed
             if isinstance(stmt.expr, IRExpression):
+                stmt.expr = cast(IRExpression, deep_cow(stmt.expr))
                 stmt.expr, changed = self._replace_local_in_expr(stmt.expr, target, replacement)
                 made_change = made_change or changed
         elif isinstance(stmt, IRExpression):
+            # Not deep_cow'd: see the matching comment in _substitute_in_statement.
             _, changed = self._replace_local_in_expr(stmt, target, replacement)
             made_change = made_change or changed
         elif isinstance(stmt, IRReturn):
             if stmt.value:
+                stmt.value = cast(IRExpression, deep_cow(stmt.value))
                 stmt.value, changed = self._replace_local_in_expr(stmt.value, target, replacement)
                 made_change = made_change or changed
         elif isinstance(stmt, IRConditional):
+            stmt.condition = cast(IRExpression, deep_cow(stmt.condition))
             stmt.condition, changed = self._replace_local_in_expr(stmt.condition, target, replacement)
             made_change = made_change or changed
         elif isinstance(stmt, IRWhileLoop):
+            stmt.condition = cast(IRExpression, deep_cow(stmt.condition))
             stmt.condition, changed = self._replace_local_in_expr(stmt.condition, target, replacement)
             made_change = made_change or changed
 

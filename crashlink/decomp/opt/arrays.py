@@ -88,6 +88,7 @@ from . import (
     _bytes_mem_kind,
     _int_const_value,
     _signed_i32,
+    deep_cow,
 )
 
 
@@ -141,6 +142,7 @@ class IRNativeArrayAllocOptimizer(TraversingIROptimizer):
             stmt.target.native_elem_type = elem_type
             stmt.expr = IRNativeArrayNew(self.func.code, stmt.target.type, elem_type, size_arg)
         for stmt in block.statements:
+            self._cow_children(stmt)
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
@@ -237,6 +239,7 @@ class IRArrayObjWrapperOptimizer(TraversingIROptimizer):
             new_statements.append(stmt)
         block.statements = new_statements
         for stmt in block.statements:
+            self._cow_children(stmt)
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
@@ -297,6 +300,7 @@ class IRNativeMapAllocOptimizer(TraversingIROptimizer):
                 stmt.target.native_map_class = class_name
             stmt.expr = IRNativeMapNew(self.func.code, abstract_type, class_name)
         for stmt in block.statements:
+            self._cow_children(stmt)
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
@@ -419,7 +423,12 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         # rather than appearing inline in the access; track those as we go.
         idx_temp_map: Dict[str, IRExpression] = {}
         for j in range(start + 1, len(stmts)):
-            use = stmts[j]
+            # `use` is already privately owned (a block-statement-list element),
+            # but anything nested inside it is only shallow-copied along with it,
+            # so it could still be shared -- deep_cow privatizes the whole subtree
+            # up front so _find_temp_accesses's found nodes and _replace_temp_accesses's
+            # in-place mutations below agree on the same (private) object identities.
+            use = cast(IRStatement, deep_cow(stmts[j]))
             if (
                 isinstance(use, IRAssign)
                 and isinstance(use.target, IRLocal)

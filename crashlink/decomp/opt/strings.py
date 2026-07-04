@@ -88,6 +88,7 @@ from . import (
     _bytes_mem_kind,
     _int_const_value,
     _signed_i32,
+    deep_cow,
 )
 
 
@@ -252,7 +253,12 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
                     current_assigns[stmt.target.name] = stmt
                 if isinstance(stmt.expr, IRExpression):
                     self._target_stmt = stmt
-                    stmt.expr = self._rewrite_expr(stmt.expr, current_assigns)
+                    # stmt is already privately owned (a block-statement-list element),
+                    # but its own expr field is only shallow-copied along with it, so
+                    # anything nested inside could still be shared -- deep_cow
+                    # privatizes the whole subtree before _rewrite_expr mutates
+                    # nested nodes (expr.args) in place.
+                    stmt.expr = self._rewrite_expr(cast(IRExpression, deep_cow(stmt.expr)), current_assigns)
 
         # A bytes-temp assignment fully consumed by a collapse above is now
         # dead — its only use (the __alloc__ call) no longer reads it — but
@@ -388,6 +394,7 @@ class IRStringAllocOptimizer(TraversingIROptimizer):
     def visit_block(self, block: IRBlock) -> None:
         if self.alloc_func is None or self.func.func.findex.value == self.alloc_func.findex.value:
             for stmt in block.statements:
+                self._cow_children(stmt)
                 for child in stmt.get_children():
                     if isinstance(child, IRBlock):
                         self.visit_block(child)
@@ -449,6 +456,7 @@ class IRStringAllocOptimizer(TraversingIROptimizer):
             block.statements = [s for idx, s in enumerate(block.statements) if idx not in remove]
 
         for stmt in block.statements:
+            self._cow_children(stmt)
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)

@@ -81,6 +81,139 @@ from ..ir import (
 from ..cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
 
 
+def cow(node: Optional[IRStatement]) -> Optional[IRStatement]:
+    """Return a privately-owned copy of `node` if it might still be shared with
+    another parent, else return `node` unchanged.
+
+    `IRFunction._lift_block` caches lifted CFG regions keyed by (node, stop_at,
+    loop_ctx) and, on a cache hit, hands back the exact same object rather than
+    re-lifting or deep-cloning it (deep-cloning used to compound into an
+    exponential blowup for functions with many convergent branches -- see
+    `_mark_shared`'s docstring in decomp/function.py). That means the IR can be a
+    real DAG: the same IRBlock/IRStatement reachable from more than one parent.
+    Most optimizer passes are context-sensitive (their rewrite decision depends
+    on surrounding siblings or loop state) and mutate fields in place, so two
+    occurrences of a shared node could legitimately need different treatment.
+
+    This is the copy-on-write half of that: call it on any node immediately
+    before mutating one of its own fields (`.statements`, `.true_block`, `.value`,
+    `.default`, ...), and mutate/store the *result*, not the original reference.
+    Only actually-shared nodes pay a (shallow) copy; anything private (the
+    overwhelming majority of nodes, which were never a cache hit) is returned
+    as-is at no cost.
+    """
+    if node is None or not getattr(node, "_shared", False):
+        return node
+    new_node = copy.copy(node)
+    new_node._shared = False
+    if isinstance(new_node, IRBlock):
+        new_node.statements = list(new_node.statements)
+    elif isinstance(new_node, IRSwitch):
+        new_node.cases = dict(new_node.cases)
+    return new_node
+
+
+def _deep_copy_ir(value: Any, memo: Dict[int, Any]) -> Any:
+    from enum import Enum as _Enum
+
+    if value is None or isinstance(value, (int, float, str, bool, bytes, _Enum)):
+        return value
+    vid = id(value)
+    if vid in memo:
+        return memo[vid]
+    if isinstance(value, IRLocal) or isinstance(value, IRBlock):
+        # IRLocal: a register identity shared throughout the whole function,
+        # never cloned. IRBlock: block-level sharing is handled lazily by cow()
+        # (see its docstring for why it must stay shallow); deep_cow is only for
+        # bounded expression trees, so if one somehow reaches a block, leave it
+        # for cow() rather than deep-copying a potentially large subtree here.
+        return value
+    if isinstance(value, list):
+        new_list: List[Any] = []
+        memo[vid] = new_list
+        new_list.extend(_deep_copy_ir(v, memo) for v in value)
+        return new_list
+    if isinstance(value, tuple):
+        return tuple(_deep_copy_ir(v, memo) for v in value)
+    if isinstance(value, dict):
+        new_dict: Dict[Any, Any] = {}
+        memo[vid] = new_dict
+        for k, v in value.items():
+            new_dict[_deep_copy_ir(k, memo)] = _deep_copy_ir(v, memo)
+        return new_dict
+    if isinstance(value, set):
+        new_set: Set[Any] = set()
+        memo[vid] = new_set
+        new_set.update(_deep_copy_ir(v, memo) for v in value)
+        return new_set
+    if not isinstance(value, (IRStatement, IRExpression)):
+        # Anything that isn't part of the IR tree itself (a bytecode-level
+        # Function/Type/Native/Opcode/... reachable e.g. through an IRConst's
+        # `.value`) is shared program-wide data, not something this function
+        # lifted -- copying into it would walk into unrelated, potentially huge
+        # structures (a Function's own ops, a Type's whole hierarchy, ...).
+        return value
+    new_obj = object.__new__(type(value))
+    memo[vid] = new_obj
+    for k, v in vars(value).items():
+        setattr(new_obj, k, _deep_copy_ir(v, memo))
+    if hasattr(new_obj, "_shared"):
+        new_obj._shared = False
+    return new_obj
+
+
+def deep_cow(node: Optional[IRExpression]) -> Optional[IRExpression]:
+    """Like `cow`, but privatizes an entire expression subtree at once, not just
+    its root.
+
+    Some passes (copy/constant propagation) walk into an expression tree and
+    mutate a *nested* node's field in place (e.g. `parent.left = value` several
+    levels down), not just reassign the top-level statement's own `.expr`. Since
+    `cow()` only shallow-copies the node it's given, chasing every such recursive
+    mutation site to insert a `cow()` call at each level is fragile and easy to
+    miss one of. Expression trees are small and bounded in size (unlike whole
+    IRBlock subtrees full of nested control flow, which is why `cow()` itself
+    must stay lazy/shallow -- see its docstring), so fully deep-copying one here
+    is cheap and doesn't reintroduce the exponential blowup this module exists to
+    avoid. Call this once, on the root expression, before handing it to a pass
+    that walks-and-mutates in place.
+    """
+    if node is None or not getattr(node, "_shared", False):
+        return node
+    return cast(IRExpression, _deep_copy_ir(node, {}))
+
+
+def _cow_block_children(statement: IRStatement) -> None:
+    """Privatize (via `cow`) every direct sub-block/case-block attribute of
+    `statement`, writing the (possibly new) private copies back onto `statement`
+    itself. Call this on `statement` right before it might mutate one of these
+    children (including implicitly, via `visit_block`/`visit_conditional`/etc, or
+    via a pass's own manual recursion into nested blocks) -- `statement` itself
+    must already be privately owned by this point (guaranteed by induction: either
+    it's the function's root block, or its own parent already called this on it).
+    """
+    if isinstance(statement, IRBlock):
+        for i in range(len(statement.statements)):
+            statement.statements[i] = cow(statement.statements[i])
+    elif isinstance(statement, IRConditional):
+        statement.true_block = cast(IRBlock, cow(statement.true_block))
+        statement.false_block = cast(IRBlock, cow(statement.false_block))
+    elif isinstance(statement, IRSwitch):
+        statement.default = cast(IRBlock, cow(statement.default))
+        for k in list(statement.cases.keys()):
+            statement.cases[k] = cast(IRBlock, cow(statement.cases[k]))
+    elif isinstance(statement, IRTryCatch):
+        statement.try_block = cast(IRBlock, cow(statement.try_block))
+        statement.catch_block = cast(IRBlock, cow(statement.catch_block))
+    elif isinstance(statement, IRPrimitiveLoop):
+        # Unlike the other loop types, IRPrimitiveLoop.condition is itself an
+        # IRBlock (a "condition block"), not a plain IRExpression.
+        statement.condition = cast(IRBlock, cow(statement.condition))
+        statement.body = cast(IRBlock, cow(statement.body))
+    elif isinstance(statement, (IRWhileLoop, IRForEachLoop, IRIntRangeLoop)):
+        statement.body = cast(IRBlock, cow(statement.body))
+
+
 class IROptimizer(ABC):
     """
     Base class for intermediate representation optimization routines.
@@ -115,6 +248,12 @@ class TraversingIROptimizer(IROptimizer):
             self._visited_ids: Set[int] = set()
             self.visit(self.func.block)
 
+    def _cow_children(self, statement: IRStatement) -> None:
+        """See module-level `_cow_block_children`. Passes that do their own manual
+        recursion into nested blocks (bypassing `visit()`'s generic dispatch, which
+        already calls this) must call this themselves before recursing."""
+        _cow_block_children(statement)
+
     def visit(self, statement: IRStatement) -> None:
         """
         Recursively visit an IR statement and its children.
@@ -136,6 +275,13 @@ class TraversingIROptimizer(IROptimizer):
         if id(statement) in self._visited_ids:
             return
         self._visited_ids.add(id(statement))
+
+        # `statement` is guaranteed privately-owned by this point (by induction:
+        # either it's the function's root block, passed to the very first `visit()`
+        # call, or its parent already privatized it via this same mechanism before
+        # recursing here). Privatize its own direct sub-block/case-block children
+        # now, before any visit_X hook below gets a chance to mutate them in place.
+        _cow_block_children(statement)
 
         self.before_visit_statement(statement)
 

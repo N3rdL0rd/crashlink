@@ -75,6 +75,13 @@ class IRStatement(ABC):
         # disasm<->pseudocode sync and per-opcode comments) instead of only
         # whichever one happened to seed the replacement statement.
         self.src_op_idxs: Set[int] = set()
+        # Set once, recursively, when this node (and everything reachable from
+        # it) is stored into IRFunction._lift_cache: it may be returned again,
+        # unchanged, to satisfy a later cache hit, so it could end up reachable
+        # from more than one parent. Optimizer passes must treat a `_shared`
+        # node as read-only and go through `decomp.opt.cow()` before mutating
+        # any of its fields (see cow()'s docstring for why).
+        self._shared: bool = False
 
     @property
     def src_op_idx(self) -> Optional[int]:

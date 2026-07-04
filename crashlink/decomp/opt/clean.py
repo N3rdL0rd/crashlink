@@ -89,6 +89,8 @@ from . import (
     _bytes_mem_kind,
     _int_const_value,
     _signed_i32,
+    cow,
+    deep_cow,
 )
 
 
@@ -769,6 +771,7 @@ class IRDeadCodeEliminator(TraversingIROptimizer):
                 terminated = True
         block.statements = new_stmts
         for stmt in block.statements:
+            self._cow_children(stmt)
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
@@ -906,6 +909,7 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
 
         block.statements = new_stmts
         for stmt in block.statements:
+            self._cow_children(stmt)
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
@@ -939,10 +943,17 @@ class IRSequentialTempFolder(TraversingIROptimizer):
                 ):
                     i += 1
                     continue
+                # nxt/stmt are already privately owned (block-statement-list elements),
+                # but their own expression-typed fields are only shallow-copied along
+                # with them, so they (and anything nested inside them) could still be
+                # shared -- deep_cow privatizes the whole root expression at once
+                # before _replace_local_in_expr walks in and mutates nested nodes.
+                nxt.expr = cast(IRExpression, deep_cow(nxt.expr))
                 replaced = self._replace_local_in_expr(nxt.expr, stmt.target, stmt.expr)
                 if not replaced:
                     # The next RHS may also use the local through its target (e.g. array index).
                     if isinstance(nxt.target, IRArrayAccess):
+                        nxt.target = cast(IRArrayAccess, deep_cow(nxt.target))
                         replaced |= self._replace_local_in_expr(nxt.target.array, stmt.target, stmt.expr)
                         replaced |= self._replace_local_in_expr(nxt.target.index, stmt.target, stmt.expr)
                     if not replaced:
@@ -952,6 +963,7 @@ class IRSequentialTempFolder(TraversingIROptimizer):
                 block.statements.pop(i)
                 changed = True
         for stmt in block.statements:
+            self._cow_children(stmt)
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
@@ -1145,38 +1157,51 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
         # Recursively process nested blocks with the correct live-out sets.
         if isinstance(stmt, IRConditional):
             child_out = set(live_after_stmt)
+            if mutate:
+                stmt.true_block = cast(IRBlock, cow(stmt.true_block))
+                stmt.false_block = cast(IRBlock, cow(stmt.false_block))
             true_in = self._process_block(stmt.true_block, child_out, mutate=mutate) if stmt.true_block else set()
             false_in = self._process_block(stmt.false_block, child_out, mutate=mutate) if stmt.false_block else set()
             uses.update(true_in)
             uses.update(false_in)
-        elif isinstance(stmt, IRWhileLoop):
-            body_in = self._process_loop_body(
-                stmt.body, live_after_stmt, self._locals_in_expr(stmt.condition), mutate=mutate
-            )
-            uses.update(body_in)
-        elif isinstance(stmt, IRPrimitiveLoop):
-            cond_uses: Set[str] = set()
-            body_in = self._process_loop_body(stmt.body, live_after_stmt, cond_uses, mutate=mutate)
-            uses.update(body_in)
-            uses.update(cond_uses)
-        elif isinstance(stmt, IRForEachLoop):
-            array_uses = self._locals_in_expr(stmt.array) if hasattr(stmt, "array") else set()
-            body_in = self._process_loop_body(stmt.body, live_after_stmt, array_uses, mutate=mutate)
-            uses.update(body_in)
-            uses.update(array_uses)
-        elif isinstance(stmt, IRIntRangeLoop):
-            header_uses = self._locals_in_expr(stmt.start) | self._locals_in_expr(stmt.end)
-            body_in = self._process_loop_body(stmt.body, live_after_stmt, header_uses, mutate=mutate)
-            uses.update(body_in)
-            uses.update(header_uses)
+        elif isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop, IRForEachLoop, IRIntRangeLoop)):
+            if mutate:
+                stmt.body = cast(IRBlock, cow(stmt.body))
+            if isinstance(stmt, IRWhileLoop):
+                body_in = self._process_loop_body(
+                    stmt.body, live_after_stmt, self._locals_in_expr(stmt.condition), mutate=mutate
+                )
+                uses.update(body_in)
+            elif isinstance(stmt, IRPrimitiveLoop):
+                cond_uses: Set[str] = set()
+                body_in = self._process_loop_body(stmt.body, live_after_stmt, cond_uses, mutate=mutate)
+                uses.update(body_in)
+                uses.update(cond_uses)
+            elif isinstance(stmt, IRForEachLoop):
+                array_uses = self._locals_in_expr(stmt.array) if hasattr(stmt, "array") else set()
+                body_in = self._process_loop_body(stmt.body, live_after_stmt, array_uses, mutate=mutate)
+                uses.update(body_in)
+                uses.update(array_uses)
+            elif isinstance(stmt, IRIntRangeLoop):
+                header_uses = self._locals_in_expr(stmt.start) | self._locals_in_expr(stmt.end)
+                body_in = self._process_loop_body(stmt.body, live_after_stmt, header_uses, mutate=mutate)
+                uses.update(body_in)
+                uses.update(header_uses)
         elif isinstance(stmt, IRSwitch):
             child_out = set(live_after_stmt)
-            for case_block in stmt.cases.values():
-                uses.update(self._process_block(case_block, child_out, mutate=mutate))
+            for k in list(stmt.cases.keys()):
+                if mutate:
+                    stmt.cases[k] = cast(IRBlock, cow(stmt.cases[k]))
+                uses.update(self._process_block(stmt.cases[k], child_out, mutate=mutate))
             if stmt.default is not None:
+                if mutate:
+                    stmt.default = cast(IRBlock, cow(stmt.default))
                 uses.update(self._process_block(stmt.default, child_out, mutate=mutate))
         elif isinstance(stmt, IRTryCatch):
             child_out = set(live_after_stmt)
+            if mutate:
+                stmt.try_block = cast(IRBlock, cow(stmt.try_block))
+                stmt.catch_block = cast(IRBlock, cow(stmt.catch_block))
             try_in = self._process_block(stmt.try_block, child_out, mutate=mutate)
             catch_in = self._process_block(stmt.catch_block, child_out, mutate=mutate)
             uses.update(try_in)
@@ -1337,6 +1362,9 @@ class IRConstructorFolder(TraversingIROptimizer):
                             # Keep any statements between the allocation and the
                             # constructor call (e.g. initializers for constructor
                             # arguments), and place the folded `new` after them.
+                            # stmt.expr may still be shared (only shallow-copied
+                            # along with stmt itself) -- privatize it before mutating.
+                            stmt.expr = cast(IRNew, cow(stmt.expr))
                             stmt.expr.constructor_args = ctor_args
                             stmt.adopt(next_stmt)  # constructor-call opcode is dropped below
                             new_statements.extend(block.statements[i + 1 : j])
@@ -1355,6 +1383,7 @@ class IRConstructorFolder(TraversingIROptimizer):
                 i += 1
             block.statements = new_statements
         for stmt in block.statements:
+            self._cow_children(stmt)
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
@@ -1433,6 +1462,7 @@ class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
                 i += 1
             block.statements = new_statements
         for stmt in block.statements:
+            self._cow_children(stmt)
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
@@ -1486,18 +1516,27 @@ class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
         return use_stmt, j - start + 1
 
     def _substitute_use(self, stmt: IRStatement, local: IRLocal, replacement: IRExpression) -> bool:
+        # `stmt` is already privately owned (a block-statement-list element, cow'd
+        # by the generic traversal), but its own expression-typed fields are only
+        # shallow-copied along with it, so they (and anything nested inside them)
+        # could still be shared -- deep_cow privatizes each whole root expression
+        # before `_replace_in_expr` walks in and mutates nested nodes in place.
         if isinstance(stmt, IRAssign):
             changed = False
+            stmt.expr = cast(IRExpression, deep_cow(stmt.expr))
             if stmt.expr == local:
                 stmt.expr = replacement
                 changed = True
             elif isinstance(stmt.expr, IRExpression) and self._replace_in_expr(stmt.expr, local, replacement):
                 changed = True
             if isinstance(stmt.target, IRExpression) and stmt.target != local:
+                stmt.target = cast(IRExpression, deep_cow(stmt.target))
                 if self._replace_in_expr(stmt.target, local, replacement):
                     changed = True
             return changed
         if isinstance(stmt, (IRReturn, IRThrow)):
+            if stmt.value is not None:
+                stmt.value = cast(IRExpression, deep_cow(stmt.value))
             if stmt.value == local:
                 stmt.value = replacement
                 return True
@@ -1505,6 +1544,9 @@ class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
                 return self._replace_in_expr(stmt.value, local, replacement)
             return False
         if isinstance(stmt, IRExpression):
+            # Not deep_cow'd: unlike the branches above, there's no attribute on a
+            # bare expression-as-statement to write a copy back into here, and this
+            # shape doesn't occur in the anon-object-literal fold this class targets.
             return self._replace_in_expr(stmt, local, replacement)
         return False
 
@@ -1632,19 +1674,29 @@ class IRShiftConstantOptimizer(TraversingIROptimizer):
         return made_change
 
     def _apply_to_statement(self, stmt: IRStatement, const_map: Dict[IRLocal, IRConst]) -> None:
+        # `stmt` is already privately owned (a block-statement-list element, cow'd
+        # by the generic traversal), but its own expression-typed fields are only
+        # shallow-copied along with it, so they (and anything nested inside them)
+        # could still be shared -- deep_cow privatizes each whole root expression
+        # before _replace_shift_const walks in and mutates nested nodes in place.
         if isinstance(stmt, IRAssign):
+            stmt.expr = cast(IRExpression, deep_cow(stmt.expr))
             self._replace_shift_const(stmt.expr, const_map)
         elif isinstance(stmt, IRReturn):
             if stmt.value is not None:
+                stmt.value = cast(IRExpression, deep_cow(stmt.value))
                 self._replace_shift_const(stmt.value, const_map)
         elif isinstance(stmt, IRConditional):
+            stmt.condition = cast(IRExpression, deep_cow(stmt.condition))
             self._replace_shift_const(stmt.condition, const_map)
         elif isinstance(stmt, IRPrimitiveJump):
             for attr in ("left", "right", "cond"):
                 val = getattr(stmt, attr, None)
                 if val is not None:
-                    self._replace_shift_const(val, const_map)
+                    setattr(stmt, attr, deep_cow(val))
+                    self._replace_shift_const(getattr(stmt, attr), const_map)
         elif isinstance(stmt, IRSwitch):
+            stmt.value = cast(IRExpression, deep_cow(stmt.value))
             self._replace_shift_const(stmt.value, const_map)
 
     def visit_block(self, block: IRBlock) -> None:

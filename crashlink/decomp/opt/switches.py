@@ -117,6 +117,7 @@ class IRIntSwitchOptimizer(TraversingIROptimizer):
                 i += 1
             block.statements = new_statements
         for stmt in block.statements:
+            self._cow_children(stmt)
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
@@ -231,6 +232,7 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
                 i += 1
             block.statements = new_statements
         for stmt in block.statements:
+            self._cow_children(stmt)
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)

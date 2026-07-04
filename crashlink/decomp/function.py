@@ -1397,53 +1397,53 @@ class IRFunction:
             left = self.locals[op.df[reg_key].value]
         return IRBoolExpr(self.code, cond, left, right)
 
-    def _clone_ir(self, block: IRBlock) -> IRBlock:
+    def _mark_shared(self, value: Any, seen: Set[int]) -> None:
         """
-        Clones a cached IRBlock so a memoized `_lift_block` result can be reused without
-        making the same object reachable from multiple parents. `self.code` (the whole
-        Bytecode) and `self.locals` (the register->IRLocal identities used throughout
-        the function) are shared rather than duplicated; everything else in the
-        statement/expression tree is copied. Hand-rolled instead of `copy.deepcopy`:
-        deepcopy's generic `__reduce_ex__`/pickling-protocol dispatch is much slower
-        than just walking `__dict__`, and this runs once per cache hit.
-        """
-        memo: Dict[int, Any] = {id(self.code): self.code}
-        for local in self.locals:
-            memo[id(local)] = local
-        return cast(IRBlock, self._clone_value(block, memo))
+        Recursively mark a just-cached IRBlock (and everything reachable from it) as
+        `_shared`, so a later cache hit can hand back the exact same objects (O(1),
+        no copying) instead of the old approach of deep-cloning the whole subtree on
+        every hit -- which re-copies whatever earlier hits already nested inside it,
+        compounding into an exponential blowup for functions with many convergent
+        branches. Optimizer passes are responsible for privatizing (via
+        `decomp.opt.cow()`) a `_shared` node before mutating it in place, since it may
+        be reachable from more than one parent.
 
-    def _clone_value(self, value: Any, memo: Dict[int, Any]) -> Any:
+        Mirrors the old `_clone_value`'s traversal shape (walk containers, then
+        `__dict__`) so it reaches the same nodes, but only sets a flag instead of
+        copying, and stops descending once it hits a node already marked `_shared`
+        (marked once, recursively, the first time *it* was cached) -- so total cost
+        across the function is O(distinct nodes ever built), not O(hits x subtree).
+        """
         if value is None or isinstance(value, (int, float, str, bool, bytes, _Enum)):
-            return value
+            return
         vid = id(value)
-        if vid in memo:
-            return memo[vid]
-        if isinstance(value, list):
-            new_list: List[Any] = []
-            memo[vid] = new_list
-            new_list.extend(self._clone_value(v, memo) for v in value)
-            return new_list
-        if isinstance(value, tuple):
-            return tuple(self._clone_value(v, memo) for v in value)
+        if vid in seen:
+            return
+        seen.add(vid)
+        if isinstance(value, IRStatement):
+            if value._shared:
+                return
+            value._shared = True
+        if isinstance(value, (list, tuple, set)):
+            for v in value:
+                self._mark_shared(v, seen)
+            return
         if isinstance(value, dict):
-            new_dict: Dict[Any, Any] = {}
-            memo[vid] = new_dict
             for k, v in value.items():
-                new_dict[self._clone_value(k, memo)] = self._clone_value(v, memo)
-            return new_dict
-        if isinstance(value, set):
-            new_set: Set[Any] = set()
-            memo[vid] = new_set
-            new_set.update(self._clone_value(v, memo) for v in value)
-            return new_set
-        if not hasattr(value, "__dict__"):
-            # Unknown leaf type (e.g. a Bytecode/Function/Type reference) - share it.
-            return value
-        new_obj = object.__new__(type(value))
-        memo[vid] = new_obj
-        for k, v in vars(value).items():
-            setattr(new_obj, k, self._clone_value(v, memo))
-        return new_obj
+                self._mark_shared(k, seen)
+                self._mark_shared(v, seen)
+            return
+        if not isinstance(value, IRStatement) or isinstance(value, IRLocal):
+            # Anything that isn't part of the IR tree itself (a bytecode-level
+            # Function/Type/Native/Opcode/... reachable e.g. through an IRConst's
+            # `.value`, or the whole Bytecode via IRLocal.code) is shared program-
+            # wide data, not something this function lifted -- descending into it
+            # would walk into unrelated, potentially huge structures (a Function's
+            # own ops, a Type's whole hierarchy, ...) for no benefit, since it's
+            # never itself cloned/mutated by an optimizer pass.
+            return
+        for v in vars(value).values():
+            self._mark_shared(v, seen)
 
     def _lift_block(
         self,
@@ -1482,19 +1482,18 @@ class IRFunction:
         # reaches it, which is exponential in the nesting depth of the function. Since
         # loops are handled separately above, everything reachable here is acyclic, so
         # the *logical content* for an identical (node, stop_at, loop_ctx) request never
-        # depends on which ancestor path got there. We still hand back a fresh clone
-        # rather than the cached object itself: returning the same instance would make
-        # the IR a real DAG, and nothing downstream (repr(), pprint(), the optimizer
-        # passes' generic statement walk) expects a node to be reachable from multiple
-        # parents, so they would re-render/re-process the shared subtree once per
-        # reference path - the same exponential blowup we're trying to avoid, just
-        # moved into every later consumer instead of the lifter.
+        # depends on which ancestor path got there. The IR is allowed to be a real DAG:
+        # a `_shared`-marked node (see `_mark_shared`) may be reachable from more than
+        # one parent, and optimizer passes go through `decomp.opt.cow()` before mutating
+        # one, so handing back the exact cached object here is O(1) and safe -- no need
+        # to deep-clone the whole subtree per hit (which used to compound into an
+        # exponential blowup for functions with many convergent branches).
         # _LoopContext is a non-frozen @dataclass, so it's unhashable; key on identity instead.
         cache_key = (node, stop_at, id(loop_ctx))
         cached = self._lift_cache.get(cache_key)
         if cached is not None:
             visited.add(node)
-            return self._clone_ir(cached)
+            return cached
 
         visited.add(node)
 
@@ -1730,6 +1729,7 @@ class IRFunction:
                     block.statements.extend(next_block_ir.statements)
 
         self._lift_cache[cache_key] = block
+        self._mark_shared(block, set())
         return block
 
     def print(self) -> None:
