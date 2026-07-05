@@ -641,7 +641,7 @@ def hlc_main(argv: List[str]) -> None:
 
     code = _load_code_from_cli_path(args.file, args.no_constants)
     out_c = args.output or _default_hlc_output(args.file)
-    out_dir = str(Path(out_c).with_suffix("")) + ".d"
+    out_dir = str(Path(out_c))
     os.makedirs(out_dir, exist_ok=True)
     out_build_c = str(Path(out_c).with_suffix(""))
     out_bin = out_build_c
