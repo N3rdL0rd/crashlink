@@ -698,6 +698,13 @@ def generate_globals(code: Bytecode) -> List[str]:
         c_type_str = ctype(code, g_type, all_types.index(g_type))
         line(f"{c_type_str} g_s_{i} = 0;")
 
+    nglobals = len(code.global_types)
+    if nglobals > 0:
+        line(f"\nvoid *hlc_global_data[{nglobals}] = {{")
+        with indent:
+            line(",\n".join(f"(void*)&g_s_{i}" for i in range(nglobals)))
+        line("};")
+
     for const in code.constants:
         obj = const._global.resolve(code).definition
         objIdx = const._global.partial_resolve(code).value
@@ -2378,6 +2385,8 @@ def code_to_c(
     # ---- Function forward declarations ----
     _sec(funcs_h_lines, "Function Forward Declarations")
     funcs_h_lines.append("void hl_entry_point();")
+    if len(code.global_types) > 0:
+        funcs_h_lines.append(f"extern void *hlc_global_data[{len(code.global_types)}];")
 
     # ---- Natives (body has definitions, funcs_h gets forward decls) ----
     native_output = generate_natives(code)
