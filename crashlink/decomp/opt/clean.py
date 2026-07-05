@@ -383,9 +383,10 @@ class IRBlockFlattener(TraversingIROptimizer):
 
 class IRCommonBlockMerger(TraversingIROptimizer):
     """
-    Finds IRConditional statements where both the true and false blocks end
-    with the same sequence of statements. It "hoists" this common suffix out
-    of the conditional and places it after the if/else block.
+    Finds IRConditional/IRSwitch statements where every branch (both arms of
+    an if/else, or every case plus an explicit default of a switch) ends with
+    the same sequence of statements. It "hoists" this common suffix out of
+    the branches and places it after the conditional/switch.
 
     For example:
         if (cond) {
@@ -403,7 +404,54 @@ class IRCommonBlockMerger(TraversingIROptimizer):
             do_b();
         }
         common_code();
+
+    This matters beyond tidiness: HashLink often compiles a chain of guard
+    clauses (`if (x != A) { if (x != B) { ... } else {...} } else {...}`) where
+    every branch's "no match yet, keep checking" path and every match's
+    fallthrough all converge on the same later code. The lifter shares that
+    convergent tail once (see IRFunction._lift_block), but each occurrence
+    still needs its own private copy once an optimizer touches it (see
+    decomp.opt.cow) -- so left as deeply nested branches, that shared tail
+    gets duplicated once per branch, compounding multiplicatively with
+    nesting depth. Hoisting it back out to run once, as soon as branches
+    converge, undoes that compounding at the source instead of after the
+    fact. Every branch must be processed (children first, so an inner
+    if/switch's own hoist has already happened and its now-shorter branches
+    can still match their siblings) for the cascade to reach every level.
     """
+
+    def _leaf_branches(self, block: IRBlock, depth: int = 0) -> List[IRBlock]:
+        """Widen a single branch into all the terminal ("leaf") blocks reachable
+        by descending through a *chain* of trailing conditionals/switches --
+        each nested as the very last statement of its enclosing block, as a
+        guard-clause chain compiles (`if (mismatch) { if (mismatch2) {...} else
+        {...} } else {...}`). Every leaf found this way is a distinct point
+        where execution could fall out of the whole chain, so if they all end
+        with the same suffix, that suffix can be hoisted to run once after the
+        *entire* chain -- not just after one direct if/else pair -- however
+        deep the chain goes. Conservative by construction: it only descends
+        past a nested conditional/switch when every one of *its* branches is
+        itself non-empty and accounted for (same requirement as the top-level
+        hoist below), so a chain link that doesn't fit the pattern just becomes
+        a leaf itself instead of being skipped incorrectly.
+        """
+        if depth > 200 or not block.statements:
+            return [block]
+        last = block.statements[-1]
+        if (
+            isinstance(last, IRConditional)
+            and last.true_block
+            and last.true_block.statements
+            and last.false_block
+            and last.false_block.statements
+        ):
+            return self._leaf_branches(last.true_block, depth + 1) + self._leaf_branches(last.false_block, depth + 1)
+        if isinstance(last, IRSwitch) and last.default and last.default.statements and len(last.cases) >= 1:
+            leaves = list(self._leaf_branches(last.default, depth + 1))
+            for case_block in last.cases.values():
+                leaves.extend(self._leaf_branches(case_block, depth + 1))
+            return leaves
+        return [block]
 
     def visit_block(self, block: IRBlock) -> None:
         made_change = False
@@ -411,64 +459,80 @@ class IRCommonBlockMerger(TraversingIROptimizer):
 
         for stmt in block.statements:
             if isinstance(stmt, IRConditional):
-                # We can only merge if there is an 'else' block
                 if not stmt.false_block or not stmt.false_block.statements:
                     new_statements.append(stmt)
                     continue
-
-                # stmt is already privately owned (a block-statement-list element),
-                # but its true_block/false_block are only shallow-copied along with
-                # it (see decomp.opt.cow), so they could still be shared -- privatize
-                # them before truncating their .statements below.
                 stmt.true_block = cast(IRBlock, cow(stmt.true_block))
                 stmt.false_block = cast(IRBlock, cow(stmt.false_block))
-                true_stmts = stmt.true_block.statements
-                false_stmts = stmt.false_block.statements
-
-                common_suffix: List[IRStatement] = []
-                # Compare statements from the end of each block
-                t_idx, f_idx = len(true_stmts) - 1, len(false_stmts) - 1
-                while t_idx >= 0 and f_idx >= 0:
-                    # Cheap type check first: a mismatch here means the repr()s can never
-                    # be equal, so we skip fully rendering large nested subtrees (e.g. a
-                    # branch ending in a deeply nested IRConditional from a cascading
-                    # if/elif chain) just to find out they differ.
-                    if type(true_stmts[t_idx]) is not type(false_stmts[f_idx]):
-                        break
-                    # Structural comparison without rendering: repr()/pformat on
-                    # the IR DAG re-expands shared continuation blocks and is
-                    # exponential for branchy code. _ir_structurally_equal walks
-                    # the pair in lockstep with memoization instead.
-                    if _ir_structurally_equal(true_stmts[t_idx], false_stmts[f_idx]):
-                        # Prepend to keep the order correct
-                        common_suffix.insert(0, true_stmts[t_idx])
-                        t_idx -= 1
-                        f_idx -= 1
-                    else:
-                        break
-
-                # A lone hoisted `return`/`throw` doesn't reduce anything -- each
-                # branch already terminates there, so hoisting it just replaces a
-                # direct `return expr` with an extra temp assignment plus a shared
-                # `return temp`. Only hoist single-statement suffixes when there's
-                # an actual reduction to be had (i.e. more than one statement).
-                if len(common_suffix) == 1 and isinstance(common_suffix[0], (IRReturn, IRThrow)):
-                    common_suffix = []
-                    t_idx, f_idx = len(true_stmts) - 1, len(false_stmts) - 1
-
-                if common_suffix:
-                    dbg_print(f"IRCommonBlockMerger: Found {len(common_suffix)} common statements to merge.")
-                    made_change = True
-
-                    # Truncate the original blocks
-                    stmt.true_block.statements = true_stmts[: t_idx + 1]
-                    stmt.false_block.statements = false_stmts[: f_idx + 1]
-
-                    # Add the modified conditional, then the common code after it.
+                direct_branches = [stmt.true_block, stmt.false_block]
+            elif isinstance(stmt, IRSwitch):
+                # Only safe if every path is accounted for: all named cases,
+                # plus an *explicit* default (an empty default means "no match
+                # falls through to whatever's after the switch normally",
+                # which is a different, unaccounted-for path).
+                if not stmt.default or not stmt.default.statements or len(stmt.cases) < 1:
                     new_statements.append(stmt)
-                    new_statements.extend(common_suffix)
-                else:
-                    new_statements.append(stmt)
+                    continue
+                stmt.default = cast(IRBlock, cow(stmt.default))
+                for k in list(stmt.cases.keys()):
+                    stmt.cases[k] = cast(IRBlock, cow(stmt.cases[k]))
+                direct_branches = [stmt.default] + list(stmt.cases.values())
+            else:
+                new_statements.append(stmt)
+                continue
+
+            # Process children first (post-order): an inner if/switch nested at
+            # the tail of one of these branches needs its own hoist to have
+            # already happened, so its now-truncated branch can still match
+            # its siblings here and the hoist cascades outward one level at a
+            # time instead of only ever firing at the innermost level.
+            for b in direct_branches:
+                self.visit(b)
+
+            # Widen past the direct branches to every leaf of a chain nested at
+            # their tails (see _leaf_branches) -- the shared tail in a guard-
+            # clause chain sits at the end of each "matched" branch, scattered
+            # across many different nesting depths, not just these two.
+            branches: List[IRBlock] = []
+            for b in direct_branches:
+                branches.extend(self._leaf_branches(b))
+
+            common_suffix: List[IRStatement] = []
+            idxs = [len(b.statements) - 1 for b in branches]
+            while all(i >= 0 for i in idxs):
+                candidates = [b.statements[i] for b, i in zip(branches, idxs)]
+                first = candidates[0]
+                # Cheap type check first: a mismatch here means the repr()s can never
+                # be equal, so we skip fully rendering large nested subtrees (e.g. a
+                # branch ending in a deeply nested IRConditional from a cascading
+                # if/elif chain) just to find out they differ.
+                if any(type(c) is not type(first) for c in candidates[1:]):
+                    break
+                # Structural comparison without rendering: repr()/pformat on
+                # the IR DAG re-expands shared continuation blocks and is
+                # exponential for branchy code. _ir_structurally_equal walks
+                # the pair in lockstep with memoization instead.
+                if any(not _ir_structurally_equal(c, first) for c in candidates[1:]):
+                    break
+                common_suffix.insert(0, first)
+                idxs = [i - 1 for i in idxs]
+
+            # A lone hoisted `return`/`throw` doesn't reduce anything -- each
+            # branch already terminates there, so hoisting it just replaces a
+            # direct `return expr` with an extra temp assignment plus a shared
+            # `return temp`. Only hoist single-statement suffixes when there's
+            # an actual reduction to be had (i.e. more than one statement).
+            if len(common_suffix) == 1 and isinstance(common_suffix[0], (IRReturn, IRThrow)):
+                common_suffix = []
+                idxs = [len(b.statements) - 1 for b in branches]
+
+            if common_suffix:
+                dbg_print(f"IRCommonBlockMerger: Found {len(common_suffix)} common statements to merge.")
+                made_change = True
+                for b, i in zip(branches, idxs):
+                    b.statements = b.statements[: i + 1]
+                new_statements.append(stmt)
+                new_statements.extend(common_suffix)
             else:
                 new_statements.append(stmt)
 
