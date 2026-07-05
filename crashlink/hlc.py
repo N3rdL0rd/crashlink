@@ -109,8 +109,8 @@ def sanitize_field_ident(name: str, fallback: str) -> str:
 
 
 def c_escape_string(value: str) -> str:
-    encoded = value.encode("utf-8")
-    return "".join(f"\\x{byte:02x}" for byte in encoded)
+    encoded = value.encode("utf-16-le")
+    return "".join(f"\\x{byte:02x}" for byte in encoded) + "\\x00\\x00"
 
 
 def _signed32(v: int) -> int:
@@ -718,7 +718,7 @@ def generate_globals(code: Bytecode) -> List[str]:
             elif isinstance(typd, Bytes):
                 val = code.strings.value[field.value]
                 c_escaped_str = c_escape_string(val)
-                const_fields.append(f'(vbyte*)USTR("{c_escaped_str}")')
+                const_fields.append(f'(vbyte*)USTRN("{c_escaped_str}")')
         line(f"static struct _obj_s_{objIdx} const_g_s_{const._global.value} = {{&t_s_{objIdx}, {', '.join(const_fields)}}};")
 
     line("\n// Type initializer")
@@ -1436,9 +1436,9 @@ def generate_functions(code: Bytecode, progress_cb: Optional[ProgressCallback] =
                         rhs = "true" if str(df["value"]) == "True" else "false"
                     case "Bytes":
                         # TODO not sure this is right - might be bytes pool past v5?
-                        rhs = f'(vbyte*)USTR("{c_escape_string(code.strings.value[df["ptr"].value])}")'
+                        rhs = f'(vbyte*)USTRN("{c_escape_string(code.strings.value[df["ptr"].value])}")'
                     case "String":
-                        rhs = f'(vbyte*)USTR("{c_escape_string(code.strings.value[df["ptr"].value])}")'
+                        rhs = f'(vbyte*)USTRN("{c_escape_string(code.strings.value[df["ptr"].value])}")'
                     case "Null":
                         rhs = "NULL"
                     case "Add":
@@ -2299,7 +2299,7 @@ def generate_hashes(code: Bytecode) -> List[str]:
     line_h("void hlc_init_hashes() {")
     with indent_h:
         for s in sorted(list(hashed_strings)):
-            line_h(f'hl_hash((vbyte*)USTR("{c_escape_string(s)}"));')
+            line_h(f'hl_hash((vbyte*)USTRN("{c_escape_string(s)}"));')
     line_h("}")
     return res_h
 
