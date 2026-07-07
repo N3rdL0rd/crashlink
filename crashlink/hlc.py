@@ -360,6 +360,7 @@ def generate_runtime_resolution() -> List[str]:
         # -- HL fatal / errors --
         ("hl_fatal", "void", "const char *a0", "a0", ""),
         ("hl_null_access", "void", "void", "", ""),
+        ("hl_null_access_op", "void", "int a0", "a0", ""),
         ("hl_assert", "void", "void", "", ""),
         # -- HL exceptions --
         ("hl_throw", "void", "vdynamic *a0", "a0", ""),
@@ -375,8 +376,8 @@ def generate_runtime_resolution() -> List[str]:
         # -- HL dynamic calls --
         ("hl_dyn_call", "vdynamic *", "vclosure *a0, vdynamic **a1, int a2", "a0, a1, a2", ""),
         ("hl_dyn_call_obj", "void *", "vdynamic *a0, hl_type *a1, int a2, void **a3, vdynamic *a4", "a0, a1, a2, a3, a4", ""),
-        ("hl_dyn_compare", "int", "vdynamic *a0, vdynamic *a1", "a0, a1", ""),
-        ("hl_same_type", "int", "hl_type *a0, hl_type *a1", "a0, a1", ""),
+        ("hl_dyn_compare", "bool", "vdynamic *a0, vdynamic *a1", "a0, a1", ""),
+        ("hl_same_type", "bool", "hl_type *a0, hl_type *a1", "a0, a1", ""),
         ("hl_to_virtual", "vvirtual *", "hl_type *a0, vdynamic *a1", "a0, a1", ""),
         ("hl_make_dyn", "vdynamic *", "void *a0, hl_type *a1", "a0, a1", ""),
         # -- HL dynamic get (per-prefix) --
@@ -2188,7 +2189,7 @@ def generate_functions(code: Bytecode, progress_cb: Optional[ProgressCallback] =
                         continue
                     case "NullCheck":
                         has_dst = False
-                        rhs = f"if( r{df['reg']} == NULL ) hl_null_access()"
+                        rhs = f"if( r{df['reg']} == NULL ) hl_null_access_op({i})"
                     case "Trap":
                         opline(i, f"hl_trap(trap_s_{trap_depth}, {regstr(df['exc'])}, Op_{i + 1 + df['offset'].value});")
                         trap_depth += 1
