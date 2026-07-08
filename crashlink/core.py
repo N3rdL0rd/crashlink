@@ -1609,11 +1609,10 @@ class DebugInfo(Serialisable):
         rcount: ctypes.c_size_t,
         pos: int,
     ) -> None:
-        if rcount.value > 0:
+        while rcount.value > 0:
             if rcount.value > 15:
                 w.write(ctypes.c_uint8((15 << 2) | 2).value.to_bytes(1, "little"))
                 rcount.value -= 15
-                self._flush_repeat(w, curpos, rcount, pos)
             else:
                 delta = pos - curpos.value
                 delta = delta if 0 < delta < 4 else 0
