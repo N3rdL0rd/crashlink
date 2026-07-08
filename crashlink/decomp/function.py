@@ -100,6 +100,7 @@ from .opt.inliner import (
 from .opt.clean import (
     IRLoopConditionOptimizer,
     IRSelfAssignOptimizer,
+    IRBoolMaterializationCollapser,
     IRArrayGrowGuardEliminator,
     IRRedundantRecomputeEliminator,
     IRBlockFlattener,
@@ -272,6 +273,7 @@ class IRFunction:
                 IRSelfAssignOptimizer(self),
                 IRRedundantContinueEliminator(self),
                 IRCopyPropOptimizer(self),
+                IRBoolMaterializationCollapser(self),
                 IRShiftConstantOptimizer(self),
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRTempAssignmentInliner(self, aggressive=True),
@@ -283,6 +285,8 @@ class IRFunction:
                 IRNativeArrayAllocOptimizer(self),
                 IRArrayObjWrapperOptimizer(self),
                 IRNativeMapAllocOptimizer(self),
+                # past_kills only after the pattern optimizers: they match raw lowering shapes
+                IRTempAssignmentInliner(self, aggressive=True, past_kills=True),
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRVoidAssignOptimizer(self),
                 IRDeadCodeEliminator(self),
@@ -299,7 +303,9 @@ class IRFunction:
                 IRLoopRerollOptimizer(self),
                 IRForEachLoopOptimizer(self),
                 IRIntRangeLoopOptimizer(self),
+                IRBoolMaterializationCollapser(self),
                 IRDeadStoreEliminator(self),
+                IRDeadAssignmentEliminator(self),
                 IRGuardOrMerger(self),
                 IRRedundantRecomputeEliminator(self),
             ]

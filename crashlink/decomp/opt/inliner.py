@@ -341,6 +341,9 @@ class IRConditionInliner(TraversingIROptimizer):
         for s in later_statements:
             if self._stmt_contains_local_read(s, local):
                 return True
+            # a top-level reassignment kills the value; later reads don't count
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target.name == local.name:
+                break
         return False
 
     def visit_block(self, block: IRBlock) -> None:
@@ -683,9 +686,11 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
       is not redefined.
     """
 
-    def __init__(self, function: "IRFunction", aggressive: bool = False):
+    def __init__(self, function: "IRFunction", aggressive: bool = False, past_kills: bool = False):
         super().__init__(function)
         self.aggressive = aggressive
+        # past_kills: a later redefinition bounds the substitution range instead of blocking inlining
+        self.past_kills = past_kills
 
         # --- NEW: Pre-calculate the set of all user-named variables ---
         self._user_variable_names: Set[str] = set()
@@ -852,8 +857,10 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 stmt.expr, changed = self._substitute_in_expr(stmt.expr, target, replacement)
                 made_change = made_change or changed
         elif isinstance(stmt, IRExpression):
-            _, changed = self._substitute_in_expr(stmt, target, replacement)
-            made_change = made_change or changed
+            # a root-equal match can't be replaced in place; don't report a phantom change
+            if stmt != target:
+                _, changed = self._substitute_in_expr(stmt, target, replacement)
+                made_change = made_change or changed
         elif isinstance(stmt, IRReturn):
             if stmt.value:
                 stmt.value, changed = self._substitute_in_expr(stmt.value, target, replacement)
@@ -1138,7 +1145,23 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                         if self._stmt_contains_local(next_stmt, temp_local) and not self._is_local_redefined(
                             temp_local, [next_stmt]
                         ):
-                            later_uses = any(self._stmt_contains_local(s, temp_local) for s in statements[i + 2 :])
+                            # Reads after a top-level reassignment belong to the new value.
+                            later_uses = False
+                            for s in statements[i + 2 :]:
+                                if (
+                                    isinstance(s, IRAssign)
+                                    and isinstance(s.target, IRLocal)
+                                    and (s.target == temp_local or s.target.same_register(temp_local))
+                                ):
+                                    # the kill's own RHS may still read the old value
+                                    if isinstance(s.expr, IRExpression) and self._expr_contains_local(
+                                        s.expr, temp_local
+                                    ):
+                                        later_uses = True
+                                    break
+                                if self._stmt_contains_local(s, temp_local):
+                                    later_uses = True
+                                    break
                             if not later_uses:
                                 substituted = self._substitute_in_statement(next_stmt, temp_local, expr_to_inline)
                                 if substituted:
@@ -1194,7 +1217,32 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                     continue
 
                 remaining_statements = block.statements[i + 1 :]
-                if self._is_local_redefined(temp_local, remaining_statements):
+                must_keep_assign = False
+                boundary_stmt: Optional[IRStatement] = None
+                if self.past_kills:
+                    # A top-level reassign is a guaranteed kill: substitute up to and
+                    # including it (its RHS still reads the old value). A nested
+                    # redefinition only kills on some paths, so stop before it and
+                    # keep the assignment.
+                    for j, s in enumerate(remaining_statements):
+                        if self._is_local_redefined(temp_local, [s]):
+                            is_top_level_kill = (
+                                isinstance(s, IRAssign)
+                                and isinstance(s.target, IRLocal)
+                                and (s.target == temp_local or s.target.same_register(temp_local))
+                            )
+                            if is_top_level_kill:
+                                remaining_statements = remaining_statements[: j + 1]
+                            else:
+                                remaining_statements = remaining_statements[:j]
+                                must_keep_assign = True
+                                # A conditional/switch subject is evaluated before any
+                                # branch can redefine the temp, so it can still be
+                                # substituted into even though the branches can't.
+                                if isinstance(s, (IRConditional, IRSwitch)):
+                                    boundary_stmt = s
+                            break
+                elif self._is_local_redefined(temp_local, remaining_statements):
                     continue
 
                 # The inlined expression reads other locals (its free variables).
@@ -1216,7 +1264,16 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 use_indices = [
                     j for j, s in enumerate(remaining_statements) if self._stmt_contains_local(s, temp_local)
                 ]
-                if not use_indices:
+                boundary_subject: Optional[IRExpression] = None
+                if boundary_stmt is not None:
+                    subject = (
+                        boundary_stmt.condition if isinstance(boundary_stmt, IRConditional) else boundary_stmt.value
+                    )
+                    if self._expr_contains_local(subject, temp_local) and not (
+                        free_vars and any(self._stmt_reassigns_any(s, free_vars) for s in remaining_statements)
+                    ):
+                        boundary_subject = subject
+                if not use_indices and boundary_subject is None:
                     continue
                 blocked = False
                 if free_vars:
@@ -1234,11 +1291,21 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                         any_substituted = True
                         substituted_into.append(subsequent_stmt)
 
+                if boundary_subject is not None and boundary_stmt is not None:
+                    new_subject, changed = self._substitute_in_expr(boundary_subject, temp_local, expr_to_inline)
+                    if changed:
+                        if isinstance(boundary_stmt, IRConditional):
+                            boundary_stmt.condition = new_subject
+                        else:
+                            cast(IRSwitch, boundary_stmt).value = new_subject
+                        any_substituted = True
+                        substituted_into.append(boundary_stmt)
+
                 if not any_substituted:
                     continue
 
                 dbg_print(f"Aggressively inlining safe expression from temporary '{temp_local.name}'.")
-                if not inside_loop_body:
+                if not inside_loop_body and not must_keep_assign:
                     # stmt is dropped below; every site the expression got inlined
                     # into inherits its opcode (setdefault means whichever renders
                     # first in output wins, so adopting onto all of them is safe).

@@ -246,6 +246,89 @@ class IRSelfAssignOptimizer(TraversingIROptimizer):
         block.statements = new_statements
 
 
+class IRBoolMaterializationCollapser(TraversingIROptimizer):
+    """
+    Collapses `if (cond) { t = true; } else { t = false; }` into `t = cond`,
+    the inverted constant pair into `t = !cond`, and unwraps double negation.
+    """
+
+    @staticmethod
+    def _negated_operand(expr: IRExpression) -> Optional[IRExpression]:
+        if isinstance(expr, IRNot):
+            return expr.expr
+        if (
+            isinstance(expr, IRBoolExpr)
+            and expr.op in (IRBoolExpr.CompareType.ISFALSE, IRBoolExpr.CompareType.NOT)
+            and expr.left is not None
+        ):
+            return expr.left
+        return None
+
+    @staticmethod
+    def _strip_istrue(expr: IRExpression) -> IRExpression:
+        while (
+            isinstance(expr, IRBoolExpr) and expr.op == IRBoolExpr.CompareType.ISTRUE and expr.left is not None
+        ):
+            expr = expr.left
+        return expr
+
+    @classmethod
+    def _unwrap_double_not(cls, expr: IRExpression) -> IRExpression:
+        inner = cls._negated_operand(cls._strip_istrue(expr))
+        if inner is None:
+            return expr
+        inner2 = cls._negated_operand(cls._strip_istrue(inner))
+        if inner2 is None:
+            return expr
+        return cls._unwrap_double_not(inner2)
+
+    @staticmethod
+    def _branch_bool_assign(block: Optional[IRBlock]) -> Optional[Tuple[IRLocal, bool]]:
+        if block is None or len(block.statements) != 1:
+            return None
+        stmt = block.statements[0]
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRLocal)
+            and isinstance(stmt.expr, IRConst)
+            and stmt.expr.const_type == IRConst.ConstType.BOOL
+        ):
+            return stmt.target, bool(stmt.expr.value)
+        return None
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements: List[IRStatement] = []
+        for stmt in block.statements:
+            if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRExpression):
+                stmt.expr = self._unwrap_double_not(stmt.expr)
+            elif isinstance(stmt, IRConditional):
+                stmt.condition = self._unwrap_double_not(stmt.condition)
+            elif isinstance(stmt, IRWhileLoop):
+                stmt.condition = self._unwrap_double_not(stmt.condition)
+            elif isinstance(stmt, IRReturn) and stmt.value is not None:
+                stmt.value = self._unwrap_double_not(stmt.value)
+            if isinstance(stmt, IRConditional):
+                true_assign = self._branch_bool_assign(stmt.true_block)
+                false_assign = self._branch_bool_assign(stmt.false_block)
+                if (
+                    true_assign is not None
+                    and false_assign is not None
+                    and true_assign[0] == false_assign[0]
+                    and true_assign[1] != false_assign[1]
+                ):
+                    target = true_assign[0]
+                    cond = stmt.condition
+                    if not true_assign[1]:
+                        cond = cond.expr if isinstance(cond, IRNot) else IRNot(self.func.code, cond)
+                    assign = IRAssign(self.func.code, target, cond)
+                    assign.adopt(stmt)
+                    dbg_print(f"IRBoolMaterializationCollapser: {stmt} -> {assign}")
+                    new_statements.append(assign)
+                    continue
+            new_statements.append(stmt)
+        block.statements = new_statements
+
+
 class IRArrayGrowGuardEliminator(TraversingIROptimizer):
     """
     Removes `if (idx >= arr.length) arr.__expand(idx);` guards.
@@ -778,10 +861,6 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
     """Removes local assignments that are overwritten before being read within a block."""
 
     def visit_block(self, block: IRBlock) -> None:
-        new_stmts: List[IRStatement] = []
-        # local -> index in new_stmts of its pending assignment
-        pending: Dict[IRLocal, int] = {}
-
         def _locals_in_expr(expr: Optional[IRExpression]) -> Set[IRLocal]:
             found: Set[IRLocal] = set()
             if expr is None:
@@ -878,31 +957,86 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
                 return stmt.target
             return None
 
-        for stmt in block.statements:
-            reads = _reads_in_stmt(stmt)
-            for local in reads:
-                pending.pop(local, None)
+        # First use of `local` along every path through a statement:
+        # "read" (value needed), "kill" (dead on all paths: overwritten before
+        # any read, or the path terminates), or "none" (untouched).
+        def _first_use(stmt: IRStatement, local: IRLocal, _visited: Optional[Set[int]] = None) -> str:
+            if _visited is None:
+                _visited = set()
+            if id(stmt) in _visited:
+                return "none"
+            _visited.add(id(stmt))
 
-            target = _written_local(stmt)
-            if target is not None:
-                _pending_idx = pending.get(target)
-                _pending_s = new_stmts[_pending_idx] if _pending_idx is not None else None
-                if (
-                    _pending_idx is not None
-                    and _pending_s is not None
-                    and isinstance(_pending_s, IRAssign)
-                    and not _has_side_effects(_pending_s.expr)
+            if isinstance(stmt, IRAssign):
+                if _reads_in_stmt(stmt) & {local}:
+                    return "read"
+                if isinstance(stmt.target, IRLocal) and (
+                    stmt.target == local or stmt.target.same_register(local)
                 ):
-                    dead_idx: int = _pending_idx
-                    del new_stmts[dead_idx]
-                    # adjust indices after removal
-                    for loc, idx in list(pending.items()):
-                        if idx > dead_idx:
-                            pending[loc] = idx - 1
-                new_stmts.append(stmt)
-                pending[target] = len(new_stmts) - 1
-            else:
-                new_stmts.append(stmt)
+                    return "kill"
+                return "none"
+            if isinstance(stmt, (IRBreak, IRContinue)):
+                # jumps to a continuation this block-level scan can't see
+                return "read"
+            if isinstance(stmt, (IRReturn, IRThrow)):
+                if _reads_in_stmt(stmt) & {local}:
+                    return "read"
+                return "kill"
+            if isinstance(stmt, IRConditional):
+                if _locals_in_expr(stmt.condition) & {local}:
+                    return "read"
+                branches = [stmt.true_block.statements]
+                branches.append(stmt.false_block.statements if stmt.false_block else [])
+                results = [_first_use_in_list(b, local, _visited) for b in branches]
+                if "read" in results:
+                    return "read"
+                if all(r == "kill" for r in results):
+                    return "kill"
+                return "none"
+            if isinstance(stmt, IRSwitch):
+                if _locals_in_expr(stmt.value) & {local}:
+                    return "read"
+                branches = [c.statements for c in stmt.cases.values()]
+                branches.append(stmt.default.statements if stmt.default else [])
+                results = [_first_use_in_list(b, local, _visited) for b in branches]
+                if "read" in results:
+                    return "read"
+                if all(r == "kill" for r in results):
+                    return "kill"
+                return "none"
+            if isinstance(stmt, IRExpression):
+                return "read" if local in _locals_in_expr(stmt) else "none"
+            # Loops, try/catch and anything else with nested blocks: any
+            # occurrence at all is conservatively a read.
+            if _reads_in_stmt(stmt) & {local}:
+                return "read"
+            for child in stmt.get_children():
+                child_stmts = child.statements if isinstance(child, IRBlock) else [child]
+                for s in child_stmts:
+                    if _first_use(s, local, set()) != "none":
+                        return "read"
+            return "none"
+
+        def _first_use_in_list(stmts: List[IRStatement], local: IRLocal, _visited: Set[int]) -> str:
+            for s in stmts:
+                r = _first_use(s, local, _visited)
+                if r != "none":
+                    return r
+            return "none"
+
+        new_stmts = []
+        for i, stmt in enumerate(block.statements):
+            target = _written_local(stmt)
+            if (
+                target is not None
+                and isinstance(stmt, IRAssign)
+                and not _has_side_effects(stmt.expr)
+                and _first_use_in_list(block.statements[i + 1 :], target, set()) == "kill"
+            ):
+                if DEBUG:
+                    dbg_print(f"IRDeadStoreEliminator: removing dead store {stmt}")
+                continue
+            new_stmts.append(stmt)
 
         block.statements = new_stmts
         for stmt in block.statements:
