@@ -450,16 +450,24 @@ class Regs(Serialisable):
     List of references to registers.
     """
 
-    __slots__ = ("n", "value")
+    __slots__ = ("n", "_value")
 
     def __init__(self) -> None:
         self.n = VarInt()
-        self.value: List[Reg] = []
+        self._value: List[Reg] = []
+
+    @property
+    def value(self) -> List[Reg]:
+        return self._value
+    
+    @value.setter
+    def value(self, value:  List[int | Reg]) -> None:
+        self._value = [v if isinstance(v, Reg) else Reg(v)for v in value]
 
     def deserialise(self, f: BinaryIO | BytesIO) -> "Regs":
         self.n.deserialise(f)
         for _ in range(self.n.value):
-            self.value.append(Reg().deserialise(f))
+            self._value.append(Reg().deserialise(f))
         return self
 
     def serialise(self) -> bytes:
@@ -1601,11 +1609,10 @@ class DebugInfo(Serialisable):
         rcount: ctypes.c_size_t,
         pos: int,
     ) -> None:
-        if rcount.value > 0:
+        while rcount.value > 0:
             if rcount.value > 15:
                 w.write(ctypes.c_uint8((15 << 2) | 2).value.to_bytes(1, "little"))
                 rcount.value -= 15
-                self._flush_repeat(w, curpos, rcount, pos)
             else:
                 delta = pos - curpos.value
                 delta = delta if 0 < delta < 4 else 0
