@@ -450,16 +450,24 @@ class Regs(Serialisable):
     List of references to registers.
     """
 
-    __slots__ = ("n", "value")
+    __slots__ = ("n", "_value")
 
     def __init__(self) -> None:
         self.n = VarInt()
-        self.value: List[Reg] = []
+        self._value: List[Reg] = []
+
+    @property
+    def value(self) -> List[Reg]:
+        return self._value
+    
+    @value.setter
+    def value(self, value:  List[int | Reg]) -> None:
+        self._value = [v if isinstance(v, Reg) else Reg(v)for v in value]
 
     def deserialise(self, f: BinaryIO | BytesIO) -> "Regs":
         self.n.deserialise(f)
         for _ in range(self.n.value):
-            self.value.append(Reg().deserialise(f))
+            self._value.append(Reg().deserialise(f))
         return self
 
     def serialise(self) -> bytes:
