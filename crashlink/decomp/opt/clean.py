@@ -315,6 +315,10 @@ class IRBoolMaterializationCollapser(TraversingIROptimizer):
                     and false_assign is not None
                     and true_assign[0] == false_assign[0]
                     and true_assign[1] != false_assign[1]
+                    and not (
+                        isinstance(true_assign[0], IRLocal)
+                        and re.match(r"^var\d+$", true_assign[0].name)
+                    )
                 ):
                     target = true_assign[0]
                     cond = stmt.condition
@@ -1024,6 +1028,9 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
                     return r
             return "none"
 
+        user_names = self._collect_user_names()
+        user_regs = self._collect_user_reg_indices()
+
         new_stmts = []
         for i, stmt in enumerate(block.statements):
             target = _written_local(stmt)
@@ -1032,6 +1039,7 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
                 and isinstance(stmt, IRAssign)
                 and not _has_side_effects(stmt.expr)
                 and _first_use_in_list(block.statements[i + 1 :], target, set()) == "kill"
+                and not self._is_user_local(target, user_names, user_regs)
             ):
                 if DEBUG:
                     dbg_print(f"IRDeadStoreEliminator: removing dead store {stmt}")
@@ -1044,6 +1052,42 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
 
+
+
+    def _collect_user_names(self) -> Set[str]:
+        names: Set[str] = set()
+        if self.func.func.has_debug and self.func.func.assigns:
+            for name_ref, _ in self.func.func.assigns:
+                names.add(name_ref.resolve(self.func.code))
+        return names
+
+    def _collect_user_reg_indices(self) -> Set[int]:
+        indices: Set[int] = set()
+        if self.func.func.has_debug and self.func.func.assigns:
+            for _, op_idx in self.func.func.assigns:
+                val = op_idx.value - 1
+                if val >= 0 and val < len(self.func.ops):
+                    op = self.func.ops[val]
+                    try:
+                        indices.add(op.df["dst"].value)
+                    except KeyError:
+                        pass
+        return indices
+
+    def _is_user_local(self, local: IRLocal, user_names: Set[str], user_regs: Set[int]) -> bool:
+        if local.name in user_names:
+            return True
+        for name in user_names:
+            if local.name.startswith(name) and local.name[len(name):].isdigit():
+                return True
+        if local.name.startswith("var"):
+            try:
+                idx = int(local.name[3:])
+                if idx in user_regs:
+                    return True
+            except ValueError:
+                pass
+        return False
 
 class IRSequentialTempFolder(TraversingIROptimizer):
     """Folds a simple local assignment into the very next assignment to the same local.
@@ -1230,12 +1274,18 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
                 and isinstance(stmt.target, IRLocal)
                 and self._local_name(stmt.target) not in live
             ):
-                if self._has_side_effects(stmt.expr):
+                if self._is_user_local_name(self._local_name(stmt.target)):
+                    # Preserve dead stores to user-named locals so the source
+                    # round-trip stays faithful to the original bytecode.
+                    new_stmts.append(stmt)
+                elif self._has_side_effects(stmt.expr):
                     # Keep the side effects as a bare expression statement.
                     stmt.expr.adopt(stmt)  # opcode was tagged on the assign, not its expr
                     new_stmts.append(stmt.expr)
-                    live.update(uses)
-                # else: drop the dead assignment entirely.
+                # else: drop the dead assignment entirely for compiler temps.
+                # For kept statements, still update liveness; dropped ones don't.
+                live.difference_update(defs)
+                live.update(uses)
                 continue
             if mutate:
                 new_stmts.append(stmt)
@@ -1347,6 +1397,17 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
             live.difference_update(defs)
             live.update(uses)
         return live
+
+    def _is_user_local_name(self, name: str) -> bool:
+        if not self.func.func.has_debug or not self.func.func.assigns:
+            return False
+        user_names = {name_ref.resolve(self.func.code) for name_ref, _ in self.func.func.assigns}
+        if name in user_names:
+            return True
+        for un in user_names:
+            if name.startswith(un) and name[len(un):].isdigit():
+                return True
+        return False
 
     def _locals_in_expr(self, expr: Optional[IRExpression]) -> Set[str]:
         found: Set[str] = set()
