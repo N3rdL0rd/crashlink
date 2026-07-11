@@ -70,6 +70,9 @@ from .ir import (
     IRArrayLiteral,
     IRArrayAccess,
     IRRef,
+    IRRefNew,
+    IRRefGet,
+    IRRefSet,
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
@@ -1091,20 +1094,21 @@ class IRFunction:
             elif op.op == "Ref":
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = source_locals[op.df["src"].value]
-                block.statements.append(IRAssign(self.code, dst_local, IRRef(self.code, src_local)))
+                ref_new = IRRefNew(self.code, src_local)
+                ref_new.src_op_idx = op_idx
+                block.statements.append(IRAssign(self.code, dst_local, ref_new))
             elif op.op == "Unref":
-                # References are modelled transparently (IRRef renders as its
-                # inner expression), so dereferencing one is just a copy of the
-                # underlying value.
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = source_locals[op.df["src"].value]
-                block.statements.append(IRAssign(self.code, dst_local, src_local))
+                ref_get = IRRefGet(self.code, src_local)
+                ref_get.src_op_idx = op_idx
+                block.statements.append(IRAssign(self.code, dst_local, ref_get))
             elif op.op == "Setref":
-                # References are modelled transparently; writing through one is
-                # represented as a copy to the reference register itself.
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = source_locals[op.df["value"].value]
-                block.statements.append(IRAssign(self.code, dst_local, src_local))
+                ref_set = IRRefSet(self.code, dst_local, src_local)
+                ref_set.src_op_idx = op_idx
+                block.statements.append(ref_set)
             elif op.op == "StaticClosure":
                 dst_local = self.locals[op.df["dst"].value]
                 fun_const = IRConst(self.code, IRConst.ConstType.FUN, idx=op.df["fun"])

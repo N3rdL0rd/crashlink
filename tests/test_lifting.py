@@ -268,7 +268,7 @@ def test_arraydyn_concat_map_copy_not_folded_to_empty_literal():
     for findex, native_name in [(270, "anew"), (290, "a"), (287, "a")]:
         out = _decompile_at("tests/haxe/Clazz.hl", findex)
         assert f"ArrayObj.alloc({native_name})" in out, f"f@{findex}: missing ArrayObj.alloc({native_name})"
-        assert re.search(r"alloc\(\w+, true\)", out), f"f@{findex}: missing alloc(..., true)"
+        assert re.search(r"alloc\(\w+,\s*(?:true|\(true\))\)", out), f"f@{findex}: missing alloc(..., true)"
         assert "([] : Array<Dynamic>)" not in out, f"f@{findex}: empty literal folded incorrectly"
 
 

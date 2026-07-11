@@ -70,6 +70,7 @@ from ..ir import (
     IRArrayLiteral,
     IRArrayAccess,
     IRRef,
+    IRRefNew,
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
@@ -165,12 +166,12 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
             return None
         if not isinstance(expr.args[0], IRLocal):
             return None
-        # arg1 is the ref where byte count is stored back (IRLocal or IRRef wrapping one)
+        # arg1 is the ref where byte count is stored back (IRLocal, IRRef, or IRRefNew wrapping one)
         count_ref: Optional[IRLocal] = None
         arg1 = expr.args[1]
         if isinstance(arg1, IRLocal):
             count_ref = arg1
-        elif isinstance(arg1, IRRef) and isinstance(arg1.target, IRLocal):
+        elif isinstance(arg1, (IRRef, IRRefNew)) and isinstance(arg1.target, IRLocal):
             count_ref = arg1.target
         if count_ref is None:
             return None
@@ -224,7 +225,7 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
         # is a separate local var6 = &var13; we need to look through it)
         if count_ref_local.name in current_assigns:
             ref_defn = current_assigns[count_ref_local.name]
-            if isinstance(ref_defn.expr, IRRef) and isinstance(ref_defn.expr.target, IRLocal):
+            if isinstance(ref_defn.expr, (IRRef, IRRefNew)) and isinstance(ref_defn.expr.target, IRLocal):
                 if ref_defn.expr.target.name == int_arg.name:
                     if consumed_stmt is not None:
                         self._consumed.add(id(consumed_stmt))

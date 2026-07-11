@@ -70,6 +70,7 @@ from ..ir import (
     IRArrayLiteral,
     IRArrayAccess,
     IRRef,
+    IRRefNew,
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
@@ -774,28 +775,38 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         use_stmt.adopt(*stmts[start:i])  # alloc + element/store statements are dropped
         return use_stmt, i - start + 1
 
-    def _is_empty_alloc_array(self, expr: IRStatement) -> bool:
+    def _is_empty_alloc_array(
+        self, expr: IRStatement, local_defs: Optional[Dict[IRLocal, IRExpression]] = None
+    ) -> bool:
+        if isinstance(expr, IRLocal) and local_defs is not None:
+            expr = local_defs.get(expr, expr)
         if not self._is_alloc_array(expr):
             return False
         call = cast(IRCall, expr)
         if len(call.args) != 2:
             return False
         type_arg, size_arg = call.args
+        if isinstance(size_arg, IRLocal) and local_defs is not None:
+            size_arg = local_defs.get(size_arg, size_arg)
         if not isinstance(size_arg, IRConst) or size_arg.const_type != IRConst.ConstType.INT:
             return False
         if int(size_arg.value.value if hasattr(size_arg.value, "value") else size_arg.value) != 0:
             return False
+        if isinstance(type_arg, IRLocal) and local_defs is not None:
+            type_arg = local_defs.get(type_arg, type_arg)
         if isinstance(type_arg, IRConst) and (
             type_arg.const_type == IRConst.ConstType.NULL or isinstance(type_arg.value, Type)
         ):
             return True
         return False
 
-    def _is_empty_arrayobj_anon(self, expr: IRStatement) -> bool:
+    def _is_empty_arrayobj_anon(
+        self, expr: IRStatement, local_defs: Optional[Dict[IRLocal, IRExpression]] = None
+    ) -> bool:
         if not self._is_arrayobj_anon(expr):
             return False
         call = cast(IRCall, expr)
-        return len(call.args) == 1 and self._is_empty_alloc_array(call.args[0])
+        return len(call.args) == 1 and self._is_empty_alloc_array(call.args[0], local_defs)
 
     def _is_arraydyn_alloc(self, expr: IRStatement) -> bool:
         if not isinstance(expr, IRCall):
@@ -812,24 +823,51 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
 
     def _try_empty_array_dyn(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int]]:
         # Pattern:
-        #   temp = ArrayObj.anon(alloc_array(null, 0))
-        #   target = ArrayDyn.alloc(temp, true)
-        # Rewrite both statements to target = [] when temp has no later uses.
+        #   temp = ArrayObj.anon(alloc_array(null, 0))   (or already-simplified temp = [])
+        #   [flag = true]                                 (optional HashLink 1.15+ boilerplate)
+        #   target = ArrayDyn.alloc(temp, true_or_new_ref(flag))
+        # Rewrite to target = [] when temp has no later uses.
         if start + 1 >= len(stmts):
             return None
         s0 = stmts[start]
         if not isinstance(s0, IRAssign) or not isinstance(s0.target, IRLocal):
             return None
         temp = s0.target
-        if not self._is_empty_arrayobj_anon(s0.expr):
+
+        local_defs: Dict[IRLocal, IRExpression] = {}
+        for stmt in stmts[:start]:
+            if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+                local_defs[stmt.target] = stmt.expr
+
+        s0_expr_is_empty_literal = (
+            isinstance(s0.expr, IRArrayLiteral) and len(s0.expr.elements) == 0
+        )
+        if not (s0_expr_is_empty_literal or self._is_empty_arrayobj_anon(s0.expr, local_defs)):
             return None
 
-        s1 = stmts[start + 1]
-        if not isinstance(s1, IRAssign) or not isinstance(s1.expr, IRCall):
+        # Look for the ArrayDyn.alloc call. HashLink 1.15+ inserts a boolean flag
+        # temp assignment between the temp and the alloc call, so scan forward.
+        alloc_idx = -1
+        flag_local: Optional[IRLocal] = None
+        for j in range(start + 1, min(len(stmts), start + 4)):
+            s = stmts[j]
+            if isinstance(s, IRAssign) and isinstance(s.expr, IRConst) and isinstance(s.expr.value, bool):
+                # Optional flag assignment, keep looking.
+                if isinstance(s.target, IRLocal):
+                    flag_local = cast(IRLocal, s.target)
+                continue
+            if isinstance(s, IRAssign) and isinstance(s.expr, IRCall) and self._is_arraydyn_alloc(s.expr):
+                alloc_idx = j
+                break
+            # Stop scanning if we hit a non-boilerplate statement.
+            break
+
+        if alloc_idx == -1:
             return None
+        s1 = stmts[alloc_idx]
+        assert isinstance(s1, IRAssign)
         call = s1.expr
-        if not self._is_arraydyn_alloc(call):
-            return None
+        assert isinstance(call, IRCall)
         if len(call.args) != 2:
             return None
         first_arg, second_arg = call.args
@@ -840,23 +878,38 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         if isinstance(second_arg, IRConst) and isinstance(second_arg.value, bool) and second_arg.value:
             true_ok = True
         elif (
-            isinstance(second_arg, IRRef)
+            isinstance(second_arg, (IRRef, IRRefNew))
             and isinstance(second_arg.target, IRConst)
             and isinstance(second_arg.target.value, bool)
             and second_arg.target.value
         ):
             true_ok = True
+        elif isinstance(second_arg, IRRefNew) and isinstance(second_arg.target, IRLocal):
+            # HashLink 1.15+ lowers the boolean flag to a stack-allocated Ref.
+            ref_local = second_arg.target
+            for prior in stmts[:alloc_idx]:
+                if (
+                    isinstance(prior, IRAssign)
+                    and isinstance(prior.target, IRLocal)
+                    and prior.target.name == ref_local.name
+                    and isinstance(prior.expr, IRConst)
+                    and isinstance(prior.expr.value, bool)
+                    and prior.expr.value
+                ):
+                    true_ok = True
+                    break
         if not true_ok:
             return None
 
-        for later in stmts[start + 2 :]:
+        for later in stmts[alloc_idx + 1 :]:
             if self._local_in_stmt(later, temp):
                 return None
 
         literal = IRArrayLiteral(self.func.code, [])
         new_assign = IRAssign(self.func.code, s1.target, literal)
-        new_assign.adopt(s0, s1)
-        return new_assign, 2
+        consume_count = alloc_idx - start + 1
+        new_assign.adopt(*stmts[start : alloc_idx + 1])
+        return new_assign, consume_count
 
     def _index_shift(self, idx: IRStatement, local: IRLocal) -> Optional[int]:
         """Return the shift amount if `idx` is `local << const`."""
@@ -1338,21 +1391,51 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         if len(call.args) != 2:
             return None
         first_arg, second_arg = call.args
-        if not isinstance(first_arg, IRArrayLiteral):
+        literal: Optional[IRArrayLiteral] = None
+        array_temp: Optional[IRLocal] = None
+        if isinstance(first_arg, IRArrayLiteral):
+            literal = first_arg
+        elif isinstance(first_arg, IRLocal):
+            array_temp = first_arg
+            for prior in stmts[:start]:
+                if (
+                    isinstance(prior, IRAssign)
+                    and isinstance(prior.target, IRLocal)
+                    and prior.target.name == first_arg.name
+                    and isinstance(prior.expr, IRArrayLiteral)
+                ):
+                    literal = prior.expr
+                    break
+        if literal is None:
             return None
+
         true_ok = False
         if isinstance(second_arg, IRConst) and isinstance(second_arg.value, bool) and second_arg.value:
             true_ok = True
         elif (
-            isinstance(second_arg, IRRef)
+            isinstance(second_arg, (IRRef, IRRefNew))
             and isinstance(second_arg.target, IRConst)
             and isinstance(second_arg.target.value, bool)
             and second_arg.target.value
         ):
             true_ok = True
+        elif isinstance(second_arg, IRRefNew) and isinstance(second_arg.target, IRLocal):
+            # HashLink 1.15+ lowers the boolean flag to a stack-allocated Ref.
+            ref_local = second_arg.target
+            for prior in stmts[:start]:
+                if (
+                    isinstance(prior, IRAssign)
+                    and isinstance(prior.target, IRLocal)
+                    and prior.target.name == ref_local.name
+                    and isinstance(prior.expr, IRConst)
+                    and isinstance(prior.expr.value, bool)
+                    and prior.expr.value
+                ):
+                    true_ok = True
+                    break
         if not true_ok:
             return None
-        return IRAssign(self.func.code, s.target, first_arg).adopt(s), 1
+        return IRAssign(self.func.code, s.target, literal).adopt(s), 1
 
     @staticmethod
     def _expr_eq(a: Optional[IRExpression], b: Optional[IRExpression]) -> bool:

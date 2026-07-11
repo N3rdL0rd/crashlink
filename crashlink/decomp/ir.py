@@ -1098,6 +1098,61 @@ class IRRef(IRExpression):
         return f"<IRRef: &{self.target}>"
 
 
+class IRRefNew(IRExpression):
+    """Represents `new hl.Ref(value)`"""
+
+    def __init__(self, code: Bytecode, target: IRExpression):
+        super().__init__(code)
+        self.target = target
+
+    def get_type(self) -> Type:
+        return _get_type_in_code(self.code, "Ref")
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.target]
+
+    def __repr__(self) -> str:
+        return f"<IRRefNew: new Ref({self.target})>"
+
+
+class IRRefGet(IRExpression):
+    """Represents reading the value stored in an `hl.Ref`, e.g. `r.get()`"""
+
+    def __init__(self, code: Bytecode, ref: IRExpression):
+        super().__init__(code)
+        self.ref = ref
+
+    def get_type(self) -> Type:
+        ref_type = self.ref.get_type()
+        if isinstance(ref_type.definition, Ref):
+            return ref_type.definition.type.resolve(self.code)
+        return ref_type
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.ref]
+
+    def __repr__(self) -> str:
+        return f"<IRRefGet: {self.ref}.get()>"
+
+
+class IRRefSet(IRStatement):
+    """Represents writing to an `hl.Ref`, e.g. `r.set(value)`"""
+
+    def __init__(self, code: Bytecode, ref: IRExpression, value: IRExpression):
+        super().__init__(code)
+        self.ref = ref
+        self.value = value
+
+    def get_type(self) -> Type:
+        return _get_type_in_code(self.code, "Void")
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.ref, self.value]
+
+    def __repr__(self) -> str:
+        return f"<IRRefSet: {self.ref}.set({self.value})>"
+
+
 class IREnumConstruct(IRExpression):
     """Represents enum construction, e.g., `Rgb(255, 255, 0)`"""
 

@@ -71,6 +71,7 @@ from ..ir import (
     IRObjectLiteral,
     IRArrayAccess,
     IRRef,
+    IRRefNew,
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
@@ -1441,6 +1442,8 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
         elif isinstance(expr, IREnumField):
             found.update(self._locals_in_expr(expr.value))
         elif isinstance(expr, IRRef):
+            found.update(self._locals_in_expr(expr.target))
+        elif isinstance(expr, IRRefNew):
             found.update(self._locals_in_expr(expr.target))
         return found
 
