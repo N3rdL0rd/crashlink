@@ -87,8 +87,9 @@ def test_gettype_gettid_lifted():
     # make sure no compiler temporary survives between the .kind read and the
     # comparison (the renderer uses `cast t.kind` because the Int register is
     # lifted from the enum abstract).
-    assert re.search(r"if \(cast t\.kind == \d+\)", out)
-    assert ": Int = cast t.kind" not in out
+    assert re.search(r"if \(t\.kind == HObj\)", out)
+    assert "t.kind" in out
+    assert "cast t.kind" not in out
     assert "var3" not in out
 
 

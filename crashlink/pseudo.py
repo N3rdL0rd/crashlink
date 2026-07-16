@@ -65,6 +65,41 @@ def _indent_str(level: int) -> str:
     return "    " * level  # 4 spaces for indentation
 
 
+def _render_typekind_comparison(
+    left_expr: IRExpression,
+    right_expr: IRExpression,
+    code: Bytecode,
+    ir_function: Optional[IRFunction],
+) -> Optional[Tuple[str, str]]:
+    """
+    If one side is `IRTypeKind` and the other is a mapped integer constant,
+    render the type-kind read as `t.kind` (no cast) and the constant as the
+    corresponding `hl.TypeKind` enum abstract member name.
+    """
+    type_kind_expr: Optional[IRTypeKind] = None
+    const_expr: Optional[IRConst] = None
+
+    if isinstance(left_expr, IRTypeKind) and isinstance(right_expr, IRConst):
+        type_kind_expr = left_expr
+        const_expr = right_expr
+    elif isinstance(right_expr, IRTypeKind) and isinstance(left_expr, IRConst):
+        type_kind_expr = right_expr
+        const_expr = left_expr
+
+    if type_kind_expr is None or const_expr is None or const_expr.const_type != IRConst.ConstType.INT:
+        return None
+
+    kind_name = _TYPEKIND_NAMES.get(
+        int(const_expr.value.value if hasattr(const_expr.value, "value") else const_expr.value)
+    )
+    if kind_name is None:
+        return None
+
+    base = _expression_to_haxe(type_kind_expr.expr, code, ir_function)
+    return f"{base}.kind", kind_name
+
+
+
 class _PseudoClass:
     """Lightweight stand-in for IRClass when pseudo() is called on a bare IRFunction."""
 
@@ -215,6 +250,33 @@ _HAXE_OP_PRECEDENCE = {
     "*": 9,
     "/": 9,
     "%": 9,
+}
+
+# HashLink's `hl.TypeKind` is an enum abstract over Int.  The bytecode stores the
+# raw integer, but Haxe rejects `t.kind == 11` because the enum abstract expects
+# a `TypeKind` on the right.  Map known kind values to their source names so the
+# decompiled output matches the original `t.kind == HObj` style.
+_TYPEKIND_NAMES: Dict[int, str] = {
+    0: "HVoid",
+    1: "HUI8",
+    2: "HUI16",
+    3: "HI32",
+    4: "HI64",
+    5: "HF32",
+    6: "HF64",
+    7: "HBool",
+    8: "HBytes",
+    9: "HDyn",
+    10: "HFun",
+    11: "HObj",
+    12: "HArray",
+    13: "HType",
+    14: "HRef",
+    15: "HVirtual",
+    16: "HDynObj",
+    17: "HAbstract",
+    18: "HEnum",
+    19: "HNull",
 }
 
 
@@ -444,8 +506,12 @@ def _expression_to_haxe(
             if isinstance(left_expr, IRConst) and not isinstance(right_expr, IRConst) and actual_op in swap_map:
                 left_expr, right_expr = right_expr, left_expr
                 actual_op = swap_map[actual_op]
-            left = _expression_to_haxe(left_expr, code, ir_function)
-            right = _expression_to_haxe(right_expr, code, ir_function)
+            typekind_render = _render_typekind_comparison(left_expr, right_expr, code, ir_function)
+            if typekind_render is not None:
+                left, right = typekind_render
+            else:
+                left = _expression_to_haxe(left_expr, code, ir_function)
+                right = _expression_to_haxe(right_expr, code, ir_function)
             return f"{left} {op_map[actual_op]} {right}"
         elif expr.left:
             raise NotImplementedError(f"Unhandled unary IRBoolExpr op: {expr.op} on {expr.left}")
