@@ -277,7 +277,7 @@ class IRConditionInliner(TraversingIROptimizer):
         without changing program behavior. Calls and allocations are excluded."""
         if isinstance(expr, (IRConst, IRLocal)):
             return True
-        if isinstance(expr, (IRField, IRCast, IRNeg, IRNot)):
+        if isinstance(expr, (IRField, IRCast, IRNeg, IRNot, IRTypeKind)):
             for child in expr.get_children():
                 if isinstance(child, IRExpression) and not self._is_safe_to_duplicate(child):
                     return False
@@ -1011,6 +1011,8 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         if isinstance(expr, IRField):
             return self.is_safe_to_inline_aggressively(expr.target)
         if isinstance(expr, IRCast):
+            return self.is_safe_to_inline_aggressively(expr.expr)
+        if isinstance(expr, (IRTypeOf, IRTypeKind)):
             return self.is_safe_to_inline_aggressively(expr.expr)
         if isinstance(expr, IRArrayAccess):
             return self.is_safe_to_inline_aggressively(expr.array) and self.is_safe_to_inline_aggressively(expr.index)

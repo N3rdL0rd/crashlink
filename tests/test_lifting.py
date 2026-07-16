@@ -82,6 +82,14 @@ def test_gettype_gettid_lifted():
     assert "GetTID" not in _unlifted(out)
     assert "Type.getDynamic(" in out
     assert ".kind" in out
+    # The kind comparison should be folded into the if condition, not kept as a
+    # separate temporary assignment.  There are many correct spellings, so just
+    # make sure no compiler temporary survives between the .kind read and the
+    # comparison (the renderer uses `cast t.kind` because the Int register is
+    # lifted from the enum abstract).
+    assert re.search(r"if \(cast t\.kind == \d+\)", out)
+    assert ": Int = cast t.kind" not in out
+    assert "var3" not in out
 
 
 def test_setglobal_lifted():
