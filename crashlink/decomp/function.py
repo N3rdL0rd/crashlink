@@ -383,7 +383,12 @@ class IRFunction:
             self._user_reg_indices.add(reg)
             if val not in self._op_assigns:
                 self._op_assigns[val] = {}
-            self._op_assigns[val][reg] = name
+            # Keep the first debug name for a given op+reg: later names at the
+            # same op are aliases (e.g. `var b = a` compiled to the same
+            # register), and the earlier name is the one used by subsequent
+            # expressions.
+            if reg not in self._op_assigns[val]:
+                self._op_assigns[val][reg] = name
             if reg not in self._reg_first_assign or val < self._reg_first_assign[reg]:
                 self._reg_first_assign[reg] = val
 
