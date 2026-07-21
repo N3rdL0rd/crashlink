@@ -325,7 +325,20 @@ class IRBoolMaterializationCollapser(TraversingIROptimizer):
                     target = true_assign[0]
                     cond = stmt.condition
                     if not true_assign[1]:
-                        cond = cond.expr if isinstance(cond, IRNot) else IRNot(self.func.code, cond)
+                        # Negate: prefer inverting a comparison in-place over
+                        # wrapping in IRNot to avoid `!(a >= b)` → `a < b`.
+                        if isinstance(cond, IRBoolExpr) and cond.op in (
+                            IRBoolExpr.CompareType.LT,
+                            IRBoolExpr.CompareType.LTE,
+                            IRBoolExpr.CompareType.GT,
+                            IRBoolExpr.CompareType.GTE,
+                            IRBoolExpr.CompareType.EQ,
+                            IRBoolExpr.CompareType.NEQ,
+                        ):
+                            cond = copy.copy(cond)
+                            cond.invert()
+                        else:
+                            cond = cond.expr if isinstance(cond, IRNot) else IRNot(self.func.code, cond)
                     assign = IRAssign(self.func.code, target, cond)
                     assign.adopt(stmt)
                     dbg_print(f"IRBoolMaterializationCollapser: {stmt} -> {assign}")
