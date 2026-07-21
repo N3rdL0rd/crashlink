@@ -869,6 +869,9 @@ class IRStringConcatFolder(TraversingIROptimizer):
                     return None
                 if isinstance(stmt, IRTrace) and stmt.msg == temp:
                     use_idx = j
+                elif isinstance(stmt, IRTrace) and self._is_string_add_with_temp(stmt.msg, temp):
+                    use_idx = j
+                    folded_expr_for_use = self._fold_concat(parts + [cast(IRCall, stmt.msg).args[1]])
                 elif isinstance(stmt, IRAssign) and stmt.expr == temp:
                     use_idx = j
                 elif isinstance(stmt, IRAssign) and self._is_string_add_with_temp(stmt.expr, temp):
