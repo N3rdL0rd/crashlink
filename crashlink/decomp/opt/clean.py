@@ -68,10 +68,10 @@ from ..ir import (
     IRNativeMapNew,
     IRCast,
     IRArrayLiteral,
-    IRObjectLiteral,
     IRArrayAccess,
     IRRef,
     IRRefNew,
+    IRRefSet,
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
@@ -80,6 +80,7 @@ from ..ir import (
     _get_type_in_code,
     _strip_ansi,
 )
+
 from ..cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
 from . import (
     IROptimizer,

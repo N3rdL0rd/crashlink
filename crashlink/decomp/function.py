@@ -295,6 +295,11 @@ class IRFunction:
                 IRDeadCodeEliminator(self),
                 IRSelfAssignOptimizer(self),
                 IRTraceOptimizer(self),
+                # trace()'s DynObj scaffolding collapses above, bringing a dead
+                # user-local-register reassignment adjacent to its sole use for the
+                # first time; re-run so IRTempAssignmentInliner's user-local-reuse
+                # fold (see _visit_block_conservative) can now see and fold it.
+                IRTempAssignmentInliner(self, aggressive=False),
                 IRAnonObjectLiteralOptimizer(self),
                 IRStringConcatFolder(self),
                 IRIntSwitchOptimizer(self),

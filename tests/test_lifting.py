@@ -91,6 +91,13 @@ def test_gettype_gettid_lifted():
     assert "t.kind" in out
     assert "cast t.kind" not in out
     assert "var3" not in out
+    # Each branch reuses `v`'s dead register for a fresh string constant fed
+    # straight into trace(); that reuse shouldn't surface as a fake `v = "..."`
+    # reassignment, it should inline directly into the call like the source does.
+    assert 'trace("object")' in out
+    assert 'trace("not object")' in out
+    assert 'v = "object"' not in out
+    assert 'v = "not object"' not in out
 
 
 def test_setglobal_lifted():
