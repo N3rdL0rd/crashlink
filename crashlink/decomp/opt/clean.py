@@ -341,6 +341,10 @@ class IRBoolMaterializationCollapser(TraversingIROptimizer):
                             cond = cond.expr if isinstance(cond, IRNot) else IRNot(self.func.code, cond)
                     assign = IRAssign(self.func.code, target, cond)
                     assign.adopt(stmt)
+                    # The collapsed `t = cond` is a synthetic merge of the original
+                    # branch — folding constants into it would lose the branch
+                    # structure on recompile (e.g. `cond = 4 != 3` → `Bool True`).
+                    assign._no_user_inline = True
                     dbg_print(f"IRBoolMaterializationCollapser: {stmt} -> {assign}")
                     new_statements.append(assign)
                     continue
