@@ -1557,6 +1557,7 @@ class IRFunction:
                         not target.branches
                         and target.ops
                         and target.ops[-1].op == "Ret"
+                        and target != loop_ctx.exit_node
                         and loop_ctx.header not in cfg.post_dominators.get(target, set())
                     ):
                         return None
