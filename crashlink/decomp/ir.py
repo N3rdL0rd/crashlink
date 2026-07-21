@@ -75,6 +75,11 @@ class IRStatement(ABC):
         # disasm<->pseudocode sync and per-opcode comments) instead of only
         # whichever one happened to seed the replacement statement.
         self.src_op_idxs: Set[int] = set()
+        # Set by IRTempAssignmentInliner when a user-variable assignment is folded
+        # into a conditional. Prevents further user-var inlining into this statement,
+        # which would fold constants into conditions (e.g. `a = 4; if (a == 3)` →
+        # `if (4 == 3)`) and break recompilation.
+        self._no_user_inline: bool = False
 
     @property
     def src_op_idx(self) -> Optional[int]:

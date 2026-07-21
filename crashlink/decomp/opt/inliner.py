@@ -1195,7 +1195,11 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                     and i + 2 == len(statements)
                 )
 
-                if not self._is_user_local(temp_local) or user_local_reuse:
+                if not self._is_user_local(temp_local) or (
+                    user_local_reuse
+                    and i + 1 < len(statements)
+                    and not getattr(statements[i + 1], '_no_user_inline', False)
+                ):
                     expr_to_inline = current_stmt.expr
                     if not self.is_safe_to_inline_conservatively(expr_to_inline):
                         new_statements.append(current_stmt)
@@ -1243,6 +1247,11 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                                         new_statements.append(current_stmt)
                                     else:
                                         next_stmt.adopt(current_stmt)  # current_stmt is dropped
+                                        # If this inline merged a user variable into a conditional,
+                                        # the resulting statement is a synthetic merge — don't let it
+                                        # become a target for further user-var inlining.
+                                        if self._is_user_local(temp_local):
+                                            next_stmt._no_user_inline = True
                                     new_statements.append(next_stmt)
                                     i += 2
                                     inlined = True
