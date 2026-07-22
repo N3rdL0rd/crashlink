@@ -1556,6 +1556,7 @@ class IRCopyPropOptimizer(TraversingIROptimizer):
                         if not self._is_synthetic_temp(phantom):
                             continue
                         self._replace_local_shallow(later, phantom, user_local)
+                        self._replace_in_branches(later, phantom, user_local)
                     if isinstance(later, IRAssign) and isinstance(later.target, IRLocal):
                         if later.target == user_local:
                             break
@@ -1591,6 +1592,25 @@ class IRCopyPropOptimizer(TraversingIROptimizer):
                         break
                     self._replace_local_shallow(later, temp_local, user_local)
         return None
+
+    def _replace_in_branches(self, stmt: IRStatement, temp: IRLocal, user: IRLocal) -> None:
+        """Replace reads of `temp` with `user` inside a switch/conditional's branch
+        bodies, stopping at (but still substituting into the RHS of) a statement
+        that reassigns `temp` — reads past that point belong to the new value."""
+        branches: List[IRBlock] = []
+        if isinstance(stmt, IRConditional):
+            branches.append(stmt.true_block)
+            if stmt.false_block:
+                branches.append(stmt.false_block)
+        elif isinstance(stmt, IRSwitch):
+            branches.extend(stmt.cases.values())
+            if stmt.default:
+                branches.append(stmt.default)
+        for branch in branches:
+            for s in branch.statements:
+                self._replace_local_shallow(s, temp, user)
+                if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target == temp:
+                    break
 
     @staticmethod
     def _is_synthetic_temp(local: IRLocal) -> bool:
