@@ -1087,6 +1087,34 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             return True
         return False
 
+    def _call_move_ok(self, stmt: IRStatement, temp: IRLocal) -> bool:
+        """True if `stmt` is a local assignment reading `temp` exactly once in an
+        expression built only from consts, locals, and arithmetic — so moving a
+        call into it preserves evaluation order and count."""
+        if not (isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)):
+            return False
+
+        count = 0
+
+        def walk(e: Optional[IRExpression]) -> bool:
+            nonlocal count
+            if e is None:
+                return True
+            if e == temp:
+                count += 1
+                return True
+            if isinstance(e, IRConst):
+                return True
+            if isinstance(e, IRLocal):
+                return True
+            if isinstance(e, IRArithmetic):
+                return walk(e.left) and walk(e.right)
+            if isinstance(e, IRCast):
+                return walk(e.expr)
+            return False
+
+        return walk(stmt.expr) and count == 1
+
     def visit_block(self, block: IRBlock) -> None:
         if self.aggressive:
             self._visit_block_aggressive(block)
@@ -1202,9 +1230,20 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 ):
                     expr_to_inline = current_stmt.expr
                     if not self.is_safe_to_inline_conservatively(expr_to_inline):
-                        new_statements.append(current_stmt)
-                        i += 1
-                        continue
+                        # A call can still be moved (not duplicated) into an adjacent
+                        # single use whose other operands are just consts/locals —
+                        # locals can't be mutated by the call, so order is preserved.
+                        # Only when the assignment gets dropped (never inside a loop
+                        # body, where it is kept and the call would run twice).
+                        if not (
+                            isinstance(expr_to_inline, IRCall)
+                            and not inside_loop_body
+                            and i + 1 < len(statements)
+                            and self._call_move_ok(statements[i + 1], temp_local)
+                        ):
+                            new_statements.append(current_stmt)
+                            i += 1
+                            continue
                     if isinstance(expr_to_inline, IRExpression) and self._expr_contains_local(
                         expr_to_inline, temp_local
                     ):
