@@ -52,6 +52,7 @@ from .decomp import (
     IRIntRangeLoop,
     IRNativeArrayNew,
     IRNativeMapNew,
+    IRBytesNew,
     IRPrimitiveLoop,
     IRReturn,
     IRThrow,
@@ -97,7 +98,6 @@ def _render_typekind_comparison(
 
     base = _expression_to_haxe(type_kind_expr.expr, code, ir_function)
     return f"{base}.kind", kind_name
-
 
 
 class _PseudoClass:
@@ -758,6 +758,9 @@ def _expression_to_haxe(
 
     elif isinstance(expr, IRNativeMapNew):
         return f"new {expr.haxe_class_name}()"
+
+    elif isinstance(expr, IRBytesNew):
+        return f"new hl.Bytes({_expression_to_haxe(expr.size, code, ir_function)})"
 
     elif isinstance(expr, IRCast):
         target_name = disasm.type_name(code, expr.get_type())

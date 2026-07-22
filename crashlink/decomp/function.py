@@ -134,6 +134,7 @@ from .opt.arrays import (
     IRNativeArrayAllocOptimizer,
     IRArrayObjWrapperOptimizer,
     IRNativeMapAllocOptimizer,
+    IRBytesAllocOptimizer,
     IRArrayPatternOptimizer,
 )
 from .opt.loops import (
@@ -292,6 +293,7 @@ class IRFunction:
                 IRNativeArrayAllocOptimizer(self),
                 IRArrayObjWrapperOptimizer(self),
                 IRNativeMapAllocOptimizer(self),
+                IRBytesAllocOptimizer(self),
                 # past_kills only after the pattern optimizers: they match raw lowering shapes
                 IRTempAssignmentInliner(self, aggressive=True, past_kills=True),
                 IRTempAssignmentInliner(self, aggressive=False),

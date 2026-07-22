@@ -66,6 +66,7 @@ from ..ir import (
     IRNew,
     IRNativeArrayNew,
     IRNativeMapNew,
+    IRBytesNew,
     IRCast,
     IRArrayLiteral,
     IRArrayAccess,
@@ -297,6 +298,39 @@ class IRNativeMapAllocOptimizer(TraversingIROptimizer):
             if isinstance(stmt.target, IRLocal):
                 stmt.target.native_map_class = class_name
             stmt.expr = IRNativeMapNew(self.func.code, abstract_type, class_name)
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
+
+class IRBytesAllocOptimizer(TraversingIROptimizer):
+    """
+    Folds `Native.alloc_bytes(n)` into `new hl.Bytes(n)` (hl.Bytes's inline
+    constructor is exactly that native call). Must run after
+    IRArrayPatternOptimizer, which consumes the alloc_bytes calls backing
+    fixed-size array literals.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        for stmt in block.statements:
+            if not isinstance(stmt, IRAssign):
+                continue
+            expr = stmt.expr
+            if not (isinstance(expr, IRCall) and len(expr.args) == 1):
+                continue
+            if not (isinstance(expr.target, IRConst) and isinstance(expr.target.value, Native)):
+                continue
+            native = expr.target.value
+            if native.lib.resolve(self.func.code) != "std":
+                continue
+            if native.name.resolve(self.func.code) != "alloc_bytes":
+                continue
+            fun_def = native.type.resolve(self.func.code).definition
+            assert isinstance(fun_def, Fun)
+            new_expr = IRBytesNew(self.func.code, fun_def.ret, expr.args[0])
+            new_expr.adopt(expr)
+            stmt.expr = new_expr
         for stmt in block.statements:
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
@@ -839,9 +873,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
                 local_defs[stmt.target] = stmt.expr
 
-        s0_expr_is_empty_literal = (
-            isinstance(s0.expr, IRArrayLiteral) and len(s0.expr.elements) == 0
-        )
+        s0_expr_is_empty_literal = isinstance(s0.expr, IRArrayLiteral) and len(s0.expr.elements) == 0
         if not (s0_expr_is_empty_literal or self._is_empty_arrayobj_anon(s0.expr, local_defs)):
             return None
 

@@ -991,6 +991,24 @@ class IRNativeMapNew(IRExpression):
         return f"<IRNativeMapNew: new {self.haxe_class_name}()>"
 
 
+class IRBytesNew(IRExpression):
+    """Represents `new hl.Bytes(size)`, lifted from the std `alloc_bytes` native."""
+
+    def __init__(self, code: Bytecode, bytes_type: tIndex, size: IRExpression):
+        super().__init__(code)
+        self.bytes_type_idx = bytes_type
+        self.size = size
+
+    def get_type(self) -> Type:
+        return self.bytes_type_idx.resolve(self.code)
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.size] if isinstance(self.size, IRStatement) else []
+
+    def __repr__(self) -> str:
+        return f"<IRBytesNew: new hl.Bytes({self.size})>"
+
+
 class IRCast(IRExpression):
     """Represents a type cast, e.g., `(MyType)value`"""
 
