@@ -1109,7 +1109,9 @@ class Commands(BaseCommands):
     def history(self, args: List[str]) -> None:
         """Shows recently run REPL commands. `history [count]`"""
         try:
-            import readline
+            # via importlib: typeshed hides readline's attributes on win32, but at
+            # runtime pyreadline3 can still provide the module there
+            readline = importlib.import_module("readline")
         except ImportError:
             print("readline is not available on this platform, so no history is kept.")
             return
@@ -2551,7 +2553,9 @@ _HISTORY_FILE = Path.home() / ".crashlink_history"
 def _setup_repl_readline(code: Bytecode) -> None:
     """Enables persistent history (up/down arrows) and tab-completion of command names for the REPL."""
     try:
-        import readline
+        # via importlib: typeshed hides readline's attributes on win32, but at
+        # runtime pyreadline3 can still provide the module there
+        readline = importlib.import_module("readline")
     except ImportError:
         # Not available on stock Windows Python; the REPL still works, just without history/completion.
         return
