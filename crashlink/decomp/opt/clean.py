@@ -485,6 +485,46 @@ class IRBlockFlattener(TraversingIROptimizer):
             )
 
 
+class IRElseFlattener(TraversingIROptimizer):
+    """
+    Flattens `if (c) { ...; return } else { A }` into `if (c) { ...; return } A`.
+    When the true branch always terminates, the else block is the only
+    continuation, so hoisting it exposes its statements to the sequential
+    inliners. Skips DAG-shared else blocks to avoid duplicating statements.
+    """
+
+    def optimize(self) -> None:
+        self._block_refs: Dict[int, int] = {}
+        if hasattr(self.func, "block"):
+            self._count_refs(self.func.block, set())
+        super().optimize()
+
+    def _count_refs(self, block: IRBlock, visited: Set[int]) -> None:
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self._block_refs[id(child)] = self._block_refs.get(id(child), 0) + 1
+                    if id(child) not in visited:
+                        visited.add(id(child))
+                        self._count_refs(child, visited)
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements: List[IRStatement] = []
+        for stmt in block.statements:
+            new_statements.append(stmt)
+            if (
+                isinstance(stmt, IRConditional)
+                and stmt.false_block is not None
+                and stmt.false_block.statements
+                and stmt.true_block.statements
+                and isinstance(stmt.true_block.statements[-1], (IRReturn, IRThrow, IRBreak, IRContinue))
+                and self._block_refs.get(id(stmt.false_block), 0) <= 1
+            ):
+                new_statements.extend(stmt.false_block.statements)
+                stmt.false_block = IRBlock(self.func.code)
+        block.statements = new_statements
+
+
 class IRCommonBlockMerger(TraversingIROptimizer):
     """
     Finds IRConditional statements where both the true and false blocks end
