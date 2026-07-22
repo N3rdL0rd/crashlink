@@ -1111,6 +1111,8 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 return walk(e.left) and walk(e.right)
             if isinstance(e, IRCast):
                 return walk(e.expr)
+            if isinstance(e, IRNativeArrayNew):
+                return walk(e.size)
             return False
 
         return walk(stmt.expr) and count == 1
