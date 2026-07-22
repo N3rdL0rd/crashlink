@@ -743,6 +743,12 @@ class IRDeadTempEliminator(IROptimizer):
             used.update(self._collect_all_used_names(stmt.condition))
         elif isinstance(stmt, IRSwitch):
             self._collect_used_in_expr(stmt.value, used)
+        else:
+            # Generic fallback (e.g. IRRefSet): treat any expression child as a
+            # read, so a missing case can't delete a still-needed assignment.
+            for child in stmt.get_children():
+                if isinstance(child, IRExpression):
+                    self._collect_used_in_expr(child, used)
 
     def _collect_used_in_expr(self, expr: Optional[IRExpression], used: Set[str]) -> None:
         if expr is None:
@@ -1344,6 +1350,11 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
             uses.update(self._locals_in_expr(stmt.condition))
         elif isinstance(stmt, IRSwitch):
             uses.update(self._locals_in_expr(stmt.value))
+        else:
+            # Generic fallback (e.g. IRRefSet): expression children are reads.
+            for child in stmt.get_children():
+                if isinstance(child, IRExpression):
+                    uses.update(self._locals_in_expr(child))
 
         # Recursively process nested blocks with the correct live-out sets.
         if isinstance(stmt, IRConditional):
@@ -1463,6 +1474,12 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
             found.update(self._locals_in_expr(expr.target))
         elif isinstance(expr, IRRefNew):
             found.update(self._locals_in_expr(expr.target))
+        else:
+            # Generic fallback (e.g. IRNativeArrayNew, IRRefGet): a missing case
+            # here must not hide a read and let a live assignment be dropped.
+            for child in expr.get_children():
+                if isinstance(child, IRExpression):
+                    found.update(self._locals_in_expr(child))
         return found
 
     def _has_side_effects(self, expr: Optional[IRExpression]) -> bool:
