@@ -544,3 +544,34 @@ def run() -> None:
     )
     os.makedirs(os.path.join(os.path.dirname(__file__), "runs"), exist_ok=True)
     save_run(r, os.path.join(os.path.dirname(__file__), "runs", f"{gen_id()}.json"))
+
+
+def sweep(bytecode_path: str, count: int, out_path: str) -> None:
+    """Decompile the first `count` functions of a bytecode image to a file."""
+    from crashlink import disasm
+    from crashlink.decomp import IRFunction
+
+    try:
+        from tqdm import tqdm  # type: ignore[import-untyped]
+    except ImportError:
+        tqdm = None
+
+    print(f"Loading {bytecode_path}...")
+    code = Bytecode.from_path(bytecode_path)
+    funcs = code.functions[:count]
+    progress = tqdm(funcs, unit="fn") if tqdm is not None else funcs
+
+    ok = 0
+    failed = 0
+    with open(out_path, "w", encoding="utf-8") as f:
+        for func in progress:
+            header = disasm.func_header(code, func)
+            f.write(f"// {header}\n")
+            try:
+                f.write(pseudo(IRFunction(code, func)) + "\n\n")
+                ok += 1
+            except Exception:
+                f.write("// DECOMPILATION FAILED:\n")
+                f.write("".join(f"// {line}\n" for line in traceback.format_exc().splitlines()) + "\n")
+                failed += 1
+    print(f"{ok} decompiled, {failed} failed -> {out_path}")
