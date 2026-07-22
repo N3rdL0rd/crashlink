@@ -392,8 +392,9 @@ def _expression_to_haxe(
         if ir_function is not None:
             subs = getattr(ir_function, "_render_subs", None)
             if subs and expr in subs:
-                rendered = subs[expr][0]
-                return f"({rendered})"
+                # Already parenthesized at registration when the substituted
+                # expression is compound; bare atoms are stored without parens.
+                return subs[expr][0]
         return expr.name
 
     elif isinstance(expr, IRConst):
@@ -1675,6 +1676,15 @@ def _generate_statements(
                 free_locals = _free_locals_in_expr(stmt.expr)
                 if stmt.target not in free_locals:
                     rendered_expr = _expression_to_haxe(stmt.expr, code, ir_function)
+                    # Parenthesize compound expressions once here (parent op is
+                    # unknown, so wrap conservatively); leave atoms — locals,
+                    # constants, field/array accesses — bare so a substituted
+                    # single local doesn't render as `(var9)`.
+                    inner = stmt.expr
+                    while isinstance(inner, IRCast):
+                        inner = inner.expr
+                    if isinstance(inner, (IRArithmetic, IRBoolExpr, IRNeg, IRNot)):
+                        rendered_expr = f"({rendered_expr})"
                     render_subs[stmt.target] = (rendered_expr, free_locals)
 
         if stmt.comment:
