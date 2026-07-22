@@ -99,6 +99,7 @@ from .opt.inliner import (
     IRConditionInliner,
     IRTempAssignmentInliner,
     IRCopyPropOptimizer,
+    IRTerminalValueInliner,
 )
 from .opt.clean import (
     IRLoopConditionOptimizer,
@@ -305,6 +306,7 @@ class IRFunction:
                 IRIntSwitchOptimizer(self),
                 IRStringSwitchOptimizer(self),
                 IREnumSwitchOptimizer(self),
+                IRTerminalValueInliner(self),
                 IRDeadTempEliminator(self),
                 IRDeadCodeEliminator(self),
                 IRBlockFlattener(self),
@@ -316,6 +318,7 @@ class IRFunction:
                 IRDeadAssignmentEliminator(self),
                 IRGuardOrMerger(self),
                 IRRedundantRecomputeEliminator(self),
+                IRTerminalValueInliner(self),
             ]
             self._optimize()
             self.apply_annotations()

@@ -284,7 +284,7 @@ def test_arraydyn_concat_map_copy_not_folded_to_empty_literal():
     for findex, native_name in [(270, "anew"), (290, "a"), (287, "a")]:
         out = _decompile_at("tests/haxe/Clazz.hl", findex)
         assert f"ArrayObj.alloc({native_name})" in out, f"f@{findex}: missing ArrayObj.alloc({native_name})"
-        assert re.search(r"alloc\(\w+,\s*(?:true|\(true\))\)", out), f"f@{findex}: missing alloc(..., true)"
+        assert re.search(r"alloc\(.+,\s*(?:true|\(true\))\)", out), f"f@{findex}: missing alloc(..., true)"
         assert "([] : Array<Dynamic>)" not in out, f"f@{findex}: empty literal folded incorrectly"
 
 
@@ -293,7 +293,7 @@ def test_string_alloc_folded_from_inline_pattern():
     # `new String(); s.bytes = ...; s.length = ...;`. The decompiler should fold
     # those back into __alloc__ calls.
     out = _decompile_at("tests/haxe/Clazz.hl", 0)
-    assert "__alloc__(var1, this.length)" in out
+    assert "__alloc__(Native.ucs2_upper(this.bytes, 0, this.length), this.length)" in out
     out = _decompile_at("tests/haxe/Clazz.hl", 2)
     assert "__alloc__(b, 1)" in out
     out = _decompile_at("tests/haxe/Clazz.hl", 20)

@@ -1411,6 +1411,94 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                     )
 
 
+class IRTerminalValueInliner(TraversingIROptimizer):
+    """
+    Folds `temp = expr; return temp` / `throw temp` into `return expr` / `throw expr`
+    for compiler temporaries. Because the use is adjacent and terminal, the
+    expression is moved (not duplicated), so even calls are safe to inline here.
+    """
+
+    def __init__(self, function: "IRFunction"):
+        super().__init__(function)
+        self._user_variable_names: Set[str] = set()
+        if self.func.func.has_debug and self.func.func.assigns:
+            for name_ref, _ in self.func.func.assigns:
+                self._user_variable_names.add(name_ref.resolve(self.func.code))
+
+    def visit_block(self, block: IRBlock) -> None:
+        changed = True
+        while changed:
+            changed = False
+            for i in range(len(block.statements) - 1):
+                stmt = block.statements[i]
+                nxt = block.statements[i + 1]
+                if not (isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)):
+                    continue
+                if stmt.target.name in self._user_variable_names:
+                    continue
+                if not isinstance(nxt, (IRReturn, IRThrow)) or nxt.value is None:
+                    continue
+                if not isinstance(stmt.expr, IRExpression):
+                    continue
+                if nxt.value == stmt.target:
+                    nxt.value = stmt.expr
+                elif not self._subst_leftmost(nxt, stmt.target, stmt.expr):
+                    continue
+                nxt.adopt(stmt)
+                del block.statements[i]
+                changed = True
+                break
+
+    def _count_reads(self, expr: Optional[IRExpression], local: IRLocal) -> int:
+        if expr is None:
+            return 0
+        if expr == local:
+            return 1
+        n = 0
+        # expression nodes don't expose operands via get_children()
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            n += self._count_reads(expr.left, local) + self._count_reads(expr.right, local)
+        elif isinstance(expr, IRCall):
+            if isinstance(expr.target, IRExpression):
+                n += self._count_reads(expr.target, local)
+            for arg in expr.args:
+                n += self._count_reads(arg, local)
+        elif isinstance(expr, IRField):
+            n += self._count_reads(expr.target, local)
+        elif isinstance(expr, IRCast):
+            n += self._count_reads(expr.expr, local)
+        elif isinstance(expr, IRArrayAccess):
+            n += self._count_reads(expr.array, local) + self._count_reads(expr.index, local)
+        else:
+            for child in expr.get_children():
+                if isinstance(child, IRExpression):
+                    n += self._count_reads(child, local)
+        return n
+
+    def _subst_leftmost(self, stmt: Union[IRReturn, IRThrow], local: IRLocal, replacement: IRExpression) -> bool:
+        # Only fold into the leftmost operand of an arithmetic chain: it is
+        # evaluated first, so moving a (possibly side-effecting) expression
+        # there preserves evaluation order.
+        if self._count_reads(stmt.value, local) != 1:
+            return False
+        # Descend to the first-evaluated leaf: left of arithmetic, or arg 0 of a
+        # const-target call (args evaluate left-to-right).
+        node: Optional[IRExpression] = stmt.value
+        while True:
+            if isinstance(node, IRArithmetic):
+                if node.left == local:
+                    node.left = replacement
+                    return True
+                node = node.left
+            elif isinstance(node, IRCall) and node.args and isinstance(node.target, IRConst):
+                if node.args[0] == local:
+                    node.args[0] = replacement
+                    return True
+                node = node.args[0]
+            else:
+                return False
+
+
 class IRCopyPropOptimizer(TraversingIROptimizer):
     """
     Propagates copies of user-named locals introduced by switch/conditional branches.
