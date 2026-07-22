@@ -137,6 +137,9 @@ class CFGraph:
                         "JEq", "JNotEq", "JAlways", "Trap"]:
             # fmt: on
                 jump_targets.add(i + op.df["offset"].value + 1)
+            elif op.op == "Switch":
+                for offset in op.df["offsets"].value:
+                    jump_targets.add(i + offset.value + 1)
 
         current_ops: List[Opcode] = []
         current_start = 0
