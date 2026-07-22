@@ -108,6 +108,7 @@ from .opt.clean import (
     IRArrayGrowGuardEliminator,
     IRRedundantRecomputeEliminator,
     IRBlockFlattener,
+    IREmptyConditionalNormalizer,
     IRElseFlattener,
     IRCommonBlockMerger,
     IRRedundantContinueEliminator,
@@ -320,6 +321,7 @@ class IRFunction:
                 IRDeadAssignmentEliminator(self),
                 IRGuardOrMerger(self),
                 IRRedundantRecomputeEliminator(self),
+                IREmptyConditionalNormalizer(self),
                 IRTerminalValueInliner(self),
             ]
             self._optimize()
@@ -359,6 +361,7 @@ class IRFunction:
     def _build_assign_map(self) -> None:
         """Build a mapping from op index to (register, name) for SSA-esque splitting."""
         self._op_assigns: Dict[int, Dict[int, str]] = {}
+        self._op_aliases: Dict[int, List[Tuple[int, str]]] = {}
         self._user_reg_indices: Set[int] = set()
         self._reg_first_assign: Dict[int, int] = {}
         self._op_id_to_idx: Dict[int, int] = {id(op): i for i, op in enumerate(self.ops)}
@@ -394,6 +397,10 @@ class IRFunction:
             # expressions.
             if reg not in self._op_assigns[val]:
                 self._op_assigns[val][reg] = name
+            elif name != self._op_assigns[val][reg]:
+                # `var b = a;` compiled away to the same register: keep the alias
+                # so lifting can re-emit it as an explicit copy.
+                self._op_aliases.setdefault(val, []).append((reg, name))
             if reg not in self._reg_first_assign or val < self._reg_first_assign[reg]:
                 self._reg_first_assign[reg] = val
 
@@ -1267,6 +1274,13 @@ class IRFunction:
                         stmt.src_file_idx = ref.value
                     except IndexError:
                         pass
+            # Re-emit register aliases (`var b = a;` folded into one register).
+            if op_idx is not None:
+                for reg, alias in self._op_aliases.get(op_idx, ()):
+                    src_local = self.locals[reg]
+                    alias_local = IRLocal(alias, self.func.regs[reg], code=self.code)
+                    self.all_locals.append(alias_local)
+                    block.statements.append(IRAssign(self.code, alias_local, src_local))
 
     def _shortest_distances(
         self,

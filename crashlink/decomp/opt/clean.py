@@ -485,6 +485,36 @@ class IRBlockFlattener(TraversingIROptimizer):
             )
 
 
+class IREmptyConditionalNormalizer(TraversingIROptimizer):
+    """
+    Un-inverts `if (a >= b) {}` (both branches emptied by dead-store
+    elimination, e.g. a dead bool materialization) back to `if (a < b) {}`.
+    Lifting negates the bytecode jump's condition to make the fallthrough the
+    true branch; with both branches empty the negation is pure residue, and
+    the jump's own comparison is what the source contained (and what Haxe
+    re-lowers an empty if back to).
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        for s in block.statements:
+            if (
+                isinstance(s, IRConditional)
+                and not (s.true_block and s.true_block.statements)
+                and not (s.false_block and s.false_block.statements)
+                and isinstance(s.condition, IRBoolExpr)
+                and s.condition.op
+                in (
+                    IRBoolExpr.CompareType.LT,
+                    IRBoolExpr.CompareType.LTE,
+                    IRBoolExpr.CompareType.GT,
+                    IRBoolExpr.CompareType.GTE,
+                    IRBoolExpr.CompareType.EQ,
+                    IRBoolExpr.CompareType.NEQ,
+                )
+            ):
+                s.condition.invert()
+
+
 class IRElseFlattener(TraversingIROptimizer):
     """
     Flattens `if (c) { ...; return } else { A }` into `if (c) { ...; return } A`.
