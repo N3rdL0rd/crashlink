@@ -1437,7 +1437,13 @@ attributes &ndash; see the documentation for details.</p></div>
 <pre><code class="python">class IRArrayAccess(IRExpression):
     &#34;&#34;&#34;Represents an array/memory access expression, e.g., `arr[idx]`&#34;&#34;&#34;
 
-    def __init__(self, code: Bytecode, array: IRExpression, index: IRExpression, elem_type: Optional[tIndex] = None):
+    def __init__(
+        self,
+        code: Bytecode,
+        array: IRExpression,
+        index: IRExpression,
+        elem_type: Optional[tIndex] = None,
+    ):
         super().__init__(code)
         self.array = array
         self.index = index
@@ -1599,7 +1605,12 @@ render it.</p></div>
 <pre><code class="python">class IRArrayLiteral(IRExpression):
     &#34;&#34;&#34;Represents a Haxe array literal, e.g. [1, 2, 3].&#34;&#34;&#34;
 
-    def __init__(self, code: Bytecode, elements: List[IRExpression], elem_type: Optional[tIndex] = None):
+    def __init__(
+        self,
+        code: Bytecode,
+        elements: List[IRExpression],
+        elem_type: Optional[tIndex] = None,
+    ):
         super().__init__(code)
         self.elements = elements
         self.elem_type_idx = elem_type
@@ -1968,7 +1979,12 @@ source idiom.</p></div>
                     ):
                         result.append((node, IRArrayAccess(node.code, arr_expr, node.index.left)))
                     elif isinstance(node.index, IRLocal) and node.index.name in idx_temp_map:
-                        result.append((node, IRArrayAccess(node.code, arr_expr, idx_temp_map[node.index.name])))
+                        result.append(
+                            (
+                                node,
+                                IRArrayAccess(node.code, arr_expr, idx_temp_map[node.index.name]),
+                            )
+                        )
             for child in node.get_children():
                 visit(child)
 
@@ -2271,28 +2287,42 @@ source idiom.</p></div>
         use_stmt.adopt(*stmts[start:i])  # alloc + element/store statements are dropped
         return use_stmt, i - start + 1
 
-    def _is_empty_alloc_array(self, expr: IRStatement) -&gt; bool:
+    def _is_empty_alloc_array(
+        self,
+        expr: IRStatement,
+        local_defs: Optional[Dict[IRLocal, IRExpression]] = None,
+    ) -&gt; bool:
+        if isinstance(expr, IRLocal) and local_defs is not None:
+            expr = local_defs.get(expr, expr)
         if not self._is_alloc_array(expr):
             return False
         call = cast(IRCall, expr)
         if len(call.args) != 2:
             return False
         type_arg, size_arg = call.args
+        if isinstance(size_arg, IRLocal) and local_defs is not None:
+            size_arg = local_defs.get(size_arg, size_arg)
         if not isinstance(size_arg, IRConst) or size_arg.const_type != IRConst.ConstType.INT:
             return False
         if int(size_arg.value.value if hasattr(size_arg.value, &#34;value&#34;) else size_arg.value) != 0:
             return False
+        if isinstance(type_arg, IRLocal) and local_defs is not None:
+            type_arg = local_defs.get(type_arg, type_arg)
         if isinstance(type_arg, IRConst) and (
             type_arg.const_type == IRConst.ConstType.NULL or isinstance(type_arg.value, Type)
         ):
             return True
         return False
 
-    def _is_empty_arrayobj_anon(self, expr: IRStatement) -&gt; bool:
+    def _is_empty_arrayobj_anon(
+        self,
+        expr: IRStatement,
+        local_defs: Optional[Dict[IRLocal, IRExpression]] = None,
+    ) -&gt; bool:
         if not self._is_arrayobj_anon(expr):
             return False
         call = cast(IRCall, expr)
-        return len(call.args) == 1 and self._is_empty_alloc_array(call.args[0])
+        return len(call.args) == 1 and self._is_empty_alloc_array(call.args[0], local_defs)
 
     def _is_arraydyn_alloc(self, expr: IRStatement) -&gt; bool:
         if not isinstance(expr, IRCall):
@@ -2309,24 +2339,49 @@ source idiom.</p></div>
 
     def _try_empty_array_dyn(self, stmts: List[IRStatement], start: int) -&gt; Optional[Tuple[IRStatement, int]]:
         # Pattern:
-        #   temp = ArrayObj.anon(alloc_array(null, 0))
-        #   target = ArrayDyn.alloc(temp, true)
-        # Rewrite both statements to target = [] when temp has no later uses.
+        #   temp = ArrayObj.anon(alloc_array(null, 0))   (or already-simplified temp = [])
+        #   [flag = true]                                 (optional HashLink 1.15+ boilerplate)
+        #   target = ArrayDyn.alloc(temp, true_or_new_ref(flag))
+        # Rewrite to target = [] when temp has no later uses.
         if start + 1 &gt;= len(stmts):
             return None
         s0 = stmts[start]
         if not isinstance(s0, IRAssign) or not isinstance(s0.target, IRLocal):
             return None
         temp = s0.target
-        if not self._is_empty_arrayobj_anon(s0.expr):
+
+        local_defs: Dict[IRLocal, IRExpression] = {}
+        for stmt in stmts[:start]:
+            if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+                local_defs[stmt.target] = stmt.expr
+
+        s0_expr_is_empty_literal = isinstance(s0.expr, IRArrayLiteral) and len(s0.expr.elements) == 0
+        if not (s0_expr_is_empty_literal or self._is_empty_arrayobj_anon(s0.expr, local_defs)):
             return None
 
-        s1 = stmts[start + 1]
-        if not isinstance(s1, IRAssign) or not isinstance(s1.expr, IRCall):
+        # Look for the ArrayDyn.alloc call. HashLink 1.15+ inserts a boolean flag
+        # temp assignment between the temp and the alloc call, so scan forward.
+        alloc_idx = -1
+        flag_local: Optional[IRLocal] = None
+        for j in range(start + 1, min(len(stmts), start + 4)):
+            s = stmts[j]
+            if isinstance(s, IRAssign) and isinstance(s.expr, IRConst) and isinstance(s.expr.value, bool):
+                # Optional flag assignment, keep looking.
+                if isinstance(s.target, IRLocal):
+                    flag_local = s.target
+                continue
+            if isinstance(s, IRAssign) and isinstance(s.expr, IRCall) and self._is_arraydyn_alloc(s.expr):
+                alloc_idx = j
+                break
+            # Stop scanning if we hit a non-boilerplate statement.
+            break
+
+        if alloc_idx == -1:
             return None
+        s1 = stmts[alloc_idx]
+        assert isinstance(s1, IRAssign)
         call = s1.expr
-        if not self._is_arraydyn_alloc(call):
-            return None
+        assert isinstance(call, IRCall)
         if len(call.args) != 2:
             return None
         first_arg, second_arg = call.args
@@ -2337,23 +2392,38 @@ source idiom.</p></div>
         if isinstance(second_arg, IRConst) and isinstance(second_arg.value, bool) and second_arg.value:
             true_ok = True
         elif (
-            isinstance(second_arg, IRRef)
+            isinstance(second_arg, (IRRef, IRRefNew))
             and isinstance(second_arg.target, IRConst)
             and isinstance(second_arg.target.value, bool)
             and second_arg.target.value
         ):
             true_ok = True
+        elif isinstance(second_arg, IRRefNew) and isinstance(second_arg.target, IRLocal):
+            # HashLink 1.15+ lowers the boolean flag to a stack-allocated Ref.
+            ref_local = second_arg.target
+            for prior in stmts[:alloc_idx]:
+                if (
+                    isinstance(prior, IRAssign)
+                    and isinstance(prior.target, IRLocal)
+                    and prior.target.name == ref_local.name
+                    and isinstance(prior.expr, IRConst)
+                    and isinstance(prior.expr.value, bool)
+                    and prior.expr.value
+                ):
+                    true_ok = True
+                    break
         if not true_ok:
             return None
 
-        for later in stmts[start + 2 :]:
+        for later in stmts[alloc_idx + 1 :]:
             if self._local_in_stmt(later, temp):
                 return None
 
         literal = IRArrayLiteral(self.func.code, [])
         new_assign = IRAssign(self.func.code, s1.target, literal)
-        new_assign.adopt(s0, s1)
-        return new_assign, 2
+        consume_count = alloc_idx - start + 1
+        new_assign.adopt(*stmts[start : alloc_idx + 1])
+        return new_assign, consume_count
 
     def _index_shift(self, idx: IRStatement, local: IRLocal) -&gt; Optional[int]:
         &#34;&#34;&#34;Return the shift amount if `idx` is `local &lt;&lt; const`.&#34;&#34;&#34;
@@ -2835,21 +2905,51 @@ source idiom.</p></div>
         if len(call.args) != 2:
             return None
         first_arg, second_arg = call.args
-        if not isinstance(first_arg, IRArrayLiteral):
+        literal: Optional[IRArrayLiteral] = None
+        array_temp: Optional[IRLocal] = None
+        if isinstance(first_arg, IRArrayLiteral):
+            literal = first_arg
+        elif isinstance(first_arg, IRLocal):
+            array_temp = first_arg
+            for prior in stmts[:start]:
+                if (
+                    isinstance(prior, IRAssign)
+                    and isinstance(prior.target, IRLocal)
+                    and prior.target.name == first_arg.name
+                    and isinstance(prior.expr, IRArrayLiteral)
+                ):
+                    literal = prior.expr
+                    break
+        if literal is None:
             return None
+
         true_ok = False
         if isinstance(second_arg, IRConst) and isinstance(second_arg.value, bool) and second_arg.value:
             true_ok = True
         elif (
-            isinstance(second_arg, IRRef)
+            isinstance(second_arg, (IRRef, IRRefNew))
             and isinstance(second_arg.target, IRConst)
             and isinstance(second_arg.target.value, bool)
             and second_arg.target.value
         ):
             true_ok = True
+        elif isinstance(second_arg, IRRefNew) and isinstance(second_arg.target, IRLocal):
+            # HashLink 1.15+ lowers the boolean flag to a stack-allocated Ref.
+            ref_local = second_arg.target
+            for prior in stmts[:start]:
+                if (
+                    isinstance(prior, IRAssign)
+                    and isinstance(prior.target, IRLocal)
+                    and prior.target.name == ref_local.name
+                    and isinstance(prior.expr, IRConst)
+                    and isinstance(prior.expr.value, bool)
+                    and prior.expr.value
+                ):
+                    true_ok = True
+                    break
         if not true_ok:
             return None
-        return IRAssign(self.func.code, s.target, first_arg).adopt(s), 1
+        return IRAssign(self.func.code, s.target, literal).adopt(s), 1
 
     @staticmethod
     def _expr_eq(a: Optional[IRExpression], b: Optional[IRExpression]) -&gt; bool:
@@ -3617,6 +3717,66 @@ attributes &ndash; see the documentation for details.</p></div>
 </li>
 </ul>
 </dd>
+<dt id="crashlink.decomp.IRBytesNew"><code class="flex name class">
+<span>class <span class="ident">IRBytesNew</span></span>
+<span>(</span><span>code: Bytecode,<br>bytes_type: tIndex,<br>size: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRBytesNew(IRExpression):
+    &#34;&#34;&#34;Represents `new hl.Bytes(size)`, lifted from the std `alloc_bytes` native.&#34;&#34;&#34;
+
+    def __init__(self, code: Bytecode, bytes_type: tIndex, size: IRExpression):
+        super().__init__(code)
+        self.bytes_type_idx = bytes_type
+        self.size = size
+
+    def get_type(self) -&gt; Type:
+        return self.bytes_type_idx.resolve(self.code)
+
+    def get_children(self) -&gt; List[IRStatement]:
+        return [self.size] if isinstance(self.size, IRStatement) else []
+
+    def __repr__(self) -&gt; str:
+        return f&#34;&lt;IRBytesNew: new hl.Bytes({self.size})&gt;&#34;</code></pre>
+</details>
+<div class="desc"><p>Represents <code>new hl.Bytes(size)</code>, lifted from the std <code>alloc_bytes</code> native.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></li>
+<li><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRBytesNew.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    return [self.size] if isinstance(self.size, IRStatement) else []</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
 <dt id="crashlink.decomp.IRCall"><code class="flex name class">
 <span>class <span class="ident">IRCall</span></span>
 <span>(</span><span>code: Bytecode,<br>call_type: "'<a title="crashlink.decomp.IRCall.CallType" href="#crashlink.decomp.IRCall.CallType">IRCall.CallType</a>'",<br>target: "'<a title="crashlink.decomp.IRConst" href="#crashlink.decomp.IRConst">IRConst</a>|<a title="crashlink.decomp.IRLocal" href="#crashlink.decomp.IRLocal">IRLocal</a>|<a title="crashlink.decomp.IRField" href="#crashlink.decomp.IRField">IRField</a>|None'",<br>args: List[<a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>])</span>
@@ -3895,7 +4055,7 @@ attributes &ndash; see the documentation for details.</p></div>
         for binding in obj.bindings:
             binding_names.append(binding.field.resolve_obj(self.code, obj).name.resolve(self.code))
         for field in obj.fields:
-            if not field.name.resolve(self.code) in binding_names:
+            if field.name.resolve(self.code) not in binding_names:
                 res.append((field.name.resolve(self.code), field.type.resolve(self.code)))
         return res
 
@@ -3930,7 +4090,7 @@ attributes &ndash; see the documentation for details.</p></div>
     for binding in obj.bindings:
         binding_names.append(binding.field.resolve_obj(self.code, obj).name.resolve(self.code))
     for field in obj.fields:
-        if not field.name.resolve(self.code) in binding_names:
+        if field.name.resolve(self.code) not in binding_names:
             res.append((field.name.resolve(self.code), field.type.resolve(self.code)))
     return res</code></pre>
 </details>
@@ -4218,7 +4378,7 @@ common_code();</p></div>
         without changing program behavior. Calls and allocations are excluded.&#34;&#34;&#34;
         if isinstance(expr, (IRConst, IRLocal)):
             return True
-        if isinstance(expr, (IRField, IRCast, IRNeg, IRNot)):
+        if isinstance(expr, (IRField, IRCast, IRNeg, IRNot, IRTypeKind)):
             for child in expr.get_children():
                 if isinstance(child, IRExpression) and not self._is_safe_to_duplicate(child):
                     return False
@@ -4282,6 +4442,9 @@ common_code();</p></div>
         for s in later_statements:
             if self._stmt_contains_local_read(s, local):
                 return True
+            # a top-level reassignment kills the value; later reads don&#39;t count
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target.name == local.name:
+                break
         return False
 
     def visit_block(self, block: IRBlock) -&gt; None:
@@ -4501,7 +4664,10 @@ common_code();</p></div>
         return changed
 
     def _try_inline_into_boolexpr(
-        self, bool_expr: IRBoolExpr, target: IRLocal | IRField | IRArrayAccess, expr_to_inline: IRExpression
+        self,
+        bool_expr: IRBoolExpr,
+        target: IRLocal | IRField | IRArrayAccess,
+        expr_to_inline: IRExpression,
     ) -&gt; Optional[IRBoolExpr]:
         modified = False
         new_left = bool_expr.left
@@ -4810,7 +4976,10 @@ conditional statement (IRConditional, IRWhileLoop) or another expression.</p>
             return _get_type_in_code(self.code, &#34;Bool&#34;)
         elif self.const_type == IRConst.ConstType.BYTES:
             return _get_type_in_code(self.code, &#34;Bytes&#34;)
-        elif self.const_type in [IRConst.ConstType.STRING, IRConst.ConstType.GLOBAL_STRING]:
+        elif self.const_type in [
+            IRConst.ConstType.STRING,
+            IRConst.ConstType.GLOBAL_STRING,
+        ]:
             return _get_type_in_code(self.code, &#34;String&#34;)
         elif self.const_type == IRConst.ConstType.NULL:
             return _get_type_in_code(self.code, &#34;Null&#34;)  # FIXME: null is of a type...
@@ -5153,6 +5322,7 @@ attributes &ndash; see the documentation for details.</p></div>
                         if not self._is_synthetic_temp(phantom):
                             continue
                         self._replace_local_shallow(later, phantom, user_local)
+                        self._replace_in_branches(later, phantom, user_local)
                     if isinstance(later, IRAssign) and isinstance(later.target, IRLocal):
                         if later.target == user_local:
                             break
@@ -5188,6 +5358,25 @@ attributes &ndash; see the documentation for details.</p></div>
                         break
                     self._replace_local_shallow(later, temp_local, user_local)
         return None
+
+    def _replace_in_branches(self, stmt: IRStatement, temp: IRLocal, user: IRLocal) -&gt; None:
+        &#34;&#34;&#34;Replace reads of `temp` with `user` inside a switch/conditional&#39;s branch
+        bodies, stopping at (but still substituting into the RHS of) a statement
+        that reassigns `temp` — reads past that point belong to the new value.&#34;&#34;&#34;
+        branches: List[IRBlock] = []
+        if isinstance(stmt, IRConditional):
+            branches.append(stmt.true_block)
+            if stmt.false_block:
+                branches.append(stmt.false_block)
+        elif isinstance(stmt, IRSwitch):
+            branches.extend(stmt.cases.values())
+            if stmt.default:
+                branches.append(stmt.default)
+        for branch in branches:
+            for s in branch.statements:
+                self._replace_local_shallow(s, temp, user)
+                if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target == temp:
+                    break
 
     @staticmethod
     def _is_synthetic_temp(local: IRLocal) -&gt; bool:
@@ -5472,12 +5661,18 @@ until <code>temp</code> is redefined.</p></div>
                 and isinstance(stmt.target, IRLocal)
                 and self._local_name(stmt.target) not in live
             ):
-                if self._has_side_effects(stmt.expr):
+                if self._is_user_local_name(self._local_name(stmt.target)):
+                    # Preserve dead stores to user-named locals so the source
+                    # round-trip stays faithful to the original bytecode.
+                    new_stmts.append(stmt)
+                elif self._has_side_effects(stmt.expr):
                     # Keep the side effects as a bare expression statement.
                     stmt.expr.adopt(stmt)  # opcode was tagged on the assign, not its expr
                     new_stmts.append(stmt.expr)
-                    live.update(uses)
-                # else: drop the dead assignment entirely.
+                # else: drop the dead assignment entirely for compiler temps.
+                # For kept statements, still update liveness; dropped ones don&#39;t.
+                live.difference_update(defs)
+                live.update(uses)
                 continue
             if mutate:
                 new_stmts.append(stmt)
@@ -5517,6 +5712,11 @@ until <code>temp</code> is redefined.</p></div>
             uses.update(self._locals_in_expr(stmt.condition))
         elif isinstance(stmt, IRSwitch):
             uses.update(self._locals_in_expr(stmt.value))
+        else:
+            # Generic fallback (e.g. IRRefSet): expression children are reads.
+            for child in stmt.get_children():
+                if isinstance(child, IRExpression):
+                    uses.update(self._locals_in_expr(child))
 
         # Recursively process nested blocks with the correct live-out sets.
         if isinstance(stmt, IRConditional):
@@ -5527,7 +5727,10 @@ until <code>temp</code> is redefined.</p></div>
             uses.update(false_in)
         elif isinstance(stmt, IRWhileLoop):
             body_in = self._process_loop_body(
-                stmt.body, live_after_stmt, self._locals_in_expr(stmt.condition), mutate=mutate
+                stmt.body,
+                live_after_stmt,
+                self._locals_in_expr(stmt.condition),
+                mutate=mutate,
             )
             uses.update(body_in)
         elif isinstance(stmt, IRPrimitiveLoop):
@@ -5561,7 +5764,11 @@ until <code>temp</code> is redefined.</p></div>
         return uses, defs
 
     def _process_loop_body(
-        self, body: IRBlock, live_after: Set[str], header_uses: Set[str], mutate: bool = True
+        self,
+        body: IRBlock,
+        live_after: Set[str],
+        header_uses: Set[str],
+        mutate: bool = True,
     ) -&gt; Set[str]:
         &#34;&#34;&#34;Process a loop body to a fixed point so loop-carried assignments live.
 
@@ -5589,6 +5796,17 @@ until <code>temp</code> is redefined.</p></div>
             live.difference_update(defs)
             live.update(uses)
         return live
+
+    def _is_user_local_name(self, name: str) -&gt; bool:
+        if not self.func.func.has_debug or not self.func.func.assigns:
+            return False
+        user_names = {name_ref.resolve(self.func.code) for name_ref, _ in self.func.func.assigns}
+        if name in user_names:
+            return True
+        for un in user_names:
+            if name.startswith(un) and name[len(un) :].isdigit():
+                return True
+        return False
 
     def _locals_in_expr(self, expr: Optional[IRExpression]) -&gt; Set[str]:
         found: Set[str] = set()
@@ -5623,6 +5841,14 @@ until <code>temp</code> is redefined.</p></div>
             found.update(self._locals_in_expr(expr.value))
         elif isinstance(expr, IRRef):
             found.update(self._locals_in_expr(expr.target))
+        elif isinstance(expr, IRRefNew):
+            found.update(self._locals_in_expr(expr.target))
+        else:
+            # Generic fallback (e.g. IRNativeArrayNew, IRRefGet): a missing case
+            # here must not hide a read and let a live assignment be dropped.
+            for child in expr.get_children():
+                if isinstance(child, IRExpression):
+                    found.update(self._locals_in_expr(child))
         return found
 
     def _has_side_effects(self, expr: Optional[IRExpression]) -&gt; bool:
@@ -5659,7 +5885,14 @@ until <code>temp</code> is redefined.</p></div>
         code = self.func.code
         name = code.full_func_name(target.value) or code.partial_func_name(target.value) or &#34;&#34;
         # Array read-only inspectors.
-        if any(s in name for s in (&#34;ArrayAccess.getDyn&#34;, &#34;ArrayAccess.get_length&#34;, &#34;ArrayBase.indexOf&#34;)):
+        if any(
+            s in name
+            for s in (
+                &#34;ArrayAccess.getDyn&#34;,
+                &#34;ArrayAccess.get_length&#34;,
+                &#34;ArrayBase.indexOf&#34;,
+            )
+        ):
             return True
         # String read-only inspectors / factories whose result is unused.
         if any(
@@ -5681,7 +5914,16 @@ until <code>temp</code> is redefined.</p></div>
         ):
             return True
         # Byte/string comparison/search helpers.
-        if any(s in name for s in (&#34;bytes_find&#34;, &#34;bytes_compare&#34;, &#34;ucs2_length&#34;, &#34;ucs2_upper&#34;, &#34;ucs2_lower&#34;)):
+        if any(
+            s in name
+            for s in (
+                &#34;bytes_find&#34;,
+                &#34;bytes_compare&#34;,
+                &#34;ucs2_length&#34;,
+                &#34;ucs2_upper&#34;,
+                &#34;ucs2_lower&#34;,
+            )
+        ):
             return True
         return False</code></pre>
 </details>
@@ -5819,10 +6061,6 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
     &#34;&#34;&#34;Removes local assignments that are overwritten before being read within a block.&#34;&#34;&#34;
 
     def visit_block(self, block: IRBlock) -&gt; None:
-        new_stmts: List[IRStatement] = []
-        # local -&gt; index in new_stmts of its pending assignment
-        pending: Dict[IRLocal, int] = {}
-
         def _locals_in_expr(expr: Optional[IRExpression]) -&gt; Set[IRLocal]:
             found: Set[IRLocal] = set()
             if expr is None:
@@ -5919,37 +6157,129 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
                 return stmt.target
             return None
 
-        for stmt in block.statements:
-            reads = _reads_in_stmt(stmt)
-            for local in reads:
-                pending.pop(local, None)
+        # First use of `local` along every path through a statement:
+        # &#34;read&#34; (value needed), &#34;kill&#34; (dead on all paths: overwritten before
+        # any read, or the path terminates), or &#34;none&#34; (untouched).
+        def _first_use(stmt: IRStatement, local: IRLocal, _visited: Optional[Set[int]] = None) -&gt; str:
+            if _visited is None:
+                _visited = set()
+            if id(stmt) in _visited:
+                return &#34;none&#34;
+            _visited.add(id(stmt))
 
+            if isinstance(stmt, IRAssign):
+                if _reads_in_stmt(stmt) &amp; {local}:
+                    return &#34;read&#34;
+                if isinstance(stmt.target, IRLocal) and (stmt.target == local or stmt.target.same_register(local)):
+                    return &#34;kill&#34;
+                return &#34;none&#34;
+            if isinstance(stmt, (IRBreak, IRContinue)):
+                # jumps to a continuation this block-level scan can&#39;t see
+                return &#34;read&#34;
+            if isinstance(stmt, (IRReturn, IRThrow)):
+                if _reads_in_stmt(stmt) &amp; {local}:
+                    return &#34;read&#34;
+                return &#34;kill&#34;
+            if isinstance(stmt, IRConditional):
+                if _locals_in_expr(stmt.condition) &amp; {local}:
+                    return &#34;read&#34;
+                branches = [stmt.true_block.statements]
+                branches.append(stmt.false_block.statements if stmt.false_block else [])
+                results = [_first_use_in_list(b, local, _visited) for b in branches]
+                if &#34;read&#34; in results:
+                    return &#34;read&#34;
+                if all(r == &#34;kill&#34; for r in results):
+                    return &#34;kill&#34;
+                return &#34;none&#34;
+            if isinstance(stmt, IRSwitch):
+                if _locals_in_expr(stmt.value) &amp; {local}:
+                    return &#34;read&#34;
+                branches = [c.statements for c in stmt.cases.values()]
+                branches.append(stmt.default.statements if stmt.default else [])
+                results = [_first_use_in_list(b, local, _visited) for b in branches]
+                if &#34;read&#34; in results:
+                    return &#34;read&#34;
+                if all(r == &#34;kill&#34; for r in results):
+                    return &#34;kill&#34;
+                return &#34;none&#34;
+            if isinstance(stmt, IRExpression):
+                return &#34;read&#34; if local in _locals_in_expr(stmt) else &#34;none&#34;
+            # Loops, try/catch and anything else with nested blocks: any
+            # occurrence at all is conservatively a read.
+            if _reads_in_stmt(stmt) &amp; {local}:
+                return &#34;read&#34;
+            for child in stmt.get_children():
+                child_stmts = child.statements if isinstance(child, IRBlock) else [child]
+                for s in child_stmts:
+                    if _first_use(s, local, set()) != &#34;none&#34;:
+                        return &#34;read&#34;
+            return &#34;none&#34;
+
+        def _first_use_in_list(stmts: List[IRStatement], local: IRLocal, _visited: Set[int]) -&gt; str:
+            for s in stmts:
+                r = _first_use(s, local, _visited)
+                if r != &#34;none&#34;:
+                    return r
+            return &#34;none&#34;
+
+        user_names = self._collect_user_names()
+        user_regs = self._collect_user_reg_indices()
+
+        new_stmts = []
+        for i, stmt in enumerate(block.statements):
             target = _written_local(stmt)
-            if target is not None:
-                _pending_idx = pending.get(target)
-                _pending_s = new_stmts[_pending_idx] if _pending_idx is not None else None
-                if (
-                    _pending_idx is not None
-                    and _pending_s is not None
-                    and isinstance(_pending_s, IRAssign)
-                    and not _has_side_effects(_pending_s.expr)
-                ):
-                    dead_idx: int = _pending_idx
-                    del new_stmts[dead_idx]
-                    # adjust indices after removal
-                    for loc, idx in list(pending.items()):
-                        if idx &gt; dead_idx:
-                            pending[loc] = idx - 1
-                new_stmts.append(stmt)
-                pending[target] = len(new_stmts) - 1
-            else:
-                new_stmts.append(stmt)
+            if (
+                target is not None
+                and isinstance(stmt, IRAssign)
+                and not _has_side_effects(stmt.expr)
+                and _first_use_in_list(block.statements[i + 1 :], target, set()) == &#34;kill&#34;
+                and not self._is_user_local(target, user_names, user_regs)
+            ):
+                if DEBUG:
+                    dbg_print(f&#34;IRDeadStoreEliminator: removing dead store {stmt}&#34;)
+                continue
+            new_stmts.append(stmt)
 
         block.statements = new_stmts
         for stmt in block.statements:
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
-                    self.visit_block(child)</code></pre>
+                    self.visit_block(child)
+
+    def _collect_user_names(self) -&gt; Set[str]:
+        names: Set[str] = set()
+        if self.func.func.has_debug and self.func.func.assigns:
+            for name_ref, _ in self.func.func.assigns:
+                names.add(name_ref.resolve(self.func.code))
+        return names
+
+    def _collect_user_reg_indices(self) -&gt; Set[int]:
+        indices: Set[int] = set()
+        if self.func.func.has_debug and self.func.func.assigns:
+            for _, op_idx in self.func.func.assigns:
+                val = op_idx.value - 1
+                if val &gt;= 0 and val &lt; len(self.func.ops):
+                    op = self.func.ops[val]
+                    try:
+                        indices.add(op.df[&#34;dst&#34;].value)
+                    except KeyError:
+                        pass
+        return indices
+
+    def _is_user_local(self, local: IRLocal, user_names: Set[str], user_regs: Set[int]) -&gt; bool:
+        if local.name in user_names:
+            return True
+        for name in user_names:
+            if local.name.startswith(name) and local.name[len(name) :].isdigit():
+                return True
+        if local.name.startswith(&#34;var&#34;):
+            try:
+                idx = int(local.name[3:])
+                if idx in user_regs:
+                    return True
+            except ValueError:
+                pass
+        return False</code></pre>
 </details>
 <div class="desc"><p>Removes local assignments that are overwritten before being read within a block.</p></div>
 <h3>Ancestors</h3>
@@ -6100,6 +6430,12 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
             used.update(self._collect_all_used_names(stmt.condition))
         elif isinstance(stmt, IRSwitch):
             self._collect_used_in_expr(stmt.value, used)
+        else:
+            # Generic fallback (e.g. IRRefSet): treat any expression child as a
+            # read, so a missing case can&#39;t delete a still-needed assignment.
+            for child in stmt.get_children():
+                if isinstance(child, IRExpression):
+                    self._collect_used_in_expr(child, used)
 
     def _collect_used_in_expr(self, expr: Optional[IRExpression], used: Set[str]) -&gt; None:
         if expr is None:
@@ -6239,7 +6575,13 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
 <pre><code class="python">class IREnumConstruct(IRExpression):
     &#34;&#34;&#34;Represents enum construction, e.g., `Rgb(255, 255, 0)`&#34;&#34;&#34;
 
-    def __init__(self, code: Bytecode, construct_name: str, args: List[IRExpression], enum_type: tIndex):
+    def __init__(
+        self,
+        code: Bytecode,
+        construct_name: str,
+        args: List[IRExpression],
+        enum_type: tIndex,
+    ):
         super().__init__(code)
         self.construct_name = construct_name
         self.args = args
@@ -6482,7 +6824,9 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
             # existing IRConst by changing its value to the constructor name
             # string, but create a fresh one to avoid side effects.
             new_case_val = IRConst(
-                self.func.code, IRConst.ConstType.GLOBAL_STRING, value=construct.name.resolve(self.func.code)
+                self.func.code,
+                IRConst.ConstType.GLOBAL_STRING,
+                value=construct.name.resolve(self.func.code),
             )
             new_cases[new_case_val] = case_block
 
@@ -6557,6 +6901,7 @@ using enum constructor names for the cases.</p></div>
 <li><a title="crashlink.decomp.ir.IRArrayAccess" href="ir.html#crashlink.decomp.ir.IRArrayAccess">IRArrayAccess</a></li>
 <li><a title="crashlink.decomp.ir.IRArrayLiteral" href="ir.html#crashlink.decomp.ir.IRArrayLiteral">IRArrayLiteral</a></li>
 <li><a title="crashlink.decomp.ir.IRBoolExpr" href="ir.html#crashlink.decomp.ir.IRBoolExpr">IRBoolExpr</a></li>
+<li><a title="crashlink.decomp.ir.IRBytesNew" href="ir.html#crashlink.decomp.ir.IRBytesNew">IRBytesNew</a></li>
 <li><a title="crashlink.decomp.ir.IRCall" href="ir.html#crashlink.decomp.ir.IRCall">IRCall</a></li>
 <li><a title="crashlink.decomp.ir.IRCast" href="ir.html#crashlink.decomp.ir.IRCast">IRCast</a></li>
 <li><a title="crashlink.decomp.ir.IRConst" href="ir.html#crashlink.decomp.ir.IRConst">IRConst</a></li>
@@ -6573,6 +6918,8 @@ using enum constructor names for the cases.</p></div>
 <li><a title="crashlink.decomp.ir.IRObjectLiteral" href="ir.html#crashlink.decomp.ir.IRObjectLiteral">IRObjectLiteral</a></li>
 <li><a title="crashlink.decomp.ir.IRPrimitiveJump" href="ir.html#crashlink.decomp.ir.IRPrimitiveJump">IRPrimitiveJump</a></li>
 <li><a title="crashlink.decomp.ir.IRRef" href="ir.html#crashlink.decomp.ir.IRRef">IRRef</a></li>
+<li><a title="crashlink.decomp.ir.IRRefGet" href="ir.html#crashlink.decomp.ir.IRRefGet">IRRefGet</a></li>
+<li><a title="crashlink.decomp.ir.IRRefNew" href="ir.html#crashlink.decomp.ir.IRRefNew">IRRefNew</a></li>
 <li><a title="crashlink.decomp.ir.IRTypeKind" href="ir.html#crashlink.decomp.ir.IRTypeKind">IRTypeKind</a></li>
 <li><a title="crashlink.decomp.ir.IRTypeOf" href="ir.html#crashlink.decomp.ir.IRTypeOf">IRTypeOf</a></li>
 <li><a title="crashlink.decomp.ir.IRUnliftedOpcode" href="ir.html#crashlink.decomp.ir.IRUnliftedOpcode">IRUnliftedOpcode</a></li>
@@ -7128,7 +7475,9 @@ User-written
                 IRSelfAssignOptimizer(self),
                 IRRedundantContinueEliminator(self),
                 IRCopyPropOptimizer(self),
+                IRBoolMaterializationCollapser(self),
                 IRShiftConstantOptimizer(self),
+                IRElseFlattener(self),
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRTempAssignmentInliner(self, aggressive=True),
                 IRStringAllocOptimizer(self),
@@ -7139,25 +7488,38 @@ User-written
                 IRNativeArrayAllocOptimizer(self),
                 IRArrayObjWrapperOptimizer(self),
                 IRNativeMapAllocOptimizer(self),
+                IRBytesAllocOptimizer(self),
+                # past_kills only after the pattern optimizers: they match raw lowering shapes
+                IRTempAssignmentInliner(self, aggressive=True, past_kills=True),
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRVoidAssignOptimizer(self),
                 IRDeadCodeEliminator(self),
                 IRSelfAssignOptimizer(self),
                 IRTraceOptimizer(self),
+                # trace()&#39;s DynObj scaffolding collapses above, bringing a dead
+                # user-local-register reassignment adjacent to its sole use for the
+                # first time; re-run so IRTempAssignmentInliner&#39;s user-local-reuse
+                # fold (see _visit_block_conservative) can now see and fold it.
+                IRTempAssignmentInliner(self, aggressive=False),
                 IRAnonObjectLiteralOptimizer(self),
                 IRStringConcatFolder(self),
                 IRIntSwitchOptimizer(self),
                 IRStringSwitchOptimizer(self),
                 IREnumSwitchOptimizer(self),
+                IRTerminalValueInliner(self),
                 IRDeadTempEliminator(self),
                 IRDeadCodeEliminator(self),
                 IRBlockFlattener(self),
                 IRLoopRerollOptimizer(self),
                 IRForEachLoopOptimizer(self),
                 IRIntRangeLoopOptimizer(self),
+                IRBoolMaterializationCollapser(self),
                 IRDeadStoreEliminator(self),
+                IRDeadAssignmentEliminator(self),
                 IRGuardOrMerger(self),
                 IRRedundantRecomputeEliminator(self),
+                IREmptyConditionalNormalizer(self),
+                IRTerminalValueInliner(self),
             ]
             self._optimize()
             self.apply_annotations()
@@ -7196,6 +7558,7 @@ User-written
     def _build_assign_map(self) -&gt; None:
         &#34;&#34;&#34;Build a mapping from op index to (register, name) for SSA-esque splitting.&#34;&#34;&#34;
         self._op_assigns: Dict[int, Dict[int, str]] = {}
+        self._op_aliases: Dict[int, List[Tuple[int, str]]] = {}
         self._user_reg_indices: Set[int] = set()
         self._reg_first_assign: Dict[int, int] = {}
         self._op_id_to_idx: Dict[int, int] = {id(op): i for i, op in enumerate(self.ops)}
@@ -7225,7 +7588,16 @@ User-written
             self._user_reg_indices.add(reg)
             if val not in self._op_assigns:
                 self._op_assigns[val] = {}
-            self._op_assigns[val][reg] = name
+            # Keep the first debug name for a given op+reg: later names at the
+            # same op are aliases (e.g. `var b = a` compiled to the same
+            # register), and the earlier name is the one used by subsequent
+            # expressions.
+            if reg not in self._op_assigns[val]:
+                self._op_assigns[val][reg] = name
+            elif name != self._op_assigns[val][reg]:
+                # `var b = a;` compiled away to the same register: keep the alias
+                # so lifting can re-emit it as an explicit copy.
+                self._op_aliases.setdefault(val, []).append((reg, name))
             if reg not in self._reg_first_assign or val &lt; self._reg_first_assign[reg]:
                 self._reg_first_assign[reg] = val
 
@@ -7246,7 +7618,13 @@ User-written
         while name in existing_names:
             name = f&#34;{base_name}{suffix}&#34;
             suffix += 1
-        new_local = IRLocal(name, reg_type, code=self.code, reg_idx=reg_idx, defining_op_idx=defining_op_idx)
+        new_local = IRLocal(
+            name,
+            reg_type,
+            code=self.code,
+            reg_idx=reg_idx,
+            defining_op_idx=defining_op_idx,
+        )
         self.locals[reg_idx] = new_local
         self.all_locals.append(new_local)
         # Cached blocks may still reference the old local object; force them to
@@ -7289,12 +7667,11 @@ User-written
 
     def _optimize(self) -&gt; None:
         &#34;&#34;&#34;Optimize the IR&#34;&#34;&#34;
-        from ..globals import DEBUG
 
         if DEBUG:
             dbg_print(&#34;----- Disasm -----&#34;)
             dbg_print(disasm.func(self.code, self.func))
-            dbg_print(f&#34;----- LLIL -----&#34;)
+            dbg_print(&#34;----- LLIL -----&#34;)
             dbg_print(self.block.pprint())
         if self.capture_layers:
             self.opcodes = disasm.func(self.code, self.func)
@@ -7630,7 +8007,12 @@ User-written
             if field_idx &gt;= len(defn.fields):
                 return None
             field_core = defn.fields[field_idx]
-            return IRField(self.code, obj_local, field_core.name.resolve(self.code), field_core.type)
+            return IRField(
+                self.code,
+                obj_local,
+                field_core.name.resolve(self.code),
+                field_core.type,
+            )
         return None
 
     def _lift_ops_into_block(self, block: IRBlock, ops: List[Opcode]) -&gt; None:
@@ -7660,7 +8042,14 @@ User-written
                 rhs = source_locals[op.df[&#34;b&#34;].value]
                 block.statements.append(
                     IRAssign(
-                        self.code, dst, IRArithmetic(self.code, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])
+                        self.code,
+                        dst,
+                        IRArithmetic(
+                            self.code,
+                            lhs,
+                            rhs,
+                            IRArithmetic.ArithmeticType[op.op.upper()],
+                        ),
                     )
                 )
             elif op.op in [&#34;Int&#34;, &#34;Float&#34;, &#34;Bool&#34;, &#34;Bytes&#34;, &#34;String&#34;, &#34;Null&#34;]:
@@ -7721,7 +8110,11 @@ User-written
                     block.statements.append(IRAssign(self.code, dst, IRUnliftedOpcode(self.code, op)))
             elif op.op == &#34;Mov&#34;:
                 block.statements.append(
-                    IRAssign(self.code, self.locals[op.df[&#34;dst&#34;].value], source_locals[op.df[&#34;src&#34;].value])
+                    IRAssign(
+                        self.code,
+                        self.locals[op.df[&#34;dst&#34;].value],
+                        source_locals[op.df[&#34;src&#34;].value],
+                    )
                 )
             elif op.op == &#34;GetGlobal&#34;:
                 global_idx = op.df[&#34;global&#34;].value
@@ -7756,7 +8149,12 @@ User-written
                 if not isinstance(obj_type.definition, (Obj, Virtual)):
                     raise DecompError(f&#34;Field opcode used on non-object type: {obj_type.definition}&#34;)
                 field_core = op.df[&#34;field&#34;].resolve_obj(self.code, obj_type.definition)
-                field_expr = IRField(self.code, obj_local, field_core.name.resolve(self.code), field_core.type)
+                field_expr = IRField(
+                    self.code,
+                    obj_local,
+                    field_core.name.resolve(self.code),
+                    field_core.type,
+                )
                 block.statements.append(IRAssign(self.code, dst_local, field_expr))
             elif op.op == &#34;GetThis&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
@@ -7764,7 +8162,12 @@ User-written
                 this_type_def = self.code.types[self.func.regs[0].value]
                 if isinstance(this_type_def.definition, (Obj, Virtual)):
                     field_core = op.df[&#34;field&#34;].resolve_obj(self.code, this_type_def.definition)
-                    field_expr = IRField(self.code, this_local, field_core.name.resolve(self.code), field_core.type)
+                    field_expr = IRField(
+                        self.code,
+                        this_local,
+                        field_core.name.resolve(self.code),
+                        field_core.type,
+                    )
                     block.statements.append(IRAssign(self.code, dst_local, field_expr))
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
@@ -7774,7 +8177,12 @@ User-written
                 this_type_def = self.code.types[self.func.regs[0].value]
                 if isinstance(this_type_def.definition, (Obj, Virtual)):
                     field_core = op.df[&#34;field&#34;].resolve_obj(self.code, this_type_def.definition)
-                    field_expr = IRField(self.code, this_local, field_core.name.resolve(self.code), field_core.type)
+                    field_expr = IRField(
+                        self.code,
+                        this_local,
+                        field_core.name.resolve(self.code),
+                        field_core.type,
+                    )
                     block.statements.append(IRAssign(self.code, field_expr, src_local))
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
@@ -7816,7 +8224,12 @@ User-written
                     IRAssign(
                         self.code,
                         dst_local,
-                        IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df[&#34;dst&#34;].value]),
+                        IRArrayAccess(
+                            self.code,
+                            arr_local,
+                            idx_local,
+                            self.func.regs[op.df[&#34;dst&#34;].value],
+                        ),
                     )
                 )
             elif op.op == &#34;ArraySize&#34;:
@@ -7829,13 +8242,21 @@ User-written
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
                 src_local = source_locals[op.df[&#34;src&#34;].value]
                 block.statements.append(
-                    IRAssign(self.code, dst_local, IRTypeOf(self.code, src_local, self.func.regs[op.df[&#34;dst&#34;].value]))
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRTypeOf(self.code, src_local, self.func.regs[op.df[&#34;dst&#34;].value]),
+                    )
                 )
             elif op.op == &#34;GetTID&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
                 src_local = source_locals[op.df[&#34;src&#34;].value]
                 block.statements.append(
-                    IRAssign(self.code, dst_local, IRTypeKind(self.code, src_local, self.func.regs[op.df[&#34;dst&#34;].value]))
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRTypeKind(self.code, src_local, self.func.regs[op.df[&#34;dst&#34;].value]),
+                    )
                 )
             elif op.op == &#34;Incr&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
@@ -7909,7 +8330,11 @@ User-written
                 idx_local = source_locals[op.df[&#34;index&#34;].value]
                 src_local = source_locals[op.df[&#34;src&#34;].value]
                 block.statements.append(
-                    IRAssign(self.code, IRArrayAccess(self.code, arr_local, idx_local, src_local.get_type()), src_local)
+                    IRAssign(
+                        self.code,
+                        IRArrayAccess(self.code, arr_local, idx_local, src_local.get_type()),
+                        src_local,
+                    )
                 )
             elif op.op == &#34;DynSet&#34;:
                 obj_local = source_locals[op.df[&#34;obj&#34;].value]
@@ -7929,32 +8354,42 @@ User-written
                 obj_type = obj_local.get_type()
                 if isinstance(obj_type.definition, (Obj, Virtual)):
                     field_core = op.df[&#34;field&#34;].resolve_obj(self.code, obj_type.definition)
-                    field_expr = IRField(self.code, obj_local, field_core.name.resolve(self.code), field_core.type)
+                    field_expr = IRField(
+                        self.code,
+                        obj_local,
+                        field_core.name.resolve(self.code),
+                        field_core.type,
+                    )
                     block.statements.append(IRAssign(self.code, field_expr, src_local))
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
             elif op.op == &#34;Type&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
                 block.statements.append(
-                    IRAssign(self.code, dst_local, IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df[&#34;ty&#34;]))
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df[&#34;ty&#34;]),
+                    )
                 )
             elif op.op == &#34;Ref&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
                 src_local = source_locals[op.df[&#34;src&#34;].value]
-                block.statements.append(IRAssign(self.code, dst_local, IRRef(self.code, src_local)))
+                ref_new = IRRefNew(self.code, src_local)
+                ref_new.src_op_idx = op_idx
+                block.statements.append(IRAssign(self.code, dst_local, ref_new))
             elif op.op == &#34;Unref&#34;:
-                # References are modelled transparently (IRRef renders as its
-                # inner expression), so dereferencing one is just a copy of the
-                # underlying value.
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
                 src_local = source_locals[op.df[&#34;src&#34;].value]
-                block.statements.append(IRAssign(self.code, dst_local, src_local))
+                ref_get = IRRefGet(self.code, src_local)
+                ref_get.src_op_idx = op_idx
+                block.statements.append(IRAssign(self.code, dst_local, ref_get))
             elif op.op == &#34;Setref&#34;:
-                # References are modelled transparently; writing through one is
-                # represented as a copy to the reference register itself.
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
                 src_local = source_locals[op.df[&#34;value&#34;].value]
-                block.statements.append(IRAssign(self.code, dst_local, src_local))
+                ref_set = IRRefSet(self.code, dst_local, src_local)
+                ref_set.src_op_idx = op_idx
+                block.statements.append(ref_set)
             elif op.op == &#34;StaticClosure&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
                 fun_const = IRConst(self.code, IRConst.ConstType.FUN, idx=op.df[&#34;fun&#34;])
@@ -7979,7 +8414,12 @@ User-written
                     cast_expr = IRCast(self.code, self.func.regs[op.df[&#34;dst&#34;].value], obj_local)
                     block.statements.append(IRAssign(self.code, dst_local, cast_expr))
                 else:
-                    field_expr = IRField(self.code, obj_local, method_name, self.func.regs[op.df[&#34;dst&#34;].value])
+                    field_expr = IRField(
+                        self.code,
+                        obj_local,
+                        method_name,
+                        self.func.regs[op.df[&#34;dst&#34;].value],
+                    )
                     block.statements.append(IRAssign(self.code, dst_local, field_expr))
             elif op.op == &#34;VirtualClosure&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
@@ -8023,7 +8463,11 @@ User-written
                 )
                 args = [source_locals[arg.value] for arg in op.df[&#34;args&#34;].value]
                 block.statements.append(
-                    IRAssign(self.code, dst_local, IREnumConstruct(self.code, construct_name, args, enum_type))
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IREnumConstruct(self.code, construct_name, args, enum_type),
+                    )
                 )
             elif op.op == &#34;EnumAlloc&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
@@ -8036,7 +8480,11 @@ User-written
                     else f&#34;construct_{cid}&#34;
                 )
                 block.statements.append(
-                    IRAssign(self.code, dst_local, IREnumConstruct(self.code, construct_name, [], enum_type))
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IREnumConstruct(self.code, construct_name, [], enum_type),
+                    )
                 )
             elif op.op == &#34;EnumField&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
@@ -8050,7 +8498,11 @@ User-written
                     construct = enum_def.constructs[cid]
                     field_type = construct.params[fid]
                     block.statements.append(
-                        IRAssign(self.code, dst_local, IREnumField(self.code, src_local, field_name, field_type))
+                        IRAssign(
+                            self.code,
+                            dst_local,
+                            IREnumField(self.code, src_local, field_name, field_type),
+                        )
                     )
                 else:
                     block.statements.append(IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op)))
@@ -8075,14 +8527,22 @@ User-written
                     field_name = f&#34;param{fid}&#34;
                     field_type = construct.params[fid]
                     block.statements.append(
-                        IRAssign(self.code, IREnumField(self.code, value_local, field_name, field_type), src_local)
+                        IRAssign(
+                            self.code,
+                            IREnumField(self.code, value_local, field_name, field_type),
+                            src_local,
+                        )
                     )
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
             else:
                 if &#34;dst&#34; in op.df:
                     block.statements.append(
-                        IRAssign(self.code, self.locals[op.df[&#34;dst&#34;].value], IRUnliftedOpcode(self.code, op))
+                        IRAssign(
+                            self.code,
+                            self.locals[op.df[&#34;dst&#34;].value],
+                            IRUnliftedOpcode(self.code, op),
+                        )
                     )
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
@@ -8098,6 +8558,13 @@ User-written
                         stmt.src_file_idx = ref.value
                     except IndexError:
                         pass
+            # Re-emit register aliases (`var b = a;` folded into one register).
+            if op_idx is not None:
+                for reg, alias in self._op_aliases.get(op_idx, ()):
+                    src_local = self.locals[reg]
+                    alias_local = IRLocal(alias, self.func.regs[reg], code=self.code)
+                    self.all_locals.append(alias_local)
+                    block.statements.append(IRAssign(self.code, alias_local, src_local))
 
     def _shortest_distances(
         self,
@@ -8141,7 +8608,13 @@ User-written
         if not common_nodes:
             return None
 
-        return min(common_nodes, key=lambda node: (left_distances[node] + right_distances[node], node.base_offset))
+        return min(
+            common_nodes,
+            key=lambda node: (
+                left_distances[node] + right_distances[node],
+                node.base_offset,
+            ),
+        )
 
     def _is_terminal_branch_node(self, node: Optional[CFNode], loop_ctx: Optional[_LoopContext]) -&gt; bool:
         &#34;&#34;&#34;Return True if a branch target has no live successors within the current region.&#34;&#34;&#34;
@@ -8217,7 +8690,11 @@ User-written
         else:
             body_block = self._lift_block(header, visited.copy(), stop_at=header, loop_ctx=loop_ctx)
             block.statements.append(
-                IRWhileLoop(self.code, IRBoolExpr(self.code, IRBoolExpr.CompareType.TRUE), body_block)
+                IRWhileLoop(
+                    self.code,
+                    IRBoolExpr(self.code, IRBoolExpr.CompareType.TRUE),
+                    body_block,
+                )
             )
 
         next_block_ir = self._lift_block(exit_node, visited, stop_at, loop_ctx=parent_loop)
@@ -8398,6 +8875,7 @@ User-written
                         not target.branches
                         and target.ops
                         and target.ops[-1].op == &#34;Ret&#34;
+                        and target != loop_ctx.exit_node
                         and loop_ctx.header not in cfg.post_dominators.get(target, set())
                     ):
                         return None
@@ -8410,7 +8888,10 @@ User-written
                         # its statements are preserved; stop at the loop&#39;s normal exit
                         # node so post-loop code is not duplicated here.
                         branch_block = self._lift_block(
-                            target, visited.copy(), stop_at=loop_ctx.exit_node, loop_ctx=None
+                            target,
+                            visited.copy(),
+                            stop_at=loop_ctx.exit_node,
+                            loop_ctx=None,
                         )
                         if branch_block.statements and isinstance(branch_block.statements[-1], (IRReturn, IRThrow)):
                             return branch_block
@@ -8476,11 +8957,17 @@ User-written
 
             if then_block_ir is None:
                 then_block_ir = self._lift_block(
-                    fall_through, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                    fall_through,
+                    visited.copy(),
+                    stop_at=convergence_node,
+                    loop_ctx=loop_ctx,
                 )
             if else_block_ir is None:
                 else_block_ir = self._lift_block(
-                    jump_target, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                    jump_target,
+                    visited.copy(),
+                    stop_at=convergence_node,
+                    loop_ctx=loop_ctx,
                 )
 
             conditional_stmt = IRConditional(self.code, cond_expr, then_block_ir, else_block_ir)
@@ -8504,7 +8991,10 @@ User-written
 
             for target_node, edge_type in node.branches:
                 case_block_ir = self._lift_block(
-                    target_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                    target_node,
+                    visited.copy(),
+                    stop_at=convergence_node,
+                    loop_ctx=loop_ctx,
                 )
                 if edge_type.startswith(&#34;switch: case:&#34;):
                     case_val = int(edge_type.split(&#34;:&#34;)[-1].strip())
@@ -8535,17 +9025,29 @@ User-written
             )
 
             try_block_ir = self._lift_block(
-                try_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                try_branch_node,
+                visited.copy(),
+                stop_at=convergence_node,
+                loop_ctx=loop_ctx,
             )
             catch_block_ir = self._lift_block(
-                catch_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                catch_branch_node,
+                visited.copy(),
+                stop_at=convergence_node,
+                loop_ctx=loop_ctx,
             )
             catch_local = self.locals[last_op.df[&#34;exc&#34;].value]
             explicit_catch_type = (
                 self._catch_has_explicit_type(catch_branch_node) if catch_branch_node is not None else False
             )
             block.statements.append(
-                IRTryCatch(self.code, try_block_ir, catch_block_ir, catch_local, explicit_catch_type)
+                IRTryCatch(
+                    self.code,
+                    try_block_ir,
+                    catch_block_ir,
+                    catch_local,
+                    explicit_catch_type,
+                )
             )
 
             # Must bound this by the enclosing stop_at, like the conditional case
@@ -8811,7 +9313,12 @@ reg = <IRConst type=GLOBAL_STRING, value="the actual string"></p></div>
         if not isinstance(inner, IRConditional):
             return None
         if _stmt_lists_structurally_equal(outer_true, inner.true_block.statements):
-            or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, stmt.condition, inner.condition)
+            or_cond = IRBoolExpr(
+                self.func.code,
+                IRBoolExpr.CompareType.OR,
+                stmt.condition,
+                inner.condition,
+            )
             merged = IRConditional(self.func.code, or_cond, inner.true_block, inner.false_block)
             merged.adopt(stmt, inner)
             return merged
@@ -8946,7 +9453,14 @@ which recompiles to different (larger) bytecode than the original.</p></div>
     end: IRExpression
     body: IRBlock
 
-    def __init__(self, code: Bytecode, elem: IRLocal, start: IRExpression, end: IRExpression, body: IRBlock):
+    def __init__(
+        self,
+        code: Bytecode,
+        elem: IRLocal,
+        start: IRExpression,
+        end: IRExpression,
+        body: IRBlock,
+    ):
         super().__init__(code)
         self.elem = elem
         self.start = start
@@ -9507,10 +10021,16 @@ back into a switch.</p></div>
     &#34;&#34;&#34;
 
     def _clone_bool_expr(self, expr: IRBoolExpr) -&gt; IRBoolExpr:
-        return cast(IRBoolExpr, IRBoolExpr(expr.code, expr.op, expr.left, expr.right).adopt(expr))
+        return cast(
+            IRBoolExpr,
+            IRBoolExpr(expr.code, expr.op, expr.left, expr.right).adopt(expr),
+        )
 
     def _inline_into_boolexpr(
-        self, bool_expr: IRBoolExpr, target: IRLocal | IRField | IRArrayAccess, expr_to_inline: IRExpression
+        self,
+        bool_expr: IRBoolExpr,
+        target: IRLocal | IRField | IRArrayAccess,
+        expr_to_inline: IRExpression,
     ) -&gt; Optional[IRBoolExpr]:
         modified = False
         new_left = bool_expr.left
@@ -10450,7 +10970,12 @@ actual bytecode type, kept for type compatibility with the rest of the IR.</p></
 <pre><code class="python">class IRNew(IRExpression):
     &#34;&#34;&#34;Represents object allocation, e.g., `new MyClass()` or `{}`&#34;&#34;&#34;
 
-    def __init__(self, code: Bytecode, alloc_type: tIndex, constructor_args: Optional[List[IRExpression]] = None):
+    def __init__(
+        self,
+        code: Bytecode,
+        alloc_type: tIndex,
+        constructor_args: Optional[List[IRExpression]] = None,
+    ):
         super().__init__(code)
         self.alloc_type_idx = alloc_type
         self.constructor_args = constructor_args or []
@@ -11332,6 +11857,198 @@ produces extra opcodes that don't exist in the original bytecode.</p></div>
 </li>
 </ul>
 </dd>
+<dt id="crashlink.decomp.IRRefGet"><code class="flex name class">
+<span>class <span class="ident">IRRefGet</span></span>
+<span>(</span><span>code: Bytecode,<br>ref: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRRefGet(IRExpression):
+    &#34;&#34;&#34;Represents reading the value stored in an `hl.Ref`, e.g. `r.get()`&#34;&#34;&#34;
+
+    def __init__(self, code: Bytecode, ref: IRExpression):
+        super().__init__(code)
+        self.ref = ref
+
+    def get_type(self) -&gt; Type:
+        ref_type = self.ref.get_type()
+        if isinstance(ref_type.definition, Ref):
+            return ref_type.definition.type.resolve(self.code)
+        return ref_type
+
+    def get_children(self) -&gt; List[IRStatement]:
+        return [self.ref]
+
+    def __repr__(self) -&gt; str:
+        return f&#34;&lt;IRRefGet: {self.ref}.get()&gt;&#34;</code></pre>
+</details>
+<div class="desc"><p>Represents reading the value stored in an <code>hl.Ref</code>, e.g. <code>r.get()</code></p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></li>
+<li><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRRefGet.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    return [self.ref]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.IRRefNew"><code class="flex name class">
+<span>class <span class="ident">IRRefNew</span></span>
+<span>(</span><span>code: Bytecode,<br>target: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRRefNew(IRExpression):
+    &#34;&#34;&#34;Represents `new hl.Ref(value)`&#34;&#34;&#34;
+
+    def __init__(self, code: Bytecode, target: IRExpression):
+        super().__init__(code)
+        self.target = target
+
+    def get_type(self) -&gt; Type:
+        return _get_type_in_code(self.code, &#34;Ref&#34;)
+
+    def get_children(self) -&gt; List[IRStatement]:
+        return [self.target]
+
+    def __repr__(self) -&gt; str:
+        return f&#34;&lt;IRRefNew: new Ref({self.target})&gt;&#34;</code></pre>
+</details>
+<div class="desc"><p>Represents <code>new hl.Ref(value)</code></p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></li>
+<li><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRRefNew.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    return [self.target]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRExpression" href="ir.html#crashlink.decomp.ir.IRExpression">IRExpression</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRExpression.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.get_type" href="ir.html#crashlink.decomp.ir.IRExpression.get_type">get_type</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRExpression.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.IRRefSet"><code class="flex name class">
+<span>class <span class="ident">IRRefSet</span></span>
+<span>(</span><span>code: Bytecode,<br>ref: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>,<br>value: <a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRRefSet(IRStatement):
+    &#34;&#34;&#34;Represents writing to an `hl.Ref`, e.g. `r.set(value)`&#34;&#34;&#34;
+
+    def __init__(self, code: Bytecode, ref: IRExpression, value: IRExpression):
+        super().__init__(code)
+        self.ref = ref
+        self.value = value
+
+    def get_type(self) -&gt; Type:
+        return _get_type_in_code(self.code, &#34;Void&#34;)
+
+    def get_children(self) -&gt; List[IRStatement]:
+        return [self.ref, self.value]
+
+    def __repr__(self) -&gt; str:
+        return f&#34;&lt;IRRefSet: {self.ref}.set({self.value})&gt;&#34;</code></pre>
+</details>
+<div class="desc"><p>Represents writing to an <code>hl.Ref</code>, e.g. <code>r.set(value)</code></p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="crashlink.decomp.IRRefSet.get_children"><code class="name flex">
+<span>def <span class="ident">get_children</span></span>(<span>self) ‑> List[<a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a>]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_children(self) -&gt; List[IRStatement]:
+    return [self.ref, self.value]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="crashlink.decomp.IRRefSet.get_type"><code class="name flex">
+<span>def <span class="ident">get_type</span></span>(<span>self) ‑> <a title="crashlink.core.Type" href="../core.html#crashlink.core.Type">Type</a></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_type(self) -&gt; Type:
+    return _get_type_in_code(self.code, &#34;Void&#34;)</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.ir.IRStatement" href="ir.html#crashlink.decomp.ir.IRStatement">IRStatement</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.ir.IRStatement.adopt" href="ir.html#crashlink.decomp.ir.IRStatement.adopt">adopt</a></code></li>
+<li><code><a title="crashlink.decomp.ir.IRStatement.src_op_idx" href="ir.html#crashlink.decomp.ir.IRStatement.src_op_idx">src_op_idx</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
 <dt id="crashlink.decomp.IRReturn"><code class="flex name class">
 <span>class <span class="ident">IRReturn</span></span>
 <span>(</span><span>code: Bytecode,<br>value: Optional[<a title="crashlink.decomp.IRExpression" href="#crashlink.decomp.IRExpression">IRExpression</a>] = None)</span>
@@ -11770,6 +12487,11 @@ propagation.</p></div>
         # disasm&lt;-&gt;pseudocode sync and per-opcode comments) instead of only
         # whichever one happened to seed the replacement statement.
         self.src_op_idxs: Set[int] = set()
+        # Set by IRTempAssignmentInliner when a user-variable assignment is folded
+        # into a conditional. Prevents further user-var inlining into this statement,
+        # which would fold constants into conditions (e.g. `a = 4; if (a == 3)` →
+        # `if (4 == 3)`) and break recompilation.
+        self._no_user_inline: bool = False
 
     @property
     def src_op_idx(self) -&gt; Optional[int]:
@@ -11816,6 +12538,7 @@ inheritance.</p></div>
 <li><a title="crashlink.decomp.ir.IRIntRangeLoop" href="ir.html#crashlink.decomp.ir.IRIntRangeLoop">IRIntRangeLoop</a></li>
 <li><a title="crashlink.decomp.ir.IRNativeStub" href="ir.html#crashlink.decomp.ir.IRNativeStub">IRNativeStub</a></li>
 <li><a title="crashlink.decomp.ir.IRPrimitiveLoop" href="ir.html#crashlink.decomp.ir.IRPrimitiveLoop">IRPrimitiveLoop</a></li>
+<li><a title="crashlink.decomp.ir.IRRefSet" href="ir.html#crashlink.decomp.ir.IRRefSet">IRRefSet</a></li>
 <li><a title="crashlink.decomp.ir.IRReturn" href="ir.html#crashlink.decomp.ir.IRReturn">IRReturn</a></li>
 <li><a title="crashlink.decomp.ir.IRSwitch" href="ir.html#crashlink.decomp.ir.IRSwitch">IRSwitch</a></li>
 <li><a title="crashlink.decomp.ir.IRThrow" href="ir.html#crashlink.decomp.ir.IRThrow">IRThrow</a></li>
@@ -12031,8 +12754,14 @@ def get_children(self) -&gt; List[IRStatement]:
                     if self._statement_touches_local(nxt, local):
                         break
                 if bytes_idx is not None and len_idx is not None:
-                    bytes_expr = cast(IRExpression, self._match_bytes_assign(block.statements[bytes_idx], local))
-                    length_expr = cast(IRExpression, self._match_length_assign(block.statements[len_idx], local))
+                    bytes_expr = cast(
+                        IRExpression,
+                        self._match_bytes_assign(block.statements[bytes_idx], local),
+                    )
+                    length_expr = cast(
+                        IRExpression,
+                        self._match_length_assign(block.statements[len_idx], local),
+                    )
                     # Moving the call to the allocation site evaluates its arguments
                     # earlier. That is only safe if no free variable of the bytes
                     # or length expression is reassigned between the allocation and
@@ -12202,6 +12931,9 @@ source idiom <code>__alloc__(bytes, length)</code> inside the String class.</p><
                     return None
                 if isinstance(stmt, IRTrace) and stmt.msg == temp:
                     use_idx = j
+                elif isinstance(stmt, IRTrace) and self._is_string_add_with_temp(stmt.msg, temp):
+                    use_idx = j
+                    folded_expr_for_use = self._fold_concat(parts + [cast(IRCall, stmt.msg).args[1]])
                 elif isinstance(stmt, IRAssign) and stmt.expr == temp:
                     use_idx = j
                 elif isinstance(stmt, IRAssign) and self._is_string_add_with_temp(stmt.expr, temp):
@@ -12453,12 +13185,12 @@ the pseudocode printer then renders with Haxe's <code>+</code> operator.</p></di
             return None
         if not isinstance(expr.args[0], IRLocal):
             return None
-        # arg1 is the ref where byte count is stored back (IRLocal or IRRef wrapping one)
+        # arg1 is the ref where byte count is stored back (IRLocal, IRRef, or IRRefNew wrapping one)
         count_ref: Optional[IRLocal] = None
         arg1 = expr.args[1]
         if isinstance(arg1, IRLocal):
             count_ref = arg1
-        elif isinstance(arg1, IRRef) and isinstance(arg1.target, IRLocal):
+        elif isinstance(arg1, (IRRef, IRRefNew)) and isinstance(arg1.target, IRLocal):
             count_ref = arg1.target
         if count_ref is None:
             return None
@@ -12512,7 +13244,7 @@ the pseudocode printer then renders with Haxe's <code>+</code> operator.</p></di
         # is a separate local var6 = &amp;var13; we need to look through it)
         if count_ref_local.name in current_assigns:
             ref_defn = current_assigns[count_ref_local.name]
-            if isinstance(ref_defn.expr, IRRef) and isinstance(ref_defn.expr.target, IRLocal):
+            if isinstance(ref_defn.expr, (IRRef, IRRefNew)) and isinstance(ref_defn.expr.target, IRLocal):
                 if ref_defn.expr.target.name == int_arg.name:
                     if consumed_stmt is not None:
                         self._consumed.add(id(consumed_stmt))
@@ -12917,7 +13649,7 @@ string local.</p></div>
 </dd>
 <dt id="crashlink.decomp.IRTempAssignmentInliner"><code class="flex name class">
 <span>class <span class="ident">IRTempAssignmentInliner</span></span>
-<span>(</span><span>function: "'<a title="crashlink.decomp.IRFunction" href="#crashlink.decomp.IRFunction">IRFunction</a>'",<br>aggressive: bool = False)</span>
+<span>(</span><span>function: "'<a title="crashlink.decomp.IRFunction" href="#crashlink.decomp.IRFunction">IRFunction</a>'",<br>aggressive: bool = False,<br>past_kills: bool = False)</span>
 </code></dt>
 <dd>
 <details class="source">
@@ -12941,9 +13673,11 @@ string local.</p></div>
       is not redefined.
     &#34;&#34;&#34;
 
-    def __init__(self, function: &#34;IRFunction&#34;, aggressive: bool = False):
+    def __init__(self, function: &#34;IRFunction&#34;, aggressive: bool = False, past_kills: bool = False):
         super().__init__(function)
         self.aggressive = aggressive
+        # past_kills: a later redefinition bounds the substitution range instead of blocking inlining
+        self.past_kills = past_kills
 
         # --- NEW: Pre-calculate the set of all user-named variables ---
         self._user_variable_names: Set[str] = set()
@@ -13011,6 +13745,12 @@ string local.</p></div>
             expr.constructor_args = new_args
         elif isinstance(expr, IRRef):
             expr.target, changed = self._substitute_in_expr(expr.target, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(expr, IRRefNew):
+            expr.target, changed = self._substitute_in_expr(expr.target, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(expr, IRRefGet):
+            expr.ref, changed = self._substitute_in_expr(expr.ref, target, replacement)
             made_change = made_change or changed
         elif isinstance(expr, IREnumConstruct):
             new_args = []
@@ -13085,7 +13825,11 @@ string local.</p></div>
         return False
 
     def _substitute_in_statement(
-        self, stmt: IRStatement, target: IRLocal, replacement: IRExpression, _visited: Optional[Set[int]] = None
+        self,
+        stmt: IRStatement,
+        target: IRLocal,
+        replacement: IRExpression,
+        _visited: Optional[Set[int]] = None,
     ) -&gt; bool:
         &#34;&#34;&#34;
         Recursively traverses a statement to perform substitutions.
@@ -13110,12 +13854,18 @@ string local.</p></div>
                 stmt.expr, changed = self._substitute_in_expr(stmt.expr, target, replacement)
                 made_change = made_change or changed
         elif isinstance(stmt, IRExpression):
-            _, changed = self._substitute_in_expr(stmt, target, replacement)
-            made_change = made_change or changed
+            # a root-equal match can&#39;t be replaced in place; don&#39;t report a phantom change
+            if stmt != target:
+                _, changed = self._substitute_in_expr(stmt, target, replacement)
+                made_change = made_change or changed
         elif isinstance(stmt, IRReturn):
             if stmt.value:
                 stmt.value, changed = self._substitute_in_expr(stmt.value, target, replacement)
                 made_change = made_change or changed
+        elif isinstance(stmt, IRTrace):
+            stmt.msg, changed = self._substitute_in_expr(stmt.msg, target, replacement)
+            made_change = made_change or changed
+            return made_change
 
         for child in stmt.get_children():
             if child is not stmt:
@@ -13159,6 +13909,11 @@ string local.</p></div>
             if stmt.value:
                 stmt.value, changed = self._substitute_in_expr(stmt.value, target, replacement)
                 made_change = made_change or changed
+        elif isinstance(stmt, IRRefSet):
+            stmt.ref, changed = self._substitute_in_expr(stmt.ref, target, replacement)
+            made_change = made_change or changed
+            stmt.value, changed = self._substitute_in_expr(stmt.value, target, replacement)
+            made_change = made_change or changed
         elif isinstance(stmt, IRConditional):
             stmt.condition, changed = self._substitute_in_expr(stmt.condition, target, replacement)
             made_change = made_change or changed
@@ -13263,6 +14018,8 @@ string local.</p></div>
             return self.is_safe_to_inline_aggressively(expr.target)
         if isinstance(expr, IRCast):
             return self.is_safe_to_inline_aggressively(expr.expr)
+        if isinstance(expr, (IRTypeOf, IRTypeKind)):
+            return self.is_safe_to_inline_aggressively(expr.expr)
         if isinstance(expr, IRArrayAccess):
             return self.is_safe_to_inline_aggressively(expr.array) and self.is_safe_to_inline_aggressively(expr.index)
         if isinstance(expr, IRRef):
@@ -13318,6 +14075,36 @@ string local.</p></div>
             return True
         return False
 
+    def _call_move_ok(self, stmt: IRStatement, temp: IRLocal) -&gt; bool:
+        &#34;&#34;&#34;True if `stmt` is a local assignment reading `temp` exactly once in an
+        expression built only from consts, locals, and arithmetic — so moving a
+        call into it preserves evaluation order and count.&#34;&#34;&#34;
+        if not (isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)):
+            return False
+
+        count = 0
+
+        def walk(e: Optional[IRExpression]) -&gt; bool:
+            nonlocal count
+            if e is None:
+                return True
+            if e == temp:
+                count += 1
+                return True
+            if isinstance(e, IRConst):
+                return True
+            if isinstance(e, IRLocal):
+                return True
+            if isinstance(e, IRArithmetic):
+                return walk(e.left) and walk(e.right)
+            if isinstance(e, IRCast):
+                return walk(e.expr)
+            if isinstance(e, IRNativeArrayNew):
+                return walk(e.size)
+            return False
+
+        return walk(stmt.expr) and count == 1
+
     def visit_block(self, block: IRBlock) -&gt; None:
         if self.aggressive:
             self._visit_block_aggressive(block)
@@ -13359,13 +14146,41 @@ string local.</p></div>
             and getattr(parent, &#34;body&#34;, None) is child
         )
 
-    def _visit_block_conservative(self, block: IRBlock, inside_loop_body: bool = False) -&gt; None:
+    def _flatten_stmts(self, stmts: List[IRStatement]) -&gt; List[IRStatement]:
+        &#34;&#34;&#34;Document-order flattening of a statement list and their nested blocks.&#34;&#34;&#34;
+        out: List[IRStatement] = []
+        for s in stmts:
+            out.append(s)
+            for child in s.get_children():
+                if isinstance(child, IRBlock):
+                    out.extend(self._flatten_stmts(child.statements))
+        return out
+
+    def _local_read_in_continuation(self, continuation: List[IRStatement], local: IRLocal) -&gt; bool:
+        &#34;&#34;&#34;Whether `local` is read anywhere in `continuation` (what executes after
+        the current block, e.g. code following the enclosing if/loop). Unlike a
+        whole-function scan, this only looks at statements actually reachable after
+        the current point — it deliberately excludes sibling branches (e.g. the
+        `else` of the `if` we&#39;re inside), which are mutually exclusive with us and
+        would otherwise cause false &#34;still read&#34; positives for register reuse
+        across branches.
+        &#34;&#34;&#34;
+        return any(self._stmt_contains_local(s, local) for s in self._flatten_stmts(continuation))
+
+    def _visit_block_conservative(
+        self,
+        block: IRBlock,
+        inside_loop_body: bool = False,
+        continuation: Optional[List[IRStatement]] = None,
+    ) -&gt; None:
         &#34;&#34;&#34;Only inlines an assignment if it is used in the very next statement.
 
         Inside a loop body we still perform the inline substitution, but we keep
         the original assignment. Removing it would destroy the loop-carried value
         that is live after the loop (e.g. String.indexOf&#39;s search result).
         &#34;&#34;&#34;
+        if continuation is None:
+            continuation = []
         if not block.statements:
             return
 
@@ -13379,12 +14194,49 @@ string local.</p></div>
             if isinstance(current_stmt, IRAssign) and isinstance(current_stmt.target, IRLocal):
                 temp_local = current_stmt.target
 
-                if not self._is_user_local(temp_local):
+                # A debug-named register can still be reused by the compiler for an
+                # unrelated, short-lived value (e.g. a string literal fed straight
+                # into the next call) after the named variable&#39;s real last read has
+                # already happened. Allow folding that case too, but only when the
+                # value is consumed by the very next statement, nothing else in this
+                # block follows, we&#39;re not inside a loop body (which needs the
+                # variable to stay live past the loop), and the whole rest of the
+                # function never reads it again — i.e. it&#39;s truly dead, not just
+                # locally dead within this block. Excluding a bare-IRLocal RHS keeps
+                # `s = var1; return s.bytes;` copy-propagation renames intact: that
+                # pattern intentionally gives a synthetic temp a readable name, and
+                # folding it back would just undo the rename.
+                _reuse_expr = current_stmt.expr
+                while isinstance(_reuse_expr, IRCast):
+                    _reuse_expr = _reuse_expr.expr
+                user_local_reuse = (
+                    self._is_user_local(temp_local)
+                    and not isinstance(_reuse_expr, IRLocal)
+                    and not inside_loop_body
+                    and i + 2 == len(statements)
+                )
+
+                if not self._is_user_local(temp_local) or (
+                    user_local_reuse
+                    and i + 1 &lt; len(statements)
+                    and not getattr(statements[i + 1], &#34;_no_user_inline&#34;, False)
+                ):
                     expr_to_inline = current_stmt.expr
                     if not self.is_safe_to_inline_conservatively(expr_to_inline):
-                        new_statements.append(current_stmt)
-                        i += 1
-                        continue
+                        # A call can still be moved (not duplicated) into an adjacent
+                        # single use whose other operands are just consts/locals —
+                        # locals can&#39;t be mutated by the call, so order is preserved.
+                        # Only when the assignment gets dropped (never inside a loop
+                        # body, where it is kept and the call would run twice).
+                        if not (
+                            isinstance(expr_to_inline, IRCall)
+                            and not inside_loop_body
+                            and i + 1 &lt; len(statements)
+                            and self._call_move_ok(statements[i + 1], temp_local)
+                        ):
+                            new_statements.append(current_stmt)
+                            i += 1
+                            continue
                     if isinstance(expr_to_inline, IRExpression) and self._expr_contains_local(
                         expr_to_inline, temp_local
                     ):
@@ -13396,7 +14248,29 @@ string local.</p></div>
                         if self._stmt_contains_local(next_stmt, temp_local) and not self._is_local_redefined(
                             temp_local, [next_stmt]
                         ):
-                            later_uses = any(self._stmt_contains_local(s, temp_local) for s in statements[i + 2 :])
+                            # Reads after a top-level reassignment belong to the new value.
+                            later_uses = False
+                            for s in statements[i + 2 :]:
+                                if (
+                                    isinstance(s, IRAssign)
+                                    and isinstance(s.target, IRLocal)
+                                    and (s.target == temp_local or s.target.same_register(temp_local))
+                                ):
+                                    # the kill&#39;s own RHS may still read the old value
+                                    if isinstance(s.expr, IRExpression) and self._expr_contains_local(
+                                        s.expr, temp_local
+                                    ):
+                                        later_uses = True
+                                    break
+                                if self._stmt_contains_local(s, temp_local):
+                                    later_uses = True
+                                    break
+                            if (
+                                not later_uses
+                                and user_local_reuse
+                                and self._local_read_in_continuation(continuation, temp_local)
+                            ):
+                                later_uses = True
                             if not later_uses:
                                 substituted = self._substitute_in_statement(next_stmt, temp_local, expr_to_inline)
                                 if substituted:
@@ -13405,6 +14279,11 @@ string local.</p></div>
                                         new_statements.append(current_stmt)
                                     else:
                                         next_stmt.adopt(current_stmt)  # current_stmt is dropped
+                                        # If this inline merged a user variable into a conditional,
+                                        # the resulting statement is a synthetic merge — don&#39;t let it
+                                        # become a target for further user-var inlining.
+                                        if self._is_user_local(temp_local):
+                                            next_stmt._no_user_inline = True
                                     new_statements.append(next_stmt)
                                     i += 2
                                     inlined = True
@@ -13415,11 +14294,14 @@ string local.</p></div>
 
         block.statements = new_statements
 
-        for stmt in block.statements:
+        for idx, stmt in enumerate(block.statements):
+            child_continuation = block.statements[idx + 1 :] + continuation
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self._visit_block_conservative(
-                        child, inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child)
+                        child,
+                        inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child),
+                        continuation=child_continuation,
                     )
 
     def _visit_block_aggressive(self, block: IRBlock, inside_loop_body: bool = False) -&gt; None:
@@ -13452,7 +14334,32 @@ string local.</p></div>
                     continue
 
                 remaining_statements = block.statements[i + 1 :]
-                if self._is_local_redefined(temp_local, remaining_statements):
+                must_keep_assign = False
+                boundary_stmt: Optional[IRStatement] = None
+                if self.past_kills:
+                    # A top-level reassign is a guaranteed kill: substitute up to and
+                    # including it (its RHS still reads the old value). A nested
+                    # redefinition only kills on some paths, so stop before it and
+                    # keep the assignment.
+                    for j, s in enumerate(remaining_statements):
+                        if self._is_local_redefined(temp_local, [s]):
+                            is_top_level_kill = (
+                                isinstance(s, IRAssign)
+                                and isinstance(s.target, IRLocal)
+                                and (s.target == temp_local or s.target.same_register(temp_local))
+                            )
+                            if is_top_level_kill:
+                                remaining_statements = remaining_statements[: j + 1]
+                            else:
+                                remaining_statements = remaining_statements[:j]
+                                must_keep_assign = True
+                                # A conditional/switch subject is evaluated before any
+                                # branch can redefine the temp, so it can still be
+                                # substituted into even though the branches can&#39;t.
+                                if isinstance(s, (IRConditional, IRSwitch)):
+                                    boundary_stmt = s
+                            break
+                elif self._is_local_redefined(temp_local, remaining_statements):
                     continue
 
                 # The inlined expression reads other locals (its free variables).
@@ -13474,7 +14381,18 @@ string local.</p></div>
                 use_indices = [
                     j for j, s in enumerate(remaining_statements) if self._stmt_contains_local(s, temp_local)
                 ]
-                if not use_indices:
+                boundary_subject: Optional[IRExpression] = None
+                if boundary_stmt is not None:
+                    subject = (
+                        boundary_stmt.condition
+                        if isinstance(boundary_stmt, IRConditional)
+                        else cast(IRSwitch, boundary_stmt).value
+                    )
+                    if self._expr_contains_local(subject, temp_local) and not (
+                        free_vars and any(self._stmt_reassigns_any(s, free_vars) for s in remaining_statements)
+                    ):
+                        boundary_subject = subject
+                if not use_indices and boundary_subject is None:
                     continue
                 blocked = False
                 if free_vars:
@@ -13492,11 +14410,21 @@ string local.</p></div>
                         any_substituted = True
                         substituted_into.append(subsequent_stmt)
 
+                if boundary_subject is not None and boundary_stmt is not None:
+                    new_subject, changed = self._substitute_in_expr(boundary_subject, temp_local, expr_to_inline)
+                    if changed:
+                        if isinstance(boundary_stmt, IRConditional):
+                            boundary_stmt.condition = new_subject
+                        else:
+                            cast(IRSwitch, boundary_stmt).value = new_subject
+                        any_substituted = True
+                        substituted_into.append(boundary_stmt)
+
                 if not any_substituted:
                     continue
 
                 dbg_print(f&#34;Aggressively inlining safe expression from temporary &#39;{temp_local.name}&#39;.&#34;)
-                if not inside_loop_body:
+                if not inside_loop_body and not must_keep_assign:
                     # stmt is dropped below; every site the expression got inlined
                     # into inherits its opcode (setdefault means whichever renders
                     # first in output wins, so adopting onto all of them is safe).
@@ -13513,7 +14441,8 @@ string local.</p></div>
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self._visit_block_aggressive(
-                        child, inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child)
+                        child,
+                        inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child),
                     )</code></pre>
 </details>
 <div class="desc"><p>Optimizes IR by inlining temporary variable assignments.
@@ -13558,6 +14487,8 @@ is not redefined.</p>
     if isinstance(expr, IRField):
         return self.is_safe_to_inline_aggressively(expr.target)
     if isinstance(expr, IRCast):
+        return self.is_safe_to_inline_aggressively(expr.expr)
+    if isinstance(expr, (IRTypeOf, IRTypeKind)):
         return self.is_safe_to_inline_aggressively(expr.expr)
     if isinstance(expr, IRArrayAccess):
         return self.is_safe_to_inline_aggressively(expr.array) and self.is_safe_to_inline_aggressively(expr.index)
@@ -13793,7 +14724,15 @@ without changing the program's semantics.</p></div>
                 if isinstance(stmt, IRConditional) and stmt.true_block is not None and stmt.false_block is not None:
                     branched = self._try_branched_trace(stmt, block.statements, i)
                     if branched is not None:
-                        true_tail, false_tail, msg_true, msg_false, pos_true, pos_false, consumed_after = branched
+                        (
+                            true_tail,
+                            false_tail,
+                            msg_true,
+                            msg_false,
+                            pos_true,
+                            pos_false,
+                            consumed_after,
+                        ) = branched
                         old_true_stmts = stmt.true_block.statements
                         old_false_stmts = stmt.false_block.statements
                         true_trace = IRTrace(self.func.code, msg_true, pos_true)
@@ -13904,7 +14843,7 @@ without changing the program's semantics.</p></div>
                             is_valid_trace_call = True
 
                     elif DEBUG:
-                        dbg_print(f&#34;[TraceOpt]  -&gt; FAILED: Statement is not an IRCall with 2 arguments.&#34;)
+                        dbg_print(&#34;[TraceOpt]  -&gt; FAILED: Statement is not an IRCall with 2 arguments.&#34;)
 
                     if is_valid_trace_call:
                         assert isinstance(call_stmt, IRCall)
@@ -13946,7 +14885,7 @@ without changing the program's semantics.</p></div>
                         made_change = True
                         continue
                     elif DEBUG:
-                        dbg_print(f&#34;[TraceOpt] FAILED: Pattern did not match for trace call.&#34;)
+                        dbg_print(&#34;[TraceOpt] FAILED: Pattern did not match for trace call.&#34;)
 
                 new_statements.append(stmt)
                 i += 1
@@ -14017,7 +14956,15 @@ without changing the program's semantics.</p></div>
     def _try_branched_trace(
         self, cond: &#34;IRConditional&#34;, statements: List[IRStatement], idx: int
     ) -&gt; Optional[
-        Tuple[List[IRStatement], List[IRStatement], IRExpression, IRExpression, Dict[str, Any], Dict[str, Any], int]
+        Tuple[
+            List[IRStatement],
+            List[IRStatement],
+            IRExpression,
+            IRExpression,
+            Dict[str, Any],
+            Dict[str, Any],
+            int,
+        ]
     ]:
         &#34;&#34;&#34;
         Matches `trace(msg)` calls that got duplicated into each branch of an
@@ -14099,7 +15046,15 @@ without changing the program's semantics.</p></div>
         final_pos_t = {**pos_t, **shared_pos}
         final_pos_f = {**pos_f, **shared_pos}
         consumed_after = j - idx
-        return true_tail, false_tail, msg_true, msg_false, final_pos_t, final_pos_f, consumed_after</code></pre>
+        return (
+            true_tail,
+            false_tail,
+            msg_true,
+            msg_false,
+            final_pos_t,
+            final_pos_f,
+            consumed_after,
+        )</code></pre>
 </details>
 <div class="desc"><p>Finds the common <code>haxe.Log.trace</code> pattern with an anonymous object for
 position and collapses it into a single IRTrace statement.</p></div>
@@ -14782,16 +15737,20 @@ E.g., <code>var_void_local:Void = some_call();</code> becomes <code>some_call();
 <ul class="hlist">
 <li><a title="crashlink.decomp.opt.arrays.IRArrayObjWrapperOptimizer" href="opt/arrays.html#crashlink.decomp.opt.arrays.IRArrayObjWrapperOptimizer">IRArrayObjWrapperOptimizer</a></li>
 <li><a title="crashlink.decomp.opt.arrays.IRArrayPatternOptimizer" href="opt/arrays.html#crashlink.decomp.opt.arrays.IRArrayPatternOptimizer">IRArrayPatternOptimizer</a></li>
+<li><a title="crashlink.decomp.opt.arrays.IRBytesAllocOptimizer" href="opt/arrays.html#crashlink.decomp.opt.arrays.IRBytesAllocOptimizer">IRBytesAllocOptimizer</a></li>
 <li><a title="crashlink.decomp.opt.arrays.IRNativeArrayAllocOptimizer" href="opt/arrays.html#crashlink.decomp.opt.arrays.IRNativeArrayAllocOptimizer">IRNativeArrayAllocOptimizer</a></li>
 <li><a title="crashlink.decomp.opt.arrays.IRNativeMapAllocOptimizer" href="opt/arrays.html#crashlink.decomp.opt.arrays.IRNativeMapAllocOptimizer">IRNativeMapAllocOptimizer</a></li>
 <li><a title="crashlink.decomp.opt.clean.IRAnonObjectLiteralOptimizer" href="opt/clean.html#crashlink.decomp.opt.clean.IRAnonObjectLiteralOptimizer">IRAnonObjectLiteralOptimizer</a></li>
 <li><a title="crashlink.decomp.opt.clean.IRArrayGrowGuardEliminator" href="opt/clean.html#crashlink.decomp.opt.clean.IRArrayGrowGuardEliminator">IRArrayGrowGuardEliminator</a></li>
 <li><a title="crashlink.decomp.opt.clean.IRBlockFlattener" href="opt/clean.html#crashlink.decomp.opt.clean.IRBlockFlattener">IRBlockFlattener</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRBoolMaterializationCollapser" href="opt/clean.html#crashlink.decomp.opt.clean.IRBoolMaterializationCollapser">IRBoolMaterializationCollapser</a></li>
 <li><a title="crashlink.decomp.opt.clean.IRCommonBlockMerger" href="opt/clean.html#crashlink.decomp.opt.clean.IRCommonBlockMerger">IRCommonBlockMerger</a></li>
 <li><a title="crashlink.decomp.opt.clean.IRConstructorFolder" href="opt/clean.html#crashlink.decomp.opt.clean.IRConstructorFolder">IRConstructorFolder</a></li>
 <li><a title="crashlink.decomp.opt.clean.IRDeadAssignmentEliminator" href="opt/clean.html#crashlink.decomp.opt.clean.IRDeadAssignmentEliminator">IRDeadAssignmentEliminator</a></li>
 <li><a title="crashlink.decomp.opt.clean.IRDeadCodeEliminator" href="opt/clean.html#crashlink.decomp.opt.clean.IRDeadCodeEliminator">IRDeadCodeEliminator</a></li>
 <li><a title="crashlink.decomp.opt.clean.IRDeadStoreEliminator" href="opt/clean.html#crashlink.decomp.opt.clean.IRDeadStoreEliminator">IRDeadStoreEliminator</a></li>
+<li><a title="crashlink.decomp.opt.clean.IRElseFlattener" href="opt/clean.html#crashlink.decomp.opt.clean.IRElseFlattener">IRElseFlattener</a></li>
+<li><a title="crashlink.decomp.opt.clean.IREmptyConditionalNormalizer" href="opt/clean.html#crashlink.decomp.opt.clean.IREmptyConditionalNormalizer">IREmptyConditionalNormalizer</a></li>
 <li><a title="crashlink.decomp.opt.clean.IRGuardOrMerger" href="opt/clean.html#crashlink.decomp.opt.clean.IRGuardOrMerger">IRGuardOrMerger</a></li>
 <li><a title="crashlink.decomp.opt.clean.IRLoopConditionOptimizer" href="opt/clean.html#crashlink.decomp.opt.clean.IRLoopConditionOptimizer">IRLoopConditionOptimizer</a></li>
 <li><a title="crashlink.decomp.opt.clean.IRRedundantContinueEliminator" href="opt/clean.html#crashlink.decomp.opt.clean.IRRedundantContinueEliminator">IRRedundantContinueEliminator</a></li>
@@ -14804,6 +15763,7 @@ E.g., <code>var_void_local:Void = some_call();</code> becomes <code>some_call();
 <li><a title="crashlink.decomp.opt.inliner.IRCopyPropOptimizer" href="opt/inliner.html#crashlink.decomp.opt.inliner.IRCopyPropOptimizer">IRCopyPropOptimizer</a></li>
 <li><a title="crashlink.decomp.opt.inliner.IRPrimitiveJumpLifter" href="opt/inliner.html#crashlink.decomp.opt.inliner.IRPrimitiveJumpLifter">IRPrimitiveJumpLifter</a></li>
 <li><a title="crashlink.decomp.opt.inliner.IRTempAssignmentInliner" href="opt/inliner.html#crashlink.decomp.opt.inliner.IRTempAssignmentInliner">IRTempAssignmentInliner</a></li>
+<li><a title="crashlink.decomp.opt.inliner.IRTerminalValueInliner" href="opt/inliner.html#crashlink.decomp.opt.inliner.IRTerminalValueInliner">IRTerminalValueInliner</a></li>
 <li><a title="crashlink.decomp.opt.loops.IRForEachLoopOptimizer" href="opt/loops.html#crashlink.decomp.opt.loops.IRForEachLoopOptimizer">IRForEachLoopOptimizer</a></li>
 <li><a title="crashlink.decomp.opt.loops.IRIntRangeLoopOptimizer" href="opt/loops.html#crashlink.decomp.opt.loops.IRIntRangeLoopOptimizer">IRIntRangeLoopOptimizer</a></li>
 <li><a title="crashlink.decomp.opt.loops.IRLoopRerollOptimizer" href="opt/loops.html#crashlink.decomp.opt.loops.IRLoopRerollOptimizer">IRLoopRerollOptimizer</a></li>
@@ -15209,6 +16169,12 @@ heavily-converging control flow.</p></div>
 </ul>
 </li>
 <li>
+<h4><code><a title="crashlink.decomp.IRBytesNew" href="#crashlink.decomp.IRBytesNew">IRBytesNew</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRBytesNew.get_children" href="#crashlink.decomp.IRBytesNew.get_children">get_children</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="crashlink.decomp.IRCall" href="#crashlink.decomp.IRCall">IRCall</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.decomp.IRCall.CallType" href="#crashlink.decomp.IRCall.CallType">CallType</a></code></li>
@@ -15452,6 +16418,25 @@ heavily-converging control flow.</p></div>
 <h4><code><a title="crashlink.decomp.IRRef" href="#crashlink.decomp.IRRef">IRRef</a></code></h4>
 <ul class="">
 <li><code><a title="crashlink.decomp.IRRef.get_children" href="#crashlink.decomp.IRRef.get_children">get_children</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.IRRefGet" href="#crashlink.decomp.IRRefGet">IRRefGet</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRRefGet.get_children" href="#crashlink.decomp.IRRefGet.get_children">get_children</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.IRRefNew" href="#crashlink.decomp.IRRefNew">IRRefNew</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRRefNew.get_children" href="#crashlink.decomp.IRRefNew.get_children">get_children</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.IRRefSet" href="#crashlink.decomp.IRRefSet">IRRefSet</a></code></h4>
+<ul class="">
+<li><code><a title="crashlink.decomp.IRRefSet.get_children" href="#crashlink.decomp.IRRefSet.get_children">get_children</a></code></li>
+<li><code><a title="crashlink.decomp.IRRefSet.get_type" href="#crashlink.decomp.IRRefSet.get_type">get_type</a></code></li>
 </ul>
 </li>
 <li>

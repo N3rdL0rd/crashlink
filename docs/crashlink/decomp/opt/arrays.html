@@ -368,7 +368,12 @@ source idiom.</p></div>
                     ):
                         result.append((node, IRArrayAccess(node.code, arr_expr, node.index.left)))
                     elif isinstance(node.index, IRLocal) and node.index.name in idx_temp_map:
-                        result.append((node, IRArrayAccess(node.code, arr_expr, idx_temp_map[node.index.name])))
+                        result.append(
+                            (
+                                node,
+                                IRArrayAccess(node.code, arr_expr, idx_temp_map[node.index.name]),
+                            )
+                        )
             for child in node.get_children():
                 visit(child)
 
@@ -671,28 +676,42 @@ source idiom.</p></div>
         use_stmt.adopt(*stmts[start:i])  # alloc + element/store statements are dropped
         return use_stmt, i - start + 1
 
-    def _is_empty_alloc_array(self, expr: IRStatement) -&gt; bool:
+    def _is_empty_alloc_array(
+        self,
+        expr: IRStatement,
+        local_defs: Optional[Dict[IRLocal, IRExpression]] = None,
+    ) -&gt; bool:
+        if isinstance(expr, IRLocal) and local_defs is not None:
+            expr = local_defs.get(expr, expr)
         if not self._is_alloc_array(expr):
             return False
         call = cast(IRCall, expr)
         if len(call.args) != 2:
             return False
         type_arg, size_arg = call.args
+        if isinstance(size_arg, IRLocal) and local_defs is not None:
+            size_arg = local_defs.get(size_arg, size_arg)
         if not isinstance(size_arg, IRConst) or size_arg.const_type != IRConst.ConstType.INT:
             return False
         if int(size_arg.value.value if hasattr(size_arg.value, &#34;value&#34;) else size_arg.value) != 0:
             return False
+        if isinstance(type_arg, IRLocal) and local_defs is not None:
+            type_arg = local_defs.get(type_arg, type_arg)
         if isinstance(type_arg, IRConst) and (
             type_arg.const_type == IRConst.ConstType.NULL or isinstance(type_arg.value, Type)
         ):
             return True
         return False
 
-    def _is_empty_arrayobj_anon(self, expr: IRStatement) -&gt; bool:
+    def _is_empty_arrayobj_anon(
+        self,
+        expr: IRStatement,
+        local_defs: Optional[Dict[IRLocal, IRExpression]] = None,
+    ) -&gt; bool:
         if not self._is_arrayobj_anon(expr):
             return False
         call = cast(IRCall, expr)
-        return len(call.args) == 1 and self._is_empty_alloc_array(call.args[0])
+        return len(call.args) == 1 and self._is_empty_alloc_array(call.args[0], local_defs)
 
     def _is_arraydyn_alloc(self, expr: IRStatement) -&gt; bool:
         if not isinstance(expr, IRCall):
@@ -709,24 +728,49 @@ source idiom.</p></div>
 
     def _try_empty_array_dyn(self, stmts: List[IRStatement], start: int) -&gt; Optional[Tuple[IRStatement, int]]:
         # Pattern:
-        #   temp = ArrayObj.anon(alloc_array(null, 0))
-        #   target = ArrayDyn.alloc(temp, true)
-        # Rewrite both statements to target = [] when temp has no later uses.
+        #   temp = ArrayObj.anon(alloc_array(null, 0))   (or already-simplified temp = [])
+        #   [flag = true]                                 (optional HashLink 1.15+ boilerplate)
+        #   target = ArrayDyn.alloc(temp, true_or_new_ref(flag))
+        # Rewrite to target = [] when temp has no later uses.
         if start + 1 &gt;= len(stmts):
             return None
         s0 = stmts[start]
         if not isinstance(s0, IRAssign) or not isinstance(s0.target, IRLocal):
             return None
         temp = s0.target
-        if not self._is_empty_arrayobj_anon(s0.expr):
+
+        local_defs: Dict[IRLocal, IRExpression] = {}
+        for stmt in stmts[:start]:
+            if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+                local_defs[stmt.target] = stmt.expr
+
+        s0_expr_is_empty_literal = isinstance(s0.expr, IRArrayLiteral) and len(s0.expr.elements) == 0
+        if not (s0_expr_is_empty_literal or self._is_empty_arrayobj_anon(s0.expr, local_defs)):
             return None
 
-        s1 = stmts[start + 1]
-        if not isinstance(s1, IRAssign) or not isinstance(s1.expr, IRCall):
+        # Look for the ArrayDyn.alloc call. HashLink 1.15+ inserts a boolean flag
+        # temp assignment between the temp and the alloc call, so scan forward.
+        alloc_idx = -1
+        flag_local: Optional[IRLocal] = None
+        for j in range(start + 1, min(len(stmts), start + 4)):
+            s = stmts[j]
+            if isinstance(s, IRAssign) and isinstance(s.expr, IRConst) and isinstance(s.expr.value, bool):
+                # Optional flag assignment, keep looking.
+                if isinstance(s.target, IRLocal):
+                    flag_local = s.target
+                continue
+            if isinstance(s, IRAssign) and isinstance(s.expr, IRCall) and self._is_arraydyn_alloc(s.expr):
+                alloc_idx = j
+                break
+            # Stop scanning if we hit a non-boilerplate statement.
+            break
+
+        if alloc_idx == -1:
             return None
+        s1 = stmts[alloc_idx]
+        assert isinstance(s1, IRAssign)
         call = s1.expr
-        if not self._is_arraydyn_alloc(call):
-            return None
+        assert isinstance(call, IRCall)
         if len(call.args) != 2:
             return None
         first_arg, second_arg = call.args
@@ -737,23 +781,38 @@ source idiom.</p></div>
         if isinstance(second_arg, IRConst) and isinstance(second_arg.value, bool) and second_arg.value:
             true_ok = True
         elif (
-            isinstance(second_arg, IRRef)
+            isinstance(second_arg, (IRRef, IRRefNew))
             and isinstance(second_arg.target, IRConst)
             and isinstance(second_arg.target.value, bool)
             and second_arg.target.value
         ):
             true_ok = True
+        elif isinstance(second_arg, IRRefNew) and isinstance(second_arg.target, IRLocal):
+            # HashLink 1.15+ lowers the boolean flag to a stack-allocated Ref.
+            ref_local = second_arg.target
+            for prior in stmts[:alloc_idx]:
+                if (
+                    isinstance(prior, IRAssign)
+                    and isinstance(prior.target, IRLocal)
+                    and prior.target.name == ref_local.name
+                    and isinstance(prior.expr, IRConst)
+                    and isinstance(prior.expr.value, bool)
+                    and prior.expr.value
+                ):
+                    true_ok = True
+                    break
         if not true_ok:
             return None
 
-        for later in stmts[start + 2 :]:
+        for later in stmts[alloc_idx + 1 :]:
             if self._local_in_stmt(later, temp):
                 return None
 
         literal = IRArrayLiteral(self.func.code, [])
         new_assign = IRAssign(self.func.code, s1.target, literal)
-        new_assign.adopt(s0, s1)
-        return new_assign, 2
+        consume_count = alloc_idx - start + 1
+        new_assign.adopt(*stmts[start : alloc_idx + 1])
+        return new_assign, consume_count
 
     def _index_shift(self, idx: IRStatement, local: IRLocal) -&gt; Optional[int]:
         &#34;&#34;&#34;Return the shift amount if `idx` is `local &lt;&lt; const`.&#34;&#34;&#34;
@@ -1235,21 +1294,51 @@ source idiom.</p></div>
         if len(call.args) != 2:
             return None
         first_arg, second_arg = call.args
-        if not isinstance(first_arg, IRArrayLiteral):
+        literal: Optional[IRArrayLiteral] = None
+        array_temp: Optional[IRLocal] = None
+        if isinstance(first_arg, IRArrayLiteral):
+            literal = first_arg
+        elif isinstance(first_arg, IRLocal):
+            array_temp = first_arg
+            for prior in stmts[:start]:
+                if (
+                    isinstance(prior, IRAssign)
+                    and isinstance(prior.target, IRLocal)
+                    and prior.target.name == first_arg.name
+                    and isinstance(prior.expr, IRArrayLiteral)
+                ):
+                    literal = prior.expr
+                    break
+        if literal is None:
             return None
+
         true_ok = False
         if isinstance(second_arg, IRConst) and isinstance(second_arg.value, bool) and second_arg.value:
             true_ok = True
         elif (
-            isinstance(second_arg, IRRef)
+            isinstance(second_arg, (IRRef, IRRefNew))
             and isinstance(second_arg.target, IRConst)
             and isinstance(second_arg.target.value, bool)
             and second_arg.target.value
         ):
             true_ok = True
+        elif isinstance(second_arg, IRRefNew) and isinstance(second_arg.target, IRLocal):
+            # HashLink 1.15+ lowers the boolean flag to a stack-allocated Ref.
+            ref_local = second_arg.target
+            for prior in stmts[:start]:
+                if (
+                    isinstance(prior, IRAssign)
+                    and isinstance(prior.target, IRLocal)
+                    and prior.target.name == ref_local.name
+                    and isinstance(prior.expr, IRConst)
+                    and isinstance(prior.expr.value, bool)
+                    and prior.expr.value
+                ):
+                    true_ok = True
+                    break
         if not true_ok:
             return None
-        return IRAssign(self.func.code, s.target, first_arg).adopt(s), 1
+        return IRAssign(self.func.code, s.target, literal).adopt(s), 1
 
     @staticmethod
     def _expr_eq(a: Optional[IRExpression], b: Optional[IRExpression]) -&gt; bool:
@@ -1412,6 +1501,81 @@ into high-level Haxe array operations.</p>
 - temp = arr.bytes; &hellip;; x = temp[idx &lt;&lt; 2] -&gt; x = arr[idx].</p>
 <p>Too many distinct opcode triggers to gate safely by TARGET_OPCODES — runs
 unconditionally.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></li>
+<li><a title="crashlink.decomp.opt.IROptimizer" href="index.html#crashlink.decomp.opt.IROptimizer">IROptimizer</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.TARGET_OPCODES" href="index.html#crashlink.decomp.opt.IROptimizer.TARGET_OPCODES">TARGET_OPCODES</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement">after_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement">before_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.optimize" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.should_run" href="index.html#crashlink.decomp.opt.IROptimizer.should_run">should_run</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit">visit</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_assign" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_assign">visit_assign</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_block" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_block">visit_block</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_break" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_break">visit_break</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_conditional" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_conditional">visit_conditional</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_continue" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_continue">visit_continue</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_expression" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_expression">visit_expression</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop">visit_primitive_loop</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_return" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_return">visit_return</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_switch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_switch">visit_switch</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch">visit_try_catch</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.opt.arrays.IRBytesAllocOptimizer"><code class="flex name class">
+<span>class <span class="ident">IRBytesAllocOptimizer</span></span>
+<span>(</span><span>function: "'IRFunction'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRBytesAllocOptimizer(TraversingIROptimizer):
+    &#34;&#34;&#34;
+    Folds `Native.alloc_bytes(n)` into `new hl.Bytes(n)` (hl.Bytes&#39;s inline
+    constructor is exactly that native call). Must run after
+    IRArrayPatternOptimizer, which consumes the alloc_bytes calls backing
+    fixed-size array literals.
+    &#34;&#34;&#34;
+
+    def visit_block(self, block: IRBlock) -&gt; None:
+        for stmt in block.statements:
+            if not isinstance(stmt, IRAssign):
+                continue
+            expr = stmt.expr
+            if not (isinstance(expr, IRCall) and len(expr.args) == 1):
+                continue
+            if not (isinstance(expr.target, IRConst) and isinstance(expr.target.value, Native)):
+                continue
+            native = expr.target.value
+            if native.lib.resolve(self.func.code) != &#34;std&#34;:
+                continue
+            if native.name.resolve(self.func.code) != &#34;alloc_bytes&#34;:
+                continue
+            fun_def = native.type.resolve(self.func.code).definition
+            assert isinstance(fun_def, Fun)
+            new_expr = IRBytesNew(self.func.code, fun_def.ret, expr.args[0])
+            new_expr.adopt(expr)
+            stmt.expr = new_expr
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)</code></pre>
+</details>
+<div class="desc"><p>Folds <code>Native.alloc_bytes(n)</code> into <code>new hl.Bytes(n)</code> (hl.Bytes's inline
+constructor is exactly that native call). Must run after
+IRArrayPatternOptimizer, which consumes the alloc_bytes calls backing
+fixed-size array literals.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></li>
@@ -1678,6 +1842,9 @@ to tell which map class an allocation belongs to.</p></div>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.opt.arrays.IRArrayPatternOptimizer" href="#crashlink.decomp.opt.arrays.IRArrayPatternOptimizer">IRArrayPatternOptimizer</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.opt.arrays.IRBytesAllocOptimizer" href="#crashlink.decomp.opt.arrays.IRBytesAllocOptimizer">IRBytesAllocOptimizer</a></code></h4>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.opt.arrays.IRNativeArrayAllocOptimizer" href="#crashlink.decomp.opt.arrays.IRNativeArrayAllocOptimizer">IRNativeArrayAllocOptimizer</a></code></h4>

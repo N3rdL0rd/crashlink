@@ -857,7 +857,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             if isinstance(s, IRAssign) and isinstance(s.expr, IRConst) and isinstance(s.expr.value, bool):
                 # Optional flag assignment, keep looking.
                 if isinstance(s.target, IRLocal):
-                    flag_local = cast(IRLocal, s.target)
+                    flag_local = s.target
                 continue
             if isinstance(s, IRAssign) and isinstance(s.expr, IRCall) and self._is_arraydyn_alloc(s.expr):
                 alloc_idx = j

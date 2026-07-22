@@ -51,6 +51,7 @@ from ..ir import (
     IRNativeArrayNew,
     IRCast,
     IRArrayLiteral,
+    IRObjectLiteral,
     IRArrayAccess,
     IRRef,
     IRRefNew,

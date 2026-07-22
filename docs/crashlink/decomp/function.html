@@ -119,7 +119,7 @@ el.replaceWith(d);
         for binding in obj.bindings:
             binding_names.append(binding.field.resolve_obj(self.code, obj).name.resolve(self.code))
         for field in obj.fields:
-            if not field.name.resolve(self.code) in binding_names:
+            if field.name.resolve(self.code) not in binding_names:
                 res.append((field.name.resolve(self.code), field.type.resolve(self.code)))
         return res
 
@@ -154,7 +154,7 @@ el.replaceWith(d);
     for binding in obj.bindings:
         binding_names.append(binding.field.resolve_obj(self.code, obj).name.resolve(self.code))
     for field in obj.fields:
-        if not field.name.resolve(self.code) in binding_names:
+        if field.name.resolve(self.code) not in binding_names:
             res.append((field.name.resolve(self.code), field.type.resolve(self.code)))
     return res</code></pre>
 </details>
@@ -281,7 +281,9 @@ el.replaceWith(d);
                 IRSelfAssignOptimizer(self),
                 IRRedundantContinueEliminator(self),
                 IRCopyPropOptimizer(self),
+                IRBoolMaterializationCollapser(self),
                 IRShiftConstantOptimizer(self),
+                IRElseFlattener(self),
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRTempAssignmentInliner(self, aggressive=True),
                 IRStringAllocOptimizer(self),
@@ -292,25 +294,38 @@ el.replaceWith(d);
                 IRNativeArrayAllocOptimizer(self),
                 IRArrayObjWrapperOptimizer(self),
                 IRNativeMapAllocOptimizer(self),
+                IRBytesAllocOptimizer(self),
+                # past_kills only after the pattern optimizers: they match raw lowering shapes
+                IRTempAssignmentInliner(self, aggressive=True, past_kills=True),
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRVoidAssignOptimizer(self),
                 IRDeadCodeEliminator(self),
                 IRSelfAssignOptimizer(self),
                 IRTraceOptimizer(self),
+                # trace()&#39;s DynObj scaffolding collapses above, bringing a dead
+                # user-local-register reassignment adjacent to its sole use for the
+                # first time; re-run so IRTempAssignmentInliner&#39;s user-local-reuse
+                # fold (see _visit_block_conservative) can now see and fold it.
+                IRTempAssignmentInliner(self, aggressive=False),
                 IRAnonObjectLiteralOptimizer(self),
                 IRStringConcatFolder(self),
                 IRIntSwitchOptimizer(self),
                 IRStringSwitchOptimizer(self),
                 IREnumSwitchOptimizer(self),
+                IRTerminalValueInliner(self),
                 IRDeadTempEliminator(self),
                 IRDeadCodeEliminator(self),
                 IRBlockFlattener(self),
                 IRLoopRerollOptimizer(self),
                 IRForEachLoopOptimizer(self),
                 IRIntRangeLoopOptimizer(self),
+                IRBoolMaterializationCollapser(self),
                 IRDeadStoreEliminator(self),
+                IRDeadAssignmentEliminator(self),
                 IRGuardOrMerger(self),
                 IRRedundantRecomputeEliminator(self),
+                IREmptyConditionalNormalizer(self),
+                IRTerminalValueInliner(self),
             ]
             self._optimize()
             self.apply_annotations()
@@ -349,6 +364,7 @@ el.replaceWith(d);
     def _build_assign_map(self) -&gt; None:
         &#34;&#34;&#34;Build a mapping from op index to (register, name) for SSA-esque splitting.&#34;&#34;&#34;
         self._op_assigns: Dict[int, Dict[int, str]] = {}
+        self._op_aliases: Dict[int, List[Tuple[int, str]]] = {}
         self._user_reg_indices: Set[int] = set()
         self._reg_first_assign: Dict[int, int] = {}
         self._op_id_to_idx: Dict[int, int] = {id(op): i for i, op in enumerate(self.ops)}
@@ -378,7 +394,16 @@ el.replaceWith(d);
             self._user_reg_indices.add(reg)
             if val not in self._op_assigns:
                 self._op_assigns[val] = {}
-            self._op_assigns[val][reg] = name
+            # Keep the first debug name for a given op+reg: later names at the
+            # same op are aliases (e.g. `var b = a` compiled to the same
+            # register), and the earlier name is the one used by subsequent
+            # expressions.
+            if reg not in self._op_assigns[val]:
+                self._op_assigns[val][reg] = name
+            elif name != self._op_assigns[val][reg]:
+                # `var b = a;` compiled away to the same register: keep the alias
+                # so lifting can re-emit it as an explicit copy.
+                self._op_aliases.setdefault(val, []).append((reg, name))
             if reg not in self._reg_first_assign or val &lt; self._reg_first_assign[reg]:
                 self._reg_first_assign[reg] = val
 
@@ -399,7 +424,13 @@ el.replaceWith(d);
         while name in existing_names:
             name = f&#34;{base_name}{suffix}&#34;
             suffix += 1
-        new_local = IRLocal(name, reg_type, code=self.code, reg_idx=reg_idx, defining_op_idx=defining_op_idx)
+        new_local = IRLocal(
+            name,
+            reg_type,
+            code=self.code,
+            reg_idx=reg_idx,
+            defining_op_idx=defining_op_idx,
+        )
         self.locals[reg_idx] = new_local
         self.all_locals.append(new_local)
         # Cached blocks may still reference the old local object; force them to
@@ -442,12 +473,11 @@ el.replaceWith(d);
 
     def _optimize(self) -&gt; None:
         &#34;&#34;&#34;Optimize the IR&#34;&#34;&#34;
-        from ..globals import DEBUG
 
         if DEBUG:
             dbg_print(&#34;----- Disasm -----&#34;)
             dbg_print(disasm.func(self.code, self.func))
-            dbg_print(f&#34;----- LLIL -----&#34;)
+            dbg_print(&#34;----- LLIL -----&#34;)
             dbg_print(self.block.pprint())
         if self.capture_layers:
             self.opcodes = disasm.func(self.code, self.func)
@@ -783,7 +813,12 @@ el.replaceWith(d);
             if field_idx &gt;= len(defn.fields):
                 return None
             field_core = defn.fields[field_idx]
-            return IRField(self.code, obj_local, field_core.name.resolve(self.code), field_core.type)
+            return IRField(
+                self.code,
+                obj_local,
+                field_core.name.resolve(self.code),
+                field_core.type,
+            )
         return None
 
     def _lift_ops_into_block(self, block: IRBlock, ops: List[Opcode]) -&gt; None:
@@ -813,7 +848,14 @@ el.replaceWith(d);
                 rhs = source_locals[op.df[&#34;b&#34;].value]
                 block.statements.append(
                     IRAssign(
-                        self.code, dst, IRArithmetic(self.code, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])
+                        self.code,
+                        dst,
+                        IRArithmetic(
+                            self.code,
+                            lhs,
+                            rhs,
+                            IRArithmetic.ArithmeticType[op.op.upper()],
+                        ),
                     )
                 )
             elif op.op in [&#34;Int&#34;, &#34;Float&#34;, &#34;Bool&#34;, &#34;Bytes&#34;, &#34;String&#34;, &#34;Null&#34;]:
@@ -874,7 +916,11 @@ el.replaceWith(d);
                     block.statements.append(IRAssign(self.code, dst, IRUnliftedOpcode(self.code, op)))
             elif op.op == &#34;Mov&#34;:
                 block.statements.append(
-                    IRAssign(self.code, self.locals[op.df[&#34;dst&#34;].value], source_locals[op.df[&#34;src&#34;].value])
+                    IRAssign(
+                        self.code,
+                        self.locals[op.df[&#34;dst&#34;].value],
+                        source_locals[op.df[&#34;src&#34;].value],
+                    )
                 )
             elif op.op == &#34;GetGlobal&#34;:
                 global_idx = op.df[&#34;global&#34;].value
@@ -909,7 +955,12 @@ el.replaceWith(d);
                 if not isinstance(obj_type.definition, (Obj, Virtual)):
                     raise DecompError(f&#34;Field opcode used on non-object type: {obj_type.definition}&#34;)
                 field_core = op.df[&#34;field&#34;].resolve_obj(self.code, obj_type.definition)
-                field_expr = IRField(self.code, obj_local, field_core.name.resolve(self.code), field_core.type)
+                field_expr = IRField(
+                    self.code,
+                    obj_local,
+                    field_core.name.resolve(self.code),
+                    field_core.type,
+                )
                 block.statements.append(IRAssign(self.code, dst_local, field_expr))
             elif op.op == &#34;GetThis&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
@@ -917,7 +968,12 @@ el.replaceWith(d);
                 this_type_def = self.code.types[self.func.regs[0].value]
                 if isinstance(this_type_def.definition, (Obj, Virtual)):
                     field_core = op.df[&#34;field&#34;].resolve_obj(self.code, this_type_def.definition)
-                    field_expr = IRField(self.code, this_local, field_core.name.resolve(self.code), field_core.type)
+                    field_expr = IRField(
+                        self.code,
+                        this_local,
+                        field_core.name.resolve(self.code),
+                        field_core.type,
+                    )
                     block.statements.append(IRAssign(self.code, dst_local, field_expr))
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
@@ -927,7 +983,12 @@ el.replaceWith(d);
                 this_type_def = self.code.types[self.func.regs[0].value]
                 if isinstance(this_type_def.definition, (Obj, Virtual)):
                     field_core = op.df[&#34;field&#34;].resolve_obj(self.code, this_type_def.definition)
-                    field_expr = IRField(self.code, this_local, field_core.name.resolve(self.code), field_core.type)
+                    field_expr = IRField(
+                        self.code,
+                        this_local,
+                        field_core.name.resolve(self.code),
+                        field_core.type,
+                    )
                     block.statements.append(IRAssign(self.code, field_expr, src_local))
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
@@ -969,7 +1030,12 @@ el.replaceWith(d);
                     IRAssign(
                         self.code,
                         dst_local,
-                        IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df[&#34;dst&#34;].value]),
+                        IRArrayAccess(
+                            self.code,
+                            arr_local,
+                            idx_local,
+                            self.func.regs[op.df[&#34;dst&#34;].value],
+                        ),
                     )
                 )
             elif op.op == &#34;ArraySize&#34;:
@@ -982,13 +1048,21 @@ el.replaceWith(d);
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
                 src_local = source_locals[op.df[&#34;src&#34;].value]
                 block.statements.append(
-                    IRAssign(self.code, dst_local, IRTypeOf(self.code, src_local, self.func.regs[op.df[&#34;dst&#34;].value]))
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRTypeOf(self.code, src_local, self.func.regs[op.df[&#34;dst&#34;].value]),
+                    )
                 )
             elif op.op == &#34;GetTID&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
                 src_local = source_locals[op.df[&#34;src&#34;].value]
                 block.statements.append(
-                    IRAssign(self.code, dst_local, IRTypeKind(self.code, src_local, self.func.regs[op.df[&#34;dst&#34;].value]))
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRTypeKind(self.code, src_local, self.func.regs[op.df[&#34;dst&#34;].value]),
+                    )
                 )
             elif op.op == &#34;Incr&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
@@ -1062,7 +1136,11 @@ el.replaceWith(d);
                 idx_local = source_locals[op.df[&#34;index&#34;].value]
                 src_local = source_locals[op.df[&#34;src&#34;].value]
                 block.statements.append(
-                    IRAssign(self.code, IRArrayAccess(self.code, arr_local, idx_local, src_local.get_type()), src_local)
+                    IRAssign(
+                        self.code,
+                        IRArrayAccess(self.code, arr_local, idx_local, src_local.get_type()),
+                        src_local,
+                    )
                 )
             elif op.op == &#34;DynSet&#34;:
                 obj_local = source_locals[op.df[&#34;obj&#34;].value]
@@ -1082,32 +1160,42 @@ el.replaceWith(d);
                 obj_type = obj_local.get_type()
                 if isinstance(obj_type.definition, (Obj, Virtual)):
                     field_core = op.df[&#34;field&#34;].resolve_obj(self.code, obj_type.definition)
-                    field_expr = IRField(self.code, obj_local, field_core.name.resolve(self.code), field_core.type)
+                    field_expr = IRField(
+                        self.code,
+                        obj_local,
+                        field_core.name.resolve(self.code),
+                        field_core.type,
+                    )
                     block.statements.append(IRAssign(self.code, field_expr, src_local))
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
             elif op.op == &#34;Type&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
                 block.statements.append(
-                    IRAssign(self.code, dst_local, IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df[&#34;ty&#34;]))
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df[&#34;ty&#34;]),
+                    )
                 )
             elif op.op == &#34;Ref&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
                 src_local = source_locals[op.df[&#34;src&#34;].value]
-                block.statements.append(IRAssign(self.code, dst_local, IRRef(self.code, src_local)))
+                ref_new = IRRefNew(self.code, src_local)
+                ref_new.src_op_idx = op_idx
+                block.statements.append(IRAssign(self.code, dst_local, ref_new))
             elif op.op == &#34;Unref&#34;:
-                # References are modelled transparently (IRRef renders as its
-                # inner expression), so dereferencing one is just a copy of the
-                # underlying value.
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
                 src_local = source_locals[op.df[&#34;src&#34;].value]
-                block.statements.append(IRAssign(self.code, dst_local, src_local))
+                ref_get = IRRefGet(self.code, src_local)
+                ref_get.src_op_idx = op_idx
+                block.statements.append(IRAssign(self.code, dst_local, ref_get))
             elif op.op == &#34;Setref&#34;:
-                # References are modelled transparently; writing through one is
-                # represented as a copy to the reference register itself.
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
                 src_local = source_locals[op.df[&#34;value&#34;].value]
-                block.statements.append(IRAssign(self.code, dst_local, src_local))
+                ref_set = IRRefSet(self.code, dst_local, src_local)
+                ref_set.src_op_idx = op_idx
+                block.statements.append(ref_set)
             elif op.op == &#34;StaticClosure&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
                 fun_const = IRConst(self.code, IRConst.ConstType.FUN, idx=op.df[&#34;fun&#34;])
@@ -1132,7 +1220,12 @@ el.replaceWith(d);
                     cast_expr = IRCast(self.code, self.func.regs[op.df[&#34;dst&#34;].value], obj_local)
                     block.statements.append(IRAssign(self.code, dst_local, cast_expr))
                 else:
-                    field_expr = IRField(self.code, obj_local, method_name, self.func.regs[op.df[&#34;dst&#34;].value])
+                    field_expr = IRField(
+                        self.code,
+                        obj_local,
+                        method_name,
+                        self.func.regs[op.df[&#34;dst&#34;].value],
+                    )
                     block.statements.append(IRAssign(self.code, dst_local, field_expr))
             elif op.op == &#34;VirtualClosure&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
@@ -1176,7 +1269,11 @@ el.replaceWith(d);
                 )
                 args = [source_locals[arg.value] for arg in op.df[&#34;args&#34;].value]
                 block.statements.append(
-                    IRAssign(self.code, dst_local, IREnumConstruct(self.code, construct_name, args, enum_type))
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IREnumConstruct(self.code, construct_name, args, enum_type),
+                    )
                 )
             elif op.op == &#34;EnumAlloc&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
@@ -1189,7 +1286,11 @@ el.replaceWith(d);
                     else f&#34;construct_{cid}&#34;
                 )
                 block.statements.append(
-                    IRAssign(self.code, dst_local, IREnumConstruct(self.code, construct_name, [], enum_type))
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IREnumConstruct(self.code, construct_name, [], enum_type),
+                    )
                 )
             elif op.op == &#34;EnumField&#34;:
                 dst_local = self.locals[op.df[&#34;dst&#34;].value]
@@ -1203,7 +1304,11 @@ el.replaceWith(d);
                     construct = enum_def.constructs[cid]
                     field_type = construct.params[fid]
                     block.statements.append(
-                        IRAssign(self.code, dst_local, IREnumField(self.code, src_local, field_name, field_type))
+                        IRAssign(
+                            self.code,
+                            dst_local,
+                            IREnumField(self.code, src_local, field_name, field_type),
+                        )
                     )
                 else:
                     block.statements.append(IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op)))
@@ -1228,14 +1333,22 @@ el.replaceWith(d);
                     field_name = f&#34;param{fid}&#34;
                     field_type = construct.params[fid]
                     block.statements.append(
-                        IRAssign(self.code, IREnumField(self.code, value_local, field_name, field_type), src_local)
+                        IRAssign(
+                            self.code,
+                            IREnumField(self.code, value_local, field_name, field_type),
+                            src_local,
+                        )
                     )
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
             else:
                 if &#34;dst&#34; in op.df:
                     block.statements.append(
-                        IRAssign(self.code, self.locals[op.df[&#34;dst&#34;].value], IRUnliftedOpcode(self.code, op))
+                        IRAssign(
+                            self.code,
+                            self.locals[op.df[&#34;dst&#34;].value],
+                            IRUnliftedOpcode(self.code, op),
+                        )
                     )
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
@@ -1251,6 +1364,13 @@ el.replaceWith(d);
                         stmt.src_file_idx = ref.value
                     except IndexError:
                         pass
+            # Re-emit register aliases (`var b = a;` folded into one register).
+            if op_idx is not None:
+                for reg, alias in self._op_aliases.get(op_idx, ()):
+                    src_local = self.locals[reg]
+                    alias_local = IRLocal(alias, self.func.regs[reg], code=self.code)
+                    self.all_locals.append(alias_local)
+                    block.statements.append(IRAssign(self.code, alias_local, src_local))
 
     def _shortest_distances(
         self,
@@ -1294,7 +1414,13 @@ el.replaceWith(d);
         if not common_nodes:
             return None
 
-        return min(common_nodes, key=lambda node: (left_distances[node] + right_distances[node], node.base_offset))
+        return min(
+            common_nodes,
+            key=lambda node: (
+                left_distances[node] + right_distances[node],
+                node.base_offset,
+            ),
+        )
 
     def _is_terminal_branch_node(self, node: Optional[CFNode], loop_ctx: Optional[_LoopContext]) -&gt; bool:
         &#34;&#34;&#34;Return True if a branch target has no live successors within the current region.&#34;&#34;&#34;
@@ -1370,7 +1496,11 @@ el.replaceWith(d);
         else:
             body_block = self._lift_block(header, visited.copy(), stop_at=header, loop_ctx=loop_ctx)
             block.statements.append(
-                IRWhileLoop(self.code, IRBoolExpr(self.code, IRBoolExpr.CompareType.TRUE), body_block)
+                IRWhileLoop(
+                    self.code,
+                    IRBoolExpr(self.code, IRBoolExpr.CompareType.TRUE),
+                    body_block,
+                )
             )
 
         next_block_ir = self._lift_block(exit_node, visited, stop_at, loop_ctx=parent_loop)
@@ -1551,6 +1681,7 @@ el.replaceWith(d);
                         not target.branches
                         and target.ops
                         and target.ops[-1].op == &#34;Ret&#34;
+                        and target != loop_ctx.exit_node
                         and loop_ctx.header not in cfg.post_dominators.get(target, set())
                     ):
                         return None
@@ -1563,7 +1694,10 @@ el.replaceWith(d);
                         # its statements are preserved; stop at the loop&#39;s normal exit
                         # node so post-loop code is not duplicated here.
                         branch_block = self._lift_block(
-                            target, visited.copy(), stop_at=loop_ctx.exit_node, loop_ctx=None
+                            target,
+                            visited.copy(),
+                            stop_at=loop_ctx.exit_node,
+                            loop_ctx=None,
                         )
                         if branch_block.statements and isinstance(branch_block.statements[-1], (IRReturn, IRThrow)):
                             return branch_block
@@ -1629,11 +1763,17 @@ el.replaceWith(d);
 
             if then_block_ir is None:
                 then_block_ir = self._lift_block(
-                    fall_through, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                    fall_through,
+                    visited.copy(),
+                    stop_at=convergence_node,
+                    loop_ctx=loop_ctx,
                 )
             if else_block_ir is None:
                 else_block_ir = self._lift_block(
-                    jump_target, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                    jump_target,
+                    visited.copy(),
+                    stop_at=convergence_node,
+                    loop_ctx=loop_ctx,
                 )
 
             conditional_stmt = IRConditional(self.code, cond_expr, then_block_ir, else_block_ir)
@@ -1657,7 +1797,10 @@ el.replaceWith(d);
 
             for target_node, edge_type in node.branches:
                 case_block_ir = self._lift_block(
-                    target_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                    target_node,
+                    visited.copy(),
+                    stop_at=convergence_node,
+                    loop_ctx=loop_ctx,
                 )
                 if edge_type.startswith(&#34;switch: case:&#34;):
                     case_val = int(edge_type.split(&#34;:&#34;)[-1].strip())
@@ -1688,17 +1831,29 @@ el.replaceWith(d);
             )
 
             try_block_ir = self._lift_block(
-                try_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                try_branch_node,
+                visited.copy(),
+                stop_at=convergence_node,
+                loop_ctx=loop_ctx,
             )
             catch_block_ir = self._lift_block(
-                catch_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                catch_branch_node,
+                visited.copy(),
+                stop_at=convergence_node,
+                loop_ctx=loop_ctx,
             )
             catch_local = self.locals[last_op.df[&#34;exc&#34;].value]
             explicit_catch_type = (
                 self._catch_has_explicit_type(catch_branch_node) if catch_branch_node is not None else False
             )
             block.statements.append(
-                IRTryCatch(self.code, try_block_ir, catch_block_ir, catch_local, explicit_catch_type)
+                IRTryCatch(
+                    self.code,
+                    try_block_ir,
+                    catch_block_ir,
+                    catch_local,
+                    explicit_catch_type,
+                )
             )
 
             # Must bound this by the enclosing stop_at, like the conditional case

@@ -122,7 +122,9 @@ el.replaceWith(d);
             # existing IRConst by changing its value to the constructor name
             # string, but create a fresh one to avoid side effects.
             new_case_val = IRConst(
-                self.func.code, IRConst.ConstType.GLOBAL_STRING, value=construct.name.resolve(self.func.code)
+                self.func.code,
+                IRConst.ConstType.GLOBAL_STRING,
+                value=construct.name.resolve(self.func.code),
             )
             new_cases[new_case_val] = case_block
 

@@ -1003,7 +1003,10 @@ Comments are keyed on (findex, src_op_idx).</p></div>
 
     @classmethod
     def from_path(
-        cls, path: str, search_magic: bool = True, progress_cb: Optional[ProgressCallback] = None
+        cls,
+        path: str,
+        search_magic: bool = True,
+        progress_cb: Optional[ProgressCallback] = None,
     ) -&gt; &#34;Bytecode&#34;:
         &#34;&#34;&#34;
         Create a new Bytecode instance from a file path.
@@ -1015,7 +1018,10 @@ Comments are keyed on (findex, src_op_idx).</p></div>
 
     @classmethod
     def from_bytes(
-        cls, data: bytes, search_magic: bool = True, progress_cb: Optional[ProgressCallback] = None
+        cls,
+        data: bytes,
+        search_magic: bool = True,
+        progress_cb: Optional[ProgressCallback] = None,
     ) -&gt; &#34;Bytecode&#34;:
         &#34;&#34;&#34;
         Create a new Bytecode instance from a `bytes` object.
@@ -13974,7 +13980,11 @@ class XRef:
                         if isinstance(t.definition, Obj):
                             proto = code.proto_by_pindex(t.definition, pindex)
                             if proto is not None:
-                                _emit(TargetKind.FUNCTION, proto.findex.value, RefKind.CALL_VIRTUAL)
+                                _emit(
+                                    TargetKind.FUNCTION,
+                                    proto.findex.value,
+                                    RefKind.CALL_VIRTUAL,
+                                )
 
                 elif op_name in (&#34;StaticClosure&#34;, &#34;InstanceClosure&#34;):
                     _emit(TargetKind.FUNCTION, df[&#34;fun&#34;].value, RefKind.CLOSURE)
@@ -13987,7 +13997,11 @@ class XRef:
                         if isinstance(t.definition, Obj):
                             proto = code.proto_by_pindex(t.definition, pindex)
                             if proto is not None:
-                                _emit(TargetKind.FUNCTION, proto.findex.value, RefKind.CLOSURE)
+                                _emit(
+                                    TargetKind.FUNCTION,
+                                    proto.findex.value,
+                                    RefKind.CLOSURE,
+                                )
 
                 elif op_name == &#34;Field&#34;:
                     obj_t = _reg_tindex(df[&#34;obj&#34;].value)
@@ -13997,7 +14011,12 @@ class XRef:
                             try:
                                 flat = df[&#34;field&#34;].value
                                 owner_t, own_slot = _field_owner(flat, obj_t, t.definition)
-                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_READ, own_slot)
+                                _emit(
+                                    TargetKind.FIELD,
+                                    owner_t,
+                                    RefKind.FIELD_READ,
+                                    own_slot,
+                                )
                             except (IndexError, KeyError):
                                 pass
 
@@ -14009,7 +14028,12 @@ class XRef:
                             try:
                                 flat = df[&#34;field&#34;].value
                                 owner_t, own_slot = _field_owner(flat, this_t, t.definition)
-                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_READ, own_slot)
+                                _emit(
+                                    TargetKind.FIELD,
+                                    owner_t,
+                                    RefKind.FIELD_READ,
+                                    own_slot,
+                                )
                             except (IndexError, KeyError):
                                 pass
 
@@ -14021,7 +14045,12 @@ class XRef:
                             try:
                                 flat = df[&#34;field&#34;].value
                                 owner_t, own_slot = _field_owner(flat, obj_t, t.definition)
-                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_WRITE, own_slot)
+                                _emit(
+                                    TargetKind.FIELD,
+                                    owner_t,
+                                    RefKind.FIELD_WRITE,
+                                    own_slot,
+                                )
                             except (IndexError, KeyError):
                                 pass
 
@@ -14033,7 +14062,12 @@ class XRef:
                             try:
                                 flat = df[&#34;field&#34;].value
                                 owner_t, own_slot = _field_owner(flat, this_t, t.definition)
-                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_WRITE, own_slot)
+                                _emit(
+                                    TargetKind.FIELD,
+                                    owner_t,
+                                    RefKind.FIELD_WRITE,
+                                    own_slot,
+                                )
                             except (IndexError, KeyError):
                                 pass
 
@@ -14064,11 +14098,21 @@ class XRef:
                 elif op_name == &#34;MakeEnum&#34;:
                     dst_t = _reg_tindex(df[&#34;dst&#34;].value)
                     if dst_t is not None:
-                        _emit(TargetKind.ENUM_CONSTRUCT, dst_t, RefKind.ENUM_CONSTRUCT, df[&#34;construct&#34;].value)
+                        _emit(
+                            TargetKind.ENUM_CONSTRUCT,
+                            dst_t,
+                            RefKind.ENUM_CONSTRUCT,
+                            df[&#34;construct&#34;].value,
+                        )
                 elif op_name == &#34;EnumField&#34;:
                     val_t = _reg_tindex(df[&#34;value&#34;].value)
                     if val_t is not None:
-                        _emit(TargetKind.ENUM_CONSTRUCT, val_t, RefKind.ENUM_FIELD_READ, df[&#34;construct&#34;].value)
+                        _emit(
+                            TargetKind.ENUM_CONSTRUCT,
+                            val_t,
+                            RefKind.ENUM_FIELD_READ,
+                            df[&#34;construct&#34;].value,
+                        )
                 elif op_name == &#34;EnumIndex&#34;:
                     val_t = _reg_tindex(df[&#34;value&#34;].value)
                     if val_t is not None:
@@ -14102,7 +14146,17 @@ class XRef:
                     _struct(TargetKind.TYPE, f.type.value, RefKind.FIELD_DECL)
 
         for gindex, gt in enumerate(code.global_types):
-            idx._add(XRef(SourceKind.GLOBAL, gindex, TargetKind.TYPE, gt.value, None, RefKind.GLOBAL_TYPE, None))
+            idx._add(
+                XRef(
+                    SourceKind.GLOBAL,
+                    gindex,
+                    TargetKind.TYPE,
+                    gt.value,
+                    None,
+                    RefKind.GLOBAL_TYPE,
+                    None,
+                )
+            )
 
         return idx</code></pre>
 </details>

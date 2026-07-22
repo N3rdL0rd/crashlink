@@ -1367,7 +1367,9 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 boundary_subject: Optional[IRExpression] = None
                 if boundary_stmt is not None:
                     subject = (
-                        boundary_stmt.condition if isinstance(boundary_stmt, IRConditional) else boundary_stmt.value
+                        boundary_stmt.condition
+                        if isinstance(boundary_stmt, IRConditional)
+                        else cast(IRSwitch, boundary_stmt).value
                     )
                     if self._expr_contains_local(subject, temp_local) and not (
                         free_vars and any(self._stmt_reassigns_any(s, free_vars) for s in remaining_statements)

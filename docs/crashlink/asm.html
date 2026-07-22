@@ -63,6 +63,8 @@ el.replaceWith(d);
         self.content = content
         self.raw_sections: Dict[str, AsmSection] = {}
         self.strings: List[str] = []
+        self.ints: List[int] = []
+        self.floats: List[float] = []
         self._parse()
 
     @classmethod
@@ -71,12 +73,24 @@ el.replaceWith(d);
             content = file.read()
         return cls(content)
 
+    @staticmethod
+    def _strip_comment(line: str) -&gt; str:
+        &#34;&#34;&#34;Strips a trailing `# ...` comment, ignoring &#39;#&#39; characters inside quoted strings.&#34;&#34;&#34;
+        in_quotes = False
+        for i, char in enumerate(line):
+            if char == &#39;&#34;&#39;:
+                in_quotes = not in_quotes
+            elif char == &#34;#&#34; and not in_quotes:
+                return line[:i]
+        return line
+
     def _parse(self) -&gt; None:
         self.content = self.content.replace(&#34;    &#34;, &#34;\t&#34;)  # for consistency
         lines = self.content.splitlines()
         section_stack: List[AsmSection] = []
-        for line in lines:
-            if not line.strip() or line.strip().startswith(&#34;#&#34;):
+        for raw_line in lines:
+            line = self._strip_comment(raw_line).rstrip()
+            if not line.strip():
                 continue
             indent_level = len(line) - len(line.lstrip(&#34;\t&#34;))
             # pop extra sections if we decreased the indent level
@@ -133,7 +147,6 @@ el.replaceWith(d);
             GUID: 23,
         }
         for val in section.value:
-            print(val.value)
             if not isinstance(val, AsmValueStr):
                 continue
             parts = val.value.split()
@@ -146,7 +159,6 @@ el.replaceWith(d);
                 code.types.append(typ)
                 code.invalidate_proto_field_cache()
             elif parts[0] == &#34;Fun&#34;:
-                print(&#34;Adding Fun...&#34;)
                 fun = Fun()
                 tokens = re.findall(r&#34;\([^)]*\)|\S+&#34;, val.value)
                 _, args, _, ret = tokens
@@ -162,7 +174,7 @@ el.replaceWith(d);
                     fun.args = a  # type: ignore
                 typ = Type()
                 typ.kind.value = 10  # Fun
-                typ.definition = m_def  # pyright: ignore[reportPossiblyUnboundVariable]
+                typ.definition = fun
                 code.types.append(typ)
                 code.invalidate_proto_field_cache()
 
@@ -184,26 +196,45 @@ el.replaceWith(d);
                 return bytesRef(int(val[2:]))
         raise SyntaxError(f&#34;Unknown prefix &#39;{val[0]}&#39;!&#34;)
 
-    def _parse_opcode_ref(self, val: str) -&gt; Any:
-        if val[1] != &#34;@&#34;:
-            if val[0] == &#39;&#34;&#39;:
-                return self._get_str_idx(val[1:-1])
-            elif val.startswith(&#34;reg&#34;):
-                return Reg(int(val[3:]))
-        match val[0]:  # TODO: float, field support
-            case &#34;f&#34;:
-                return fIndex(int(val[2:]))
-            case &#34;t&#34;:
-                return tIndex(int(val[2:]))
-            case &#34;s&#34;:
-                return strRef(int(val[2:]))
-            case &#34;g&#34;:
-                return gIndex(int(val[2:]))
-            case &#34;i&#34;:
-                return intRef(int(val[2:]))
-            case &#34;b&#34;:
-                return bytesRef(int(val[2:]))
-        raise SyntaxError(f&#34;Unknown prefix &#39;{val[0]}&#39;!&#34;)
+    def _parse_opcode_ref(self, val: str, expected: type) -&gt; Any:
+        if val[0] == &#39;&#34;&#39;:
+            return self._get_str_idx(val[1:-1])
+        if val.startswith(&#34;reg&#34;):
+            return Reg(int(val[3:]))
+        if expected is InlineBool and val in (&#34;true&#34;, &#34;false&#34;):
+            inline_bool = InlineBool()
+            inline_bool.value = val == &#34;true&#34;
+            return inline_bool
+
+        # Bare numeric literals: jump offsets and other InlineInt-style operands are embedded
+        # directly, while RefInt/RefFloat operands are pool references, so the literal gets
+        # auto-interned (mirroring how quoted string literals are auto-interned above).
+        if re.fullmatch(r&#34;-?\d+&#34;, val):
+            if expected is intRef:
+                return self._get_int_idx(int(val))
+            if expected is floatRef:
+                return self._get_float_idx(float(val))
+            return VarInt(int(val))
+        if re.fullmatch(r&#34;-?\d+\.\d+&#34;, val) and expected is floatRef:
+            return self._get_float_idx(float(val))
+
+        if len(val) &gt; 1 and val[1] == &#34;@&#34;:
+            match val[0]:  # TODO: field support
+                case &#34;f&#34;:
+                    return fIndex(int(val[2:]))
+                case &#34;t&#34;:
+                    return tIndex(int(val[2:]))
+                case &#34;s&#34;:
+                    return strRef(int(val[2:]))
+                case &#34;g&#34;:
+                    return gIndex(int(val[2:]))
+                case &#34;i&#34;:
+                    return intRef(int(val[2:]))
+                case &#34;b&#34;:
+                    return bytesRef(int(val[2:]))
+            raise SyntaxError(f&#34;Unknown prefix &#39;{val[0]}&#39;!&#34;)
+
+        raise SyntaxError(f&#34;Could not parse operand &#39;{val}&#39; as a {expected.__name__}!&#34;)
 
     def _get_single_val(self, name: str) -&gt; str:
         if len(self.raw_sections[name].value) != 1:
@@ -217,6 +248,16 @@ el.replaceWith(d);
         if val not in self.strings:
             self.strings.append(val)
         return strRef(self.strings.index(val))
+
+    def _get_int_idx(self, val: int) -&gt; intRef:
+        if val not in self.ints:
+            self.ints.append(val)
+        return intRef(self.ints.index(val))
+
+    def _get_float_idx(self, val: float) -&gt; floatRef:
+        if val not in self.floats:
+            self.floats.append(val)
+        return floatRef(self.floats.index(val))
 
     def _validate(self, code: Bytecode) -&gt; None:
         if not code.entrypoint:
@@ -276,11 +317,37 @@ el.replaceWith(d);
             if i + 1 &gt;= len(parts):
                 raise SyntaxError(f&#34;Not enough arguments for opcode {name}, expected {k}&#34;)
             typ = Opcode.TYPE_MAP[v]
-            parsed = self._parse_opcode_ref(parts[i + 1])
+            parsed = self._parse_opcode_ref(parts[i + 1], typ)
             assert isinstance(parsed, typ), f&#34;Expected type {typ} for argument {k} of opcode {name}, got {type(parsed)}&#34;
             op.df[k] = parsed
 
         return op
+
+    def _intern_fun_type(self, code: Bytecode, args: List[tIndex], ret: tIndex) -&gt; tIndex:
+        &#34;&#34;&#34;
+        Finds an existing `Fun` type matching this exact signature, or appends a new one.
+        Mirrors how string/int/float literals get auto-interned rather than requiring the
+        assembly source to declare a pool entry by hand.
+        &#34;&#34;&#34;
+        for i, existing in enumerate(code.types):
+            defn = existing.definition
+            if (
+                existing.kind.value == 10
+                and isinstance(defn, Fun)
+                and [a.value for a in defn.args] == [a.value for a in args]
+                and defn.ret.value == ret.value
+            ):
+                return tIndex(i)
+
+        fun = Fun()
+        fun.args = args
+        fun.ret = ret
+        typ = Type()
+        typ.kind.value = 10  # Fun
+        typ.definition = fun
+        code.types.append(typ)
+        code.invalidate_proto_field_cache()
+        return tIndex(len(code.types) - 1)
 
     def _add_functions(self, code: Bytecode) -&gt; None:
         for section in self.raw_sections.values():
@@ -288,12 +355,11 @@ el.replaceWith(d);
                 func = Function()
                 returns_section = section.get(&#34;returns&#34;)
                 if isinstance(returns_section.value[0], AsmValueStr):
-                    typ = self._parse_ref(returns_section.value[0].value)
+                    ret = self._parse_ref(returns_section.value[0].value)
                 else:
                     raise SyntaxError(&#34;Return type must be a string reference!&#34;)
+                assert isinstance(ret, tIndex), &#34;Return type must be a type reference!&#34;
 
-                assert isinstance(typ, tIndex), &#34;Return type must be a type reference!&#34;
-                func.type = typ
                 findex = self._parse_ref(section.name)
                 assert isinstance(findex, fIndex), &#34;Function index must be a function reference!&#34;
                 func.findex = findex
@@ -310,6 +376,18 @@ el.replaceWith(d);
 
                 assert all(isinstance(r, tIndex) for r in regs), &#34;All registers must be types!&#34;
                 func.regs = regs
+
+                # `.args &lt;n&gt;` declares how many of the leading registers are parameters
+                # (default 0, i.e. a no-argument function like a typical entrypoint).
+                nargs = 0
+                try:
+                    args_section = section.get(&#34;args&#34;)
+                    if args_section.value and isinstance(args_section.value[0], AsmValueStr):
+                        nargs = int(args_section.value[0].value)
+                except KeyError:
+                    pass
+                assert nargs &lt;= len(regs), &#34;More args than declared registers!&#34;
+                func.type = self._intern_fun_type(code, regs[:nargs], ret)
 
                 ops_section = section.get(&#34;ops&#34;)
                 ops = []
@@ -329,6 +407,18 @@ el.replaceWith(d);
         for s in self.strings:
             code.strings.value.append(s)
 
+    def _add_ints(self, code: Bytecode) -&gt; None:
+        for n in self.ints:
+            si = SerialisableInt()
+            si.value = n
+            code.ints.append(si)
+
+    def _add_floats(self, code: Bytecode) -&gt; None:
+        for n in self.floats:
+            sf = SerialisableF64()
+            sf.value = n
+            code.floats.append(sf)
+
     def assemble(self) -&gt; Bytecode:
         required = [&#34;version&#34;, &#34;types&#34;, &#34;entrypoint&#34;]
         for req in required:
@@ -345,6 +435,8 @@ el.replaceWith(d);
             self._add_natives(code, self.raw_sections[&#34;natives&#34;])
         self._add_functions(code)
         self._add_strings(code)
+        self._add_ints(code)
+        self._add_floats(code)
         self._validate(code)
         return code</code></pre>
 </details>
@@ -384,6 +476,8 @@ el.replaceWith(d);
         self._add_natives(code, self.raw_sections[&#34;natives&#34;])
     self._add_functions(code)
     self._add_strings(code)
+    self._add_ints(code)
+    self._add_floats(code)
     self._validate(code)
     return code</code></pre>
 </details>

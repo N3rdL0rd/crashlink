@@ -122,7 +122,7 @@ el.replaceWith(d);
         &#34;&#34;&#34;
         Adds a string and returns its index. If it already exists, returns the existing index.
         &#34;&#34;&#34;
-        if not val in strs:
+        if val not in strs:
             strs.append(val)
             return len(strs) - 1
         return strs.index(val)
@@ -212,7 +212,10 @@ el.replaceWith(d);
                         source_symbol_name = addr_to_symbol_name.get(source_addr)
 
             if source_symbol_name:
-                type_assignments[str(dest_symbol.name)] = (field_name, source_symbol_name)
+                type_assignments[str(dest_symbol.name)] = (
+                    field_name,
+                    source_symbol_name,
+                )
 
     except Exception as e:
         print(f&#34;Warning: Could not analyze &#39;hl_init_types&#39;. Some type info may be missing. Reason: {e}&#34;)
@@ -282,7 +285,12 @@ el.replaceWith(d);
                             f_name = read_chars(f_name_ptr, 2).decode(&#34;utf-16&#34;)
                         else:
                             f_name = &#34;null&#34;
-                        fields.append(Field(name=strRef(add_str(f_name)), type=offset_to_tindex[f_type_ptr]))
+                        fields.append(
+                            Field(
+                                name=strRef(add_str(f_name)),
+                                type=offset_to_tindex[f_type_ptr],
+                            )
+                        )
 
                     protos: List[Proto] = []
                     for i in range(nprotos):

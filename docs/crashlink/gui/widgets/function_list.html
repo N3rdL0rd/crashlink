@@ -234,7 +234,13 @@ el.replaceWith(d);
         cls_color = QColor(t.teal) if t else None
         meth_color = QColor(t.pink) if t else None
         _build_tree_items(
-            self._tree, root, bold, top_level=True, pkg_color=pkg_color, cls_color=cls_color, meth_color=meth_color
+            self._tree,
+            root,
+            bold,
+            top_level=True,
+            pkg_color=pkg_color,
+            cls_color=cls_color,
+            meth_color=meth_color,
         )
 
         if standalone:
@@ -317,7 +323,10 @@ el.replaceWith(d);
                 for m in methods:
                     m_item = QTreeWidgetItem([m.method_name])
                     m_item.setData(0, Qt.ItemDataRole.UserRole, m.findex)
-                    m_item.setToolTip(0, f&#34;f@{m.findex}  {cls.canonical_name}.{m.method_name}  line {m.first_line}&#34;)
+                    m_item.setToolTip(
+                        0,
+                        f&#34;f@{m.findex}  {cls.canonical_name}.{m.method_name}  line {m.first_line}&#34;,
+                    )
                     cls_item.addChild(m_item)
                 file_item.addChild(cls_item)
                 cls_item.setExpanded(True)

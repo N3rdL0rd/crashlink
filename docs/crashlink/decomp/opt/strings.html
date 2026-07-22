@@ -292,8 +292,14 @@ reg = <IRConst type=GLOBAL_STRING, value="the actual string"></p></div>
                     if self._statement_touches_local(nxt, local):
                         break
                 if bytes_idx is not None and len_idx is not None:
-                    bytes_expr = cast(IRExpression, self._match_bytes_assign(block.statements[bytes_idx], local))
-                    length_expr = cast(IRExpression, self._match_length_assign(block.statements[len_idx], local))
+                    bytes_expr = cast(
+                        IRExpression,
+                        self._match_bytes_assign(block.statements[bytes_idx], local),
+                    )
+                    length_expr = cast(
+                        IRExpression,
+                        self._match_length_assign(block.statements[len_idx], local),
+                    )
                     # Moving the call to the allocation site evaluates its arguments
                     # earlier. That is only safe if no free variable of the bytes
                     # or length expression is reassigned between the allocation and
@@ -463,6 +469,9 @@ source idiom <code>__alloc__(bytes, length)</code> inside the String class.</p><
                     return None
                 if isinstance(stmt, IRTrace) and stmt.msg == temp:
                     use_idx = j
+                elif isinstance(stmt, IRTrace) and self._is_string_add_with_temp(stmt.msg, temp):
+                    use_idx = j
+                    folded_expr_for_use = self._fold_concat(parts + [cast(IRCall, stmt.msg).args[1]])
                 elif isinstance(stmt, IRAssign) and stmt.expr == temp:
                     use_idx = j
                 elif isinstance(stmt, IRAssign) and self._is_string_add_with_temp(stmt.expr, temp):
@@ -714,12 +723,12 @@ the pseudocode printer then renders with Haxe's <code>+</code> operator.</p></di
             return None
         if not isinstance(expr.args[0], IRLocal):
             return None
-        # arg1 is the ref where byte count is stored back (IRLocal or IRRef wrapping one)
+        # arg1 is the ref where byte count is stored back (IRLocal, IRRef, or IRRefNew wrapping one)
         count_ref: Optional[IRLocal] = None
         arg1 = expr.args[1]
         if isinstance(arg1, IRLocal):
             count_ref = arg1
-        elif isinstance(arg1, IRRef) and isinstance(arg1.target, IRLocal):
+        elif isinstance(arg1, (IRRef, IRRefNew)) and isinstance(arg1.target, IRLocal):
             count_ref = arg1.target
         if count_ref is None:
             return None
@@ -773,7 +782,7 @@ the pseudocode printer then renders with Haxe's <code>+</code> operator.</p></di
         # is a separate local var6 = &amp;var13; we need to look through it)
         if count_ref_local.name in current_assigns:
             ref_defn = current_assigns[count_ref_local.name]
-            if isinstance(ref_defn.expr, IRRef) and isinstance(ref_defn.expr.target, IRLocal):
+            if isinstance(ref_defn.expr, (IRRef, IRRefNew)) and isinstance(ref_defn.expr.target, IRLocal):
                 if ref_defn.expr.target.name == int_arg.name:
                     if consumed_stmt is not None:
                         self._consumed.add(id(consumed_stmt))
@@ -887,7 +896,15 @@ nested inside <strong>add</strong> are collapsed to the plain integer local.</p>
                 if isinstance(stmt, IRConditional) and stmt.true_block is not None and stmt.false_block is not None:
                     branched = self._try_branched_trace(stmt, block.statements, i)
                     if branched is not None:
-                        true_tail, false_tail, msg_true, msg_false, pos_true, pos_false, consumed_after = branched
+                        (
+                            true_tail,
+                            false_tail,
+                            msg_true,
+                            msg_false,
+                            pos_true,
+                            pos_false,
+                            consumed_after,
+                        ) = branched
                         old_true_stmts = stmt.true_block.statements
                         old_false_stmts = stmt.false_block.statements
                         true_trace = IRTrace(self.func.code, msg_true, pos_true)
@@ -998,7 +1015,7 @@ nested inside <strong>add</strong> are collapsed to the plain integer local.</p>
                             is_valid_trace_call = True
 
                     elif DEBUG:
-                        dbg_print(f&#34;[TraceOpt]  -&gt; FAILED: Statement is not an IRCall with 2 arguments.&#34;)
+                        dbg_print(&#34;[TraceOpt]  -&gt; FAILED: Statement is not an IRCall with 2 arguments.&#34;)
 
                     if is_valid_trace_call:
                         assert isinstance(call_stmt, IRCall)
@@ -1040,7 +1057,7 @@ nested inside <strong>add</strong> are collapsed to the plain integer local.</p>
                         made_change = True
                         continue
                     elif DEBUG:
-                        dbg_print(f&#34;[TraceOpt] FAILED: Pattern did not match for trace call.&#34;)
+                        dbg_print(&#34;[TraceOpt] FAILED: Pattern did not match for trace call.&#34;)
 
                 new_statements.append(stmt)
                 i += 1
@@ -1111,7 +1128,15 @@ nested inside <strong>add</strong> are collapsed to the plain integer local.</p>
     def _try_branched_trace(
         self, cond: &#34;IRConditional&#34;, statements: List[IRStatement], idx: int
     ) -&gt; Optional[
-        Tuple[List[IRStatement], List[IRStatement], IRExpression, IRExpression, Dict[str, Any], Dict[str, Any], int]
+        Tuple[
+            List[IRStatement],
+            List[IRStatement],
+            IRExpression,
+            IRExpression,
+            Dict[str, Any],
+            Dict[str, Any],
+            int,
+        ]
     ]:
         &#34;&#34;&#34;
         Matches `trace(msg)` calls that got duplicated into each branch of an
@@ -1193,7 +1218,15 @@ nested inside <strong>add</strong> are collapsed to the plain integer local.</p>
         final_pos_t = {**pos_t, **shared_pos}
         final_pos_f = {**pos_f, **shared_pos}
         consumed_after = j - idx
-        return true_tail, false_tail, msg_true, msg_false, final_pos_t, final_pos_f, consumed_after</code></pre>
+        return (
+            true_tail,
+            false_tail,
+            msg_true,
+            msg_false,
+            final_pos_t,
+            final_pos_f,
+            consumed_after,
+        )</code></pre>
 </details>
 <div class="desc"><p>Finds the common <code>haxe.Log.trace</code> pattern with an anonymous object for
 position and collapses it into a single IRTrace statement.</p></div>

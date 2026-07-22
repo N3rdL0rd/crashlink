@@ -949,7 +949,10 @@ Returns a summary of what was loaded.</p></div>
                 _code = Bytecode().deserialise(f)
             print(f&#34;[crashlink-mcp] Preloaded: {preload_path}&#34;, file=sys.stderr)
         except Exception as e:
-            print(f&#34;[crashlink-mcp] Warning: failed to preload {preload_path}: {e}&#34;, file=sys.stderr)
+            print(
+                f&#34;[crashlink-mcp] Warning: failed to preload {preload_path}: {e}&#34;,
+                file=sys.stderr,
+            )
 
     mcp.run(transport=&#34;stdio&#34;)</code></pre>
 </details>

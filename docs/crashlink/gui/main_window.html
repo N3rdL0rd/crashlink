@@ -173,7 +173,10 @@ el.replaceWith(d);
         for i, mode in enumerate(_VIEW_MODE_CYCLE):
             btn = QPushButton(_VIEW_MODE_GLYPHS[mode])
             btn.setObjectName(&#34;modeBtnIcon&#34;)
-            btn.setProperty(&#34;segment&#34;, &#34;first&#34; if i == 0 else &#34;last&#34; if i == len(_VIEW_MODE_CYCLE) - 1 else &#34;mid&#34;)
+            btn.setProperty(
+                &#34;segment&#34;,
+                &#34;first&#34; if i == 0 else &#34;last&#34; if i == len(_VIEW_MODE_CYCLE) - 1 else &#34;mid&#34;,
+            )
             btn.setCheckable(True)
             btn.setFixedWidth(32)
             btn.setToolTip(f&#34;{_VIEW_MODE_NAMES[mode]} view  (Tab to cycle)&#34;)
@@ -285,7 +288,10 @@ el.replaceWith(d);
 
     def _open_file(self) -&gt; None:
         path, _ = QFileDialog.getOpenFileName(
-            self, &#34;Open HashLink bytecode&#34;, &#34;&#34;, &#34;HashLink files (*.hl *.dat);;All files (*)&#34;
+            self,
+            &#34;Open HashLink bytecode&#34;,
+            &#34;&#34;,
+            &#34;HashLink files (*.hl *.dat);;All files (*)&#34;,
         )
         if path and self._confirm_discard_changes():
             self._load_file(path)
@@ -625,7 +631,10 @@ el.replaceWith(d);
         view.comment_requested.connect(self._on_comment_hotkey)
 
         placeholder = [
-            (fi, self._class_results[class_key][fi] or f&#34;class {display_name} {{\n    // f@{fi}  decompiling…\n}}&#34;)
+            (
+                fi,
+                self._class_results[class_key][fi] or f&#34;class {display_name} {{\n    // f@{fi}  decompiling…\n}}&#34;,
+            )
             for fi in all_fi
         ]
         view.load_pseudo(display_name, placeholder)

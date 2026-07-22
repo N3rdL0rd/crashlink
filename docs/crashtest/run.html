@@ -60,13 +60,17 @@ el.replaceWith(d);
     try:
         original_code.get_test_obj(class_name)
     except ValueError:
-        return OpcodeComparison(overall_similarity=-1.0, recompile_error=f&#34;Class &#39;{class_name}&#39; not found in original&#34;)
+        return OpcodeComparison(
+            overall_similarity=-1.0,
+            recompile_error=f&#34;Class &#39;{class_name}&#39; not found in original&#34;,
+        )
 
     try:
         recompiled_code.get_test_obj(class_name)
     except ValueError:
         return OpcodeComparison(
-            overall_similarity=-1.0, recompile_error=f&#34;Class &#39;{class_name}&#39; not found in recompiled&#34;
+            overall_similarity=-1.0,
+            recompile_error=f&#34;Class &#39;{class_name}&#39; not found in recompiled&#34;,
         )
 
     def _belongs_to_class(name: str, cls: str) -&gt; bool:

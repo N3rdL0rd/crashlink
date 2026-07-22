@@ -461,6 +461,145 @@ are pulled up into the parent.</p></div>
 </li>
 </ul>
 </dd>
+<dt id="crashlink.decomp.opt.clean.IRBoolMaterializationCollapser"><code class="flex name class">
+<span>class <span class="ident">IRBoolMaterializationCollapser</span></span>
+<span>(</span><span>function: "'IRFunction'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRBoolMaterializationCollapser(TraversingIROptimizer):
+    &#34;&#34;&#34;
+    Collapses `if (cond) { t = true; } else { t = false; }` into `t = cond`,
+    the inverted constant pair into `t = !cond`, and unwraps double negation.
+    &#34;&#34;&#34;
+
+    @staticmethod
+    def _negated_operand(expr: IRExpression) -&gt; Optional[IRExpression]:
+        if isinstance(expr, IRNot):
+            return expr.expr
+        if (
+            isinstance(expr, IRBoolExpr)
+            and expr.op in (IRBoolExpr.CompareType.ISFALSE, IRBoolExpr.CompareType.NOT)
+            and expr.left is not None
+        ):
+            return expr.left
+        return None
+
+    @staticmethod
+    def _strip_istrue(expr: IRExpression) -&gt; IRExpression:
+        while isinstance(expr, IRBoolExpr) and expr.op == IRBoolExpr.CompareType.ISTRUE and expr.left is not None:
+            expr = expr.left
+        return expr
+
+    @classmethod
+    def _unwrap_double_not(cls, expr: IRExpression) -&gt; IRExpression:
+        inner = cls._negated_operand(cls._strip_istrue(expr))
+        if inner is None:
+            return expr
+        inner2 = cls._negated_operand(cls._strip_istrue(inner))
+        if inner2 is None:
+            return expr
+        return cls._unwrap_double_not(inner2)
+
+    @staticmethod
+    def _branch_bool_assign(block: Optional[IRBlock]) -&gt; Optional[Tuple[IRLocal, bool]]:
+        if block is None or len(block.statements) != 1:
+            return None
+        stmt = block.statements[0]
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRLocal)
+            and isinstance(stmt.expr, IRConst)
+            and stmt.expr.const_type == IRConst.ConstType.BOOL
+        ):
+            return stmt.target, bool(stmt.expr.value)
+        return None
+
+    def visit_block(self, block: IRBlock) -&gt; None:
+        new_statements: List[IRStatement] = []
+        for stmt in block.statements:
+            if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRExpression):
+                stmt.expr = self._unwrap_double_not(stmt.expr)
+            elif isinstance(stmt, IRConditional):
+                stmt.condition = self._unwrap_double_not(stmt.condition)
+            elif isinstance(stmt, IRWhileLoop):
+                stmt.condition = self._unwrap_double_not(stmt.condition)
+            elif isinstance(stmt, IRReturn) and stmt.value is not None:
+                stmt.value = self._unwrap_double_not(stmt.value)
+            if isinstance(stmt, IRConditional):
+                true_assign = self._branch_bool_assign(stmt.true_block)
+                false_assign = self._branch_bool_assign(stmt.false_block)
+                if (
+                    true_assign is not None
+                    and false_assign is not None
+                    and true_assign[0] == false_assign[0]
+                    and true_assign[1] != false_assign[1]
+                    and not (isinstance(true_assign[0], IRLocal) and re.match(r&#34;^var\d+$&#34;, true_assign[0].name))
+                ):
+                    target = true_assign[0]
+                    cond = stmt.condition
+                    if not true_assign[1]:
+                        # Negate: prefer inverting a comparison in-place over
+                        # wrapping in IRNot to avoid `!(a &gt;= b)` → `a &lt; b`.
+                        if isinstance(cond, IRBoolExpr) and cond.op in (
+                            IRBoolExpr.CompareType.LT,
+                            IRBoolExpr.CompareType.LTE,
+                            IRBoolExpr.CompareType.GT,
+                            IRBoolExpr.CompareType.GTE,
+                            IRBoolExpr.CompareType.EQ,
+                            IRBoolExpr.CompareType.NEQ,
+                        ):
+                            cond = copy.copy(cond)
+                            cond.invert()
+                        else:
+                            cond = cond.expr if isinstance(cond, IRNot) else IRNot(self.func.code, cond)
+                    assign = IRAssign(self.func.code, target, cond)
+                    assign.adopt(stmt)
+                    # The collapsed `t = cond` is a synthetic merge of the original
+                    # branch — folding constants into it would lose the branch
+                    # structure on recompile (e.g. `cond = 4 != 3` → `Bool True`).
+                    assign._no_user_inline = True
+                    dbg_print(f&#34;IRBoolMaterializationCollapser: {stmt} -&gt; {assign}&#34;)
+                    new_statements.append(assign)
+                    continue
+            new_statements.append(stmt)
+        block.statements = new_statements</code></pre>
+</details>
+<div class="desc"><p>Collapses <code>if (cond) { t = true; } else { t = false; }</code> into <code>t = cond</code>,
+the inverted constant pair into <code>t = !cond</code>, and unwraps double negation.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></li>
+<li><a title="crashlink.decomp.opt.IROptimizer" href="index.html#crashlink.decomp.opt.IROptimizer">IROptimizer</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.TARGET_OPCODES" href="index.html#crashlink.decomp.opt.IROptimizer.TARGET_OPCODES">TARGET_OPCODES</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement">after_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement">before_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.optimize" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.should_run" href="index.html#crashlink.decomp.opt.IROptimizer.should_run">should_run</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit">visit</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_assign" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_assign">visit_assign</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_block" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_block">visit_block</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_break" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_break">visit_break</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_conditional" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_conditional">visit_conditional</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_continue" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_continue">visit_continue</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_expression" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_expression">visit_expression</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop">visit_primitive_loop</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_return" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_return">visit_return</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_switch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_switch">visit_switch</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch">visit_try_catch</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
 <dt id="crashlink.decomp.opt.clean.IRCommonBlockMerger"><code class="flex name class">
 <span>class <span class="ident">IRCommonBlockMerger</span></span>
 <span>(</span><span>function: "'IRFunction'")</span>
@@ -771,12 +910,18 @@ common_code();</p></div>
                 and isinstance(stmt.target, IRLocal)
                 and self._local_name(stmt.target) not in live
             ):
-                if self._has_side_effects(stmt.expr):
+                if self._is_user_local_name(self._local_name(stmt.target)):
+                    # Preserve dead stores to user-named locals so the source
+                    # round-trip stays faithful to the original bytecode.
+                    new_stmts.append(stmt)
+                elif self._has_side_effects(stmt.expr):
                     # Keep the side effects as a bare expression statement.
                     stmt.expr.adopt(stmt)  # opcode was tagged on the assign, not its expr
                     new_stmts.append(stmt.expr)
-                    live.update(uses)
-                # else: drop the dead assignment entirely.
+                # else: drop the dead assignment entirely for compiler temps.
+                # For kept statements, still update liveness; dropped ones don&#39;t.
+                live.difference_update(defs)
+                live.update(uses)
                 continue
             if mutate:
                 new_stmts.append(stmt)
@@ -816,6 +961,11 @@ common_code();</p></div>
             uses.update(self._locals_in_expr(stmt.condition))
         elif isinstance(stmt, IRSwitch):
             uses.update(self._locals_in_expr(stmt.value))
+        else:
+            # Generic fallback (e.g. IRRefSet): expression children are reads.
+            for child in stmt.get_children():
+                if isinstance(child, IRExpression):
+                    uses.update(self._locals_in_expr(child))
 
         # Recursively process nested blocks with the correct live-out sets.
         if isinstance(stmt, IRConditional):
@@ -826,7 +976,10 @@ common_code();</p></div>
             uses.update(false_in)
         elif isinstance(stmt, IRWhileLoop):
             body_in = self._process_loop_body(
-                stmt.body, live_after_stmt, self._locals_in_expr(stmt.condition), mutate=mutate
+                stmt.body,
+                live_after_stmt,
+                self._locals_in_expr(stmt.condition),
+                mutate=mutate,
             )
             uses.update(body_in)
         elif isinstance(stmt, IRPrimitiveLoop):
@@ -860,7 +1013,11 @@ common_code();</p></div>
         return uses, defs
 
     def _process_loop_body(
-        self, body: IRBlock, live_after: Set[str], header_uses: Set[str], mutate: bool = True
+        self,
+        body: IRBlock,
+        live_after: Set[str],
+        header_uses: Set[str],
+        mutate: bool = True,
     ) -&gt; Set[str]:
         &#34;&#34;&#34;Process a loop body to a fixed point so loop-carried assignments live.
 
@@ -888,6 +1045,17 @@ common_code();</p></div>
             live.difference_update(defs)
             live.update(uses)
         return live
+
+    def _is_user_local_name(self, name: str) -&gt; bool:
+        if not self.func.func.has_debug or not self.func.func.assigns:
+            return False
+        user_names = {name_ref.resolve(self.func.code) for name_ref, _ in self.func.func.assigns}
+        if name in user_names:
+            return True
+        for un in user_names:
+            if name.startswith(un) and name[len(un) :].isdigit():
+                return True
+        return False
 
     def _locals_in_expr(self, expr: Optional[IRExpression]) -&gt; Set[str]:
         found: Set[str] = set()
@@ -922,6 +1090,14 @@ common_code();</p></div>
             found.update(self._locals_in_expr(expr.value))
         elif isinstance(expr, IRRef):
             found.update(self._locals_in_expr(expr.target))
+        elif isinstance(expr, IRRefNew):
+            found.update(self._locals_in_expr(expr.target))
+        else:
+            # Generic fallback (e.g. IRNativeArrayNew, IRRefGet): a missing case
+            # here must not hide a read and let a live assignment be dropped.
+            for child in expr.get_children():
+                if isinstance(child, IRExpression):
+                    found.update(self._locals_in_expr(child))
         return found
 
     def _has_side_effects(self, expr: Optional[IRExpression]) -&gt; bool:
@@ -958,7 +1134,14 @@ common_code();</p></div>
         code = self.func.code
         name = code.full_func_name(target.value) or code.partial_func_name(target.value) or &#34;&#34;
         # Array read-only inspectors.
-        if any(s in name for s in (&#34;ArrayAccess.getDyn&#34;, &#34;ArrayAccess.get_length&#34;, &#34;ArrayBase.indexOf&#34;)):
+        if any(
+            s in name
+            for s in (
+                &#34;ArrayAccess.getDyn&#34;,
+                &#34;ArrayAccess.get_length&#34;,
+                &#34;ArrayBase.indexOf&#34;,
+            )
+        ):
             return True
         # String read-only inspectors / factories whose result is unused.
         if any(
@@ -980,7 +1163,16 @@ common_code();</p></div>
         ):
             return True
         # Byte/string comparison/search helpers.
-        if any(s in name for s in (&#34;bytes_find&#34;, &#34;bytes_compare&#34;, &#34;ucs2_length&#34;, &#34;ucs2_upper&#34;, &#34;ucs2_lower&#34;)):
+        if any(
+            s in name
+            for s in (
+                &#34;bytes_find&#34;,
+                &#34;bytes_compare&#34;,
+                &#34;ucs2_length&#34;,
+                &#34;ucs2_upper&#34;,
+                &#34;ucs2_lower&#34;,
+            )
+        ):
             return True
         return False</code></pre>
 </details>
@@ -1118,10 +1310,6 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
     &#34;&#34;&#34;Removes local assignments that are overwritten before being read within a block.&#34;&#34;&#34;
 
     def visit_block(self, block: IRBlock) -&gt; None:
-        new_stmts: List[IRStatement] = []
-        # local -&gt; index in new_stmts of its pending assignment
-        pending: Dict[IRLocal, int] = {}
-
         def _locals_in_expr(expr: Optional[IRExpression]) -&gt; Set[IRLocal]:
             found: Set[IRLocal] = set()
             if expr is None:
@@ -1218,37 +1406,129 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
                 return stmt.target
             return None
 
-        for stmt in block.statements:
-            reads = _reads_in_stmt(stmt)
-            for local in reads:
-                pending.pop(local, None)
+        # First use of `local` along every path through a statement:
+        # &#34;read&#34; (value needed), &#34;kill&#34; (dead on all paths: overwritten before
+        # any read, or the path terminates), or &#34;none&#34; (untouched).
+        def _first_use(stmt: IRStatement, local: IRLocal, _visited: Optional[Set[int]] = None) -&gt; str:
+            if _visited is None:
+                _visited = set()
+            if id(stmt) in _visited:
+                return &#34;none&#34;
+            _visited.add(id(stmt))
 
+            if isinstance(stmt, IRAssign):
+                if _reads_in_stmt(stmt) &amp; {local}:
+                    return &#34;read&#34;
+                if isinstance(stmt.target, IRLocal) and (stmt.target == local or stmt.target.same_register(local)):
+                    return &#34;kill&#34;
+                return &#34;none&#34;
+            if isinstance(stmt, (IRBreak, IRContinue)):
+                # jumps to a continuation this block-level scan can&#39;t see
+                return &#34;read&#34;
+            if isinstance(stmt, (IRReturn, IRThrow)):
+                if _reads_in_stmt(stmt) &amp; {local}:
+                    return &#34;read&#34;
+                return &#34;kill&#34;
+            if isinstance(stmt, IRConditional):
+                if _locals_in_expr(stmt.condition) &amp; {local}:
+                    return &#34;read&#34;
+                branches = [stmt.true_block.statements]
+                branches.append(stmt.false_block.statements if stmt.false_block else [])
+                results = [_first_use_in_list(b, local, _visited) for b in branches]
+                if &#34;read&#34; in results:
+                    return &#34;read&#34;
+                if all(r == &#34;kill&#34; for r in results):
+                    return &#34;kill&#34;
+                return &#34;none&#34;
+            if isinstance(stmt, IRSwitch):
+                if _locals_in_expr(stmt.value) &amp; {local}:
+                    return &#34;read&#34;
+                branches = [c.statements for c in stmt.cases.values()]
+                branches.append(stmt.default.statements if stmt.default else [])
+                results = [_first_use_in_list(b, local, _visited) for b in branches]
+                if &#34;read&#34; in results:
+                    return &#34;read&#34;
+                if all(r == &#34;kill&#34; for r in results):
+                    return &#34;kill&#34;
+                return &#34;none&#34;
+            if isinstance(stmt, IRExpression):
+                return &#34;read&#34; if local in _locals_in_expr(stmt) else &#34;none&#34;
+            # Loops, try/catch and anything else with nested blocks: any
+            # occurrence at all is conservatively a read.
+            if _reads_in_stmt(stmt) &amp; {local}:
+                return &#34;read&#34;
+            for child in stmt.get_children():
+                child_stmts = child.statements if isinstance(child, IRBlock) else [child]
+                for s in child_stmts:
+                    if _first_use(s, local, set()) != &#34;none&#34;:
+                        return &#34;read&#34;
+            return &#34;none&#34;
+
+        def _first_use_in_list(stmts: List[IRStatement], local: IRLocal, _visited: Set[int]) -&gt; str:
+            for s in stmts:
+                r = _first_use(s, local, _visited)
+                if r != &#34;none&#34;:
+                    return r
+            return &#34;none&#34;
+
+        user_names = self._collect_user_names()
+        user_regs = self._collect_user_reg_indices()
+
+        new_stmts = []
+        for i, stmt in enumerate(block.statements):
             target = _written_local(stmt)
-            if target is not None:
-                _pending_idx = pending.get(target)
-                _pending_s = new_stmts[_pending_idx] if _pending_idx is not None else None
-                if (
-                    _pending_idx is not None
-                    and _pending_s is not None
-                    and isinstance(_pending_s, IRAssign)
-                    and not _has_side_effects(_pending_s.expr)
-                ):
-                    dead_idx: int = _pending_idx
-                    del new_stmts[dead_idx]
-                    # adjust indices after removal
-                    for loc, idx in list(pending.items()):
-                        if idx &gt; dead_idx:
-                            pending[loc] = idx - 1
-                new_stmts.append(stmt)
-                pending[target] = len(new_stmts) - 1
-            else:
-                new_stmts.append(stmt)
+            if (
+                target is not None
+                and isinstance(stmt, IRAssign)
+                and not _has_side_effects(stmt.expr)
+                and _first_use_in_list(block.statements[i + 1 :], target, set()) == &#34;kill&#34;
+                and not self._is_user_local(target, user_names, user_regs)
+            ):
+                if DEBUG:
+                    dbg_print(f&#34;IRDeadStoreEliminator: removing dead store {stmt}&#34;)
+                continue
+            new_stmts.append(stmt)
 
         block.statements = new_stmts
         for stmt in block.statements:
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
-                    self.visit_block(child)</code></pre>
+                    self.visit_block(child)
+
+    def _collect_user_names(self) -&gt; Set[str]:
+        names: Set[str] = set()
+        if self.func.func.has_debug and self.func.func.assigns:
+            for name_ref, _ in self.func.func.assigns:
+                names.add(name_ref.resolve(self.func.code))
+        return names
+
+    def _collect_user_reg_indices(self) -&gt; Set[int]:
+        indices: Set[int] = set()
+        if self.func.func.has_debug and self.func.func.assigns:
+            for _, op_idx in self.func.func.assigns:
+                val = op_idx.value - 1
+                if val &gt;= 0 and val &lt; len(self.func.ops):
+                    op = self.func.ops[val]
+                    try:
+                        indices.add(op.df[&#34;dst&#34;].value)
+                    except KeyError:
+                        pass
+        return indices
+
+    def _is_user_local(self, local: IRLocal, user_names: Set[str], user_regs: Set[int]) -&gt; bool:
+        if local.name in user_names:
+            return True
+        for name in user_names:
+            if local.name.startswith(name) and local.name[len(name) :].isdigit():
+                return True
+        if local.name.startswith(&#34;var&#34;):
+            try:
+                idx = int(local.name[3:])
+                if idx in user_regs:
+                    return True
+            except ValueError:
+                pass
+        return False</code></pre>
 </details>
 <div class="desc"><p>Removes local assignments that are overwritten before being read within a block.</p></div>
 <h3>Ancestors</h3>
@@ -1399,6 +1679,12 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
             used.update(self._collect_all_used_names(stmt.condition))
         elif isinstance(stmt, IRSwitch):
             self._collect_used_in_expr(stmt.value, used)
+        else:
+            # Generic fallback (e.g. IRRefSet): treat any expression child as a
+            # read, so a missing case can&#39;t delete a still-needed assignment.
+            for child in stmt.get_children():
+                if isinstance(child, IRExpression):
+                    self._collect_used_in_expr(child, used)
 
     def _collect_used_in_expr(self, expr: Optional[IRExpression], used: Set[str]) -&gt; None:
         if expr is None:
@@ -1526,6 +1812,165 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
 </li>
 </ul>
 </dd>
+<dt id="crashlink.decomp.opt.clean.IRElseFlattener"><code class="flex name class">
+<span>class <span class="ident">IRElseFlattener</span></span>
+<span>(</span><span>function: "'IRFunction'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IRElseFlattener(TraversingIROptimizer):
+    &#34;&#34;&#34;
+    Flattens `if (c) { ...; return } else { A }` into `if (c) { ...; return } A`.
+    When the true branch always terminates, the else block is the only
+    continuation, so hoisting it exposes its statements to the sequential
+    inliners. Skips DAG-shared else blocks to avoid duplicating statements.
+    &#34;&#34;&#34;
+
+    def optimize(self) -&gt; None:
+        self._block_refs: Dict[int, int] = {}
+        if hasattr(self.func, &#34;block&#34;):
+            self._count_refs(self.func.block, set())
+        super().optimize()
+
+    def _count_refs(self, block: IRBlock, visited: Set[int]) -&gt; None:
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self._block_refs[id(child)] = self._block_refs.get(id(child), 0) + 1
+                    if id(child) not in visited:
+                        visited.add(id(child))
+                        self._count_refs(child, visited)
+
+    def visit_block(self, block: IRBlock) -&gt; None:
+        new_statements: List[IRStatement] = []
+        for stmt in block.statements:
+            new_statements.append(stmt)
+            if (
+                isinstance(stmt, IRConditional)
+                and stmt.false_block is not None
+                and stmt.false_block.statements
+                and stmt.true_block.statements
+                and isinstance(
+                    stmt.true_block.statements[-1],
+                    (IRReturn, IRThrow, IRBreak, IRContinue),
+                )
+                and self._block_refs.get(id(stmt.false_block), 0) &lt;= 1
+            ):
+                new_statements.extend(stmt.false_block.statements)
+                stmt.false_block = IRBlock(self.func.code)
+        block.statements = new_statements</code></pre>
+</details>
+<div class="desc"><p>Flattens <code>if (c) { ...; return } else { A }</code> into <code>if (c) { ...; return } A</code>.
+When the true branch always terminates, the else block is the only
+continuation, so hoisting it exposes its statements to the sequential
+inliners. Skips DAG-shared else blocks to avoid duplicating statements.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></li>
+<li><a title="crashlink.decomp.opt.IROptimizer" href="index.html#crashlink.decomp.opt.IROptimizer">IROptimizer</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.TARGET_OPCODES" href="index.html#crashlink.decomp.opt.IROptimizer.TARGET_OPCODES">TARGET_OPCODES</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement">after_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement">before_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.optimize" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.should_run" href="index.html#crashlink.decomp.opt.IROptimizer.should_run">should_run</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit">visit</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_assign" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_assign">visit_assign</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_block" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_block">visit_block</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_break" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_break">visit_break</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_conditional" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_conditional">visit_conditional</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_continue" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_continue">visit_continue</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_expression" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_expression">visit_expression</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop">visit_primitive_loop</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_return" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_return">visit_return</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_switch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_switch">visit_switch</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch">visit_try_catch</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="crashlink.decomp.opt.clean.IREmptyConditionalNormalizer"><code class="flex name class">
+<span>class <span class="ident">IREmptyConditionalNormalizer</span></span>
+<span>(</span><span>function: "'IRFunction'")</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class IREmptyConditionalNormalizer(TraversingIROptimizer):
+    &#34;&#34;&#34;
+    Un-inverts `if (a &gt;= b) {}` (both branches emptied by dead-store
+    elimination, e.g. a dead bool materialization) back to `if (a &lt; b) {}`.
+    Lifting negates the bytecode jump&#39;s condition to make the fallthrough the
+    true branch; with both branches empty the negation is pure residue, and
+    the jump&#39;s own comparison is what the source contained (and what Haxe
+    re-lowers an empty if back to).
+    &#34;&#34;&#34;
+
+    def visit_block(self, block: IRBlock) -&gt; None:
+        for s in block.statements:
+            if (
+                isinstance(s, IRConditional)
+                and not (s.true_block and s.true_block.statements)
+                and not (s.false_block and s.false_block.statements)
+                and isinstance(s.condition, IRBoolExpr)
+                and s.condition.op
+                in (
+                    IRBoolExpr.CompareType.LT,
+                    IRBoolExpr.CompareType.LTE,
+                    IRBoolExpr.CompareType.GT,
+                    IRBoolExpr.CompareType.GTE,
+                    IRBoolExpr.CompareType.EQ,
+                    IRBoolExpr.CompareType.NEQ,
+                )
+            ):
+                s.condition.invert()</code></pre>
+</details>
+<div class="desc"><p>Un-inverts <code>if (a &gt;= b) {}</code> (both branches emptied by dead-store
+elimination, e.g. a dead bool materialization) back to <code>if (a &lt; b) {}</code>.
+Lifting negates the bytecode jump's condition to make the fallthrough the
+true branch; with both branches empty the negation is pure residue, and
+the jump's own comparison is what the source contained (and what Haxe
+re-lowers an empty if back to).</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></li>
+<li><a title="crashlink.decomp.opt.IROptimizer" href="index.html#crashlink.decomp.opt.IROptimizer">IROptimizer</a></li>
+<li>abc.ABC</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="crashlink.decomp.opt.TraversingIROptimizer" href="index.html#crashlink.decomp.opt.TraversingIROptimizer">TraversingIROptimizer</a></b></code>:
+<ul class="hlist">
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.TARGET_OPCODES" href="index.html#crashlink.decomp.opt.IROptimizer.TARGET_OPCODES">TARGET_OPCODES</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.after_visit_statement">after_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.before_visit_statement">before_visit_statement</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.optimize" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.optimize">optimize</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.should_run" href="index.html#crashlink.decomp.opt.IROptimizer.should_run">should_run</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit">visit</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_assign" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_assign">visit_assign</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_block" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_block">visit_block</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_break" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_break">visit_break</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_conditional" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_conditional">visit_conditional</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_continue" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_continue">visit_continue</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_expression" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_expression">visit_expression</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_primitive_loop">visit_primitive_loop</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_return" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_return">visit_return</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_switch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_switch">visit_switch</a></code></li>
+<li><code><a title="crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch" href="index.html#crashlink.decomp.opt.TraversingIROptimizer.visit_try_catch">visit_try_catch</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
 <dt id="crashlink.decomp.opt.clean.IRGuardOrMerger"><code class="flex name class">
 <span>class <span class="ident">IRGuardOrMerger</span></span>
 <span>(</span><span>function: "'IRFunction'")</span>
@@ -1585,7 +2030,12 @@ sibling branches, loop conditions, or code after a loop are never dropped.</p></
         if not isinstance(inner, IRConditional):
             return None
         if _stmt_lists_structurally_equal(outer_true, inner.true_block.statements):
-            or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, stmt.condition, inner.condition)
+            or_cond = IRBoolExpr(
+                self.func.code,
+                IRBoolExpr.CompareType.OR,
+                stmt.condition,
+                inner.condition,
+            )
             merged = IRConditional(self.func.code, or_cond, inner.true_block, inner.false_block)
             merged.adopt(stmt, inner)
             return merged
@@ -1723,10 +2173,16 @@ which recompiles to different (larger) bytecode than the original.</p></div>
     &#34;&#34;&#34;
 
     def _clone_bool_expr(self, expr: IRBoolExpr) -&gt; IRBoolExpr:
-        return cast(IRBoolExpr, IRBoolExpr(expr.code, expr.op, expr.left, expr.right).adopt(expr))
+        return cast(
+            IRBoolExpr,
+            IRBoolExpr(expr.code, expr.op, expr.left, expr.right).adopt(expr),
+        )
 
     def _inline_into_boolexpr(
-        self, bool_expr: IRBoolExpr, target: IRLocal | IRField | IRArrayAccess, expr_to_inline: IRExpression
+        self,
+        bool_expr: IRBoolExpr,
+        target: IRLocal | IRField | IRArrayAccess,
+        expr_to_inline: IRExpression,
     ) -&gt; Optional[IRBoolExpr]:
         modified = False
         new_left = bool_expr.left
@@ -2523,6 +2979,9 @@ E.g., <code>var_void_local:Void = some_call();</code> becomes <code>some_call();
 <h4><code><a title="crashlink.decomp.opt.clean.IRBlockFlattener" href="#crashlink.decomp.opt.clean.IRBlockFlattener">IRBlockFlattener</a></code></h4>
 </li>
 <li>
+<h4><code><a title="crashlink.decomp.opt.clean.IRBoolMaterializationCollapser" href="#crashlink.decomp.opt.clean.IRBoolMaterializationCollapser">IRBoolMaterializationCollapser</a></code></h4>
+</li>
+<li>
 <h4><code><a title="crashlink.decomp.opt.clean.IRCommonBlockMerger" href="#crashlink.decomp.opt.clean.IRCommonBlockMerger">IRCommonBlockMerger</a></code></h4>
 </li>
 <li>
@@ -2542,6 +3001,12 @@ E.g., <code>var_void_local:Void = some_call();</code> becomes <code>some_call();
 <ul class="">
 <li><code><a title="crashlink.decomp.opt.clean.IRDeadTempEliminator.optimize" href="#crashlink.decomp.opt.clean.IRDeadTempEliminator.optimize">optimize</a></code></li>
 </ul>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.opt.clean.IRElseFlattener" href="#crashlink.decomp.opt.clean.IRElseFlattener">IRElseFlattener</a></code></h4>
+</li>
+<li>
+<h4><code><a title="crashlink.decomp.opt.clean.IREmptyConditionalNormalizer" href="#crashlink.decomp.opt.clean.IREmptyConditionalNormalizer">IREmptyConditionalNormalizer</a></code></h4>
 </li>
 <li>
 <h4><code><a title="crashlink.decomp.opt.clean.IRGuardOrMerger" href="#crashlink.decomp.opt.clean.IRGuardOrMerger">IRGuardOrMerger</a></code></h4>
