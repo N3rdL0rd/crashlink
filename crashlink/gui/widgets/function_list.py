@@ -231,7 +231,13 @@ class FunctionList(QWidget):
         cls_color = QColor(t.teal) if t else None
         meth_color = QColor(t.pink) if t else None
         _build_tree_items(
-            self._tree, root, bold, top_level=True, pkg_color=pkg_color, cls_color=cls_color, meth_color=meth_color
+            self._tree,
+            root,
+            bold,
+            top_level=True,
+            pkg_color=pkg_color,
+            cls_color=cls_color,
+            meth_color=meth_color,
         )
 
         if standalone:
@@ -314,7 +320,10 @@ class FunctionList(QWidget):
                 for m in methods:
                     m_item = QTreeWidgetItem([m.method_name])
                     m_item.setData(0, Qt.ItemDataRole.UserRole, m.findex)
-                    m_item.setToolTip(0, f"f@{m.findex}  {cls.canonical_name}.{m.method_name}  line {m.first_line}")
+                    m_item.setToolTip(
+                        0,
+                        f"f@{m.findex}  {cls.canonical_name}.{m.method_name}  line {m.first_line}",
+                    )
                     cls_item.addChild(m_item)
                 file_item.addChild(cls_item)
                 cls_item.setExpanded(True)
@@ -461,7 +470,13 @@ def _build_tree_items(
                 item.setForeground(0, QBrush(pkg_color))
             item.setData(0, Qt.ItemDataRole.UserRole, _first_findex(child))
             _build_tree_items(
-                item, child, bold, top_level=False, pkg_color=pkg_color, cls_color=cls_color, meth_color=meth_color
+                item,
+                child,
+                bold,
+                top_level=False,
+                pkg_color=pkg_color,
+                cls_color=cls_color,
+                meth_color=meth_color,
             )
             _add_item(parent, item)
             item.setExpanded(True)

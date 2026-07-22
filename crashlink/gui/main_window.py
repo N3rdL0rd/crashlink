@@ -6,10 +6,20 @@ import os
 import re
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QRect, QRunnable, QSettings, QThread, QThreadPool, QTimer, Qt, Signal, QObject, QSize
+from PySide6.QtCore import (
+    QRect,
+    QRunnable,
+    QSettings,
+    QThread,
+    QThreadPool,
+    QTimer,
+    Qt,
+    Signal,
+    QObject,
+    QSize,
+)
 from PySide6.QtGui import QColor, QPainter, QTextCursor, QTextDocument
 from PySide6.QtWidgets import (
-    QApplication,
     QButtonGroup,
     QDialog,
     QDockWidget,
@@ -33,7 +43,12 @@ from PySide6.QtWidgets import (
 )
 
 from crashlink.core import AnalysisWorker, Bytecode, Native, destaticify
-from crashlink.database import DatabaseLoadResult, SessionState, load_database, save_database
+from crashlink.database import (
+    DatabaseLoadResult,
+    SessionState,
+    load_database,
+    save_database,
+)
 from crashlink.decomp.function import IRFunction
 from crashlink.globals import VERSION, set_dbg_callback
 from crashlink.pseudo import pseudo_oplines, _method_registry
@@ -45,7 +60,13 @@ from .widgets.function_list import FunctionList
 from .widgets.log_panel import LogPanel
 from .widgets.natives_view import NativesView
 from .widgets.sync_view import DISASM, PSEUDO, SPLIT, SyncView
-from .widgets.xref_panel import XrefPopup, resolve_targets, XrefGroup, XrefSite, _func_label
+from .widgets.xref_panel import (
+    XrefPopup,
+    resolve_targets,
+    XrefGroup,
+    XrefSite,
+    _func_label,
+)
 
 
 # View mode cycling: Tab steps through split → disassembly → decompiled → …
@@ -403,7 +424,10 @@ class MainWindow(QMainWindow):
         for i, mode in enumerate(_VIEW_MODE_CYCLE):
             btn = QPushButton(_VIEW_MODE_GLYPHS[mode])
             btn.setObjectName("modeBtnIcon")
-            btn.setProperty("segment", "first" if i == 0 else "last" if i == len(_VIEW_MODE_CYCLE) - 1 else "mid")
+            btn.setProperty(
+                "segment",
+                "first" if i == 0 else "last" if i == len(_VIEW_MODE_CYCLE) - 1 else "mid",
+            )
             btn.setCheckable(True)
             btn.setFixedWidth(32)
             btn.setToolTip(f"{_VIEW_MODE_NAMES[mode]} view  (Tab to cycle)")
@@ -515,7 +539,10 @@ class MainWindow(QMainWindow):
 
     def _open_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open HashLink bytecode", "", "HashLink files (*.hl *.dat);;All files (*)"
+            self,
+            "Open HashLink bytecode",
+            "",
+            "HashLink files (*.hl *.dat);;All files (*)",
         )
         if path and self._confirm_discard_changes():
             self._load_file(path)
@@ -855,7 +882,10 @@ class MainWindow(QMainWindow):
         view.comment_requested.connect(self._on_comment_hotkey)
 
         placeholder = [
-            (fi, self._class_results[class_key][fi] or f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}")
+            (
+                fi,
+                self._class_results[class_key][fi] or f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}",
+            )
             for fi in all_fi
         ]
         view.load_pseudo(display_name, placeholder)

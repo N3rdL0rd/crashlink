@@ -17,7 +17,6 @@ from crashlink import Bytecode, decomp, globals
 from crashlink.core import (
     Bytecode,
     Function,
-    Opcode,
     Reg,
     bytesRef,
     fIndex,
@@ -27,7 +26,7 @@ from crashlink.core import (
     strRef,
     tIndex,
 )
-from crashlink.disasm import to_asm, type_name
+from crashlink.disasm import type_name
 from crashlink.pseudo import pseudo
 
 from .models import (
@@ -160,13 +159,17 @@ def compare_opcodes(original_code: Bytecode, recompiled_code: Bytecode, class_na
     try:
         original_code.get_test_obj(class_name)
     except ValueError:
-        return OpcodeComparison(overall_similarity=-1.0, recompile_error=f"Class '{class_name}' not found in original")
+        return OpcodeComparison(
+            overall_similarity=-1.0,
+            recompile_error=f"Class '{class_name}' not found in original",
+        )
 
     try:
         recompiled_code.get_test_obj(class_name)
     except ValueError:
         return OpcodeComparison(
-            overall_similarity=-1.0, recompile_error=f"Class '{class_name}' not found in recompiled"
+            overall_similarity=-1.0,
+            recompile_error=f"Class '{class_name}' not found in recompiled",
         )
 
     def _belongs_to_class(name: str, cls: str) -> bool:

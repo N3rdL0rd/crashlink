@@ -4,37 +4,17 @@ Inlining and copy-propagation optimizers.
 
 from __future__ import annotations
 
-import copy
 import re
-from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, Union, cast
 
 if TYPE_CHECKING:
     from ..function import IRFunction
 
 from ...core import (
-    Bytecode,
-    DynObj,
-    Enum,
-    Fun,
-    Function,
-    Native,
-    Obj,
     Opcode,
-    Ref,
-    ResolvableVarInt,
     Type,
-    TypeDef,
-    Virtual,
-    Void,
-    fieldRef,
-    gIndex,
-    tIndex,
 )
-from ...errors import DecompError
 from ...globals import DEBUG, dbg_print
-from ... import disasm
-from ...opcodes import arithmetic, conditionals, terminal, simple_calls
 from ..ir import (
     IRStatement,
     IRExpression,
@@ -51,12 +31,9 @@ from ..ir import (
     IRConst,
     IRConditional,
     IRPrimitiveLoop,
-    IRBreak,
-    IRContinue,
     IRReturn,
     IRThrow,
     IRTrace,
-    IRTryCatch,
     IRSwitch,
     IRPrimitiveJump,
     IRWhileLoop,
@@ -65,7 +42,6 @@ from ..ir import (
     IRField,
     IRNew,
     IRNativeArrayNew,
-    IRNativeMapNew,
     IRCast,
     IRArrayLiteral,
     IRArrayAccess,
@@ -76,21 +52,9 @@ from ..ir import (
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
-    IRUnliftedOpcode,
-    IRNativeStub,
-    _get_type_in_code,
-    _strip_ansi,
 )
-from ..cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
 from . import (
-    IROptimizer,
     TraversingIROptimizer,
-    _ir_structurally_equal,
-    _structurally_equal,
-    _stmt_lists_structurally_equal,
-    _bytes_mem_kind,
-    _int_const_value,
-    _signed_i32,
 )
 
 
@@ -566,7 +530,10 @@ class IRConditionInliner(TraversingIROptimizer):
         return changed
 
     def _try_inline_into_boolexpr(
-        self, bool_expr: IRBoolExpr, target: IRLocal | IRField | IRArrayAccess, expr_to_inline: IRExpression
+        self,
+        bool_expr: IRBoolExpr,
+        target: IRLocal | IRField | IRArrayAccess,
+        expr_to_inline: IRExpression,
     ) -> Optional[IRBoolExpr]:
         modified = False
         new_left = bool_expr.left
@@ -841,7 +808,11 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         return False
 
     def _substitute_in_statement(
-        self, stmt: IRStatement, target: IRLocal, replacement: IRExpression, _visited: Optional[Set[int]] = None
+        self,
+        stmt: IRStatement,
+        target: IRLocal,
+        replacement: IRExpression,
+        _visited: Optional[Set[int]] = None,
     ) -> bool:
         """
         Recursively traverses a statement to perform substitutions.
@@ -1180,7 +1151,10 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         return any(self._stmt_contains_local(s, local) for s in self._flatten_stmts(continuation))
 
     def _visit_block_conservative(
-        self, block: IRBlock, inside_loop_body: bool = False, continuation: Optional[List[IRStatement]] = None
+        self,
+        block: IRBlock,
+        inside_loop_body: bool = False,
+        continuation: Optional[List[IRStatement]] = None,
     ) -> None:
         """Only inlines an assignment if it is used in the very next statement.
 
@@ -1228,7 +1202,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 if not self._is_user_local(temp_local) or (
                     user_local_reuse
                     and i + 1 < len(statements)
-                    and not getattr(statements[i + 1], '_no_user_inline', False)
+                    and not getattr(statements[i + 1], "_no_user_inline", False)
                 ):
                     expr_to_inline = current_stmt.expr
                     if not self.is_safe_to_inline_conservatively(expr_to_inline):
@@ -1448,7 +1422,8 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self._visit_block_aggressive(
-                        child, inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child)
+                        child,
+                        inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child),
                     )
 
 

@@ -4,64 +4,36 @@ Array and bytes-buffer pattern optimizers.
 
 from __future__ import annotations
 
-import copy
 import re
-from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, cast
 
 if TYPE_CHECKING:
-    from ..function import IRFunction
+    pass
 
 from ...core import (
-    Bytecode,
-    DynObj,
-    Enum,
     Fun,
     Function,
     Native,
-    Obj,
-    Opcode,
-    Ref,
-    ResolvableVarInt,
     Type,
-    TypeDef,
-    Virtual,
-    Void,
-    fieldRef,
-    gIndex,
-    tIndex,
 )
-from ...errors import DecompError
-from ...globals import DEBUG, dbg_print
 from ... import disasm
-from ...opcodes import arithmetic, conditionals, terminal, simple_calls
 from ..ir import (
     IRStatement,
     IRExpression,
     IRBlock,
     IRLocal,
     IRArithmetic,
-    IRNeg,
-    IRNot,
-    IRTypeOf,
-    IRTypeKind,
     IRAssign,
     IRCall,
     IRBoolExpr,
     IRConst,
     IRConditional,
     IRPrimitiveLoop,
-    IRBreak,
-    IRContinue,
     IRReturn,
-    IRThrow,
     IRTrace,
     IRTryCatch,
     IRSwitch,
-    IRPrimitiveJump,
     IRWhileLoop,
-    IRForEachLoop,
-    IRIntRangeLoop,
     IRField,
     IRNew,
     IRNativeArrayNew,
@@ -75,21 +47,11 @@ from ..ir import (
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
-    IRUnliftedOpcode,
-    IRNativeStub,
     _get_type_in_code,
-    _strip_ansi,
 )
-from ..cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
 from . import (
-    IROptimizer,
     TraversingIROptimizer,
-    _ir_structurally_equal,
-    _structurally_equal,
-    _stmt_lists_structurally_equal,
-    _bytes_mem_kind,
     _int_const_value,
-    _signed_i32,
 )
 
 
@@ -506,7 +468,12 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                     ):
                         result.append((node, IRArrayAccess(node.code, arr_expr, node.index.left)))
                     elif isinstance(node.index, IRLocal) and node.index.name in idx_temp_map:
-                        result.append((node, IRArrayAccess(node.code, arr_expr, idx_temp_map[node.index.name])))
+                        result.append(
+                            (
+                                node,
+                                IRArrayAccess(node.code, arr_expr, idx_temp_map[node.index.name]),
+                            )
+                        )
             for child in node.get_children():
                 visit(child)
 
@@ -810,7 +777,9 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         return use_stmt, i - start + 1
 
     def _is_empty_alloc_array(
-        self, expr: IRStatement, local_defs: Optional[Dict[IRLocal, IRExpression]] = None
+        self,
+        expr: IRStatement,
+        local_defs: Optional[Dict[IRLocal, IRExpression]] = None,
     ) -> bool:
         if isinstance(expr, IRLocal) and local_defs is not None:
             expr = local_defs.get(expr, expr)
@@ -835,7 +804,9 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         return False
 
     def _is_empty_arrayobj_anon(
-        self, expr: IRStatement, local_defs: Optional[Dict[IRLocal, IRExpression]] = None
+        self,
+        expr: IRStatement,
+        local_defs: Optional[Dict[IRLocal, IRExpression]] = None,
     ) -> bool:
         if not self._is_arrayobj_anon(expr):
             return False

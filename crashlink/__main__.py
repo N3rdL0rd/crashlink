@@ -19,21 +19,17 @@ import textwrap
 import traceback
 import webbrowser
 from typing import Callable, Dict, List, Optional, Tuple, Set, cast
-from functools import wraps
 
 from crashlink.hlc import code_to_c, code_to_c_files
 
 from . import decomp, disasm, globals
 from .core import (
     XRef,
-    XrefIndex,
     TargetKind,
     SourceKind,
     RefKind,
-    AnnotationStore,
     USE_TQDM,
     ProgressCallback,
-    AnalysisWorker,
 )
 from .asm import AsmFile
 from .core import (
@@ -110,7 +106,12 @@ def _make_progress_cb() -> "Optional[ProgressCallback]":
         if pct != _last_pct[0]:
             _last_pct[0] = pct
             end = "\n" if frac >= 1.0 else ""
-            print(f"\r[{pct:3d}%] {status}" + " " * 20 + end, end="", file=sys.stderr, flush=True)
+            print(
+                f"\r[{pct:3d}%] {status}" + " " * 20 + end,
+                end="",
+                file=sys.stderr,
+                flush=True,
+            )
 
     return _plain_cb
 
@@ -232,7 +233,11 @@ def _compile_objects_parallel(
 
     obj_dir.mkdir(parents=True, exist_ok=True)
     cc: List[str] = (["ccache"] if use_ccache else []) + ["clang" if use_clang else "cc"]
-    base_flags = [opt_level, "-Wno-incompatible-pointer-types", f"-I{hashlink_dir / 'src'}"]
+    base_flags = [
+        opt_level,
+        "-Wno-incompatible-pointer-types",
+        f"-I{hashlink_dir / 'src'}",
+    ]
 
     def compile_one(c_path: str) -> str:
         obj = str(obj_dir / (Path(c_path).stem + ".o"))
@@ -422,9 +427,9 @@ def _build_hlc_script(
         "# Compile each translation unit to an object file, in parallel across cores,",
         "# then link. (With a single generated C file this is one compile job; with",
         "# --split N it's N+2, which is the whole point of splitting.)",
-        'NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)',
-        'OBJ_DIR=$(mktemp -d)',
-        'trap \'rm -rf "$OBJ_DIR"\' EXIT',
+        "NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)",
+        "OBJ_DIR=$(mktemp -d)",
+        "trap 'rm -rf \"$OBJ_DIR\"' EXIT",
         "OBJS=()",
         'for c in "${C_FILES[@]}" "$HASHLINK_DIR/src/hlc_main.c"; do',
         '  obj="$OBJ_DIR/$(basename "$c").o"',
@@ -525,7 +530,7 @@ def search_main(argv: List[str]) -> None:
                 "  crashlink search game.hl password",
                 "      Print every string containing 'password' (case-insensitive), with its s@ index.",
                 "",
-                "  crashlink search game.hl \"http://\"",
+                '  crashlink search game.hl "http://"',
                 "      Find embedded URLs.",
             ]
         ),
@@ -721,7 +726,10 @@ def decompile_main(argv: List[str]) -> None:
     parser.add_argument("file", help="Input .hl / .dat file")
     parser.add_argument("index", type=int, help="findex for a function, or tIndex with --class")
     parser.add_argument(
-        "--class", dest="is_class", action="store_true", help="Treat index as a tIndex and decompile the whole class"
+        "--class",
+        dest="is_class",
+        action="store_true",
+        help="Treat index as a tIndex and decompile the whole class",
     )
     parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
     args = parser.parse_args(argv)
@@ -848,7 +856,14 @@ def hlc_main(argv: List[str]) -> None:
     opt_level = f"-O{args.opt_level}"
     native_libs = _hlc_native_libs(code)
     script = _build_hlc_script(
-        c_files, out_bin, native_libs, hashlink_dir, args.hdll_dir, args.clang, args.ccache, opt_level
+        c_files,
+        out_bin,
+        native_libs,
+        hashlink_dir,
+        args.hdll_dir,
+        args.clang,
+        args.ccache,
+        opt_level,
     )
     with open(build_script, "w") as f:
         f.write(script)
@@ -1599,7 +1614,7 @@ class Commands(BaseCommands):
             print(f"  Packed Inner Type: {inner_type_name} (t@{packed_def.inner.value})")
 
         elif isinstance(definition, GUID):
-            print(f"  GUID Type (no data)")
+            print("  GUID Type (no data)")
 
         elif isinstance(definition, Abstract):
             abs_def: Abstract = definition
@@ -1968,7 +1983,6 @@ class Commands(BaseCommands):
             return
         func = func_map[findex]
         from .decomp.function import IRFunction
-        from .core import Function
 
         if not isinstance(func, Function):
             print("Natives have no locals.")
@@ -2574,7 +2588,10 @@ def mcp_main(argv: List[str]) -> None:
     run_mcp_server(preload_path=preload)
 
 
-def _print_help_all(parser: "argparse.ArgumentParser", subcommands: Dict[str, Callable[[List[str]], None]]) -> None:
+def _print_help_all(
+    parser: "argparse.ArgumentParser",
+    subcommands: Dict[str, Callable[[List[str]], None]],
+) -> None:
     """Print the top-level help, then each subcommand's own -h output."""
     print(parser.format_help())
 
@@ -2778,7 +2795,11 @@ def main() -> None:
                 args.output = args.file + ".patch"
             with open(args.output, "wb") as f:
                 f.write(code.serialise())
-            with open(os.path.join(os.path.dirname(args.output), "crashlink_patch.py"), "w", encoding="utf-8") as f:
+            with open(
+                os.path.join(os.path.dirname(args.output), "crashlink_patch.py"),
+                "w",
+                encoding="utf-8",
+            ) as f:
                 f.write(content)
         except ImportError as e:
             print(f"Failed to import patch module: {e}")

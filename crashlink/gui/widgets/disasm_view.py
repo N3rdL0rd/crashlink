@@ -6,7 +6,7 @@ import re
 from typing import List, Optional, Tuple
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFont, QKeyEvent, QTextCharFormat, QTextCursor, QTextDocument
+from PySide6.QtGui import QColor, QFont, QKeyEvent, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import QWidget
 
 from ... import disasm

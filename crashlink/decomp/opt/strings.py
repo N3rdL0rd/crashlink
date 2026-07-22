@@ -4,91 +4,50 @@ String-related IR optimizers.
 
 from __future__ import annotations
 
-import copy
-import re
-from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, cast
 
 if TYPE_CHECKING:
     from ..function import IRFunction
 
 from ...core import (
-    Bytecode,
     DynObj,
-    Enum,
-    Fun,
     Function,
     Native,
     Obj,
-    Opcode,
-    Ref,
-    ResolvableVarInt,
     Type,
-    TypeDef,
-    Virtual,
-    Void,
-    fieldRef,
     gIndex,
-    tIndex,
 )
 from ...errors import DecompError
 from ...globals import DEBUG, dbg_print
 from ... import disasm
-from ...opcodes import arithmetic, conditionals, terminal, simple_calls
 from ..ir import (
     IRStatement,
     IRExpression,
     IRBlock,
     IRLocal,
     IRArithmetic,
-    IRNeg,
-    IRNot,
-    IRTypeOf,
-    IRTypeKind,
     IRAssign,
     IRCall,
     IRBoolExpr,
     IRConst,
     IRConditional,
     IRPrimitiveLoop,
-    IRBreak,
-    IRContinue,
     IRReturn,
-    IRThrow,
     IRTrace,
-    IRTryCatch,
     IRSwitch,
-    IRPrimitiveJump,
     IRWhileLoop,
-    IRForEachLoop,
-    IRIntRangeLoop,
     IRField,
     IRNew,
-    IRNativeArrayNew,
-    IRNativeMapNew,
     IRCast,
-    IRArrayLiteral,
     IRArrayAccess,
     IRRef,
     IRRefNew,
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
-    IRUnliftedOpcode,
-    IRNativeStub,
-    _get_type_in_code,
-    _strip_ansi,
 )
-from ..cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
 from . import (
-    IROptimizer,
     TraversingIROptimizer,
-    _ir_structurally_equal,
-    _structurally_equal,
-    _stmt_lists_structurally_equal,
-    _bytes_mem_kind,
-    _int_const_value,
-    _signed_i32,
 )
 
 
@@ -413,8 +372,14 @@ class IRStringAllocOptimizer(TraversingIROptimizer):
                     if self._statement_touches_local(nxt, local):
                         break
                 if bytes_idx is not None and len_idx is not None:
-                    bytes_expr = cast(IRExpression, self._match_bytes_assign(block.statements[bytes_idx], local))
-                    length_expr = cast(IRExpression, self._match_length_assign(block.statements[len_idx], local))
+                    bytes_expr = cast(
+                        IRExpression,
+                        self._match_bytes_assign(block.statements[bytes_idx], local),
+                    )
+                    length_expr = cast(
+                        IRExpression,
+                        self._match_length_assign(block.statements[len_idx], local),
+                    )
                     # Moving the call to the allocation site evaluates its arguments
                     # earlier. That is only safe if no free variable of the bytes
                     # or length expression is reassigned between the allocation and
@@ -477,7 +442,15 @@ class IRTraceOptimizer(TraversingIROptimizer):
                 if isinstance(stmt, IRConditional) and stmt.true_block is not None and stmt.false_block is not None:
                     branched = self._try_branched_trace(stmt, block.statements, i)
                     if branched is not None:
-                        true_tail, false_tail, msg_true, msg_false, pos_true, pos_false, consumed_after = branched
+                        (
+                            true_tail,
+                            false_tail,
+                            msg_true,
+                            msg_false,
+                            pos_true,
+                            pos_false,
+                            consumed_after,
+                        ) = branched
                         old_true_stmts = stmt.true_block.statements
                         old_false_stmts = stmt.false_block.statements
                         true_trace = IRTrace(self.func.code, msg_true, pos_true)
@@ -588,7 +561,7 @@ class IRTraceOptimizer(TraversingIROptimizer):
                             is_valid_trace_call = True
 
                     elif DEBUG:
-                        dbg_print(f"[TraceOpt]  -> FAILED: Statement is not an IRCall with 2 arguments.")
+                        dbg_print("[TraceOpt]  -> FAILED: Statement is not an IRCall with 2 arguments.")
 
                     if is_valid_trace_call:
                         assert isinstance(call_stmt, IRCall)
@@ -630,7 +603,7 @@ class IRTraceOptimizer(TraversingIROptimizer):
                         made_change = True
                         continue
                     elif DEBUG:
-                        dbg_print(f"[TraceOpt] FAILED: Pattern did not match for trace call.")
+                        dbg_print("[TraceOpt] FAILED: Pattern did not match for trace call.")
 
                 new_statements.append(stmt)
                 i += 1
@@ -701,7 +674,15 @@ class IRTraceOptimizer(TraversingIROptimizer):
     def _try_branched_trace(
         self, cond: "IRConditional", statements: List[IRStatement], idx: int
     ) -> Optional[
-        Tuple[List[IRStatement], List[IRStatement], IRExpression, IRExpression, Dict[str, Any], Dict[str, Any], int]
+        Tuple[
+            List[IRStatement],
+            List[IRStatement],
+            IRExpression,
+            IRExpression,
+            Dict[str, Any],
+            Dict[str, Any],
+            int,
+        ]
     ]:
         """
         Matches `trace(msg)` calls that got duplicated into each branch of an
@@ -783,7 +764,15 @@ class IRTraceOptimizer(TraversingIROptimizer):
         final_pos_t = {**pos_t, **shared_pos}
         final_pos_f = {**pos_f, **shared_pos}
         consumed_after = j - idx
-        return true_tail, false_tail, msg_true, msg_false, final_pos_t, final_pos_f, consumed_after
+        return (
+            true_tail,
+            false_tail,
+            msg_true,
+            msg_false,
+            final_pos_t,
+            final_pos_f,
+            consumed_after,
+        )
 
 
 class IRStringConcatFolder(TraversingIROptimizer):

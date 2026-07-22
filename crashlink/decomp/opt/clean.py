@@ -6,35 +6,19 @@ from __future__ import annotations
 
 import copy
 import re
-from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, cast
 
 if TYPE_CHECKING:
     from ..function import IRFunction
 
 from ...core import (
-    Bytecode,
     DynObj,
-    Enum,
-    Fun,
     Function,
-    Native,
-    Obj,
-    Opcode,
-    Ref,
-    ResolvableVarInt,
     Type,
-    TypeDef,
     Virtual,
-    Void,
-    fieldRef,
-    gIndex,
-    tIndex,
 )
 from ...errors import DecompError
 from ...globals import DEBUG, dbg_print
-from ... import disasm
-from ...opcodes import arithmetic, conditionals, terminal, simple_calls
 from ..ir import (
     IRStatement,
     IRExpression,
@@ -65,32 +49,22 @@ from ..ir import (
     IRField,
     IRNew,
     IRNativeArrayNew,
-    IRNativeMapNew,
     IRCast,
     IRArrayLiteral,
     IRArrayAccess,
     IRRef,
     IRRefNew,
-    IRRefSet,
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
-    IRUnliftedOpcode,
-    IRNativeStub,
-    _get_type_in_code,
-    _strip_ansi,
 )
 
-from ..cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
 from . import (
     IROptimizer,
     TraversingIROptimizer,
     _ir_structurally_equal,
     _structurally_equal,
     _stmt_lists_structurally_equal,
-    _bytes_mem_kind,
-    _int_const_value,
-    _signed_i32,
 )
 
 
@@ -107,10 +81,16 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
     """
 
     def _clone_bool_expr(self, expr: IRBoolExpr) -> IRBoolExpr:
-        return cast(IRBoolExpr, IRBoolExpr(expr.code, expr.op, expr.left, expr.right).adopt(expr))
+        return cast(
+            IRBoolExpr,
+            IRBoolExpr(expr.code, expr.op, expr.left, expr.right).adopt(expr),
+        )
 
     def _inline_into_boolexpr(
-        self, bool_expr: IRBoolExpr, target: IRLocal | IRField | IRArrayAccess, expr_to_inline: IRExpression
+        self,
+        bool_expr: IRBoolExpr,
+        target: IRLocal | IRField | IRArrayAccess,
+        expr_to_inline: IRExpression,
     ) -> Optional[IRBoolExpr]:
         modified = False
         new_left = bool_expr.left
@@ -268,9 +248,7 @@ class IRBoolMaterializationCollapser(TraversingIROptimizer):
 
     @staticmethod
     def _strip_istrue(expr: IRExpression) -> IRExpression:
-        while (
-            isinstance(expr, IRBoolExpr) and expr.op == IRBoolExpr.CompareType.ISTRUE and expr.left is not None
-        ):
+        while isinstance(expr, IRBoolExpr) and expr.op == IRBoolExpr.CompareType.ISTRUE and expr.left is not None:
             expr = expr.left
         return expr
 
@@ -317,10 +295,7 @@ class IRBoolMaterializationCollapser(TraversingIROptimizer):
                     and false_assign is not None
                     and true_assign[0] == false_assign[0]
                     and true_assign[1] != false_assign[1]
-                    and not (
-                        isinstance(true_assign[0], IRLocal)
-                        and re.match(r"^var\d+$", true_assign[0].name)
-                    )
+                    and not (isinstance(true_assign[0], IRLocal) and re.match(r"^var\d+$", true_assign[0].name))
                 ):
                     target = true_assign[0]
                     cond = stmt.condition
@@ -547,7 +522,10 @@ class IRElseFlattener(TraversingIROptimizer):
                 and stmt.false_block is not None
                 and stmt.false_block.statements
                 and stmt.true_block.statements
-                and isinstance(stmt.true_block.statements[-1], (IRReturn, IRThrow, IRBreak, IRContinue))
+                and isinstance(
+                    stmt.true_block.statements[-1],
+                    (IRReturn, IRThrow, IRBreak, IRContinue),
+                )
                 and self._block_refs.get(id(stmt.false_block), 0) <= 1
             ):
                 new_statements.extend(stmt.false_block.statements)
@@ -1069,9 +1047,7 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
             if isinstance(stmt, IRAssign):
                 if _reads_in_stmt(stmt) & {local}:
                     return "read"
-                if isinstance(stmt.target, IRLocal) and (
-                    stmt.target == local or stmt.target.same_register(local)
-                ):
+                if isinstance(stmt.target, IRLocal) and (stmt.target == local or stmt.target.same_register(local)):
                     return "kill"
                 return "none"
             if isinstance(stmt, (IRBreak, IRContinue)):
@@ -1147,8 +1123,6 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
 
-
-
     def _collect_user_names(self) -> Set[str]:
         names: Set[str] = set()
         if self.func.func.has_debug and self.func.func.assigns:
@@ -1173,7 +1147,7 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
         if local.name in user_names:
             return True
         for name in user_names:
-            if local.name.startswith(name) and local.name[len(name):].isdigit():
+            if local.name.startswith(name) and local.name[len(name) :].isdigit():
                 return True
         if local.name.startswith("var"):
             try:
@@ -1183,6 +1157,7 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
             except ValueError:
                 pass
         return False
+
 
 class IRSequentialTempFolder(TraversingIROptimizer):
     """Folds a simple local assignment into the very next assignment to the same local.
@@ -1435,7 +1410,10 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
             uses.update(false_in)
         elif isinstance(stmt, IRWhileLoop):
             body_in = self._process_loop_body(
-                stmt.body, live_after_stmt, self._locals_in_expr(stmt.condition), mutate=mutate
+                stmt.body,
+                live_after_stmt,
+                self._locals_in_expr(stmt.condition),
+                mutate=mutate,
             )
             uses.update(body_in)
         elif isinstance(stmt, IRPrimitiveLoop):
@@ -1469,7 +1447,11 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
         return uses, defs
 
     def _process_loop_body(
-        self, body: IRBlock, live_after: Set[str], header_uses: Set[str], mutate: bool = True
+        self,
+        body: IRBlock,
+        live_after: Set[str],
+        header_uses: Set[str],
+        mutate: bool = True,
     ) -> Set[str]:
         """Process a loop body to a fixed point so loop-carried assignments live.
 
@@ -1505,7 +1487,7 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
         if name in user_names:
             return True
         for un in user_names:
-            if name.startswith(un) and name[len(un):].isdigit():
+            if name.startswith(un) and name[len(un) :].isdigit():
                 return True
         return False
 
@@ -1586,7 +1568,14 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
         code = self.func.code
         name = code.full_func_name(target.value) or code.partial_func_name(target.value) or ""
         # Array read-only inspectors.
-        if any(s in name for s in ("ArrayAccess.getDyn", "ArrayAccess.get_length", "ArrayBase.indexOf")):
+        if any(
+            s in name
+            for s in (
+                "ArrayAccess.getDyn",
+                "ArrayAccess.get_length",
+                "ArrayBase.indexOf",
+            )
+        ):
             return True
         # String read-only inspectors / factories whose result is unused.
         if any(
@@ -1608,7 +1597,16 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
         ):
             return True
         # Byte/string comparison/search helpers.
-        if any(s in name for s in ("bytes_find", "bytes_compare", "ucs2_length", "ucs2_upper", "ucs2_lower")):
+        if any(
+            s in name
+            for s in (
+                "bytes_find",
+                "bytes_compare",
+                "ucs2_length",
+                "ucs2_upper",
+                "ucs2_lower",
+            )
+        ):
             return True
         return False
 
@@ -2019,7 +2017,12 @@ class IRGuardOrMerger(TraversingIROptimizer):
         if not isinstance(inner, IRConditional):
             return None
         if _stmt_lists_structurally_equal(outer_true, inner.true_block.statements):
-            or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, stmt.condition, inner.condition)
+            or_cond = IRBoolExpr(
+                self.func.code,
+                IRBoolExpr.CompareType.OR,
+                stmt.condition,
+                inner.condition,
+            )
             merged = IRConditional(self.func.code, or_cond, inner.true_block, inner.false_block)
             merged.adopt(stmt, inner)
             return merged

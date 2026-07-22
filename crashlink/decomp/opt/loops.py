@@ -4,90 +4,39 @@ Loop-reroll and loop-lifting optimizers.
 
 from __future__ import annotations
 
-import copy
-import re
-from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import List, Optional, Set, Tuple
 
-if TYPE_CHECKING:
-    from ..function import IRFunction
 
-from ...core import (
-    Bytecode,
-    DynObj,
-    Enum,
-    Fun,
-    Function,
-    Native,
-    Obj,
-    Opcode,
-    Ref,
-    ResolvableVarInt,
-    Type,
-    TypeDef,
-    Virtual,
-    Void,
-    fieldRef,
-    gIndex,
-    tIndex,
-)
-from ...errors import DecompError
-from ...globals import DEBUG, dbg_print
-from ... import disasm
-from ...opcodes import arithmetic, conditionals, terminal, simple_calls
 from ..ir import (
     IRStatement,
     IRExpression,
     IRBlock,
     IRLocal,
     IRArithmetic,
-    IRNeg,
-    IRNot,
-    IRTypeOf,
-    IRTypeKind,
     IRAssign,
     IRCall,
     IRBoolExpr,
     IRConst,
     IRConditional,
     IRPrimitiveLoop,
-    IRBreak,
-    IRContinue,
     IRReturn,
-    IRThrow,
     IRTrace,
-    IRTryCatch,
     IRSwitch,
-    IRPrimitiveJump,
     IRWhileLoop,
     IRForEachLoop,
     IRIntRangeLoop,
     IRField,
     IRNew,
-    IRNativeArrayNew,
-    IRNativeMapNew,
     IRCast,
     IRArrayLiteral,
     IRArrayAccess,
     IRRef,
-    IREnumConstruct,
     IREnumIndex,
     IREnumField,
-    IRUnliftedOpcode,
-    IRNativeStub,
-    _get_type_in_code,
-    _strip_ansi,
 )
-from ..cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
 from . import (
-    IROptimizer,
     TraversingIROptimizer,
-    _ir_structurally_equal,
-    _structurally_equal,
-    _stmt_lists_structurally_equal,
-    _bytes_mem_kind,
     _int_const_value,
-    _signed_i32,
 )
 
 

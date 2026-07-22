@@ -4,38 +4,16 @@ Control-flow graph construction and optimization.
 
 from __future__ import annotations
 
-import copy
-import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from enum import Enum as _Enum
-from pprint import pformat
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import Dict, List, Optional, Set, Tuple
 
 from ..core import (
     Bytecode,
-    DynObj,
-    Enum,
-    Fun,
     Function,
-    Native,
-    Obj,
     Opcode,
-    Reg,
-    Regs,
-    ResolvableVarInt,
-    Type,
-    TypeDef,
-    Virtual,
-    Void,
-    fieldRef,
-    gIndex,
-    tIndex,
 )
-from ..errors import DecompError
 from ..globals import DEBUG, dbg_print
 from .. import disasm
-from ..opcodes import arithmetic, conditionals, terminal, simple_calls
 
 
 class CFNode:

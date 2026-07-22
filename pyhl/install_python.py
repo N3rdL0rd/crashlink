@@ -145,7 +145,7 @@ def main_win() -> None:
                 os.system(f'copy /Y "{lib_src}" "{lib_dest}"')
                 break
 
-    os.system(f"copy /Y python_nuget\\tools\\python313.dll ")
+    os.system("copy /Y python_nuget\\tools\\python313.dll ")
 
     print("Copying Lib...")
     lib_src = os.path.join("python_nuget", "tools", "Lib")

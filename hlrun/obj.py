@@ -3,7 +3,7 @@ from __future__ import annotations
 from .core import HlObj
 from typing import Optional, List, Dict, Type, TypeVar, Callable, Any
 from functools import wraps
-from typing import TypeVar, Callable, Any, ParamSpec, cast
+from typing import ParamSpec, cast
 
 R = TypeVar("R")
 P = ParamSpec("P")

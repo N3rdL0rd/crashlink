@@ -15,8 +15,8 @@ from mcp.server.fastmcp import FastMCP
 
 from . import decomp as _decomp
 from . import disasm as _disasm
-from .core import Bytecode, Function, Native, Obj, Enum, Fun, Virtual
-from .core import XRef, TargetKind, SourceKind, RefKind
+from .core import Bytecode, Native, Obj, Enum, Fun, Virtual
+from .core import XRef, TargetKind, SourceKind
 from .hlc import code_to_c
 from .opcodes import opcode_docs, opcodes
 from .pseudo import pseudo
@@ -694,6 +694,9 @@ def run_mcp_server(preload_path: Optional[str] = None) -> None:
                 _code = Bytecode().deserialise(f)
             print(f"[crashlink-mcp] Preloaded: {preload_path}", file=sys.stderr)
         except Exception as e:
-            print(f"[crashlink-mcp] Warning: failed to preload {preload_path}: {e}", file=sys.stderr)
+            print(
+                f"[crashlink-mcp] Warning: failed to preload {preload_path}: {e}",
+                file=sys.stderr,
+            )
 
     mcp.run(transport="stdio")

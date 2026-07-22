@@ -26,7 +26,6 @@ from .core import (
     Enum,
     EnumConstruct,
 )
-from .globals import dbg_print
 
 try:
     from capstone import Cs, CS_ARCH_X86, CS_MODE_64
@@ -118,7 +117,7 @@ def code_from_bin(
         """
         Adds a string and returns its index. If it already exists, returns the existing index.
         """
-        if not val in strs:
+        if val not in strs:
             strs.append(val)
             return len(strs) - 1
         return strs.index(val)
@@ -208,7 +207,10 @@ def code_from_bin(
                         source_symbol_name = addr_to_symbol_name.get(source_addr)
 
             if source_symbol_name:
-                type_assignments[str(dest_symbol.name)] = (field_name, source_symbol_name)
+                type_assignments[str(dest_symbol.name)] = (
+                    field_name,
+                    source_symbol_name,
+                )
 
     except Exception as e:
         print(f"Warning: Could not analyze 'hl_init_types'. Some type info may be missing. Reason: {e}")
@@ -278,7 +280,12 @@ def code_from_bin(
                             f_name = read_chars(f_name_ptr, 2).decode("utf-16")
                         else:
                             f_name = "null"
-                        fields.append(Field(name=strRef(add_str(f_name)), type=offset_to_tindex[f_type_ptr]))
+                        fields.append(
+                            Field(
+                                name=strRef(add_str(f_name)),
+                                type=offset_to_tindex[f_type_ptr],
+                            )
+                        )
 
                     protos: List[Proto] = []
                     for i in range(nprotos):

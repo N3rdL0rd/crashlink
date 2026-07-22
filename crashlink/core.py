@@ -20,7 +20,19 @@ import threading
 
 _EnumBase = _Enum
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Dict, ItemsView, List, Literal, Optional, Set, Tuple, TypeVar
+from typing import (
+    Any,
+    BinaryIO,
+    Callable,
+    Dict,
+    ItemsView,
+    List,
+    Literal,
+    Optional,
+    Set,
+    Tuple,
+    TypeVar,
+)
 
 T = TypeVar("T", bound="VarInt")  # easier than reimplementing deserialise for each subclass
 
@@ -2056,7 +2068,10 @@ class Bytecode(Serialisable):
 
     @classmethod
     def from_path(
-        cls, path: str, search_magic: bool = True, progress_cb: Optional[ProgressCallback] = None
+        cls,
+        path: str,
+        search_magic: bool = True,
+        progress_cb: Optional[ProgressCallback] = None,
     ) -> "Bytecode":
         """
         Create a new Bytecode instance from a file path.
@@ -2068,7 +2083,10 @@ class Bytecode(Serialisable):
 
     @classmethod
     def from_bytes(
-        cls, data: bytes, search_magic: bool = True, progress_cb: Optional[ProgressCallback] = None
+        cls,
+        data: bytes,
+        search_magic: bool = True,
+        progress_cb: Optional[ProgressCallback] = None,
     ) -> "Bytecode":
         """
         Create a new Bytecode instance from a `bytes` object.
@@ -3099,7 +3117,11 @@ class XrefIndex:
                         if isinstance(t.definition, Obj):
                             proto = code.proto_by_pindex(t.definition, pindex)
                             if proto is not None:
-                                _emit(TargetKind.FUNCTION, proto.findex.value, RefKind.CALL_VIRTUAL)
+                                _emit(
+                                    TargetKind.FUNCTION,
+                                    proto.findex.value,
+                                    RefKind.CALL_VIRTUAL,
+                                )
 
                 elif op_name in ("StaticClosure", "InstanceClosure"):
                     _emit(TargetKind.FUNCTION, df["fun"].value, RefKind.CLOSURE)
@@ -3112,7 +3134,11 @@ class XrefIndex:
                         if isinstance(t.definition, Obj):
                             proto = code.proto_by_pindex(t.definition, pindex)
                             if proto is not None:
-                                _emit(TargetKind.FUNCTION, proto.findex.value, RefKind.CLOSURE)
+                                _emit(
+                                    TargetKind.FUNCTION,
+                                    proto.findex.value,
+                                    RefKind.CLOSURE,
+                                )
 
                 elif op_name == "Field":
                     obj_t = _reg_tindex(df["obj"].value)
@@ -3122,7 +3148,12 @@ class XrefIndex:
                             try:
                                 flat = df["field"].value
                                 owner_t, own_slot = _field_owner(flat, obj_t, t.definition)
-                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_READ, own_slot)
+                                _emit(
+                                    TargetKind.FIELD,
+                                    owner_t,
+                                    RefKind.FIELD_READ,
+                                    own_slot,
+                                )
                             except (IndexError, KeyError):
                                 pass
 
@@ -3134,7 +3165,12 @@ class XrefIndex:
                             try:
                                 flat = df["field"].value
                                 owner_t, own_slot = _field_owner(flat, this_t, t.definition)
-                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_READ, own_slot)
+                                _emit(
+                                    TargetKind.FIELD,
+                                    owner_t,
+                                    RefKind.FIELD_READ,
+                                    own_slot,
+                                )
                             except (IndexError, KeyError):
                                 pass
 
@@ -3146,7 +3182,12 @@ class XrefIndex:
                             try:
                                 flat = df["field"].value
                                 owner_t, own_slot = _field_owner(flat, obj_t, t.definition)
-                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_WRITE, own_slot)
+                                _emit(
+                                    TargetKind.FIELD,
+                                    owner_t,
+                                    RefKind.FIELD_WRITE,
+                                    own_slot,
+                                )
                             except (IndexError, KeyError):
                                 pass
 
@@ -3158,7 +3199,12 @@ class XrefIndex:
                             try:
                                 flat = df["field"].value
                                 owner_t, own_slot = _field_owner(flat, this_t, t.definition)
-                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_WRITE, own_slot)
+                                _emit(
+                                    TargetKind.FIELD,
+                                    owner_t,
+                                    RefKind.FIELD_WRITE,
+                                    own_slot,
+                                )
                             except (IndexError, KeyError):
                                 pass
 
@@ -3189,11 +3235,21 @@ class XrefIndex:
                 elif op_name == "MakeEnum":
                     dst_t = _reg_tindex(df["dst"].value)
                     if dst_t is not None:
-                        _emit(TargetKind.ENUM_CONSTRUCT, dst_t, RefKind.ENUM_CONSTRUCT, df["construct"].value)
+                        _emit(
+                            TargetKind.ENUM_CONSTRUCT,
+                            dst_t,
+                            RefKind.ENUM_CONSTRUCT,
+                            df["construct"].value,
+                        )
                 elif op_name == "EnumField":
                     val_t = _reg_tindex(df["value"].value)
                     if val_t is not None:
-                        _emit(TargetKind.ENUM_CONSTRUCT, val_t, RefKind.ENUM_FIELD_READ, df["construct"].value)
+                        _emit(
+                            TargetKind.ENUM_CONSTRUCT,
+                            val_t,
+                            RefKind.ENUM_FIELD_READ,
+                            df["construct"].value,
+                        )
                 elif op_name == "EnumIndex":
                     val_t = _reg_tindex(df["value"].value)
                     if val_t is not None:
@@ -3227,7 +3283,17 @@ class XrefIndex:
                     _struct(TargetKind.TYPE, f.type.value, RefKind.FIELD_DECL)
 
         for gindex, gt in enumerate(code.global_types):
-            idx._add(XRef(SourceKind.GLOBAL, gindex, TargetKind.TYPE, gt.value, None, RefKind.GLOBAL_TYPE, None))
+            idx._add(
+                XRef(
+                    SourceKind.GLOBAL,
+                    gindex,
+                    TargetKind.TYPE,
+                    gt.value,
+                    None,
+                    RefKind.GLOBAL_TYPE,
+                    None,
+                )
+            )
 
         return idx
 

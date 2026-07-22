@@ -8,32 +8,21 @@ import re
 from abc import ABC, abstractmethod
 from enum import Enum as _Enum
 from pprint import pformat
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..core import (
     Bytecode,
-    DynObj,
-    Enum,
-    Fun,
     Function,
     Native,
-    Obj,
     Opcode,
     Ref,
-    Reg,
     ResolvableVarInt,
     Type,
-    TypeDef,
-    Virtual,
-    Void,
-    fieldRef,
-    gIndex,
     tIndex,
 )
 from .. import disasm
 from ..errors import DecompError
-from ..globals import DEBUG, dbg_print
-from ..opcodes import arithmetic, conditionals, terminal, simple_calls
+from ..opcodes import conditionals
 
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -577,7 +566,10 @@ class IRConst(IRExpression):
             return _get_type_in_code(self.code, "Bool")
         elif self.const_type == IRConst.ConstType.BYTES:
             return _get_type_in_code(self.code, "Bytes")
-        elif self.const_type in [IRConst.ConstType.STRING, IRConst.ConstType.GLOBAL_STRING]:
+        elif self.const_type in [
+            IRConst.ConstType.STRING,
+            IRConst.ConstType.GLOBAL_STRING,
+        ]:
             return _get_type_in_code(self.code, "String")
         elif self.const_type == IRConst.ConstType.NULL:
             return _get_type_in_code(self.code, "Null")  # FIXME: null is of a type...
@@ -873,7 +865,14 @@ class IRIntRangeLoop(IRStatement):
     end: IRExpression
     body: IRBlock
 
-    def __init__(self, code: Bytecode, elem: IRLocal, start: IRExpression, end: IRExpression, body: IRBlock):
+    def __init__(
+        self,
+        code: Bytecode,
+        elem: IRLocal,
+        start: IRExpression,
+        end: IRExpression,
+        body: IRBlock,
+    ):
         super().__init__(code)
         self.elem = elem
         self.start = start
@@ -919,7 +918,12 @@ class IRField(IRExpression):
 class IRNew(IRExpression):
     """Represents object allocation, e.g., `new MyClass()` or `{}`"""
 
-    def __init__(self, code: Bytecode, alloc_type: tIndex, constructor_args: Optional[List[IRExpression]] = None):
+    def __init__(
+        self,
+        code: Bytecode,
+        alloc_type: tIndex,
+        constructor_args: Optional[List[IRExpression]] = None,
+    ):
         super().__init__(code)
         self.alloc_type_idx = alloc_type
         self.constructor_args = constructor_args or []
@@ -1031,7 +1035,12 @@ class IRCast(IRExpression):
 class IRArrayLiteral(IRExpression):
     """Represents a Haxe array literal, e.g. [1, 2, 3]."""
 
-    def __init__(self, code: Bytecode, elements: List[IRExpression], elem_type: Optional[tIndex] = None):
+    def __init__(
+        self,
+        code: Bytecode,
+        elements: List[IRExpression],
+        elem_type: Optional[tIndex] = None,
+    ):
         super().__init__(code)
         self.elements = elements
         self.elem_type_idx = elem_type
@@ -1077,7 +1086,13 @@ class IRObjectLiteral(IRExpression):
 class IRArrayAccess(IRExpression):
     """Represents an array/memory access expression, e.g., `arr[idx]`"""
 
-    def __init__(self, code: Bytecode, array: IRExpression, index: IRExpression, elem_type: Optional[tIndex] = None):
+    def __init__(
+        self,
+        code: Bytecode,
+        array: IRExpression,
+        index: IRExpression,
+        elem_type: Optional[tIndex] = None,
+    ):
         super().__init__(code)
         self.array = array
         self.index = index
@@ -1179,7 +1194,13 @@ class IRRefSet(IRStatement):
 class IREnumConstruct(IRExpression):
     """Represents enum construction, e.g., `Rgb(255, 255, 0)`"""
 
-    def __init__(self, code: Bytecode, construct_name: str, args: List[IRExpression], enum_type: tIndex):
+    def __init__(
+        self,
+        code: Bytecode,
+        construct_name: str,
+        args: List[IRExpression],
+        enum_type: tIndex,
+    ):
         super().__init__(code)
         self.construct_name = construct_name
         self.args = args

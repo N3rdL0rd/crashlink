@@ -37,7 +37,10 @@ _RULES: List[_Rule] = [
         r"static|override|inline|dynamic|extern)\b",
         "keyword",
     ),
-    _Rule(r"\b(Int|Float|Bool|String|Dynamic|Void|Array|Bytes|haxe\.io\.Bytes|Any)\b", "type_name"),
+    _Rule(
+        r"\b(Int|Float|Bool|String|Dynamic|Void|Array|Bytes|haxe\.io\.Bytes|Any)\b",
+        "type_name",
+    ),
     _Rule(r"\b\d+(?:\.\d+)?\b", "number"),
     _Rule(r"\b([a-z_]\w*)\s*(?=\()", "func_call"),
     # Applied last so it wins over anything else matched inside the comment text

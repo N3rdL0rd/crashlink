@@ -12,7 +12,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter, QWheelEvent
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtSvgWidgets import QGraphicsSvgItem
-from PySide6.QtWidgets import QGraphicsScene, QGraphicsView, QLabel, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QGraphicsScene,
+    QGraphicsView,
+    QLabel,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ..themes import Theme
 

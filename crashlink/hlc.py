@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import enum
 from typing import Any, Callable, List, Literal, Optional, Dict, Set, Tuple
 
 from crashlink.errors import MalformedBytecode
@@ -432,7 +431,7 @@ def generate_structs(code: Bytecode) -> List[str]:
             for cid, constr in enumerate(df.constructs):
                 if constr.params:
                     c_name = enum_constr_type(code, df, cid)
-                    line(f"typedef struct {{")
+                    line("typedef struct {")
                     with indent:
                         line("HL__ENUM_CONSTRUCT__")
                         for pid, param_tindex in enumerate(constr.params):
@@ -755,9 +754,19 @@ def generate_reflection(code: Bytecode) -> List[str]:
     def get_type_kind(typ: Type) -> Type.Kind:
         """Simplifies a type into a broader category for reflection."""
         kind_val = typ.kind.value
-        if kind_val in {Type.Kind.BOOL.value, Type.Kind.U8.value, Type.Kind.U16.value, Type.Kind.I32.value}:
+        if kind_val in {
+            Type.Kind.BOOL.value,
+            Type.Kind.U8.value,
+            Type.Kind.U16.value,
+            Type.Kind.I32.value,
+        }:
             return Type.Kind.I32
-        if kind_val in {Type.Kind.F32.value, Type.Kind.F64.value, Type.Kind.I64.value, Type.Kind.VOID.value}:
+        if kind_val in {
+            Type.Kind.F32.value,
+            Type.Kind.F64.value,
+            Type.Kind.I64.value,
+            Type.Kind.VOID.value,
+        }:
             return Type.Kind(kind_val)
         return Type.Kind.DYN
 
@@ -882,7 +891,12 @@ def generate_reflection(code: Bytecode) -> List[str]:
         kind = typ.kind.value
         if kind == Type.Kind.VOID.value:
             return "v"
-        if kind in {Type.Kind.U8.value, Type.Kind.U16.value, Type.Kind.I32.value, Type.Kind.BOOL.value}:
+        if kind in {
+            Type.Kind.U8.value,
+            Type.Kind.U16.value,
+            Type.Kind.I32.value,
+            Type.Kind.BOOL.value,
+        }:
             return "i"
         if kind == Type.Kind.F32.value:
             return "f"
@@ -1173,7 +1187,11 @@ def generate_functions(
         if isinstance(type_a_def, TypeType) and isinstance(type_b_def, TypeType):
             # hl_same_type returns a bool: nonzero (true) when the types ARE equal.
             same_type_op = "!=" if op_name == "JEq" else "=="
-            return False, True, f"if (hl_same_type({reg_a}, {reg_b}) {same_type_op} 0) goto {label};"
+            return (
+                False,
+                True,
+                f"if (hl_same_type({reg_a}, {reg_b}) {same_type_op} 0) goto {label};",
+            )
 
         # -- HNull<T> --
         if isinstance(type_a_def, Null) and isinstance(type_b_def, Null):
@@ -1183,9 +1201,17 @@ def generate_functions(
             pcompare = f"({reg_a}->{field} {comp_op_str} {reg_b}->{field})"
 
             if op_name == "JEq":
-                return False, True, f"if ({reg_a} == {reg_b} || ({reg_a} && {reg_b} && {pcompare})) goto {label};"
+                return (
+                    False,
+                    True,
+                    f"if ({reg_a} == {reg_b} || ({reg_a} && {reg_b} && {pcompare})) goto {label};",
+                )
             if op_name == "JNotEq":
-                return False, True, f"if ({reg_a} != {reg_b} && (!{reg_a} || !{reg_b} || {pcompare})) goto {label};"
+                return (
+                    False,
+                    True,
+                    f"if ({reg_a} != {reg_b} && (!{reg_a} || !{reg_b} || {pcompare})) goto {label};",
+                )
             # For <, <=, >, >=, both must be non-null.
             return False, True, f"if ({reg_a} && {reg_b} && {pcompare}) goto {label};"
 
@@ -1224,7 +1250,11 @@ def generate_functions(
                         True,
                         f"if ({reg_a} != {reg_b} && (!{reg_a} || !{reg_b} || {compare_call} != 0)) goto {label};",
                     )
-                return False, True, f"if ({reg_a} && {reg_b} && {compare_call} {comp_op_str} 0) goto {label};"
+                return (
+                    False,
+                    True,
+                    f"if ({reg_a} && {reg_b} && {compare_call} {comp_op_str} 0) goto {label};",
+                )
 
         # -- HVirtual vs HVirtual --
         if isinstance(type_a_def, Virtual) and isinstance(type_b_def, Virtual):
@@ -1241,7 +1271,7 @@ def generate_functions(
                     f"if ({reg_a} != {reg_b} && (!{reg_a} || !{reg_b} || !{reg_a}->value || !{reg_b}->value || {reg_a}->value != {reg_b}->value)) goto {label};",
                 )
             # Other comparisons are not supported for Virtuals
-            return False, True, f"/* JSLt/JSGt on Virtual not supported */"
+            return False, True, "/* JSLt/JSGt on Virtual not supported */"
 
         # -- HVirtual vs HObj --
         if isinstance(type_a_def, Virtual) and isinstance(type_b_def, Obj):
@@ -1257,7 +1287,7 @@ def generate_functions(
                     True,
                     f"if ({reg_a} ? ({reg_b} == NULL || {reg_a}->value != (vdynamic*){reg_b}) : ({reg_b} != NULL)) goto {label};",
                 )
-            return False, True, f"/* JSLt/JSGt on Virtual vs Obj not supported */"
+            return False, True, "/* JSLt/JSGt on Virtual vs Obj not supported */"
 
         # -- HObj vs HVirtual (recursive call with swapped operands) --
         if isinstance(type_a_def, Obj) and isinstance(type_b_def, Virtual):
@@ -1279,7 +1309,12 @@ def generate_functions(
         'i' for int-like, 'f' for f32, 'd' for f64, 'i64' for i64, 'p' for pointers.
         """
         kind = typ.kind.value
-        if kind in {Type.Kind.U8.value, Type.Kind.U16.value, Type.Kind.I32.value, Type.Kind.BOOL.value}:
+        if kind in {
+            Type.Kind.U8.value,
+            Type.Kind.U16.value,
+            Type.Kind.I32.value,
+            Type.Kind.BOOL.value,
+        }:
             return "i"
         if kind == Type.Kind.F32.value:
             return "f"
@@ -1375,7 +1410,11 @@ def generate_functions(
                         rhs = f"r{df['a']} * r{df['b']}"
                     case "SDiv":
                         rtype = function.regs[df["dst"].value].resolve(code).kind.value
-                        if rtype in {Type.Kind.U8.value, Type.Kind.U16.value, Type.Kind.I32.value}:
+                        if rtype in {
+                            Type.Kind.U8.value,
+                            Type.Kind.U16.value,
+                            Type.Kind.I32.value,
+                        }:
                             rhs = f"(r{df['b']} == 0 || r{df['b']} == -1) ? r{df['a']} * r{df['b']} : r{df['a']} / r{df['b']}"
                         else:
                             rhs = f"r{df['a']} / r{df['b']}"
@@ -1383,7 +1422,11 @@ def generate_functions(
                         rhs = f"(r{df['b']} == 0) ? 0 : ((unsigned)r{df['a']}) / ((unsigned)r{df['b']})"
                     case "SMod":
                         rtype = function.regs[df["dst"].value].resolve(code).kind.value
-                        if rtype in {Type.Kind.U8.value, Type.Kind.U16.value, Type.Kind.I32.value}:
+                        if rtype in {
+                            Type.Kind.U8.value,
+                            Type.Kind.U16.value,
+                            Type.Kind.I32.value,
+                        }:
                             rhs = f"(r{df['b']} == 0 || r{df['b']} == -1) ? 0 : r{df['a']} % r{df['b']}"
                         elif rtype == Type.Kind.F32.value:
                             rhs = f"fmodf(r{df['a']}, r{df['b']})"
@@ -1397,21 +1440,27 @@ def generate_functions(
                         rhs = f"(r{df['b']} == 0) ? 0 : ((unsigned)r{df['a']}) % ((unsigned)r{df['b']})"
                     case "Shl":
                         _shift_kind = function.regs[df["dst"].value].resolve(code).kind.value
-                        _shift_bits = {Type.Kind.U8.value: 8, Type.Kind.U16.value: 16, Type.Kind.I64.value: 64}.get(
-                            _shift_kind, 32
-                        )
+                        _shift_bits = {
+                            Type.Kind.U8.value: 8,
+                            Type.Kind.U16.value: 16,
+                            Type.Kind.I64.value: 64,
+                        }.get(_shift_kind, 32)
                         rhs = f"r{df['a']} << (r{df['b']} % {_shift_bits})"
                     case "SShr":
                         _shift_kind = function.regs[df["dst"].value].resolve(code).kind.value
-                        _shift_bits = {Type.Kind.U8.value: 8, Type.Kind.U16.value: 16, Type.Kind.I64.value: 64}.get(
-                            _shift_kind, 32
-                        )
+                        _shift_bits = {
+                            Type.Kind.U8.value: 8,
+                            Type.Kind.U16.value: 16,
+                            Type.Kind.I64.value: 64,
+                        }.get(_shift_kind, 32)
                         rhs = f"r{df['a']} >> (r{df['b']} % {_shift_bits})"
                     case "UShr":
                         _shift_kind = function.regs[df["dst"].value].resolve(code).kind.value
-                        _shift_bits = {Type.Kind.U8.value: 8, Type.Kind.U16.value: 16, Type.Kind.I64.value: 64}.get(
-                            _shift_kind, 32
-                        )
+                        _shift_bits = {
+                            Type.Kind.U8.value: 8,
+                            Type.Kind.U16.value: 16,
+                            Type.Kind.I64.value: 64,
+                        }.get(_shift_kind, 32)
                         if _shift_kind == Type.Kind.I64.value:
                             rhs = f"((uint64)r{df['a']}) >> (r{df['b']} % {_shift_bits})"
                         else:
@@ -1472,7 +1521,12 @@ def generate_functions(
 
                             dyn_idx = code.find_prim_type(Type.Kind.DYN)
                             arg_type_idxs = [dyn_idx] + [function.regs[r.value] for r in arg_regs]
-                            meth = cast_fun(code, f"hl_vfields(r{obj_reg})[{fid}]", ret_type_idx, arg_type_idxs)
+                            meth = cast_fun(
+                                code,
+                                f"hl_vfields(r{obj_reg})[{fid}]",
+                                ret_type_idx,
+                                arg_type_idxs,
+                            )
                             call_args = ", ".join([f"r{obj_reg}->value"] + [f"r{r.value}" for r in arg_regs])
 
                             assign = ""
@@ -1487,7 +1541,10 @@ def generate_functions(
                             has_dst = False
                             no_semi = True
 
-                            opline(i, f"if( hl_vfields(r{obj_reg})[{fid}] ) {assign}{meth}({call_args}); else {{")
+                            opline(
+                                i,
+                                f"if( hl_vfields(r{obj_reg})[{fid}] ) {assign}{meth}({call_args}); else {{",
+                            )
                             with indent:
                                 if arg_regs:
                                     args_arr_parts = []
@@ -1594,11 +1651,21 @@ def generate_functions(
                             rcast(code, reg, target_type_idx, function)
                             for reg, target_type_idx in zip(call_arg_regs, closure_arg_type_idxs)
                         ]
-                        static_fun_ptr = cast_fun(code, f"{closure_reg_str}->fun", ret_type_idx, closure_arg_type_idxs)
+                        static_fun_ptr = cast_fun(
+                            code,
+                            f"{closure_reg_str}->fun",
+                            ret_type_idx,
+                            closure_arg_type_idxs,
+                        )
                         static_call = f"{static_fun_ptr}({', '.join(casted_args_str_list)})"
                         dyn_type_idx = code.find_prim_type(Type.Kind.DYN)
                         instance_arg_types = [dyn_type_idx] + closure_arg_type_idxs
-                        instance_fun_ptr = cast_fun(code, f"{closure_reg_str}->fun", ret_type_idx, instance_arg_types)
+                        instance_fun_ptr = cast_fun(
+                            code,
+                            f"{closure_reg_str}->fun",
+                            ret_type_idx,
+                            instance_arg_types,
+                        )
                         instance_call = f"{instance_fun_ptr}({', '.join([f'(vdynamic*){closure_reg_str}->value'] + casted_args_str_list)})"
                         rhs = f"({closure_reg_str}->hasValue ? {instance_call} : {static_call})"
                     case "StaticClosure":
@@ -1645,7 +1712,11 @@ def generate_functions(
                         rhs = f"hl_alloc_closure_ptr(&t${method_type.value}, {func_ptr}, r{df['obj']})"
                     case "GetGlobal":
                         dst_reg = df["dst"].value
-                        dst = ctype(code, function.regs[dst_reg].resolve(code), function.regs[dst_reg].value)
+                        dst = ctype(
+                            code,
+                            function.regs[dst_reg].resolve(code),
+                            function.regs[dst_reg].value,
+                        )
                         rhs = f"({dst})g${df['global'].value}"
                     case "SetGlobal":
                         src_reg = df["src"].value
@@ -1977,7 +2048,11 @@ def generate_functions(
                         prefix = dyn_prefix(dst_type)
 
                         type_arg = ""
-                        if dst_type.kind.value not in {Type.Kind.F32.value, Type.Kind.F64.value, Type.Kind.I64.value}:
+                        if dst_type.kind.value not in {
+                            Type.Kind.F32.value,
+                            Type.Kind.F64.value,
+                            Type.Kind.I64.value,
+                        }:
                             type_arg = f", &t${dst_type_idx.value}"
 
                         rhs = f"({dst_ctype})hl_dyn_get{prefix}((vdynamic*)r{df['obj'].value}, {field_hash}/*{field_name}*/{type_arg})"
@@ -1994,7 +2069,11 @@ def generate_functions(
                         prefix = dyn_prefix(src_type)
 
                         type_arg = ""
-                        if src_type.kind.value not in {Type.Kind.F32.value, Type.Kind.F64.value, Type.Kind.I64.value}:
+                        if src_type.kind.value not in {
+                            Type.Kind.F32.value,
+                            Type.Kind.F64.value,
+                            Type.Kind.I64.value,
+                        }:
                             type_arg = f", &t${src_type_idx.value}"
 
                         rhs = f"hl_dyn_set{prefix}((vdynamic*)r{df['obj'].value}, {field_hash}/*{field_name}*/{type_arg}, r{src_reg})"
@@ -2109,7 +2188,10 @@ def generate_functions(
                         has_dst = False
                         rhs = f"if( r{df['reg']} == NULL ) hl_null_access()"
                     case "Trap":
-                        opline(i, f"hl_trap(trap${trap_depth}, {regstr(df['exc'])}, Op_{i + 1 + df['offset'].value});")
+                        opline(
+                            i,
+                            f"hl_trap(trap${trap_depth}, {regstr(df['exc'])}, Op_{i + 1 + df['offset'].value});",
+                        )
                         trap_depth += 1
                         continue
                     case "EndTrap":
@@ -2428,11 +2510,18 @@ def code_to_c_files(
     chunks = _split_functions_evenly(code, parts)
     nchunks = len(chunks)
     for ci, chunk in enumerate(chunks):
-        _p(0.30 + 0.70 * (ci / nchunks), f"generating functions (part {ci + 1}/{nchunks})")
+        _p(
+            0.30 + 0.70 * (ci / nchunks),
+            f"generating functions (part {ci + 1}/{nchunks})",
+        )
         part: List[str] = [banner, f'#include "{header_name}"', ""]
         part += generate_functions(
             code,
-            progress_cb=_scaled_cb(progress_cb, 0.30 + 0.70 * (ci / nchunks), 0.30 + 0.70 * ((ci + 1) / nchunks)),
+            progress_cb=_scaled_cb(
+                progress_cb,
+                0.30 + 0.70 * (ci / nchunks),
+                0.30 + 0.70 * ((ci + 1) / nchunks),
+            ),
             functions=chunk,
             include_prototypes=False,
         )

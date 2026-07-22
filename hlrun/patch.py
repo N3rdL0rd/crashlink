@@ -7,7 +7,6 @@ from typing import Callable, Dict, Optional, TypeVar
 from .globals import is_runtime
 
 from .core import Args
-from .globals import dbg_print
 
 if is_runtime():
     USE_CRASHLINK = False

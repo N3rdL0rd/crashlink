@@ -8,8 +8,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeyEvent, QTextCursor
 from PySide6.QtWidgets import QWidget
 
-from .decomp_view import DecompView, _NAV_KEYS
-from ..themes import Theme
+from .decomp_view import DecompView
 
 
 class ClassView(DecompView):
