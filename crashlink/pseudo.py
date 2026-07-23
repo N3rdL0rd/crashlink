@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 import re
 import weakref
-from typing import Optional, List, Set, Dict, Tuple, Union, cast, Any
+from typing import Optional, List, Set, Dict, Tuple, Union, cast, Any, Iterator
 
 from .core import (
     Bytecode,
@@ -3463,17 +3463,86 @@ def _find_constructor(code: Bytecode, obj: Obj) -> Optional[Function]:
     return None
 
 
-def _stub_function(ir_func: IRFunction, ir_class: "IRClass") -> Optional[str]:
-    """One method rendered as a compilable stub. None for natives (skipped)."""
-    code = ir_func.code
-    func = ir_func.func
+def _obj_pair(obj: Obj) -> Tuple[Optional[Obj], Optional[Obj]]:
+    """(dynamic, static) halves of a class from either one (needs map_statics)."""
+    dynamic: Optional[Obj]
+    static: Optional[Obj]
+    if obj.is_static:
+        static = obj
+        try:
+            dynamic = obj.dynamic
+        except (ValueError, AttributeError):
+            dynamic = None
+    else:
+        dynamic = obj
+        try:
+            static = obj.static
+        except (ValueError, AttributeError):
+            static = None
+    return dynamic, static
+
+
+def _obj_functions(code: Bytecode, obj: Optional[Obj]) -> List[Function]:
+    """Non-native functions bound to a class half (protos + bindings), deduped."""
+    if obj is None:
+        return []
+    res: List[Function] = []
+    seen: Set[int] = set()
+    for entry in list(getattr(obj, "protos", [])) + list(getattr(obj, "bindings", [])):
+        try:
+            fn = entry.findex.resolve(code)
+        except Exception:
+            continue
+        if isinstance(fn, Function) and fn.findex.value not in seen:
+            seen.add(fn.findex.value)
+            res.append(fn)
+    return res
+
+
+def _obj_fields(code: Bytecode, obj: Optional[Obj]) -> List[Tuple[str, Type]]:
+    """Data fields of a class half (mirrors IRClass.gather_fields, no lifting)."""
+    if obj is None:
+        return []
+    binding_names: Set[str] = set()
+    for binding in getattr(obj, "bindings", []):
+        try:
+            binding_names.add(binding.field.resolve_obj(code, obj).name.resolve(code))
+        except Exception:
+            pass
+    res: List[Tuple[str, Type]] = []
+    for field in getattr(obj, "fields", []):
+        try:
+            name = field.name.resolve(code)
+            if name not in binding_names:
+                res.append((name, field.type.resolve(code)))
+        except Exception:
+            pass
+    return res
+
+
+def _overrides_super(code: Bytecode, dynamic: Optional[Obj], method_name: str) -> bool:
+    """True if `method_name` is declared by the direct super class (needs `override`)."""
+    if dynamic is None or not dynamic.super or dynamic.super.value <= 0:
+        return False
+    try:
+        super_def = dynamic.super.resolve(code).definition
+        if isinstance(super_def, Obj):
+            return any(p.name.resolve(code) == method_name for p in super_def.protos)
+    except Exception:
+        pass
+    return False
+
+
+def _stub_method(code: Bytecode, func: Function, is_instance: bool, dynamic: Optional[Obj]) -> Optional[str]:
+    """One method rendered as a compilable stub from its type alone (no decompile)."""
     if isinstance(func, Native):
         return None
 
     raw = code.partial_func_name(func)
     is_ctor = raw == "__constructor__"
     name = "new" if is_ctor else (raw if raw and raw != "<none>" else f"f{func.findex.value}")
-    is_instance = is_ctor or ir_func in ir_class.methods
+    if is_ctor:
+        is_instance = True
 
     fun_def = func.type.resolve(code).definition
     params: List[str] = []
@@ -3487,9 +3556,7 @@ def _stub_function(ir_func: IRFunction, ir_class: "IRClass") -> Optional[str]:
     ret_name = disasm.type_to_haxe(disasm.type_name(code, ret_type)) if ret_type is not None else "Void"
 
     static_kw = "" if is_instance else "static "
-    override_kw = ""
-    if is_instance and not is_ctor and _method_overrides(name, ir_class, code):
-        override_kw = "override "
+    override_kw = "override " if (is_instance and not is_ctor and _overrides_super(code, dynamic, name)) else ""
     ret_decl = "" if is_ctor else (f": {ret_name}" if ret_name else "")
     header = f"public {static_kw}{override_kw}function {name}({', '.join(params)}){ret_decl} {{"
 
@@ -3497,9 +3564,8 @@ def _stub_function(ir_func: IRFunction, ir_class: "IRClass") -> Optional[str]:
     if is_ctor:
         # A derived class must call super(); supply type-correct default args so
         # the stub compiles even when we don't reproduce the real constructor.
-        dyn = ir_class.dynamic
-        if dyn is not None and dyn.super and dyn.super.value > 0:
-            parent_def = dyn.super.resolve(code).definition
+        if dynamic is not None and dynamic.super and dynamic.super.value > 0:
+            parent_def = dynamic.super.resolve(code).definition
             super_args = ""
             if isinstance(parent_def, Obj):
                 pctor = _find_constructor(code, parent_def)
@@ -3515,31 +3581,47 @@ def _stub_function(ir_func: IRFunction, ir_class: "IRClass") -> Optional[str]:
     return f"{header}\n{body}\n}}" if body else f"{header}\n}}"
 
 
-def _stub_class(ir_class: "IRClass") -> str:
-    """A class rendered as a compilable stub: fields + stubbed method signatures."""
-    code = ir_class.code
-    primary = ir_class.dynamic if ir_class.dynamic else ir_class.static
-    assert primary is not None
-    class_name = destaticify(primary.name.resolve(code))
+def _stub_class(code: Bytecode, primary: Obj) -> str:
+    """A class rendered as a compilable stub straight from its Obj: fields + method
+    signatures, no decompilation (so it's fast and can't crash on hard bodies)."""
+    dynamic, static = _obj_pair(primary)
+    named = dynamic if dynamic is not None else static
+    assert named is not None
+    # Short name only: the package is declared once per file (a dotted name in a
+    # `class` declaration isn't valid Haxe). `extends`/type refs stay qualified.
+    class_name = destaticify(named.name.resolve(code)).rsplit(".", 1)[-1]
 
     lines: List[str] = []
     header = f"class {class_name}"
-    if ir_class.dynamic and ir_class.dynamic.super and ir_class.dynamic.super.value > 0:
-        super_def = ir_class.dynamic.super.resolve(code).definition
+    if dynamic is not None and dynamic.super and dynamic.super.value > 0:
+        super_def = dynamic.super.resolve(code).definition
         if isinstance(super_def, Obj):
             header += f" extends {destaticify(super_def.name.resolve(code))}"
     header += " {"
     lines.append(header)
 
-    for field_name, field_type in ir_class.static_fields:
+    static_fields = _obj_fields(code, static)
+    inst_fields = _obj_fields(code, dynamic)
+    for field_name, field_type in static_fields:
         lines.append(f"    public static var {field_name}: {disasm.type_to_haxe(disasm.type_name(code, field_type))};")
-    for field_name, field_type in ir_class.fields:
+    for field_name, field_type in inst_fields:
         lines.append(f"    public var {field_name}: {disasm.type_to_haxe(disasm.type_name(code, field_type))};")
-    if ir_class.static_fields or ir_class.fields:
+    if static_fields or inst_fields:
         lines.append("")
 
-    for ir_func in ir_class.static_methods + ir_class.methods:
-        stub = _stub_function(ir_func, ir_class)
+    # Static methods (from the static half) then instance methods, deduped by findex.
+    seen: Set[int] = set()
+    ordered: List[Tuple[Function, bool]] = []
+    for func in _obj_functions(code, static):
+        seen.add(func.findex.value)
+        ordered.append((func, False))
+    for func in _obj_functions(code, dynamic):
+        if func.findex.value not in seen:
+            seen.add(func.findex.value)
+            ordered.append((func, True))
+
+    for func, is_instance in ordered:
+        stub = _stub_method(code, func, is_instance, dynamic)
         if stub is None:
             continue
         for line in stub.split("\n"):
@@ -3567,18 +3649,65 @@ def stub_file(code: Bytecode, needle: str) -> Optional[str]:
         return None
 
     reg = _method_registry(code)
+    return _stub_from_entries(code, reg, [e for k in keys for e in fmap[k]])
+
+
+def _stub_from_entries(code: Bytecode, reg: Dict[int, Any], entries: List[Any]) -> str:
+    """Render a stub for one file's ClassEntry list, straight from each class's Obj
+    (no decompilation, so it's fast and can't crash on a hard-to-lift body)."""
     chunks: List[str] = []
     emitted: Set[str] = set()
-    for key in keys:
-        for entry in fmap[key]:
-            if entry.canonical_name == "(standalone)" or entry.canonical_name in emitted:
-                continue
-            emitted.add(entry.canonical_name)
-            reg_entry = reg.get(entry.methods[0].findex) if entry.methods else None
-            if reg_entry is None:
-                continue
-            try:
-                chunks.append(_stub_class(IRClass(code, reg_entry[0])))
-            except Exception as e:
-                chunks.append(f"// class {entry.canonical_name}: stub failed: {e}")
-    return "\n\n".join(chunks)
+    package = ""
+    for entry in entries:
+        if entry.canonical_name == "(standalone)" or entry.canonical_name in emitted:
+            continue
+        emitted.add(entry.canonical_name)
+        reg_entry = reg.get(entry.methods[0].findex) if entry.methods else None
+        if reg_entry is None:
+            continue
+        if not package and "." in entry.canonical_name:
+            package = entry.canonical_name.rsplit(".", 1)[0]
+        try:
+            chunks.append(_stub_class(code, reg_entry[0]))
+        except Exception as e:
+            chunks.append(f"// class {entry.canonical_name}: stub failed: {e}")
+    body = "\n\n".join(chunks)
+    # A packaged file needs a matching `package` declaration to compile under its
+    # directory on the classpath.
+    return f"package {package};\n\n{body}" if package else body
+
+
+def _stub_output_path(file_path: str, entries: List[Any], reg: Dict[int, Any], code: Bytecode) -> str:
+    """Relative on-disk path for a file's stub, mirroring its Haxe package.
+
+    A file's package comes from its first class's dotted name (`tool.log.LogUtils`
+    -> `tool/log/`), which is stable even when the debug path is an absolute
+    build-machine path (`/home/.../std/hl/_std/String.hx`). The filename is the
+    debug path's basename."""
+    filename = os.path.basename(file_path.replace("\\", "/"))
+    pkg = ""
+    for entry in entries:
+        if entry.canonical_name == "(standalone)" or not entry.methods:
+            continue
+        reg_entry = reg.get(entry.methods[0].findex)
+        if reg_entry is None:
+            continue
+        canonical = destaticify(reg_entry[0].name.resolve(code))
+        if "." in canonical:
+            pkg = canonical.rsplit(".", 1)[0].replace(".", "/")
+        break
+    return f"{pkg}/{filename}" if pkg else filename
+
+
+def stub_all(code: Bytecode) -> Iterator[Tuple[str, str]]:
+    """Yield (relative-output-path, stub-source) for every debug file with classes.
+
+    Computes the file→class map once (unlike calling `stub_file` per file), so it
+    scales to a whole image. Files with only standalone functions are skipped."""
+    reg = _method_registry(code)
+    for file_path, entries in disasm.file_class_map(code).items():
+        if all(e.canonical_name == "(standalone)" for e in entries):
+            continue
+        text = _stub_from_entries(code, reg, entries)
+        if text.strip():
+            yield _stub_output_path(file_path, entries, reg, code), text

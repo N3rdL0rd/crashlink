@@ -18,7 +18,7 @@ import tempfile
 import textwrap
 import traceback
 import webbrowser
-from typing import Callable, Dict, List, Optional, Tuple, Set, cast
+from typing import Callable, Dict, Iterable, List, Optional, Tuple, Set, cast
 
 from crashlink.hlc import code_to_c, code_to_c_files
 
@@ -1378,6 +1378,42 @@ class Commands(BaseCommands):
             return
         _emit_haxe(out)
 
+    def autostub(self, args: List[str]) -> None:
+        """Stub every file in the debug database to a target folder. `autostub <folder>`
+
+        Writes a compilable stub (see `stub`) for each source file, laid out under
+        <folder> mirroring each file's Haxe package (e.g. tool/log/LogUtils.hx).
+        For bootstrapping a large decompilation project: a whole compilable
+        skeleton you fill in file by file."""
+        if not args:
+            print("Usage: autostub <folder>")
+            return
+        if not self.code.has_debug_info:
+            print("Debug info not found.")
+            return
+        from .pseudo import stub_all
+
+        out_dir = args[0]
+        items: Iterable[Tuple[str, str]] = stub_all(self.code)
+        try:
+            from tqdm import tqdm
+
+            items = tqdm(items, unit="file", desc="stubbing")
+        except ImportError:
+            pass
+
+        written = 0
+        for rel_path, text in items:
+            dest = os.path.join(out_dir, rel_path)
+            try:
+                os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+                with open(dest, "w", encoding="utf-8") as f:
+                    f.write(text + "\n")
+                written += 1
+            except OSError as e:
+                print(f"[warning] could not write {dest}: {e}", file=sys.stderr)
+        print(f"Wrote {written} stub file(s) to {out_dir}")
+
     @alias("cp")
     def copy(self, args: List[str]) -> None:
         """Runs a command and copies its (plain-text) output to your clipboard. `copy <command> [args...]`
@@ -2240,33 +2276,6 @@ class Commands(BaseCommands):
             print("Bytecode pickled.")
         except ImportError:
             print("dill not found. Install dill to pickle bytecode, or install crashlink with the [extras] option.")
-
-    def stub(self, args: List[str]) -> None:
-        """Generate files in the same structure as the original Haxe source. Requires debuginfo. `stub <path>`"""
-        if len(args) == 0:
-            print("Usage: stub <path>")
-            return
-        if not self.code.has_debug_info:
-            print("Debug info not found.")
-            return
-        path = args[0]
-        if not os.path.exists(path):
-            os.makedirs(path)
-        if not self.code.debugfiles:
-            print("No debug files found.")
-            return
-        for file in self.code.debugfiles.value:
-            if (
-                file == "std" or file == "?" or file.startswith("C:") or file.startswith("D:") or file.startswith("/")
-            ):  # FIXME: lazy sanitization
-                continue
-            try:
-                os.makedirs(os.path.join(path, os.path.dirname(file)), exist_ok=True)
-                with open(os.path.join(path, file), "w") as f:
-                    f.write("")
-            except OSError:
-                print(f"Failed to write to {os.path.join(path, file)}")
-        print(f"Files generated in {os.path.abspath(path)}")
 
     @alias("run")
     def interp(self, args: List[str]) -> None:
