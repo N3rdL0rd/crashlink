@@ -4,6 +4,7 @@ Pseudocode generation routines to create a Haxe representation of the decompiled
 
 from __future__ import annotations
 
+import os
 import re
 import weakref
 from typing import Optional, List, Set, Dict, Tuple, Union, cast, Any
@@ -3230,21 +3231,21 @@ def class_pseudo(ir_class: "IRClass") -> str:
     return "\n\n".join(_class_pseudo_recursive(ir_class, set()))
 
 
-def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]:
-    """
-    Recursive helper for class_pseudo. Returns a list of class source strings.
+def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
+    """Render one class's own body — header, static + instance fields, methods and
+    anonymous-closure helpers — with no cross-file recursion.
+
+    Returns (source, referenced_class_names, super_name). This is the single place
+    class bodies are rendered: `class_pseudo` wraps it with recursive emission of
+    referenced classes (for single-class recompilation), while `decompile_file`
+    calls it flat per class for a whole-file dump.
     """
     code: Bytecode = ir_class.code
-
     primary_obj = ir_class.dynamic if ir_class.dynamic else ir_class.static
     if not primary_obj:
-        return ["// Error: IRClass contains no valid Obj definitions."]
+        return "// Error: IRClass contains no valid Obj definitions.", set(), None
 
     class_name = destaticify(primary_obj.name.resolve(code))
-    if class_name in emitted:
-        return []
-    emitted.add(class_name)
-
     output_lines: List[str] = []
     indent_str = _indent_str(1)
 
@@ -3326,10 +3327,31 @@ def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]
         output_lines.pop()
 
     output_lines.append("}")
-    result = ["\n".join(output_lines)]
+    return "\n".join(output_lines), referenced_classes, super_name
+
+
+def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]:
+    """
+    Recursive helper for class_pseudo. Returns a list of class source strings:
+    the class itself plus its super and referenced user classes (for recompile-
+    ability), each emitted once.
+    """
+    code: Bytecode = ir_class.code
+
+    primary_obj = ir_class.dynamic if ir_class.dynamic else ir_class.static
+    if not primary_obj:
+        return ["// Error: IRClass contains no valid Obj definitions."]
+
+    class_name = destaticify(primary_obj.name.resolve(code))
+    if class_name in emitted:
+        return []
+    emitted.add(class_name)
+
+    body, referenced_classes, super_name = _class_body(ir_class)
+    result = [body]
 
     # Recursively emit the super class and any other referenced user classes.
-    to_emit: Set[str] = referenced_classes
+    to_emit: Set[str] = set(referenced_classes)
     if super_name and super_name != class_name:
         to_emit.add(super_name)
 
@@ -3346,3 +3368,51 @@ def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]
             emitted.add(other_name)
 
     return result
+
+
+def decompile_file(code: Bytecode, needle: str) -> Optional[str]:
+    """Decompile every class/function of a debug source file into one dump.
+
+    The single source of by-file decompilation, shared by the CLI (`df`) and GUI.
+    Classes are grouped and ordered by `disasm.file_class_map` (the one place file
+    ordering lives) and each is rendered once via `_class_body` — no cross-file
+    recursion, so the dump stays scoped to the file. `needle` matches a debug file
+    by full path, path suffix, or basename. Returns None if nothing matches.
+    """
+    fmap = disasm.file_class_map(code)
+    keys = [
+        k for k in fmap
+        if k == needle or k.endswith(needle) or os.path.basename(k) == needle
+    ]
+    if not keys:
+        return None
+
+    reg = _method_registry(code)
+    findex_map = code.get_findex_map()
+    chunks: List[str] = []
+    emitted: Set[str] = set()
+
+    for key in keys:
+        for entry in fmap[key]:
+            if entry.canonical_name == "(standalone)":
+                for m in entry.methods:
+                    fn = findex_map.get(m.findex)
+                    if fn is None or isinstance(fn, Native):
+                        continue
+                    try:
+                        chunks.append(pseudo(IRFunction(code, fn)))
+                    except Exception as e:
+                        chunks.append(f"// f@{m.findex}: decompilation failed: {e}")
+                continue
+            if entry.canonical_name in emitted:
+                continue
+            emitted.add(entry.canonical_name)
+            reg_entry = reg.get(entry.methods[0].findex) if entry.methods else None
+            if reg_entry is None:
+                continue
+            try:
+                chunks.append(_class_body(IRClass(code, reg_entry[0]))[0])
+            except Exception as e:
+                chunks.append(f"// class {entry.canonical_name}: decompilation failed: {e}")
+
+    return "\n\n".join(chunks)

@@ -1335,42 +1335,26 @@ class Commands(BaseCommands):
                 return
         print("Function not found.")
 
-    def _funcs_in_file(self, needle: str) -> List["Function"]:
-        """Functions whose debug file matches `needle` (exact, suffix, or basename)."""
-        out: List["Function"] = []
-        for func in self.code.functions:
-            try:
-                f = func.resolve_file(self.code)
-            except Exception:
-                continue
-            if f == needle or f.endswith(needle) or os.path.basename(f) == needle:
-                out.append(func)
-        return out
-
     @alias("df")
     def decompfile(self, args: List[str]) -> None:
-        """Decompiles every function in a debug file to one dump. `decompfile <file>`
+        """Decompiles a whole debug file, grouped into its classes. `decompfile <file>`
 
         `<file>` matches a debug file by full path, suffix, or basename (e.g.
-        `df Main.hx`). Pair with `copy` to grab the whole file: `copy df Main.hx`."""
+        `df Main.hx`). Classes are rendered with their fields and methods, in
+        source order. Pair with `copy` to grab it all: `copy df Main.hx`."""
         if not args:
             print("Usage: decompfile <file>")
             return
         if not self.code.has_debug_info:
             print("Debug info not found.")
             return
-        funcs = self._funcs_in_file(args[0])
-        if not funcs:
-            print(f"No functions found in file: {args[0]}")
+        from .pseudo import decompile_file
+
+        out = decompile_file(self.code, args[0])
+        if out is None:
+            print(f"No debug file matching: {args[0]}")
             return
-        chunks: List[str] = []
-        for func in funcs:
-            header = disasm.func_header(self.code, func)
-            try:
-                chunks.append(pseudo(decomp.IRFunction(self.code, func)))
-            except Exception as e:
-                chunks.append(f"// {header}\n// decompilation failed: {e}")
-        _emit_haxe("\n\n".join(chunks))
+        _emit_haxe(out)
 
     @alias("cp")
     def copy(self, args: List[str]) -> None:
