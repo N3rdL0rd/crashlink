@@ -435,13 +435,23 @@ def _expression_to_haxe(
             return "null"
         elif isinstance(expr.value, Type):
             if isinstance(expr.original_index, gIndex):
-                # A real mutable global slot (from GetGlobal/SetGlobal), not a
-                # compile-time class/type reference (those come from the `Type`
-                # opcode). Mirrors Haxe's actual `untyped $name(...)` idiom for
-                # raw HL globals (zero-arg call to read, one-arg call to write
-                # — see e.g. `get_allTypes()`/`init()` in hl/_std/Type.hx),
-                # with a synthesized name (see varN) since there's no
-                # source-level name to recover.
+                # A global holding a class/enum's runtime type object — the base
+                # of `Std.isOfType(x, C)`, `Type.resolveClass`, static-field
+                # access (`C.field` lowers to GetGlobal C + Field), etc. Recover
+                # the source-level name (`C`) instead of the opaque
+                # `untyped $globalN()` fallback whenever the global's type is a
+                # named class or enum.
+                defn = expr.value.definition
+                if isinstance(defn, (Obj, Enum)):
+                    try:
+                        resolved = defn.name.resolve(code)
+                    except Exception:
+                        resolved = None
+                    if resolved:
+                        return destaticify(resolved)
+                # Otherwise a genuine raw HL global with no source-level name.
+                # Mirrors Haxe's `untyped $name(...)` idiom (zero-arg call to
+                # read — see e.g. `get_allTypes()` in hl/_std/Type.hx).
                 return f"untyped ${global_name(expr)}()"
             # Types as runtime values are used internally by the HashLink stdlib.
             # There is no direct Haxe equivalent, so emit null as a placeholder.
