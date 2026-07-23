@@ -2319,6 +2319,35 @@ class Commands(BaseCommands):
 
             cd.interact(banner=banner, local=local_vars)
 
+    @alias("shaders")
+    def shader(self, args: List[str]) -> None:
+        """Recover hxsl shaders from the image. `shader [name]`
+
+        With no argument, lists every shader and its var/function counts. With a
+        name (or substring), dumps that shader's interface — declared inputs,
+        params, textures, globals, outputs and functions — decoded from the
+        serialized `hxsl.ShaderData` in the string pool."""
+        from . import hxsl
+
+        shaders = hxsl.find_shaders(self.code)
+        if not shaders:
+            print("No hxsl shaders found in this image.")
+            return
+        if args:
+            needle = args[0].lower()
+            matches = [s for s in shaders if needle in s.name.lower()]
+            if not matches:
+                print(f"No shader matching {args[0]!r}.")
+                return
+            for s in matches:
+                print(hxsl.shader_header(s))
+                print()
+        else:
+            print(f"{len(shaders)} shader(s):\n")
+            for s in sorted(shaders, key=lambda s: s.name):
+                params = sum(1 for v in s.vars if v.kind == "Param")
+                print(f"  {s.name:36} {len(s.vars):3} vars, {params} params")
+
     def sha(self, args: List[str]) -> None:
         """Print the SHA-256 of the loaded bytecode image (used to pin plugins)."""
         print(self.code.sha256 or "unknown (loaded without a file/bytes source)")
