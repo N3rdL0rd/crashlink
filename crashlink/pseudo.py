@@ -22,6 +22,7 @@ from .core import (
     gIndex,
 )
 from . import disasm
+from . import hxsl
 from .decomp import (
     IRBreak,
     IRContinue,
@@ -3260,8 +3261,6 @@ def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
     # If this class is an hxsl shader, its real source is the serialized ShaderData
     # (the bytecode only holds generated uniform-plumbing). Recover and render it.
     try:
-        from . import hxsl
-
         shader = hxsl.shader_for_class(code, class_name)
         if shader is not None:
             return hxsl.render_shader(shader), set(), "hxsl.Shader"
