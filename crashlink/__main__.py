@@ -941,6 +941,45 @@ def primary(
     return decorator
 
 
+def _emit_haxe(res: str) -> None:
+    """Print Haxe pseudocode, syntax-highlighted when pygments is available."""
+    try:
+        from pygments import highlight
+        from pygments.lexers import HaxeLexer
+        from pygments.formatters import Terminal256Formatter
+
+        print(highlight(res, HaxeLexer(), Terminal256Formatter(style="dracula")))
+    except ImportError:
+        print(res)
+
+
+def _copy_to_clipboard(text: str) -> bool:
+    """Copy `text` to the system clipboard. Returns True on success.
+
+    Tries pyperclip, then platform CLIs (wl-copy/xclip/xsel on Linux, pbcopy on
+    macOS, clip on Windows), so it works without an extra dependency installed."""
+    try:
+        import pyperclip  # type: ignore[import-untyped]
+
+        pyperclip.copy(text)
+        return True
+    except Exception:
+        pass
+    candidates = [
+        ["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"],
+        ["pbcopy"], ["clip"],
+    ]
+    for cmd in candidates:
+        if shutil.which(cmd[0]) is None:
+            continue
+        try:
+            subprocess.run(cmd, input=text.encode("utf-8"), check=True)
+            return True
+        except (subprocess.SubprocessError, OSError):
+            continue
+    return False
+
+
 def alias(
     *aliases: str,
 ) -> Callable[[Callable[[Commands, List[str]], None]], Callable[[Commands, List[str]], None]]:
@@ -1291,24 +1330,79 @@ class Commands(BaseCommands):
         for func in self.code.functions:
             if func.findex.value == index:
                 ir = decomp.IRFunction(self.code, func)
-                res = pseudo(ir)
-
                 print("\n")
-
-                try:
-                    from pygments import highlight
-                    from pygments.lexers import HaxeLexer
-                    from pygments.formatters import Terminal256Formatter
-
-                    lexer = HaxeLexer()
-                    formatter = Terminal256Formatter(style="dracula")
-                    highlighted_output = highlight(res, lexer, formatter)
-                    print(highlighted_output)
-                except ImportError:
-                    print("[warning] pygments not found.")
-                    print(res)
+                _emit_haxe(pseudo(ir))
                 return
         print("Function not found.")
+
+    def _funcs_in_file(self, needle: str) -> List["Function"]:
+        """Functions whose debug file matches `needle` (exact, suffix, or basename)."""
+        out: List["Function"] = []
+        for func in self.code.functions:
+            try:
+                f = func.resolve_file(self.code)
+            except Exception:
+                continue
+            if f == needle or f.endswith(needle) or os.path.basename(f) == needle:
+                out.append(func)
+        return out
+
+    @alias("df")
+    def decompfile(self, args: List[str]) -> None:
+        """Decompiles every function in a debug file to one dump. `decompfile <file>`
+
+        `<file>` matches a debug file by full path, suffix, or basename (e.g.
+        `df Main.hx`). Pair with `copy` to grab the whole file: `copy df Main.hx`."""
+        if not args:
+            print("Usage: decompfile <file>")
+            return
+        if not self.code.has_debug_info:
+            print("Debug info not found.")
+            return
+        funcs = self._funcs_in_file(args[0])
+        if not funcs:
+            print(f"No functions found in file: {args[0]}")
+            return
+        chunks: List[str] = []
+        for func in funcs:
+            header = disasm.func_header(self.code, func)
+            try:
+                chunks.append(pseudo(decomp.IRFunction(self.code, func)))
+            except Exception as e:
+                chunks.append(f"// {header}\n// decompilation failed: {e}")
+        _emit_haxe("\n\n".join(chunks))
+
+    @alias("cp")
+    def copy(self, args: List[str]) -> None:
+        """Runs a command and copies its (plain-text) output to your clipboard. `copy <command> [args...]`
+
+        Example: `copy df Main.hx` decompiles the whole file and puts it on your
+        clipboard instead of the screen. ANSI colour is stripped before copying."""
+        if not args:
+            print("Usage: copy <command> [args...]")
+            return
+        commands = self._get_commands()
+        sub = args[0]
+        if sub not in commands or sub in ("copy", "cp"):
+            print(f"Unknown command: {sub}")
+            return
+        import io
+        from contextlib import redirect_stdout
+        from .decomp import _strip_ansi
+
+        buf = io.StringIO()
+        try:
+            with redirect_stdout(buf):
+                commands[sub](args[1:])
+        except Exception as e:
+            print(f"Command '{sub}' failed: {e}")
+            return
+        text = _strip_ansi(buf.getvalue()).strip("\n") + "\n"
+        if _copy_to_clipboard(text):
+            print(f"Copied {len(text)} chars from '{sub}' to clipboard.")
+        else:
+            print("Could not access clipboard (install pyperclip or xclip/wl-clipboard). Output:")
+            print(text, end="")
 
     @alias("edit")
     def patch(self, args: List[str]) -> None:
