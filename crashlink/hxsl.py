@@ -24,11 +24,17 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .core import Bytecode
 
-# --- hxsl.Ast enum orderings (constructor index -> name), from heaps' Ast.hx ---
+# --- hxsl.Ast enum orderings (constructor index -> name) ---
+#
+# THESE ARE VERSION-SPECIFIC. hxsl's enums (especially TGlobal and Type) gain
+# constructors between heaps releases, which shifts every later index. The tables
+# below are for heaps **1.6.0** (the version Dead Cells ships — see sourcerer's
+# version pinning). Decoding a shader from a different heaps build needs that
+# build's Ast.hx enum orders.
 _TYPE = [
     "TVoid", "TInt", "TBool", "TFloat", "TString", "TVec", "TMat3", "TMat4", "TMat3x4",
-    "TBytes", "TSampler", "TRWTexture", "TMat2", "TStruct", "TFun", "TArray", "TBuffer",
-    "TChannel", "TTextureHandle", "TBufferHandle",
+    "TBytes", "TSampler2D", "TSampler2DArray", "TSamplerCube", "TStruct", "TFun", "TArray",
+    "TBuffer", "TChannel",
 ]
 _VARKIND = ["Global", "Input", "Param", "Var", "Local", "Output", "Function"]
 _VARQUAL = [
@@ -37,6 +43,32 @@ _VARQUAL = [
 ]
 _VECTYPE = ["VInt", "VFloat", "VBool"]
 _TEXDIM = ["T1D", "T2D", "T3D", "TCube"]
+_COMPONENT = ["x", "y", "z", "w"]
+_CONST = ["CNull", "CBool", "CInt", "CFloat", "CString"]
+_FUNKIND = ["Vertex", "Fragment", "Init", "Helper", "Main"]
+# hxsl.TExprDef constructor order (Ast.hx).
+_TEXPRDEF = [
+    "TConst", "TVar", "TGlobal", "TParenthesis", "TBlock", "TBinop", "TUnop", "TVarDecl",
+    "TCall", "TSwiz", "TIf", "TDiscard", "TReturn", "TFor", "TContinue", "TBreak", "TArray",
+    "TArrayDecl", "TSwitch", "TWhile", "TMeta", "TField", "TSyntax",
+]
+# hxsl.TGlobal (GLSL builtins), heaps 1.6.0 order.
+_TGLOBAL = [
+    "radians", "degrees", "sin", "cos", "tan", "asin", "acos", "atan", "pow", "exp", "log",
+    "exp2", "log2", "sqrt", "inversesqrt", "abs", "sign", "floor", "ceil", "fract", "mod",
+    "min", "max", "clamp", "mix", "step", "smoothstep", "length", "distance", "dot", "cross",
+    "normalize", "reflect", "texture", "textureLod", "int", "float", "bool", "vec2", "vec3",
+    "vec4", "ivec2", "ivec3", "ivec4", "bvec2", "bvec3", "bvec4", "mat2", "mat3", "mat4",
+    "mat3x4", "saturate", "pack", "unpack", "packNormal", "unpackNormal", "screenToUv",
+    "uvToScreen", "dFdx", "dFdy", "fwidth", "channelRead", "channelReadLod", "trace",
+    "vertexID", "instanceID",
+]
+# haxe.macro.Binop symbol per constructor index (Haxe 4). Index 20 (OpAssignOp) is special.
+_BINOP = [
+    "+", "*", "/", "-", "=", "==", "!=", ">", ">=", "<", "<=", "&", "|", "^", "&&", "||",
+    "<<", ">>", ">>>", "%", None, "...", "=>", "in",
+]
+_UNOP = ["++", "--", "!", "-", "~"]
 
 
 class HxEnum:
@@ -193,17 +225,13 @@ def _type_str(t: Any) -> str:
         vt = _enum_name(t.args[1], _VECTYPE) if len(t.args) > 1 else "VFloat"
         base = {"VFloat": "Vec", "VInt": "IVec", "VBool": "BVec"}.get(vt, "Vec")
         return f"{base}{size}"
-    if name == "TSampler":
-        dim = _enum_name(t.args[0], _TEXDIM) if t.args else "?"
-        arr = "Array" if len(t.args) > 1 and t.args[1] else ""
-        return f"Sampler{dim[1:]}{arr}"  # T2D -> Sampler2D
     if name == "TArray":
         return f"Array<{_type_str(t.args[0])}>" if t.args else "Array"
     if name == "TChannel":
         return "Channel"
     if name == "TStruct":
         return "Struct"
-    # strip leading T for the simple scalars/matrices (TFloat->Float, TMat4->Mat4)
+    # Strip the leading T: TFloat->Float, TMat4->Mat4, TSampler2D->Sampler2D, …
     return name[1:] if name.startswith("T") else name
 
 
@@ -280,3 +308,249 @@ def shader_header(shader: Shader) -> str:
             lines.append(f"    {v.kind.lower():8} {v.name}: {v.type}{quals}")
     lines.append("}")
     return "\n".join(lines)
+
+
+# --- full source rendering (port of hxsl.Printer) --------------------------
+
+
+class _ShaderPrinter:
+    """Renders a deserialized ShaderData back to readable hxsl source — a port of
+    heaps' own `hxsl.Printer`."""
+
+    def __init__(self) -> None:
+        self.buf: List[str] = []
+
+    def add(self, s: str) -> None:
+        self.buf.append(s)
+
+    def render(self, raw: Dict[str, Any]) -> str:
+        self.buf = []
+        vars_ = raw.get("vars") or []
+        for v in vars_:
+            if isinstance(v, dict) and _enum_name(v.get("kind"), _VARKIND) == "Function":
+                continue
+            self._var(v, None, "")
+            self.add(";\n")
+        if vars_:
+            self.add("\n")
+        for f in raw.get("funs") or []:
+            self._fun(f)
+            self.add("\n\n")
+        return "".join(self.buf)
+
+    # -- vars --
+    def _var_name(self, v: Dict[str, Any]) -> None:
+        parent = v.get("parent")
+        if isinstance(parent, dict):
+            self._var_name(parent)
+            self.add(".")
+        self.add(v.get("name", "?"))
+
+    def _var(self, v: Any, def_kind: Optional[str], tabs: str, parent: Any = None) -> None:
+        if not isinstance(v, dict):
+            self.add("?")
+            return
+        for q in v.get("qualifiers") or []:
+            self.add("@" + _qual_str(q) + " ")
+        kind = _enum_name(v.get("kind"), _VARKIND)
+        if kind != def_kind and kind != "?":
+            self.add(f"@{kind.lower()} ")
+        vparent = v.get("parent")
+        if parent is not None and vparent is parent:
+            self.add(v.get("name", "?"))
+        else:
+            self.add("var ")
+            self._var_name(v)
+        self.add(" : ")
+        t = v.get("type")
+        if isinstance(t, HxEnum) and _enum_name(t, _TYPE) == "TStruct":
+            self.add("{")
+            first = True
+            for child in (t.args[0] if t.args else []):
+                if first:
+                    first = False
+                else:
+                    self.add(", ")
+                self._var(child, v.get("kind_name"), tabs, v)
+            self.add("}")
+        else:
+            self.add(_type_str(t))
+
+    # -- functions --
+    def _fun(self, f: Dict[str, Any]) -> None:
+        ref = f.get("ref") or {}
+        self.add(f"function {ref.get('name', '?')}(")
+        args = f.get("args") or []
+        for i, a in enumerate(args):
+            self.add(" " if i == 0 else ", ")
+            self._var(a, "Local", "")
+        if args:
+            self.add(" ")
+        self.add(f") : {_type_str(f.get('ret'))} ")
+        self._expr(f.get("expr"), "")
+
+    # -- expressions --
+    def _const(self, c: Any) -> None:
+        if not isinstance(c, HxEnum):
+            self.add("?")
+            return
+        name = _enum_name(c, _CONST)
+        if name == "CNull":
+            self.add("null")
+        elif name == "CString":
+            self.add('"' + str(c.args[0]) + '"')
+        elif name == "CBool":
+            self.add("true" if c.args and c.args[0] else "false")
+        else:
+            self.add(str(c.args[0]) if c.args else "?")
+
+    def _binop(self, op: Any) -> str:
+        if not isinstance(op, HxEnum):
+            return "?"
+        if op.index == 20 and op.args:  # OpAssignOp(sub)
+            return self._binop(op.args[0]) + "="
+        sym = _BINOP[op.index] if 0 <= op.index < len(_BINOP) else None
+        return sym if sym else "?"
+
+    def _expr(self, e: Any, tabs: str) -> None:
+        if not isinstance(e, dict) or not isinstance(e.get("e"), HxEnum):
+            self.add("?")
+            return
+        node = e["e"]
+        kind = _enum_name(node, _TEXPRDEF)
+        a = node.args
+
+        if kind == "TConst":
+            self._const(a[0])
+        elif kind == "TVar":
+            self._var_name(a[0]) if isinstance(a[0], dict) else self.add("?")
+        elif kind == "TGlobal":
+            g = a[0]
+            self.add(_TGLOBAL[g.index] if isinstance(g, HxEnum) and 0 <= g.index < len(_TGLOBAL) else "?")
+        elif kind == "TParenthesis":
+            self.add("(")
+            self._expr(a[0], tabs)
+            self.add(")")
+        elif kind == "TBlock":
+            self.add("{")
+            inner = tabs + "\t"
+            for sub in a[0]:
+                self.add("\n" + inner)
+                self._expr(sub, inner)
+                self.add(";")
+            if a[0]:
+                self.add("\n" + tabs)
+            self.add("}")
+        elif kind == "TBinop":
+            self._expr(a[1], tabs)
+            self.add(f" {self._binop(a[0])} ")
+            self._expr(a[2], tabs)
+        elif kind == "TUnop":
+            op = a[0]
+            self.add(_UNOP[op.index] if isinstance(op, HxEnum) and 0 <= op.index < len(_UNOP) else "?")
+            self._expr(a[1], tabs)
+        elif kind == "TVarDecl":
+            self._var(a[0], "Local", tabs)
+            if len(a) > 1 and a[1] is not None:
+                self.add(" = ")
+                self._expr(a[1], tabs)
+        elif kind == "TCall":
+            self._expr(a[0], tabs)
+            self.add("(")
+            for i, arg in enumerate(a[1]):
+                if i:
+                    self.add(", ")
+                self._expr(arg, tabs)
+            self.add(")")
+        elif kind == "TSwiz":
+            self._expr(a[0], tabs)
+            self.add(".")
+            for r in a[1]:
+                self.add(_COMPONENT[r.index] if isinstance(r, HxEnum) and 0 <= r.index < 4 else "?")
+        elif kind == "TIf":
+            self.add("if( ")
+            self._expr(a[0], tabs)
+            self.add(" ) ")
+            self._expr(a[1], tabs)
+            if len(a) > 2 and a[2] is not None:
+                self.add(" else ")
+                self._expr(a[2], tabs)
+        elif kind == "TReturn":
+            self.add("return")
+            if a and a[0] is not None:
+                self.add(" ")
+                self._expr(a[0], tabs)
+        elif kind == "TDiscard":
+            self.add("discard")
+        elif kind == "TContinue":
+            self.add("continue")
+        elif kind == "TBreak":
+            self.add("break")
+        elif kind == "TFor":
+            self.add("for( ")
+            self._var_name(a[0]) if isinstance(a[0], dict) else self.add("?")
+            self.add(" in ")
+            self._expr(a[1], tabs)
+            self.add(" ) ")
+            self._expr(a[2], tabs)
+        elif kind == "TArray":
+            self._expr(a[0], tabs)
+            self.add("[")
+            self._expr(a[1], tabs)
+            self.add("]")
+        elif kind == "TArrayDecl":
+            self.add("[")
+            for i, sub in enumerate(a[0]):
+                if i:
+                    self.add(", ")
+                self._expr(sub, tabs)
+            self.add("]")
+        elif kind == "TField":
+            self._expr(a[0], tabs)
+            self.add(".")
+            self.add(str(a[1]))
+        elif kind == "TWhile":
+            normal = len(a) > 2 and a[2]
+            if normal:
+                self.add("while( ")
+                self._expr(a[0], tabs)
+                self.add(" ) {\n" + tabs + "\t")
+                self._expr(a[1], tabs + "\t")
+                self.add("\n" + tabs + "}")
+            else:
+                self.add("do {\n" + tabs + "\t")
+                self._expr(a[1], tabs + "\t")
+                self.add("\n" + tabs + "} while( ")
+                self._expr(a[0], tabs)
+                self.add(" )")
+        elif kind == "TMeta":
+            self.add("@" + str(a[0]))
+            self.add(" ")
+            self._expr(a[2], tabs)
+        else:
+            # TSwitch / TSyntax and anything unhandled — leave a marker.
+            self.add(f"/*{kind}*/")
+
+
+def render_shader(shader: Shader) -> str:
+    """Render a recovered shader back to hxsl Haxe source."""
+    body = _ShaderPrinter().render(shader.raw)
+    return f"class {shader.name.rsplit('.', 1)[-1]} extends hxsl.Shader {{\n\tstatic var SRC = {{\n{body}\t}};\n}}"
+
+
+def shaders_by_name(code: Bytecode) -> Dict[str, "Shader"]:
+    """All shaders keyed by their embedded name (e.g. `shader.Base2d`), cached on
+    the code object so repeated decompiler lookups don't re-scan the string pool."""
+    cached = getattr(code, "_hxsl_shaders_cache", None)
+    if cached is None:
+        cached = {s.name: s for s in find_shaders(code)}
+        try:
+            code._hxsl_shaders_cache = cached  # type: ignore[attr-defined]
+        except (AttributeError, TypeError):
+            pass
+    return cached
+
+
+def shader_for_class(code: Bytecode, class_name: str) -> Optional["Shader"]:
+    """The recovered shader for a class name (destaticified), if it is one."""
+    return shaders_by_name(code).get(class_name)

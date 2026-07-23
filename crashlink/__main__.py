@@ -2340,7 +2340,7 @@ class Commands(BaseCommands):
                 print(f"No shader matching {args[0]!r}.")
                 return
             for s in matches:
-                print(hxsl.shader_header(s))
+                _emit_haxe(hxsl.render_shader(s))
                 print()
         else:
             print(f"{len(shaders)} shader(s):\n")

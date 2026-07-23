@@ -3256,6 +3256,17 @@ def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
         return "// Error: IRClass contains no valid Obj definitions.", set(), None
 
     class_name = destaticify(primary_obj.name.resolve(code))
+
+    # If this class is an hxsl shader, its real source is the serialized ShaderData
+    # (the bytecode only holds generated uniform-plumbing). Recover and render it.
+    try:
+        from . import hxsl
+
+        shader = hxsl.shader_for_class(code, class_name)
+        if shader is not None:
+            return hxsl.render_shader(shader), set(), "hxsl.Shader"
+    except Exception:
+        pass  # never let shader recovery break normal decompilation
     output_lines: List[str] = []
     indent_str = _indent_str(1)
 

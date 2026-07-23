@@ -50,3 +50,23 @@ def test_parse_shader_header_smoke():
     v = sh.vars[0]
     assert v.name == "foo" and v.kind == "Param" and v.type == "Float"
     assert "param" in shader_header(sh)
+
+
+def test_render_shader_body():
+    from crashlink.hxsl import HxEnum, Shader, render_shader
+
+    var = {  # @param var amount : Float
+        "name": "amount",
+        "kind": HxEnum("hxsl.VarKind", 2, []),  # Param
+        "type": HxEnum("hxsl.Type", 3, []),     # TFloat
+    }
+    # function fragment() : Void { return 1.0; }  ->  TReturn(TConst(CFloat 1.0))
+    body = {"e": HxEnum("hxsl.TExprDef", 12, [
+        {"e": HxEnum("hxsl.TExprDef", 0, [HxEnum("hxsl.Const", 3, [1.0])])}
+    ])}
+    fun = {"ref": {"name": "fragment"}, "args": [], "ret": HxEnum("hxsl.Type", 0, []), "expr": body}
+    raw = {"name": "T", "vars": [var], "funs": [fun]}
+    out = render_shader(Shader(name="T", vars=[], raw=raw))
+    assert "@param var amount : Float;" in out
+    assert "function fragment() : Void" in out
+    assert "return 1.0" in out
