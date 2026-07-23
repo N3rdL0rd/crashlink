@@ -303,6 +303,25 @@ class IRFunction:
                 IREmptyConditionalNormalizer(self),
                 IRTerminalValueInliner(self),
             ]
+            # Splice in plugin optimizers gated to this bytecode (see
+            # crashlink.plugins). Which classes apply is a property of the image,
+            # so resolve it once per Bytecode and cache it on the code object.
+            plugin_classes = getattr(self.code, "_plugin_optimizer_classes", None)
+            if plugin_classes is None:
+                from ..plugins import optimizers_for
+
+                plugin_classes = (
+                    optimizers_for(self.code, "start"),
+                    optimizers_for(self.code, "end"),
+                )
+                try:
+                    self.code._plugin_optimizer_classes = plugin_classes  # type: ignore[attr-defined]
+                except AttributeError:
+                    pass
+            starts, ends = plugin_classes
+            self.optimizers = (
+                [cls(self) for cls in starts] + self.optimizers + [cls(self) for cls in ends]
+            )
             self._optimize()
             self.apply_annotations()
 

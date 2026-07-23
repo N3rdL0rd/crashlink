@@ -10,6 +10,7 @@ you.
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import struct
 from abc import ABC, abstractmethod
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -1847,6 +1848,11 @@ class Bytecode(Serialisable):
 
     def __init__(self) -> None:
         self.deserialised = False
+        # SHA-256 of the raw image and where it was loaded from, set by
+        # from_path/from_bytes. Used to gate plugin optimizers to a specific
+        # bytecode (see crashlink.plugins).
+        self.sha256: Optional[str] = None
+        self.source_path: Optional[str] = None
         self.magic = RawData(3)
         self.version = SerialisableInt()
         self.version.length = 1
@@ -2079,6 +2085,12 @@ class Bytecode(Serialisable):
         f = open(path, "rb")
         instance = cls().deserialise(f, search_magic=search_magic, progress_cb=progress_cb)
         f.close()
+        try:
+            with open(path, "rb") as hf:
+                instance.sha256 = hashlib.sha256(hf.read()).hexdigest()
+            instance.source_path = path
+        except OSError:
+            pass
         return instance
 
     @classmethod
@@ -2094,6 +2106,7 @@ class Bytecode(Serialisable):
         f = BytesIO(data)
         instance = cls().deserialise(f, search_magic=search_magic, progress_cb=progress_cb)
         f.close()
+        instance.sha256 = hashlib.sha256(data).hexdigest()
         return instance
 
     @classmethod

@@ -163,6 +163,7 @@ from .globals import *
 from .opcodes import *
 from . import decomp as decomp
 from . import disasm as disasm
+from . import plugins as plugins
 from . import pseudo as pseudo
 from . import interp as interp
 from . import hlc as hlc

@@ -2288,6 +2288,23 @@ class Commands(BaseCommands):
 
             cd.interact(banner=banner, local=local_vars)
 
+    def sha(self, args: List[str]) -> None:
+        """Print the SHA-256 of the loaded bytecode image (used to pin plugins)."""
+        print(self.code.sha256 or "unknown (loaded without a file/bytes source)")
+
+    def plugins(self, args: List[str]) -> None:
+        """List discovered plugin optimizers and whether they apply to this image."""
+        from . import plugins as plugin_mod
+
+        entries = plugin_mod.registered()
+        if not entries:
+            print("No plugin optimizers found.")
+            print(f"Searched: {', '.join(plugin_mod.plugin_dirs())}")
+            return
+        for e in entries:
+            applies = "applies" if e.predicate(self.code) else "n/a"
+            print(f"  [{applies:7}] {e.name}  (position: {e.position})")
+
     def offset(self, args: List[str]) -> None:
         """Print the bytecode section at a given offset. `offset <offset in hex>`"""
         if len(args) == 0:
