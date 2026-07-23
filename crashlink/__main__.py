@@ -1356,6 +1356,28 @@ class Commands(BaseCommands):
             return
         _emit_haxe(out)
 
+    @alias("stubfile")
+    def stub(self, args: List[str]) -> None:
+        """Emit a compilable stub of a whole file — signatures kept, bodies stubbed. `stub <file>`
+
+        Every class keeps its fields and exact method signatures (arg + return
+        types); bodies become type-correct placeholders (`throw` / `super(...)`).
+        For large decompilation projects: stub the files you haven't reached so
+        the project keeps compiling. Pair with `copy`: `copy stub Foo.hx`."""
+        if not args:
+            print("Usage: stub <file>")
+            return
+        if not self.code.has_debug_info:
+            print("Debug info not found.")
+            return
+        from .pseudo import stub_file
+
+        out = stub_file(self.code, args[0])
+        if out is None:
+            print(f"No debug file matching: {args[0]}")
+            return
+        _emit_haxe(out)
+
     @alias("cp")
     def copy(self, args: List[str]) -> None:
         """Runs a command and copies its (plain-text) output to your clipboard. `copy <command> [args...]`

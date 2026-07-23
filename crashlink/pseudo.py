@@ -3426,3 +3426,159 @@ def decompile_file(code: Bytecode, needle: str) -> Optional[str]:
                 chunks.append(f"// class {entry.canonical_name}: decompilation failed: {e}")
 
     return "\n\n".join(chunks)
+
+
+# --- stub generation -------------------------------------------------------
+#
+# For large decompilation projects: emit a whole file as a *compilable stub* —
+# every class with its fields and its methods' exact signatures (names, argument
+# types, return types), but with bodies replaced by a type-correct placeholder.
+# Other files that reference this one compile against a faithful API surface,
+# while the un-decompiled bodies fail loudly if actually called.
+
+
+def _stub_default(typ: Type) -> str:
+    """A type-correct default *expression* for a stub value of `typ`."""
+    k = typ.kind.value
+    K = Type.Kind
+    if k in (K.U8.value, K.U16.value, K.I32.value, K.I64.value):
+        return "0"
+    if k in (K.F32.value, K.F64.value):
+        return "0.0"
+    if k == K.BOOL.value:
+        return "false"
+    return "null"
+
+
+def _find_constructor(code: Bytecode, obj: Obj) -> Optional[Function]:
+    """The `__constructor__` function of a class, searching protos and bindings."""
+    entries = list(getattr(obj, "protos", [])) + list(getattr(obj, "bindings", []))
+    for entry in entries:
+        try:
+            fn = entry.findex.resolve(code)
+        except Exception:
+            continue
+        if isinstance(fn, Function) and code.partial_func_name(fn) == "__constructor__":
+            return fn
+    return None
+
+
+def _stub_function(ir_func: IRFunction, ir_class: "IRClass") -> Optional[str]:
+    """One method rendered as a compilable stub. None for natives (skipped)."""
+    code = ir_func.code
+    func = ir_func.func
+    if isinstance(func, Native):
+        return None
+
+    raw = code.partial_func_name(func)
+    is_ctor = raw == "__constructor__"
+    name = "new" if is_ctor else (raw if raw and raw != "<none>" else f"f{func.findex.value}")
+    is_instance = is_ctor or ir_func in ir_class.methods
+
+    fun_def = func.type.resolve(code).definition
+    params: List[str] = []
+    ret_type: Optional[Type] = None
+    if isinstance(fun_def, Fun):
+        start = 1 if is_instance else 0
+        for i, arg_idx in enumerate(fun_def.args[start:]):
+            t = disasm.type_to_haxe(disasm.type_name(code, arg_idx.resolve(code)))
+            params.append(f"arg{i}: {t}" if t else f"arg{i}")
+        ret_type = fun_def.ret.resolve(code)
+    ret_name = disasm.type_to_haxe(disasm.type_name(code, ret_type)) if ret_type is not None else "Void"
+
+    static_kw = "" if is_instance else "static "
+    override_kw = ""
+    if is_instance and not is_ctor and _method_overrides(name, ir_class, code):
+        override_kw = "override "
+    ret_decl = "" if is_ctor else (f": {ret_name}" if ret_name else "")
+    header = f"public {static_kw}{override_kw}function {name}({', '.join(params)}){ret_decl} {{"
+
+    body: Optional[str] = None
+    if is_ctor:
+        # A derived class must call super(); supply type-correct default args so
+        # the stub compiles even when we don't reproduce the real constructor.
+        dyn = ir_class.dynamic
+        if dyn is not None and dyn.super and dyn.super.value > 0:
+            parent_def = dyn.super.resolve(code).definition
+            super_args = ""
+            if isinstance(parent_def, Obj):
+                pctor = _find_constructor(code, parent_def)
+                if pctor is not None:
+                    pfun = pctor.type.resolve(code).definition
+                    if isinstance(pfun, Fun) and len(pfun.args) > 1:
+                        super_args = ", ".join(_stub_default(a.resolve(code)) for a in pfun.args[1:])
+            body = f"    super({super_args});"
+    elif ret_type is not None and ret_type.kind.value != Type.Kind.VOID.value:
+        # `throw` type-checks against any return type — the standard stub body.
+        body = f'    throw "stub: {name} not decompiled";'
+
+    return f"{header}\n{body}\n}}" if body else f"{header}\n}}"
+
+
+def _stub_class(ir_class: "IRClass") -> str:
+    """A class rendered as a compilable stub: fields + stubbed method signatures."""
+    code = ir_class.code
+    primary = ir_class.dynamic if ir_class.dynamic else ir_class.static
+    assert primary is not None
+    class_name = destaticify(primary.name.resolve(code))
+
+    lines: List[str] = []
+    header = f"class {class_name}"
+    if ir_class.dynamic and ir_class.dynamic.super and ir_class.dynamic.super.value > 0:
+        super_def = ir_class.dynamic.super.resolve(code).definition
+        if isinstance(super_def, Obj):
+            header += f" extends {destaticify(super_def.name.resolve(code))}"
+    header += " {"
+    lines.append(header)
+
+    for field_name, field_type in ir_class.static_fields:
+        lines.append(f"    public static var {field_name}: {disasm.type_to_haxe(disasm.type_name(code, field_type))};")
+    for field_name, field_type in ir_class.fields:
+        lines.append(f"    public var {field_name}: {disasm.type_to_haxe(disasm.type_name(code, field_type))};")
+    if ir_class.static_fields or ir_class.fields:
+        lines.append("")
+
+    for ir_func in ir_class.static_methods + ir_class.methods:
+        stub = _stub_function(ir_func, ir_class)
+        if stub is None:
+            continue
+        for line in stub.split("\n"):
+            lines.append(f"    {line}")
+        lines.append("")
+
+    if lines and lines[-1] == "":
+        lines.pop()
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def stub_file(code: Bytecode, needle: str) -> Optional[str]:
+    """Emit a compilable stub of a whole debug file: every class with its fields
+    and exact method signatures, bodies replaced by type-correct placeholders.
+
+    For large decompilation projects — stub the files you haven't reached yet so
+    the project keeps compiling and the API surface other files see stays faithful.
+    `needle` matches a debug file by full path, suffix, or basename; None if no
+    match. Classes are ordered by `disasm.file_class_map`.
+    """
+    fmap = disasm.file_class_map(code)
+    keys = [k for k in fmap if k == needle or k.endswith(needle) or os.path.basename(k) == needle]
+    if not keys:
+        return None
+
+    reg = _method_registry(code)
+    chunks: List[str] = []
+    emitted: Set[str] = set()
+    for key in keys:
+        for entry in fmap[key]:
+            if entry.canonical_name == "(standalone)" or entry.canonical_name in emitted:
+                continue
+            emitted.add(entry.canonical_name)
+            reg_entry = reg.get(entry.methods[0].findex) if entry.methods else None
+            if reg_entry is None:
+                continue
+            try:
+                chunks.append(_stub_class(IRClass(code, reg_entry[0])))
+            except Exception as e:
+                chunks.append(f"// class {entry.canonical_name}: stub failed: {e}")
+    return "\n\n".join(chunks)

@@ -419,3 +419,19 @@ def test_throw_lifted():
     out = _decompile_named("tests/haxe/ThrowCase.hl", "ThrowCase.decode")
     assert "throw " in out
     assert "UNLIFTED OPCODE: Throw" not in out
+
+
+def test_stub_file_signatures_and_bodies():
+    from crashlink import Bytecode
+    from crashlink.pseudo import stub_file
+
+    out = stub_file(Bytecode.from_path("tests/haxe/Clazz.hl"), "Clazz.hx")
+    assert out is not None
+    # class + field kept
+    assert "class Clazz extends Parent" in out
+    assert "public var b: Int;" in out
+    # constructor calls super so it compiles
+    assert "public function new()" in out and "super(" in out
+    # void method is empty, non-void method stubs with a throw (type-checks)
+    assert "function main(): Void" in out
+    assert 'throw "stub' in out and "function method(): Int" in out
