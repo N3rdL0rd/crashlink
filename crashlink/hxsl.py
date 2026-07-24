@@ -317,24 +317,30 @@ class _ShaderPrinter:
     """Renders a deserialized ShaderData back to readable hxsl source — a port of
     heaps' own `hxsl.Printer`."""
 
-    def __init__(self) -> None:
+    def __init__(self, unit: str = "    ") -> None:
         self.buf: List[str] = []
+        self.unit = unit  # one indentation level
 
     def add(self, s: str) -> None:
         self.buf.append(s)
 
-    def render(self, raw: Dict[str, Any]) -> str:
+    def render(self, raw: Dict[str, Any], base: str = "") -> str:
+        """Render the shader body. Every top-level line is prefixed with `base`, and
+        nested blocks indent from there, so the whole thing sits cleanly inside its
+        enclosing `static var SRC = { … }`."""
         self.buf = []
         vars_ = raw.get("vars") or []
         for v in vars_:
             if isinstance(v, dict) and _enum_name(v.get("kind"), _VARKIND) == "Function":
                 continue
-            self._var(v, None, "")
+            self.add(base)
+            self._var(v, None, base)
             self.add(";\n")
         if vars_:
             self.add("\n")
         for f in raw.get("funs") or []:
-            self._fun(f)
+            self.add(base)
+            self._fun(f, base)
             self.add("\n\n")
         return "".join(self.buf)
 
@@ -377,17 +383,17 @@ class _ShaderPrinter:
             self.add(_type_str(t))
 
     # -- functions --
-    def _fun(self, f: Dict[str, Any]) -> None:
+    def _fun(self, f: Dict[str, Any], base: str) -> None:
         ref = f.get("ref") or {}
         self.add(f"function {ref.get('name', '?')}(")
         args = f.get("args") or []
         for i, a in enumerate(args):
             self.add(" " if i == 0 else ", ")
-            self._var(a, "Local", "")
+            self._var(a, "Local", base)
         if args:
             self.add(" ")
         self.add(f") : {_type_str(f.get('ret'))} ")
-        self._expr(f.get("expr"), "")
+        self._expr(f.get("expr"), base)
 
     # -- expressions --
     def _const(self, c: Any) -> None:
@@ -433,7 +439,7 @@ class _ShaderPrinter:
             self.add(")")
         elif kind == "TBlock":
             self.add("{")
-            inner = tabs + "\t"
+            inner = tabs + self.unit
             for sub in a[0]:
                 self.add("\n" + inner)
                 self._expr(sub, inner)
@@ -514,12 +520,12 @@ class _ShaderPrinter:
             if normal:
                 self.add("while( ")
                 self._expr(a[0], tabs)
-                self.add(" ) {\n" + tabs + "\t")
-                self._expr(a[1], tabs + "\t")
+                self.add(" ) {\n" + tabs + self.unit)
+                self._expr(a[1], tabs + self.unit)
                 self.add("\n" + tabs + "}")
             else:
-                self.add("do {\n" + tabs + "\t")
-                self._expr(a[1], tabs + "\t")
+                self.add("do {\n" + tabs + self.unit)
+                self._expr(a[1], tabs + self.unit)
                 self.add("\n" + tabs + "} while( ")
                 self._expr(a[0], tabs)
                 self.add(" )")
@@ -534,8 +540,17 @@ class _ShaderPrinter:
 
 def render_shader(shader: Shader) -> str:
     """Render a recovered shader back to hxsl Haxe source."""
-    body = _ShaderPrinter().render(shader.raw)
-    return f"class {shader.name.rsplit('.', 1)[-1]} extends hxsl.Shader {{\n\tstatic var SRC = {{\n{body}\t}};\n}}"
+    unit = "    "
+    # Body sits two levels deep: inside the class, inside `static var SRC = { … }`.
+    body = _ShaderPrinter(unit=unit).render(shader.raw, base=unit * 2).rstrip("\n") + "\n"
+    class_name = shader.name.rsplit(".", 1)[-1]
+    return (
+        f"class {class_name} extends hxsl.Shader {{\n"
+        f"{unit}static var SRC = {{\n"
+        f"{body}"
+        f"{unit}}};\n"
+        f"}}"
+    )
 
 
 def shaders_by_name(code: Bytecode) -> Dict[str, "Shader"]:
