@@ -60,13 +60,14 @@ def test_render_shader_body():
         "kind": HxEnum("hxsl.VarKind", 2, []),  # Param
         "type": HxEnum("hxsl.Type", 3, []),     # TFloat
     }
-    # function fragment() : Void { return 1.0; }  ->  TReturn(TConst(CFloat 1.0))
-    body = {"e": HxEnum("hxsl.TExprDef", 12, [
+    # function fragment() { return 1.0; }  ->  TBlock([ TReturn(TConst(CFloat 1.0)) ])
+    ret = {"e": HxEnum("hxsl.TExprDef", 12, [
         {"e": HxEnum("hxsl.TExprDef", 0, [HxEnum("hxsl.Const", 3, [1.0])])}
     ])}
+    body = {"e": HxEnum("hxsl.TExprDef", 4, [[ret]])}
     fun = {"ref": {"name": "fragment"}, "args": [], "ret": HxEnum("hxsl.Type", 0, []), "expr": body}
     raw = {"name": "T", "vars": [var], "funs": [fun]}
     out = render_shader(Shader(name="T", vars=[], raw=raw))
     assert "@param var amount : Float;" in out
-    assert "function fragment() : Void" in out
+    assert "function fragment() {" in out  # no `var` on params, no return type
     assert "return 1.0" in out

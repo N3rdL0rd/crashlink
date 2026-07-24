@@ -43,7 +43,15 @@ _VARQUAL = [
 ]
 _VECTYPE = ["VInt", "VFloat", "VBool"]
 _TEXDIM = ["T1D", "T2D", "T3D", "TCube"]
+_PREC = ["Low", "Medium", "High"]
+_SIZEDECL = ["SConst", "SVar"]
 _COMPONENT = ["x", "y", "z", "w"]
+# Var kinds that carry a source-level metadata annotation. Only these four set a
+# kind in hxsl's MacroParser; Var/Local/Output render as a bare `var` (there is no
+# `@output`/`@local` source qualifier — outputs are the built-in `output`/pixelColor).
+_KIND_ANNOT = {"Global": "@global", "Input": "@input", "Param": "@param"}
+# Texture/channel read globals rendered as sampler methods: `tex.get(uv)`, not `texture(tex, uv)`.
+_TEX_METHOD = {"texture": "get", "textureLod": "getLod", "channelRead": "get", "channelReadLod": "getLod"}
 _CONST = ["CNull", "CBool", "CInt", "CFloat", "CString"]
 _FUNKIND = ["Vertex", "Fragment", "Init", "Helper", "Main"]
 # hxsl.TExprDef constructor order (Ast.hx).
@@ -226,24 +234,54 @@ def _type_str(t: Any) -> str:
         base = {"VFloat": "Vec", "VInt": "IVec", "VBool": "BVec"}.get(vt, "Vec")
         return f"{base}{size}"
     if name == "TArray":
-        return f"Array<{_type_str(t.args[0])}>" if t.args else "Array"
+        elem = _type_str(t.args[0]) if t.args else "?"
+        size = _size_str(t.args[1]) if len(t.args) > 1 else None
+        return f"Array<{elem}, {size}>" if size else f"Array<{elem}>"
     if name == "TChannel":
         return "Channel"
     if name == "TStruct":
-        return "Struct"
+        fields = t.args[0] if t.args else []
+        inner = ", ".join(
+            f"var {c.get('name', '?')} : {_type_str(c.get('type'))}" for c in fields if isinstance(c, dict)
+        )
+        return "{ " + inner + " }"
     # Strip the leading T: TFloat->Float, TMat4->Mat4, TSampler2D->Sampler2D, …
     return name[1:] if name.startswith("T") else name
 
 
+def _size_str(sd: Any) -> Optional[str]:
+    """Render an hxsl.SizeDecl (array size): a constant or a size-variable's name."""
+    if not isinstance(sd, HxEnum):
+        return None
+    name = _enum_name(sd, _SIZEDECL)
+    if name == "SConst":
+        return str(sd.args[0]) if sd.args else None
+    if name == "SVar" and sd.args and isinstance(sd.args[0], dict):
+        return sd.args[0].get("name")
+    return None
+
+
 def _qual_str(q: Any) -> str:
+    """A var qualifier as source metadata that hxsl's MacroParser accepts, or "" to
+    drop it (the `Name` qualifier is folded into the kind annotation by the caller;
+    borrow/doc/sampler/final/flat/noVar aren't parseable in 1.6.0, so are omitted —
+    losing them doesn't affect whether the shader compiles)."""
     if not isinstance(q, HxEnum):
-        return "?"
+        return ""
     name = _enum_name(q, _VARQUAL)
-    if name in ("Name", "Borrow", "Sampler", "Doc") and q.args:
-        return f"{name}({q.args[0]})"
-    if name == "Const" and q.args and q.args[0]:
-        return f"Const({q.args[0]})"
-    return name
+    args = q.args
+    if name == "Const":
+        return "const" + (f"({args[0]})" if args and args[0] else "")
+    if name == "Precision":
+        return (_enum_name(args[0], _PREC).lower() + "p") if args else "mediump"
+    if name == "Range" and len(args) >= 2:
+        return f"range({args[0]},{args[1]})"
+    if name == "PerInstance":
+        return f"perInstance({args[0]})" if args else "perInstance"
+    return {
+        "Private": "private", "Nullable": "nullable", "PerObject": "perObject",
+        "Shared": "shared", "Ignore": "ignore",
+    }.get(name, "")
 
 
 def _interpret(raw: Dict[str, Any]) -> Shader:
@@ -252,7 +290,7 @@ def _interpret(raw: Dict[str, Any]) -> Shader:
     for v in raw.get("vars", []) or []:
         if not isinstance(v, dict):
             continue
-        quals = [_qual_str(q) for q in (v.get("qualifiers") or [])]
+        quals = [s for s in (_qual_str(q) for q in (v.get("qualifiers") or [])) if s]
         vars_out.append(
             ShaderVar(
                 name=v.get("name", "?"),
@@ -334,7 +372,7 @@ class _ShaderPrinter:
             if isinstance(v, dict) and _enum_name(v.get("kind"), _VARKIND) == "Function":
                 continue
             self.add(base)
-            self._var(v, None, base)
+            self._var(v, base)
             self.add(";\n")
         if vars_:
             self.add("\n")
@@ -352,35 +390,29 @@ class _ShaderPrinter:
             self.add(".")
         self.add(v.get("name", "?"))
 
-    def _var(self, v: Any, def_kind: Optional[str], tabs: str, parent: Any = None) -> None:
+    def _var(self, v: Any, tabs: str) -> None:
+        """A top-level shader var declaration (the interface): source qualifiers,
+        the kind's metadata (`@param`/`@global`/… — bare `var` for Var/Local), then
+        `var name : type`."""
         if not isinstance(v, dict):
             self.add("?")
             return
+        # The Name qualifier isn't its own metadata — it's the string argument to the
+        # kind (`@param("customName")`), so pull it out to fold in below.
+        name_qual: Optional[str] = None
         for q in v.get("qualifiers") or []:
-            self.add("@" + _qual_str(q) + " ")
-        kind = _enum_name(v.get("kind"), _VARKIND)
-        if kind != def_kind and kind != "?":
-            self.add(f"@{kind.lower()} ")
-        vparent = v.get("parent")
-        if parent is not None and vparent is parent:
-            self.add(v.get("name", "?"))
-        else:
-            self.add("var ")
-            self._var_name(v)
-        self.add(" : ")
-        t = v.get("type")
-        if isinstance(t, HxEnum) and _enum_name(t, _TYPE) == "TStruct":
-            self.add("{")
-            first = True
-            for child in (t.args[0] if t.args else []):
-                if first:
-                    first = False
-                else:
-                    self.add(", ")
-                self._var(child, v.get("kind_name"), tabs, v)
-            self.add("}")
-        else:
-            self.add(_type_str(t))
+            if isinstance(q, HxEnum) and _enum_name(q, _VARQUAL) == "Name" and q.args:
+                name_qual = q.args[0]
+                continue
+            s = _qual_str(q)
+            if s:
+                self.add("@" + s + " ")
+        annot = _KIND_ANNOT.get(_enum_name(v.get("kind"), _VARKIND), "@var" if name_qual else "")
+        if annot:
+            self.add(f'{annot}("{name_qual}") ' if name_qual else f"{annot} ")
+        self.add("var ")
+        self._var_name(v)
+        self.add(" : " + _type_str(v.get("type")))
 
     # -- functions --
     def _fun(self, f: Dict[str, Any], base: str) -> None:
@@ -389,10 +421,11 @@ class _ShaderPrinter:
         args = f.get("args") or []
         for i, a in enumerate(args):
             self.add(" " if i == 0 else ", ")
-            self._var(a, "Local", base)
+            # hxsl function params are `name : Type` — no `var`, no return type on the fn.
+            self.add(f"{a.get('name', '?')} : {_type_str(a.get('type'))}" if isinstance(a, dict) else "?")
         if args:
             self.add(" ")
-        self.add(f") : {_type_str(f.get('ret'))} ")
+        self.add(") ")
         self._expr(f.get("expr"), base)
 
     # -- expressions --
@@ -409,6 +442,31 @@ class _ShaderPrinter:
             self.add("true" if c.args and c.args[0] else "false")
         else:
             self.add(str(c.args[0]) if c.args else "?")
+
+    def _call(self, target: Any, call_args: List[Any], tabs: str) -> None:
+        # A texture/channel read prints as a method on the sampler — `tex.get(uv)` —
+        # not the `texture(tex, uv)` global-call form, whose name collides with the var.
+        if isinstance(target, dict) and isinstance(target.get("e"), HxEnum):
+            tnode = target["e"]
+            if _enum_name(tnode, _TEXPRDEF) == "TGlobal" and tnode.args:
+                g = tnode.args[0]
+                gname = _TGLOBAL[g.index] if isinstance(g, HxEnum) and 0 <= g.index < len(_TGLOBAL) else None
+                if gname in _TEX_METHOD and call_args:
+                    self._expr(call_args[0], tabs)
+                    self.add("." + _TEX_METHOD[gname] + "(")
+                    for i, arg in enumerate(call_args[1:]):
+                        if i:
+                            self.add(", ")
+                        self._expr(arg, tabs)
+                    self.add(")")
+                    return
+        self._expr(target, tabs)
+        self.add("(")
+        for i, arg in enumerate(call_args):
+            if i:
+                self.add(", ")
+            self._expr(arg, tabs)
+        self.add(")")
 
     def _binop(self, op: Any) -> str:
         if not isinstance(op, HxEnum):
@@ -456,18 +514,19 @@ class _ShaderPrinter:
             self.add(_UNOP[op.index] if isinstance(op, HxEnum) and 0 <= op.index < len(_UNOP) else "?")
             self._expr(a[1], tabs)
         elif kind == "TVarDecl":
-            self._var(a[0], "Local", tabs)
-            if len(a) > 1 and a[1] is not None:
+            # A function-body local: `var name = init` (type inferred), or
+            # `var name : Type` when there's no initializer.
+            v = a[0]
+            self.add("var ")
+            self._var_name(v) if isinstance(v, dict) else self.add("?")
+            init = a[1] if len(a) > 1 else None
+            if init is not None:
                 self.add(" = ")
-                self._expr(a[1], tabs)
+                self._expr(init, tabs)
+            elif isinstance(v, dict):
+                self.add(" : " + _type_str(v.get("type")))
         elif kind == "TCall":
-            self._expr(a[0], tabs)
-            self.add("(")
-            for i, arg in enumerate(a[1]):
-                if i:
-                    self.add(", ")
-                self._expr(arg, tabs)
-            self.add(")")
+            self._call(a[0], a[1], tabs)
         elif kind == "TSwiz":
             self._expr(a[0], tabs)
             self.add(".")
@@ -533,8 +592,27 @@ class _ShaderPrinter:
             self.add("@" + str(a[0]))
             self.add(" ")
             self._expr(a[2], tabs)
+        elif kind == "TSwitch":
+            self.add("switch( ")
+            self._expr(a[0], tabs)
+            self.add(" ) {")
+            inner = tabs + self.unit
+            for c in a[1] or []:
+                self.add("\n" + tabs + "case ")
+                for i, val in enumerate(c.get("values") or []):
+                    if i:
+                        self.add(", ")
+                    self._expr(val, tabs)
+                self.add(":\n" + inner)
+                self._expr(c.get("expr"), inner)
+                self.add(";")
+            if len(a) > 2 and a[2] is not None:
+                self.add("\n" + tabs + "default:\n" + inner)
+                self._expr(a[2], inner)
+                self.add(";")
+            self.add("\n" + tabs + "}")
         else:
-            # TSwitch / TSyntax and anything unhandled — leave a marker.
+            # TSyntax (raw GLSL/HLSL injection) — rare; leave a visible marker.
             self.add(f"/*{kind}*/")
 
 
