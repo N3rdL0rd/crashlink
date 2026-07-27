@@ -1723,6 +1723,26 @@ class IRFunction:
             if convergence_node is None and node in cfg.immediate_post_dominators:
                 convergence_node = cfg.immediate_post_dominators[node]
 
+            # `_find_convergence_node`'s shortest-combined-distance heuristic can pick
+            # one of the branch targets itself as the "convergence" when that target is
+            # *also* reachable from the other branch — but only via one of that other
+            # branch's own internal sub-paths, not every path (e.g. an inner
+            # `if (a) sharedCall(); else skip;` nested in one arm of this outer `if`,
+            # where sharedCall()'s node gets picked as the outer merge point instead of
+            # the node both arms actually always reach afterward). The real post-dominator
+            # (from proper dominance analysis, so it accounts for every path rather than
+            # just the shortest one) is authoritative here, outside loop regions where the
+            # global post-dominator tree isn't guaranteed to respect the loop's local scope.
+            if (
+                loop_ctx is None
+                and convergence_node is not None
+                and convergence_node in (jump_target, fall_through)
+                and node in cfg.immediate_post_dominators
+            ):
+                pd = cfg.immediate_post_dominators[node]
+                if pd is not None and pd != convergence_node:
+                    convergence_node = pd
+
             # If the branches do not share a real convergence point because one of
             # them terminates (e.g. returns), use the post-dominator of the live
             # branch as the convergence.  This keeps the code after the terminating
