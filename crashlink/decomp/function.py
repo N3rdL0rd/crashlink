@@ -81,6 +81,7 @@ from .opt.clean import (
     IRSelfAssignOptimizer,
     IRBoolMaterializationCollapser,
     IRArrayGrowGuardEliminator,
+    IRArrayObjBoundsCheckCollapser,
     IRRedundantRecomputeEliminator,
     IRBlockFlattener,
     IREmptyConditionalNormalizer,
@@ -274,6 +275,9 @@ class IRFunction:
                 # past_kills only after the pattern optimizers: they match raw lowering shapes
                 IRTempAssignmentInliner(self, aggressive=True, past_kills=True),
                 IRTempAssignmentInliner(self, aggressive=False),
+                # only after temp inlining has folded the register chain into a
+                # single `this.field.array[idx]` shape for it to match
+                IRArrayObjBoundsCheckCollapser(self),
                 IRVoidAssignOptimizer(self),
                 IRDeadCodeEliminator(self),
                 IRSelfAssignOptimizer(self),

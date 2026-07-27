@@ -371,6 +371,76 @@ class IRArrayGrowGuardEliminator(TraversingIROptimizer):
         block.statements = new_statements
 
 
+class IRArrayObjBoundsCheckCollapser(TraversingIROptimizer):
+    """
+    Collapses HL's compiler-emitted null-safe bounds check for reading an
+    `Array<T>` of objects (backed by ArrayObj) into a plain bracket access:
+
+        if (idx >= arr.length) x = null; else x = (T) arr.array[idx];
+        ->
+        x = arr[idx];
+
+    `.array` is ArrayObj's internal backing-storage field — not a real,
+    user-visible field of `Array<T>` — so rendering it literally produces
+    Haxe that doesn't recompile. The collapse is semantics-preserving:
+    Haxe's `Array<T>.__get` already returns null for an out-of-range index,
+    which is exactly what the guard being removed was open-coding.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements = []
+        for stmt in block.statements:
+            collapsed = self._try_collapse(stmt)
+            if collapsed is not None:
+                if DEBUG:
+                    dbg_print(f"IRArrayObjBoundsCheckCollapser: {stmt} -> {collapsed}")
+                new_statements.append(collapsed)
+                continue
+            new_statements.append(stmt)
+        block.statements = new_statements
+
+    def _try_collapse(self, stmt: IRStatement) -> Optional[IRStatement]:
+        if not isinstance(stmt, IRConditional):
+            return None
+        cond = stmt.condition
+        if not (isinstance(cond, IRBoolExpr) and cond.op == IRBoolExpr.CompareType.GTE):
+            return None
+
+        true_stmts = stmt.true_block.statements if stmt.true_block else []
+        false_stmts = stmt.false_block.statements if stmt.false_block else []
+        if len(true_stmts) != 1 or len(false_stmts) != 1:
+            return None
+        true_stmt, false_stmt = true_stmts[0], false_stmts[0]
+        if not (isinstance(true_stmt, IRAssign) and isinstance(false_stmt, IRAssign)):
+            return None
+        if not (isinstance(true_stmt.expr, IRConst) and true_stmt.expr.const_type == IRConst.ConstType.NULL):
+            return None
+        if not _structurally_equal(true_stmt.target, false_stmt.target):
+            return None
+
+        false_value = false_stmt.expr
+        if isinstance(false_value, IRCast):
+            false_value = false_value.expr
+        if not isinstance(false_value, IRArrayAccess):
+            return None
+        arr_field = false_value.array
+        if not (isinstance(arr_field, IRField) and arr_field.field_name == "array"):
+            return None
+
+        length_field = cond.right
+        if not (isinstance(length_field, IRField) and length_field.field_name == "length"):
+            return None
+        if not _structurally_equal(length_field.target, arr_field.target):
+            return None
+        if not _structurally_equal(cond.left, false_value.index):
+            return None
+
+        new_access = IRArrayAccess(self.func.code, arr_field.target, false_value.index)
+        assign = IRAssign(self.func.code, true_stmt.target, new_access)
+        assign.adopt(stmt)
+        return assign
+
+
 class IRRedundantRecomputeEliminator(TraversingIROptimizer):
     """
     Rewrites `t1 = E; t2 = E;` (the same expression recomputed verbatim in the
