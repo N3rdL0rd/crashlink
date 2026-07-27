@@ -1802,19 +1802,21 @@ class IRFunction:
             # branch's own internal sub-paths, not every path (e.g. an inner
             # `if (a) sharedCall(); else skip;` nested in one arm of this outer `if`,
             # where sharedCall()'s node gets picked as the outer merge point instead of
-            # the node both arms actually always reach afterward). The real post-dominator
-            # (from proper dominance analysis, so it accounts for every path rather than
-            # just the shortest one) is authoritative here, outside loop regions where the
-            # global post-dominator tree isn't guaranteed to respect the loop's local scope.
-            if (
-                loop_ctx is None
-                and convergence_node is not None
-                and convergence_node in (jump_target, fall_through)
-                and node in cfg.immediate_post_dominators
-            ):
-                pd = cfg.immediate_post_dominators[node]
-                if pd is not None and pd != convergence_node:
-                    convergence_node = pd
+            # the node both arms actually always reach afterward). Detect that precisely
+            # with real post-dominance (every path, not just the shortest one) rather than
+            # overriding every self-referential pick: the simple "if with no else" shape
+            # legitimately wants the branch target itself as convergence (that *is* its
+            # only continuation), and forcing the post-dominator there would wrongly pull
+            # the tail inside the conditional instead of leaving it as the fall-through.
+            if loop_ctx is None and convergence_node is not None and convergence_node in (jump_target, fall_through):
+                other_branch = fall_through if convergence_node == jump_target else jump_target
+                dominates_other = (
+                    other_branch is None or convergence_node in cfg.post_dominators.get(other_branch, set())
+                )
+                if not dominates_other and node in cfg.immediate_post_dominators:
+                    pd = cfg.immediate_post_dominators[node]
+                    if pd is not None and pd != convergence_node:
+                        convergence_node = pd
 
             # If the branches do not share a real convergence point because one of
             # them terminates (e.g. returns), use the post-dominator of the live
