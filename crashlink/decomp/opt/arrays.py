@@ -182,18 +182,102 @@ class IRArrayObjWrapperOptimizer(TraversingIROptimizer):
             return self._is_empty_array_alloc(local_defs.get(expr), local_defs, seen)
         return False
 
+    def _reads_or_writes(self, stmt: IRStatement, local: IRLocal) -> bool:
+        """True if `stmt` touches `local` anywhere (target or expression), used to make
+        sure nothing but the alloc/index-stores we're about to fold away references it."""
+        if isinstance(stmt, IRAssign):
+            if stmt.target == local:
+                return True
+            if isinstance(stmt.target, IRArrayAccess) and (
+                stmt.target.array == local or self._expr_reads(stmt.target.index, local)
+            ):
+                return True
+            return self._expr_reads(stmt.expr, local)
+        return any(self._expr_reads(c, local) for c in stmt.get_children() if isinstance(c, IRExpression))
+
+    def _expr_reads(self, expr: Optional[IRExpression], local: IRLocal) -> bool:
+        if expr is None:
+            return False
+        if expr == local:
+            return True
+        return any(self._expr_reads(c, local) for c in expr.get_children() if isinstance(c, IRExpression))
+
+    def _try_fold_array_literal(
+        self, stmts: List[IRStatement], call_idx: int, arr_local: IRLocal
+    ) -> Optional[Tuple[List[IRExpression], List[int]]]:
+        """Find the `hl.NativeArray<T>(n)` alloc that sized `arr_local` and the n
+        index-stores populating it, anywhere before `call_idx` (other, unrelated
+        statements — e.g. constructing the values being stored — may sit between
+        them). Returns (values in index order, indices of every statement to drop)
+        so the caller can remove just those and splice in a single array literal.
+        """
+        alloc_idx: Optional[int] = None
+        size: Optional[int] = None
+        for j in range(call_idx - 1, -1, -1):
+            s = stmts[j]
+            if isinstance(s, IRAssign) and s.target == arr_local:
+                if not isinstance(s.expr, IRNativeArrayNew):
+                    return None
+                size_expr = s.expr.size
+                if not isinstance(size_expr, IRConst) or size_expr.const_type != IRConst.ConstType.INT:
+                    return None
+                size = int(getattr(size_expr.value, "value", size_expr.value))
+                alloc_idx = j
+                break
+        if alloc_idx is None or size is None or size <= 0:
+            return None
+
+        values: Dict[int, IRExpression] = {}
+        store_indices: List[int] = []
+        for j in range(alloc_idx + 1, call_idx):
+            s = stmts[j]
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRArrayAccess)
+                and s.target.array == arr_local
+                and isinstance(s.target.index, IRConst)
+                and s.target.index.const_type == IRConst.ConstType.INT
+            ):
+                idx = int(getattr(s.target.index.value, "value", s.target.index.value))
+                if idx in values:
+                    return None
+                values[idx] = s.expr
+                store_indices.append(j)
+                continue
+            if self._reads_or_writes(s, arr_local):
+                # Something else touches the array between alloc and use (a blit,
+                # a partial store we don't recognize, ...) — bail, too risky to fold.
+                return None
+
+        if set(values) != set(range(size)):
+            return None
+        return [values[i] for i in range(size)], [alloc_idx, *store_indices]
+
     def visit_block(self, block: IRBlock) -> None:
         local_defs: Dict[IRLocal, IRExpression] = {}
-        new_statements: List[IRStatement] = []
-        for stmt in block.statements:
+        stmts = block.statements
+        drop: Set[int] = set()
+        for i, stmt in enumerate(stmts):
             if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
                 local_defs[stmt.target] = stmt.expr
             if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRCall) and self._is_array_wrapper_call(stmt.expr):
                 if self._is_empty_array_alloc(stmt.expr.args[0], local_defs):
                     stmt.expr = IRArrayLiteral(self.func.code, [])
-                # Non-empty wrappers (e.g. ArrayObj.alloc(anew) after blitting)
-                # must stay so pseudo can render `alloc(anew)`.
-            elif isinstance(stmt, IRCall) and self._is_array_wrapper_call(stmt):
+                elif isinstance(stmt.expr.args[0], IRLocal):
+                    folded = self._try_fold_array_literal(stmts, i, stmt.expr.args[0])
+                    if folded is not None:
+                        values, consumed = folded
+                        drop.update(consumed)
+                        stmt.expr = IRArrayLiteral(self.func.code, values)
+                # Any other non-empty wrapper (e.g. after a blit into an
+                # already-populated array) must stay so pseudo can render
+                # `alloc(anew)`.
+
+        new_statements: List[IRStatement] = []
+        for i, stmt in enumerate(stmts):
+            if i in drop:
+                continue
+            if isinstance(stmt, IRCall) and self._is_array_wrapper_call(stmt):
                 # Bare wrapper call (typically a constructor wrapper on a fresh
                 # `new ArrayObj()`).  It has no observable effect beyond
                 # initializing the array, so drop it.
