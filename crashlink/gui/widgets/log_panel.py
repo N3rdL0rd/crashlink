@@ -211,12 +211,17 @@ class LogPanel(QWidget):
             self._continuation_lines = []
             self._prompt_label.setText(">>>")
 
+    # CLI verbs that mutate the bytecode and have an undo-aware equivalent on
+    # MainWindow — routed there instead of straight to handle_cmd so they land
+    # on the undo stack / edit history instead of bypassing it.
     def _run_cli_command(self, cmd_line: str) -> None:
         bc = self._repl_namespace.get("code")
         if bc is None:
             self._append_raw("No bytecode loaded.", self._col("yellow"))
             return
         if not cmd_line:
+            return
+        if self._try_undoable_cli_command(cmd_line):
             return
         from ...__main__ import handle_cmd  # deferred: avoids CLI import cost at GUI startup
 
@@ -236,6 +241,45 @@ class LogPanel(QWidget):
             self._append_raw(out_line, self._col("text"))
         for err_line in err_buf.getvalue().splitlines():
             self._append_raw(err_line, self._col("red"))
+
+    def _try_undoable_cli_command(self, cmd_line: str) -> bool:
+        """Handles `rename`/`unrename`/`addcomment`/`rmcomment`/`setstring` by delegating to
+        MainWindow's undo-aware methods. Returns False (unhandled) for every other command,
+        including their aliases — those fall through to the plain CLI dispatch."""
+        parts = cmd_line.split(" ")
+        verb, args = parts[0], parts[1:]
+        mw = self._repl_namespace.get("mw")
+        if mw is None:
+            return False
+
+        def _def_op(s: str) -> Optional[int]:
+            return None if s == "_" else int(s)
+
+        try:
+            if verb == "rename" and len(args) >= 4:
+                mw._apply_rename(int(args[0]), int(args[1]), _def_op(args[2]), args[3])
+                self._append_raw(f"Renamed reg{args[1]} in f@{args[0]} -> {args[3]!r}.", self._col("text"))
+                return True
+            if verb == "unrename" and len(args) >= 3:
+                mw._apply_rename(int(args[0]), int(args[1]), _def_op(args[2]), None)
+                self._append_raw("Rename cleared.", self._col("text"))
+                return True
+            if verb == "addcomment" and len(args) >= 3:
+                mw._apply_comment(int(args[0]), int(args[1]), " ".join(args[2:]))
+                self._append_raw(f"Comment set on f@{args[0]} op#{args[1]}.", self._col("text"))
+                return True
+            if verb == "rmcomment" and len(args) >= 2:
+                mw._apply_comment(int(args[0]), int(args[1]), None)
+                self._append_raw("Comment cleared.", self._col("text"))
+                return True
+            if verb == "setstring" and len(args) >= 2:
+                mw._apply_setstring(int(args[0]), " ".join(args[1:]))
+                self._append_raw("String set.", self._col("text"))
+                return True
+        except (ValueError, IndexError) as e:
+            self._append_raw(f"Bad arguments for {verb}: {e}", self._col("red"))
+            return True
+        return False
 
     def _run_repl_command(self, cmd_line: str) -> None:
         cmd, *args = cmd_line.split()

@@ -18,7 +18,7 @@ from PySide6.QtCore import (
     QObject,
     QSize,
 )
-from PySide6.QtGui import QColor, QPainter, QTextCursor, QTextDocument
+from PySide6.QtGui import QColor, QPainter, QTextCursor, QTextDocument, QUndoStack
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDialog,
@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
     QTabBar,
     QTabWidget,
     QToolButton,
+    QUndoView,
     QVBoxLayout,
     QWidget,
 )
@@ -54,6 +55,7 @@ from crashlink.globals import VERSION, set_dbg_callback
 from crashlink.pseudo import pseudo_oplines, _method_registry
 
 from .themes import DEFAULT_THEME, THEMES, Theme, generate_qss
+from .undo import CommentCommand, RenameCommand, SetStringCommand
 from .widgets.cfg_view import CfgView
 from .widgets.class_view import ClassView
 from .widgets.function_list import FunctionList
@@ -353,6 +355,8 @@ class MainWindow(QMainWindow):
         self._dirty = False
         self._recent_files: List[str] = []
         self._find_dialog: Optional[_FindDialog] = None
+        self._undo_stack = QUndoStack(self)
+        self._undo_stack.cleanChanged.connect(self._on_undo_clean_changed)
 
         self._build_ui()
         self._build_menu()
@@ -407,6 +411,10 @@ class MainWindow(QMainWindow):
         name = os.path.basename(self._source_path)
         star = "*" if self._dirty else ""
         self.setWindowTitle(f"{name}{star} - crashlink")
+
+    def _on_undo_clean_changed(self, clean: bool) -> None:
+        self._dirty = not clean
+        self._update_window_title()
 
     # ── UI ────────────────────────────────────────────────────────────────────
 
@@ -472,6 +480,15 @@ class MainWindow(QMainWindow):
         self._log_dock.setMinimumHeight(80)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._log_dock)
 
+        # ── Bottom dock: edit history (undo buffer) — off by default ──────────
+        self._history_view = QUndoView(self._undo_stack)
+        self._history_dock = QDockWidget("Edit History", self)
+        self._history_dock.setObjectName("historyDock")
+        self._history_dock.setWidget(self._history_view)
+        self._history_dock.setMinimumHeight(80)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._history_dock)
+        self._history_dock.hide()
+
         # ── Right dock: CFG viewer (off by default — opt in via Window menu) ──
         self._cfg_view = CfgView()
         self._cfg_dock = QDockWidget("CFG", self)
@@ -516,6 +533,15 @@ class MainWindow(QMainWindow):
         fm.addAction("Export Pseudocode…", self._export_pseudo)
         fm.addSeparator()
         fm.addAction("Quit", self.close, "Ctrl+Q")
+
+        em = mb.addMenu("Edit")
+        undo_action = self._undo_stack.createUndoAction(self, "Undo")
+        undo_action.setShortcut("Ctrl+Z")
+        redo_action = self._undo_stack.createRedoAction(self, "Redo")
+        redo_action.setShortcut("Ctrl+Shift+Z")
+        em.addAction(undo_action)
+        em.addAction(redo_action)
+
         vm = mb.addMenu("View")
         tm = vm.addMenu("Theme")
         for name in THEMES:
@@ -529,6 +555,7 @@ class MainWindow(QMainWindow):
         wm.addAction(self._nav_dock.toggleViewAction())
         wm.addAction(self._log_dock.toggleViewAction())
         wm.addAction(self._cfg_dock.toggleViewAction())
+        wm.addAction(self._history_dock.toggleViewAction())
         wm.addSection("Views")
         wm.addAction("Natives", self._open_natives_tab)
         wm.addAction("Types", self._open_types_tab)
@@ -613,6 +640,7 @@ class MainWindow(QMainWindow):
         self._cfg_view.clear_view()
         self._db_cache.clear()
         self._log_panel.clear()
+        self._undo_stack.clear()
         self._dirty = False
         self._code = None
         self._log_panel.set_context(code=None, findex=None, func=None, irf=None)
@@ -794,6 +822,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self._log_panel.error(f"Failed to save database: {e}")
             return
+        self._undo_stack.setClean()
         self._dirty = False
         self._update_window_title()
         self._log_panel.success(f"Saved database to {cldb_path}")
@@ -1137,13 +1166,37 @@ class MainWindow(QMainWindow):
         self._apply_rename(findex, loc.reg_idx, loc.defining_op_idx, new_name)
         self._log_panel.success(f"Renamed '{word}' → '{new_name}' in f@{findex}")
 
-    def _apply_rename(self, findex: int, reg_idx: int, def_op: Optional[int], new_name: str) -> None:
+    def _apply_rename(self, findex: int, reg_idx: int, def_op: Optional[int], new_name: Optional[str]) -> None:
+        """new_name=None clears the rename (used by the CLI bridge's `unrename`)."""
         if self._code is None:
             return
-        def_op_int = def_op
-        self._code.annotations.rename(findex, reg_idx, def_op_int, new_name)
-        self._dirty = True
-        self._update_window_title()
+        old_name = self._code.annotations.get_rename(findex, reg_idx, def_op)
+        cmd = RenameCommand(
+            self._code, findex, reg_idx, def_op, old_name, new_name, self._on_annotation_applied
+        )
+        self._undo_stack.push(cmd)
+
+    def _apply_comment(self, findex: int, op_idx: int, text: Optional[str]) -> None:
+        """text=None clears the comment (used by the CLI bridge's `rmcomment`)."""
+        if self._code is None:
+            return
+        old_text = self._code.annotations.get_comment(findex, op_idx)
+        cmd = CommentCommand(self._code, findex, op_idx, old_text, text, self._on_annotation_applied)
+        self._undo_stack.push(cmd)
+
+    def _apply_setstring(self, index: int, new_value: str) -> None:
+        if self._code is None:
+            return
+        old_value = self._code.strings.value[index]
+        cmd = SetStringCommand(self._code, index, old_value, new_value, self._on_annotation_applied)
+        self._undo_stack.push(cmd)
+
+    def _on_annotation_applied(self, findex: Optional[int]) -> None:
+        """Shared undo/redo callback for rename and comment commands."""
+        if findex is None:
+            return
+        class_key, _, _ = self._class_key_for(findex)
+        self._refresh_disasm_view(class_key)
         self._invalidate_and_redecompile(findex)
 
     def _invalidate_and_redecompile(self, findex: int) -> None:
@@ -1170,23 +1223,17 @@ class MainWindow(QMainWindow):
     def _on_comment_hotkey(self, findex: int, op_idx: int) -> None:
         if self._code is None:
             return
-        existing = self._code.annotations.get_comment(findex, op_idx) or ""
-        text, ok = QInputDialog.getText(self, "Comment", f"Comment on op {op_idx} in f@{findex}:", text=existing)
+        existing = self._code.annotations.get_comment(findex, op_idx)
+        text, ok = QInputDialog.getText(self, "Comment", f"Comment on op {op_idx} in f@{findex}:", text=existing or "")
         if not ok:
             return
         text = text.strip()
-        if text:
-            self._code.annotations.set_comment(findex, op_idx, text)
+        new_text = text or None
+        self._apply_comment(findex, op_idx, new_text)
+        if new_text:
             self._log_panel.success(f"Commented op {op_idx} in f@{findex}")
         else:
-            self._code.annotations.clear_comment(findex, op_idx)
             self._log_panel.info(f"Cleared comment on op {op_idx} in f@{findex}")
-        self._dirty = True
-        self._update_window_title()
-
-        class_key, _, _ = self._class_key_for(findex)
-        self._refresh_disasm_view(class_key)
-        self._invalidate_and_redecompile(findex)
 
     # ── Xrefs (X) ────────────────────────────────────────────────────────────
 
