@@ -680,7 +680,17 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         dbg_print(f"IRTempAssignmentInliner: Protecting user reg indices: {self._user_reg_indices}")
 
     def _is_user_local(self, local: IRLocal) -> bool:
-        return local.name in self._user_variable_names
+        if local.name in self._user_variable_names:
+            return True
+        # Preserve names like `b1` that _name_locals generated to disambiguate
+        # two user-named locals sharing a debug name (see IRDeadTempEliminator's
+        # identical check) -- without this, a disambiguated local silently loses
+        # its "real variable" protection and gets inlined away like an anonymous
+        # temp, since its suffixed name never matches the raw debug name set.
+        for name in self._user_variable_names:
+            if local.name.startswith(name) and local.name[len(name) :].isdigit():
+                return True
+        return False
 
     def _substitute_in_expr(
         self, expr: IRExpression, target: IRLocal, replacement: IRExpression
