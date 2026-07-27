@@ -844,6 +844,11 @@ class IRDeadTempEliminator(IROptimizer):
             if isinstance(stmt.target, IRArrayAccess):
                 self._collect_used_in_expr(stmt.target.array, used)
                 self._collect_used_in_expr(stmt.target.index, used)
+            # For field-store assignments (`obj.field = value`), the object
+            # expression is still a read, even though the statement as a whole
+            # is a write.
+            elif isinstance(stmt.target, IRField):
+                self._collect_used_in_expr(stmt.target.target, used)
         elif isinstance(stmt, IRReturn) and stmt.value:
             self._collect_used_in_expr(stmt.value, used)
         elif isinstance(stmt, IRThrow):
