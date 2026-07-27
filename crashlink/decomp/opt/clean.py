@@ -2067,6 +2067,11 @@ class IRGuardOrMerger(TraversingIROptimizer):
                     new_statements.append(merged)
                     i += 1
                     continue
+                merged_true = self._try_merge_true(stmt)
+                if merged_true is not None:
+                    new_statements.append(merged_true)
+                    i += 1
+                    continue
                 merged2 = self._try_merge_sibling(stmt, stmts[i + 1 :])
                 if merged2 is not None:
                     new_cond, consumed_siblings = merged2
@@ -2099,6 +2104,30 @@ class IRGuardOrMerger(TraversingIROptimizer):
                 stmt.condition,
                 inner.condition,
             )
+            merged = IRConditional(self.func.code, or_cond, inner.true_block, inner.false_block)
+            merged.adopt(stmt, inner)
+            return merged
+        return None
+
+    def _try_merge_true(self, stmt: IRConditional) -> Optional[IRConditional]:
+        """if (A) { if (B) { T } } else { T } -> if (!A || B) { T } { inner's else }
+
+        Mirror of _try_merge_else with the nested conditional in the TRUE branch
+        instead of the FALSE branch — the shape HL's short-circuit-OR lowering
+        produces when the "taken" (throwing/returning) action is reached via the
+        *first* condition being true, and the second check sits inside the
+        "first condition false" arm instead of the other way around.
+        """
+        outer_true = stmt.true_block.statements
+        false_stmts = stmt.false_block.statements
+        if len(outer_true) != 1 or not false_stmts:
+            return None
+        inner = outer_true[0]
+        if not isinstance(inner, IRConditional):
+            return None
+        if _stmt_lists_structurally_equal(false_stmts, inner.true_block.statements):
+            not_a = self._invert(stmt.condition)
+            or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, not_a, inner.condition)
             merged = IRConditional(self.func.code, or_cond, inner.true_block, inner.false_block)
             merged.adopt(stmt, inner)
             return merged
