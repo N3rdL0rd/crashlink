@@ -2898,6 +2898,28 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
             return "Int"
         return "Int"
 
+    # A name that's also used as a raw hl.Bytes buffer elsewhere (explicit
+    # .setI32()/.getI32()-style accessor calls, rendered whenever an
+    # IRArrayAccess carries a bytes_access_kind) must keep the hl.Bytes
+    # declaration -- those accessors don't exist on hl.BytesAccess<T>. A
+    # register can legitimately feed ArrayBase.alloc* at one point (e.g. an
+    # empty-array fast path) and be manually byte-written at another (e.g.
+    # building a single-element literal), so the upgrade below can't apply
+    # per-name unconditionally.
+    raw_bytes_required: Set[str] = set()
+
+    def _collect_raw_bytes_required(stmt: IRStatement, _seen: Set[int]) -> None:
+        if id(stmt) in _seen:
+            return
+        _seen.add(id(stmt))
+        if isinstance(stmt, IRArrayAccess) and getattr(stmt, "bytes_access_kind", None):
+            if isinstance(stmt.array, IRLocal):
+                raw_bytes_required.add(stmt.array.name)
+        for child in stmt.get_children():
+            _collect_raw_bytes_required(child, _seen)
+
+    _collect_raw_bytes_required(root, set())
+
     seen_upgrade: Set[int] = set()
 
     def _upgrade_bytes(stmt: IRStatement) -> None:
@@ -2911,7 +2933,11 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
                 name = root.code.full_func_name(func) or root.code.partial_func_name(func) or ""
                 if "ArrayBase.alloc" in name and call.args:
                     first_arg = call.args[0]
-                    if isinstance(first_arg, IRLocal) and locals.get(first_arg.name) == "hl.Bytes":
+                    if (
+                        isinstance(first_arg, IRLocal)
+                        and locals.get(first_arg.name) == "hl.Bytes"
+                        and first_arg.name not in raw_bytes_required
+                    ):
                         locals[first_arg.name] = f"hl.BytesAccess<{_alloc_element_type(name)}>"
         for child in stmt.get_children():
             _upgrade_bytes(child)
