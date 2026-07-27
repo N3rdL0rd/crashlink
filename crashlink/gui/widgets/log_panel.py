@@ -95,7 +95,7 @@ class LogPanel(QWidget):
 
         self._repl_input = _ReplLineEdit()
         self._repl_input.setFont(font)
-        self._repl_input.setPlaceholderText("Python REPL (.help for help)")
+        self._repl_input.setPlaceholderText("REPL (.help for help, !<cmd> for the crashlink CLI)")
         self._repl_input.returnPressed.connect(self._on_repl_submit)
         self._repl_input.history_prev.connect(self._on_history_prev)
         self._repl_input.history_next.connect(self._on_history_next)
@@ -177,6 +177,12 @@ class LogPanel(QWidget):
             self._run_repl_command(line.strip())
             return
 
+        # `!<cmd>` dispatches to the crashlink CLI's own command set (same
+        # dispatch as the `crashlink` shell's `handle_cmd`).
+        if not self._continuation_lines and line.strip().startswith("!"):
+            self._run_cli_command(line.strip()[1:].strip())
+            return
+
         self._continuation_lines.append(line)
         # A blank line always ends a continuation, even if runsource would
         # otherwise keep waiting (e.g. a trailing comment-only block).
@@ -204,6 +210,32 @@ class LogPanel(QWidget):
         else:
             self._continuation_lines = []
             self._prompt_label.setText(">>>")
+
+    def _run_cli_command(self, cmd_line: str) -> None:
+        bc = self._repl_namespace.get("code")
+        if bc is None:
+            self._append_raw("No bytecode loaded.", self._col("yellow"))
+            return
+        if not cmd_line:
+            return
+        from ...__main__ import handle_cmd  # deferred: avoids CLI import cost at GUI startup
+
+        out_buf, err_buf = StringIO(), StringIO()
+        old_out, old_err = sys.stdout, sys.stderr
+        sys.stdout, sys.stderr = out_buf, err_buf
+        try:
+            handle_cmd(bc, cmd_line)
+        except SystemExit:
+            pass  # the CLI's `exit` command calls sys.exit(); swallow it rather than killing the GUI
+        except Exception:
+            err_buf.write(traceback.format_exc())
+        finally:
+            sys.stdout, sys.stderr = old_out, old_err
+
+        for out_line in out_buf.getvalue().splitlines():
+            self._append_raw(out_line, self._col("text"))
+        for err_line in err_buf.getvalue().splitlines():
+            self._append_raw(err_line, self._col("red"))
 
     def _run_repl_command(self, cmd_line: str) -> None:
         cmd, *args = cmd_line.split()
@@ -233,6 +265,10 @@ class LogPanel(QWidget):
         self._print_vars(header="Your variables:", empty_msg=None)
         self._append_raw(
             "Commands: .help  .clear  .vars  .goto <findex>  .disasm [findex]  .pseudo [findex]  .save",
+            self._col("subtext"),
+        )
+        self._append_raw(
+            "!<cmd> dispatches to the crashlink CLI (e.g. !findfunc Foo, !obj 12). !help lists CLI commands.",
             self._col("subtext"),
         )
 

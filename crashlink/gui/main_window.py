@@ -60,6 +60,7 @@ from .widgets.function_list import FunctionList
 from .widgets.log_panel import LogPanel
 from .widgets.natives_view import NativesView
 from .widgets.sync_view import DISASM, PSEUDO, SPLIT, SyncView
+from .widgets.types_view import TypesView
 from .widgets.xref_panel import (
     XrefPopup,
     resolve_targets,
@@ -520,7 +521,7 @@ class MainWindow(QMainWindow):
         for name in THEMES:
             tm.addAction(name, lambda n=name: self._apply_theme(THEMES[n]))
         vm.addSeparator()
-        vm.addAction("Cycle view (split/disasm/decompiled)\tTab", self._cycle_view_mode)
+        vm.addAction("Cycle view\tTab", self._cycle_view_mode)
         vm.addSeparator()
         vm.addAction("Find…\tCtrl+F", self._open_find)
 
@@ -528,8 +529,9 @@ class MainWindow(QMainWindow):
         wm.addAction(self._nav_dock.toggleViewAction())
         wm.addAction(self._log_dock.toggleViewAction())
         wm.addAction(self._cfg_dock.toggleViewAction())
-        wm.addSeparator()
-        wm.addAction("Natives Table", self._open_natives_tab)
+        wm.addSection("Views")
+        wm.addAction("Natives", self._open_natives_tab)
+        wm.addAction("Types", self._open_types_tab)
 
         hm = mb.addMenu("Help")
         hm.addAction("Keyboard Shortcuts…", self._show_shortcuts)
@@ -844,13 +846,40 @@ class MainWindow(QMainWindow):
         self._tabs.setCurrentIndex(idx)
 
     def _on_native_xref_requested(self, findex: int) -> None:
+        self._show_xrefs_for(f"f@{findex}")
+
+    def _show_xrefs_for(self, word: str) -> None:
         if self._code is None:
             return
-        word = f"f@{findex}"
         groups = resolve_targets(self._code, word)
         at = self.mapToGlobal(self.rect().center())
         self._xref_popup.show_results(word, groups, at)
         self._log_panel.result(f"Xrefs for '{word}': {len(groups)} target(s)")
+
+    # ── Types table ──────────────────────────────────────────────────────────
+
+    _TYPES_TAB_KEY = "__types__"
+
+    def _open_types_tab(self) -> None:
+        if self._code is None:
+            self._log_panel.warn("Open a bytecode file first.")
+            return
+        key = self._TYPES_TAB_KEY
+        if key in self._open_tabs:
+            self._tabs.setCurrentIndex(self._open_tabs[key])
+            return
+
+        view = TypesView()
+        view.setProperty("class_key", key)
+        view.set_theme(self._theme)
+        view.load(self._code)
+        view.xref_requested.connect(self._show_xrefs_for)
+
+        idx = self._tabs.addTab(view, "Types")
+        self._tabs.setTabToolTip(idx, f"{len(self._code.types)} types")
+        self._open_tabs[key] = idx
+        self._add_close_btn(idx, key)
+        self._tabs.setCurrentIndex(idx)
 
     def _open_class_tab(self, class_key: str, display_name: str, all_fi: List[int], jump_to: int) -> None:
         assert self._code is not None
@@ -1331,7 +1360,7 @@ class MainWindow(QMainWindow):
         box.setText(f"<table>{rows_html}</table>")
         # QMessageBox ignores resize()/setFixedWidth() directly — widening its
         # internal label is the standard way to give it a bit more breathing room.
-        box.setStyleSheet("QLabel{min-width: 400px;}")
+        # box.setStyleSheet("QLabel{min-width: 400px;}")
         box.exec()
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
