@@ -236,14 +236,24 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
             elif isinstance(stmt, IRConditional) and temp_local is not None:
                 cond = stmt.condition
                 if isinstance(cond, IRBoolExpr) and cond.op == IRBoolExpr.CompareType.EQ:
+                    # A single-use temp (`temp = s.length`) may already have been inlined
+                    # directly into this comparison by an earlier pass, leaving `s.length`
+                    # in place of `temp` even though the assignment itself still exists
+                    # (kept alive by a later, non-adjacent use of `temp`, e.g. as a call
+                    # argument). Accept either form.
+                    def _is_len_ref(e: IRExpression) -> bool:
+                        return e == temp_local or (
+                            isinstance(e, IRField) and e.field_name == "length" and e.target == s_local
+                        )
+
                     if (
-                        cond.left == temp_local
+                        _is_len_ref(cond.left)
                         and isinstance(cond.right, IRConst)
                         and cond.right.const_type == IRConst.ConstType.INT
                     ):
                         return stmt, temp_local
                     if (
-                        cond.right == temp_local
+                        _is_len_ref(cond.right)
                         and isinstance(cond.left, IRConst)
                         and cond.left.const_type == IRConst.ConstType.INT
                     ):
