@@ -415,11 +415,19 @@ class IRFunction:
         reg_type = self.func.regs[reg_idx]
         new_type = reg_type.resolve(self.code)
         # Avoid name collisions only with a different register of a different
-        # type.  Same-type duplicates are usually the same source variable split
-        # across registers.
+        # type. Same-type duplicates are usually the same source variable split
+        # across registers -- unless that other register is later recycled as
+        # an anonymous compiler temp (self._has_untracked_reuse), in which case
+        # its debug name isn't reliably "the same variable" and must not be
+        # allowed to silently collide with a genuinely different one that
+        # happens to share both the name and the type.
         base_name = name
         suffix = 1
-        existing_names = {loc.name for i, loc in enumerate(self.locals) if i != reg_idx and loc.get_type() != new_type}
+        existing_names = {
+            loc.name
+            for i, loc in enumerate(self.locals)
+            if i != reg_idx and (loc.get_type() != new_type or self._has_untracked_reuse(i))
+        }
         while name in existing_names:
             name = f"{base_name}{suffix}"
             suffix += 1
@@ -437,6 +445,36 @@ class IRFunction:
         self._lift_cache.clear()
         return new_local
 
+    def _has_untracked_reuse(self, reg: int) -> bool:
+        """True if register `reg` is written again, after its own first debug-named
+        definition, by an op that isn't itself a debug-named assignment for `reg` —
+        i.e. the register gets recycled as an anonymous compiler temp somewhere in
+        its remaining lifetime, rather than staying the same named source variable
+        for every subsequent write."""
+        first_assign = self._reg_first_assign.get(reg)
+        if first_assign is None or first_assign < 0:
+            return False
+        for op_idx in range(first_assign + 1, len(self.ops)):
+            op = self.ops[op_idx]
+            if not (op.df and "dst" in op.df) or op.df["dst"].value != reg:
+                continue
+            named_here = self._op_assigns.get(op_idx, {})
+            if reg not in named_here:
+                return True
+        return False
+
+    def _is_continuation_write(self, op: Opcode) -> bool:
+        """True if `op`'s dst-write plausibly continues the register's current named
+        variable (e.g. `i++`, `i = i + 1`) rather than starting an unrelated value."""
+        if op.op in ("Incr", "Decr"):
+            return True
+        if op.op in arithmetic and op.df and "dst" in op.df:
+            dst_val = op.df["dst"].value
+            a, b = op.df.get("a"), op.df.get("b")
+            if (a is not None and a.value == dst_val) or (b is not None and b.value == dst_val):
+                return True
+        return False
+
     def _check_assign(self, op_idx: int) -> None:
         """Check if this op index has an assign entry and split the local if needed."""
         if op_idx in self._op_assigns:
@@ -444,6 +482,23 @@ class IRFunction:
                 current = self.locals[reg_idx]
                 if current.name != name:
                     self._split_local(reg_idx, name, defining_op_idx=op_idx)
+            return
+        # No debug name at this op. If it still writes a register that currently
+        # holds a real (debug-sourced) name, and the write clearly doesn't derive
+        # from that register's own prior value, the register is being recycled as
+        # an anonymous compiler temp — split it back to a synthetic name so later
+        # reads of it aren't mistaken for reads of the earlier named variable
+        # (e.g. a loop counter's register reused afterward to hold an unrelated
+        # `.length` value, which would otherwise still render as the loop
+        # variable's name and get protected from inlining as if it were real).
+        op = self.ops[op_idx]
+        if not (op.df and "dst" in op.df):
+            return
+        reg_idx = op.df["dst"].value
+        current = self.locals[reg_idx]
+        default_name = f"var{reg_idx}"
+        if current.name != default_name and not self._is_continuation_write(op):
+            self._split_local(reg_idx, default_name, defining_op_idx=op_idx)
 
     def apply_annotations(self) -> None:
         """Apply renames and comments from code.annotations to this IR function in-place."""
@@ -693,8 +748,15 @@ class IRFunction:
                 typed_regs.setdefault(typ_key, []).append(r)
             # Only rename when the same debug name is used for variables with
             # different types.  Same-type duplicates are usually just different
-            # registers for a single source variable.
-            if len(typed_regs) <= 1:
+            # registers for a single source variable — UNLESS one of them gets
+            # reused as an anonymous compiler temp somewhere in between its own
+            # debug-named point and the end of the function (e.g. a register
+            # named "i" for one `for` loop, later recycled as a scratch temp
+            # for an unrelated computation, with no debug name at that reuse
+            # site to trigger `_check_assign`'s split). That register would
+            # otherwise keep the stale debug name for its entire remaining
+            # lifetime, corrupting every later use of it.
+            if len(typed_regs) <= 1 and not any(self._has_untracked_reuse(r) for r in regs):
                 # Exception: a parameter shadowed by a body local with the same
                 # name must be disambiguated (e.g. ArrayBytes.getDyn's `pos`).
                 ordered = sorted(regs, key=lambda r: self._reg_first_assign.get(r, float("inf")))
