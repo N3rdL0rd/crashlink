@@ -306,6 +306,10 @@ class IRFunction:
                 IRRedundantRecomputeEliminator(self),
                 IREmptyConditionalNormalizer(self),
                 IRTerminalValueInliner(self),
+                # Late second pass: in larger functions the `this.field.array[idx]`
+                # shape this targets doesn't fully materialize until after loop/switch
+                # restructuring and the later cleanup passes above have run.
+                IRArrayObjBoundsCheckCollapser(self),
             ]
             # Splice in plugin optimizers gated to this bytecode (see
             # crashlink.plugins). Which classes apply is a property of the image,
