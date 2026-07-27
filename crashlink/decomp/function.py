@@ -460,6 +460,8 @@ class IRFunction:
             return False
         for op_idx in range(first_assign + 1, len(self.ops)):
             op = self.ops[op_idx]
+            if op.op == "Setref":
+                continue  # "dst" is a read (the ref being written through), not a write
             if not (op.df and "dst" in op.df) or op.df["dst"].value != reg:
                 continue
             named_here = self._op_assigns.get(op_idx, {})
@@ -497,6 +499,11 @@ class IRFunction:
         # variable's name and get protected from inlining as if it were real).
         op = self.ops[op_idx]
         if not (op.df and "dst" in op.df):
+            return
+        if op.op == "Setref":
+            # Setref's "dst" is the ref pointer being written *through*, not a
+            # register receiving a fresh value -- it's a read of the register
+            # holding the ref, same as any other operand.
             return
         reg_idx = op.df["dst"].value
         current = self.locals[reg_idx]
