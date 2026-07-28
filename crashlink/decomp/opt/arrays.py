@@ -295,7 +295,9 @@ class IRArrayObjWrapperOptimizer(TraversingIROptimizer):
                 def_idx = j
         if def_idx is None:
             return None
-        def_expr = stmts[def_idx].expr
+        def_stmt = stmts[def_idx]
+        assert isinstance(def_stmt, IRAssign)
+        def_expr = def_stmt.expr
         if not isinstance(def_expr, (IRNew, IRArrayLiteral, IRConst, IRArithmetic, IRCast, IRField, IRLocal)):
             return None
         # The temp must be read exactly once in the whole block, and that read
@@ -1421,11 +1423,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             return expr.target, start
         # Field-based array: `this.field.length` — the array is the field access
         # itself, read inline (no length temp to consume).
-        if (
-            isinstance(expr, IRField)
-            and expr.field_name == "length"
-            and isinstance(expr.target, IRField)
-        ):
+        if isinstance(expr, IRField) and expr.field_name == "length" and isinstance(expr.target, IRField):
             return expr.target, start
         if not isinstance(expr, IRLocal):
             return None

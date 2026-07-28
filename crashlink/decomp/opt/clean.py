@@ -2213,11 +2213,7 @@ class IRGuardOrMerger(TraversingIROptimizer):
         """True if `cond` is `temp is true` / `temp` (the staged temp being tested."""
         if cond == temp:
             return True
-        return (
-            isinstance(cond, IRBoolExpr)
-            and cond.op == IRBoolExpr.CompareType.ISTRUE
-            and cond.left == temp
-        )
+        return isinstance(cond, IRBoolExpr) and cond.op == IRBoolExpr.CompareType.ISTRUE and cond.left == temp
 
     def _count_reads(self, stmts: List[IRStatement], local: IRLocal) -> int:
         """Count reads of `local` across `stmts`, ignoring a bare write to it."""
