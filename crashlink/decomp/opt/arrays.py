@@ -183,6 +183,46 @@ class IRArrayObjWrapperOptimizer(TraversingIROptimizer):
             return self._is_empty_array_alloc(local_defs.get(expr), local_defs, seen)
         return False
 
+    def _empty_array_elem_type(
+        self,
+        expr: Optional[IRExpression],
+        local_defs: Dict["IRLocal", IRExpression],
+        seen: Optional[Set[int]] = None,
+    ) -> Optional[Type]:
+        """Element type recovered from an empty-array alloc chain, if any.
+
+        Mirrors `_is_empty_array_alloc`'s traversal but also surfaces the `Type`
+        argument HL's `alloc_array(ty, 0)` native carries — the only place the
+        element type survives erasure — so the caller can stamp it onto the
+        folded literal instead of discarding it.
+        """
+        if expr is None or not isinstance(expr, IRStatement):
+            return None
+        if seen is None:
+            seen = set()
+        if id(expr) in seen:
+            return None
+        seen.add(id(expr))
+
+        if isinstance(expr, IRNativeArrayNew):
+            return expr.elem_type
+        if isinstance(expr, IRCall) and len(expr.args) == 2:
+            target = expr.target
+            if (
+                isinstance(target, IRConst)
+                and isinstance(target.value, Native)
+                and target.value.name.resolve(self.func.code) == "alloc_array"
+            ):
+                ty_arg = expr.args[0]
+                if isinstance(ty_arg, IRLocal):
+                    ty_arg = local_defs.get(ty_arg, ty_arg)
+                if isinstance(ty_arg, IRConst) and ty_arg.const_type == IRConst.ConstType.GLOBAL_OBJ:
+                    if isinstance(ty_arg.value, Type):
+                        return ty_arg.value
+        if isinstance(expr, IRLocal):
+            return self._empty_array_elem_type(local_defs.get(expr), local_defs, seen)
+        return None
+
     def _reads_or_writes(self, stmt: IRStatement, local: IRLocal) -> bool:
         """True if `stmt` touches `local` anywhere (target or expression), used to make
         sure nothing but the alloc/index-stores we're about to fold away references it."""
@@ -362,7 +402,9 @@ class IRArrayObjWrapperOptimizer(TraversingIROptimizer):
                 local_defs[stmt.target] = stmt.expr
             if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRCall) and self._is_array_wrapper_call(stmt.expr):
                 if self._is_empty_array_alloc(stmt.expr.args[0], local_defs):
-                    stmt.expr = IRArrayLiteral(self.func.code, [])
+                    literal = IRArrayLiteral(self.func.code, [])
+                    literal.recovered_elem_type = self._empty_array_elem_type(stmt.expr.args[0], local_defs)
+                    stmt.expr = literal
                 elif isinstance(stmt.expr.args[0], IRLocal):
                     folded = self._try_fold_array_literal(stmts, i, stmt.expr.args[0])
                     if folded is not None:

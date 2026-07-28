@@ -159,23 +159,23 @@ def _walk_statement(
             except Exception:
                 value_type = None
             _record_array_source(access.array, value_type, code, field_elem_types, local_elem_types, global_cache)
-        # Array literal assigned to a local: recover elem type from elements.
-        if isinstance(stmt.target, IRLocal) and isinstance(stmt.expr, IRArrayLiteral):
+        # Array literal assigned to a local or field: recover elem type from
+        # the allocation site's own type (e.g. `[]`'s alloc_array(Joint, 0))
+        # or, failing that, from the literal's elements.
+        if isinstance(stmt.target, (IRLocal, IRField)) and isinstance(stmt.expr, IRArrayLiteral):
             if _is_erased_array(stmt.target, code):
                 lit = stmt.expr
                 if lit.recovered_elem_type is not None:
-                    local_elem_types[id(stmt.target)] = lit.recovered_elem_type
-                    if stmt.target.array_elem_type is None:
-                        stmt.target.array_elem_type = lit.recovered_elem_type
+                    _record_array_source(
+                        stmt.target, lit.recovered_elem_type, code, field_elem_types, local_elem_types, global_cache
+                    )
                 elif lit.elements:
                     # Only infer when ALL elements share the same non-erased
                     # type — a mixed literal like [1, "two", 3.0] is
                     # genuinely Array<Dynamic>, not Array<first_element_type>.
                     et = _uniform_element_type(lit.elements, code)
                     if et is not None:
-                        local_elem_types[id(stmt.target)] = et
-                        if stmt.target.array_elem_type is None:
-                            stmt.target.array_elem_type = et
+                        _record_array_source(stmt.target, et, code, field_elem_types, local_elem_types, global_cache)
     for child in stmt.get_children():
         if isinstance(child, IRBlock):
             _walk_block(child, code, visited, field_elem_types, local_elem_types, global_cache)
