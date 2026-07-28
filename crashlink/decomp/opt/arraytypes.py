@@ -271,14 +271,26 @@ def _propagate_calls_in_stmt(
         if callee is None:
             continue
         is_instance = _is_instance_method(callee)
+        # For FUNC calls to instance methods, args[0] is the receiver too
+        # (CallThis/CallMethod lower to FUNC with the receiver as first arg).
+        if is_instance and expr.call_type == IRCall.CallType.FUNC:
+            skip_args = 1
         start_arg = 1 if is_instance else 0
         for i, arg in enumerate(expr.args[skip_args:], start=start_arg):
             # Forward: arg has elem type → set callee param.
+            arg_elem: Optional[Type] = None
             if isinstance(arg, IRLocal) and arg.array_elem_type is not None:
-                if i < len(callee.locals):
-                    param_local = callee.locals[i]
-                    if param_local.array_elem_type is None and _is_erased_array(param_local, code):
-                        param_local.array_elem_type = arg.array_elem_type
+                arg_elem = arg.array_elem_type
+            elif isinstance(arg, IRField):
+                # Field argument: look up the recovered elem type from the
+                # global cache (e.g. `p1.joints` → Permut.joints → Joint).
+                cls = _class_name_of(arg.target, code)
+                if cls is not None:
+                    arg_elem = global_cache.get((cls, arg.field_name))
+            if arg_elem is not None and i < len(callee.locals):
+                param_local = callee.locals[i]
+                if param_local.array_elem_type is None and _is_erased_array(param_local, code):
+                    param_local.array_elem_type = arg_elem
             # Reverse: callee param has elem type → propagate to arg's field.
             if i < len(callee.locals):
                 param_local = callee.locals[i]
