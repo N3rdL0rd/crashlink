@@ -239,6 +239,30 @@ class IRConditionInliner(TraversingIROptimizer):
                 return True
         return False
 
+    def _has_loop_condition_cost(self, expr: IRExpression) -> bool:
+        """True if folding `expr` directly into a while-loop's condition would
+        make it re-execute real work (arithmetic or a narrowing/widening cast)
+        every iteration, instead of the original's single computation before
+        the loop. Even a lone remaining use is unsafe to inline here — unlike
+        an `if` condition (evaluated once either way), a loop condition is
+        evaluated every pass, and Haxe's own compiler additionally lowers a
+        non-trivial while-condition through a costlier `while(true){if(!c)
+        break;}` shape instead of a direct comparison."""
+        if isinstance(expr, (IRConst, IRLocal)):
+            return False
+        if isinstance(expr, (IRArithmetic, IRCast, IRNeg)):
+            return True
+        if isinstance(expr, IRField):
+            return self._has_loop_condition_cost(expr.target)
+        if isinstance(expr, IRArrayAccess):
+            return self._has_loop_condition_cost(expr.array) or self._has_loop_condition_cost(expr.index)
+        if isinstance(expr, (IRNot, IRTypeKind)):
+            for child in expr.get_children():
+                if isinstance(child, IRExpression) and self._has_loop_condition_cost(child):
+                    return True
+            return False
+        return True
+
     def _is_safe_to_duplicate(self, expr: IRExpression) -> bool:
         """Return True for side-effect-free expressions that can be duplicated
         without changing program behavior. Calls and allocations are excluded."""
@@ -390,7 +414,9 @@ class IRConditionInliner(TraversingIROptimizer):
                             assigned_local, while_loop_stmt, block.statements[i + 2 :]
                         )
                         if while_loop_stmt.condition == assigned_local:
-                            if used_outside and not self._is_safe_to_duplicate(expr_to_inline):
+                            if (used_outside and not self._is_safe_to_duplicate(expr_to_inline)) or (
+                                self._has_loop_condition_cost(expr_to_inline)
+                            ):
                                 new_statements.append(current_stmt)
                                 i += 1
                                 continue
@@ -406,7 +432,9 @@ class IRConditionInliner(TraversingIROptimizer):
                             i += 2
                             inlined_something = True
                         elif isinstance(while_loop_stmt.condition, IRBoolExpr):
-                            if used_outside and not self._is_safe_to_duplicate(expr_to_inline):
+                            if (used_outside and not self._is_safe_to_duplicate(expr_to_inline)) or (
+                                self._has_loop_condition_cost(expr_to_inline)
+                            ):
                                 new_statements.append(current_stmt)
                                 i += 1
                                 continue
@@ -1502,6 +1530,18 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 if boundary_subject is not None:
                     total_uses += self._count_local_reads(boundary_subject, temp_local)
                 if total_uses > 1 and self._has_nontrivial_computation(expr_to_inline):
+                    continue
+                # A while-loop condition re-evaluates on every iteration, so even
+                # a single logical use there is unsafe to inline when it's real
+                # computation (arithmetic/casts): the original only paid that cost
+                # once, before the loop, and Haxe's own compiler additionally
+                # lowers a non-trivial while-condition through a costlier
+                # `while(true){if(!c)break;}` shape instead of a direct compare.
+                if self._has_nontrivial_computation(expr_to_inline) and any(
+                    isinstance(remaining_statements[j], IRWhileLoop)
+                    and self._count_expr_local(cast(IRWhileLoop, remaining_statements[j]).condition, temp_local) > 0
+                    for j in use_indices
+                ):
                     continue
                 blocked = False
                 if free_vars:

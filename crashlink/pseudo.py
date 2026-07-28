@@ -921,6 +921,62 @@ def _free_locals_in_expr(expr: IRExpression) -> Set[IRLocal]:
     return found
 
 
+def _has_nontrivial_computation_for_render(expr: IRExpression) -> bool:
+    """True if `expr` does real work (arithmetic or a cast) rather than just
+    naming a value. Mirrors the decomp-side `_has_nontrivial_computation` used
+    to gate IR-level inlining; needed again here because pseudo.py's own
+    single-use substitution (`_is_single_use_render_expr`) runs independently
+    of those IR passes, at print time."""
+    if isinstance(expr, (IRArithmetic, IRCast)):
+        return True
+    return False
+
+
+def _is_read_in_while_condition(root: IRStatement, name: str) -> bool:
+    """True if a local named `name` is read inside any IRWhileLoop's own
+    condition expression anywhere in `root`. A while condition re-evaluates
+    every iteration, so substituting a non-trivial expression there re-runs
+    that work each pass instead of the original's single computation before
+    the loop — unlike a substitution at an ordinary single-execution site."""
+    found = False
+
+    def walk_expr(e: Optional[IRExpression]) -> bool:
+        if e is None:
+            return False
+        if isinstance(e, IRLocal):
+            return e.name == name
+        if isinstance(e, (IRArithmetic, IRBoolExpr)):
+            return walk_expr(e.left) or walk_expr(e.right)
+        if isinstance(e, IRCall):
+            if e.target is not None and walk_expr(e.target):
+                return True
+            return any(walk_expr(arg) for arg in e.args)
+        if isinstance(e, IRField):
+            return walk_expr(e.target)
+        if isinstance(e, IRCast):
+            return walk_expr(e.expr)
+        if isinstance(e, IRArrayAccess):
+            return walk_expr(e.array) or walk_expr(e.index)
+        return False
+
+    def walk_stmt(s: Optional[IRStatement]) -> None:
+        nonlocal found
+        if found or s is None:
+            return
+        if isinstance(s, IRWhileLoop) and walk_expr(s.condition):
+            found = True
+            return
+        for child in s.get_children():
+            if isinstance(child, IRBlock):
+                for child_stmt in child.statements:
+                    walk_stmt(child_stmt)
+            else:
+                walk_stmt(child)
+
+    walk_stmt(root)
+    return found
+
+
 def _count_local_reads_and_writes(root: IRStatement, name: str) -> Tuple[int, int]:
     """Count read vs write occurrences of a local by name across an IR subtree.
 
@@ -1140,7 +1196,14 @@ def _generate_statements(
                 and _is_single_use_render_expr(stmt.expr)
             ):
                 reads, writes = _count_local_reads_and_writes(ir_function.block, local_name)
-                skip_declaration = reads == 1 and writes == 1
+                skip_declaration = (
+                    reads == 1
+                    and writes == 1
+                    and not (
+                        _has_nontrivial_computation_for_render(stmt.expr)
+                        and _is_read_in_while_condition(ir_function.block, local_name)
+                    )
+                )
 
             if not skip_declaration:
                 value_str = _expression_to_haxe(stmt.expr, code, ir_function)
@@ -1697,7 +1760,14 @@ def _generate_statements(
             registerable = _is_simple_render_expr(stmt.expr)
             if not registerable and re.fullmatch(r"var\d+", stmt.target.name) and _is_single_use_render_expr(stmt.expr):
                 reads, writes = _count_local_reads_and_writes(ir_function.block, stmt.target.name)
-                registerable = reads == 1 and writes == 1
+                registerable = (
+                    reads == 1
+                    and writes == 1
+                    and not (
+                        _has_nontrivial_computation_for_render(stmt.expr)
+                        and _is_read_in_while_condition(ir_function.block, stmt.target.name)
+                    )
+                )
             if registerable:
                 free_locals = _free_locals_in_expr(stmt.expr)
                 if stmt.target not in free_locals:
