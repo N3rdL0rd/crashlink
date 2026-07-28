@@ -466,6 +466,14 @@ class IRFunction:
                 continue
             named_here = self._op_assigns.get(op_idx, {})
             if reg not in named_here:
+                # A self-referential write (b++, b = b + 1, b += 5) continues
+                # the same source variable rather than recycling the register
+                # as an anonymous temp. Counting it as reuse would make
+                # _split_local disambiguate an unrelated register that shares
+                # the name (e.g. `b += 5` lifted into a fresh reg rendering as
+                # `var b1` instead of `b = b + 5`).
+                if self._is_continuation_write(op):
+                    continue
                 return True
         return False
 
