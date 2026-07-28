@@ -1171,9 +1171,7 @@ class MainWindow(QMainWindow):
         if self._code is None:
             return
         old_name = self._code.annotations.get_rename(findex, reg_idx, def_op)
-        cmd = RenameCommand(
-            self._code, findex, reg_idx, def_op, old_name, new_name, self._on_annotation_applied
-        )
+        cmd = RenameCommand(self._code, findex, reg_idx, def_op, old_name, new_name, self._on_annotation_applied)
         self._undo_stack.push(cmd)
 
     def _apply_comment(self, findex: int, op_idx: int, text: Optional[str]) -> None:

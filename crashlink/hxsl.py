@@ -32,14 +32,43 @@ from .core import Bytecode
 # version pinning). Decoding a shader from a different heaps build needs that
 # build's Ast.hx enum orders.
 _TYPE = [
-    "TVoid", "TInt", "TBool", "TFloat", "TString", "TVec", "TMat3", "TMat4", "TMat3x4",
-    "TBytes", "TSampler2D", "TSampler2DArray", "TSamplerCube", "TStruct", "TFun", "TArray",
-    "TBuffer", "TChannel",
+    "TVoid",
+    "TInt",
+    "TBool",
+    "TFloat",
+    "TString",
+    "TVec",
+    "TMat3",
+    "TMat4",
+    "TMat3x4",
+    "TBytes",
+    "TSampler2D",
+    "TSampler2DArray",
+    "TSamplerCube",
+    "TStruct",
+    "TFun",
+    "TArray",
+    "TBuffer",
+    "TChannel",
 ]
 _VARKIND = ["Global", "Input", "Param", "Var", "Local", "Output", "Function"]
 _VARQUAL = [
-    "Const", "Private", "Nullable", "PerObject", "Name", "Shared", "Precision", "Range",
-    "Ignore", "PerInstance", "Doc", "Borrow", "Sampler", "Final", "Flat", "NoVar",
+    "Const",
+    "Private",
+    "Nullable",
+    "PerObject",
+    "Name",
+    "Shared",
+    "Precision",
+    "Range",
+    "Ignore",
+    "PerInstance",
+    "Doc",
+    "Borrow",
+    "Sampler",
+    "Final",
+    "Flat",
+    "NoVar",
 ]
 _VECTYPE = ["VInt", "VFloat", "VBool"]
 _TEXDIM = ["T1D", "T2D", "T3D", "TCube"]
@@ -56,25 +85,125 @@ _CONST = ["CNull", "CBool", "CInt", "CFloat", "CString"]
 _FUNKIND = ["Vertex", "Fragment", "Init", "Helper", "Main"]
 # hxsl.TExprDef constructor order (Ast.hx).
 _TEXPRDEF = [
-    "TConst", "TVar", "TGlobal", "TParenthesis", "TBlock", "TBinop", "TUnop", "TVarDecl",
-    "TCall", "TSwiz", "TIf", "TDiscard", "TReturn", "TFor", "TContinue", "TBreak", "TArray",
-    "TArrayDecl", "TSwitch", "TWhile", "TMeta", "TField", "TSyntax",
+    "TConst",
+    "TVar",
+    "TGlobal",
+    "TParenthesis",
+    "TBlock",
+    "TBinop",
+    "TUnop",
+    "TVarDecl",
+    "TCall",
+    "TSwiz",
+    "TIf",
+    "TDiscard",
+    "TReturn",
+    "TFor",
+    "TContinue",
+    "TBreak",
+    "TArray",
+    "TArrayDecl",
+    "TSwitch",
+    "TWhile",
+    "TMeta",
+    "TField",
+    "TSyntax",
 ]
 # hxsl.TGlobal (GLSL builtins), heaps 1.6.0 order.
 _TGLOBAL = [
-    "radians", "degrees", "sin", "cos", "tan", "asin", "acos", "atan", "pow", "exp", "log",
-    "exp2", "log2", "sqrt", "inversesqrt", "abs", "sign", "floor", "ceil", "fract", "mod",
-    "min", "max", "clamp", "mix", "step", "smoothstep", "length", "distance", "dot", "cross",
-    "normalize", "reflect", "texture", "textureLod", "int", "float", "bool", "vec2", "vec3",
-    "vec4", "ivec2", "ivec3", "ivec4", "bvec2", "bvec3", "bvec4", "mat2", "mat3", "mat4",
-    "mat3x4", "saturate", "pack", "unpack", "packNormal", "unpackNormal", "screenToUv",
-    "uvToScreen", "dFdx", "dFdy", "fwidth", "channelRead", "channelReadLod", "trace",
-    "vertexID", "instanceID",
+    "radians",
+    "degrees",
+    "sin",
+    "cos",
+    "tan",
+    "asin",
+    "acos",
+    "atan",
+    "pow",
+    "exp",
+    "log",
+    "exp2",
+    "log2",
+    "sqrt",
+    "inversesqrt",
+    "abs",
+    "sign",
+    "floor",
+    "ceil",
+    "fract",
+    "mod",
+    "min",
+    "max",
+    "clamp",
+    "mix",
+    "step",
+    "smoothstep",
+    "length",
+    "distance",
+    "dot",
+    "cross",
+    "normalize",
+    "reflect",
+    "texture",
+    "textureLod",
+    "int",
+    "float",
+    "bool",
+    "vec2",
+    "vec3",
+    "vec4",
+    "ivec2",
+    "ivec3",
+    "ivec4",
+    "bvec2",
+    "bvec3",
+    "bvec4",
+    "mat2",
+    "mat3",
+    "mat4",
+    "mat3x4",
+    "saturate",
+    "pack",
+    "unpack",
+    "packNormal",
+    "unpackNormal",
+    "screenToUv",
+    "uvToScreen",
+    "dFdx",
+    "dFdy",
+    "fwidth",
+    "channelRead",
+    "channelReadLod",
+    "trace",
+    "vertexID",
+    "instanceID",
 ]
 # haxe.macro.Binop symbol per constructor index (Haxe 4). Index 20 (OpAssignOp) is special.
 _BINOP = [
-    "+", "*", "/", "-", "=", "==", "!=", ">", ">=", "<", "<=", "&", "|", "^", "&&", "||",
-    "<<", ">>", ">>>", "%", None, "...", "=>", "in",
+    "+",
+    "*",
+    "/",
+    "-",
+    "=",
+    "==",
+    "!=",
+    ">",
+    ">=",
+    "<",
+    "<=",
+    "&",
+    "|",
+    "^",
+    "&&",
+    "||",
+    "<<",
+    ">>",
+    ">>>",
+    "%",
+    None,
+    "...",
+    "=>",
+    "in",
 ]
 _UNOP = ["++", "--", "!", "-", "~"]
 
@@ -104,10 +233,10 @@ class HaxeUnserializer:
         self.s = s
         self.pos = 0
         self.scache: List[str] = []  # string cache (R references)
-        self.cache: List[Any] = []   # value cache (r references)
+        self.cache: List[Any] = []  # value cache (r references)
 
     def _err(self, msg: str) -> "UnserializeError":
-        ctx = self.s[max(0, self.pos - 20):self.pos + 20]
+        ctx = self.s[max(0, self.pos - 20) : self.pos + 20]
         return UnserializeError(f"{msg} at {self.pos}: …{ctx}…")
 
     def _read_int(self) -> int:
@@ -116,14 +245,14 @@ class HaxeUnserializer:
             self.pos += 1
         while self.pos < len(self.s) and self.s[self.pos].isdigit():
             self.pos += 1
-        return int(self.s[start:self.pos])
+        return int(self.s[start : self.pos])
 
     def _read_float(self) -> float:
         # Values are opcode-separated, so a float is a maximal run of number chars.
         start = self.pos
         while self.pos < len(self.s) and self.s[self.pos] in "0123456789.eE+-":
             self.pos += 1
-        return float(self.s[start:self.pos])
+        return float(self.s[start : self.pos])
 
     def unserialize(self) -> Any:
         c = self.s[self.pos]
@@ -150,7 +279,7 @@ class HaxeUnserializer:
             length = self._read_int()
             assert self.s[self.pos] == ":"
             self.pos += 1
-            raw = self.s[self.pos:self.pos + length]
+            raw = self.s[self.pos : self.pos + length]
             self.pos += length
             val = urllib.parse.unquote(raw)
             self.scache.append(val)
@@ -279,8 +408,11 @@ def _qual_str(q: Any) -> str:
     if name == "PerInstance":
         return f"perInstance({args[0]})" if args else "perInstance"
     return {
-        "Private": "private", "Nullable": "nullable", "PerObject": "perObject",
-        "Shared": "shared", "Ignore": "ignore",
+        "Private": "private",
+        "Nullable": "nullable",
+        "PerObject": "perObject",
+        "Shared": "shared",
+        "Ignore": "ignore",
     }.get(name, "")
 
 
@@ -622,13 +754,7 @@ def render_shader(shader: Shader) -> str:
     # Body sits two levels deep: inside the class, inside `static var SRC = { … }`.
     body = _ShaderPrinter(unit=unit).render(shader.raw, base=unit * 2).rstrip("\n") + "\n"
     class_name = shader.name.rsplit(".", 1)[-1]
-    return (
-        f"class {class_name} extends hxsl.Shader {{\n"
-        f"{unit}static var SRC = {{\n"
-        f"{body}"
-        f"{unit}}};\n"
-        f"}}"
-    )
+    return f"class {class_name} extends hxsl.Shader {{\n{unit}static var SRC = {{\n{body}{unit}}};\n}}"
 
 
 def shaders_by_name(code: Bytecode) -> Dict[str, "Shader"]:

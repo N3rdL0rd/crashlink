@@ -1805,10 +1805,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
                     param_name = candidate
                 # If the param's IRLocal has a recovered array element type,
                 # render Array<T> instead of the erased Array<Dynamic>.
-                if (
-                    arg_haxe_type_name == "Array<Dynamic>"
-                    and ir_func.locals[local_idx].array_elem_type is not None
-                ):
+                if arg_haxe_type_name == "Array<Dynamic>" and ir_func.locals[local_idx].array_elem_type is not None:
                     elem_type = ir_func.locals[local_idx].array_elem_type
                     assert elem_type is not None  # narrowed by the guard above
                     elem_haxe = disasm.type_to_haxe(disasm.type_name(code, elem_type))

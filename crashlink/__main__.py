@@ -966,8 +966,11 @@ def _copy_to_clipboard(text: str) -> bool:
     except Exception:
         pass
     candidates = [
-        ["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"],
-        ["pbcopy"], ["clip"],
+        ["wl-copy"],
+        ["xclip", "-selection", "clipboard"],
+        ["xsel", "--clipboard", "--input"],
+        ["pbcopy"],
+        ["clip"],
     ]
     for cmd in candidates:
         if shutil.which(cmd[0]) is None:
