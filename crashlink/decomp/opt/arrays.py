@@ -52,6 +52,7 @@ from ..ir import (
 from . import (
     TraversingIROptimizer,
     _int_const_value,
+    _structurally_equal,
 )
 
 
@@ -1409,13 +1410,22 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
 
     def _array_from_length_expr(
         self, stmts: List[IRStatement], start: int, expr: IRExpression
-    ) -> Optional[Tuple[IRLocal, int]]:
-        """Resolve the array variable behind a `.length` expression or a temp holding it.
+    ) -> Optional[Tuple[IRExpression, int]]:
+        """Resolve the array expression behind a `.length` expression or a temp holding it.
 
-        Returns the array local and the index of the statement that produced the
-        length value, so the caller can consume it.
+        Returns the array expression (a local or a field access like `this.weights`)
+        and the index of the statement that produced the length value, so the caller
+        can consume it.
         """
         if isinstance(expr, IRField) and expr.field_name == "length" and isinstance(expr.target, IRLocal):
+            return expr.target, start
+        # Field-based array: `this.field.length` — the array is the field access
+        # itself, read inline (no length temp to consume).
+        if (
+            isinstance(expr, IRField)
+            and expr.field_name == "length"
+            and isinstance(expr.target, IRField)
+        ):
             return expr.target, start
         if not isinstance(expr, IRLocal):
             return None
@@ -1427,7 +1437,6 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                 and prev.target.same_register(expr)
                 and isinstance(prev.expr, IRField)
                 and prev.expr.field_name == "length"
-                and isinstance(prev.expr.target, IRLocal)
             ):
                 return prev.expr.target, j
         return None
@@ -1487,9 +1496,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         access = else_assign.expr
         if not isinstance(access.array, IRField):
             return None
-        if not isinstance(access.array.target, IRLocal):
-            return None
-        if access.array.field_name != "bytes" or access.array.target.name != arr_var.name:
+        if access.array.field_name != "bytes" or not _structurally_equal(access.array.target, arr_var):
             return None
         if not isinstance(access.index, IRArithmetic) or access.index.op.value != "<<":
             return None
