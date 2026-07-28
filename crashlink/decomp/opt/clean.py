@@ -2303,24 +2303,44 @@ class IRGuardOrMerger(TraversingIROptimizer):
         the parent block by Y then TAIL again (the fallthrough-when-!A path
         repeats the else-action and shared tail-code) -> if (A && B) { X }
         else { Y } TAIL, consuming Y+TAIL's statements from the parent block.
+
+        Also handles B's else being empty with Y living in TAIL instead, when
+        X is terminal (continue/break/return/throw): since X never falls
+        through, TAIL is only reachable via B-false, so it plays the same
+        role as an inline else -- if (A) { if (B) { X } TAIL } (empty else),
+        followed by TAIL again -> if (A && B) { X } else { TAIL }, consuming
+        all of TAIL's duplicate from the parent block (there's no separate
+        shared-tail remainder left over, unlike the inline-else case above).
         """
         outer_true = stmt.true_block.statements
         if stmt.false_block.statements or not outer_true:
             return None
         inner = outer_true[0]
-        if not isinstance(inner, IRConditional) or not inner.false_block.statements:
+        if not isinstance(inner, IRConditional):
             return None
         tail = outer_true[1:]
         inner_false = inner.false_block.statements
-        wanted = inner_false + tail
+        if inner_false:
+            wanted = inner_false + tail
+            false_block = inner.false_block
+            consumed = len(inner_false)
+        elif tail and inner.true_block.statements and isinstance(
+            inner.true_block.statements[-1], (IRContinue, IRBreak, IRReturn, IRThrow)
+        ):
+            wanted = tail
+            false_block = IRBlock(self.func.code)
+            false_block.statements = tail
+            consumed = len(wanted)
+        else:
+            return None
         if not wanted or len(following) < len(wanted):
             return None
         if not _stmt_lists_structurally_equal(wanted, following[: len(wanted)]):
             return None
         and_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.AND, stmt.condition, inner.condition)
-        merged = IRConditional(self.func.code, and_cond, inner.true_block, inner.false_block)
+        merged = IRConditional(self.func.code, and_cond, inner.true_block, false_block)
         merged.adopt(stmt, inner, *following[: len(wanted)])
-        return merged, len(inner_false)
+        return merged, consumed
 
     def _invert(self, cond: IRExpression) -> IRExpression:
         """Return a negated copy of a boolean expression. Flips simple
