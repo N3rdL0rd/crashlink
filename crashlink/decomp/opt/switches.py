@@ -159,13 +159,6 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
                         switch.adopt(next_switch)
                         tail = next_tail
                         i += 1
-                    # Whatever's left once the chain stops matching is exactly
-                    # what runs when no case matched - that's the default body.
-                    if not tail and not switch.default.statements and i < len(block.statements):
-                        fallthrough = IRBlock(self.func.code)
-                        fallthrough.statements = block.statements[i:]
-                        switch.default = fallthrough
-                        i = len(block.statements)
                     new_statements.append(switch)
                     new_statements.extend(tail)
                     made_change = True
@@ -193,7 +186,16 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
             return None
         cases, default, tail, consumed = parsed
         if not default.statements:
-            default = stmt.false_block
+            # The chain's no-match `rest` was empty (no explicit default). Do
+            # NOT fall back to `stmt.false_block`: when the switch has no
+            # explicit default and multiple cases, the compiler factors the
+            # null check so the null path re-enters the next case's chain
+            # (the convergence node), which the lifter duplicates into
+            # `stmt.false_block`. That duplicate is NOT the switch's default —
+            # it's the continuation, and using it as `default` re-emits the
+            # remaining cases as a fabricated nested switch. Leave the
+            # default empty: the post-switch continuation is the siblings.
+            default = IRBlock(self.func.code)
         new_switch = IRSwitch(self.func.code, s_local, cases, default)
         new_switch.adopt(stmt, len_cond, *consumed)
         return new_switch, tail
