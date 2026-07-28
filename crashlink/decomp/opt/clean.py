@@ -111,12 +111,28 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
             return bool_expr
         return None
 
+    def _reads_target_before_redefine(
+        self, statements: List[IRStatement], target: IRLocal | IRField | IRArrayAccess
+    ) -> bool:
+        """Scan a top-level statement list in order for a read of `target`, stopping at
+        the first statement that reassigns it. HL freely reuses dead registers, so a
+        later statement matching `target` by name/register may be a genuine read of our
+        value, or it may be operating on the register after it's been overwritten for an
+        unrelated purpose - once reassigned, later statements can no longer be reading
+        the value we're trying to inline."""
+        for stmt in statements:
+            if self._statement_reads_target(stmt, target):
+                return True
+            if isinstance(stmt, IRAssign) and stmt.target == target:
+                return False
+        return False
+
     def _statement_reads_target(self, statement: IRStatement, target: IRLocal | IRField | IRArrayAccess) -> bool:
         if statement == target:
             return True
         if isinstance(statement, IRAssign):
             return self._statement_reads_target(statement.expr, target)
-        if isinstance(statement, IRBoolExpr):
+        if isinstance(statement, (IRBoolExpr, IRArithmetic)):
             return (statement.left is not None and self._statement_reads_target(statement.left, target)) or (
                 statement.right is not None and self._statement_reads_target(statement.right, target)
             )
@@ -174,12 +190,21 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
                 and isinstance(stmt.expr, IRExpression)
                 and isinstance(stmt.target, (IRLocal, IRField, IRArrayAccess))
             ):
-                later_statements = list(setup_statements_for_body[i + 1 :]) + list(loop.body.statements)
-                reads_later = any(
-                    self._statement_reads_target(later_stmt, stmt.target) for later_stmt in later_statements
+                # The loop wraps around: after this statement, execution continues to
+                # the end of the condition block, then to the body, then back to the
+                # top of the condition block for the next iteration. Include that
+                # wrap-around (ending at `stmt` itself, which is a natural
+                # redefinition boundary) so a read at the very top of the next
+                # iteration - like a do-while's condition setup feeding straight
+                # back into its own body - isn't missed.
+                later_statements = (
+                    list(setup_statements_for_body[i + 1 :])
+                    + list(loop.body.statements)
+                    + list(setup_statements_for_body[: i + 1])
                 )
+                reads_later = self._reads_target_before_redefine(later_statements, stmt.target)
                 reads_in_condition = self._statement_reads_target(working_exit_condition, stmt.target)
-                if reads_later or reads_in_condition:
+                if reads_later or not reads_in_condition:
                     remaining_setup.append(stmt)
                     continue
 

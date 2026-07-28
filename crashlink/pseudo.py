@@ -1861,8 +1861,10 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         # Enum switch index temps are rendered as the enum expression, not declared.
         if local_name in enum_switch_index_vars:
             continue
-        # For-each loop variables are declared by the `for (x in y)` syntax.
-        if local_name in foreach_elem_names:
+        # For-each loop variables are declared by the `for (x in y)` syntax - unless
+        # the same name is also assigned somewhere else in the function (register
+        # reuse), in which case it still needs a real declaration.
+        if local_name in foreach_elem_names and not _has_explicit_assignment(local_name, ir_func.block):
             continue
         type_str = local_types[local_name]
         defining_stmt = _find_defining_assignment(local_name, ir_func.block)
@@ -1958,6 +1960,20 @@ def pseudo_oplines(ir_func: IRFunction) -> Tuple[str, Dict[int, int]]:
     final_output.append("}")
 
     return "\n".join(final_output), op_to_line
+
+
+def _has_explicit_assignment(local_name: str, stmt: IRStatement) -> bool:
+    """Recursively check for a genuine `IRAssign` to `local_name` anywhere in `stmt`.
+
+    HL bytecode reuses register names, so the same name can be bound as a
+    for-loop's element (an implicit binding, no `IRAssign` statement of its own)
+    *and* separately reused as an ordinary assigned variable elsewhere in the same
+    function. `_collect_foreach_elem_names` alone can't tell those cases apart; this
+    catches the "elsewhere" case so that variable still gets a hoisted declaration.
+    """
+    if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target.name == local_name:
+        return True
+    return any(_has_explicit_assignment(local_name, child) for child in stmt.get_children())
 
 
 def _collect_foreach_elem_names(block: IRBlock) -> Set[str]:
