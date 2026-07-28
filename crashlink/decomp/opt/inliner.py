@@ -260,16 +260,14 @@ class IRConditionInliner(TraversingIROptimizer):
         if isinstance(stmt, IRAssign):
             if self._expr_contains_local(stmt.expr, local):
                 return True
-            # A compound target (`obj.field = ...`) still reads `local` to
-            # compute the field's containing object — only a bare local
-            # target (`local = ...`) is a pure redefinition with no read of
-            # the old value. (Deliberately narrower than IRField: treating
-            # an IRArrayAccess target's index as a "read" here blocks the
-            # generic IRAssign-pair fold below from ever reaching it, since
-            # that fold only substitutes into the *value* side, not the
-            # target — see the dedicated IRArrayAccess substitution path
-            # there instead.)
-            if isinstance(stmt.target, IRField) and self._expr_contains_local(stmt.target, local):
+            # A compound target (`obj.field = ...` or `arr[idx] = ...`) still
+            # reads `local` to compute the field's containing object or the
+            # array/index — only a bare local target (`local = ...`) is a
+            # pure redefinition with no read of the old value.
+            if (
+                isinstance(stmt.target, (IRField, IRArrayAccess))
+                and self._expr_contains_local(stmt.target, local)
+            ):
                 return True
             return False
         if isinstance(stmt, IRExpression):
@@ -1030,6 +1028,113 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             return self.is_safe_to_inline_aggressively(expr.left) and self.is_safe_to_inline_aggressively(expr.right)
         return False
 
+    def _count_expr_local(self, expr: IRExpression, local: IRLocal) -> int:
+        """Like `_expr_contains_local` but counting every occurrence instead of
+        stopping at the first. Mirrors its explicit per-node-type dispatch:
+        most IRExpression subclasses don't implement get_children(), so a
+        blind get_children() walk silently misses reads nested in arithmetic,
+        casts, calls, etc."""
+        if expr == local:
+            return 1
+        count = 0
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            if expr.left:
+                count += self._count_expr_local(expr.left, local)
+            if expr.right:
+                count += self._count_expr_local(expr.right, local)
+        elif isinstance(expr, IRCall):
+            if expr.target is not None:
+                count += self._count_expr_local(expr.target, local)
+            for arg in expr.args:
+                count += self._count_expr_local(arg, local)
+        elif isinstance(expr, IRField):
+            count += self._count_expr_local(expr.target, local)
+        elif isinstance(expr, IRCast):
+            count += self._count_expr_local(expr.expr, local)
+        elif isinstance(expr, IRArrayAccess):
+            count += self._count_expr_local(expr.array, local)
+            count += self._count_expr_local(expr.index, local)
+        elif isinstance(expr, IRRef):
+            count += self._count_expr_local(expr.target, local)
+        elif isinstance(expr, IREnumConstruct):
+            for arg in expr.args:
+                count += self._count_expr_local(arg, local)
+        elif isinstance(expr, (IREnumIndex, IREnumField)):
+            count += self._count_expr_local(expr.value, local)
+        elif isinstance(expr, (IRNeg, IRNot, IRTypeOf, IRTypeKind)):
+            count += self._count_expr_local(expr.expr, local)
+        elif isinstance(expr, IRNew):
+            for arg in expr.constructor_args:
+                count += self._count_expr_local(arg, local)
+        elif isinstance(expr, IRArrayLiteral):
+            for element in expr.elements:
+                count += self._count_expr_local(element, local)
+        elif isinstance(expr, IRNativeArrayNew):
+            count += self._count_expr_local(expr.size, local)
+        return count
+
+    def _count_local_reads(self, stmt: IRStatement, local: IRLocal, _visited: Optional[Set[int]] = None) -> int:
+        """Count read occurrences of `local` within `stmt`, recursing into
+        nested blocks. Unlike `_stmt_contains_local` (which just answers "does
+        this statement touch it anywhere", so an IRConditional whose condition
+        AND branch body both read the same temp still counts as a single
+        "use"), this counts every read site separately so callers can tell
+        "one remaining use" from "several"."""
+        if _visited is None:
+            _visited = set()
+        if isinstance(stmt, IRBlock):
+            if id(stmt) in _visited:
+                return 0
+            _visited.add(id(stmt))
+            count = 0
+            for s in stmt.statements:
+                count += self._count_local_reads(s, local, _visited)
+            return count
+
+        count = 0
+        if isinstance(stmt, IRAssign):
+            if isinstance(stmt.target, IRExpression) and not isinstance(stmt.target, IRLocal):
+                count += self._count_expr_local(stmt.target, local)
+            if isinstance(stmt.expr, IRExpression):
+                count += self._count_expr_local(stmt.expr, local)
+            return count
+        if isinstance(stmt, IRExpression):
+            return self._count_expr_local(stmt, local)
+        if isinstance(stmt, IRReturn):
+            if stmt.value is not None:
+                count += self._count_expr_local(stmt.value, local)
+        elif isinstance(stmt, IRConditional):
+            count += self._count_expr_local(stmt.condition, local)
+        elif isinstance(stmt, IRWhileLoop):
+            count += self._count_expr_local(stmt.condition, local)
+        elif isinstance(stmt, IRSwitch):
+            count += self._count_expr_local(stmt.value, local)
+
+        for child in stmt.get_children():
+            if isinstance(child, IRBlock):
+                count += self._count_local_reads(child, local, _visited)
+        return count
+
+    def _has_nontrivial_computation(self, expr: IRExpression) -> bool:
+        """True if duplicating `expr` would re-execute real work (arithmetic or a
+        narrowing/widening cast) rather than just re-reading a field chain.
+        Field/array-access chains (`.bytes`, `.array`, ...) are cheap to
+        duplicate and later pattern-matching passes rely on seeing them at
+        every use site; a division or int/float cast is not, and duplicating
+        those recomputes something the original bytecode only did once.
+        """
+        if isinstance(expr, (IRConst, IRLocal)):
+            return False
+        if isinstance(expr, (IRArithmetic, IRCast, IRNeg)):
+            return True
+        if isinstance(expr, IRField):
+            return self._has_nontrivial_computation(expr.target)
+        if isinstance(expr, IRArrayAccess):
+            return self._has_nontrivial_computation(expr.array) or self._has_nontrivial_computation(expr.index)
+        if isinstance(expr, (IRTypeOf, IRTypeKind, IRNot)):
+            return self._has_nontrivial_computation(expr.expr)
+        return True
+
     def is_safe_to_inline_conservatively(self, expr: IRExpression) -> bool:
         # Avoid inlining calls in conservative mode: they can have side effects
         # and removing the assignment eliminates evidence needed by pattern
@@ -1386,6 +1491,17 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                     ):
                         boundary_subject = subject
                 if not use_indices and boundary_subject is None:
+                    continue
+                # Inlining duplicates expr_to_inline's computation into every use
+                # site. For a bare const/local that's free (same op count either
+                # way); for anything else (casts, arithmetic, field reads...)
+                # duplicating it into 2+ sites re-executes work the original
+                # bytecode only did once. Keep the temp (and let a single-use
+                # pass, or copy-prop, handle it) once there's more than one use.
+                total_uses = sum(self._count_local_reads(remaining_statements[j], temp_local) for j in use_indices)
+                if boundary_subject is not None:
+                    total_uses += self._count_local_reads(boundary_subject, temp_local)
+                if total_uses > 1 and self._has_nontrivial_computation(expr_to_inline):
                     continue
                 blocked = False
                 if free_vars:
