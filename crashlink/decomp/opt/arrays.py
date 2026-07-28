@@ -251,7 +251,104 @@ class IRArrayObjWrapperOptimizer(TraversingIROptimizer):
 
         if set(values) != set(range(size)):
             return None
-        return [values[i] for i in range(size)], [alloc_idx, *store_indices]
+        consumed = [alloc_idx, *store_indices]
+        result_values = [values[i] for i in range(size)]
+        # Inline single-use element-construction temps (e.g. `var10 = new X(...)`)
+        # that live between the alloc and the wrapper call. Without this, an
+        # element constructed in its own statement before the store folds into
+        # `[var10]`, leaving `var10 = new X(...)` as a separate preceding
+        # statement — which recompiles with the constructor *before* the array
+        # allocation, diverging from the original `[new X(...)]` source order
+        # (Haxe allocates the enclosing array first when the element is inline).
+        # Inlining the temp into the literal restores that order. This is a *move*
+        # (the temp is single-use), never a duplication, so side effects run once.
+        for k, val in enumerate(result_values):
+            inlined = self._try_inline_element_temp(stmts, val, alloc_idx, call_idx, consumed)
+            if inlined is not None:
+                inlined_expr, def_idx = inlined
+                result_values[k] = inlined_expr
+                consumed.append(def_idx)
+        return result_values, consumed
+
+    def _try_inline_element_temp(
+        self,
+        stmts: List[IRStatement],
+        val: IRExpression,
+        alloc_idx: int,
+        call_idx: int,
+        already_consumed: List[int],
+    ) -> Optional[Tuple[IRExpression, int]]:
+        """If `val` is a single-use synthetic local whose sole definition sits
+        between the array alloc and the wrapper call, return its defining
+        expression and the index of that definition so the caller can splice it
+        into the array literal (a move, not a copy) and drop the definition."""
+        if not isinstance(val, IRLocal):
+            return None
+        temp = val
+        def_idx: Optional[int] = None
+        for j in range(alloc_idx + 1, call_idx):
+            s = stmts[j]
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target == temp:
+                if def_idx is not None:
+                    return None  # redefined — not a single def
+                def_idx = j
+        if def_idx is None:
+            return None
+        def_expr = stmts[def_idx].expr
+        if not isinstance(def_expr, (IRNew, IRArrayLiteral, IRConst, IRArithmetic, IRCast, IRField, IRLocal)):
+            return None
+        # The temp must be read exactly once in the whole block, and that read
+        # must be the store we're folding (one of the already-consumed stores).
+        # The definition itself is a write, not a read.
+        read_count = 0
+        for j, s in enumerate(stmts):
+            if j == def_idx:
+                continue
+            if self._stmt_reads(s, temp):
+                read_count += 1
+        if read_count != 1:
+            return None
+        # Nothing between the def and the wrapper call may reassign any free
+        # local of the moved expression — otherwise moving the def to the
+        # literal's position would change which value those locals hold.
+        free_locals: Set[IRLocal] = set()
+        self._collect_locals(def_expr, free_locals)
+        for j in range(def_idx + 1, call_idx):
+            if j in already_consumed:
+                continue
+            s = stmts[j]
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target in free_locals:
+                return None
+        return def_expr, def_idx
+
+    def _reads_in_assign(self, stmt: IRAssign, local: IRLocal) -> bool:
+        """True if `stmt` reads `local` (in its target's array/index or in expr),
+        ignoring a write to `local` itself."""
+        if isinstance(stmt.target, IRArrayAccess):
+            if self._expr_reads(stmt.target.index, local) or self._expr_reads(stmt.target.array, local):
+                return True
+        elif stmt.target == local:
+            # A write to `local` itself; the RHS may still read the old value,
+            # but for a single-def temp that can't happen — treat as no read.
+            return self._expr_reads(stmt.expr, local)
+        return self._expr_reads(stmt.expr, local)
+
+    def _stmt_reads(self, stmt: IRStatement, local: IRLocal) -> bool:
+        """True if `stmt` reads `local` anywhere, treating a bare write to
+        `local` itself as a read only via its RHS."""
+        if isinstance(stmt, IRAssign):
+            return self._reads_in_assign(stmt, local)
+        return any(self._expr_reads(c, local) for c in stmt.get_children() if isinstance(c, IRExpression))
+
+    def _collect_locals(self, expr: Optional[IRExpression], out: Set[IRLocal]) -> None:
+        if expr is None:
+            return
+        if isinstance(expr, IRLocal):
+            out.add(expr)
+            return
+        for c in expr.get_children():
+            if isinstance(c, IRExpression):
+                self._collect_locals(c, out)
 
     def visit_block(self, block: IRBlock) -> None:
         local_defs: Dict[IRLocal, IRExpression] = {}
