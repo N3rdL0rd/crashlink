@@ -2145,21 +2145,110 @@ class IRGuardOrMerger(TraversingIROptimizer):
         produces when the "taken" (throwing/returning) action is reached via the
         *first* condition being true, and the second check sits inside the
         "first condition false" arm instead of the other way around.
+
+        Also handles the common staged-RHS shape where Haxe evaluates the second
+        condition into a temp first::
+
+            if (A) { t = B(); if (t) { T } } else { T }
+                -> if (!A || B()) { T }
+
+        The temp is moved (it is single-use), not duplicated, so B() runs once
+        either way — only when A is false, exactly as the short-circuit requires.
         """
         outer_true = stmt.true_block.statements
         false_stmts = stmt.false_block.statements
-        if len(outer_true) != 1 or not false_stmts:
+        if not false_stmts:
             return None
-        inner = outer_true[0]
-        if not isinstance(inner, IRConditional):
+        resolved = self._resolve_or_inner(outer_true)
+        if resolved is None:
             return None
+        inner, rhs_cond, temp_assign = resolved
         if _stmt_lists_structurally_equal(false_stmts, inner.true_block.statements):
             not_a = self._invert(stmt.condition)
-            or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, not_a, inner.condition)
+            or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, not_a, rhs_cond)
             merged = IRConditional(self.func.code, or_cond, inner.true_block, inner.false_block)
-            merged.adopt(stmt, inner)
+            if temp_assign is not None:
+                merged.adopt(stmt, inner, temp_assign)
+            else:
+                merged.adopt(stmt, inner)
             return merged
         return None
+
+    def _resolve_or_inner(
+        self, outer_true: List[IRStatement]
+    ) -> Optional[Tuple[IRConditional, IRExpression, Optional[IRStatement]]]:
+        """Extract the inner conditional and the expression to use as the OR
+        right-hand side from a short-circuit-OR true branch.
+
+        Returns (inner_conditional, rhs_expression, temp_definition_or_None).
+        The temp_definition is the staged `t = B()` assignment, when present,
+        so the caller can drop it (the RHS is folded into the merged condition).
+        """
+        if not outer_true:
+            return None
+        # Bare shape: [if (B) { T }] — RHS is the inner condition itself.
+        if len(outer_true) == 1:
+            inner = outer_true[0]
+            if isinstance(inner, IRConditional):
+                return inner, inner.condition, None
+            return None
+        # Staged shape: [t = B(); if (t) { T }] — fold B() into the condition.
+        if len(outer_true) == 2:
+            temp_stmt, inner = outer_true
+            if not (isinstance(temp_stmt, IRAssign) and isinstance(temp_stmt.target, IRLocal)):
+                return None
+            if not isinstance(inner, IRConditional):
+                return None
+            temp = temp_stmt.target
+            cond = inner.condition
+            if not self._condition_is_temp(cond, temp):
+                return None
+            # The temp must be read only here (single-use) so folding is a move.
+            if self._count_reads(outer_true, temp) != 1:
+                return None
+            return inner, temp_stmt.expr, temp_stmt
+        return None
+
+    def _condition_is_temp(self, cond: IRExpression, temp: IRLocal) -> bool:
+        """True if `cond` is `temp is true` / `temp` (the staged temp being tested."""
+        if cond == temp:
+            return True
+        return (
+            isinstance(cond, IRBoolExpr)
+            and cond.op == IRBoolExpr.CompareType.ISTRUE
+            and cond.left == temp
+        )
+
+    def _count_reads(self, stmts: List[IRStatement], local: IRLocal) -> int:
+        """Count reads of `local` across `stmts`, ignoring a bare write to it."""
+        count = 0
+
+        def walk(e: Optional[IRExpression]) -> None:
+            nonlocal count
+            if e is None:
+                return
+            if e == local:
+                count += 1
+                return
+            for c in e.get_children():
+                if isinstance(c, IRExpression):
+                    walk(c)
+
+        for s in stmts:
+            if isinstance(s, IRAssign):
+                tgt = s.target
+                if isinstance(tgt, IRArrayAccess):
+                    walk(tgt.index)
+                    walk(tgt.array)
+                elif tgt == local:
+                    walk(s.expr)
+                    continue
+                walk(s.expr)
+            else:
+                for c in s.get_children():
+                    if isinstance(c, IRExpression):
+                        walk(c)
+        return count
 
     def _try_merge_and_else(self, stmt: IRConditional) -> Optional[IRConditional]:
         """if (A) { if (B) { X } else { Y } } else { Y } -> if (A && B) { X } else { Y }
