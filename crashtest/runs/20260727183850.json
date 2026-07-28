@@ -2,7 +2,7 @@
     "git": {
         "is_release": false,
         "dirty": true,
-        "branch": "claude/crashtest-accuracy-fixes",
+        "branch": "crashtest-accuracy-fixes",
         "commit": "355eb644",
         "github": "https://github.com/N3rdL0rd/crashlink/commit/355eb644fb9b05a1fbc365c05cb05dc438980d5d"
     },
