@@ -1538,17 +1538,38 @@ class IRFunction:
         # exits (e.g. String.lastIndexOf).
         exit_node: Optional[CFNode] = None
         header_last_op = header.ops[-1] if header.ops else None
-        if header_last_op and header_last_op.op in conditionals:
-            outside_header_successors = [target for target, _ in header.branches if target not in loop_nodes]
-            if len(outside_header_successors) == 1:
-                exit_node = outside_header_successors[0]
+        outside_header_successors = (
+            [target for target, _ in header.branches if target not in loop_nodes] if header_last_op else []
+        )
+        # Non-exit successors: everything the conditional can fall into that stays in
+        # the loop, including a direct self-edge back to the header (a body folded
+        # entirely into the condition block, e.g. `while(true) { x *= 2; if (x > n) break; }`).
+        non_exit_successors = (
+            [target for target, _ in header.branches if target not in outside_header_successors]
+            if header_last_op
+            else []
+        )
+        # The header only *is* the loop's condition when its branch cleanly gates the
+        # loop: exactly one edge stays inside (continue) and exactly one leaves (exit).
+        # A header that ends in a conditional for other reasons (e.g. an inline bounds
+        # check while computing an array index) can have both edges land inside the
+        # loop without either being the exit; treating that conditional as the loop
+        # condition then drops the real body.
+        header_is_loop_gate = (
+            header_last_op is not None
+            and header_last_op.op in conditionals
+            and len(outside_header_successors) == 1
+            and len(non_exit_successors) == 1
+        )
+        if header_is_loop_gate:
+            exit_node = outside_header_successors[0]
         if exit_node is None:
             exit_nodes = self._loop_exit_nodes(loop_nodes)
             exit_node = exit_nodes[0] if len(exit_nodes) == 1 else None
         loop_ctx = self._LoopContext(header, loop_nodes, exit_node)
 
-        header_last_op = header.ops[-1] if header.ops else None
-        if header_last_op and header_last_op.op in conditionals:
+        if header_is_loop_gate:
+            assert header_last_op is not None
             cond_block = IRBlock(self.code)
             self._lift_ops_into_block(cond_block, header.ops[:-1])
 
@@ -1562,17 +1583,23 @@ class IRFunction:
             pj_cond = _jump_operand("cond") if "cond" in header_last_op.df else _jump_operand("reg")
             cond_block.statements.append(IRPrimitiveJump(self.code, header_last_op, pj_left, pj_right, pj_cond))
 
-            inside_successors = [target for target, _ in header.branches if target in loop_nodes and target != header]
-            body_start = inside_successors[0] if len(inside_successors) == 1 else None
+            body_start = non_exit_successors[0]
             body_block = (
                 self._lift_block(body_start, visited.copy(), stop_at=header, loop_ctx=loop_ctx)
-                if body_start is not None
+                if body_start != header
                 else IRBlock(self.code)
             )
 
             block.statements.append(IRPrimitiveLoop(self.code, cond_block, body_block))
         else:
-            body_block = self._lift_block(header, visited.copy(), stop_at=header, loop_ctx=loop_ctx)
+            # `header` was marked visited above so the outer caller won't re-descend into
+            # it, but the body traversal genuinely starts at the header's own content
+            # here (no separate condition block was carved out of it) - excluding it from
+            # this copy lets `_lift_block` actually process it instead of immediately
+            # bailing out on the "already visited" check.
+            body_visited = visited.copy()
+            body_visited.discard(header)
+            body_block = self._lift_block(header, body_visited, stop_at=header, loop_ctx=loop_ctx, is_loop_entry=True)
             block.statements.append(
                 IRWhileLoop(
                     self.code,
@@ -1668,6 +1695,7 @@ class IRFunction:
         visited: Set[CFNode],
         stop_at: Optional[CFNode] = None,
         loop_ctx: Optional[_LoopContext] = None,
+        is_loop_entry: bool = False,
     ) -> IRBlock:
         """
         Recursively lifts a CFNode and its successors into an IRBlock.
@@ -1677,6 +1705,9 @@ class IRFunction:
             visited: A set of nodes already processed in the current traversal path to prevent infinite loops.
             stop_at: A CFNode that signals the end of the current branch (the convergence point).
                      When this node is reached, the recursive call terminates.
+            is_loop_entry: True for the one call that starts lifting a loop body at its own
+                header node (stop_at == node); skips the immediate self-stop so the header's
+                content is actually processed instead of yielding an empty block.
 
         Returns:
             An IRBlock containing the lifted IR statements.
@@ -1684,7 +1715,7 @@ class IRFunction:
         # --- Base Cases for Recursion Termination ---
         assert self.cfg is not None
         cfg = self.cfg
-        if node is None or node == stop_at or node in visited:
+        if node is None or (node == stop_at and not is_loop_entry) or node in visited:
             return IRBlock(self.code)
         if loop_ctx and node not in loop_ctx.nodes and node.branches:
             block = IRBlock(self.code)
