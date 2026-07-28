@@ -41,7 +41,7 @@ def test_parse_shader_header_smoke():
         "y4:namey3:foo"
         "y2:idi1"
         "y4:kindjy12:hxsl.VarKind:2:0"  # Param
-        "y4:typejy9:hxsl.Type:3:0"      # TFloat
+        "y4:typejy9:hxsl.Type:3:0"  # TFloat
         "ghy4:funsahg"
     )
     sh = parse_shader(s)
@@ -58,12 +58,10 @@ def test_render_shader_body():
     var = {  # @param var amount : Float
         "name": "amount",
         "kind": HxEnum("hxsl.VarKind", 2, []),  # Param
-        "type": HxEnum("hxsl.Type", 3, []),     # TFloat
+        "type": HxEnum("hxsl.Type", 3, []),  # TFloat
     }
     # function fragment() { return 1.0; }  ->  TBlock([ TReturn(TConst(CFloat 1.0)) ])
-    ret = {"e": HxEnum("hxsl.TExprDef", 12, [
-        {"e": HxEnum("hxsl.TExprDef", 0, [HxEnum("hxsl.Const", 3, [1.0])])}
-    ])}
+    ret = {"e": HxEnum("hxsl.TExprDef", 12, [{"e": HxEnum("hxsl.TExprDef", 0, [HxEnum("hxsl.Const", 3, [1.0])])}])}
     body = {"e": HxEnum("hxsl.TExprDef", 4, [[ret]])}
     fun = {"ref": {"name": "fragment"}, "args": [], "ret": HxEnum("hxsl.Type", 0, []), "expr": body}
     raw = {"name": "T", "vars": [var], "funs": [fun]}

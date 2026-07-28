@@ -46,10 +46,7 @@ def _has_log_util(code) -> bool:
 
 
 def _is_pos_object(expr: IRExpression) -> bool:
-    return (
-        isinstance(expr, IRObjectLiteral)
-        and _POS_FIELDS.issubset({field_name for field_name, _ in expr.fields})
-    )
+    return isinstance(expr, IRObjectLiteral) and _POS_FIELDS.issubset({field_name for field_name, _ in expr.fields})
 
 
 @optimizer(when=_has_log_util, name="StripLogPositions")

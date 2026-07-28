@@ -249,13 +249,15 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
                         )
 
                     if (
-                        _is_len_ref(cond.left)
+                        cond.left is not None
+                        and _is_len_ref(cond.left)
                         and isinstance(cond.right, IRConst)
                         and cond.right.const_type == IRConst.ConstType.INT
                     ):
                         return stmt, temp_local
                     if (
-                        _is_len_ref(cond.right)
+                        cond.right is not None
+                        and _is_len_ref(cond.right)
                         and isinstance(cond.left, IRConst)
                         and cond.left.const_type == IRConst.ConstType.INT
                     ):

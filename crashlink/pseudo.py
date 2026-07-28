@@ -396,7 +396,7 @@ def _expression_to_haxe(
             if subs and expr in subs:
                 # Already parenthesized at registration when the substituted
                 # expression is compound; bare atoms are stored without parens.
-                return subs[expr][0]
+                return str(subs[expr][0])
         return expr.name
 
     elif isinstance(expr, IRConst):
