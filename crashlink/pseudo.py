@@ -779,6 +779,13 @@ def _expression_to_haxe(
         type_name = disasm.type_name(code, expr.get_type())
         if type_name == "DynObj" or type_name.startswith("Virtual["):
             return "{}"
+        elif type_name == "hl.types.ArrayObj" and not expr.constructor_args:
+            # `new ArrayObj()` is Haxe's `new Array<T>()` / `[]` for typed
+            # object arrays. Render as `[]` so Haxe infers the element type
+            # from context (e.g. the local/param's declared Array<T>).
+            # ArrayDyn (`new Array<Dynamic>()`) uses a different allocation
+            # pattern, so leave it as `new Array<Dynamic>()`.
+            return "[]"
         else:
             args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args)
             return f"new {disasm.type_to_haxe(type_name)}({args_str})"
@@ -1796,6 +1803,16 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
                 candidate = ir_func.locals[local_idx].name
                 if candidate and candidate != "this":
                     param_name = candidate
+                # If the param's IRLocal has a recovered array element type,
+                # render Array<T> instead of the erased Array<Dynamic>.
+                if (
+                    arg_haxe_type_name == "Array<Dynamic>"
+                    and ir_func.locals[local_idx].array_elem_type is not None
+                ):
+                    elem_type = ir_func.locals[local_idx].array_elem_type
+                    assert elem_type is not None  # narrowed by the guard above
+                    elem_haxe = disasm.type_to_haxe(disasm.type_name(code, elem_type))
+                    arg_haxe_type_name = f"Array<{elem_haxe}>"
             elif func_core.has_debug and func_core.assigns:
                 # Fallback to raw debug assigns if locals aren't available.
                 arg_assigns = [a for a in func_core.assigns if a[1].value <= 0]
@@ -2872,6 +2889,9 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
                 type_name = f"hl.NativeArray<{elem_haxe_type}>"
             elif stmt.native_map_class is not None:
                 type_name = stmt.native_map_class
+            elif stmt.array_elem_type is not None:
+                elem_haxe_type = disasm.type_to_haxe(disasm.type_name(stmt.code, stmt.array_elem_type))
+                type_name = f"Array<{elem_haxe_type}>"
             else:
                 local_type = stmt.get_type()
                 if isinstance(local_type.definition, Ref):
@@ -3338,12 +3358,22 @@ def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
     if ir_class.static_fields:
         for field_name, field_type in ir_class.static_fields:
             field_type_haxe = disasm.type_to_haxe(disasm.type_name(code, field_type))
+            if field_type_haxe == "Array<Dynamic>":
+                elem_types = getattr(ir_class, "field_elem_types", {})
+                if field_name in elem_types:
+                    elem_haxe = disasm.type_to_haxe(disasm.type_name(code, elem_types[field_name]))
+                    field_type_haxe = f"Array<{elem_haxe}>"
             output_lines.append(f"{indent_str}public static var {field_name}: {field_type_haxe};")
         output_lines.append("")
 
     if ir_class.fields:
         for field_name, field_type in ir_class.fields:
             field_type_haxe = disasm.type_to_haxe(disasm.type_name(code, field_type))
+            if field_type_haxe == "Array<Dynamic>":
+                elem_types = getattr(ir_class, "field_elem_types", {})
+                if field_name in elem_types:
+                    elem_haxe = disasm.type_to_haxe(disasm.type_name(code, elem_types[field_name]))
+                    field_type_haxe = f"Array<{elem_haxe}>"
             output_lines.append(f"{indent_str}public var {field_name}: {field_type_haxe};")
         output_lines.append("")
 
@@ -3433,10 +3463,7 @@ def decompile_file(code: Bytecode, needle: str) -> Optional[str]:
     by full path, path suffix, or basename. Returns None if nothing matches.
     """
     fmap = disasm.file_class_map(code)
-    keys = [
-        k for k in fmap
-        if k == needle or k.endswith(needle) or os.path.basename(k) == needle
-    ]
+    keys = [k for k in fmap if k == needle or k.endswith(needle) or os.path.basename(k) == needle]
     if not keys:
         return None
 

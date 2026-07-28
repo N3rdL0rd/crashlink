@@ -203,6 +203,12 @@ class IRLocal(IRExpression):
         # so this records the `T` recovered from the allocation site for the
         # declared-type renderer to use instead of the generic Array<Dynamic>.
         self.native_elem_type: Optional[Type] = None
+        # Set by IRArrayElementTypeRecovery when this local/param is an
+        # ArrayObj/ArrayDyn whose element type was recovered from usage (element
+        # reads, stores, or array-literal allocation). The bytecode type is
+        # element-type-erased, so without this the declared type renders as
+        # Array<Dynamic> and recompiles to ArrayDyn instead of a typed array.
+        self.array_elem_type: Optional[Type] = None
         # Set by IRNativeMapAllocOptimizer when this local is bound to one of
         # HL's raw map-abstract allocators (e.g. `Native.hballoc()`): the
         # bytecode's Abstract type carries no usable name (see
@@ -1044,6 +1050,10 @@ class IRArrayLiteral(IRExpression):
         super().__init__(code)
         self.elements = elements
         self.elem_type_idx = elem_type
+        # The recovered element type (a resolved Type) for this array literal,
+        # set by IRArrayElementTypeRecovery from the alloc_array type argument
+        # or from the element expressions. Used to type the target local/param.
+        self.recovered_elem_type: Optional[Type] = None
 
     def get_type(self) -> Type:
         if self.elem_type_idx:

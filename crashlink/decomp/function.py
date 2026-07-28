@@ -327,9 +327,7 @@ class IRFunction:
                 except AttributeError:
                     pass
             starts, ends = plugin_classes
-            self.optimizers = (
-                [cls(self) for cls in starts] + self.optimizers + [cls(self) for cls in ends]
-            )
+            self.optimizers = [cls(self) for cls in starts] + self.optimizers + [cls(self) for cls in ends]
             self._optimize()
             self.apply_annotations()
 
@@ -1818,8 +1816,8 @@ class IRFunction:
             # the tail inside the conditional instead of leaving it as the fall-through.
             if loop_ctx is None and convergence_node is not None and convergence_node in (jump_target, fall_through):
                 other_branch = fall_through if convergence_node == jump_target else jump_target
-                dominates_other = (
-                    other_branch is None or convergence_node in cfg.post_dominators.get(other_branch, set())
+                dominates_other = other_branch is None or convergence_node in cfg.post_dominators.get(
+                    other_branch, set()
                 )
                 if not dominates_other and node in cfg.immediate_post_dominators:
                     pd = cfg.immediate_post_dominators[node]
@@ -2039,6 +2037,12 @@ class IRClass:
         if self.static:
             self.static_methods += self.gather_methods(self.static)
             self.static_fields += self.gather_fields(self.static)
+
+        # Recover erased Array<T> element types from usage now that all
+        # methods are lifted and optimized. Must run before pseudo rendering.
+        from .opt.arraytypes import recover_array_element_types
+
+        recover_array_element_types(self)
 
     def gather_methods(self, obj: Obj) -> List[IRFunction]:
         """

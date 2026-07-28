@@ -16,6 +16,7 @@ from ...core import (
     Function,
     Type,
     Virtual,
+    tIndex,
 )
 from ...errors import DecompError
 from ...globals import DEBUG, dbg_print
@@ -229,6 +230,14 @@ class IRSelfAssignOptimizer(TraversingIROptimizer):
         block.statements = new_statements
 
 
+def _next_stmt_is_return_of(stmts: List[IRStatement], idx: int, target: IRLocal) -> bool:
+    """True if the statement right after `idx` is `return target;`."""
+    if idx + 1 >= len(stmts):
+        return False
+    nxt = stmts[idx + 1]
+    return isinstance(nxt, IRReturn) and nxt.value is not None and nxt.value == target
+
+
 class IRBoolMaterializationCollapser(TraversingIROptimizer):
     """
     Collapses `if (cond) { t = true; } else { t = false; }` into `t = cond`,
@@ -279,7 +288,7 @@ class IRBoolMaterializationCollapser(TraversingIROptimizer):
 
     def visit_block(self, block: IRBlock) -> None:
         new_statements: List[IRStatement] = []
-        for stmt in block.statements:
+        for idx, stmt in enumerate(block.statements):
             if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRExpression):
                 stmt.expr = self._unwrap_double_not(stmt.expr)
             elif isinstance(stmt, IRConditional):
@@ -296,7 +305,14 @@ class IRBoolMaterializationCollapser(TraversingIROptimizer):
                     and false_assign is not None
                     and true_assign[0] == false_assign[0]
                     and true_assign[1] != false_assign[1]
-                    and not (isinstance(true_assign[0], IRLocal) and re.match(r"^var\d+$", true_assign[0].name))
+                    and not (
+                        isinstance(true_assign[0], IRLocal)
+                        and re.match(r"^var\d+$", true_assign[0].name)
+                        # Exception: collapse `if (cond) { t = C1; } else { t = C2; }
+                        # return t;` into `return cond;` even for varN temps, so
+                        # `return x != null` doesn't decompile as a 4-line if/else.
+                        and not _next_stmt_is_return_of(block.statements, idx, true_assign[0])
+                    )
                 ):
                     target = true_assign[0]
                     cond = stmt.condition
@@ -310,6 +326,8 @@ class IRBoolMaterializationCollapser(TraversingIROptimizer):
                             IRBoolExpr.CompareType.GTE,
                             IRBoolExpr.CompareType.EQ,
                             IRBoolExpr.CompareType.NEQ,
+                            IRBoolExpr.CompareType.NULL,
+                            IRBoolExpr.CompareType.NOT_NULL,
                         ):
                             cond = copy.copy(cond)
                             cond.invert()
@@ -419,7 +437,12 @@ class IRArrayObjBoundsCheckCollapser(TraversingIROptimizer):
             return None
 
         false_value = false_stmt.expr
+        # Preserve the element type the cast was introducing (e.g.
+        # `(Item) arr.array[i]`) so downstream Array<T> element-type recovery
+        # can read it from the collapsed access instead of losing it.
+        cast_elem_type: Optional[tIndex] = None
         if isinstance(false_value, IRCast):
+            cast_elem_type = false_value.target_type_idx
             false_value = false_value.expr
         if not isinstance(false_value, IRArrayAccess):
             return None
@@ -435,7 +458,7 @@ class IRArrayObjBoundsCheckCollapser(TraversingIROptimizer):
         if not _structurally_equal(cond.left, false_value.index):
             return None
 
-        new_access = IRArrayAccess(self.func.code, arr_field.target, false_value.index)
+        new_access = IRArrayAccess(self.func.code, arr_field.target, false_value.index, cast_elem_type)
         assign = IRAssign(self.func.code, true_stmt.target, new_access)
         assign.adopt(stmt)
         return assign
