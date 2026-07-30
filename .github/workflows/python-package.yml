@@ -31,17 +31,18 @@ jobs:
       run: |
         uv sync --extra dev
 
-    - name: Set up Haxe
-      uses: krdlab/setup-haxe@v1
-      with:
-        haxe-version: 4.3.4
-
     - name: Cache test samples
       id: cache-hl
       uses: actions/cache@v4
       with:
         path: tests/haxe/*.hl
         key: haxe-samples-${{ hashFiles('tests/haxe/*.hx') }}
+
+    - name: Set up Haxe
+      if: steps.cache-hl.outputs.cache-hit != 'true'
+      uses: krdlab/setup-haxe@v1
+      with:
+        haxe-version: 4.3.4
 
     - name: Build test samples
       if: steps.cache-hl.outputs.cache-hit != 'true'
