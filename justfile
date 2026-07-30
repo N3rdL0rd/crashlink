@@ -30,7 +30,7 @@ format:
 
 # Run type checking
 check:
-    uv run mypy crashlink
+    uv run ty check
 
 # Generate documentation
 docs:
