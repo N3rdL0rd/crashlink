@@ -18,16 +18,17 @@ license = "MIT"
 dependencies = []
 
 [project.optional-dependencies]
-dev = [
-  "pdoc3",
-  "ty",
+# Everything `pytest` and `ty check` need to exercise/typecheck the whole repo
+# (ty resolves every import it sees, including ones behind try/except
+# ImportError guards, so this is effectively "every optional runtime import
+# that appears anywhere in the tree").
+ci = [
   "pytest",
-  "tqdm",
   "pytest-xdist",
+  "ty",
+  "tqdm",
   "staticjinja",
   "IPython",
-  "requests",
-  "ruff",
   "pygments",
   "markupsafe",
   "lief",
@@ -36,6 +37,11 @@ dev = [
   "PySide6",
   "graphviz",
   "keystone-engine",
+]
+dev = [
+  "crashlink[ci]",
+  "pdoc3",
+  "ruff",
 ]
 extras = [
   "tqdm",

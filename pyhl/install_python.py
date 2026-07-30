@@ -5,7 +5,7 @@ import subprocess
 import zipfile
 import glob
 
-import requests
+import requests  # ty: ignore[unresolved-import]  -- not a project dependency, install manually to run this script
 
 CURRENT_PYTHON = "https://www.python.org/ftp/python/3.14.0/Python-3.14.0a6.tar.xz"
 DIR = "Python-3.14.0a6"
