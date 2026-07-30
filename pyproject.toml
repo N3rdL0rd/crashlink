@@ -53,6 +53,12 @@ gui = [
   "graphviz",
 ]
 
+[tool.ty.environment]
+# crashlink supports Windows/macOS/Linux; pin to a single platform and
+# platform-gated stdlib members (e.g. posix-only `readline` functions) get
+# flagged as missing on whichever platform ty isn't targeting.
+python-platform = "all"
+
 [build-system]
 requires = ["uv_build>=0.9,<0.10"]
 build-backend = "uv_build"
