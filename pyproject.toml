@@ -20,8 +20,6 @@ dependencies = []
 [project.optional-dependencies]
 dev = [
   "pdoc3",
-  "build",
-  "twine",
   "ty",
   "pytest",
   "tqdm",
@@ -59,16 +57,15 @@ gui = [
 ]
 
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["uv_build>=0.9,<0.10"]
+build-backend = "uv_build"
 
 [project.scripts]
 crashlink = "crashlink.__main__:main"
 crashtest = "crashtest.__main__:main"
 
-[tool.setuptools.packages.find]
-include = ["crashlink", "crashlink.*", "crashtest", "crashtest.*", "hlrun", "hlrun.*"]
-exclude = ["tests", "tests.*", "local", "local.*", "env", "env.*"]
-
-[tool.setuptools.package-data]
-"crashtest" = ["*.html", "templates/*.html", "static/**/*"]
+[tool.uv.build-backend]
+module-name = ["crashlink", "crashtest", "hlrun"]
+module-root = ""
+source-exclude = ["/crashtest/runs", "/tests", "/local", "/env", "/pyhl"]
+wheel-exclude = ["/crashtest/runs"]
