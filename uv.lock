@@ -244,6 +244,7 @@ requires-dist = [
     { name = "capstone", marker = "extra == 'ci'" },
     { name = "capstone", marker = "extra == 'extras'" },
     { name = "crashlink", extras = ["ci"], marker = "extra == 'dev'" },
+    { name = "crashlink", extras = ["extras"], marker = "extra == 'dev'" },
     { name = "graphviz", marker = "extra == 'ci'" },
     { name = "graphviz", marker = "extra == 'extras'" },
     { name = "graphviz", marker = "extra == 'gui'" },

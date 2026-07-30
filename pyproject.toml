@@ -18,10 +18,6 @@ license = "MIT"
 dependencies = []
 
 [project.optional-dependencies]
-# Everything `pytest` and `ty check` need to exercise/typecheck the whole repo
-# (ty resolves every import it sees, including ones behind try/except
-# ImportError guards, so this is effectively "every optional runtime import
-# that appears anywhere in the tree").
 ci = [
   "pytest",
   "pytest-xdist",
@@ -39,6 +35,7 @@ ci = [
   "keystone-engine",
 ]
 dev = [
+  "crashlink[extras]",
   "crashlink[ci]",
   "pdoc3",
   "ruff",
@@ -60,9 +57,6 @@ gui = [
 ]
 
 [tool.ty.environment]
-# crashlink supports Windows/macOS/Linux; pin to a single platform and
-# platform-gated stdlib members (e.g. posix-only `readline` functions) get
-# flagged as missing on whichever platform ty isn't targeting.
 python-platform = "all"
 
 [build-system]
