@@ -23,7 +23,6 @@ dev = [
   "ty",
   "pytest",
   "tqdm",
-  "snakeviz",
   "dill",
   "pytest-xdist",
   "staticjinja",

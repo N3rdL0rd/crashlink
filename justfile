@@ -51,11 +51,6 @@ serve-docs:
 test:
     pytest -n 24 --ignore pyhl/
 
-# Profile the codebase running tests
-profile:
-    python -m cProfile -o tests.prof -m pytest
-    snakeviz tests.prof
-
 # Download or build libpython for pyhl
 pyhl-prepare:
     cd pyhl && python install_python.py
