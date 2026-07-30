@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from ast import literal_eval
 from collections import OrderedDict
-from typing import List, Optional, Dict, Tuple
+from typing import Any, List, Optional, Dict, Tuple
 
 try:
     from tqdm import tqdm
@@ -722,33 +722,33 @@ def _field_label_compact(
     func: Optional[Function],
     regs: List[Reg] | List[tIndex],
     op_name: str,
-    df: Dict[str, object],
+    df: Dict[str, Any],
 ) -> str:
     """Best-effort human-readable name for a `RefField` operand, by opcode."""
     field_ref = df["field"]
-    fidx = field_ref.value  # type: ignore[attr-defined]
+    fidx = field_ref.value
     try:
         if op_name in ("Field", "SetField"):
-            owner = regs[df["obj"].value].resolve(code)  # type: ignore[attr-defined]
-            field = field_ref.resolve_obj(code, owner.definition)  # type: ignore[attr-defined]
+            owner = regs[df["obj"].value].resolve(code)
+            field = field_ref.resolve_obj(code, owner.definition)
             return f'"{field.name.resolve(code)}"'
         if op_name in ("GetThis", "SetThis") and func is not None:
             owner = func.regs[0].resolve(code)
-            field = field_ref.resolve_obj(code, owner.definition)  # type: ignore[attr-defined]
+            field = field_ref.resolve_obj(code, owner.definition)
             return f'"{field.name.resolve(code)}"'
         if op_name == "CallThis" and func is not None:
             method = _method_name_for_field(code, func.regs[0].resolve(code), fidx)
             return f'"{method}"'
         if op_name == "CallMethod":
-            args = df["args"].value  # type: ignore[attr-defined]
+            args = df["args"].value
             if args:
                 obj_reg = args[0].value
                 method = _method_name_for_field(code, regs[obj_reg].resolve(code), fidx)
                 return f'"{method}"'
         if op_name in ("EnumField", "SetEnumField"):
-            value_reg = df["value"].value  # type: ignore[attr-defined]
+            value_reg = df["value"].value
             enum_def = regs[value_reg].resolve(code).definition
-            construct = enum_def.constructs[df["construct"].value]  # type: ignore[attr-defined]
+            construct = enum_def.constructs[df["construct"].value]
             ptype = type_name(code, construct.params[fidx].resolve(code))
             return f"field{fidx}<{ptype}>"
     except Exception:

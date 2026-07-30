@@ -204,9 +204,7 @@ class DecompView(QPlainTextEdit):
         # both keyPressEvent and the drag/drop guards above.
         pass
 
-    def keyPressEvent(self, event: object) -> None:
-        if not isinstance(event, QKeyEvent):
-            return
+    def keyPressEvent(self, event: QKeyEvent) -> None:
         if (
             event.matches(QKeySequence.StandardKey.Copy)
             or event.matches(QKeySequence.StandardKey.SelectAll)
@@ -222,4 +220,4 @@ class DecompView(QPlainTextEdit):
         menu.addAction("Copy", self.copy)
         menu.addSeparator()
         menu.addAction("Select All", self.selectAll)
-        menu.exec(event.globalPos())
+        menu.exec_(event.globalPos())  # exec()'s stub overloads are broken (PySide6 marks them overload-cannot-match)

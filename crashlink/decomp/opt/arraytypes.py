@@ -328,9 +328,7 @@ def recover_array_element_types(ir_class: "IRClass") -> None:
     field_elem_types: Dict[str, Type] = {}
     local_elem_types: Dict[int, Type] = {}
 
-    if not hasattr(code, "_global_field_elem_types"):
-        code._global_field_elem_types = {}  # type: ignore[attr-defined]
-    global_cache: Dict[Tuple[str, str], Type] = code._global_field_elem_types  # type: ignore[attr-defined]
+    global_cache: Dict[Tuple[str, str], Type] = code._global_field_elem_types
 
     # Seed from the global cache: fields recovered by other classes.
     primary_obj = ir_class.dynamic if ir_class.dynamic else ir_class.static
@@ -385,4 +383,4 @@ def recover_array_element_types(ir_class: "IRClass") -> None:
         for fname, etype in field_elem_types.items():
             global_cache[(class_name, fname)] = etype
 
-    ir_class.field_elem_types = field_elem_types  # type: ignore[attr-defined]
+    ir_class.field_elem_types = field_elem_types

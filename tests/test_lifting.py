@@ -30,7 +30,9 @@ def _decompile_named(path: str, name_suffix: str) -> str:
 
 def _decompile_at(path: str, findex: int) -> str:
     code = Bytecode.from_path(path)
-    return pseudo.pseudo(IRFunction(code, code.fn(findex)))
+    fn = code.fn(findex)
+    assert isinstance(fn, Function)
+    return pseudo.pseudo(IRFunction(code, fn))
 
 
 def _unlifted(out: str) -> set:

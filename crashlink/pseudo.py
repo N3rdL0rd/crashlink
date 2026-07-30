@@ -1150,7 +1150,7 @@ def _generate_statements(
         )
 
     prev_render_subs = getattr(ir_function, "_render_subs", None)
-    ir_function._render_subs = render_subs  # type: ignore[attr-defined]
+    ir_function._render_subs = render_subs
 
     for stmt in statements:
         stmt_start_line = len(output_lines)
@@ -1790,7 +1790,7 @@ def _generate_statements(
             else:  # Should not happen if statement generated something
                 output_lines.append(f"{indent}// {stmt.comment}")
 
-    ir_function._render_subs = prev_render_subs  # type: ignore[attr-defined]
+    ir_function._render_subs = prev_render_subs
     return output_lines
 
 
@@ -1824,7 +1824,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     if containing is None:
         containing = _containing_class_for(ir_func, code)
         if containing is not None:
-            ir_func._containing_class = containing  # type: ignore[attr-defined]
+            ir_func._containing_class = containing
     is_instance = containing is not None and ir_func in containing.methods
     if is_constructor:
         is_instance = True

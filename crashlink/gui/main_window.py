@@ -18,7 +18,7 @@ from PySide6.QtCore import (
     QObject,
     QSize,
 )
-from PySide6.QtGui import QColor, QPainter, QTextCursor, QTextDocument, QUndoStack
+from PySide6.QtGui import QCloseEvent, QColor, QPainter, QPaintEvent, QTextCursor, QTextDocument, QUndoStack
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDialog,
@@ -189,8 +189,8 @@ class _TabBar(QTabBar):
 
     _fill: QColor = QColor("#181825")
 
-    def paintEvent(self, event: object) -> None:
-        super().paintEvent(event)  # type: ignore[arg-type]
+    def paintEvent(self, event: QPaintEvent) -> None:
+        super().paintEvent(event)
         # Find where the last tab ends; fill everything to the right.
         empty_x = 0
         for i in range(self.count()):
@@ -1410,14 +1410,14 @@ class MainWindow(QMainWindow):
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
-    def closeEvent(self, event: object) -> None:
+    def closeEvent(self, event: QCloseEvent) -> None:
         if not self._confirm_discard_changes():
-            event.ignore()  # type: ignore[attr-defined]
+            event.ignore()
             return
         self._save_settings()
         set_dbg_callback(None)
         self._worker.shutdown(wait=False)
-        super().closeEvent(event)  # type: ignore[arg-type]
+        super().closeEvent(event)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

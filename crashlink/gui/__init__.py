@@ -11,15 +11,17 @@ def _install_excepthook(win: object) -> None:
     whole window down with it."""
     import sys
     import traceback
+    from types import TracebackType
 
-    def _hook(exc_type: type, exc_value: BaseException, exc_tb: object) -> None:
-        tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))  # type: ignore[call-overload]
+    def _hook(exc_type: type[BaseException] | None, exc_value: BaseException | None, exc_tb: TracebackType | None) -> None:
+        tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
         print(tb_text, file=sys.stderr)  # keep it visible in the terminal too
         log_panel = getattr(win, "_log_panel", None)
         if log_panel is None:
             return
         try:
-            log_panel.error(f"Unhandled exception ({exc_type.__name__}): {exc_value}")
+            type_name = exc_type.__name__ if exc_type is not None else "Unknown"
+            log_panel.error(f"Unhandled exception ({type_name}): {exc_value}")
             for line in tb_text.rstrip("\n").splitlines():
                 log_panel.info(line)
         except Exception:

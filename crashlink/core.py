@@ -1903,6 +1903,9 @@ class Bytecode(Serialisable):
         self._xref_lock = threading.Lock()
         self._search_lock = threading.Lock()
         self._source_map_lock = threading.Lock()
+        self._plugin_optimizer_classes: Optional[Tuple[List[Any], List[Any]]] = None
+        self._global_field_elem_types: Dict[Tuple[str, str], "Type"] = {}
+        self._hxsl_shaders_cache: Optional[Any] = None
         self.annotations: AnnotationStore = AnnotationStore()
 
         self.virtuals_built = False

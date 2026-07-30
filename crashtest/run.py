@@ -554,7 +554,7 @@ def sweep(bytecode_path: str, count: int, out_path: str) -> None:
     try:
         from tqdm import tqdm  # type: ignore[import-untyped]
     except ImportError:
-        tqdm = None
+        tqdm: Any = None
 
     print(f"Loading {bytecode_path}...")
     code = Bytecode.from_path(bytecode_path)

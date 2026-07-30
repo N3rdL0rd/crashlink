@@ -17,6 +17,7 @@ def _make_test_code():
     code.ints[-1].value = 0
     code.floats.append(SerialisableF64())
     code.floats[-1].value = 0.0
+    assert code.bytes is not None
     code.bytes.value.append(b"")
     code.global_types.append(tIndex(0))
     code.nglobals.value = 1

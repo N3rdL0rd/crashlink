@@ -51,7 +51,7 @@ from .core import (
     Abstract,
 )
 from .globals import VERSION
-from .interp.vm import VM  # type: ignore
+from .interp.vm import VM
 from .opcodes import opcode_docs, opcodes
 from .pseudo import pseudo
 from hlrun.patch import Patch
@@ -130,7 +130,7 @@ def _load_code_from_cli_path(path: str, no_constants: bool) -> Bytecode:
 
     if is_haxe:
         stripped = path.split(".")[0]
-        os.system(f"haxe -hl {stripped}.hl -main {path}")
+        subprocess.run(["haxe", "-hl", f"{stripped}.hl", "-main", path])
         with open(f"{stripped}.hl", "rb") as f:
             return Bytecode().deserialise(f, init_globals=not no_constants, progress_cb=_make_progress_cb())
 
@@ -945,8 +945,8 @@ def _emit_haxe(res: str) -> None:
     """Print Haxe pseudocode, syntax-highlighted when pygments is available."""
     try:
         from pygments import highlight
-        from pygments.lexers import HaxeLexer
-        from pygments.formatters import Terminal256Formatter
+        from pygments.lexers import HaxeLexer  # ty: ignore[unresolved-import]
+        from pygments.formatters import Terminal256Formatter  # ty: ignore[unresolved-import]
 
         print(highlight(res, HaxeLexer(), Terminal256Formatter(style="dracula")))
     except ImportError:
@@ -959,7 +959,7 @@ def _copy_to_clipboard(text: str) -> bool:
     Tries pyperclip, then platform CLIs (wl-copy/xclip/xsel on Linux, pbcopy on
     macOS, clip on Windows), so it works without an extra dependency installed."""
     try:
-        import pyperclip  # type: ignore[import-untyped]
+        import pyperclip  # ty: ignore[unresolved-import]
 
         pyperclip.copy(text)
         return True
@@ -1145,7 +1145,10 @@ class Commands(BaseCommands):
 
     def clear(self, args: List[str]) -> None:
         """Clears the terminal screen."""
-        os.system("cls" if platform.system() == "Windows" else "clear")
+        if platform.system() == "Windows":
+            subprocess.run("cls", shell=True)  # cls is a cmd builtin, not an executable
+        else:
+            subprocess.run(["clear"])
 
     @alias("hist")
     def history(self, args: List[str]) -> None:
@@ -1496,9 +1499,9 @@ class Commands(BaseCommands):
             root.mainloop()
         except ImportError:
             if os.name == "nt":
-                os.system(f'notepad "{file}"')
+                subprocess.run(["notepad", file])
             elif os.name == "posix":
-                os.system(f'nano "{file}"')
+                subprocess.run(["nano", file])
             else:
                 print("No suitable editor found")
                 os.unlink(file)
@@ -2668,8 +2671,8 @@ class Commands(BaseCommands):
 
             try:
                 from pygments import highlight
-                from pygments.lexers import HaxeLexer
-                from pygments.formatters import Terminal256Formatter
+                from pygments.lexers import HaxeLexer  # ty: ignore[unresolved-import]
+                from pygments.formatters import Terminal256Formatter  # ty: ignore[unresolved-import]
 
                 lexer = HaxeLexer()
                 formatter = Terminal256Formatter(style="dracula")

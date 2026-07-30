@@ -319,9 +319,10 @@ def generate_abstract_forwards(code: Bytecode) -> List[str]:
             visit_type(dfn.ret.resolve(code))
             for arg in dfn.args:
                 visit_type(arg.resolve(code))
-        elif isinstance(dfn, (Ref, Null, Packed)):
-            inner = dfn.type if hasattr(dfn, "type") else dfn.inner
-            visit_type(inner.resolve(code))
+        elif isinstance(dfn, (Ref, Null)):
+            visit_type(dfn.type.resolve(code))
+        elif isinstance(dfn, Packed):
+            visit_type(dfn.inner.resolve(code))
 
     for typ in code.types:
         visit_type(typ)

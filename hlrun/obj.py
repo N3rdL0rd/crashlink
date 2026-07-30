@@ -31,7 +31,7 @@ def method(func: Callable[..., R]) -> Callable[..., R]:
 
     Preserves the original function's return type and parameter types.
     """
-    method_name = func.__name__
+    method_name = func.__name__  # ty: ignore[unresolved-attribute]  # decorator is only ever applied to real functions
 
     @wraps(func)
     def wrapper(self: HlObj, *args: Any) -> R:

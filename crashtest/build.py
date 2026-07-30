@@ -4,7 +4,8 @@ Functions to build the crashtest results site.
 
 import os
 
-from staticjinja import Site  # type: ignore
+from staticjinja import Site
+from staticjinja.types import ContextMapping
 
 from .models import load_runs
 
@@ -15,7 +16,7 @@ def build() -> None:
     """
     template_path = os.path.join(os.path.dirname(__file__), "templates")
     runs = load_runs(os.path.join(os.path.dirname(__file__), "runs"))
-    contexts = [
+    contexts: ContextMapping = [
         (
             "index.html",
             {

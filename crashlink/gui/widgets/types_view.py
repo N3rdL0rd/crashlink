@@ -128,8 +128,8 @@ class TypesView(QWidget):
             text = f"(error rendering t@{index}: {e})"
         self._detail.setPlainText(text)
 
-    def keyPressEvent(self, event: object) -> None:
-        if isinstance(event, QKeyEvent) and not event.modifiers() and event.key() == Qt.Key.Key_X:
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if not event.modifiers() and event.key() == Qt.Key.Key_X:
             item = self._table.currentItem()
             if item is not None:
                 index_item = self._table.item(item.row(), 0)

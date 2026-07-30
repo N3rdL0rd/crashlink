@@ -230,11 +230,13 @@ class IRFunction:
         self.locals: List[IRLocal] = []
         self.all_locals: List[IRLocal] = []  # all created locals including superseded splits
         self.opcodes: str = ""
-        self.cfg_data: Dict[str, List[Dict[str, Any]]] = {"nodes": [], "edges": []}
+        self.cfg_data: Dict[str, Any] = {"nodes": [], "edges": []}
         self.layer_snapshots: List[Tuple[str, str, bool]] = []
         self._lift_cache: Dict[Tuple[Optional[CFNode], Optional[CFNode], int], IRBlock] = {}
         self._enum_global_map: Dict[int, Tuple[str, tIndex]] = {}
         self.capture_layers: bool = capture_layers
+        self._render_subs: Optional[Any] = None
+        self._containing_class: Optional[Any] = None
         if isinstance(func, Native):
             # Native entries have no HL bytecode; represent them as a stub block.
             self.block.statements.append(IRNativeStub(code, func))
@@ -314,7 +316,7 @@ class IRFunction:
             # Splice in plugin optimizers gated to this bytecode (see
             # crashlink.plugins). Which classes apply is a property of the image,
             # so resolve it once per Bytecode and cache it on the code object.
-            plugin_classes = getattr(self.code, "_plugin_optimizer_classes", None)
+            plugin_classes = self.code._plugin_optimizer_classes
             if plugin_classes is None:
                 from ..plugins import optimizers_for
 
@@ -322,10 +324,7 @@ class IRFunction:
                     optimizers_for(self.code, "start"),
                     optimizers_for(self.code, "end"),
                 )
-                try:
-                    self.code._plugin_optimizer_classes = plugin_classes  # type: ignore[attr-defined]
-                except AttributeError:
-                    pass
+                self.code._plugin_optimizer_classes = plugin_classes
             starts, ends = plugin_classes
             self.optimizers = [cls(self) for cls in starts] + self.optimizers + [cls(self) for cls in ends]
             self._optimize()
@@ -2057,6 +2056,7 @@ class IRClass:
         self.static_methods: List[IRFunction] = []
         self.fields: List[Tuple[str, Type]] = []
         self.static_fields: List[Tuple[str, Type]] = []
+        self.field_elem_types: Dict[str, Type] = {}
         if self.dynamic is None and self.static is None:
             raise ValueError(
                 "IRClass needs at least one valid Obj that has been preprocessed by `Bytecode.map_statics`!"

@@ -760,13 +760,10 @@ def render_shader(shader: Shader) -> str:
 def shaders_by_name(code: Bytecode) -> Dict[str, "Shader"]:
     """All shaders keyed by their embedded name (e.g. `shader.Base2d`), cached on
     the code object so repeated decompiler lookups don't re-scan the string pool."""
-    cached = getattr(code, "_hxsl_shaders_cache", None)
+    cached = code._hxsl_shaders_cache
     if cached is None:
         cached = {s.name: s for s in find_shaders(code)}
-        try:
-            code._hxsl_shaders_cache = cached  # type: ignore[attr-defined]
-        except (AttributeError, TypeError):
-            pass
+        code._hxsl_shaders_cache = cached
     return cached
 
 

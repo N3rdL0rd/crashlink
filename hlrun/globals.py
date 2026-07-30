@@ -4,11 +4,16 @@ Global constants and utility functions.
 
 from typing import Any
 
+# Injected into module globals at runtime by the embedded pyhl interpreter;
+# not bound here, hence the NameError guards below.
+DEBUG: bool
+RUNTIME: bool
+
 
 def dbg_print(*args: Any, **kwargs: Any) -> None:
     global DEBUG
     try:
-        if DEBUG:  # type: ignore
+        if DEBUG:
             print("[pyhl] [py] ", end="")
             print(*args, **kwargs)
     except NameError:
@@ -21,8 +26,8 @@ def is_runtime() -> bool:
     """
     global RUNTIME
     try:
-        assert isinstance(RUNTIME, bool)  # type: ignore
-        return RUNTIME  # type: ignore
+        assert isinstance(RUNTIME, bool)
+        return RUNTIME
     except NameError:
         return False
 
@@ -35,7 +40,7 @@ def is_debug() -> bool:
         return False
     global DEBUG
     try:
-        assert isinstance(DEBUG, bool)  # type: ignore
-        return DEBUG  # type: ignore
+        assert isinstance(DEBUG, bool)
+        return DEBUG
     except NameError:
         return False

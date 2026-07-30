@@ -53,6 +53,6 @@ jobs:
       run: |
         uv run pytest
 
-    - name: Check with mypy
+    - name: Check with ty
       run: |
-        uv run mypy --strict --check-untyped-defs crashlink
+        uv run ty check

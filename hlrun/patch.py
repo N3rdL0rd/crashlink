@@ -282,7 +282,7 @@ if USE_CRASHLINK:
             return self.interceptions[identifier](args)
 else:
 
-    class Patch:  # type: ignore
+    class Patch:
         """
         Runtime stub version of the Patch class.
         Maintains API compatibility but provides no patching functionality in runtime mode.

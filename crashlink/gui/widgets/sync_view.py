@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QHBoxLayout, QSplitter, QWidget
 
-from ...core import Bytecode
+from ...core import Bytecode, Function, Native
 from ..themes import Theme
 from .class_view import ClassView
+from .decomp_view import DecompView
 from .disasm_view import DisasmView
 
 # Display modes
@@ -64,7 +65,7 @@ class SyncView(QWidget):
         self.class_view.load_methods(display_name, methods)
         self._rev_cache.clear()
 
-    def load_disasm(self, code: Bytecode, methods: List[Tuple[int, object]]) -> None:
+    def load_disasm(self, code: Bytecode, methods: List[Tuple[int, "Function | Native"]]) -> None:
         self.disasm_view.load(code, methods)
 
     # ── Navigation (delegates to pseudo; sync engine mirrors disasm) ────────────
@@ -94,7 +95,7 @@ class SyncView(QWidget):
         self._mode = mode
         self._apply_mode()
 
-    def eventFilter(self, obj: object, event: object) -> bool:
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         if isinstance(event, QKeyEvent) and event.type() == QEvent.Type.KeyPress and not event.modifiers():
             if event.key() == Qt.Key.Key_Tab:
                 self.cycle_requested.emit()
@@ -102,7 +103,7 @@ class SyncView(QWidget):
             if event.key() == Qt.Key.Key_Slash:
                 self._request_comment(obj)
                 return True
-        return super().eventFilter(obj, event)  # type: ignore[arg-type]
+        return super().eventFilter(obj, event)
 
     def _request_comment(self, obj: object) -> None:
         """Resolve (findex, op_idx) for the current cursor in whichever pane sent
@@ -138,15 +139,15 @@ class SyncView(QWidget):
         self._rev_cache[findex] = rev
         return rev
 
-    def _scroll_silently(self, view: object, block_no: int) -> None:
-        view.blockSignals(True)  # type: ignore[attr-defined]
-        cursor = view.textCursor()  # type: ignore[attr-defined]
-        block = view.document().findBlockByNumber(block_no)  # type: ignore[attr-defined]
+    def _scroll_silently(self, view: DecompView, block_no: int) -> None:
+        view.blockSignals(True)
+        cursor = view.textCursor()
+        block = view.document().findBlockByNumber(block_no)
         if block.isValid():
             cursor.setPosition(block.position())
-            view.setTextCursor(cursor)  # type: ignore[attr-defined]
-            view.centerCursor()  # type: ignore[attr-defined]
-        view.blockSignals(False)  # type: ignore[attr-defined]
+            view.setTextCursor(cursor)
+            view.centerCursor()
+        view.blockSignals(False)
 
     def _drive_from_pseudo(self) -> None:
         cv = self.class_view

@@ -159,7 +159,7 @@ def code_from_bin(
         code_bytes = bytes(binary.get_content_from_virtual_address(init_func_addr, func_symbol.size))
         md = Cs(CS_ARCH_X86, CS_MODE_64)
         md.detail = True
-        instructions = list(md.disasm(code_bytes, init_func_addr))
+        instructions = list(md.disasm(code_bytes, init_func_addr))  # ty: ignore[missing-argument, invalid-argument-type]  -- capstone ships no real type stubs
 
         for i, curr_insn in enumerate(instructions):
             if not (curr_insn.mnemonic.startswith("mov") and len(curr_insn.operands) == 2):
