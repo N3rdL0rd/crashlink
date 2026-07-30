@@ -18,7 +18,7 @@ import tempfile
 import textwrap
 import traceback
 import webbrowser
-from typing import Callable, Dict, Iterable, List, Optional, Tuple, Set, cast
+from typing import Callable, Dict, Iterable, List, Optional, Tuple, Set
 
 from crashlink.hlc import code_to_c, code_to_c_files
 
@@ -134,18 +134,8 @@ def _load_code_from_cli_path(path: str, no_constants: bool) -> Bytecode:
         with open(f"{stripped}.hl", "rb") as f:
             return Bytecode().deserialise(f, init_globals=not no_constants, progress_cb=_make_progress_cb())
 
-    if not path.endswith(".pkl"):
-        with open(path, "rb") as f:
-            return Bytecode().deserialise(f, init_globals=not no_constants, progress_cb=_make_progress_cb())
-
-    try:
-        import dill  # type: ignore[import-untyped]
-
-        with open(path, "rb") as f:
-            return cast(Bytecode, dill.load(f))
-    except ImportError:
-        print("Dill not found. Install dill to unpickle bytecode, or install crashlink with the [extras] option.")
-        sys.exit(1)
+    with open(path, "rb") as f:
+        return Bytecode().deserialise(f, init_globals=not no_constants, progress_cb=_make_progress_cb())
 
 
 def _default_hlc_output(path: str) -> str:
@@ -2267,21 +2257,6 @@ class Commands(BaseCommands):
             print(f"No debug info for f@{findex} op#{op_idx}.")
             return
         print(loc)
-
-    @alias("pkl")
-    def pickle(self, args: List[str]) -> None:
-        """Pickle the bytecode to a given path. `pickle <path>`"""
-        if len(args) == 0:
-            print("Usage: pickle <path>")
-            return
-        try:
-            import dill
-
-            with open(args[0], "wb") as f:
-                dill.dump(self.code, f)
-            print("Bytecode pickled.")
-        except ImportError:
-            print("dill not found. Install dill to pickle bytecode, or install crashlink with the [extras] option.")
 
     @alias("run")
     def interp(self, args: List[str]) -> None:

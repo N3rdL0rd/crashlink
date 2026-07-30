@@ -23,7 +23,6 @@ dev = [
   "ty",
   "pytest",
   "tqdm",
-  "dill",
   "pytest-xdist",
   "staticjinja",
   "IPython",
@@ -40,7 +39,6 @@ dev = [
 ]
 extras = [
   "tqdm",
-  "dill",
   "IPython",
   "pygments",
   "lief",
