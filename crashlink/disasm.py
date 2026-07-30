@@ -5,6 +5,7 @@ Human-readable disassembly of opcodes and utilities to work at a relatively low 
 from __future__ import annotations
 
 from ast import literal_eval
+from collections import OrderedDict
 from typing import List, Optional, Dict, Tuple
 
 try:
@@ -241,7 +242,11 @@ def func_header(code: Bytecode, func: Function | Native) -> str:
     fun_type = func.type.resolve(code).definition
     if isinstance(fun_type, Fun):
         fun: Fun = fun_type
-        return f"f@{func.findex.value} {'static ' if is_static(code, func) else ''}{name} ({', '.join([type_name(code, arg.resolve(code)) for arg in fun.args])}) -> {type_name(code, fun.ret.resolve(code))} (from {func.resolve_file(code)})"
+        try:
+            src = f" (from {func.resolve_file(code)})"
+        except ValueError:
+            src = ""
+        return f"f@{func.findex.value} {'static ' if is_static(code, func) else ''}{name} ({', '.join([type_name(code, arg.resolve(code)) for arg in fun.args])}) -> {type_name(code, fun.ret.resolve(code))}{src}"
     return f"f@{func.findex.value} {name} (no fun found!)"
 
 
@@ -309,6 +314,62 @@ def _method_name_for_field(code: Bytecode, obj_type: "Type", field_idx: int) -> 
     elif isinstance(defn, Virtual) and field_idx < len(defn.fields):
         return defn.fields[field_idx].name.resolve(code)
     return f"field{field_idx}"
+
+
+_X86_RUN_CACHE_MAX = 8
+_x86_run_cache: "OrderedDict[int, Dict[int, Tuple[int, str]]]" = OrderedDict()
+
+
+def _x86_runs_for(ops: List[Opcode]) -> Dict[int, Tuple[int, str]]:
+    """
+    Groups contiguous raw x86-byte `Asm` ops (mode 0) into instructions, returning a map
+    from the op-index starting each instruction to (byte length, decoded mnemonic text).
+    Cached per ops list (keyed by id, since a function's ops don't change between prints);
+    bounded LRU so stale entries from GC'd functions don't accumulate.
+    """
+    cache_key = id(ops)
+    cached = _x86_run_cache.get(cache_key)
+    if cached is not None:
+        _x86_run_cache.move_to_end(cache_key)
+        return cached
+
+    from .asm import X86AsmError, disassemble_x86
+
+    result: Dict[int, Tuple[int, str]] = {}
+    i = 0
+    n = len(ops)
+    while i < n:
+        if ops[i].op == "Asm" and ops[i].df["mode"].value == 0:
+            j = i
+            data = bytearray()
+            while j < n and ops[j].op == "Asm" and ops[j].df["mode"].value == 0:
+                data.append(ops[j].df["value"].value)
+                j += 1
+            try:
+                for offset, size, text in disassemble_x86(bytes(data)):
+                    result[i + offset] = (size, text)
+            except X86AsmError:
+                pass
+            i = j
+        else:
+            i += 1
+
+    _x86_run_cache[cache_key] = result
+    if len(_x86_run_cache) > _X86_RUN_CACHE_MAX:
+        _x86_run_cache.popitem(last=False)
+    return result
+
+
+def _x86_insn_text(ops: List[Opcode], idx: int) -> Optional[str]:
+    """Returns the decoded x86 mnemonic for the raw-byte `Asm` op at `idx`, if any."""
+    runs = _x86_runs_for(ops)
+    if idx in runs:
+        size, text = runs[idx]
+        return text if size == 1 else f"{text} ({size} bytes)"
+    for start, (size, _) in runs.items():
+        if start < idx < start + size:
+            return "..."
+    return None
 
 
 def pseudo_from_op(
@@ -600,6 +661,23 @@ def pseudo_from_op(
             return "assert"
         case "Nop":
             return "nop"
+        case "Asm":
+            mode = op.df["mode"].value
+            if mode == 4:
+                return "naked function (raw x86 follows)"
+            if mode == 0:
+                if func is not None:
+                    text = _x86_insn_text(func.ops, idx)
+                    if text is not None:
+                        return text
+                return f"emit x86 byte 0x{op.df['value'].value:02X}"
+            if mode == 1:
+                return f"scratch cpu reg {op.df['value'].value}"
+            if mode == 2:
+                return f"cpu reg {op.df['value'].value} = reg{op.df['reg'].value - 1} (read vm reg)"
+            if mode == 3:
+                return f"reg{op.df['reg'].value - 1} = cpu reg {op.df['value'].value} (write vm reg)"
+            return f"asm mode {mode}"
 
         # Unknown
         case _:

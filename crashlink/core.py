@@ -1803,9 +1803,14 @@ class Function(Serialisable):
         )
         if self.has_debug and self.debuginfo:
             res += self.debuginfo.serialise()
-            if self.version and self.version >= 3 and self.nassigns and self.assigns is not None:
-                res += self.nassigns.serialise()
-                res += b"".join([b"".join([v.serialise() for v in assign]) for assign in self.assigns])
+            if self.version and self.version >= 3:
+                # HL's loader always reads nassigns+assigns here for v>=3 with
+                # debug info; write an empty list if we have none to keep the
+                # stream aligned.
+                nassigns = self.nassigns if self.nassigns else VarInt(0)
+                assigns = self.assigns if self.assigns is not None else []
+                res += nassigns.serialise()
+                res += b"".join([b"".join([v.serialise() for v in assign]) for assign in assigns])
         return res
 
 

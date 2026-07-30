@@ -41,7 +41,8 @@ dev = [
   "capstone",
   "mcp",
   "PySide6",
-  "graphviz"
+  "graphviz",
+  "keystone-engine",
 ]
 extras = [
   "tqdm",
@@ -52,7 +53,8 @@ extras = [
   "capstone",
   "mcp",
   "PySide6",
-  "graphviz"
+  "graphviz",
+  "keystone-engine",
 ]
 gui = [
   "PySide6",
