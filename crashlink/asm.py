@@ -603,7 +603,7 @@ def _ks_asm(ks: Any, text: str, addr: int) -> bytes:
 
 def _cs() -> Any:
     try:
-        from capstone import CS_ARCH_X86, CS_MODE_64, Cs  # type: ignore[import-untyped]
+        from capstone import CS_ARCH_X86, CS_MODE_64, Cs 
     except ImportError as e:
         raise X86AsmError(
             "X86 disassembly requires capstone. Install it with `pip install capstone` or `pip install crashlink[extras]`."
