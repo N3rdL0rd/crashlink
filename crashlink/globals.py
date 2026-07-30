@@ -20,7 +20,7 @@ def _is_debug() -> bool:
     )
 
 
-VERSION: str = "v0.0.7"
+VERSION: str = "v0.0.8"
 """
 The version of crashlink.
 """
