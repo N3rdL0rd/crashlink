@@ -32,6 +32,10 @@ local/
 *crashlink_patch.py*
 histogram.svg
 test-docs/
+# pdoc-generated API docs; built by .github/workflows/docs.yml, not committed
+/docs/crashlink/
+/docs/crashtest/
+/docs/hlrun/
 deadcells/
 .venv/
 tests/haxe/*.c

@@ -1,0 +1,65 @@
+name: Deploy docs
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "crashlink/**"
+      - "crashtest/**"
+      - "hlrun/**"
+      - "docs/**"
+      - "!docs/crashlink/**"
+      - "!docs/crashtest/**"
+      - "!docs/hlrun/**"
+      - "!docs/crashtest_out/**"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Generate API docs with pdoc
+        run: |
+          uv run python -m pdoc crashlink --html -o docs --force --template-dir docs/templates
+          uv run python -m pdoc crashtest --html -o docs --force --template-dir docs/templates
+          uv run python -m pdoc hlrun --html -o docs --force --template-dir docs/templates
+
+      - name: Build Jekyll site
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: docs
+          destination: _site
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
