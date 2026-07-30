@@ -199,6 +199,20 @@ class Run:
             "status_color": self.status_color,
         }
 
+    def to_summary_json(self) -> dict:
+        """A small subset of `to_json`, without the (potentially huge) per-case
+        disassembly/decompiled text - for listing runs, not inspecting one."""
+        return {
+            "git": self.git.to_json(),
+            "version": self.context.version,
+            "id": self.id,
+            "timestamp": self.timestamp,
+            "status": self.status,
+            "status_color": self.status_color,
+            "case_count": len(self.cases),
+            "avg_similarity": self.avg_similarity(),
+        }
+
     @classmethod
     def from_json(cls, data: dict) -> "Run":
         return cls(

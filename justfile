@@ -32,20 +32,19 @@ format:
 check:
     uv run ty check
 
-# Generate documentation
+# Generate the API reference (Markdown, via griffe) and build the Docusaurus site
 docs:
-    python -m pdoc crashlink --html -o docs --force --template-dir docs/templates
-    python -m pdoc crashtest --html -o docs --force --template-dir docs/templates
-    python -m pdoc hlrun --html -o docs --force --template-dir docs/templates
+    python docs/gen_reference.py
+    cd docs && bun install && bun run build
 
-# Host and open documentation locally
+# Host and open documentation locally (dev server, live reload)
 open-docs:
-    python -m webbrowser -t "http://127.0.0.1:8080"
-    python -m http.server -b 127.0.0.1 8080 -d docs
+    python docs/gen_reference.py
+    cd docs && bun start
 
-# Serve documentation locally
+# Serve the built documentation locally
 serve-docs:
-    python -m http.server -b 127.0.0.1 8080 -d docs
+    cd docs && bun run serve
 
 # Run tests
 test:

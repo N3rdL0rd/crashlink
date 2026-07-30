@@ -8,10 +8,8 @@ on:
       - "crashtest/**"
       - "hlrun/**"
       - "docs/**"
-      - "!docs/crashlink/**"
-      - "!docs/crashtest/**"
-      - "!docs/hlrun/**"
-      - "!docs/crashtest_out/**"
+      - "!docs/content/reference/**"
+      - "!docs/build/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -38,23 +36,31 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
-      - name: Install PySide6 runtime libraries
-        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3
+      - name: Generate API reference with griffe
+        # Static AST analysis, not a runtime import - no need to install
+        # PySide6/mcp/capstone/etc for this to see crashlink.gui and friends.
+        run: uv run python docs/gen_reference.py
 
-      - name: Generate API docs with pdoc
-        run: |
-          uv run python -m pdoc crashlink --html -o docs --force --template-dir docs/templates
-          uv run python -m pdoc crashtest --html -o docs --force --template-dir docs/templates
-          uv run python -m pdoc hlrun --html -o docs --force --template-dir docs/templates
+      - name: Build crashtest result dashboards
+        # Reproducible from the committed crashtest/runs/*.json - no need to
+        # commit the generated HTML itself.
+        run: uv run python -m crashtest build
 
-      - name: Build Jekyll site
-        uses: actions/jekyll-build-pages@v1
-        with:
-          source: docs
-          destination: _site
+      - name: Install bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install docs dependencies
+        working-directory: docs
+        run: bun install --frozen-lockfile
+
+      - name: Build Docusaurus site
+        working-directory: docs
+        run: bun run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/build
 
   deploy:
     needs: build

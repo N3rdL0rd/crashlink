@@ -1,0 +1,34 @@
+.version 5
+
+# A plain conditional branch: two ints are compared
+# with JSLt, and the two arms of the if/else print a different string. Note
+# HashLink's jump convention (see the Decompilation Notes "If Statements"
+# section): JSLt jumps to its target when the comparison holds, so the
+# fall-through path is the "else" arm.
+
+.types
+    Bytes                   # t@1
+    I32                     # t@2
+    Fun (t@1) -> t@0        # t@3
+
+.natives
+    f@1 (t@3) std.sys_print
+
+.f@0
+    .returns t@0
+    .regs
+        t@0     # reg0: void
+        t@2     # reg1: a
+        t@2     # reg2: b
+        t@1     # reg3: message
+    .ops
+        Int reg1, 5              # 0: a = 5
+        Int reg2, 7               # 1: b = 7
+        JSLt reg1, reg2, 2        # 2: if a < b, jump to op 5
+        String reg3, "a is not less than b\n"  # 3: else arm
+        JAlways 1                 # 4: skip the if-arm
+        String reg3, "a is less than b\n"      # 5: if-arm
+        Call1 reg0, f@1, reg3     # 6: print
+        Ret reg0                  # 7
+
+.entrypoint f@0

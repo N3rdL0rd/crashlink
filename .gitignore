@@ -12,6 +12,8 @@ hl/
 *.prof
 *.json
 !crashtest/runs/*
+!docs/package.json
+!docs/tsconfig.json
 build*.bat
 pypi_token.txt
 testenv
@@ -32,10 +34,14 @@ local/
 *crashlink_patch.py*
 histogram.svg
 test-docs/
-# pdoc-generated API docs; built by .github/workflows/docs.yml, not committed
-/docs/crashlink/
-/docs/crashtest/
-/docs/hlrun/
+# griffe-generated API reference and crashtest result dashboards; built by
+# .github/workflows/docs.yml from committed source, not committed themselves
+/docs/content/reference/
+/docs/static/crashtest_out/
+# Docusaurus
+/docs/node_modules/
+/docs/.docusaurus/
+/docs/build/
 deadcells/
 .venv/
 tests/haxe/*.c

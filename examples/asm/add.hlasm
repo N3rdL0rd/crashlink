@@ -1,0 +1,77 @@
+.version 5
+
+# Minimal hybrid-function example: a normal HL function whose body is a single
+# x86 `add`, bridged to the HL register file with Asm modes 2/3.
+#
+# Expected output: 13
+
+.types
+    Bytes                  # t@1
+    I32                    # t@2
+    Fun (t@2, t@2) -> t@2  # t@3: add
+    Fun (t@2) -> t@1       # t@4: itos
+    Fun (t@1) -> t@0       # t@5: sys_print
+
+.natives
+    f@3 (t@5) std.sys_print
+
+.f@1
+    .returns t@2
+    .args 2
+    .regs
+        t@2     # reg0: a
+        t@2     # reg1: b
+        t@2     # reg2: result
+    .ops
+        Asm 2, 0, reg1           # RAX = reg0 (a)
+        Asm 2, 1, reg2           # RCX = reg1 (b)
+        X86 add eax, ecx
+        Asm 3, 0, reg3           # reg2 = RAX
+        Ret reg2
+
+.f@2
+    .returns t@1
+    .args 1
+    .regs
+        t@2     # reg0: v
+        t@1     # reg1: result (bytes)
+    .ops
+        Asm 2, 0, reg1           # RAX = reg0 (v)
+        X86 lea rdi, [rip+buf+24]
+        X86 mov word [rdi], 10      # '\n' as UTF-16
+        X86 mov word [rdi+2], 0     # NUL
+        X86 mov rsi, 10
+        cvt:
+        X86 xor edx, edx
+        X86 div rsi
+        X86 add dl, 0x30
+        X86 dec rdi
+        X86 dec rdi
+        X86 mov [rdi], dl
+        X86 test eax, eax
+        X86 jnz cvt
+        X86 mov rax, rdi
+        X86 jmp over
+        buf:
+        X86 times 32 db 0     # inline data, skipped by the jmp
+        over:
+        X86 nop
+        Asm 3, 0, reg2        # reg1 = RAX (ptr to string)
+        Ret reg1
+
+.f@0
+    .returns t@0
+    .regs
+        t@0     # reg0: void
+        t@2     # reg1: a / result
+        t@2     # reg2: b
+        t@1     # reg3: str
+    .ops
+        Int reg1, 7
+        Int reg2, 6
+        Call2 reg1, f@1, reg1, reg2
+        Call1 reg3, f@2, reg1
+        Call1 reg0, f@3, reg3
+        Ret reg0
+
+.entrypoint f@0
