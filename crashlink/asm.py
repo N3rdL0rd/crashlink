@@ -586,7 +586,7 @@ def _ks() -> Any:
     except ImportError as e:
         raise X86AsmError(
             "X86 mnemonic assembly requires keystone-engine. "
-            "Install it with `pip install keystone-engine` or `pip install crashlink[x86]`."
+            "Install it with `pip install keystone-engine` or `pip install crashlink[extras]`."
         ) from e
     return Ks(KS_ARCH_X86, KS_MODE_64)
 
@@ -606,7 +606,7 @@ def _cs() -> Any:
         from capstone import CS_ARCH_X86, CS_MODE_64, Cs  # type: ignore[import-untyped]
     except ImportError as e:
         raise X86AsmError(
-            "X86 disassembly requires capstone. Install it with `pip install capstone` or `pip install crashlink[x86]`."
+            "X86 disassembly requires capstone. Install it with `pip install capstone` or `pip install crashlink[extras]`."
         ) from e
     return Cs(CS_ARCH_X86, CS_MODE_64)
 

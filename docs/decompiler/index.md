@@ -118,7 +118,7 @@ part of the function on first entry.
 ### Writing `Asm` code in `.hlasm`
 
 crashlink's assembler has three pseudo-ops plus a mnemonic layer (requires the
-optional `keystone-engine` dependency: `pip install crashlink[x86]`):
+optional `keystone-engine` dependency: `pip install crashlink[extras]`):
 
 ```text
 .f@1
