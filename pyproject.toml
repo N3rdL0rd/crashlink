@@ -33,11 +33,11 @@ ci = [
   "PySide6",
   "graphviz",
   "keystone-engine",
+  "griffe",
 ]
 dev = [
   "crashlink[extras]",
   "crashlink[ci]",
-  "griffe",
   "ruff",
 ]
 extras = [

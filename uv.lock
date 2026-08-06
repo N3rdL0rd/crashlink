@@ -189,6 +189,7 @@ source = { editable = "." }
 ci = [
     { name = "capstone" },
     { name = "graphviz" },
+    { name = "griffe" },
     { name = "ipython", version = "8.37.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "ipython", version = "9.6.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "keystone-engine" },
@@ -248,7 +249,7 @@ requires-dist = [
     { name = "graphviz", marker = "extra == 'ci'" },
     { name = "graphviz", marker = "extra == 'extras'" },
     { name = "graphviz", marker = "extra == 'gui'" },
-    { name = "griffe", marker = "extra == 'dev'" },
+    { name = "griffe", marker = "extra == 'ci'" },
     { name = "ipython", marker = "extra == 'ci'" },
     { name = "ipython", marker = "extra == 'extras'" },
     { name = "keystone-engine", marker = "extra == 'ci'" },
