@@ -48,6 +48,7 @@ tests/haxe/*.c
 tests/haxe/_std
 tests/haxe/haxe
 tests/haxe/hlc
+tests/haxe/_AbstractOps
 test.c
 tests/libhl.dll
 tests/generate_hashes.exe
