@@ -85,6 +85,7 @@ from .opt.clean import (
     IRRedundantRecomputeEliminator,
     IRBlockFlattener,
     IREmptyConditionalNormalizer,
+    IRTypedCatchOptimizer,
     IRElseFlattener,
     IRRedundantContinueEliminator,
     IRVoidAssignOptimizer,
@@ -246,6 +247,11 @@ class IRFunction:
         self.cfg.build()
         self._enum_global_map = _build_enum_global_map(code)
         self.ops = func.ops
+        # Depth of Trap regions currently being lifted; a backedge jump to the
+        # enclosing loop header inside a trap is an explicit `continue` in the
+        # source (Haxe's HL codegen is sensitive to it: without the continue a
+        # constant-bounds loop with a catch can be unrolled by the compiler).
+        self._trap_depth = 0
         self._lift(no_lift=no_lift)
         if do_optimize:
             self.optimizers: List[IROptimizer] = [
@@ -312,6 +318,9 @@ class IRFunction:
                 # shape this targets doesn't fully materialize until after loop/switch
                 # restructuring and the later cleanup passes above have run.
                 IRArrayObjBoundsCheckCollapser(self),
+                # Restore typed/multi catch clauses; runs last because it matches
+                # the copy-propagated shape of HL's catch dispatch lowering.
+                IRTypedCatchOptimizer(self),
             ]
             # Splice in plugin optimizers gated to this bytecode (see
             # crashlink.plugins). Which classes apply is a property of the image,
@@ -1960,6 +1969,7 @@ class IRFunction:
                 stop_nodes=stop_nodes,
             )
 
+            self._trap_depth += 1
             try_block_ir = self._lift_block(
                 try_branch_node,
                 visited.copy(),
@@ -1972,6 +1982,7 @@ class IRFunction:
                 stop_at=convergence_node,
                 loop_ctx=loop_ctx,
             )
+            self._trap_depth -= 1
             catch_local = self.locals[last_op.df["exc"].value]
             explicit_catch_type = (
                 self._catch_has_explicit_type(catch_branch_node) if catch_branch_node is not None else False
@@ -2016,6 +2027,8 @@ class IRFunction:
             if node.branches:
                 successor_node, _ = node.branches[0]
                 if loop_ctx and successor_node == loop_ctx.header:
+                    if self._trap_depth:
+                        block.statements.append(IRContinue(self.code))
                     return block
                 if loop_ctx and successor_node not in loop_ctx.nodes:
                     block.statements.append(IRBreak(self.code))

@@ -1718,8 +1718,28 @@ def _generate_statements(
                     catch_subs,
                 )
             )
+            all_subs = [try_subs, catch_subs]
+            for extra_local, extra_block in stmt.extra_catches:
+                extra_name = extra_local.name
+                if not extra_name or extra_name.startswith("var"):
+                    extra_name = "e"
+                    extra_local.name = extra_name
+                extra_haxe = disasm.type_to_haxe(disasm.type_name(code, extra_local.get_type()))
+                output_lines.append(f"{indent}}} catch ({extra_name}:{extra_haxe}) {{")
+                extra_subs = render_subs.copy()
+                all_subs.append(extra_subs)
+                output_lines.extend(
+                    _gen(
+                        extra_block.statements,
+                        indent_level + 1,
+                        declared_vars_in_scope.copy(),
+                        extra_subs,
+                    )
+                )
             output_lines.append(f"{indent}}}")
-            valid_keys = set(render_subs.keys()) & set(try_subs.keys()) & set(catch_subs.keys())
+            valid_keys = set(render_subs.keys())
+            for subs in all_subs:
+                valid_keys &= set(subs.keys())
             for key in list(render_subs.keys()):
                 if key not in valid_keys:
                     del render_subs[key]
@@ -2063,6 +2083,8 @@ def _collect_foreach_elem_names(block: IRBlock) -> Set[str]:
         elif isinstance(stmt, IRTryCatch):
             names.update(_collect_foreach_elem_names(stmt.try_block))
             names.update(_collect_foreach_elem_names(stmt.catch_block))
+            for _, extra_block in stmt.extra_catches:
+                names.update(_collect_foreach_elem_names(extra_block))
         elif isinstance(stmt, IRSwitch):
             for case_block in stmt.cases.values():
                 names.update(_collect_foreach_elem_names(case_block))
@@ -2078,6 +2100,9 @@ def _collect_catch_local_names(block: IRBlock) -> Set[str]:
         if isinstance(stmt, IRTryCatch):
             if stmt.catch_local and stmt.catch_local.name:
                 names.add(stmt.catch_local.name)
+            for extra_local, _ in stmt.extra_catches:
+                if extra_local.name:
+                    names.add(extra_local.name)
             names.update(_collect_catch_local_names(stmt.try_block))
             names.update(_collect_catch_local_names(stmt.catch_block))
         elif isinstance(stmt, IRConditional):
@@ -2242,6 +2267,10 @@ def _find_inner_defining_assignment(local_name: str, block: IRBlock) -> Optional
         )
         in_catch = _find_assignment_recursive(local_name, stmt.catch_block) is not None or _contains_local_name(
             local_name, stmt.catch_block
+        ) or any(
+            _find_assignment_recursive(local_name, extra_block) is not None
+            or _contains_local_name(local_name, extra_block)
+            for _, extra_block in stmt.extra_catches
         )
         if in_try and not in_catch:
             # Use _find_defining_assignment on the sub-block to ensure it's safe.
@@ -2362,6 +2391,7 @@ def _contains_local_name(local_name: str, stmt: IRStatement) -> bool:
         return (
             _contains_local_name(local_name, stmt.try_block)
             or _contains_local_name(local_name, stmt.catch_block)
+            or any(_contains_local_name(local_name, extra_block) for _, extra_block in stmt.extra_catches)
             or (stmt.catch_local is not None and stmt.catch_local.name == local_name)
         )
     return any(_contains_local_name(local_name, child) for child in stmt.get_children())
@@ -3238,6 +3268,39 @@ def _native_extern(natives: List[Native], code: Bytecode) -> str:
     return "\n".join(lines)
 
 
+def _is_std_class_obj(code: Bytecode, obj: Obj) -> bool:
+    """
+    True when the Obj (or its static/dynamic counterpart) has member functions
+    and every one of them comes from a /std/ file — i.e. a standard-library
+    class. Memberless classes are treated as user data classes (bytecode holds
+    no source path to prove otherwise).
+    """
+    objs = [obj]
+    for attr in ("static", "dynamic"):
+        try:
+            other = getattr(obj, attr)
+        except (ValueError, AttributeError):
+            continue
+        if isinstance(other, Obj):
+            objs.append(other)
+    has_members = False
+    for o in objs:
+        for member in list(o.protos) + list(o.bindings):
+            try:
+                fn = member.findex.resolve(code)
+            except Exception:
+                continue
+            if isinstance(fn, Function):
+                has_members = True
+                try:
+                    path = fn.resolve_file(code).replace("\\", "/")
+                except Exception:
+                    return False
+                if "/std/" not in path:
+                    return False
+    return has_members
+
+
 def _collect_referenced_user_classes(root: IRStatement, code: Bytecode, exclude: Set[str]) -> Set[str]:
     """
     Recursively collect names of user-defined (non-std) classes referenced in the
@@ -3250,16 +3313,7 @@ def _collect_referenced_user_classes(root: IRStatement, code: Bytecode, exclude:
         if not isinstance(typ.definition, Obj):
             return False
         try:
-            obj = typ.definition
-            for proto in obj.protos:
-                fn = proto.findex.resolve(code)
-                if isinstance(fn, Function) and "/std/" not in fn.resolve_file(code).replace("\\", "/"):
-                    return True
-            for binding in obj.bindings:
-                fn = binding.findex.resolve(code)
-                if isinstance(fn, Function) and "/std/" not in fn.resolve_file(code).replace("\\", "/"):
-                    return True
-            return not obj.protos and not obj.bindings
+            return not _is_std_class_obj(code, typ.definition)
         except Exception:
             return False
 
@@ -3283,6 +3337,19 @@ def _collect_referenced_user_classes(root: IRStatement, code: Bytecode, exclude:
                 name = destaticify(target_type.definition.name.resolve(code))
                 if name not in exclude and is_user_type(target_type):
                     names.add(name)
+        elif isinstance(stmt, IRTryCatch):
+            # Restored typed catches may bind a class that is never otherwise
+            # referenced in the bodies (`catch (e:Unused)`); the clause types
+            # still need to exist for recompilation.
+            clause_locals = [stmt.catch_local] + [loc for loc, _ in stmt.extra_catches]
+            for loc in clause_locals:
+                if loc is None:
+                    continue
+                loc_type = loc.get_type()
+                if isinstance(loc_type.definition, Obj):
+                    name = destaticify(loc_type.definition.name.resolve(code))
+                    if name not in exclude and is_user_type(loc_type):
+                        names.add(name)
         for child in stmt.get_children():
             visit(child)
 
@@ -3526,6 +3593,17 @@ def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]
             continue
         try:
             other_obj = code.get_test_obj(other_name)
+        except Exception:
+            # Fall back to a stub if the class cannot be found.
+            result.append(f"class {other_name} {{}}")
+            emitted.add(other_name)
+            continue
+        # Std classes (e.g. a user exception's `extends haxe.Exception`) are
+        # referenced by path in the header, never inlined.
+        if _is_std_class_obj(code, other_obj):
+            emitted.add(other_name)
+            continue
+        try:
             other_ir = IRClass(code, other_obj)
             result.extend(_class_pseudo_recursive(other_ir, emitted))
         except Exception:

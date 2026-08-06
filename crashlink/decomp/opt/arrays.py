@@ -797,6 +797,11 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                 parent.try_block = new
             elif parent.catch_block is old:
                 parent.catch_block = new
+            else:
+                for i, (extra_local, extra_block) in enumerate(parent.extra_catches):
+                    if extra_block is old:
+                        parent.extra_catches[i] = (extra_local, new)
+                        break
         elif isinstance(parent, IRTrace):
             if parent.msg is old:
                 parent.msg = new

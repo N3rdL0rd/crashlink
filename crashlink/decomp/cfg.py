@@ -158,7 +158,7 @@ class CFGraph:
                         "JSLt", "JSGte", "JSGt", "JSLte", 
                         "JULt", "JUGte", "JNotLt", "JNotGte",
                         "JEq", "JNotEq", "JAlways", "Switch", "Ret",
-                        "Trap", "EndTrap"]:
+                        "Trap", "EndTrap", "Throw", "Rethrow"]:
             # fmt: on
                 blocks.append((current_start, current_ops))
                 current_ops = []
@@ -232,8 +232,17 @@ class CFGraph:
                     self.add_branch(
                         src_node, nodes_by_idx[jump_idx], "unconditional")
             elif last_op.op != "Ret" and next_idx in nodes_by_idx:
-                self.add_branch(
-                    src_node, nodes_by_idx[next_idx], "unconditional")
+                next_node = nodes_by_idx[next_idx]
+                # A throw never continues into its paired EndTrap; that edge
+                # would let the trap's catch entry pose as the try/catch
+                # convergence point and leave the catch block empty. Every
+                # other successor keeps the edge (it is what lets `if (...) throw;`
+                # restructure with the throw as the if-body).
+                if last_op.op in ("Throw", "Rethrow") and next_node.ops and next_node.ops[0].op == "EndTrap":
+                    pass
+                else:
+                    self.add_branch(
+                        src_node, next_node, "unconditional")
 
         if do_optimize:
             # fmt: off

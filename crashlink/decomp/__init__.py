@@ -104,6 +104,7 @@ from .opt.clean import (
     IRAnonObjectLiteralOptimizer,
     IRShiftConstantOptimizer,
     IRGuardOrMerger,
+    IRTypedCatchOptimizer,
 )
 from .opt.strings import (
     IRGlobalStringOptimizer,
@@ -219,6 +220,7 @@ __all__ = [
     "IRTrace",
     "IRTraceOptimizer",
     "IRTryCatch",
+    "IRTypedCatchOptimizer",
     "IRThrow",
     "IRTypeKind",
     "IRTypeOf",

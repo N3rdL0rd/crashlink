@@ -14,11 +14,14 @@ if TYPE_CHECKING:
 from ...core import (
     DynObj,
     Function,
+    Obj,
     Type,
     Virtual,
+    destaticify,
     tIndex,
 )
 from ...errors import DecompError
+from ... import disasm
 from ...globals import DEBUG, dbg_print
 from ..ir import (
     IRStatement,
@@ -1567,6 +1570,8 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
             catch_in = self._process_block(stmt.catch_block, child_out, mutate=mutate)
             uses.update(try_in)
             uses.update(catch_in)
+            for _, extra_block in stmt.extra_catches:
+                uses.update(self._process_block(extra_block, child_out, mutate=mutate))
 
         return uses, defs
 
@@ -2384,3 +2389,410 @@ class IRGuardOrMerger(TraversingIROptimizer):
             except DecompError:
                 pass
         return IRBoolExpr(self.func.code, IRBoolExpr.CompareType.NOT, cond)
+
+class IRTypedCatchOptimizer(IROptimizer):
+    """
+    Restores typed catch clauses from HL's dynamic dispatch lowering.
+
+    Haxe lowers `try T catch (e:X1) C1 ... catch (e:Xn) Cn` into a single
+    dynamic trap whose catch block is a dispatch chain:
+
+        t = X1.check(e); if (t) C1 else { ... t = Xn.check(e); if (t) Cn else {
+        t = haxe.ValueException.check(e); if (t) { ve = cast(e, haxe.ValueException);
+            t = Std.isOfType(ve.value, Xj); if (t) Cj ... else throw ve }
+        else throw e }}
+
+    (the ValueException arm unwraps values thrown via `throw value`). When
+    every arm transfers control (throw/return/continue), restructuring flattens
+    the chain into sequential `if (t) {...}` guards with empty else-blocks and
+    the terminal throw at the same level; the walkers below accept the nested,
+    flat, and mixed shapes.
+
+    The native `Xi.check` arms and the unwrap arm's `isOfType` sub-arms are two
+    copies of the same clause bodies; the unwrap copies keep the cleanest
+    binding shape, so clauses are restored from them (the native arms only
+    contribute the type list, cross-checked against the unwrap sub-arms).
+
+    Further handled: clause bodies that use the caught value start with
+    `v = cast(ve.value, Xi)` (or `v = ve.value`) and may reuse the catch
+    register as scratch — the restored clause binds `v`; statements after the
+    terminal `throw e` (the trap region's continuation, lifted into the catch
+    block when the try side never falls through) are spliced back out after
+    the restored try/catch.
+    """
+
+    TARGET_OPCODES = {"Trap"}
+
+    def optimize(self) -> None:
+        self._process_block(self.func.block)
+
+    def _process_block(self, block: IRBlock) -> None:
+        new_stmts: List[IRStatement] = []
+        for stmt in list(block.statements):
+            new_stmts.extend(self._process_stmt(stmt))
+        block.statements = new_stmts
+
+    def _process_stmt(self, stmt: IRStatement) -> List[IRStatement]:
+        """Process one statement; returns the statement plus any continuation
+        a restore spliced after it (which itself may hold try/catches, so it is
+        processed recursively)."""
+        if isinstance(stmt, IRTryCatch):
+            trail = self._restore(stmt)
+            self._process_block(stmt.try_block)
+            self._process_block(stmt.catch_block)
+            for _, extra_block in stmt.extra_catches:
+                self._process_block(extra_block)
+            out: List[IRStatement] = [stmt]
+            for trail_stmt in trail:
+                out.extend(self._process_stmt(trail_stmt))
+            return out
+        if isinstance(stmt, IRConditional):
+            self._process_block(stmt.true_block)
+            if stmt.false_block is not None:
+                self._process_block(stmt.false_block)
+        elif isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop, IRForEachLoop, IRIntRangeLoop)):
+            self._process_block(stmt.body)
+        elif isinstance(stmt, IRSwitch):
+            for case_block in stmt.cases.values():
+                self._process_block(case_block)
+            if stmt.default is not None:
+                self._process_block(stmt.default)
+        return [stmt]
+
+    def _restore(self, tc: IRTryCatch) -> List[IRStatement]:
+        """Restore typed catches on `tc`. Returns continuation statements to
+        splice after the try/catch (empty on no match)."""
+        e = tc.catch_local
+        if e is None or tc.extra_catches:
+            return []
+        stmts = tc.catch_block.statements
+        arms: List[Tuple[Type, IRBlock]] = []
+        unwrap_arms: List[Tuple[Type, IRBlock]] = []
+        consumed = self._parse_check_chain(stmts, 0, e, arms, unwrap_arms)
+        if consumed is None or not arms:
+            return []
+        # haxe.Exception-subclass catch types never arrive wrapped in a
+        # ValueException, so HL emits no isOfType sub-arm for them: the unwrap
+        # arm re-dispatches exactly the non-exception caught types (and is
+        # absent entirely when every caught type is an exception subclass).
+        non_exc_arms = [(t, b) for t, b in arms if not self._is_exception_type(t)]
+        if sorted(self._type_name(t) for t, _ in unwrap_arms) != sorted(
+            self._type_name(t) for t, _ in non_exc_arms
+        ):
+            return []
+        bodies_by_name = {self._type_name(t): b for t, b in unwrap_arms}
+        clauses = []
+        for typ, native_body in arms:
+            if self._is_exception_type(typ):
+                # No unwrap copy exists; the native arm body is the clause body.
+                clause = self._make_clause(typ, native_body, e, native=True)
+            else:
+                clause = self._make_clause(typ, bodies_by_name[self._type_name(typ)], e)
+            clauses.append(clause)
+        if any(clause is None for clause in clauses):
+            return []
+        assert clauses[0] is not None
+        first_local, first_body = clauses[0]
+        tc.catch_local = first_local
+        tc.catch_block = first_body
+        tc.extra_catches = [clause for clause in clauses[1:] if clause is not None]
+        return list(stmts[consumed:])
+
+    # --- dispatch-chain walkers -------------------------------------------
+    #
+    # Both chains are sequences of `t = <call>; if (t) ARM else NEXT` pairs
+    # terminated by `throw <local>`. NEXT is one of:
+    #   - [throw local]            -> nested terminal
+    #   - []                       -> flat continuation (next pair or the
+    #                                 terminal throw follows at this level)
+    #   - more pairs               -> nested continuation (must consume all)
+
+    def _parse_check_chain(
+        self,
+        stmts: List[IRStatement],
+        i: int,
+        e: IRLocal,
+        arms: List[Tuple[Type, IRBlock]],
+        unwrap_arms: List[Tuple[Type, IRBlock]],
+    ) -> Optional[int]:
+        """Walk native `X.check(e)` arms. Returns the index just past the
+        terminal `throw e`, or None if the shape breaks."""
+        while True:
+            if i >= len(stmts):
+                return None
+            stmt = stmts[i]
+            if isinstance(stmt, IRThrow) and stmt.value is e:
+                return i + 1
+            if i + 1 >= len(stmts):
+                return None
+            matched = self._match_check_pair(stmts[i], stmts[i + 1], e)
+            if matched is None:
+                return None
+            typ, tname, body, cond = matched
+            if tname == "haxe.ValueException":
+                if unwrap_arms:
+                    return None
+                if self._parse_unwrap(body, e, unwrap_arms) != len(body.statements):
+                    return None
+            else:
+                arms.append((typ, body))
+            else_stmts = cond.false_block.statements
+            if len(else_stmts) == 1 and isinstance(else_stmts[0], IRThrow) and else_stmts[0].value is e:
+                return i + 2
+            if len(else_stmts) == 0:
+                i += 2
+                continue
+            if self._parse_check_chain(else_stmts, 0, e, arms, unwrap_arms) != len(else_stmts):
+                return None
+            return i + 2
+
+    def _parse_unwrap(
+        self, body: IRBlock, e: IRLocal, sub_arms: List[Tuple[Type, IRBlock]]
+    ) -> Optional[int]:
+        """Match the ValueException arm body: `ve = cast(e, haxe.ValueException)`,
+        optional catch-register plumbing, then an isOfType chain. Returns the
+        consumed statement count, or None."""
+        stmts = body.statements
+        if len(stmts) < 3:
+            return None
+        cast_assign = stmts[0]
+        if not (
+            isinstance(cast_assign, IRAssign)
+            and isinstance(cast_assign.target, IRLocal)
+            and isinstance(cast_assign.expr, IRCast)
+            and cast_assign.expr.expr is e
+            and self._type_name(cast_assign.expr.get_type()) == "haxe.ValueException"
+        ):
+            return None
+        ve = cast_assign.target
+        # Skip catch-register plumbing the wrapped path emits before the
+        # isOfType chain (e.g. `e = ve.value`, kept inside loops).
+        start = 1
+        while start < len(stmts):
+            plumbing = stmts[start]
+            if (
+                isinstance(plumbing, IRAssign)
+                and plumbing.target is e
+                and (
+                    (
+                        isinstance(plumbing.expr, IRField)
+                        and plumbing.expr.target is ve
+                        and plumbing.expr.field_name == "value"
+                    )
+                    or (isinstance(plumbing.expr, IRConst) and plumbing.expr.value is None)
+                )
+            ):
+                start += 1
+                continue
+            break
+        return self._parse_isotype_chain(stmts, start, ve, sub_arms)
+
+    def _parse_isotype_chain(
+        self,
+        stmts: List[IRStatement],
+        i: int,
+        ve: IRLocal,
+        sub_arms: List[Tuple[Type, IRBlock]],
+    ) -> Optional[int]:
+        """Walk `isOfType(ve.value, Xj)` sub-arms. Returns the index just past
+        the terminal `throw ve` (or len(stmts) for the guard variant), or None."""
+        while True:
+            if i >= len(stmts):
+                return None
+            stmt = stmts[i]
+            if isinstance(stmt, IRThrow) and stmt.value is ve:
+                return i + 1
+            if i + 1 >= len(stmts):
+                return None
+            assign = stmts[i]
+            call = self._std_call(assign, "isOfType")
+            if call is None or len(call.args) != 2 or not isinstance(assign, IRAssign) or not isinstance(assign.target, IRLocal):
+                return None
+            field, type_const = call.args
+            if not (
+                isinstance(field, IRField)
+                and field.target is ve
+                and field.field_name == "value"
+                and isinstance(type_const, IRConst)
+                and isinstance(type_const.value, Type)
+            ):
+                return None
+            cond = stmts[i + 1]
+            if not isinstance(cond, IRConditional):
+                return None
+            typ = type_const.value
+            cond_expr = cond.condition
+            if self._is_true_cond(cond_expr, assign.target):
+                sub_arms.append((typ, cond.true_block))
+                else_stmts = cond.false_block.statements
+                if len(else_stmts) == 1 and isinstance(else_stmts[0], IRThrow) and else_stmts[0].value is ve:
+                    return i + 2
+                if len(else_stmts) == 0:
+                    i += 2
+                    continue
+                if self._parse_isotype_chain(else_stmts, 0, ve, sub_arms) != len(else_stmts):
+                    return None
+                return i + 2
+            if (
+                isinstance(cond_expr, IRBoolExpr)
+                and cond_expr.op == IRBoolExpr.CompareType.ISFALSE
+                and cond_expr.left is assign.target
+            ):
+                # Final arm as a guard: `if (!t) throw ve;` with the arm body
+                # inline after it.
+                then_stmts = cond.true_block.statements
+                if not (
+                    len(then_stmts) == 1 and isinstance(then_stmts[0], IRThrow) and then_stmts[0].value is ve
+                ):
+                    return None
+                tail = IRBlock(self.func.code)
+                tail.statements = list(stmts[i + 2 :])
+                sub_arms.append((typ, tail))
+                return len(stmts)
+            return None
+
+    # --- arm-pair and clause helpers ---------------------------------------
+
+    def _match_check_pair(
+        self, assign: IRStatement, cond: IRStatement, e: IRLocal
+    ) -> Optional[Tuple[Type, str, IRBlock, IRConditional]]:
+        """Match `t = X.check(e); if (t) ...`."""
+        call = self._std_call(assign, "check")
+        if call is None or len(call.args) != 2 or not isinstance(assign, IRAssign) or not isinstance(assign.target, IRLocal):
+            return None
+        type_const, arg1 = call.args
+        if not (isinstance(type_const, IRConst) and isinstance(type_const.value, Type)):
+            return None
+        if arg1 is not e:
+            return None
+        if not (isinstance(cond, IRConditional) and self._is_true_cond(cond.condition, assign.target)):
+            return None
+        typ = type_const.value
+        return typ, self._type_name(typ), cond.true_block, cond
+
+    def _make_clause(
+        self, typ: Type, body: IRBlock, e: IRLocal, native: bool = False
+    ) -> Optional[Tuple[IRLocal, IRBlock]]:
+        """Return (binding_local, body) for one restored clause, or None if the
+        body uses the caught value in a shape we don't recognize."""
+        stmts = body.statements
+        first = stmts[0] if stmts else None
+        if isinstance(first, IRAssign) and isinstance(first.target, IRLocal):
+            expr = first.expr
+            cast_inner = expr.expr if isinstance(expr, IRCast) else None
+            bound = (
+                cast_inner is not None and (self._is_value_field(cast_inner) or cast_inner is e)
+            ) or self._is_value_field(expr)
+            if bound:
+                # `v = cast(ve.value, T)` / `v = ve.value` (unwrap bodies) or
+                # `v = cast(e, T)` (native bodies of exception-subclass arms)
+                # binds the caught value; the clause binds `v`. Any later use
+                # of the dispatch registers in the body is scratch reuse.
+                body.statements = stmts[1:]
+                return first.target, body
+        try:
+            idx = self.func.code.types.index(typ)
+        except ValueError:
+            return None
+        if native:
+            # Exception arms have no unwrap copy; when the body reads the catch
+            # register inline (no binding assignment), the clause binds `e`
+            # itself — but only if the body never writes it (scratch reuse).
+            if self._assigns_local(body, e) or self._references_plumbing(body):
+                return None
+            if self._references_local(body, e):
+                e.type = tIndex(idx)
+                return e, body
+            return IRLocal("e", tIndex(idx), self.func.code), body
+        if self._references_dispatch(body, e):
+            return None
+        return IRLocal("e", tIndex(idx), self.func.code), body
+
+    def _is_value_field(self, expr: IRStatement) -> bool:
+        """True for `<something>.value` field reads (the ValueException payload)."""
+        return isinstance(expr, IRField) and expr.field_name == "value"
+
+    def _references_dispatch(self, stmt: IRStatement, e: IRLocal) -> bool:
+        """True if stmt still reads/writes the dispatch plumbing: the catch
+        register `e`, any `_.value` unwrap field, or a ValueException local."""
+        if stmt is e:
+            return True
+        return self._references_plumbing(stmt)
+
+    def _references_plumbing(self, stmt: IRStatement) -> bool:
+        """Dispatch plumbing other than the catch register itself."""
+        if self._is_value_field(stmt):
+            return True
+        if isinstance(stmt, IRLocal) and self._type_name(stmt.get_type()) in (
+            "haxe.ValueException",
+            "haxe.Exception",
+        ):
+            return True
+        return any(self._references_plumbing(child) for child in stmt.get_children())
+
+    def _assigns_local(self, stmt: IRStatement, local: IRLocal) -> bool:
+        if isinstance(stmt, IRAssign) and stmt.target is local:
+            return True
+        return any(self._assigns_local(child, local) for child in stmt.get_children())
+
+    def _references_local(self, stmt: IRStatement, local: IRLocal) -> bool:
+        if stmt is local:
+            return True
+        return any(self._references_local(child, local) for child in stmt.get_children())
+
+    def _is_exception_type(self, typ: Type) -> bool:
+        """True if typ is or subclasses haxe.Exception/haxe.ValueException;
+        such caught values are exceptions themselves and never arrive wrapped
+        in a ValueException, so HL emits no unwrap sub-arm for them."""
+        defn = typ.definition
+        for _ in range(32):
+            if not isinstance(defn, Obj):
+                return False
+            # Type constants often carry the static counterpart ($Foo), whose
+            # super chain is the metaclass chain; walk the instance class chain.
+            try:
+                dyn = defn.dynamic
+                if isinstance(dyn, Obj):
+                    defn = dyn
+            except (ValueError, AttributeError):
+                pass
+            if destaticify(defn.name.resolve(self.func.code)) in ("haxe.Exception", "haxe.ValueException"):
+                return True
+            if defn.super.value <= 0:
+                return False
+            try:
+                defn = defn.super.resolve(self.func.code).definition
+            except Exception:
+                return False
+        return False
+
+    def _type_name(self, typ: Type) -> str:
+        return destaticify(disasm.type_name(self.func.code, typ))
+
+    def _std_call(self, stmt: IRStatement, want_name: str) -> Optional[IRCall]:
+        """If stmt is `t = <std fn named want_name>(...)`, return the call."""
+        if not (isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)):
+            return None
+        call = stmt.expr
+        if not isinstance(call, IRCall):
+            return None
+        target = call.target
+        if not (isinstance(target, IRConst) and isinstance(target.value, Function)):
+            return None
+        fname = self.func.code.partial_func_name(target.value)
+        if not (fname == want_name or fname.endswith("." + want_name)):
+            return None
+        try:
+            path = target.value.resolve_file(self.func.code).replace("\\", "/")
+        except Exception:
+            return None
+        if "/std/" not in path:
+            return None
+        return call
+
+    def _is_true_cond(self, cond: IRStatement, local: IRLocal) -> bool:
+        return (
+            isinstance(cond, IRBoolExpr)
+            and cond.op == IRBoolExpr.CompareType.ISTRUE
+            and cond.left is local
+        )

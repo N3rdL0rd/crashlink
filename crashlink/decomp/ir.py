@@ -725,11 +725,16 @@ class IRTryCatch(IRStatement):
         catch_block: IRBlock,
         catch_local: Optional[IRLocal] = None,
         explicit_catch_type: bool = False,
+        extra_catches: Optional[List[Tuple["IRLocal", "IRBlock"]]] = None,
     ):
         super().__init__(code)
         self.try_block = try_block
         self.catch_block = catch_block
         self.catch_local = catch_local
+        # Additional `catch (_:T) {...}` clauses after the primary one
+        # (restored multi-catch, see IRTypedCatchOptimizer): (binding local,
+        # body) pairs; each local carries the clause's restored type.
+        self.extra_catches: List[Tuple["IRLocal", "IRBlock"]] = list(extra_catches or [])
         # Haxe's codegen for a catch clause differs depending on whether the
         # source wrote an explicit `catch (e: Dynamic)` or just `catch (e)`,
         # even though both infer the same type — see
@@ -740,6 +745,7 @@ class IRTryCatch(IRStatement):
         children: List[IRStatement] = [self.try_block, self.catch_block]
         if self.catch_local is not None:
             children.insert(0, self.catch_local)
+        children.extend(block for _, block in self.extra_catches)
         return children
 
     def __repr__(self) -> str:
