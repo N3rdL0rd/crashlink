@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, cast
 from ..core import (
     Bytecode,
     Enum,
+    destaticify,
     Fun,
     Function,
     Native,
@@ -51,6 +52,7 @@ from .ir import (
     IRPrimitiveJump,
     IRWhileLoop,
     IRField,
+    IRBoundClosure,
     IRNew,
     IRCast,
     IRArrayAccess,
@@ -95,6 +97,7 @@ from .opt.clean import (
     IRSequentialTempFolder,
     IRDeadAssignmentEliminator,
     IRConstructorFolder,
+    IREnumConstructorFolder,
     IRAnonObjectLiteralOptimizer,
     IRShiftConstantOptimizer,
     IRGuardOrMerger,
@@ -123,6 +126,14 @@ from .opt.switches import (
     IRStringSwitchOptimizer,
     IREnumSwitchOptimizer,
 )
+
+
+def _obj_field_name(field_core: Any, field_index: int, code: Bytecode) -> str:
+    """Resolve an Obj field's debug name, falling back to a synthesized name
+    when it's empty (e.g. HL's per-interface Virtual-typed dispatch cache
+    slot, which has no source-level name)."""
+    name = field_core.name.resolve(code)
+    return name if name else f"__hidden{field_index}"
 
 
 def _build_enum_global_map(code: Bytecode) -> Dict[int, Tuple[str, tIndex]]:
@@ -257,6 +268,7 @@ class IRFunction:
             self.optimizers: List[IROptimizer] = [
                 IRBlockFlattener(self),
                 IRConstructorFolder(self),
+                IREnumConstructorFolder(self),
                 IRPrimitiveJumpLifter(self),
                 IRGlobalStringOptimizer(self),
                 IRStringIntConcatOptimizer(self),
@@ -347,6 +359,7 @@ class IRFunction:
             self.locals.append(local)
             self.all_locals.append(local)
         self._build_assign_map()
+        self._new_defined_regs: Set[int] = set()
         self._name_locals()
         if not no_lift:
             if self.cfg.entry:
@@ -420,8 +433,11 @@ class IRFunction:
         """Get the current IRLocal for a register, respecting SSA-esque name transitions."""
         return self.locals[reg_idx]
 
-    def _split_local(self, reg_idx: int, name: str, defining_op_idx: Optional[int] = None) -> IRLocal:
-        """Create a new IRLocal for a register with a specific name (SSA-esque split)."""
+    def _split_local(
+        self, reg_idx: int, name: str, defining_op_idx: Optional[int] = None, avoid_same_reg: bool = False
+    ) -> IRLocal:
+        """Create a new IRLocal for a register with a specific name (SSA-esque split).
+        avoid_same_reg also forces a name distinct from the register's current local."""
         reg_type = self.func.regs[reg_idx]
         new_type = reg_type.resolve(self.code)
         # Avoid name collisions only with a different register of a different
@@ -438,6 +454,8 @@ class IRFunction:
             for i, loc in enumerate(self.locals)
             if i != reg_idx and (loc.get_type() != new_type or self._has_untracked_reuse(i))
         }
+        if avoid_same_reg:
+            existing_names.add(self.locals[reg_idx].name)
         while name in existing_names:
             name = f"{base_name}{suffix}"
             suffix += 1
@@ -497,6 +515,22 @@ class IRFunction:
 
     def _check_assign(self, op_idx: int) -> None:
         """Check if this op index has an assign entry and split the local if needed."""
+        op = self.ops[op_idx]
+        new_reg_idx: Optional[int] = None
+        prior_name: Optional[str] = None
+        if op.op == "New" and op.df and "dst" in op.df:
+            new_reg_idx = op.df["dst"].value
+            prior_name = self.locals[new_reg_idx].name
+        self._check_assign_inner(op_idx, op)
+        if new_reg_idx is not None:
+            # Two `New`s reusing one register must not share an IRLocal, or a stored reference aliases the later alloc.
+            if new_reg_idx in self._new_defined_regs and self.locals[new_reg_idx].name == prior_name:
+                self._split_local(
+                    new_reg_idx, self.locals[new_reg_idx].name, defining_op_idx=op_idx, avoid_same_reg=True
+                )
+            self._new_defined_regs.add(new_reg_idx)
+
+    def _check_assign_inner(self, op_idx: int, op: Opcode) -> None:
         if op_idx in self._op_assigns:
             for reg_idx, name in self._op_assigns[op_idx].items():
                 current = self.locals[reg_idx]
@@ -511,7 +545,6 @@ class IRFunction:
         # (e.g. a loop counter's register reused afterward to hold an unrelated
         # `.length` value, which would otherwise still render as the loop
         # variable's name and get protected from inlining as if it were real).
-        op = self.ops[op_idx]
         if not (op.df and "dst" in op.df):
             return
         if op.op == "Setref":
@@ -795,21 +828,14 @@ class IRFunction:
                         suffix += 1
                 continue
             ordered = sorted(regs, key=lambda r: self._reg_first_assign.get(r, float("inf")))
-            by_type: Dict[int, List[int]] = {}
-            for r in ordered:
-                typ = self.func.regs[r]
-                typ_key = id(typ.resolve(self.code))
-                by_type.setdefault(typ_key, []).append(r)
-            # Keep the earliest register of the first-seen type as the base name;
-            # rename duplicates of other types.
-            kept = set()
-            for r in ordered:
+            # Keep earliest reg's type as base name; suffix any other-typed regs sharing this name.
+            first_type = id(self.func.regs[ordered[0]].resolve(self.code))
+            suffix = 1
+            for r in ordered[1:]:
                 typ_key = id(self.func.regs[r].resolve(self.code))
-                if typ_key not in kept:
-                    kept.add(typ_key)
-                else:
-                    self.locals[r].name = f"{name}{len(kept)}"
-                    kept.add(typ_key)
+                if typ_key != first_type:
+                    self.locals[r].name = f"{name}{suffix}"
+                    suffix += 1
 
         if self.locals and self.locals[0].name == "var0" and has_this:
             self.locals[0].name = "this"
@@ -1044,7 +1070,7 @@ class IRFunction:
                 field_expr = IRField(
                     self.code,
                     obj_local,
-                    field_core.name.resolve(self.code),
+                    _obj_field_name(field_core, op.df["field"].value, self.code),
                     field_core.type,
                 )
                 block.statements.append(IRAssign(self.code, dst_local, field_expr))
@@ -1057,7 +1083,7 @@ class IRFunction:
                     field_expr = IRField(
                         self.code,
                         this_local,
-                        field_core.name.resolve(self.code),
+                        _obj_field_name(field_core, op.df["field"].value, self.code),
                         field_core.type,
                     )
                     block.statements.append(IRAssign(self.code, dst_local, field_expr))
@@ -1072,7 +1098,7 @@ class IRFunction:
                     field_expr = IRField(
                         self.code,
                         this_local,
-                        field_core.name.resolve(self.code),
+                        _obj_field_name(field_core, op.df["field"].value, self.code),
                         field_core.type,
                     )
                     block.statements.append(IRAssign(self.code, field_expr, src_local))
@@ -1249,7 +1275,7 @@ class IRFunction:
                     field_expr = IRField(
                         self.code,
                         obj_local,
-                        field_core.name.resolve(self.code),
+                        _obj_field_name(field_core, op.df["field"].value, self.code),
                         field_core.type,
                     )
                     block.statements.append(IRAssign(self.code, field_expr, src_local))
@@ -1292,7 +1318,7 @@ class IRFunction:
                 fun = op.df["fun"].resolve(self.code)
                 method_name = self.code.partial_func_name(fun)
                 obj_def = obj_local.get_type().definition
-                if method_name in (None, "<none>") or not isinstance(obj_def, (Obj, Virtual)):
+                if method_name in (None, "<none>") and not isinstance(obj_def, (Obj, Virtual)):
                     # Not a real `obj.method` binding: the compiler also uses
                     # InstanceClosure to wrap a `Dynamic` value as the captured
                     # `this` of a small synthesized adapter function (e.g. the
@@ -1305,6 +1331,12 @@ class IRFunction:
                     # observable result without inventing a bogus field name.
                     cast_expr = IRCast(self.code, self.func.regs[op.df["dst"].value], obj_local)
                     block.statements.append(IRAssign(self.code, dst_local, cast_expr))
+                elif method_name in (None, "<none>") and isinstance(fun, Function):
+                    # Genuine closure over a captured local: `fun` is a real
+                    # synthesized function with no resolvable method name and
+                    # `obj` is its captured environment, not a `this` receiver.
+                    bound_expr = IRBoundClosure(self.code, fun, obj_local)
+                    block.statements.append(IRAssign(self.code, dst_local, bound_expr))
                 else:
                     field_expr = IRField(
                         self.code,
@@ -1976,6 +2008,9 @@ class IRFunction:
                 stop_at=convergence_node,
                 loop_ctx=loop_ctx,
             )
+            # Trap rebinds this register fresh -- split it before lifting the catch block.
+            exc_reg = last_op.df["exc"].value
+            catch_local = self._split_local(exc_reg, f"var{exc_reg}", defining_op_idx=None)
             catch_block_ir = self._lift_block(
                 catch_branch_node,
                 visited.copy(),
@@ -1983,7 +2018,8 @@ class IRFunction:
                 loop_ctx=loop_ctx,
             )
             self._trap_depth -= 1
-            catch_local = self.locals[last_op.df["exc"].value]
+            # Split again after the catch so later code can't inherit catch_local's identity.
+            self._split_local(exc_reg, f"var{exc_reg}", defining_op_idx=None)
             explicit_catch_type = (
                 self._catch_has_explicit_type(catch_branch_node) if catch_branch_node is not None else False
             )
@@ -2043,6 +2079,337 @@ class IRFunction:
         print(self.block.pprint())
 
 
+STATIC_INIT_UNRECOVERABLE = "<unrecoverable static initializer>"
+
+
+def _static_call_name_parts(func: Function, code: Bytecode) -> Optional[Tuple[str, str]]:
+    """Return (class_name, method_name) for a static function, e.g. for rendering `Class.method(...)` call text."""
+    name = code.partial_func_name(func)
+    if not name or name == "<none>":
+        name = None
+    if name and "." in name:
+        class_name, method_name = name.rsplit(".", 1)
+        return class_name, method_name
+    full = code.full_func_name(func)
+    if full and full != "<none>.<none>" and "." in full:
+        class_name, method_name = full.rsplit(".", 1)
+        return destaticify(class_name), method_name
+    return None
+
+
+def _static_default_value(code: Bytecode, t: "tIndex") -> str:
+    """Zero/default value HL gives a static field read before its own initializer has run."""
+    try:
+        kind = t.resolve(code).kind.value
+    except Exception:
+        return "null"
+    if kind in (Type.Kind.I32.value, Type.Kind.U8.value, Type.Kind.U16.value, Type.Kind.I64.value):
+        return "0"
+    if kind in (Type.Kind.F32.value, Type.Kind.F64.value):
+        return "0.0"
+    if kind == Type.Kind.BOOL.value:
+        return "false"
+    return "null"
+
+
+def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
+    """Scan the entrypoint for SetField writes to class statics with simple constant/arith/enum initializers, keyed by the static Obj's id() then field name."""
+    cache: Optional[Dict[int, Dict[str, str]]] = getattr(code, "_static_field_inits_cache", None)
+    if cache is not None:
+        return cache
+    result: Dict[int, Dict[str, str]] = {}
+    field_refs: Dict[int, Dict[str, Set[str]]] = {}
+    arith_syms = {"Add": "+", "Sub": "-", "Mul": "*", "Div": "/"}
+    # preset string-literal globals (from the bytecode constants table) resolve to a value
+    # even though they're loaded via GetGlobal rather than the String opcode
+    const_strings: Dict[int, str] = {}
+    try:
+        for const in code.constants:
+            gi = const._global.value
+            if const.fields:
+                gtype = code.global_types[gi].resolve(code)
+                if isinstance(gtype.definition, Obj) and gtype.definition.name.resolve(code) == "String":
+                    const_strings[gi] = '"' + code.strings.value[const.fields[0].value].replace('"', '\\"') + '"'
+    except Exception:
+        pass
+    try:
+        entry = code.entrypoint.resolve(code)
+        if not isinstance(entry, Function):
+            raise ValueError
+        reg_value: Dict[int, str] = {}
+        reg_refs: Dict[int, Set[str]] = {}
+        reg_global: Dict[int, int] = {}
+        pending_new: Dict[int, str] = {}
+        empty_array_regs: Set[int] = set()
+        # in-progress array-literal builds: alloc reg -> (declared length, {index: (value, refs)})
+        array_builds: Dict[int, Tuple[int, Dict[int, Tuple[str, Set[str]]]]] = {}
+        for op in entry.ops:
+            dst = op.df.get("dst")
+            if op.op.startswith("J") or op.op in ("Switch", "Label", "Trap"):
+                # branchy control flow (e.g. switch-computed initializers): can't safely
+                # track a single value across merge points with a flat linear scan
+                reg_value.clear()
+                reg_refs.clear()
+                empty_array_regs.clear()
+                array_builds.clear()
+                continue
+            if op.op in ("Int", "Float"):
+                try:
+                    resolved = op.df["ptr"].resolve(code)
+                    reg_value[dst.value] = str(getattr(resolved, "value", resolved))
+                    reg_refs.pop(dst.value, None)
+                except Exception:
+                    reg_value.pop(dst.value, None)
+            elif op.op == "Bool":
+                reg_value[dst.value] = "true" if op.df["value"].value else "false"
+                reg_refs.pop(dst.value, None)
+            elif op.op == "Null":
+                reg_value[dst.value] = "null"
+                reg_refs.pop(dst.value, None)
+            elif op.op == "String":
+                try:
+                    s = op.df["ptr"].resolve(code)
+                    reg_value[dst.value] = '"' + str(s).replace('"', '\\"') + '"'
+                    reg_refs.pop(dst.value, None)
+                except Exception:
+                    reg_value.pop(dst.value, None)
+            elif op.op in arith_syms:
+                a, b = op.df["a"].value, op.df["b"].value
+                if a in reg_value and b in reg_value:
+                    reg_value[dst.value] = f"({reg_value[a]} {arith_syms[op.op]} {reg_value[b]})"
+                    reg_refs[dst.value] = reg_refs.get(a, set()) | reg_refs.get(b, set())
+                else:
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+            elif op.op in ("MakeEnum", "EnumAlloc"):
+                try:
+                    enum_type = entry.regs[dst.value].resolve(code)
+                    enum_def = enum_type.definition
+                    cid = op.df["construct"].value
+                    cname = (
+                        enum_def.constructs[cid].name.resolve(code)
+                        if cid < len(enum_def.constructs)
+                        else f"construct_{cid}"
+                    )
+                    if op.op == "MakeEnum":
+                        arg_regs = [a.value for a in op.df["args"].value]
+                        if all(a in reg_value for a in arg_regs):
+                            reg_value[dst.value] = f"{cname}({', '.join(reg_value[a] for a in arg_regs)})"
+                        else:
+                            reg_value[dst.value] = STATIC_INIT_UNRECOVERABLE
+                    else:
+                        reg_value[dst.value] = cname
+                except Exception:
+                    reg_value.pop(dst.value, None)
+            elif op.op == "New":
+                try:
+                    typ = entry.regs[dst.value].resolve(code)
+                    if isinstance(typ.definition, Obj):
+                        pending_new[dst.value] = destaticify(typ.definition.name.resolve(code))
+                except Exception:
+                    pass
+                reg_value.pop(dst.value, None)
+                reg_refs.pop(dst.value, None)
+            elif op.op == "CallMethod" and op.df["args"].value and op.df["args"].value[0].value in pending_new:
+                obj_reg = op.df["args"].value[0].value
+                cname = pending_new.pop(obj_reg)
+                is_ctor = False
+                try:
+                    obj_type = entry.regs[obj_reg].resolve(code)
+                    if isinstance(obj_type.definition, Obj):
+                        proto = code.proto_by_pindex(obj_type.definition, op.df["field"].value)
+                        is_ctor = proto is not None and proto.name.resolve(code) in ("new", "__constructor__")
+                except Exception:
+                    is_ctor = False
+                call_args = [a.value for a in op.df["args"].value[1:]]
+                if is_ctor and all(a in reg_value for a in call_args):
+                    reg_value[obj_reg] = f"new {cname}({', '.join(reg_value[a] for a in call_args)})"
+                    reg_refs[obj_reg] = {cname}
+                    for a in call_args:
+                        reg_refs[obj_reg] |= reg_refs.get(a, set())
+                else:
+                    reg_value[obj_reg] = STATIC_INIT_UNRECOVERABLE
+                    reg_refs.pop(obj_reg, None)
+                if dst is not None:
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+            elif op.op in simple_calls:
+                fname_parts = None
+                fun = None
+                try:
+                    fun = op.df["fun"].resolve(code)
+                    fname_parts = _static_call_name_parts(fun, code) if isinstance(fun, Function) else None
+                except Exception:
+                    fname_parts = None
+                call_arg_regs = (
+                    [op.df["args"].value[i].value for i in range(len(op.df["args"].value))]
+                    if op.op == "CallN"
+                    else [op.df[f"arg{i}"].value for i in range(int(op.op[-1]))]
+                )
+                # `[]` literal lowers to native alloc_array(type, 0) then a synthetic
+                # wrapper call turning the raw array into an Array<T>; the wrapper has
+                # no resolvable name, so match on the alloc_array(.., 0) shape instead
+                if (
+                    isinstance(fun, Native)
+                    and fun.name.resolve(code) == "alloc_array"
+                    and len(call_arg_regs) == 2
+                    and reg_value.get(call_arg_regs[1]) == "0"
+                ):
+                    empty_array_regs.add(dst.value)
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+                # non-empty array literal: alloc_array(type, N) followed by N
+                # SetArray element writes, then the same synthetic wrap call
+                elif (
+                    isinstance(fun, Native)
+                    and fun.name.resolve(code) == "alloc_array"
+                    and len(call_arg_regs) == 2
+                    and reg_value.get(call_arg_regs[1], "").isdigit()
+                    and int(reg_value[call_arg_regs[1]]) > 0
+                ):
+                    array_builds[dst.value] = (int(reg_value[call_arg_regs[1]]), {})
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+                elif op.op == "Call1" and call_arg_regs[0] in empty_array_regs:
+                    reg_value[dst.value] = "[]"
+                    reg_refs.pop(dst.value, None)
+                elif op.op == "Call1" and call_arg_regs[0] in array_builds:
+                    length, elems = array_builds.pop(call_arg_regs[0])
+                    if len(elems) == length and all(i in elems for i in range(length)):
+                        reg_value[dst.value] = "[" + ", ".join(elems[i][0] for i in range(length)) + "]"
+                        refs: Set[str] = set()
+                        for i in range(length):
+                            refs |= elems[i][1]
+                        reg_refs[dst.value] = refs
+                    else:
+                        reg_value[dst.value] = STATIC_INIT_UNRECOVERABLE
+                        reg_refs.pop(dst.value, None)
+                # constructors are compiled as direct calls to the `new` findex, obj as arg0,
+                # not dispatched through the vtable, so catch them here too
+                elif (
+                    fname_parts is not None
+                    and fname_parts[1] in ("new", "__constructor__")
+                    and call_arg_regs
+                    and call_arg_regs[0] in pending_new
+                ):
+                    obj_reg = call_arg_regs[0]
+                    cname = pending_new.pop(obj_reg)
+                    ctor_args = call_arg_regs[1:]
+                    if all(a in reg_value for a in ctor_args):
+                        reg_value[obj_reg] = f"new {cname}({', '.join(reg_value[a] for a in ctor_args)})"
+                        reg_refs[obj_reg] = {cname}
+                        for a in ctor_args:
+                            reg_refs[obj_reg] |= reg_refs.get(a, set())
+                    else:
+                        reg_value[obj_reg] = STATIC_INIT_UNRECOVERABLE
+                        reg_refs.pop(obj_reg, None)
+                    if dst is not None:
+                        reg_value.pop(dst.value, None)
+                        reg_refs.pop(dst.value, None)
+                elif fname_parts is not None and all(a in reg_value for a in call_arg_regs):
+                    cname, mname = fname_parts
+                    reg_value[dst.value] = f"{cname}.{mname}({', '.join(reg_value[a] for a in call_arg_regs)})"
+                    reg_refs[dst.value] = {cname}
+                    for a in call_arg_regs:
+                        reg_refs[dst.value] |= reg_refs.get(a, set())
+                else:
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+            elif op.op == "StaticClosure":
+                try:
+                    fun = op.df["fun"].resolve(code)
+                    parts = _static_call_name_parts(fun, code) if isinstance(fun, Function) else None
+                    if parts:
+                        cname, mname = parts
+                        reg_value[dst.value] = f"{cname}.{mname}"
+                        reg_refs[dst.value] = {cname}
+                    else:
+                        # anonymous closure: rendered by pseudo.py as a private
+                        # static helper named __anon_<findex>
+                        reg_value[dst.value] = f"__anon_{fun.findex.value}"
+                        reg_refs.pop(dst.value, None)
+                except Exception:
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+            elif op.op == "SetArray":
+                array_reg = op.df["array"].value
+                if array_reg in array_builds:
+                    idx_reg = op.df["index"].value
+                    src_reg = op.df["src"].value
+                    length, elems = array_builds[array_reg]
+                    idx_str = reg_value.get(idx_reg)
+                    if idx_str is not None and idx_str.isdigit() and src_reg in reg_value:
+                        idx = int(idx_str)
+                        if 0 <= idx < length:
+                            elems[idx] = (reg_value[src_reg], reg_refs.get(src_reg, set()))
+            elif op.op == "GetGlobal":
+                gi = op.df["global"].value
+                if gi in const_strings:
+                    reg_value[dst.value] = const_strings[gi]
+                    reg_refs.pop(dst.value, None)
+                else:
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+                reg_global[dst.value] = gi
+            elif op.op == "Field":
+                obj_reg = op.df["obj"].value
+                gi = reg_global.get(obj_reg)
+                if gi is not None:
+                    try:
+                        defn = code.global_types[gi].resolve(code).definition
+                        if isinstance(defn, Obj):
+                            field_core = op.df["field"].resolve_obj(code, defn)
+                            fname = field_core.name.resolve(code)
+                            field_dict = result.get(id(defn), {})
+                            if fname in field_dict:
+                                known = field_dict[fname]
+                                if known != STATIC_INIT_UNRECOVERABLE:
+                                    # reference the field itself rather than inlining its init
+                                    # expression: inlining would re-run any side effects (e.g. a
+                                    # call) that already ran once when that field was initialized
+                                    owner_name = destaticify(defn.name.resolve(code))
+                                    reg_value[dst.value] = f"{owner_name}.{fname}"
+                                    reg_refs[dst.value] = {owner_name} | field_refs.get(id(defn), {}).get(fname, set())
+                                else:
+                                    reg_value.pop(dst.value, None)
+                                    reg_refs.pop(dst.value, None)
+                            else:
+                                # field not yet assigned in scan order (forward reference, same
+                                # or later class): reads the type's zero/default value at runtime
+                                reg_value[dst.value] = _static_default_value(code, field_core.type)
+                                reg_refs.pop(dst.value, None)
+                    except Exception:
+                        reg_value.pop(dst.value, None)
+                        reg_refs.pop(dst.value, None)
+                else:
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+            elif op.op == "SetField":
+                obj_reg = op.df["obj"].value
+                src_reg = op.df["src"].value
+                gi = reg_global.get(obj_reg)
+                if gi is not None:
+                    try:
+                        defn = code.global_types[gi].resolve(code).definition
+                        if isinstance(defn, Obj):
+                            field_core = op.df["field"].resolve_obj(code, defn)
+                            fname = field_core.name.resolve(code)
+                            value = reg_value.get(src_reg, STATIC_INIT_UNRECOVERABLE)
+                            result.setdefault(id(defn), {})[fname] = value
+                            field_refs.setdefault(id(defn), {})[fname] = reg_refs.get(src_reg, set())
+                    except Exception:
+                        pass
+            elif dst is not None:
+                reg_value.pop(dst.value, None)
+                reg_refs.pop(dst.value, None)
+                reg_global.pop(dst.value, None)
+    except Exception:
+        pass
+    code._static_field_inits_cache = result
+    code._static_field_init_refs_cache = field_refs
+    return result
+
+
 class IRClass:
     """
     Intermediate representation of a class.
@@ -2070,6 +2437,8 @@ class IRClass:
         self.fields: List[Tuple[str, Type]] = []
         self.static_fields: List[Tuple[str, Type]] = []
         self.field_elem_types: Dict[str, Type] = {}
+        self.static_field_inits: Dict[str, str] = {}
+        self.static_field_init_refs: Dict[str, Set[str]] = {}
         if self.dynamic is None and self.static is None:
             raise ValueError(
                 "IRClass needs at least one valid Obj that has been preprocessed by `Bytecode.map_statics`!"
@@ -2081,6 +2450,13 @@ class IRClass:
         if self.static:
             self.static_methods += self.gather_methods(self.static)
             self.static_fields += self.gather_fields(self.static)
+            try:
+                self.static_field_inits = _collect_static_field_inits(self.code).get(id(self.static), {})
+                self.static_field_init_refs = getattr(self.code, "_static_field_init_refs_cache", {}).get(
+                    id(self.static), {}
+                )
+            except Exception:
+                pass
 
         # Recover erased Array<T> element types from usage now that all
         # methods are lifted and optimized. Must run before pseudo rendering.
@@ -2110,9 +2486,14 @@ class IRClass:
         binding_names: List[str] = []
         for binding in obj.bindings:
             binding_names.append(binding.field.resolve_obj(self.code, obj).name.resolve(self.code))
-        for field in obj.fields:
+        # Own fields sit at the end of resolve_fields() (parent fields first),
+        # so this offset keeps the synthesized fallback name aligned with the
+        # index Field/SetField ops actually resolve against.
+        own_start = len(obj.resolve_fields(self.code)) - len(obj.fields)
+        for i, field in enumerate(obj.fields):
+            name = _obj_field_name(field, own_start + i, self.code)
             if field.name.resolve(self.code) not in binding_names:
-                res.append((field.name.resolve(self.code), field.type.resolve(self.code)))
+                res.append((name, field.type.resolve(self.code)))
         return res
 
     def pseudo(self) -> str:

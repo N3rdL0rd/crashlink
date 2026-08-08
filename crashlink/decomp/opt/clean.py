@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 from ...core import (
     DynObj,
+    Enum,
     Function,
     Obj,
     Type,
@@ -241,15 +242,29 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
 
 class IRSelfAssignOptimizer(TraversingIROptimizer):
     """
-    Optimizes away redundant assignments like `x = x`.
+    Optimizes away redundant assignments like `x = x`, including cases where
+    `x` is wrapped in round-trip casts back to its own type (e.g. HL's
+    Dyn->I32->Dyn unboxing shim on generic-method results).
     """
+
+    @staticmethod
+    def _strip_casts(expr: IRExpression) -> IRExpression:
+        while isinstance(expr, IRCast):
+            expr = expr.expr
+        return expr
 
     def visit_block(self, block: IRBlock) -> None:
         new_statements = []
 
         for stmt in block.statements:
-            if isinstance(stmt, IRAssign):
-                if isinstance(stmt.target, IRLocal) and stmt.target == stmt.expr:
+            if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+                # only elide if the assignment's own outer type is a no-op
+                # round-trip back to the target's declared type
+                if isinstance(stmt.expr, IRCast) and stmt.expr.get_type() is not stmt.target.get_type():
+                    new_statements.append(stmt)
+                    continue
+                inner = self._strip_casts(stmt.expr)
+                if stmt.target == inner:
                     if DEBUG:
                         dbg_print(f"IRSelfAssignOptimizer: Removing redundant assignment: {stmt}")
                     continue
@@ -492,6 +507,23 @@ class IRArrayObjBoundsCheckCollapser(TraversingIROptimizer):
         return assign
 
 
+def _is_closure_producing_field(expr: IRExpression) -> bool:
+    """True if `expr` is a field read whose value is a function/method.
+
+    `obj.method` allocates a fresh bound-closure object on every evaluation
+    (HL's InstanceClosure), unlike a data field read which just observes a
+    value — so two syntactically identical `obj.method` reads are NOT the
+    same value and must never be deduplicated to one.
+    """
+    if not isinstance(expr, IRField):
+        return False
+    try:
+        kind = expr.get_type().kind.value
+    except Exception:
+        return False
+    return kind in (Type.Kind.FUN.value, Type.Kind.METHOD.value)
+
+
 class IRRedundantRecomputeEliminator(TraversingIROptimizer):
     """
     Rewrites `t1 = E; t2 = E;` (the same expression recomputed verbatim in the
@@ -520,6 +552,7 @@ class IRRedundantRecomputeEliminator(TraversingIROptimizer):
                 and isinstance(nxt.target, IRLocal)
                 and nxt.target != stmt.target
                 and not isinstance(stmt.expr, (IRLocal, IRConst))
+                and not _is_closure_producing_field(stmt.expr)
                 and _structurally_equal(stmt.expr, nxt.expr)
             ):
                 new_statements.append(stmt)
@@ -1825,6 +1858,66 @@ class IRConstructorFolder(TraversingIROptimizer):
         if expr == local:
             return True
         return any(self._expr_uses_local(child, local) for child in expr.get_children())
+
+
+class IREnumConstructorFolder(TraversingIROptimizer):
+    """Folds `t = EnumAlloc; t.param0 = a; t.param1 = b; ...` into `t = Construct(a, b, ...)`.
+
+    HL sometimes lowers an enum construction as a bare alloc followed by
+    per-field SetEnumField writes instead of a single MakeEnum. Left
+    unfolded, the empty-args IREnumConstruct renders as a bare constructor
+    name (valid only for a truly argument-less case) — for a construct that
+    actually has params, that's a bare type/case reference assigned as a
+    value, which Haxe rejects.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements: List[IRStatement] = []
+        i = 0
+        stmts = block.statements
+        while i < len(stmts):
+            stmt = stmts[i]
+            if (
+                isinstance(stmt, IRAssign)
+                and isinstance(stmt.target, IRLocal)
+                and isinstance(stmt.expr, IREnumConstruct)
+                and not stmt.expr.args
+            ):
+                enum_def = stmt.expr.enum_type_idx.resolve(self.func.code).definition
+                construct = None
+                if isinstance(enum_def, Enum):
+                    for c in enum_def.constructs:
+                        if c.name.resolve(self.func.code) == stmt.expr.construct_name:
+                            construct = c
+                            break
+                if construct is not None and construct.params:
+                    field_names = [f"param{n}" for n in range(len(construct.params))]
+                    collected: Dict[str, IRExpression] = {}
+                    j = i + 1
+                    while (
+                        j < len(stmts)
+                        and isinstance(stmts[j], IRAssign)
+                        and isinstance(cast(IRAssign, stmts[j]).target, IREnumField)
+                        and cast(IREnumField, cast(IRAssign, stmts[j]).target).value == stmt.target
+                        and cast(IREnumField, cast(IRAssign, stmts[j]).target).field_name in field_names
+                        and cast(IREnumField, cast(IRAssign, stmts[j]).target).field_name not in collected
+                    ):
+                        field_stmt = cast(IRAssign, stmts[j])
+                        collected[cast(IREnumField, field_stmt.target).field_name] = field_stmt.expr
+                        j += 1
+                    if len(collected) == len(field_names):
+                        stmt.expr.args = [collected[n] for n in field_names]
+                        stmt.adopt(*stmts[i + 1 : j])
+                        new_statements.append(stmt)
+                        i = j
+                        continue
+            new_statements.append(stmt)
+            i += 1
+        block.statements = new_statements
+        for s in block.statements:
+            for child in s.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
 
 
 class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):

@@ -1,0 +1,7 @@
+class DeepNestIf {
+    static function main() {
+        var x = 0;
+        if (x == 0) { if (x == 1) { if (x == 2) { if (x == 3) { if (x == 4) { if (x == 5) { if (x == 6) { if (x == 7) { if (x == 8) { if (x == 9) { if (x == 10) { if (x == 11) { if (x == 12) { if (x == 13) { if (x == 14) { if (x == 15) { if (x == 16) { if (x == 17) { if (x == 18) { if (x == 19) { if (x == 20) { if (x == 21) { if (x == 22) { if (x == 23) { if (x == 24) { if (x == 25) { if (x == 26) { if (x == 27) { if (x == 28) { if (x == 29) { if (x == 30) { if (x == 31) { if (x == 32) { if (x == 33) { if (x == 34) { if (x == 35) { if (x == 36) { if (x == 37) { if (x == 38) { if (x == 39) { x = 999; } else { x = 39; } } else { x = 38; } } else { x = 37; } } else { x = 36; } } else { x = 35; } } else { x = 34; } } else { x = 33; } } else { x = 32; } } else { x = 31; } } else { x = 30; } } else { x = 29; } } else { x = 28; } } else { x = 27; } } else { x = 26; } } else { x = 25; } } else { x = 24; } } else { x = 23; } } else { x = 22; } } else { x = 21; } } else { x = 20; } } else { x = 19; } } else { x = 18; } } else { x = 17; } } else { x = 16; } } else { x = 15; } } else { x = 14; } } else { x = 13; } } else { x = 12; } } else { x = 11; } } else { x = 10; } } else { x = 9; } } else { x = 8; } } else { x = 7; } } else { x = 6; } } else { x = 5; } } else { x = 4; } } else { x = 3; } } else { x = 2; } } else { x = 1; } } else { x = 0; }
+        trace(x);
+    }
+}

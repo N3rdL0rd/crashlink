@@ -24,12 +24,14 @@ from .core import (
 from . import disasm
 from . import hxsl
 from .decomp import (
+    STATIC_INIT_UNRECOVERABLE,
     IRBreak,
     IRContinue,
     IRCast,
     IRNativeStub,
     IRClass,
     IRField,
+    IRBoundClosure,
     IRFunction,
     IRBlock,
     IRNew,
@@ -75,6 +77,16 @@ from .decomp import (
 
 def _indent_str(level: int) -> str:
     return "    " * level  # 4 spaces for indentation
+
+
+def _is_int_kind(typ: "Type") -> bool:
+    # true for HL's integer kinds, where Haxe's `/` needs Std.int() to stay truncating
+    return typ.kind.value in (
+        Type.Kind.U8.value,
+        Type.Kind.U16.value,
+        Type.Kind.I32.value,
+        Type.Kind.I64.value,
+    )
 
 
 def _render_typekind_comparison(
@@ -244,9 +256,10 @@ def _is_expression_switch(
 _HAXE_OP_PRECEDENCE = {
     "||": 1,
     "&&": 2,
+    # Haxe gives &, |, ^ equal precedence, left-to-right (not C-style tiers).
     "|": 3,
-    "^": 4,
-    "&": 5,
+    "^": 3,
+    "&": 3,
     "==": 6,
     "!=": 6,
     "<": 6,
@@ -291,19 +304,39 @@ _TYPEKIND_NAMES: Dict[int, str] = {
 }
 
 
+# Operators that are not associative/distributive with same-tier siblings on
+# their right: a - (b + c) != a - b + c, a / (b * c) != a / b * c.
+_HAXE_NON_ASSOC_OPS = {"-", "/", "%"}
+
+# &, |, ^ share a precedence tier but aren't cross-associative: a & (b | c) != (a & b) | c.
+# Same-operator chains (a & b & c) ARE associative and stay flat.
+_HAXE_BITWISE_OPS = {"&", "|", "^"}
+
+
 def _expr_to_haxe_with_precedence(
     expr: Optional[IRExpression],
     code: Bytecode,
     ir_function: Optional[IRFunction],
     parent_op: str,
+    is_right: bool = False,
 ) -> str:
     """Render an expression, wrapping it in parentheses if its operator is
-    lower-precedence than the parent's and would otherwise bind incorrectly."""
+    lower-precedence than the parent's and would otherwise bind incorrectly.
+    For the right operand of a non-associative op, same-tier children also
+    need parens since flattening would silently change the value."""
     rendered = _expression_to_haxe(expr, code, ir_function)
     if isinstance(expr, IRArithmetic):
         child_prec = _HAXE_OP_PRECEDENCE.get(expr.op.value, 10)
         parent_prec = _HAXE_OP_PRECEDENCE.get(parent_op, 10)
-        if child_prec < parent_prec:
+        needs_parens = child_prec < parent_prec or (
+            is_right and parent_op in _HAXE_NON_ASSOC_OPS and child_prec == parent_prec
+        ) or (
+            is_right
+            and parent_op in _HAXE_BITWISE_OPS
+            and expr.op.value in _HAXE_BITWISE_OPS
+            and expr.op.value != parent_op
+        )
+        if needs_parens:
             return f"({rendered})"
     elif isinstance(expr, IRBoolExpr) and expr.op in (
         IRBoolExpr.CompareType.OR,
@@ -342,6 +375,16 @@ def _resolve_array_access(
     else:
         arr_str = _expression_to_haxe(expr.array, code, ir_function)
     idx_str = _expression_to_haxe(expr.index, code, ir_function)
+    # ArrayObj/ArrayDyn stores element data in a `.array` backing field, exposed
+    # via a plain `Field .array` read (unlike `.bytes`, no index shift). Strip
+    # it so `wrapper.array[i] = v` renders as the public `wrapper[i] = v`.
+    if isinstance(expr.array, IRField) and expr.array.field_name == "array":
+        try:
+            wrapper_type = disasm.type_name(code, expr.array.target.get_type())
+        except Exception:
+            wrapper_type = None
+        if wrapper_type in ("hl.types.ArrayObj", "hl.types.ArrayDyn"):
+            return _expression_to_haxe(expr.array.target, code, ir_function), idx_str, None
     # HashLink stores array data in a `.bytes` field and indexes by element
     # size. `this.bytes` inside an ArrayBytes impl indexes the BytesAccess<T>
     # backing buffer directly, so keep `.bytes[idx]`. A user-facing array local
@@ -469,7 +512,10 @@ def _expression_to_haxe(
 
     elif isinstance(expr, IRArithmetic):
         left = _expr_to_haxe_with_precedence(expr.left, code, ir_function, expr.op.value)
-        right = _expr_to_haxe_with_precedence(expr.right, code, ir_function, expr.op.value)
+        right = _expr_to_haxe_with_precedence(expr.right, code, ir_function, expr.op.value, is_right=True)
+        if expr.op == IRArithmetic.ArithmeticType.SDIV and _is_int_kind(expr.get_type()):
+            # Haxe `/` is always float division; truncate to match HL's SDiv/UDiv on ints
+            return f"Std.int({left} {expr.op.value} {right})"
         return f"{left} {expr.op.value} {right}"
 
     elif isinstance(expr, IRNeg):
@@ -569,6 +615,17 @@ def _expression_to_haxe(
             return f"({target_str} : Dynamic).{expr.field_name}"
         return f"{target_str}.{expr.field_name}"
 
+    elif isinstance(expr, IRBoundClosure):
+        # Closure over an anonymous fun bound to a captured local: render as
+        # an arrow forwarding to the (helper-emitted) anon function.
+        fun_str = _expression_to_haxe(expr.fun_const, code, ir_function)
+        obj_str = _expression_to_haxe(expr.obj, code, ir_function)
+        fun_type = expr.fun.type.resolve(code).definition
+        extra_args = fun_type.args[1:] if isinstance(fun_type, Fun) else []
+        params = [f"a{i}" for i in range(len(extra_args))]
+        call_args = ", ".join([obj_str] + params)
+        return f"({', '.join(params)}) -> {fun_str}({call_args})"
+
     elif isinstance(expr, IRArrayAccess):
         arr_str, idx_str, method_kind = _resolve_array_access(expr, code, ir_function)
         if method_kind is not None:
@@ -608,14 +665,22 @@ def _expression_to_haxe(
         return f"{ref_str}.get()"
 
     elif isinstance(expr, IREnumConstruct):
+        # A synthesized anonymous enum (see disasm.type_name) may name its
+        # sole construct with the same colliding raw pool string as the enum
+        # itself - qualify with the synthetic enum name so the call resolves
+        # to the construct, not to whatever real global shares that name.
+        construct_name = expr.construct_name
+        enum_def = expr.enum_type_idx.resolve(code).definition
+        if isinstance(enum_def, Enum) and enum_def.name.value == 0:
+            construct_name = f"__ClosureCtx_{enum_def._global.value}.{construct_name}"
         if expr.args:
             args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.args)
-            return f"{expr.construct_name}({args_str})"
-        return expr.construct_name
+            return f"{construct_name}({args_str})"
+        return construct_name
 
     elif isinstance(expr, IREnumIndex):
         inner = _expression_to_haxe(expr.value, code, ir_function)
-        return f"/* enum_index({inner}) */"
+        return f"Type.enumIndex({inner})"
 
     elif isinstance(expr, IREnumField):
         inner = _expression_to_haxe(expr.value, code, ir_function)
@@ -698,8 +763,19 @@ def _expression_to_haxe(
             if isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function) and expr.args:
                 instance_method = _try_instance_method_call(expr.target.value, expr.args[0], code, ir_function)
                 if instance_method:
+                    rest_args = expr.args[1:]
+                    # get_X()/set_X(v) calls into a std-lib property accessor
+                    # collapse to `obj.X` / `obj.X = v` sugar, since the
+                    # accessor method itself is private and can't be called
+                    # directly.
+                    prop_name = _std_property_accessor_name(expr.target.value, code, len(rest_args))
+                    if prop_name is not None:
+                        obj_str = instance_method.rsplit(".", 1)[0]
+                        if not rest_args:
+                            return f"{obj_str}.{prop_name}"
+                        return f"{obj_str}.{prop_name} = {_expression_to_haxe(rest_args[0], code, ir_function)}"
                     callee_str = instance_method
-                    args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in expr.args[1:])
+                    args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in rest_args)
                     return f"{callee_str}({args_str})"
 
             # Anonymous ArrayObj alloc factory: render `alloc(arr)` instead of a
@@ -977,6 +1053,52 @@ def _is_read_in_while_condition(root: IRStatement, name: str) -> bool:
     return found
 
 
+def _source_redefined_before_use(root: IRStatement, def_stmt: IRStatement, target_name: str, source_names: Set[str]) -> bool:
+    """True if a local in `source_names` is reassigned after `def_stmt` but before
+    the (single, assumed) later read of `target_name`. Guards single-use render
+    substitution: `varN = i; ...; i = 1; ...; use(varN)` must not fold to `use(i)`
+    since `i`'s value changed between the copy and the use."""
+    started = False
+    hit = False
+    stopped = False
+
+    def walk(s: Optional[IRStatement]) -> None:
+        nonlocal started, hit, stopped
+        if stopped or s is None:
+            return
+        if not started:
+            if s is def_stmt:
+                started = True
+                return
+            for child in s.get_children():
+                if stopped:
+                    return
+                if isinstance(child, IRBlock):
+                    for cs in child.statements:
+                        walk(cs)
+                else:
+                    walk(child)
+            return
+        if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target.name in source_names:
+            hit = True
+            stopped = True
+            return
+        if isinstance(s, IRLocal) and s.name == target_name:
+            stopped = True
+            return
+        for child in s.get_children():
+            if stopped:
+                return
+            if isinstance(child, IRBlock):
+                for cs in child.statements:
+                    walk(cs)
+            else:
+                walk(child)
+
+    walk(root)
+    return hit
+
+
 def _count_local_reads_and_writes(root: IRStatement, name: str) -> Tuple[int, int]:
     """Count read vs write occurrences of a local by name across an IR subtree.
 
@@ -1196,6 +1318,7 @@ def _generate_statements(
                 and _is_single_use_render_expr(stmt.expr)
             ):
                 reads, writes = _count_local_reads_and_writes(ir_function.block, local_name)
+                source_names = {loc.name for loc in _free_locals_in_expr(stmt.expr)}
                 skip_declaration = (
                     reads == 1
                     and writes == 1
@@ -1203,6 +1326,7 @@ def _generate_statements(
                         _has_nontrivial_computation_for_render(stmt.expr)
                         and _is_read_in_while_condition(ir_function.block, local_name)
                     )
+                    and not _source_redefined_before_use(ir_function.block, stmt, local_name, source_names)
                 )
 
             if not skip_declaration:
@@ -1332,6 +1456,7 @@ def _generate_statements(
                 and isinstance(stmt.expr, IRArithmetic)
                 and _same_local(stmt.expr.left, stmt.target)
                 and stmt.expr.op in _compound_ops
+                and not (stmt.expr.op == IRArithmetic.ArithmeticType.SDIV and _is_int_kind(stmt.expr.get_type()))
             ):
                 rhs_str = _expression_to_haxe(stmt.expr.right, code, ir_function)
                 output_lines.append(f"{indent}{target_str} {_compound_ops[stmt.expr.op]} {rhs_str};")
@@ -1752,7 +1877,8 @@ def _generate_statements(
 
         elif isinstance(stmt, IRExpression):  # e.g. a standalone IRCall not assigned
             expr_str = _expression_to_haxe(stmt, code, ir_function)
-            output_lines.append(f"{indent}{expr_str};")
+            if expr_str:  # elided redundant calls (e.g. double ctor) render as ""
+                output_lines.append(f"{indent}{expr_str};")
 
         else:
             output_lines.append(f"{indent}// <Unhandled IRStatement: {type(stmt).__name__}> {str(stmt)[:50]}...")
@@ -1885,14 +2011,25 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         start_arg = 1 if is_instance or is_constructor else 0
         for i, arg_type_idx in enumerate(core_fun_type_def.args[start_arg:]):
             arg_core_type = arg_type_idx.resolve(code)
-            arg_haxe_type_name = disasm.type_to_haxe(disasm.type_name(code, arg_core_type))
+            if isinstance(arg_core_type.definition, Ref):
+                inner_type = arg_core_type.definition.type.resolve(code)
+                arg_haxe_type_name = f"hl.Ref<{disasm.type_to_haxe(disasm.type_name(code, inner_type))}>"
+            else:
+                arg_haxe_type_name = disasm.type_to_haxe(disasm.type_name(code, arg_core_type))
 
             param_name = f"arg{i}"
             local_idx = start_arg + i
             if local_idx < len(ir_func.locals):
-                candidate = ir_func.locals[local_idx].name
+                # Use the reg's entry-point local, not a later split (e.g. param reused for super()).
+                param_local = next((l for l in ir_func.all_locals if l.reg_idx == local_idx), ir_func.locals[local_idx])
+                candidate = param_local.name
                 if candidate and candidate != "this":
                     param_name = candidate
+                elif candidate == "this" and getattr(ir_func, "_force_static", False):
+                    # Lifted closure: rewrite all "this" locals for this reg to the new param name.
+                    for l in ir_func.all_locals:
+                        if l.reg_idx == local_idx and l.name == "this":
+                            l.name = param_name
                 # If the param's IRLocal has a recovered array element type,
                 # render Array<T> instead of the erased Array<Dynamic>.
                 if arg_haxe_type_name == "Array<Dynamic>" and ir_func.locals[local_idx].array_elem_type is not None:
@@ -1946,7 +2083,9 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         if local_name in initial_declared_vars or local_name == "this":
             continue
         # Catch-clause locals are declared by the `catch (e:T)` syntax; skip them.
-        if local_name in catch_locals:
+        # But if the same name is also explicitly assigned elsewhere (register
+        # reuse for an unrelated local), it still needs a real declaration.
+        if local_name in catch_locals and not _has_explicit_assignment(local_name, ir_func.block):
             continue
         # Enum switch index temps are rendered as the enum expression, not declared.
         if local_name in enum_switch_index_vars:
@@ -2495,6 +2634,12 @@ def _render_string_concat(expr: IRCall, code: Bytecode, ir_function: Optional[IR
             simple = _try_simplify_string_alloc(operand, code, ir_function)
             if simple is None:
                 simple = _expression_to_haxe(operand, code, ir_function)
+                # A raw arithmetic/bool operand spliced into a flat `+` chain
+                # needs parens: Haxe re-parses the flattened text left-to-right,
+                # so `"c" + b + 1` silently becomes `("c"+b)+1` instead of the
+                # intended `"c" + (b+1)`.
+                if isinstance(operand, (IRArithmetic, IRBoolExpr)):
+                    simple = f"({simple})"
             parts.append(("val", (operand, simple)))
             interp_count += 1
 
@@ -2591,6 +2736,29 @@ def _try_simplify_string_alloc(expr: IRExpression, code: Bytecode, ir_function: 
     if second_arg.name != int_expr.name:
         return None
     return _expression_to_haxe(int_expr, code, ir_function)
+
+
+def _std_property_accessor_name(func: "Function", code: Bytecode, remaining_args: int) -> Optional[str]:
+    """If func is a std-lib get_X()/set_X(v) property accessor, return X.
+
+    The accessor method is private, so a decompiled direct call to it (as
+    opposed to via the property it backs) fails to recompile. User-defined
+    classes aren't affected here since their accessors are usually reachable
+    (default Haxe visibility already allows same-class/subclass calls).
+    """
+    parts = _func_name_parts(func, code)
+    if not parts:
+        return None
+    name = parts[-1]
+    if name.startswith("get_") and remaining_args == 0:
+        prop_name = name[4:]
+    elif name.startswith("set_") and remaining_args == 1:
+        prop_name = name[4:]
+    else:
+        return None
+    if not prop_name or not _is_std_function(func, code):
+        return None
+    return prop_name
 
 
 def _is_std_function(func: "Function", code: Bytecode) -> bool:
@@ -2754,6 +2922,17 @@ def _rewrite_constructor_call(call: IRCall, code: Bytecode, ir_function: Optiona
         # The constructor wrapper is being applied to a freshly allocated
         # object; the Haxe `new` expression already includes the constructor.
         return _expression_to_haxe(arg, code, ir_function)
+
+    if isinstance(arg, IRLocal) and ir_function is not None:
+        # The receiver is a local defined by New earlier in the same block
+        # (not inlined, e.g. because it's used again later). The New's own
+        # rendering already reads as `new X(...)`, so this call is a
+        # redundant second invocation of the constructor; drop it.
+        defining = _find_defining_assignment(arg.name, ir_function.block)
+        if isinstance(defining, IRAssign) and isinstance(defining.expr, IRNew):
+            new_type_name = destaticify(disasm.type_name(code, defining.expr.get_type()))
+            if new_type_name == ctor_class_name:
+                return ""
 
     if (
         isinstance(arg, IRLocal)
@@ -3268,6 +3447,11 @@ def _native_extern(natives: List[Native], code: Bytecode) -> str:
     return "\n".join(lines)
 
 
+# Std classes that expose only static fields (no functions), so the file-path
+# check below never sees them. Fields carry no source-path info in HL bytecode.
+_FIELD_ONLY_STD_CLASSES = {"Math"}
+
+
 def _is_std_class_obj(code: Bytecode, obj: Obj) -> bool:
     """
     True when the Obj (or its static/dynamic counterpart) has member functions
@@ -3275,6 +3459,8 @@ def _is_std_class_obj(code: Bytecode, obj: Obj) -> bool:
     class. Memberless classes are treated as user data classes (bytecode holds
     no source path to prove otherwise).
     """
+    if destaticify(obj.name.resolve(code)) in _FIELD_ONLY_STD_CLASSES:
+        return True
     objs = [obj]
     for attr in ("static", "dynamic"):
         try:
@@ -3325,6 +3511,20 @@ def _collect_referenced_user_classes(root: IRStatement, code: Bytecode, exclude:
             name = destaticify(stmt.value.definition.name.resolve(code))
             if name not in exclude and is_user_type(stmt.value):
                 names.add(name)
+        elif isinstance(stmt, IRConst) and isinstance(stmt.value, Function):
+            # A call target's owning class (e.g. `Meter_Impl_.add(...)`) isn't
+            # referenced via any Type/Field/New node, so it wouldn't otherwise
+            # be pulled in as a class the recompiled output needs to compile.
+            findex = stmt.value.findex.value
+            owner_obj = None
+            if code._proto_owner_map:
+                owner_obj = code._proto_owner_map.get(findex)
+            if owner_obj is None and code._field_owner_map:
+                owner_obj = code._field_owner_map.get(findex)
+            if owner_obj is not None:
+                name = destaticify(owner_obj.name.resolve(code))
+                if name not in exclude and not _is_std_class_obj(code, owner_obj):
+                    names.add(name)
         elif isinstance(stmt, IRNew):
             new_type = stmt.get_type()
             if isinstance(new_type.definition, Obj):
@@ -3390,37 +3590,67 @@ def _collect_anonymous_functions(root: IRStatement, code: Bytecode) -> Dict[int,
 
 
 def _collect_referenced_enums(root: IRStatement, code: Bytecode) -> Dict[str, "Enum"]:
-    """Collect enum types referenced in the IR."""
-    enums: Dict[str, "Enum"] = {}
+    """Collect enum types referenced in the IR.
+
+    Keyed by the Enum *definition object*, not its display name: HashLink
+    reuses name index 0 for anonymous/synthetic enum types (e.g. closure
+    capture contexts), so distinct enum types can legitimately share a raw
+    name. A name-keyed dict would silently drop one of them.
+    """
+    enums: Dict[int, "Enum"] = {}
     seen: Set[int] = set()
+
+    def add(definition: "Enum") -> None:
+        enums[id(definition)] = definition
 
     def visit(stmt: IRStatement) -> None:
         if id(stmt) in seen:
             return
         seen.add(id(stmt))
         if isinstance(stmt, IRConst) and isinstance(stmt.value, Type) and isinstance(stmt.value.definition, Enum):
-            name = destaticify(stmt.value.definition.name.resolve(code))
-            enums[name] = stmt.value.definition
+            add(stmt.value.definition)
         elif isinstance(stmt, IRField):
             target_type = stmt.target.get_type()
             if isinstance(target_type.definition, Enum):
-                name = destaticify(target_type.definition.name.resolve(code))
-                enums[name] = target_type.definition
+                add(target_type.definition)
         elif isinstance(stmt, IREnumConstruct):
             target_type = stmt.get_type()
             if isinstance(target_type.definition, Enum):
-                name = destaticify(target_type.definition.name.resolve(code))
-                enums[name] = target_type.definition
+                add(target_type.definition)
         for child in stmt.get_children():
             visit(child)
 
     visit(root)
-    return enums
+    # Assign display names, disambiguating raw-name collisions between
+    # distinct enum definitions (see docstring).
+    by_name: Dict[str, int] = {}
+    result: Dict[str, "Enum"] = {}
+    for definition in enums.values():
+        # Name index 0 marks a synthesized anonymous enum (e.g. closure
+        # capture context); give it a unique name instead of its raw
+        # (colliding) resolved name - mirrors disasm.type_name's handling.
+        if definition.name.value == 0:
+            base_name = f"__ClosureCtx_{definition._global.value}"
+        else:
+            base_name = destaticify(definition.name.resolve(code))
+        name = base_name
+        if name in by_name and result[name] is not definition:
+            suffix = 2
+            while f"{base_name}_{suffix}" in by_name:
+                suffix += 1
+            name = f"{base_name}_{suffix}"
+        by_name[name] = id(definition)
+        result[name] = definition
+    return result
 
 
-def _enum_pseudo(enum_def: "Enum", code: Bytecode) -> str:
+def _enum_pseudo(enum_def: "Enum", code: Bytecode, name: Optional[str] = None) -> str:
     """Generate a Haxe enum declaration from a HashLink Enum definition."""
-    name = destaticify(enum_def.name.resolve(code))
+    if name is None:
+        if enum_def.name.value == 0:
+            name = f"__ClosureCtx_{enum_def._global.value}"
+        else:
+            name = destaticify(enum_def.name.resolve(code))
     lines = [f"enum {name} {{"]
     for construct in enum_def.constructs:
         cname = construct.name.resolve(code)
@@ -3491,6 +3721,8 @@ def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
         func_externs.update(_collect_function_externs(ir_func.block, code))
         referenced_classes.update(_collect_referenced_user_classes(ir_func.block, code, {class_name}))
         referenced_enums.update(_collect_referenced_enums(ir_func.block, code))
+    for ref_set in getattr(ir_class, "static_field_init_refs", {}).values():
+        referenced_classes.update(ref_set - {class_name})
     native_extern = _native_extern(natives, code)
     func_extern = _function_extern(func_externs, code)
     if native_extern:
@@ -3500,7 +3732,7 @@ def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
         output_lines.append(func_extern)
         output_lines.append("")
     for enum_name in sorted(referenced_enums):
-        output_lines.append(_enum_pseudo(referenced_enums[enum_name], code))
+        output_lines.append(_enum_pseudo(referenced_enums[enum_name], code, name=enum_name))
         output_lines.append("")
 
     output_lines.append(header)
@@ -3513,7 +3745,14 @@ def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
                 if field_name in elem_types:
                     elem_haxe = disasm.type_to_haxe(disasm.type_name(code, elem_types[field_name]))
                     field_type_haxe = f"Array<{elem_haxe}>"
-            output_lines.append(f"{indent_str}public static var {field_name}: {field_type_haxe};")
+            init = getattr(ir_class, "static_field_inits", {}).get(field_name)
+            if init == STATIC_INIT_UNRECOVERABLE:
+                init_str = ""
+                comment = "  // initializer not recovered"
+            else:
+                init_str = f" = {init}" if init is not None else ""
+                comment = ""
+            output_lines.append(f"{indent_str}public static var {field_name}: {field_type_haxe}{init_str};{comment}")
         output_lines.append("")
 
     if ir_class.fields:
@@ -3545,6 +3784,15 @@ def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
     anon_funcs: Dict[int, "Function"] = {}
     for ir_func in ir_class.static_methods + ir_class.methods:
         anon_funcs.update(_collect_anonymous_functions(ir_func.block, code))
+    # Static-init recovery renders anonymous closures as bare `__anon_<findex>`
+    # identifiers (see _collect_static_field_inits); pull those in too.
+    for init in getattr(ir_class, "static_field_inits", {}).values():
+        for m in re.finditer(r"__anon_(\d+)", init):
+            findex = int(m.group(1))
+            if findex not in anon_funcs:
+                func = next((f for f in code.functions if f.findex.value == findex), None)
+                if func is not None:
+                    anon_funcs[findex] = func
     for findex in sorted(anon_funcs):
         func = anon_funcs[findex]
         helper_ir = IRFunction(code, func)

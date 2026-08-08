@@ -72,6 +72,12 @@ def destaticify(s: str) -> str:
     path, _, class_name = s.rpartition(".")
     if class_name.startswith("$"):
         class_name = class_name[1:]
+    # HL prefixes local/private types (e.g. an abstract's impl class) with
+    # their declaring module: `_Module.Type`. That prefix is an internal HL
+    # naming detail, not a real Haxe package -- packages never start with
+    # `_`. Strip it so the name is a valid, in-scope Haxe identifier.
+    if path.startswith("_") and "." not in path:
+        path = ""
     return f"{path}.{class_name}" if path else class_name
 
 
@@ -2534,7 +2540,8 @@ class Bytecode(Serialisable):
     def get_test_obj(self, test_name: str) -> Obj:
         for t in self.types:
             if isinstance(t.definition, Obj):
-                if t.definition.name.resolve(self) == test_name:
+                raw_name = t.definition.name.resolve(self)
+                if raw_name == test_name or destaticify(raw_name) == test_name:
                     return t.definition
         raise ValueError("No test class found!")
 

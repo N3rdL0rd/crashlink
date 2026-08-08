@@ -54,6 +54,11 @@ def type_name(code: Bytecode, typ: Type) -> str:
             fields.append(field.name.resolve(code))
         return f"Virtual[{', '.join(fields)}]"
     elif typedef == Enum and isinstance(defn, Enum):
+        # Name index 0 marks a compiler-synthesized anonymous enum (e.g. a
+        # closure capture context) - its raw name collides with whatever
+        # string happens to sit at pool index 0 (often "String").
+        if defn.name.value == 0:
+            return f"__ClosureCtx_{defn._global.value}"
         return defn.name.resolve(code)
     return typedef.__name__
 
@@ -207,6 +212,7 @@ def type_to_haxe(type: str) -> str:
         "DynObj": "Dynamic",
         "Fun": "Dynamic",
         "TypeType": "hl.Type",
+        "hl.Class": "Class<Dynamic>",
     }
     if type.startswith("hl.types.ArrayBytes_"):
         suffix = type[len("hl.types.ArrayBytes_") :]
@@ -220,6 +226,11 @@ def type_to_haxe(type: str) -> str:
         return f"Array<{element_map.get(suffix, 'Dynamic')}>"
     if type in ("hl.types.ArrayObj", "hl.types.ArrayDyn"):
         return "Array<Dynamic>"
+    # HL erases Map<K,V>'s value type; these stay generic in Haxe source
+    if type in ("haxe.ds.StringMap", "haxe.ds.IntMap"):
+        return f"{type}<Dynamic>"
+    if type in ("haxe.ds.ObjectMap", "haxe.ds.EnumValueMap"):
+        return f"{type}<Dynamic,Dynamic>"
     if type == "Array":
         return "Array<Dynamic>"
     if type in ("Function", "Native"):

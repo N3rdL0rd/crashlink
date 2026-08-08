@@ -310,6 +310,36 @@ class IRConditionInliner(TraversingIROptimizer):
                 return True
         return False
 
+    def _local_reassigned_in_conditional(
+        self,
+        local: IRLocal,
+        conditional_stmt: Union[IRConditional, IRWhileLoop],
+    ) -> bool:
+        """True if a branch/body of the conditional reassigns `local` itself.
+
+        Inlining `local`'s defining expression into the condition (and dropping
+        the original assignment) is unsound when a branch overwrites `local`:
+        the branch's new value would never reach any later read of `local`."""
+        if isinstance(conditional_stmt, IRConditional):
+            blocks = [conditional_stmt.true_block]
+            if conditional_stmt.false_block:
+                blocks.append(conditional_stmt.false_block)
+        else:
+            blocks = [conditional_stmt.body]
+
+        def walk(s: IRStatement) -> bool:
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target.name == local.name:
+                return True
+            for child in s.get_children():
+                if isinstance(child, IRBlock):
+                    if any(walk(cs) for cs in child.statements):
+                        return True
+                elif isinstance(child, IRStatement) and walk(child):
+                    return True
+            return False
+
+        return any(walk(s) for blk in blocks for s in blk.statements)
+
     def _local_used_outside_condition(
         self,
         local: IRLocal,
@@ -369,6 +399,13 @@ class IRConditionInliner(TraversingIROptimizer):
                         used_outside = isinstance(assigned_local, IRLocal) and self._local_used_outside_condition(
                             assigned_local, conditional_stmt, block.statements[i + 2 :]
                         )
+                        reassigned_in_branch = isinstance(
+                            assigned_local, IRLocal
+                        ) and self._local_reassigned_in_conditional(assigned_local, conditional_stmt)
+                        if reassigned_in_branch:
+                            new_statements.append(current_stmt)
+                            i += 1
+                            continue
                         if conditional_stmt.condition == assigned_local:
                             if used_outside and not self._is_safe_to_duplicate(expr_to_inline):
                                 new_statements.append(current_stmt)
@@ -413,6 +450,13 @@ class IRConditionInliner(TraversingIROptimizer):
                         used_outside = isinstance(assigned_local, IRLocal) and self._local_used_outside_condition(
                             assigned_local, while_loop_stmt, block.statements[i + 2 :]
                         )
+                        reassigned_in_branch = isinstance(
+                            assigned_local, IRLocal
+                        ) and self._local_reassigned_in_conditional(assigned_local, while_loop_stmt)
+                        if reassigned_in_branch:
+                            new_statements.append(current_stmt)
+                            i += 1
+                            continue
                         if while_loop_stmt.condition == assigned_local:
                             if (used_outside and not self._is_safe_to_duplicate(expr_to_inline)) or (
                                 self._has_loop_condition_cost(expr_to_inline)
@@ -997,6 +1041,11 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 for arg in e.args:
                     walk(arg)
             elif isinstance(e, IRField):
+                # An intervening write to this field invalidates a captured
+                # read of it just like a reassigned local; track it the same
+                # way as a "free var" so the reassignment-boundary check below
+                # also blocks substitution across a SetField.
+                names.add(f"field:{e.field_name}")
                 walk(e.target)
             elif isinstance(e, IRCast):
                 walk(e.expr)
@@ -1020,6 +1069,12 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
     def _stmt_reassigns_any(self, stmt: IRStatement, names: Set[str]) -> bool:
         """Return True if `stmt` (or any nested statement) assigns to a local in `names`."""
         if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target.name in names:
+            return True
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRField)
+            and f"field:{stmt.target.field_name}" in names
+        ):
             return True
         for child in stmt.get_children():
             if child is not stmt and self._stmt_reassigns_any(child, names):
@@ -1141,6 +1196,57 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         for child in stmt.get_children():
             if isinstance(child, IRBlock):
                 count += self._count_local_reads(child, local, _visited)
+        return count
+
+    def _count_local_reads_pruned(
+        self,
+        node: IRStatement,
+        local: IRLocal,
+        path_ids: Set[int],
+        _visited: Optional[Set[int]] = None,
+    ) -> int:
+        """Like `_count_local_reads` but, at an IRConditional/IRSwitch that sits
+        on the ancestor path to the candidate's own block, only descends into the
+        on-path branch: a temp fresh-defined in that branch can't be read from a
+        sibling branch, since they're mutually exclusive control flow. Avoids
+        re-walking every other switch case/if-branch in the function for each
+        candidate (was the O(cases^2) hot path on large switch statements)."""
+        if _visited is None:
+            _visited = set()
+        if isinstance(node, IRBlock):
+            if id(node) in _visited:
+                return 0
+            _visited.add(id(node))
+            count = 0
+            for s in node.statements:
+                count += self._count_local_reads_pruned(s, local, path_ids, _visited)
+            return count
+
+        count = 0
+        if isinstance(node, IRAssign):
+            if isinstance(node.target, IRExpression) and not isinstance(node.target, IRLocal):
+                count += self._count_expr_local(node.target, local)
+            if isinstance(node.expr, IRExpression):
+                count += self._count_expr_local(node.expr, local)
+            return count
+        if isinstance(node, IRExpression):
+            return self._count_expr_local(node, local)
+        if isinstance(node, IRReturn):
+            if node.value is not None:
+                count += self._count_expr_local(node.value, local)
+        elif isinstance(node, IRConditional):
+            count += self._count_expr_local(node.condition, local)
+        elif isinstance(node, IRWhileLoop):
+            count += self._count_expr_local(node.condition, local)
+        elif isinstance(node, IRSwitch):
+            count += self._count_expr_local(node.value, local)
+
+        children = [c for c in node.get_children() if isinstance(c, IRBlock)]
+        if isinstance(node, (IRConditional, IRSwitch)):
+            on_path = [c for c in children if id(c) in path_ids]
+            children = on_path if on_path else children
+        for child in children:
+            count += self._count_local_reads_pruned(child, local, path_ids, _visited)
         return count
 
     def _has_nontrivial_computation(self, expr: IRExpression) -> bool:
@@ -1430,12 +1536,19 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                         continuation=child_continuation,
                     )
 
-    def _visit_block_aggressive(self, block: IRBlock, inside_loop_body: bool = False) -> None:
+    def _visit_block_aggressive(
+        self,
+        block: IRBlock,
+        inside_loop_body: bool = False,
+        _ancestor_path_ids: Optional[Set[int]] = None,
+    ) -> None:
         """Inlines safe expressions everywhere they are used, until no more changes can be made.
 
         As in conservative mode, assignments inside a loop body are preserved so
         loop-carried values remain live after the loop.
         """
+        if _ancestor_path_ids is None:
+            _ancestor_path_ids = {id(self.func.block), id(block)}
         made_change_in_pass = True
         while made_change_in_pass:
             made_change_in_pass = False
@@ -1573,7 +1686,16 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                     continue
 
                 dbg_print(f"Aggressively inlining safe expression from temporary '{temp_local.name}'.")
-                if not inside_loop_body and not must_keep_assign:
+                # This pass only sees `remaining_statements` in the current block —
+                # a read in an enclosing scope after this block merges back is
+                # invisible here. Dropping the assignment is only safe if the whole
+                # function has no more reads of it than the ones just substituted.
+                whole_function_reads = self._count_local_reads_pruned(self.func.block, temp_local, _ancestor_path_ids)
+                if (
+                    not inside_loop_body
+                    and not must_keep_assign
+                    and whole_function_reads <= total_uses
+                ):
                     # stmt is dropped below; every site the expression got inlined
                     # into inherits its opcode (setdefault means whichever renders
                     # first in output wins, so adopting onto all of them is safe).
@@ -1592,6 +1714,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                     self._visit_block_aggressive(
                         child,
                         inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child),
+                        _ancestor_path_ids=_ancestor_path_ids | {id(child)},
                     )
 
 

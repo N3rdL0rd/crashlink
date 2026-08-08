@@ -7,7 +7,6 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from enum import Enum as _Enum
-from pprint import pformat
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..core import (
@@ -128,7 +127,9 @@ class IRBlock(IRStatement):
             _repr_rendered_blocks.add(id(self))  # type: ignore[union-attr]
             try:
                 # uniform indentation
-                statements = pformat(self.statements, indent=0).replace("\n", "\n\t")
+                # plain join, not pformat: pformat repr()s each item twice (fit-check + render),
+                # which compounds exponentially through nested block reprs
+                statements = "\n".join(repr(s) for s in self.statements).replace("\n", "\n\t")
             finally:
                 _repr_rendered_blocks.discard(id(self))  # type: ignore[union-attr]
         finally:
@@ -152,7 +153,7 @@ class IRBlock(IRStatement):
                 return "[...]"
             _repr_rendered_blocks.add(id(self))  # type: ignore[union-attr]
             try:
-                statements = pformat(self.statements, indent=0).replace("\n", "\n\t")
+                statements = "\n".join(repr(s) for s in self.statements).replace("\n", "\n\t")
             finally:
                 _repr_rendered_blocks.discard(id(self))  # type: ignore[union-attr]
         finally:
@@ -285,6 +286,9 @@ class IRArithmetic(IRExpression):
         result = node.get_type()
         self._cached_type = result
         return result
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.left, self.right]
 
     def __repr__(self) -> str:
         return f"<IRArithmetic: {self.left} {self.op.value} {self.right}>"
@@ -833,7 +837,7 @@ class IRWhileLoop(IRStatement):
         return children
 
     def __repr__(self) -> str:
-        body_repr = pformat(self.body, indent=0).replace("\n", "\n\t")
+        body_repr = repr(self.body).replace("\n", "\n\t")
         return f"<IRWhileLoop: while ({self.condition}) {{\n\t{body_repr}\n}}>"
 
     def __str__(self) -> str:
@@ -860,7 +864,7 @@ class IRForEachLoop(IRStatement):
         return [self.elem, self.array, self.body]
 
     def __repr__(self) -> str:
-        body_repr = pformat(self.body, indent=0).replace("\n", "\n\t")
+        body_repr = repr(self.body).replace("\n", "\n\t")
         return f"<IRForEachLoop: for ({self.elem} in {self.array}) {{\n\t{body_repr}\n}}>"
 
     def __str__(self) -> str:
@@ -896,7 +900,7 @@ class IRIntRangeLoop(IRStatement):
         return [self.elem, self.start, self.end, self.body]
 
     def __repr__(self) -> str:
-        body_repr = pformat(self.body, indent=0).replace("\n", "\n\t")
+        body_repr = repr(self.body).replace("\n", "\n\t")
         return f"<IRIntRangeLoop: for ({self.elem} in {self.start}...{self.end}) {{\n\t{body_repr}\n}}>"
 
     def __str__(self) -> str:
@@ -925,6 +929,25 @@ class IRField(IRExpression):
 
     def __repr__(self) -> str:
         return f"<IRField: {self.target}.{self.field_name}>"
+
+
+class IRBoundClosure(IRExpression):
+    """A closure over a synthesized/anonymous function bound to a captured object (InstanceClosure with no resolvable method name)."""
+
+    def __init__(self, code: Bytecode, fun: Function, obj: IRExpression):
+        super().__init__(code)
+        self.fun = fun
+        self.fun_const = IRConst(code, IRConst.ConstType.FUN, idx=fun.findex)
+        self.obj = obj
+
+    def get_type(self) -> Type:
+        return self.fun.type.resolve(self.code)
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.fun_const, self.obj]
+
+    def __repr__(self) -> str:
+        return f"<IRBoundClosure: {self.fun_const}({self.obj}, ...)>"
 
 
 class IRNew(IRExpression):

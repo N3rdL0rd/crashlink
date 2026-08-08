@@ -4,10 +4,14 @@ Functions to run tests, collect results, and produce run reports.
 
 import datetime
 import html
+import multiprocessing as mp
 import os
 import re
+import resource
 import subprocess
 import tempfile
+import threading
+import time
 import traceback
 from difflib import SequenceMatcher, unified_diff
 from typing import Any, Dict, List, Optional, Tuple
@@ -30,7 +34,9 @@ from crashlink.disasm import type_name
 from crashlink.pseudo import pseudo
 
 from .models import (
+    MEMORY_LIMIT_MB,
     SIMILARITY_THRESHOLD,
+    TIME_LIMIT_SECONDS,
     GitInfo,
     MethodComparison,
     OpcodeComparison,
@@ -40,6 +46,117 @@ from .models import (
     TestFile,
     save_run,
 )
+
+# Hard backstop, well above MEMORY_LIMIT_MB: the polling loop below kills the
+# worker as soon as it observes RSS over the soft limit, but this rlimit
+# protects the host if the process blows past that between polls.
+_RLIMIT_AS_BYTES = int(MEMORY_LIMIT_MB * 4 * 1024 * 1024)
+_POLL_INTERVAL_S = 0.05
+
+
+def _case_worker(case: str, id: int, queue: "mp.Queue[Tuple[str, Any]]") -> None:
+    """Runs in an isolated subprocess so a runaway case can be killed without
+    taking down the test runner or the host."""
+    resource.setrlimit(resource.RLIMIT_AS, (_RLIMIT_AS_BYTES, resource.RLIM_INFINITY))
+    try:
+        result = run_case(case, id)
+        queue.put(("ok", result.to_json()))
+    except BaseException as e:  # noqa: BLE001 - must not let the worker crash silently
+        queue.put(("error", f"{type(e).__name__}: {e}"))
+
+
+def _read_peak_rss_mb(pid: int) -> Optional[float]:
+    try:
+        with open(f"/proc/{pid}/status") as f:
+            for line in f:
+                if line.startswith("VmHWM:"):
+                    return int(line.split()[1]) / 1024.0
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    return None
+
+
+def run_case_isolated(case: str, id: int) -> TestCase:
+    """Runs `run_case` in a subprocess, enforcing TIME_LIMIT_SECONDS and
+    MEMORY_LIMIT_MB. Exceeding either is reported as a failed case rather than
+    hanging or OOMing the host."""
+    ctx = mp.get_context("fork")
+    queue: "mp.Queue[Tuple[str, Any]]" = ctx.Queue()
+    proc = ctx.Process(target=_case_worker, args=(case, id, queue))
+    start = time.monotonic()
+    proc.start()
+
+    # Drain the queue concurrently: a child whose result exceeds the pipe's
+    # buffer would otherwise block in put() forever, since is_alive() stays
+    # True until the buffer drains, and nothing reads it until after the
+    # polling loop below sees the process as dead - a deadlock.
+    received: Dict[str, Any] = {}
+
+    def _reader() -> None:
+        try:
+            status, payload = queue.get()
+            received["status"] = status
+            received["payload"] = payload
+        except (EOFError, OSError):
+            pass
+
+    reader_thread = threading.Thread(target=_reader, daemon=True)
+    reader_thread.start()
+
+    peak_mb = 0.0
+    kill_reason: Optional[str] = None
+    while proc.is_alive() and "status" not in received:
+        elapsed = time.monotonic() - start
+        rss = _read_peak_rss_mb(proc.pid)
+        if rss is not None:
+            peak_mb = max(peak_mb, rss)
+        if elapsed > TIME_LIMIT_SECONDS:
+            kill_reason = f"Decompilation exceeded the {TIME_LIMIT_SECONDS:.0f}s time limit."
+        elif peak_mb > MEMORY_LIMIT_MB:
+            kill_reason = f"Decompilation exceeded the {MEMORY_LIMIT_MB:.0f}MB memory limit (peak {peak_mb:.0f}MB)."
+        if kill_reason:
+            proc.terminate()
+            proc.join(2)
+            if proc.is_alive():
+                proc.kill()
+                proc.join(2)
+            break
+        time.sleep(_POLL_INTERVAL_S)
+    else:
+        proc.join(5)
+
+    reader_thread.join(2)
+    elapsed = time.monotonic() - start
+
+    def _failure(msg: str) -> TestCase:
+        return TestCase(
+            original=TestFile(name=case, content=escape("N/A")),
+            decompiled=TestFile(name=f"{case.replace('.hx', '')} (Decompiled)", content=escape("N/A")),
+            ir=TestFile(name=f"{case.replace('.hx', '')} (IR)", content=escape("N/A")),
+            failed=True,
+            test_name=file_to_name(case),
+            test_id=id,
+            error=escape(msg),
+            elapsed_seconds=elapsed,
+            peak_memory_mb=peak_mb,
+        )
+
+    if kill_reason and "status" not in received:
+        return _failure(kill_reason)
+
+    if "status" not in received:
+        exit_note = f" (exit code {proc.exitcode})" if proc.exitcode else ""
+        return _failure(f"Worker process exited without a result{exit_note} - likely OOM-killed by the kernel.")
+
+    if received["status"] != "ok":
+        return _failure(f"Worker crashed: {received['payload']}")
+
+    result = TestCase.from_json(received["payload"])
+    result.elapsed_seconds = elapsed
+    result.peak_memory_mb = peak_mb
+    if elapsed > TIME_LIMIT_SECONDS or peak_mb > MEMORY_LIMIT_MB:
+        result.failed = True
+    return result
 
 
 def _fmt_operand(val: object, code: Bytecode) -> str:
@@ -403,7 +520,7 @@ def run_single_case(args: Any) -> None:
         print(f"No test case matching '{args.name}' found.")
         return
 
-    result = run_case(case_file, 0)
+    result = run_case_isolated(case_file, 0)
 
     if args.verbose:
         args.show_orig = True
@@ -417,6 +534,7 @@ def run_single_case(args: Any) -> None:
         return
 
     print(f"Failed: {result.failed}")
+    print(f"Time: {result.elapsed_seconds:.2f}s  Peak memory: {result.peak_memory_mb:.0f}MB")
 
     if args.show_orig:
         print("\n--- Original ---")
@@ -528,7 +646,9 @@ def run() -> None:
     results = []
     for i, case in enumerate(cases):
         print(f"Running {case}...")
-        result = run_case(case, i)
+        result = run_case_isolated(case, i)
+        if result.elapsed_seconds > TIME_LIMIT_SECONDS or result.peak_memory_mb > MEMORY_LIMIT_MB:
+            print(f"  -> exceeded limits: {result.elapsed_seconds:.1f}s, {result.peak_memory_mb:.0f}MB")
         results.append(result)
 
     print("Generating run...")
