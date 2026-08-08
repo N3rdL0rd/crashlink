@@ -1727,7 +1727,10 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             literal = first_arg
         elif isinstance(first_arg, IRLocal):
             array_temp = first_arg
-            for prior in stmts[:start]:
+            # Scan backward from `start` so a name reused by an earlier,
+            # unrelated array build (register reuse) doesn't shadow the
+            # nearest actual definition feeding this use.
+            for prior in reversed(stmts[:start]):
                 if (
                     isinstance(prior, IRAssign)
                     and isinstance(prior.target, IRLocal)
@@ -1752,7 +1755,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         elif isinstance(second_arg, IRRefNew) and isinstance(second_arg.target, IRLocal):
             # HashLink 1.15+ lowers the boolean flag to a stack-allocated Ref.
             ref_local = second_arg.target
-            for prior in stmts[:start]:
+            for prior in reversed(stmts[:start]):
                 if (
                     isinstance(prior, IRAssign)
                     and isinstance(prior.target, IRLocal)
