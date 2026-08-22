@@ -68,3 +68,19 @@ logs/
 /hlboot
 IDEA.md
 sweep.hx
+# Generated HL/C trees and headers (haxe -hl output: unity .c + per-module C dirs)
+/Heaps3D.c
+/deadcells.c
+/*_win.c
+/hl/
+/_std/
+/_Xml/
+/haxe/
+/hxd/
+/hxsl/
+/h3d/
+/h2d/
+/sys/
+/format/
+/local/heaps-win/
+*.h.gch

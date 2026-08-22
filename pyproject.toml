@@ -50,6 +50,7 @@ extras = [
   "PySide6",
   "graphviz",
   "keystone-engine",
+  "pyelftools",
 ]
 gui = [
   "PySide6",

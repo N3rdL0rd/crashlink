@@ -364,6 +364,10 @@ class IRFunction:
         if not no_lift:
             if self.cfg.entry:
                 self.block = self._lift_block(self.cfg.entry, set())
+            elif not self.func.ops:
+                # Opcode-less functions (e.g. de-HL/C reconstructions) keep the
+                # initial empty block - surrounding structure is still useful.
+                pass
             else:
                 raise DecompError("Function CFG has no entry node, cannot lift to IR")
         else:

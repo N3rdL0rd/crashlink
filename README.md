@@ -20,7 +20,7 @@ Join the [Hashlink Modding Community Discord](https://discord.gg/Es8ZpVkPey) for
 - An HL/C reimplementation to transpile HashLink bytecode straight to C and build it against libhl
 - A full-featured CLI (`crashlink`) with both one-shot subcommands and a batteries-included interactive REPL (60+ commands!)
 - Xref indexing and source-location mapping
-- (Experimental) Tools to extract debug info from compiled HL/C binaries (PDB/DWARF) back into a navigable bytecode image
+- (Experimental) De-HL/C: recovers types, functions, natives, globals, strings and the entrypoint from natively compiled HL/C binaries (x86-64 & aarch64 ELF, Windows x64 PE) back into a navigable, reserialisable bytecode image. Exact on default x86-64 builds and ordered layouts; on aggressively reordered builds (e.g. aarch64 GCC -O1+) it reconstructs the full type set, exact function/native signatures and ~87% of globals via DWARF declaration order and static anchor analysis, even without debug info. Native lib/name pairs are recovered exactly from the native table's dynamic relocations
 - A scriptable interface for easy integration into other tools
 
 ## Installation

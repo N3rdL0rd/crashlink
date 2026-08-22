@@ -2855,7 +2855,7 @@ def main() -> None:
     parser.add_argument(
         "-C",
         "--dehlc",
-        help="Extracts information about a compiled HL/C binary. Requires debug information (PDB for PE, DWARF for ELF)",
+        help="Extracts information about a compiled HL/C binary (types, functions, natives, globals, strings, entrypoint). Works without debug info; DWARF (-g builds) improves global typing",
         action="store_true",
     )
     parser.add_argument(
@@ -2905,7 +2905,7 @@ def main() -> None:
             print("Opening file...")
             with open(args.file, "rb") as f:
                 print("Reading file...")
-                code = code_from_bin(data=f.read())
+                code = code_from_bin(data=f.read(), verbose=args.debug)
         except ImportError:
             print(
                 "You need to install crashlink with the [extras] group in order to use De-HL/C, since it requires `capstone` and `lief`. Sorry!"
