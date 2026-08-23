@@ -29,7 +29,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --extra ci
+        uv sync --extra ci --extra dev
 
     - name: Cache test samples
       id: cache-hl
@@ -48,6 +48,14 @@ jobs:
       if: steps.cache-hl.outputs.cache-hit != 'true'
       run: |
         bash -c 'cd tests/haxe && for f in *.hx; do haxe -hl "${f%.*}.hl" -main "$f"; done'
+
+    - name: Check formatting with ruff
+      run: |
+        uv run ruff format --check
+
+    - name: Lint with ruff
+      run: |
+        uv run ruff check
 
     - name: Test with pytest
       run: |

@@ -45,13 +45,15 @@ def main() -> None:
     run_parser.add_argument("--no-diff", action="store_true", help="Skip opcode diff output")
     run_parser.add_argument("--verbose", "-v", action="store_true", help="Show all available details")
 
-    sweep_parser = subparsers.add_parser("sweep", help="Decompile the first N functions of a bytecode image to a file")
+    sweep_parser = subparsers.add_parser(
+        "sweep", help="Decompile the first N functions of a bytecode image to a file"
+    )
     sweep_parser.add_argument("bytecode", help="Path to the .hl/.dat bytecode image")
     sweep_parser.add_argument("count", type=int, help="Number of functions to decompile")
     sweep_parser.add_argument("--out", "-o", default="sweep.hx", help="Output file (default: sweep.hx)")
 
     subparsers.add_parser("build", help="Build the result site")
-    auto_parser = subparsers.add_parser("auto", help="Run all tests and build the site")
+    _auto_parser = subparsers.add_parser("auto", help="Run all tests and build the site")
 
     args = parser.parse_args()
     if args.command == "run":

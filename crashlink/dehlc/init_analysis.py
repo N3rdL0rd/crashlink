@@ -4,21 +4,19 @@ hl_init_types store/call analysis, per architecture.
 
 from __future__ import annotations
 
-import re
-import struct
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 try:
-    from capstone import Cs, CS_ARCH_X86, CS_MODE_64, CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN
-    from capstone.x86 import X86_OP_MEM, X86_REG_RIP, X86_OP_IMM, X86_OP_REG, X86_REG_RDI, X86_REG_EDI
-    from capstone.arm64 import (
+    from capstone import Cs, CS_ARCH_X86, CS_MODE_64, CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN  # noqa: F401
+    from capstone.x86 import X86_OP_MEM, X86_REG_RIP, X86_OP_IMM, X86_OP_REG, X86_REG_RDI, X86_REG_EDI  # noqa: F401
+    from capstone.arm64 import (  # noqa: F401
         ARM64_OP_IMM,
         ARM64_OP_REG,
         ARM64_OP_MEM,
         ARM64_REG_X0,
         ARM64_REG_X17,
     )
-    import lief
+    import lief  # noqa: F401
 except ImportError:
     raise NotImplementedError(
         "Cannot run dehl without lief and capstone installed. Try `pip install crashlink[extras]` or `pip install lief capstone`."
@@ -29,11 +27,11 @@ from .binary import (
     HL_TYPE_OBJ_GLOBAL_VALUE_OFFSET,
     HL_TYPE_UNION_OFFSET,
     HLCBinary,
-    PTR,
     _find_source_symbol,
     _resolve_mem_target,
     disasm_function,
 )
+
 
 class InitTypesAnalysis:
     """Results of analysing the hl_init_types function."""
@@ -51,7 +49,9 @@ class InitTypesAnalysis:
         self._seen_types: set = set()
 
 
-def _record_type_store(result: InitTypesAnalysis, bin_view: HLCBinary, dest_addr: int, src_addr: int, src_imm: Optional[int]) -> None:
+def _record_type_store(
+    result: InitTypesAnalysis, bin_view: HLCBinary, dest_addr: int, src_addr: int, src_imm: Optional[int]
+) -> None:
     """
     Classifies a single `*dest = <value>` store observed in hl_init_types, where the
     destination is a symbol-relative address and the source is either a resolved
@@ -120,10 +120,24 @@ def _analyse_init_types_x86(bin_view: HLCBinary) -> InitTypesAnalysis:
         regs.pop(rid, None)
 
     CALLER_SAVED_X86 = {
-        "rax", "rcx", "rdx", "rsi", "rdi",
-        "r8", "r9", "r10", "r11",
-        "eax", "ecx", "edx", "esi", "edi",
-        "r8d", "r9d", "r10d", "r11d",
+        "rax",
+        "rcx",
+        "rdx",
+        "rsi",
+        "rdi",
+        "r8",
+        "r9",
+        "r10",
+        "r11",
+        "eax",
+        "ecx",
+        "edx",
+        "esi",
+        "edi",
+        "r8d",
+        "r9d",
+        "r10d",
+        "r11d",
     }
 
     for i, insn in enumerate(instructions):
@@ -181,6 +195,7 @@ def _analyse_init_types_x86(bin_view: HLCBinary) -> InitTypesAnalysis:
 
     return result
 
+
 def _track_arm64_address_events(instructions, on_store, on_call=None) -> None:
     """
     Linear aarch64 address tracker. GCC materialises addresses with `adrp` (page)
@@ -214,7 +229,12 @@ def _track_arm64_address_events(instructions, on_store, on_call=None) -> None:
             rid = ops[0].reg
             regs[rid] = ops[1].imm
             partial_imm.pop(rid, None)
-        elif m in ("add", "sub") and len(ops) == 3 and ops[0].type == ARM64_OP_REG and ops[2].type == ARM64_OP_IMM:
+        elif (
+            m in ("add", "sub")
+            and len(ops) == 3
+            and ops[0].type == ARM64_OP_REG
+            and ops[2].type == ARM64_OP_IMM
+        ):
             dst, src = ops[0].reg, (ops[1].reg if ops[1].type == ARM64_OP_REG else 0)
             delta = ops[2].imm if m == "add" else -ops[2].imm
             if src and src in regs:
@@ -222,7 +242,12 @@ def _track_arm64_address_events(instructions, on_store, on_call=None) -> None:
                 partial_imm.pop(dst, None)
             else:
                 kill(dst)
-        elif m in ("movz", "mov") and len(ops) == 2 and ops[0].type == ARM64_OP_REG and ops[1].type == ARM64_OP_IMM:
+        elif (
+            m in ("movz", "mov")
+            and len(ops) == 2
+            and ops[0].type == ARM64_OP_REG
+            and ops[1].type == ARM64_OP_IMM
+        ):
             rid = ops[0].reg
             shift = 16 if "lsl" in insn.op_str else 0
             partial_imm[rid] = ops[1].imm << shift
@@ -286,4 +311,3 @@ def _analyse_init_types_arm64(bin_view: HLCBinary) -> InitTypesAnalysis:
         on_store=lambda dest, src, imm: _record_type_store(result, bin_view, dest, src, imm),
     )
     return result
-

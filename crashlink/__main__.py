@@ -51,7 +51,6 @@ from .core import (
     Abstract,
 )
 from .globals import VERSION
-from .interp.vm import VM
 from .opcodes import opcode_docs, opcodes
 from .pseudo import pseudo
 from hlrun.patch import Patch
@@ -144,7 +143,9 @@ def _default_hlc_output(path: str) -> str:
 
 
 def _hlc_native_libs(code: Bytecode) -> List[str]:
-    return sorted({n.lib.resolve(code).lstrip("?") for n in code.natives if n.lib.resolve(code).lstrip("?") != "std"})
+    return sorted(
+        {n.lib.resolve(code).lstrip("?") for n in code.natives if n.lib.resolve(code).lstrip("?") != "std"}
+    )
 
 
 def _find_hdll(lib: str, search_dirs: List[Path]) -> Path | None:
@@ -275,7 +276,9 @@ def _build_compile_command(
             cmd.append(f"-Wl,-rpath-link,{explicit_uv.parent}")
         else:
             try:
-                uv_flags = subprocess.check_output(["pkg-config", "--libs", "libuv"], text=True).strip().split()
+                uv_flags = (
+                    subprocess.check_output(["pkg-config", "--libs", "libuv"], text=True).strip().split()
+                )
                 cmd.extend(uv_flags)
             except Exception:
                 cmd.append("-luv")
@@ -613,7 +616,9 @@ def db_main(argv: List[str]) -> None:
         print(f"Cached functions: {len(info.cache_findices)}")
         if info.session is not None:
             s = info.session
-            print(f"Session: view_mode={s.view_mode}  theme={s.theme_name!r}  open_tabs={len(s.open_findices)}")
+            print(
+                f"Session: view_mode={s.view_mode}  theme={s.theme_name!r}  open_tabs={len(s.open_findices)}"
+            )
         else:
             print("Session: none")
 
@@ -1292,8 +1297,10 @@ class Commands(BaseCommands):
                     else:
                         subprocess.run(["xdg-open", png_file])
                     os.unlink(dot_file)
-                except:
-                    print(f"Control flow graph saved to {png_file}. Use your favourite image viewer to open it.")
+                except Exception:
+                    print(
+                        f"Control flow graph saved to {png_file}. Use your favourite image viewer to open it."
+                    )
                 return
         print("Function not found.")
 
@@ -1855,7 +1862,9 @@ class Commands(BaseCommands):
                 print(f"  Initialized Value: {initialized_global_data!r}")
         else:
             # The global gIndex is valid, but it's not in initialized_globals
-            print(f"Global {gidx} (Type: {global_type_str}) exists, but has no initialized constant values recorded.")
+            print(
+                f"Global {gidx} (Type: {global_type_str}) exists, but has no initialized constant values recorded."
+            )
 
     def setstring(self, args: List[str]) -> None:
         """
@@ -1965,7 +1974,9 @@ class Commands(BaseCommands):
 
             try:
                 obj_def = code.types[index].definition
-                field_name = obj_def.fields[aux].name.resolve(code) if isinstance(obj_def, Obj) else f"slot{aux}"
+                field_name = (
+                    obj_def.fields[aux].name.resolve(code) if isinstance(obj_def, Obj) else f"slot{aux}"
+                )
             except Exception:
                 field_name = f"slot{aux}"
             refs = xi.all_field_accesses(index, aux)
@@ -2034,7 +2045,9 @@ class Commands(BaseCommands):
 
             try:
                 edef = code.types[index].definition
-                cname = edef.constructs[aux].name.resolve(code) if isinstance(edef, HLEnum) else f"construct{aux}"
+                cname = (
+                    edef.constructs[aux].name.resolve(code) if isinstance(edef, HLEnum) else f"construct{aux}"
+                )
                 elabel = f"t@{index}.{cname}"
             except Exception:
                 elabel = f"t@{index} construct#{aux}"
@@ -2258,21 +2271,6 @@ class Commands(BaseCommands):
             return
         print(loc)
 
-    @alias("run")
-    def interp(self, args: List[str]) -> None:
-        """Run the bytecode in crashlink's integrated interpreter."""
-        if len(args) == 0:
-            idx = self.code.entrypoint.value
-        else:
-            try:
-                idx = int(args[0])
-            except ValueError:
-                print("Invalid index.")
-                return
-
-        vm = VM(self.code)
-        vm.run(entry=idx)
-
     def repl(self, args: List[str]) -> None:
         """Drop into a Python REPL with direct access to the Bytecode object."""
         code = self.code
@@ -2407,7 +2405,9 @@ class Commands(BaseCommands):
         print("Fields:")
         assert isinstance(virt.definition, Virtual), "Virtual type is not a Virtual."
         for field in virt.definition.fields:
-            print(f"  {field.name.resolve(self.code)}: {disasm.type_name(self.code, field.type.resolve(self.code))}")
+            print(
+                f"  {field.name.resolve(self.code)}: {disasm.type_name(self.code, field.type.resolve(self.code))}"
+            )
 
     def enum(self, args: List[str]) -> None:
         """Prints information about an enum by tIndex. `enum <index>`"""
@@ -2443,7 +2443,9 @@ class Commands(BaseCommands):
                 construct_name = construct.name.resolve(self.code)
                 if construct.params:
                     # Resolve the type name for each parameter
-                    param_types = [disasm.type_name(self.code, p.resolve(self.code)) for p in construct.params]
+                    param_types = [
+                        disasm.type_name(self.code, p.resolve(self.code)) for p in construct.params
+                    ]
                     print(f"  {i}: {construct_name}({', '.join(param_types)})")
                 else:
                     print(f"  {i}: {construct_name}")

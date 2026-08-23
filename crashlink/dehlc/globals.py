@@ -5,43 +5,26 @@ Module global table recovery (values, types, string constants).
 from __future__ import annotations
 
 import re
-import struct
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from ..core import (
-    Binding,
     Bytecode,
-    Field,
-    Fun,
-    Null,
     Obj,
-    Packed,
-    Proto,
-    Ref,
-    Type,
-    VarInt,
-    Virtual,
-    fIndex,
-    fieldRef,
-    strRef,
     tIndex,
-    Abstract,
     Enum,
-    EnumConstruct,
-    Native,
-    Function,
 )
+
 try:
-    from capstone import Cs, CS_ARCH_X86, CS_MODE_64, CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN
-    from capstone.x86 import X86_OP_MEM, X86_REG_RIP, X86_OP_IMM, X86_OP_REG, X86_REG_RDI, X86_REG_EDI
-    from capstone.arm64 import (
+    from capstone import Cs, CS_ARCH_X86, CS_MODE_64, CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN  # noqa: F401
+    from capstone.x86 import X86_OP_MEM, X86_REG_RIP, X86_OP_IMM, X86_OP_REG, X86_REG_RDI, X86_REG_EDI  # noqa: F401
+    from capstone.arm64 import (  # noqa: F401
         ARM64_OP_IMM,
         ARM64_OP_REG,
         ARM64_OP_MEM,
         ARM64_REG_X0,
         ARM64_REG_X17,
     )
-    import lief
+    import lief  # noqa: F401
 except ImportError:
     raise NotImplementedError(
         "Cannot run dehl without lief and capstone installed. Try `pip install crashlink[extras]` or `pip install lief capstone`."
@@ -51,12 +34,11 @@ from .binary import (
     HL_STRING_GLOBAL_PREFIX,
     HL_TYPE_GLOBAL_PREFIX,
     HL_VALUE_GLOBAL_PREFIX,
-    HLCBinary,
-    PTR,
 )
 from .context import DehlcContext
 from .init_analysis import InitTypesAnalysis
-from .types import _dwarf_def_die_order, _dwarf_global_types, _dwarf_local_names, _hl_type_from_c_desc
+from .types import _dwarf_def_die_order, _dwarf_global_types, _hl_type_from_c_desc
+
 
 def _recover_globals(
     ctx: DehlcContext,
@@ -73,9 +55,9 @@ def _recover_globals(
     seen = set()
     for s in bin_view.symbols:
         n = str(s.name)
-        if (n.startswith(HL_STRING_GLOBAL_PREFIX) or n.startswith(HL_VALUE_GLOBAL_PREFIX)) and not n.startswith(
-            HL_CONST_STRING_PREFIX
-        ):
+        if (
+            n.startswith(HL_STRING_GLOBAL_PREFIX) or n.startswith(HL_VALUE_GLOBAL_PREFIX)
+        ) and not n.startswith(HL_CONST_STRING_PREFIX):
             if s.value != 0 and (n, s.value) not in seen:
                 seen.add((n, s.value))
                 global_syms.append(s)
@@ -247,4 +229,3 @@ def _recover_globals(
     if unresolved:
         print(f"Note: {unresolved} globals could not be linked to a type statically.")
     return global_types
-

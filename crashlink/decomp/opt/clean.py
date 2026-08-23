@@ -131,7 +131,9 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
                 return False
         return False
 
-    def _statement_reads_target(self, statement: IRStatement, target: IRLocal | IRField | IRArrayAccess) -> bool:
+    def _statement_reads_target(
+        self, statement: IRStatement, target: IRLocal | IRField | IRArrayAccess
+    ) -> bool:
         if statement == target:
             return True
         if isinstance(statement, IRAssign):
@@ -236,7 +238,9 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
         new_while_loop.comment = loop.comment
         new_while_loop.adopt(loop, loop_continuation_expr)
 
-        dbg_print(f"IRLoopCondOpt: Converted IRPrimitiveLoop to IRWhileLoop. While condition: {loop_continuation_expr}")
+        dbg_print(
+            f"IRLoopCondOpt: Converted IRPrimitiveLoop to IRWhileLoop. While condition: {loop_continuation_expr}"
+        )
         return new_while_loop
 
 
@@ -301,7 +305,11 @@ class IRBoolMaterializationCollapser(TraversingIROptimizer):
 
     @staticmethod
     def _strip_istrue(expr: IRExpression) -> IRExpression:
-        while isinstance(expr, IRBoolExpr) and expr.op == IRBoolExpr.CompareType.ISTRUE and expr.left is not None:
+        while (
+            isinstance(expr, IRBoolExpr)
+            and expr.op == IRBoolExpr.CompareType.ISTRUE
+            and expr.left is not None
+        ):
             expr = expr.left
         return expr
 
@@ -1068,7 +1076,11 @@ class IRDeadCodeEliminator(TraversingIROptimizer):
         if isinstance(cond, IRBoolExpr):
             if cond.op == IRBoolExpr.CompareType.TRUE:
                 return True
-            if cond.op == IRBoolExpr.CompareType.ISTRUE and isinstance(cond.left, IRConst) and cond.left.value is True:
+            if (
+                cond.op == IRBoolExpr.CompareType.ISTRUE
+                and isinstance(cond.left, IRConst)
+                and cond.left.value is True
+            ):
                 return True
         return False
 
@@ -1207,7 +1219,9 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
             if isinstance(stmt, IRAssign):
                 if _reads_in_stmt(stmt) & {local}:
                     return "read"
-                if isinstance(stmt.target, IRLocal) and (stmt.target == local or stmt.target.same_register(local)):
+                if isinstance(stmt.target, IRLocal) and (
+                    stmt.target == local or stmt.target.same_register(local)
+                ):
                     return "kill"
                 return "none"
             if isinstance(stmt, (IRBreak, IRContinue)):
@@ -1376,7 +1390,9 @@ class IRSequentialTempFolder(TraversingIROptimizer):
         if expr == local:
             return True
         return any(
-            self._expr_uses_local(child, local) for child in expr.get_children() if isinstance(child, IRExpression)
+            self._expr_uses_local(child, local)
+            for child in expr.get_children()
+            if isinstance(child, IRExpression)
         )
 
     def _replace_local_in_expr(self, expr: IRExpression, local: IRLocal, replacement: IRExpression) -> bool:
@@ -1564,8 +1580,12 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
         # Recursively process nested blocks with the correct live-out sets.
         if isinstance(stmt, IRConditional):
             child_out = set(live_after_stmt)
-            true_in = self._process_block(stmt.true_block, child_out, mutate=mutate) if stmt.true_block else set()
-            false_in = self._process_block(stmt.false_block, child_out, mutate=mutate) if stmt.false_block else set()
+            true_in = (
+                self._process_block(stmt.true_block, child_out, mutate=mutate) if stmt.true_block else set()
+            )
+            false_in = (
+                self._process_block(stmt.false_block, child_out, mutate=mutate) if stmt.false_block else set()
+            )
             uses.update(true_in)
             uses.update(false_in)
         elif isinstance(stmt, IRWhileLoop):
@@ -1822,7 +1842,9 @@ class IRConstructorFolder(TraversingIROptimizer):
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
 
-    def _match_constructor_call(self, stmt: IRStatement, instance_local: IRLocal) -> Optional[List[IRExpression]]:
+    def _match_constructor_call(
+        self, stmt: IRStatement, instance_local: IRLocal
+    ) -> Optional[List[IRExpression]]:
         if not isinstance(stmt, IRCall):
             return None
         if stmt.call_type != IRCall.CallType.FUNC:
@@ -2447,8 +2469,10 @@ class IRGuardOrMerger(TraversingIROptimizer):
             wanted = inner_false + tail
             false_block = inner.false_block
             consumed = len(inner_false)
-        elif tail and inner.true_block.statements and isinstance(
-            inner.true_block.statements[-1], (IRContinue, IRBreak, IRReturn, IRThrow)
+        elif (
+            tail
+            and inner.true_block.statements
+            and isinstance(inner.true_block.statements[-1], (IRContinue, IRBreak, IRReturn, IRThrow))
         ):
             wanted = tail
             false_block = IRBlock(self.func.code)
@@ -2482,6 +2506,7 @@ class IRGuardOrMerger(TraversingIROptimizer):
             except DecompError:
                 pass
         return IRBoolExpr(self.func.code, IRBoolExpr.CompareType.NOT, cond)
+
 
 class IRTypedCatchOptimizer(IROptimizer):
     """
@@ -2639,9 +2664,7 @@ class IRTypedCatchOptimizer(IROptimizer):
                 return None
             return i + 2
 
-    def _parse_unwrap(
-        self, body: IRBlock, e: IRLocal, sub_arms: List[Tuple[Type, IRBlock]]
-    ) -> Optional[int]:
+    def _parse_unwrap(self, body: IRBlock, e: IRLocal, sub_arms: List[Tuple[Type, IRBlock]]) -> Optional[int]:
         """Match the ValueException arm body: `ve = cast(e, haxe.ValueException)`,
         optional catch-register plumbing, then an isOfType chain. Returns the
         consumed statement count, or None."""
@@ -2699,7 +2722,12 @@ class IRTypedCatchOptimizer(IROptimizer):
                 return None
             assign = stmts[i]
             call = self._std_call(assign, "isOfType")
-            if call is None or len(call.args) != 2 or not isinstance(assign, IRAssign) or not isinstance(assign.target, IRLocal):
+            if (
+                call is None
+                or len(call.args) != 2
+                or not isinstance(assign, IRAssign)
+                or not isinstance(assign.target, IRLocal)
+            ):
                 return None
             field, type_const = call.args
             if not (
@@ -2751,7 +2779,12 @@ class IRTypedCatchOptimizer(IROptimizer):
     ) -> Optional[Tuple[Type, str, IRBlock, IRConditional]]:
         """Match `t = X.check(e); if (t) ...`."""
         call = self._std_call(assign, "check")
-        if call is None or len(call.args) != 2 or not isinstance(assign, IRAssign) or not isinstance(assign.target, IRLocal):
+        if (
+            call is None
+            or len(call.args) != 2
+            or not isinstance(assign, IRAssign)
+            or not isinstance(assign.target, IRLocal)
+        ):
             return None
         type_const, arg1 = call.args
         if not (isinstance(type_const, IRConst) and isinstance(type_const.value, Type)):
@@ -2885,7 +2918,5 @@ class IRTypedCatchOptimizer(IROptimizer):
 
     def _is_true_cond(self, cond: IRStatement, local: IRLocal) -> bool:
         return (
-            isinstance(cond, IRBoolExpr)
-            and cond.op == IRBoolExpr.CompareType.ISTRUE
-            and cond.left is local
+            isinstance(cond, IRBoolExpr) and cond.op == IRBoolExpr.CompareType.ISTRUE and cond.left is local
         )

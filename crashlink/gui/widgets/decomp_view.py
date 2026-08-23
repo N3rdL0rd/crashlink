@@ -220,4 +220,6 @@ class DecompView(QPlainTextEdit):
         menu.addAction("Copy", self.copy)
         menu.addSeparator()
         menu.addAction("Select All", self.selectAll)
-        menu.exec_(event.globalPos())  # exec()'s stub overloads are broken (PySide6 marks them overload-cannot-match)
+        menu.exec_(
+            event.globalPos()
+        )  # exec()'s stub overloads are broken (PySide6 marks them overload-cannot-match)

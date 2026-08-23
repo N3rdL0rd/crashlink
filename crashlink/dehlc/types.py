@@ -4,9 +4,7 @@ Type-table reconstruction: ordering, parsing and typing.
 
 from __future__ import annotations
 
-import re
-import struct
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from ..core import (
     Binding,
@@ -28,20 +26,19 @@ from ..core import (
     Abstract,
     Enum,
     EnumConstruct,
-    Native,
-    Function,
 )
+
 try:
-    from capstone import Cs, CS_ARCH_X86, CS_MODE_64, CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN
-    from capstone.x86 import X86_OP_MEM, X86_REG_RIP, X86_OP_IMM, X86_OP_REG, X86_REG_RDI, X86_REG_EDI
-    from capstone.arm64 import (
+    from capstone import Cs, CS_ARCH_X86, CS_MODE_64, CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN  # noqa: F401
+    from capstone.x86 import X86_OP_MEM, X86_REG_RIP, X86_OP_IMM, X86_OP_REG, X86_REG_RDI, X86_REG_EDI  # noqa: F401
+    from capstone.arm64 import (  # noqa: F401
         ARM64_OP_IMM,
         ARM64_OP_REG,
         ARM64_OP_MEM,
         ARM64_REG_X0,
         ARM64_REG_X17,
     )
-    import lief
+    import lief  # noqa: F401
 except ImportError:
     raise NotImplementedError(
         "Cannot run dehl without lief and capstone installed. Try `pip install crashlink[extras]` or `pip install lief capstone`."
@@ -54,30 +51,28 @@ from .binary import (
     HL_OBJ_PROTO_SIZE,
     HL_STRING_GLOBAL_PREFIX,
     HL_TYPE_ENUM_CONSTRUCTS_OFFSET,
-    HL_TYPE_ENUM_GLOBAL_VALUE_OFFSET,
     HL_TYPE_ENUM_NAME_OFFSET,
     HL_TYPE_ENUM_NCONSTRUCTS_OFFSET,
     HL_TYPE_FUN_NARGS_OFFSET,
     HL_TYPE_GLOBAL_PREFIX,
     HL_TYPE_OBJ_BINDINGS_OFFSET,
     HL_TYPE_OBJ_FIELDS_OFFSET,
-    HL_TYPE_OBJ_GLOBAL_VALUE_OFFSET,
     HL_TYPE_OBJ_NAME_OFFSET,
     HL_TYPE_OBJ_NFIELDS_OFFSET,
     HL_TYPE_OBJ_PROTOS_OFFSET,
     HL_TYPE_OBJ_SUPER_OFFSET,
-    HL_TYPE_UNION_OFFSET,
     HL_TYPE_VIRT_FIELDS_OFFSET,
     HL_TYPE_VIRT_NFIELDS_OFFSET,
     HL_VALUE_GLOBAL_PREFIX,
     HLCBinary,
     PTR,
     SIMPLE_KINDS,
-    _find_source_symbol,
-    _resolve_mem_target,
     disasm_function,
+    _resolve_plt_targets,
 )
-from .init_analysis import InitTypesAnalysis, analyse_init_types
+from .context import DehlcContext
+from .init_analysis import InitTypesAnalysis, _track_arm64_address_events
+
 
 def recover_type_order(bin_view: HLCBinary, init_analysis: InitTypesAnalysis) -> Tuple[List[str], bool]:
     """
@@ -185,7 +180,7 @@ def recover_type_order(bin_view: HLCBinary, init_analysis: InitTypesAnalysis) ->
         #  - DYNOBJ sits right before the fun-type of the function following the
         #    first `hl_alloc_dynobj` call site.
         leftovers = [s for s in all_names if s not in set(order)]
-        anchors: Dict[str, Optional[str]] = {}
+        anchors: Dict[str, str] = {}
         if leftovers:
             anchors = _find_leftover_anchors(bin_view, order, leftovers)
 
@@ -193,7 +188,7 @@ def recover_type_order(bin_view: HLCBinary, init_analysis: InitTypesAnalysis) ->
             idx = order.index(anchor) if anchor and anchor in order else len(order)
             order.insert(idx, sym)
 
-        def resolve_chain(sym: str, memo: Dict[str, Optional[str]]) -> Optional[str]:
+        def resolve_chain(sym: str, memo: Dict[str, str]) -> Optional[str]:
             """Follows leftover->anchor chains until an element of `order` is reached."""
             seen = set()
             cur = sym
@@ -237,10 +232,9 @@ def _dwarf_def_die_order(bin_view: HLCBinary, prefixes: Tuple[str, ...]) -> List
     """
     out: List[str] = []
     try:
-        from elftools.elf.elffile import ELFFile
+        from elftools.elf.elffile import ELFFile  # noqa: F401
     except ImportError:
         return out
-    import io
 
     if bin_view.data is None:
         return out
@@ -318,7 +312,11 @@ def _find_dynobj_anchor(bin_view: HLCBinary, init_order: List[str]) -> Optional[
                 _track_arm64_address_events(instructions, on_store=lambda d, s, i_: None, on_call=on_call)
             else:
                 for insn in instructions:
-                    if insn.mnemonic == "call" and len(insn.operands) == 1 and insn.operands[0].type == X86_OP_IMM:
+                    if (
+                        insn.mnemonic == "call"
+                        and len(insn.operands) == 1
+                        and insn.operands[0].type == X86_OP_IMM
+                    ):
                         if is_dynobj_call(insn.operands[0].imm):
                             found = True
                             break
@@ -340,7 +338,9 @@ def _find_dynobj_anchor(bin_view: HLCBinary, init_order: List[str]) -> Optional[
     return None
 
 
-def _find_leftover_anchors(bin_view: HLCBinary, base_order: List[str], leftovers: List[str]) -> Dict[str, str]:
+def _find_leftover_anchors(
+    bin_view: HLCBinary, base_order: List[str], leftovers: List[str]
+) -> Dict[str, str]:
     """
     For each leftover type symbol, finds the base-order element it should be
     inserted before. Two anchor sources:
@@ -400,7 +400,7 @@ def _find_leftover_anchors(bin_view: HLCBinary, base_order: List[str], leftovers
                 ("protot$", lambda h: "t$" + h),
             ):
                 if aux_name.startswith(pfx):
-                    return mk(aux_name[len(pfx):])
+                    return mk(aux_name[len(pfx) :])
             return None
 
         for s in bin_view.symbols:
@@ -456,7 +456,7 @@ def _find_leftover_anchors(bin_view: HLCBinary, base_order: List[str], leftovers
                     continue
                 if not bin_view.is_static_data(s):
                     continue
-                sec = str(getattr(s, "section", ""))
+                _sec = str(getattr(s, "section", ""))
                 name = str(s.name)
                 if not name or name.startswith(("fun$", "__", "_")):
                     continue
@@ -639,7 +639,9 @@ def _parse_type(ctx: DehlcContext, name: str, init_analysis: InitTypesAnalysis) 
                 c_params_ptr = bin_view.read_ptr(cbase + PTR * 2)
                 construct = EnumConstruct()
                 construct.name = strRef(
-                    ctx.add_str(bin_view.read_cstr_utf16(c_name_ptr) if c_name_ptr else f"unknown_construct_{j}")
+                    ctx.add_str(
+                        bin_view.read_cstr_utf16(c_name_ptr) if c_name_ptr else f"unknown_construct_{j}"
+                    )
                 )
                 construct.nparams.value = c_nparams
                 params: List[tIndex] = []
@@ -668,7 +670,7 @@ def _dwarf_global_types(bin_view: HLCBinary) -> Dict[str, str]:
     """
     out: Dict[str, str] = {}
     try:
-        from elftools.elf.elffile import ELFFile
+        from elftools.elf.elffile import ELFFile  # noqa: F401
     except ImportError:
         return out
     import io
@@ -750,7 +752,16 @@ def _hl_type_from_c_desc(ctx: DehlcContext, code: Bytecode, desc: str) -> Option
             if Type.Kind(t.kind.value) == Type.Kind.DYN:
                 return tIndex(i)
         return None
-    base_map = {"int": Type.Kind.I32, "long int": Type.Kind.I64, "double": Type.Kind.F64, "float": Type.Kind.F32, "char": Type.Kind.I32, "short int": Type.Kind.U16, "long long int": Type.Kind.I64, "unsigned int": Type.Kind.I32}
+    base_map = {
+        "int": Type.Kind.I32,
+        "long int": Type.Kind.I64,
+        "double": Type.Kind.F64,
+        "float": Type.Kind.F32,
+        "char": Type.Kind.I32,
+        "short int": Type.Kind.U16,
+        "long long int": Type.Kind.I64,
+        "unsigned int": Type.Kind.I32,
+    }
     if not desc.startswith("*"):
         kind = base_map.get(desc)
         if kind:
@@ -766,7 +777,8 @@ def _hl_type_from_c_desc(ctx: DehlcContext, code: Bytecode, desc: str) -> Option
         k = Type.Kind(t.kind.value)
         if k == Type.Kind.ABSTRACT and d is not None:
             try:
-                if d.name.resolve(code).replace(".", "_") == mangled:
+                dname = getattr(d, "name", None)
+                if dname is not None and dname.resolve(code).replace(".", "_") == mangled:
                     return tIndex(i)
             except Exception:
                 pass
@@ -781,10 +793,9 @@ def _dwarf_local_names(bin_view: HLCBinary) -> List[str]:
     """
     out: List[str] = []
     try:
-        from elftools.elf.elffile import ELFFile
+        from elftools.elf.elffile import ELFFile  # noqa: F401
     except ImportError:
         return out
-    import io
 
     if bin_view.data is None:
         return out
@@ -846,9 +857,11 @@ def _encode_type_sign(bin_view: "HLCBinary", type_ptr: int, depth: int = 0) -> s
         if super_ptr:
             parts.append(_encode_type_sign(bin_view, super_ptr, depth + 1))
         if fields_ptr and 0 <= nfields <= 256:
-            fsize = HL_TYPE_OBJ_FIELD_SIZE
+            fsize = HL_OBJ_FIELD_SIZE
             for i in range(nfields):
-                parts.append(_encode_type_sign(bin_view, bin_view.read_ptr(fields_ptr + fsize * i + PTR), depth + 1))
+                parts.append(
+                    _encode_type_sign(bin_view, bin_view.read_ptr(fields_ptr + fsize * i + PTR), depth + 1)
+                )
         return ch + "".join(parts) + "_"
     if kind == Type.Kind.ABSTRACT.value:
         name_ptr = bin_view.read_ptr(type_ptr + 8)
@@ -857,12 +870,15 @@ def _encode_type_sign(bin_view: "HLCBinary", type_ptr: int, depth: int = 0) -> s
     return ch
 
 
-def _sign_from_recon_type(types: List[Type], ti: int, ctx: "DehlcContext" = None, depth: int = 0) -> str:
+def _sign_from_recon_type(
+    types: List[Type], ti: int, ctx: Optional["DehlcContext"] = None, depth: int = 0
+) -> str:
     """
     Encodes a reconstructed Type (by table index) into hashlink's runtime
     signature string. References are tIndices resolved through the table.
     Abstract names resolve through the context string table (recovered text).
     """
+
     def enc(idx, depth=0):
         if idx is None or idx < 0 or idx >= len(types) or depth > 8:
             return "?"
@@ -882,7 +898,9 @@ def _sign_from_recon_type(types: List[Type], ti: int, ctx: "DehlcContext" = None
         if k in (Type.Kind.REF, Type.Kind.NULL):
             return ch + enc(inner("type"), depth + 1)
         if k == Type.Kind.OBJ and isinstance(d, Obj):
-            return ch + "".join(enc(f.type.value if f.type else -1, depth + 1) for f in (d.fields or [])) + "_"
+            return (
+                ch + "".join(enc(f.type.value if f.type else -1, depth + 1) for f in (d.fields or [])) + "_"
+            )
         if k == Type.Kind.ABSTRACT and isinstance(d, Abstract):
             # abs_name is recovered textually; the DB stores the C abstract name.
             nm = ""
@@ -890,5 +908,5 @@ def _sign_from_recon_type(types: List[Type], ti: int, ctx: "DehlcContext" = None
                 nm = ctx.strs[d.name.value]
             return "X" + (nm or "?") + "_"
         return ch
-    return enc(ti)
 
+    return enc(ti)

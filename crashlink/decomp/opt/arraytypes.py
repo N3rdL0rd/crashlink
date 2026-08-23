@@ -149,7 +149,9 @@ def _walk_statement(
                 elem_type = access.get_type()
             except Exception:
                 elem_type = None
-            _record_array_source(access.array, elem_type, code, field_elem_types, local_elem_types, global_cache)
+            _record_array_source(
+                access.array, elem_type, code, field_elem_types, local_elem_types, global_cache
+            )
         # Element write: `arr[i] = v` — v's type is the element type.
         if isinstance(stmt.target, IRArrayAccess):
             access = stmt.target
@@ -158,7 +160,9 @@ def _walk_statement(
                 value_type = val.get_type()
             except Exception:
                 value_type = None
-            _record_array_source(access.array, value_type, code, field_elem_types, local_elem_types, global_cache)
+            _record_array_source(
+                access.array, value_type, code, field_elem_types, local_elem_types, global_cache
+            )
         # Array literal assigned to a local or field: recover elem type from
         # the allocation site's own type (e.g. `[]`'s alloc_array(Joint, 0))
         # or, failing that, from the literal's elements.
@@ -167,7 +171,12 @@ def _walk_statement(
                 lit = stmt.expr
                 if lit.recovered_elem_type is not None:
                     _record_array_source(
-                        stmt.target, lit.recovered_elem_type, code, field_elem_types, local_elem_types, global_cache
+                        stmt.target,
+                        lit.recovered_elem_type,
+                        code,
+                        field_elem_types,
+                        local_elem_types,
+                        global_cache,
                     )
                 elif lit.elements:
                     # Only infer when ALL elements share the same non-erased
@@ -175,7 +184,9 @@ def _walk_statement(
                     # genuinely Array<Dynamic>, not Array<first_element_type>.
                     et = _uniform_element_type(lit.elements, code)
                     if et is not None:
-                        _record_array_source(stmt.target, et, code, field_elem_types, local_elem_types, global_cache)
+                        _record_array_source(
+                            stmt.target, et, code, field_elem_types, local_elem_types, global_cache
+                        )
     for child in stmt.get_children():
         if isinstance(child, IRBlock):
             _walk_block(child, code, visited, field_elem_types, local_elem_types, global_cache)

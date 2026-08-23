@@ -845,7 +845,9 @@ class IRFunction:
             self.locals[0].name = "this"
         dbg_print("Named locals:", self.locals)
 
-    def _find_convergence(self, true_node: CFNode, false_node: CFNode, visited: Set[CFNode]) -> Optional[CFNode]:
+    def _find_convergence(
+        self, true_node: CFNode, false_node: CFNode, visited: Set[CFNode]
+    ) -> Optional[CFNode]:
         """Find where two branches of a conditional converge by following their control flow"""
         true_visited = set()
         false_visited = set()
@@ -909,7 +911,9 @@ class IRFunction:
                 return True
         return False
 
-    def _resolve_method_field(self, obj_local: "IRLocal", obj_type: Type, field_idx: int) -> Optional["IRField"]:
+    def _resolve_method_field(
+        self, obj_local: "IRLocal", obj_type: Type, field_idx: int
+    ) -> Optional["IRField"]:
         """Build the `obj.method` IRField targeted by a CallMethod/CallThis/
         InstanceClosure `field` operand.
 
@@ -1625,7 +1629,9 @@ class IRFunction:
             pj_left = _jump_operand("a")
             pj_right = _jump_operand("b")
             pj_cond = _jump_operand("cond") if "cond" in header_last_op.df else _jump_operand("reg")
-            cond_block.statements.append(IRPrimitiveJump(self.code, header_last_op, pj_left, pj_right, pj_cond))
+            cond_block.statements.append(
+                IRPrimitiveJump(self.code, header_last_op, pj_left, pj_right, pj_cond)
+            )
 
             body_start = non_exit_successors[0]
             body_block = (
@@ -1643,7 +1649,9 @@ class IRFunction:
             # bailing out on the "already visited" check.
             body_visited = visited.copy()
             body_visited.discard(header)
-            body_block = self._lift_block(header, body_visited, stop_at=header, loop_ctx=loop_ctx, is_loop_entry=True)
+            body_block = self._lift_block(
+                header, body_visited, stop_at=header, loop_ctx=loop_ctx, is_loop_entry=True
+            )
             block.statements.append(
                 IRWhileLoop(
                     self.code,
@@ -1852,7 +1860,9 @@ class IRFunction:
                             stop_at=loop_ctx.exit_node,
                             loop_ctx=None,
                         )
-                        if branch_block.statements and isinstance(branch_block.statements[-1], (IRReturn, IRThrow)):
+                        if branch_block.statements and isinstance(
+                            branch_block.statements[-1], (IRReturn, IRThrow)
+                        ):
                             return branch_block
                         branch_block.statements.append(IRBreak(self.code))
                         return branch_block
@@ -1889,7 +1899,11 @@ class IRFunction:
             # legitimately wants the branch target itself as convergence (that *is* its
             # only continuation), and forcing the post-dominator there would wrongly pull
             # the tail inside the conditional instead of leaving it as the fall-through.
-            if loop_ctx is None and convergence_node is not None and convergence_node in (jump_target, fall_through):
+            if (
+                loop_ctx is None
+                and convergence_node is not None
+                and convergence_node in (jump_target, fall_through)
+            ):
                 other_branch = fall_through if convergence_node == jump_target else jump_target
                 dominates_other = other_branch is None or convergence_node in cfg.post_dominators.get(
                     other_branch, set()
@@ -2049,7 +2063,9 @@ class IRFunction:
 
         elif last_op and last_op.op == "Ret":
             ret_type = self.func.regs[last_op.df["ret"].value].resolve(self.code)
-            ret_val = self.locals[last_op.df["ret"].value] if not isinstance(ret_type.definition, Void) else None
+            ret_val = (
+                self.locals[last_op.df["ret"].value] if not isinstance(ret_type.definition, Void) else None
+            )
             block.statements.append(IRReturn(self.code, ret_val))
 
         elif last_op and last_op.op in ("Throw", "Rethrow"):
@@ -2133,7 +2149,9 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
             if const.fields:
                 gtype = code.global_types[gi].resolve(code)
                 if isinstance(gtype.definition, Obj) and gtype.definition.name.resolve(code) == "String":
-                    const_strings[gi] = '"' + code.strings.value[const.fields[0].value].replace('"', '\\"') + '"'
+                    const_strings[gi] = (
+                        '"' + code.strings.value[const.fields[0].value].replace('"', '\\"') + '"'
+                    )
     except Exception:
         pass
     try:
@@ -2148,8 +2166,8 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
         # in-progress array-literal builds: alloc reg -> (declared length, {index: (value, refs)})
         array_builds: Dict[int, Tuple[int, Dict[int, Tuple[str, Set[str]]]]] = {}
         for op in entry.ops:
-            dst = op.df.get("dst")
-            if op.op.startswith("J") or op.op in ("Switch", "Label", "Trap"):
+            dst: Any = op.df.get("dst")
+            if (op.op or "").startswith("J") or op.op in ("Switch", "Label", "Trap"):
                 # branchy control flow (e.g. switch-computed initializers): can't safely
                 # track a single value across merge points with a flat linear scan
                 reg_value.clear()
@@ -2214,7 +2232,9 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                     pass
                 reg_value.pop(dst.value, None)
                 reg_refs.pop(dst.value, None)
-            elif op.op == "CallMethod" and op.df["args"].value and op.df["args"].value[0].value in pending_new:
+            elif (
+                op.op == "CallMethod" and op.df["args"].value and op.df["args"].value[0].value in pending_new
+            ):
                 obj_reg = op.df["args"].value[0].value
                 cname = pending_new.pop(obj_reg)
                 is_ctor = False
@@ -2312,7 +2332,9 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                         reg_refs.pop(dst.value, None)
                 elif fname_parts is not None and all(a in reg_value for a in call_arg_regs):
                     cname, mname = fname_parts
-                    reg_value[dst.value] = f"{cname}.{mname}({', '.join(reg_value[a] for a in call_arg_regs)})"
+                    reg_value[dst.value] = (
+                        f"{cname}.{mname}({', '.join(reg_value[a] for a in call_arg_regs)})"
+                    )
                     reg_refs[dst.value] = {cname}
                     for a in call_arg_regs:
                         reg_refs[dst.value] |= reg_refs.get(a, set())
@@ -2373,7 +2395,9 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                                     # call) that already ran once when that field was initialized
                                     owner_name = destaticify(defn.name.resolve(code))
                                     reg_value[dst.value] = f"{owner_name}.{fname}"
-                                    reg_refs[dst.value] = {owner_name} | field_refs.get(id(defn), {}).get(fname, set())
+                                    reg_refs[dst.value] = {owner_name} | field_refs.get(id(defn), {}).get(
+                                        fname, set()
+                                    )
                                 else:
                                     reg_value.pop(dst.value, None)
                                     reg_refs.pop(dst.value, None)
@@ -2475,11 +2499,15 @@ class IRClass:
         res: List[IRFunction] = []
         for proto in obj.protos:
             fn = proto.findex.resolve(self.code)
-            assert isinstance(fn, Function), "Native protos aren't supported! Not even sure if this is possible tbh"
+            assert isinstance(fn, Function), (
+                "Native protos aren't supported! Not even sure if this is possible tbh"
+            )
             res.append(IRFunction(self.code, fn, capture_layers=self.capture_layers))
         for binding in obj.bindings:
             fn = binding.findex.resolve(self.code)
-            assert isinstance(fn, Function), "Native bindings aren't supported! Not even sure if this is possible tbh"
+            assert isinstance(fn, Function), (
+                "Native bindings aren't supported! Not even sure if this is possible tbh"
+            )
             # Avoid adding duplicates if a proto is also bound
             if fn not in [r.func for r in res]:
                 res.append(IRFunction(self.code, fn, capture_layers=self.capture_layers))

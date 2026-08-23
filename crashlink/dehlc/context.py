@@ -4,36 +4,15 @@ Shared reconstruction context passed between recovery passes.
 
 from __future__ import annotations
 
-import re
-import struct
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 
 from ..core import (
-    Binding,
-    Bytecode,
-    Field,
-    Fun,
-    Null,
-    Obj,
-    Packed,
-    Proto,
-    Ref,
-    Type,
-    VarInt,
-    Virtual,
-    fIndex,
-    fieldRef,
-    strRef,
     tIndex,
-    Abstract,
-    Enum,
-    EnumConstruct,
-    Native,
-    Function,
 )
 
 from .binary import HLCBinary
+
 
 class DehlcContext:
     """Shared state for a single de-HL/C extraction run."""
@@ -67,4 +46,3 @@ class DehlcContext:
         if ti is not None:
             return ti
         return self.name_to_tindex.get(self.bin.symbol_at(ptr))
-

@@ -35,7 +35,9 @@ def test_round_trip_renames_and_comments(tmp_path):
 def test_round_trip_decompile_cache(tmp_path):
     code = _fresh_code()
     findex = code.functions[0].findex.value
-    class_results: Dict[str, Dict[int, Optional[str]]] = {"class:Foo": {findex: "class Foo { function main() {} }"}}
+    class_results: Dict[str, Dict[int, Optional[str]]] = {
+        "class:Foo": {findex: "class Foo { function main() {} }"}
+    }
     opline_cache = {findex: {0: 0, 1: 1, 2: 1}}
 
     cldb_path = str(tmp_path / "test.cldb")

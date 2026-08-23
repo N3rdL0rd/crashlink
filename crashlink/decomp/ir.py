@@ -585,7 +585,9 @@ class IRConst(IRExpression):
             return _get_type_in_code(self.code, "Null")  # FIXME: null is of a type...
         elif self.const_type == IRConst.ConstType.FUN:
             if not (isinstance(self.value, Function) or isinstance(self.value, Native)):
-                raise DecompError(f"Expected function index to resolve to a function or native, got {self.value}")
+                raise DecompError(
+                    f"Expected function index to resolve to a function or native, got {self.value}"
+                )
             res = self.value.type.resolve(self.code)
             if isinstance(res, Type):
                 return res

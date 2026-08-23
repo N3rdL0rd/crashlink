@@ -4,36 +4,19 @@ Function/native table reconstruction.
 
 from __future__ import annotations
 
-import re
 import struct
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from ..core import (
-    Binding,
-    Bytecode,
-    Field,
-    Fun,
-    Null,
-    Obj,
-    Packed,
-    Proto,
-    Ref,
     Type,
     VarInt,
-    Virtual,
     fIndex,
-    fieldRef,
     strRef,
     tIndex,
-    Abstract,
-    Enum,
-    EnumConstruct,
     Native,
     Function,
 )
-from .. import hlnative_db
 from .binary import (
-    HLCBinary,
     PTR,
     _elf_imports,
     _pe_import_map,
@@ -42,7 +25,8 @@ from .binary import (
 from .context import DehlcContext
 from .types import _sign_from_recon_type
 
-def _split_prim_symbol(sym: str, db_by_name: Dict[str, Tuple[str, str]]) -> Tuple[str, str]:
+
+def _split_prim_symbol(sym: str, db_by_name: Dict[str, str]) -> Tuple[str, str]:
     """
     Splits a linked C primitive symbol into (lib, name). libhl "std" prims are
     `hl_<name>`; other known libs use `<lib>_<name>`. Unknown symbols fall back
@@ -74,7 +58,7 @@ def _recover_native_names(ctx: "DehlcContext", natives: List[Native], types: Lis
         from .hlnative_db import HL_NATIVE_SIGNATURES
     except ImportError:
         HL_NATIVE_SIGNATURES = {}
-    db_by_name = {name: lib for name, (lib, _) in HL_NATIVE_SIGNATURES.items()}
+    db_by_name: Dict[str, str] = {name: lib for name, (lib, _) in HL_NATIVE_SIGNATURES.items()}
     db_by_sign: Dict[str, List[str]] = {}
     for name, (_lib, sign) in HL_NATIVE_SIGNATURES.items():
         db_by_sign.setdefault(sign, []).append(name)
@@ -123,12 +107,14 @@ def _recover_native_names(ctx: "DehlcContext", natives: List[Native], types: Lis
                         break
             if pick is not None:
                 used.add(pick)
-                lib, name = _split_prim_symbol("hl_" + pick if not pick.startswith("hl_") else pick, db_by_name)
+                lib, name = _split_prim_symbol(
+                    "hl_" + pick if not pick.startswith("hl_") else pick, db_by_name
+                )
         if lib is None:
             unmatched += 1
             lib, name = "std", ""
         nat.lib = strRef(ctx.add_str(lib))
-        nat.name = strRef(ctx.add_str(name))
+        nat.name = strRef(ctx.add_str(name or ""))
     if unmatched:
         ctx.log(f"  {unmatched} natives unmatched")
 
@@ -218,4 +204,3 @@ def _recover_functions(ctx: DehlcContext) -> Tuple[List[Function], List[Native],
             functions = [fn for fn in functions if fn.findex.value <= cutoff]
             natives = [nat for nat in natives if nat.findex.value <= cutoff]
     return functions, natives, entrypoint
-

@@ -61,7 +61,11 @@ def test_render_shader_body():
         "type": HxEnum("hxsl.Type", 3, []),  # TFloat
     }
     # function fragment() { return 1.0; }  ->  TBlock([ TReturn(TConst(CFloat 1.0)) ])
-    ret = {"e": HxEnum("hxsl.TExprDef", 12, [{"e": HxEnum("hxsl.TExprDef", 0, [HxEnum("hxsl.Const", 3, [1.0])])}])}
+    ret = {
+        "e": HxEnum(
+            "hxsl.TExprDef", 12, [{"e": HxEnum("hxsl.TExprDef", 0, [HxEnum("hxsl.Const", 3, [1.0])])}]
+        )
+    }
     body = {"e": HxEnum("hxsl.TExprDef", 4, [[ret]])}
     fun = {"ref": {"name": "fragment"}, "args": [], "ret": HxEnum("hxsl.Type", 0, []), "expr": body}
     raw = {"name": "T", "vars": [var], "funs": [fun]}

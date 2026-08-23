@@ -85,7 +85,9 @@ if USE_CRASHLINK:
             """
             arg_regs = fn.resolve_fun(code).args
             arg_virt = Virtual()
-            arg_virt.fields.extend([Field(code.add_string(f"arg_{i}"), typ) for i, typ in enumerate(arg_regs)])
+            arg_virt.fields.extend(
+                [Field(code.add_string(f"arg_{i}"), typ) for i, typ in enumerate(arg_regs)]
+            )
             arg_typ = Type()
             arg_typ.kind.value = Type.Kind.VIRTUAL.value
             arg_typ.definition = arg_virt
@@ -253,7 +255,9 @@ if USE_CRASHLINK:
                     if not mtch:
                         raise NameError(f"No such function '{identifier}'")
                     fn = mtch
-                assert not isinstance(fn, Native), "Cannot intercept a native! (Yet...)"  # TODO: native intercept
+                assert not isinstance(fn, Native), (
+                    "Cannot intercept a native! (Yet...)"
+                )  # TODO: native intercept
                 print(f"(Intercept) {func_header(code, fn)}")  # TODO: other handlers than pyhl
                 self._intercept(code, fn, identifier)
 
@@ -344,7 +348,9 @@ else:
             """
             if identifier in self.interceptions:
                 return self.interceptions[identifier](args)
-            print(f"\033[33m[pyhl WARNING] [py] No interceptor found in patch definition for '{identifier}'.\033[0m")
+            print(
+                f"\033[33m[pyhl WARNING] [py] No interceptor found in patch definition for '{identifier}'.\033[0m"
+            )
             return args
 
 

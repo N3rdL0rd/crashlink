@@ -64,7 +64,8 @@ class CFJumpThreader(CFOptimizer):
                     # redirect all predecessors to target_node
                     for pred in predecessors.get(node, []):
                         pred.branches = [
-                            (target_node if branch == node else branch, etype) for branch, etype in pred.branches
+                            (target_node if branch == node else branch, etype)
+                            for branch, etype in pred.branches
                         ]
                         predecessors.setdefault(target_node, []).append(pred)
                     nodes_to_remove.add(node)
@@ -276,7 +277,9 @@ class CFGraph:
                 )
             for node, ipd in self.immediate_post_dominators.items():
                 if len(node.branches) > 1:
-                    dbg_print(f"Conditional node {node.base_offset} converges at {ipd.base_offset if ipd else 'None'}")
+                    dbg_print(
+                        f"Conditional node {node.base_offset} converges at {ipd.base_offset if ipd else 'None'}"
+                    )
             dbg_print("-----------------------------")
 
     def _compute_predecessors(self) -> None:

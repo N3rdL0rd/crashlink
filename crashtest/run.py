@@ -17,7 +17,7 @@ from difflib import SequenceMatcher, unified_diff
 from typing import Any, Dict, List, Optional, Tuple
 from markupsafe import escape
 
-from crashlink import Bytecode, decomp, globals
+from crashlink import decomp, globals
 from crashlink.core import (
     Bytecode,
     Function,
@@ -107,13 +107,16 @@ def run_case_isolated(case: str, id: int) -> TestCase:
     kill_reason: Optional[str] = None
     while proc.is_alive() and "status" not in received:
         elapsed = time.monotonic() - start
+        assert proc.pid is not None
         rss = _read_peak_rss_mb(proc.pid)
         if rss is not None:
             peak_mb = max(peak_mb, rss)
         if elapsed > TIME_LIMIT_SECONDS:
             kill_reason = f"Decompilation exceeded the {TIME_LIMIT_SECONDS:.0f}s time limit."
         elif peak_mb > MEMORY_LIMIT_MB:
-            kill_reason = f"Decompilation exceeded the {MEMORY_LIMIT_MB:.0f}MB memory limit (peak {peak_mb:.0f}MB)."
+            kill_reason = (
+                f"Decompilation exceeded the {MEMORY_LIMIT_MB:.0f}MB memory limit (peak {peak_mb:.0f}MB)."
+            )
         if kill_reason:
             proc.terminate()
             proc.join(2)
@@ -146,7 +149,9 @@ def run_case_isolated(case: str, id: int) -> TestCase:
 
     if "status" not in received:
         exit_note = f" (exit code {proc.exitcode})" if proc.exitcode else ""
-        return _failure(f"Worker process exited without a result{exit_note} - likely OOM-killed by the kernel.")
+        return _failure(
+            f"Worker process exited without a result{exit_note} - likely OOM-killed by the kernel."
+        )
 
     if received["status"] != "ok":
         return _failure(f"Worker crashed: {received['payload']}")
@@ -238,7 +243,9 @@ def get_repo_info() -> GitInfo:
         os.chdir(script_dir)
 
         try:
-            branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode("utf-8")
+            branch = (
+                subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode("utf-8")
+            )
             commit = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
             dirty = subprocess.check_output(["git", "status", "--porcelain"]).strip().decode("utf-8") != ""
             return GitInfo(
@@ -437,7 +444,9 @@ def run_case(case: str, id: int) -> TestCase:
                 layers[func_name] = {
                     "opcodes": static_method.opcodes,
                     "cfg": cfg_data,
-                    "steps": [{"name": n, "ir": ir, "ran": ran} for n, ir, ran in static_method.layer_snapshots],
+                    "steps": [
+                        {"name": n, "ir": ir, "ran": ran} for n, ir, ran in static_method.layer_snapshots
+                    ],
                     "pseudo": pseudo(static_method),
                 }
 

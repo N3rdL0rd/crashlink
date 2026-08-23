@@ -4,49 +4,32 @@ Top-level reconstruction pipeline: binary image -> bytecode.
 
 from __future__ import annotations
 
-import re
-import struct
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Optional
 
 from ..core import (
-    Binding,
     Bytecode,
-    Field,
-    Fun,
-    Null,
     Obj,
-    Packed,
-    Proto,
-    Ref,
-    Type,
     VarInt,
-    Virtual,
     fIndex,
-    fieldRef,
-    strRef,
     tIndex,
-    Abstract,
-    Enum,
-    EnumConstruct,
-    Native,
-    Function,
 )
+
 try:
-    from capstone import Cs, CS_ARCH_X86, CS_MODE_64, CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN
-    from capstone.x86 import X86_OP_MEM, X86_REG_RIP, X86_OP_IMM, X86_OP_REG, X86_REG_RDI, X86_REG_EDI
-    from capstone.arm64 import (
+    from capstone import Cs, CS_ARCH_X86, CS_MODE_64, CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN  # noqa: F401
+    from capstone.x86 import X86_OP_MEM, X86_REG_RIP, X86_OP_IMM, X86_OP_REG, X86_REG_RDI, X86_REG_EDI  # noqa: F401
+    from capstone.arm64 import (  # noqa: F401
         ARM64_OP_IMM,
         ARM64_OP_REG,
         ARM64_OP_MEM,
         ARM64_REG_X0,
         ARM64_REG_X17,
     )
-    import lief
+    import lief  # noqa: F401
 except ImportError:
     raise NotImplementedError(
         "Cannot run dehl without lief and capstone installed. Try `pip install crashlink[extras]` or `pip install lief capstone`."
     )
-from .binary import HLCBinary, PTR, SIMPLE_KINDS, _resolve_plt_targets, disasm_function
+from .binary import HLCBinary, _resolve_plt_targets
 from .context import DehlcContext
 from .functions import _recover_functions, _recover_native_names
 from .globals import _recover_globals
@@ -54,6 +37,7 @@ from .init_analysis import analyse_init_types
 from .pools import _recover_constant_pools
 from .strings import _dwarf_local_names, _recover_hash_names, _recover_strings
 from .types import _parse_type, recover_type_order
+
 
 def code_from_bin(
     path: str | None = None,
@@ -191,4 +175,3 @@ def code_from_bin(
         code.nstrings = VarInt(len(ctx.strs))
 
     return code
-

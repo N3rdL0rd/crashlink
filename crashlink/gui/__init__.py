@@ -13,7 +13,9 @@ def _install_excepthook(win: object) -> None:
     import traceback
     from types import TracebackType
 
-    def _hook(exc_type: type[BaseException] | None, exc_value: BaseException | None, exc_tb: TracebackType | None) -> None:
+    def _hook(
+        exc_type: type[BaseException] | None, exc_value: BaseException | None, exc_tb: TracebackType | None
+    ) -> None:
         tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
         print(tb_text, file=sys.stderr)  # keep it visible in the terminal too
         log_panel = getattr(win, "_log_panel", None)

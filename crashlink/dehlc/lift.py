@@ -33,11 +33,9 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
-from capstone import CS_ARCH_ARM64, CS_ARCH_X86, CS_MODE_32, CS_MODE_64, CS_MODE_LITTLE_ENDIAN
-from capstone.arm64 import ARM64_OP_MEM as A64_OP_MEM
-from capstone.arm64 import ARM64_OP_REG as A64_OP_REG
+from capstone import CS_ARCH_X86, CS_MODE_32, CS_MODE_64
 from capstone.x86 import X86_OP_IMM as X86_OP_IMM
 from capstone.x86 import X86_OP_MEM as X86_OP_MEM
 from capstone.x86 import X86_OP_REG as X86_OP_REG
@@ -180,14 +178,13 @@ class LiftRule(ABC):
         return mnemonic in self.MNEMONICS
 
     @abstractmethod
-    def apply(self, ctx: LiftContext) -> bool:
-        ...
+    def apply(self, ctx: LiftContext) -> bool: ...
 
 
-def rule(*mnemonics: str) -> Callable[[type], type]:
+def rule(*mnemonics: str) -> Callable[[Type["LiftRule"]], Type["LiftRule"]]:
     """Class decorator registering a rule's handled mnemonics."""
 
-    def wrap(cls: type) -> type:
+    def wrap(cls: Type["LiftRule"]) -> Type["LiftRule"]:
         cls.MNEMONICS = tuple(mnemonics)
         return cls
 
@@ -239,8 +236,18 @@ class JmpRule(LiftRule):
 
 
 @rule(
-    "je", "jne", "js", "jns", "jg", "jge", "jl", "jle",
-    "ja", "jae", "jb", "jbe",
+    "je",
+    "jne",
+    "js",
+    "jns",
+    "jg",
+    "jge",
+    "jl",
+    "jle",
+    "ja",
+    "jae",
+    "jb",
+    "jbe",
 )
 class CondBranchRule(LiftRule):
     """Conditional branches; comparison signedness survives in the condition code."""
@@ -367,12 +374,17 @@ class ArithRule(LiftRule):
     adjustment and reg-zeroing xors are consumed upstream/downstream."""
 
     def apply(self, ctx: LiftContext) -> bool:
-        from capstone.x86 import X86_REG_RSP
+        from capstone.x86 import X86_REG_RSP  # noqa: F401
 
         if len(ctx.ops) >= 1 and ctx.ops[0].type == X86_OP_REG:
             if ctx.ops[0].reg == X86_REG_RSP:
                 return True  # frame adjustment
-        if ctx.mnemonic == "sub" and len(ctx.ops) == 2 and all(o.type == X86_OP_REG for o in ctx.ops) and False:
+        if (
+            ctx.mnemonic == "sub"
+            and len(ctx.ops) == 2
+            and all(o.type == X86_OP_REG for o in ctx.ops)
+            and False
+        ):
             pass
         fam = _ARITH_MAP.get(ctx.mnemonic)
         if fam is None:
@@ -408,8 +420,20 @@ class DivRule(LiftRule):
         return True
 
 
-_SETCC = {"sete", "setne", "sets", "setns", "setg", "setge", "setl", "setle",
-          "seta", "setae", "setb", "setbe"}
+_SETCC = {
+    "sete",
+    "setne",
+    "sets",
+    "setns",
+    "setg",
+    "setge",
+    "setl",
+    "setle",
+    "seta",
+    "setae",
+    "setb",
+    "setbe",
+}
 
 
 @rule(*_SETCC)
@@ -442,8 +466,9 @@ class FunctionLifter:
     below never changes: rules own the semantics.
     """
 
+    md: Any  # capstone engine, set by architecture subclasses
     RULES: List[LiftRule] = [
-        FloatZeroRule(),      # before Arith/Xor fallbacks
+        FloatZeroRule(),  # before Arith/Xor fallbacks
         FloatLoadRule(),
         CallRule(),
         CondBranchRule(),
@@ -514,10 +539,15 @@ class FunctionLifter:
 
 
 class X86FunctionLifter(FunctionLifter):
-    def __init__(self, bin_view: HLCBinary, plt_map: Optional[Dict[int, str]], mode: int,
-                 size_of: Optional[Callable[[int], int]] = None):
+    def __init__(
+        self,
+        bin_view: HLCBinary,
+        plt_map: Optional[Dict[int, str]],
+        mode: int,
+        size_of: Optional[Callable[[int], int]] = None,
+    ):
         super().__init__(bin_view, plt_map, size_of=size_of)
-        from capstone import Cs
+        from capstone import Cs  # noqa: F401
 
         self.md = Cs(CS_ARCH_X86, mode)
         self.md.detail = True

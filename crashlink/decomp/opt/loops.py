@@ -148,7 +148,9 @@ class IRLoopRerollOptimizer(TraversingIROptimizer):
             return False
         return header[0] == elem and header[1] == value
 
-    def _find_next_header(self, stmts: List[IRStatement], start: int, elem: IRLocal, value: int) -> Optional[int]:
+    def _find_next_header(
+        self, stmts: List[IRStatement], start: int, elem: IRLocal, value: int
+    ) -> Optional[int]:
         for i in range(start, len(stmts)):
             if self._is_header(stmts[i], elem, value):
                 return i
@@ -409,11 +411,19 @@ class IRForEachLoopOptimizer(TraversingIROptimizer):
         idx: Optional[IRLocal] = None
         arr: Optional[IRExpression] = None
         if cond.op == IRBoolExpr.CompareType.LT:
-            if isinstance(cond.left, IRLocal) and isinstance(cond.right, IRField) and cond.right.field_name == "length":
+            if (
+                isinstance(cond.left, IRLocal)
+                and isinstance(cond.right, IRField)
+                and cond.right.field_name == "length"
+            ):
                 idx = cond.left
                 arr = cond.right.target
         elif cond.op == IRBoolExpr.CompareType.GT:
-            if isinstance(cond.right, IRLocal) and isinstance(cond.left, IRField) and cond.left.field_name == "length":
+            if (
+                isinstance(cond.right, IRLocal)
+                and isinstance(cond.left, IRField)
+                and cond.left.field_name == "length"
+            ):
                 idx = cond.right
                 arr = cond.left.target
         if idx is None or arr is None:

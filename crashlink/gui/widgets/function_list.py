@@ -297,7 +297,7 @@ class FunctionList(QWidget):
         root = _DirNode()
         for file_path in visible_files:
             parts = file_path.replace("\\", "/").split("/")
-            dirs, filename = parts[:-1], parts[-1]
+            dirs, _filename = parts[:-1], parts[-1]
             node = root
             for part in dirs:
                 node = node.children.setdefault(part, _DirNode())

@@ -210,7 +210,9 @@ class _WaitBox(QDialog):
         super().__init__(parent)
         self.setObjectName("waitBox")
         self.setWindowTitle("Please wait…")
-        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowTitleHint)
+        self.setWindowFlags(
+            Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowTitleHint
+        )
         self.setModal(False)  # informational only — never block input to the app
         self.setFixedSize(280, 70)
 
@@ -617,7 +619,9 @@ class MainWindow(QMainWindow):
         box.setWindowTitle("Unsaved changes")
         box.setText("You have unsaved renames/comments. Save the analysis database before continuing?")
         box.setStandardButtons(
-            QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel
         )
         box.setDefaultButton(QMessageBox.StandardButton.Save)
         choice = box.exec()
@@ -699,7 +703,9 @@ class MainWindow(QMainWindow):
         if self._code is None or self._source_path is None:
             self._log_panel.warn("Open a bytecode file first.")
             return
-        path, _ = QFileDialog.getOpenFileName(self, "Load analysis database", "", "crashlink database (*.cldb)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load analysis database", "", "crashlink database (*.cldb)"
+        )
         if path:
             self._load_database_from(path)
 
@@ -720,7 +726,9 @@ class MainWindow(QMainWindow):
         self._export_text(view.class_view.toPlainText(), "Export Pseudocode", "pseudo.hx")
 
     def _export_text(self, text: str, title: str, default_name: str) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, title, default_name, "Text files (*.txt *.hx);;All files (*)")
+        path, _ = QFileDialog.getSaveFileName(
+            self, title, default_name, "Text files (*.txt *.hx);;All files (*)"
+        )
         if not path:
             return
         try:
@@ -760,7 +768,9 @@ class MainWindow(QMainWindow):
         assert self._code is not None and self._source_path is not None
         self._db_load_thread = _DbLoadThread(cldb_path, self._code, self._source_path)
         self._db_load_thread.signals.finished.connect(self._on_db_load_finished)
-        self._db_load_thread.signals.error.connect(lambda msg: self._log_panel.error(f"Failed to load database: {msg}"))
+        self._db_load_thread.signals.error.connect(
+            lambda msg: self._log_panel.error(f"Failed to load database: {msg}")
+        )
         self._db_load_thread.start()
 
     def _on_db_load_finished(self, result: DatabaseLoadResult) -> None:
@@ -846,7 +856,9 @@ class MainWindow(QMainWindow):
         class_key = f"class:{canonical}"
 
         # Gather all findices that belong to this canonical class (static + instance)
-        all_fi = sorted(fi for fi, (o, _, _) in reg.items() if destaticify(o.name.resolve(self._code)) == canonical)
+        all_fi = sorted(
+            fi for fi, (o, _, _) in reg.items() if destaticify(o.name.resolve(self._code)) == canonical
+        )
         return class_key, canonical, all_fi
 
     # ── Natives table ────────────────────────────────────────────────────────
@@ -942,7 +954,8 @@ class MainWindow(QMainWindow):
         placeholder = [
             (
                 fi,
-                self._class_results[class_key][fi] or f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}",
+                self._class_results[class_key][fi]
+                or f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}",
             )
             for fi in all_fi
         ]
@@ -1166,12 +1179,16 @@ class MainWindow(QMainWindow):
         self._apply_rename(findex, loc.reg_idx, loc.defining_op_idx, new_name)
         self._log_panel.success(f"Renamed '{word}' → '{new_name}' in f@{findex}")
 
-    def _apply_rename(self, findex: int, reg_idx: int, def_op: Optional[int], new_name: Optional[str]) -> None:
+    def _apply_rename(
+        self, findex: int, reg_idx: int, def_op: Optional[int], new_name: Optional[str]
+    ) -> None:
         """new_name=None clears the rename (used by the CLI bridge's `unrename`)."""
         if self._code is None:
             return
         old_name = self._code.annotations.get_rename(findex, reg_idx, def_op)
-        cmd = RenameCommand(self._code, findex, reg_idx, def_op, old_name, new_name, self._on_annotation_applied)
+        cmd = RenameCommand(
+            self._code, findex, reg_idx, def_op, old_name, new_name, self._on_annotation_applied
+        )
         self._undo_stack.push(cmd)
 
     def _apply_comment(self, findex: int, op_idx: int, text: Optional[str]) -> None:
@@ -1222,7 +1239,9 @@ class MainWindow(QMainWindow):
         if self._code is None:
             return
         existing = self._code.annotations.get_comment(findex, op_idx)
-        text, ok = QInputDialog.getText(self, "Comment", f"Comment on op {op_idx} in f@{findex}:", text=existing or "")
+        text, ok = QInputDialog.getText(
+            self, "Comment", f"Comment on op {op_idx} in f@{findex}:", text=existing or ""
+        )
         if not ok:
             return
         text = text.strip()
@@ -1399,7 +1418,9 @@ class MainWindow(QMainWindow):
             ("/", "Add/edit a comment on the opcode under the cursor"),
             ("Up / Down", "REPL command history (when the REPL input is focused)"),
         ]
-        rows_html = "".join(f"<tr><td><b>{key}</b></td><td>&nbsp;&nbsp;{desc}</td></tr>" for key, desc in rows)
+        rows_html = "".join(
+            f"<tr><td><b>{key}</b></td><td>&nbsp;&nbsp;{desc}</td></tr>" for key, desc in rows
+        )
         box = QMessageBox(self)
         box.setWindowTitle("Keyboard Shortcuts")
         box.setText(f"<table>{rows_html}</table>")

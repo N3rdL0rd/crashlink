@@ -4,21 +4,20 @@ Binary image access: symbol views, memory reads, call-target resolution (ELF/PE)
 
 from __future__ import annotations
 
-import re
 import struct
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 try:
-    from capstone import Cs, CS_ARCH_X86, CS_MODE_64, CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN
-    from capstone.x86 import X86_OP_MEM, X86_REG_RIP, X86_OP_IMM, X86_OP_REG, X86_REG_RDI, X86_REG_EDI
-    from capstone.arm64 import (
+    from capstone import Cs, CS_ARCH_X86, CS_MODE_64, CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN  # noqa: F401
+    from capstone.x86 import X86_OP_MEM, X86_REG_RIP, X86_OP_IMM, X86_OP_REG, X86_REG_RDI, X86_REG_EDI  # noqa: F401
+    from capstone.arm64 import (  # noqa: F401
         ARM64_OP_IMM,
         ARM64_OP_REG,
         ARM64_OP_MEM,
         ARM64_REG_X0,
         ARM64_REG_X17,
     )
-    import lief
+    import lief  # noqa: F401
 except ImportError:
     raise NotImplementedError(
         "Cannot run dehl without lief and capstone installed. Try `pip install crashlink[extras]` or `pip install lief capstone`."
@@ -54,7 +53,9 @@ HL_TYPE_VIRT_NFIELDS_OFFSET = 8  # hl_type_virtual.nfields
 HL_TYPE_ENUM_NAME_OFFSET = 0  # hl_type_enum.name
 HL_TYPE_ENUM_NCONSTRUCTS_OFFSET = 8  # hl_type_enum.nconstructs
 HL_TYPE_ENUM_CONSTRUCTS_OFFSET = 16  # hl_type_enum.constructs
-HL_ENUM_CONSTRUCT_SIZE = 40  # hl_enum_construct: name(8) nparams(4) pad(4) params(8) size(4) hasptr(4) offsets(8)
+HL_ENUM_CONSTRUCT_SIZE = (
+    40  # hl_enum_construct: name(8) nparams(4) pad(4) params(8) size(4) hasptr(4) offsets(8)
+)
 
 HL_TYPE_GLOBAL_PREFIX = "t$"
 HL_STRING_GLOBAL_PREFIX = "s$"
@@ -106,25 +107,30 @@ class HLCBinary:
     """
 
     def __init__(self, path: Optional[str] = None, data: Optional[bytes] = None):
+        read: Optional[bytes] = None
         if path is not None:
             try:
                 with open(path, "rb") as f:
-                    self.data = f.read()
+                    read = f.read()
             except Exception:
-                self.data = None
-        else:
-            if data is None:
-                raise ValueError("One of `path` or `data` must be passed.")
-            self.data = data
-        assert self.data is not None and len(self.data) > 2, "Failed to read binary!"
+                read = None
+        elif data is not None:
+            read = data
+        assert read is not None and len(read) > 2, "Failed to read binary!"
+        # Single non-Optional assignment site keeps the attribute type clean.
+        self.data: bytes = read
+
         if self.data[:2] == b"MZ":
-            self.binary = lief.PE.parse(self.data)
+            parsed = lief.PE.parse(self.data)
+            assert parsed is not None, "Failed to parse PE binary!"
+            self.binary = parsed
             self.format = "pe"
         else:
-            self.binary = lief.parse(self.data)
+            parsed = lief.parse(self.data)
+            assert parsed is not None, "Failed to parse binary!"
+            assert isinstance(parsed, lief.ELF.Binary), f"Unsupported format: {type(parsed)}"
+            self.binary = parsed
             self.format = "elf"
-        assert self.binary is not None, "Failed to parse binary!"
-        assert isinstance(self.binary, (lief.PE.Binary, lief.ELF.Binary, lief.MachO.Binary))
 
         self.PTR = PTR
         raw_symbols = list(self.binary.symbols)
@@ -140,8 +146,8 @@ class HLCBinary:
             if not name or (name, symbol.value) in seen:
                 continue
             seen.add((name, symbol.value))
-            self.symbols_by_name.setdefault(name, symbol)
-            self.symbols_by_addr.setdefault(symbol.value, []).append(symbol)
+            self.symbols_by_name.setdefault(name, symbol)  # ty: ignore[no-matching-overload]
+            self.symbols_by_addr.setdefault(symbol.value, []).append(symbol)  # ty: ignore[invalid-argument-type]
 
         # Architecture detection - drives capstone engine choice and code analysis.
         machine = getattr(getattr(self.binary, "header", None), "machine_type", None)
@@ -163,14 +169,14 @@ class HLCBinary:
         self.image_base = 0
         if self.format == "pe":
             try:
-                self.image_base = int(self.binary.optional_header.imagebase)
+                self.image_base = int(self.binary.optional_header.imagebase)  # ty: ignore[unresolved-attribute]
             except Exception:
                 self.image_base = 0
 
     @property
     def symbols(self) -> List["_SymView"]:
         """Format-normalized symbol views (absolute addresses, derived sizes)."""
-        return self._symbols
+        return self._symbols  # ty: ignore[invalid-return-type]
 
     def _normalize_pe_symbols(self) -> List["_SymView"]:
         """
@@ -183,11 +189,11 @@ class HLCBinary:
         by_sec: Dict[int, List[Tuple[int, str]]] = {}
         for s in self.binary.symbols:
             name = str(s.name)
-            if not name or s.section_idx <= 0 or s.section_idx > len(sections):
+            if not name or s.section_idx <= 0 or s.section_idx > len(sections):  # ty: ignore[unresolved-attribute]
                 continue
-            sec = sections[s.section_idx - 1]
+            sec = sections[s.section_idx - 1]  # ty: ignore[unresolved-attribute]
             rva = sec.virtual_address + s.value
-            by_sec.setdefault(s.section_idx, []).append((rva, name))
+            by_sec.setdefault(s.section_idx, []).append((rva, name))  # ty: ignore[unresolved-attribute]
         out: List["_SymView"] = []
         for idx, lst in by_sec.items():
             sec = sections[idx - 1]
@@ -195,7 +201,15 @@ class HLCBinary:
             lst.sort()
             for i, (rva, name) in enumerate(lst):
                 nxt = lst[i + 1][0] if i + 1 < len(lst) else end
-                out.append(_SymView(name, rva, max(0, nxt - rva), "NOBITS" if ".bss" in sec.name else "PROGBITS", sec.name))
+                out.append(
+                    _SymView(
+                        name,
+                        rva,
+                        max(0, nxt - rva),
+                        "NOBITS" if ".bss" in sec.name else "PROGBITS",  # ty: ignore[unsupported-operator]
+                        sec.name,  # ty: ignore[invalid-argument-type]
+                    )
+                )
         return out
 
     def _capstone(self):
@@ -225,15 +239,16 @@ class HLCBinary:
         Returns None when no debug sections exist (e.g. MSVC default builds).
         """
         import struct as _struct
+
         if self.format != "pe":
             return None
         try:
-            pe_off, = _struct.unpack("<I", self.data[0x3C:0x40])
+            (pe_off,) = _struct.unpack("<I", self.data[0x3C:0x40])
             coff = pe_off + 4
-            nsec, = _struct.unpack("<H", self.data[coff + 2 : coff + 4])
-            opt_size, = _struct.unpack("<H", self.data[coff + 16 : coff + 18])
-            nsyms, = _struct.unpack("<I", self.data[coff + 12 : coff + 16])
-            symtab_ptr, = _struct.unpack("<I", self.data[coff + 8 : coff + 12])
+            (nsec,) = _struct.unpack("<H", self.data[coff + 2 : coff + 4])
+            (opt_size,) = _struct.unpack("<H", self.data[coff + 16 : coff + 18])
+            (nsyms,) = _struct.unpack("<I", self.data[coff + 12 : coff + 16])
+            (symtab_ptr,) = _struct.unpack("<I", self.data[coff + 8 : coff + 12])
             strtab = symtab_ptr + nsyms * 18
             sec0 = coff + 20 + opt_size
             secs = []  # (real_name, raw_bytes)
@@ -248,9 +263,9 @@ class HLCBinary:
                     real = raw_name
                 if not real.startswith(".debug"):
                     continue
-                size, = _struct.unpack("<I", self.data[e + 8 : e + 12])
-                raw_sz, = _struct.unpack("<I", self.data[e + 16 : e + 20])
-                raw_ptr, = _struct.unpack("<I", self.data[e + 20 : e + 24])
+                (size,) = _struct.unpack("<I", self.data[e + 8 : e + 12])
+                (raw_sz,) = _struct.unpack("<I", self.data[e + 16 : e + 20])
+                (raw_ptr,) = _struct.unpack("<I", self.data[e + 20 : e + 24])
                 if size == 0 or raw_sz == 0:
                     continue
                 secs.append((real, self.data[raw_ptr : raw_ptr + min(size, raw_sz)]))
@@ -283,8 +298,8 @@ class HLCBinary:
             eh = bytearray(ehsize)
             eh[0:4] = b"\x7fELF"
             eh[4], eh[5], eh[6] = 2, 1, 1  # 64-bit, little-endian
-            _struct.pack_into("<H", eh, 16, 1)      # ET_REL
-            _struct.pack_into("<H", eh, 18, 0x3E)   # EM_X86_64
+            _struct.pack_into("<H", eh, 16, 1)  # ET_REL
+            _struct.pack_into("<H", eh, 18, 0x3E)  # EM_X86_64
             _struct.pack_into("<Q", eh, 40, shoff)  # e_shoff
             _struct.pack_into("<H", eh, 52, ehsize)
             _struct.pack_into("<H", eh, 58, shentsize)
@@ -311,8 +326,9 @@ class HLCBinary:
 
     def _elffile(self):
         """Returns an ELFFile over the image; PE images are re-wrapped with their DWARF sections."""
-        from elftools.elf.elffile import ELFFile
+        from elftools.elf.elffile import ELFFile  # noqa: F401
         import io as _io
+
         if self.format == "pe":
             if not hasattr(self, "_synth_elf"):
                 self._synth_elf = self._build_synth_elf()
@@ -452,7 +468,7 @@ def _resolve_plt_targets(bin_view: "HLCBinary") -> Dict[int, str]:
     try:
         import io as _io
 
-        from elftools.elf.elffile import ELFFile
+        from elftools.elf.elffile import ELFFile  # noqa: F401
 
         elf = ELFFile(_io.BytesIO(bin_view.data))
         got_to_name: Dict[int, int] = {}
@@ -464,9 +480,11 @@ def _resolve_plt_targets(bin_view: "HLCBinary") -> Dict[int, str]:
                 symtab = elf.get_section(sec["sh_link"])
                 for rel in sec.iter_relocations():
                     if rel["r_info_type"] in (7, 373):  # R_X86_64_JUMP_SLOT / IRELATIVE-safe
-                        sname = symtab.get_symbol(rel["r_info_sym"]).name if symtab else ""
+                        sname = symtab.get_symbol(rel["r_info_sym"]).name if symtab else ""  # ty: ignore[unresolved-attribute]
                         if sname:
-                            got_to_name[rel["r_offset"]] = sname.decode() if isinstance(sname, bytes) else sname
+                            got_to_name[rel["r_offset"]] = (
+                                sname.decode() if isinstance(sname, bytes) else sname
+                            )
         if got_to_name:
             for secname in (".plt", ".plt.sec"):
                 pltsec = binary.get_section(secname)
@@ -484,7 +502,7 @@ def _resolve_plt_targets(bin_view: "HLCBinary") -> Dict[int, str]:
                             start = base + off
                             if off >= 4 and raw[off - 4 : off] == b"\xf3\x0f\x1e\xfa":
                                 start -= 4
-                            plt_map[start] = nm
+                            plt_map[start] = nm  # ty: ignore[invalid-assignment]
             if plt_map:
                 return plt_map
     except Exception:
@@ -493,14 +511,14 @@ def _resolve_plt_targets(bin_view: "HLCBinary") -> Dict[int, str]:
     # GOT slot -> symbol name
     got_to_name2: Dict[int, str] = {}
     try:
-        for r in binary.pltgot_relocations:
+        for r in binary.pltgot_relocations:  # ty: ignore[unresolved-attribute]
             if r.symbol is not None and str(r.symbol.name):
                 got_to_name2[r.address] = str(r.symbol.name)
     except Exception:
         pass
 
     try:
-        for entry in binary.plt_entries:
+        for entry in binary.plt_entries:  # ty: ignore[unresolved-attribute]
             name = str(entry.symbol.name) if getattr(entry, "symbol", None) is not None else ""
             if name:
                 plt_map[entry.address] = name
@@ -514,11 +532,11 @@ def _resolve_plt_targets(bin_view: "HLCBinary") -> Dict[int, str]:
     md = Cs(CS_ARCH_X86, CS_MODE_64)
     md.detail = True
     try:
-        for segment in binary.segments:
-            if not (segment.type == lief.ELF.Segment.TYPE.PH_LOAD and segment.flags & 1):
+        for segment in binary.segments:  # ty: ignore[unresolved-attribute]
+            if not (segment.type == lief.ELF.Segment.TYPE.PH_LOAD and segment.flags & 1):  # ty: ignore[unresolved-attribute, unsupported-operator]
                 continue  # executable only
             data = bytes(segment.content)
-            for insn in md.disasm(data, segment.virtual_address):
+            for insn in md.disasm(data, segment.virtual_address):  # ty: ignore[invalid-argument-type, missing-argument]
                 if insn.mnemonic == "jmp" and len(insn.operands) == 1 and insn.operands[0].type == X86_OP_MEM:
                     got = _resolve_mem_target(insn, insn.operands[0])
                     name = got_to_name2.get(got)
@@ -540,8 +558,8 @@ def _resolve_plt_targets_arm64(bin_view: "HLCBinary") -> Dict[int, str]:
     got_to_name: Dict[int, str] = {}
     try:
         for r in bin_view.binary.relocations:
-            if r.symbol is not None and str(r.symbol.name):
-                got_to_name[r.address] = str(r.symbol.name)
+            if r.symbol is not None and str(r.symbol.name):  # ty: ignore[unresolved-attribute]
+                got_to_name[r.address] = str(r.symbol.name)  # ty: ignore[unresolved-attribute]
     except Exception:
         pass
 
@@ -549,10 +567,10 @@ def _resolve_plt_targets_arm64(bin_view: "HLCBinary") -> Dict[int, str]:
         import io
 
         plt = bin_view.binary.get_section(".plt")
-        stream = io.BytesIO(bin_view.data)
+        _stream = io.BytesIO(bin_view.data)
         elffile = None
         try:
-            from elftools.elf.elffile import ELFFile
+            from elftools.elf.elffile import ELFFile  # noqa: F401
 
             elffile = bin_view._elffile()
             sec = elffile.get_section_by_name(".plt")
@@ -574,7 +592,7 @@ def _resolve_plt_targets_arm64(bin_view: "HLCBinary") -> Dict[int, str]:
         entry_start = None
         page = 0
         loaded_got = 0
-        for insn in md.disasm(code, va):
+        for insn in md.disasm(code, va):  # ty: ignore[invalid-argument-type, missing-argument]
             if insn.mnemonic == "adrp" and len(insn.operands) == 2 and insn.operands[1].type == ARM64_OP_IMM:
                 # Each PLT stub opens with adrp x16, <got-page> (the PLT0 header
                 # opens with stp instead, which we simply skip over).
@@ -610,10 +628,10 @@ def _resolve_call_target_name(bin_view: "HLCBinary", plt_map: Dict[int, str], ta
         data = bin_view.read_bytes(target, 16)
         md = Cs(CS_ARCH_X86, CS_MODE_64)
         md.detail = True
-        for insn in md.disasm(data, target):
+        for insn in md.disasm(data, target):  # ty: ignore[invalid-argument-type, missing-argument]
             if insn.mnemonic == "jmp" and len(insn.operands) == 1 and insn.operands[0].type == X86_OP_MEM:
                 got = _resolve_mem_target(insn, insn.operands[0])
-                for r in bin_view.binary.pltgot_relocations:
+                for r in bin_view.binary.pltgot_relocations:  # ty: ignore[unresolved-attribute]
                     if r.address == got and r.symbol is not None:
                         return str(r.symbol.name)
             break
@@ -628,7 +646,7 @@ def _elf_imports(bin_view: "HLCBinary") -> set:
     try:
         for s in bin_view.symbols:
             try:
-                if s.shndx == 0 and s.value == 0 and s.size == 0 and str(s.name):
+                if getattr(s, "shndx", None) == 0 and s.value == 0 and s.size == 0 and str(s.name):
                     out.add(str(s.name))
             except Exception:
                 continue
@@ -646,9 +664,6 @@ def _relocated_table_slots(bin_view: "HLCBinary", sym_name: str) -> Dict[int, st
     """
     out: Dict[int, str] = {}
     try:
-        import io
-
-        from elftools.elf.elffile import ELFFile
         from elftools.elf.relocation import RelocationSection
 
         sym = bin_view.symbol(sym_name)
@@ -707,4 +722,3 @@ def _pe_import_map(bin_view: "HLCBinary") -> Dict[int, str]:
     except Exception:
         pass
     return out
-

@@ -57,6 +57,22 @@ gui = [
   "graphviz",
 ]
 
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+extend-exclude = ["env", "local", "crashtest/runs"]
+
+[tool.ruff.lint]
+# F403/F405: star-import re-exports are a deliberate pattern in __init__ files
+# and hlc; E402: capstone/lief try-import blocks must precede other imports.
+ignore = ["F403", "F405", "E402"]
+
+[tool.ruff.lint.per-file-ignores]
+# Package __init__ files exist to re-export the public API.
+"crashlink/__init__.py" = ["F401"]
+"crashlink/decomp/__init__.py" = ["F401"]
+"crashlink/decomp/opt/__init__.py" = ["F401"]
+
 [tool.ty.environment]
 python-platform = "all"
 

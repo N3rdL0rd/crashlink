@@ -22,7 +22,9 @@ from .opcodes import opcode_docs, opcodes
 from .pseudo import pseudo
 
 MAX_OUTPUT_CHARS = 8000
-_TRUNCATION_NOTE = "\n\n[Output truncated to {kept} of {total} chars. Use pagination or a more specific query.]"
+_TRUNCATION_NOTE = (
+    "\n\n[Output truncated to {kept} of {total} chars. Use pagination or a more specific query.]"
+)
 
 _code: Optional[Bytecode] = None
 
@@ -627,7 +629,9 @@ def functions_in_file(filename: str) -> str:
     code = _require_code()
     if not code.has_debug_info:
         return "No debug information in bytecode."
-    results = [_disasm.func_header(code, func) for func in code.functions if func.resolve_file(code) == filename]
+    results = [
+        _disasm.func_header(code, func) for func in code.functions if func.resolve_file(code) == filename
+    ]
     if not results:
         return f"No functions found in file '{filename}'."
     return _trim(f"Functions in {filename}:\n" + "\n".join(results))

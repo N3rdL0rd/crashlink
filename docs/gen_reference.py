@@ -28,27 +28,19 @@ def is_public(name: str) -> bool:
 def own_submodules(mod: griffe.Module) -> list[griffe.Module]:
     """Direct submodules actually defined in this package - not aliases
     pulled in by `from . import x` or `from .x import *`."""
-    return [
-        m for m in mod.members.values() if isinstance(m, griffe.Module) and is_public(m.name)
-    ]
+    return [m for m in mod.members.values() if isinstance(m, griffe.Module) and is_public(m.name)]
 
 
 def own_classes(mod_or_class: griffe.Module | griffe.Class) -> list[griffe.Class]:
-    return [
-        m for m in mod_or_class.members.values() if isinstance(m, griffe.Class) and is_public(m.name)
-    ]
+    return [m for m in mod_or_class.members.values() if isinstance(m, griffe.Class) and is_public(m.name)]
 
 
 def own_functions(mod_or_class: griffe.Module | griffe.Class) -> list[griffe.Function]:
-    return [
-        m for m in mod_or_class.members.values() if isinstance(m, griffe.Function) and is_public(m.name)
-    ]
+    return [m for m in mod_or_class.members.values() if isinstance(m, griffe.Function) and is_public(m.name)]
 
 
 def own_attributes(mod_or_class: griffe.Module | griffe.Class) -> list[griffe.Attribute]:
-    return [
-        m for m in mod_or_class.members.values() if isinstance(m, griffe.Attribute) and is_public(m.name)
-    ]
+    return [m for m in mod_or_class.members.values() if isinstance(m, griffe.Attribute) and is_public(m.name)]
 
 
 def fmt_annotation(annotation: object) -> str:

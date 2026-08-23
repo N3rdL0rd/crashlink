@@ -34,15 +34,27 @@ from .lift import LiftedOp
 
 # cc -> conditional opcode family (signed/unsigned branches map directly).
 _CC_TO_OP = {
-    "l": "JSLt", "ge": "JSGte", "g": "JSGt", "le": "JSLte",
-    "b": "JULt", "ae": "JUGte",
-    "e": "JEq", "ne": "JNotEq",
-    "s": "JSLt", "ns": "JSGte",  # sign-flag branches approximate
+    "l": "JSLt",
+    "ge": "JSGte",
+    "g": "JSGt",
+    "le": "JSLte",
+    "b": "JULt",
+    "ae": "JUGte",
+    "e": "JEq",
+    "ne": "JNotEq",
+    "s": "JSLt",
+    "ns": "JSGte",  # sign-flag branches approximate
 }
 
 _ARITH_OPS = {
-    "Add": "Add", "Sub": "Sub", "Mul": "Mul", "Shl": "Shl",
-    "SShr": "SShr", "UShr": "UShr", "And": "And", "Or": "Or",
+    "Add": "Add",
+    "Sub": "Sub",
+    "Mul": "Mul",
+    "Shl": "Shl",
+    "SShr": "SShr",
+    "UShr": "UShr",
+    "And": "And",
+    "Or": "Or",
 }
 
 _FIELD_SIZES = {"i32": 4, "u32": 4, "f32": 4, "i16": 2, "u16": 2, "i8": 1, "u8": 1, "bool": 1}
@@ -62,7 +74,7 @@ class EmitContext:
                 p = bin_view.read_ptr(ps.value + bin_view.PTR * k)
                 if p:
                     self.addr2findex[p] = k
-        self._int_pool: Dict[int, int] = {i.value: k for k, i in enumerate(code.ints)}
+        self._int_pool: Dict[int, int] = {int(i.value): k for k, i in enumerate(code.ints)}
         self._float_pool: Dict[float, int] = {}
 
     def int_ref(self, value: int) -> intRef:
@@ -92,7 +104,8 @@ class EmitContext:
         except IndexError:
             return 0
         d = self.code.types[f.type.value].definition
-        return d.nargs.value if hasattr(d, "nargs") else 0
+        nargs = getattr(d, "nargs", None)
+        return int(nargs.value) if nargs is not None else 0
 
     def fields_by_offset(self, tidx: int) -> Dict[int, int]:
         """Byte offset -> field index for one recovered type."""
@@ -209,7 +222,9 @@ def emit_function(ctx: EmitContext, ops: List[LiftedOp], max_regs: int = 512) ->
             last_value = r
         elif nm in _ARITH_OPS:
             r = new_reg()
-            out.append(Opcode(_ARITH_OPS[nm], {"dst": Reg(r), "a": Reg(last_value or 0), "b": Reg(new_reg())}))
+            out.append(
+                Opcode(_ARITH_OPS[nm], {"dst": Reg(r), "a": Reg(last_value or 0), "b": Reg(new_reg())})
+            )
             last_value = r
         # Convert / Div / LeaSym / Call? / Prim:* / Mov: skipped in v1
 

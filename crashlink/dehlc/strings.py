@@ -4,21 +4,19 @@ String table and hash-name recovery.
 
 from __future__ import annotations
 
-import re
-import struct
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List
 
 try:
-    from capstone import Cs, CS_ARCH_X86, CS_MODE_64, CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN
-    from capstone.x86 import X86_OP_MEM, X86_REG_RIP, X86_OP_IMM, X86_OP_REG, X86_REG_RDI, X86_REG_EDI
-    from capstone.arm64 import (
+    from capstone import Cs, CS_ARCH_X86, CS_MODE_64, CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN  # noqa: F401
+    from capstone.x86 import X86_OP_MEM, X86_REG_RIP, X86_OP_IMM, X86_OP_REG, X86_REG_RDI, X86_REG_EDI  # noqa: F401
+    from capstone.arm64 import (  # noqa: F401
         ARM64_OP_IMM,
         ARM64_OP_REG,
         ARM64_OP_MEM,
         ARM64_REG_X0,
         ARM64_REG_X17,
     )
-    import lief
+    import lief  # noqa: F401
 except ImportError:
     raise NotImplementedError(
         "Cannot run dehl without lief and capstone installed. Try `pip install crashlink[extras]` or `pip install lief capstone`."
@@ -32,6 +30,8 @@ from .binary import (
     disasm_function,
 )
 from .context import DehlcContext
+from .init_analysis import _track_arm64_address_events
+
 
 def _recover_strings(ctx: DehlcContext) -> None:
     """Reads string contents out of fully-initialised const_s$X objects."""
@@ -117,10 +117,9 @@ def _dwarf_local_names(bin_view: HLCBinary) -> List[str]:
     """
     out: List[str] = []
     try:
-        from elftools.elf.elffile import ELFFile
+        from elftools.elf.elffile import ELFFile  # noqa: F401
     except ImportError:
         return out
-    import io
 
     if bin_view.data is None:
         return out
@@ -144,4 +143,3 @@ def _dwarf_local_names(bin_view: HLCBinary) -> List[str]:
     except Exception:
         pass
     return out
-

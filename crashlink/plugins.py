@@ -93,7 +93,9 @@ def register_optimizer(
     "start" (before it, for passes that must see the raw lowering)."""
     if position not in ("start", "end"):
         raise ValueError(f"position must be 'start' or 'end', got {position!r}")
-    _registry.append(PluginEntry(optimizer_cls, _make_predicate(sha, when), position, name or optimizer_cls.__name__))
+    _registry.append(
+        PluginEntry(optimizer_cls, _make_predicate(sha, when), position, name or optimizer_cls.__name__)
+    )
     return optimizer_cls
 
 

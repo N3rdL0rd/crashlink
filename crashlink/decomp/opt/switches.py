@@ -81,9 +81,17 @@ class IRIntSwitchOptimizer(TraversingIROptimizer):
             ):
                 return None
             left, right = cond.left, cond.right
-            if isinstance(left, IRLocal) and isinstance(right, IRConst) and right.const_type == IRConst.ConstType.INT:
+            if (
+                isinstance(left, IRLocal)
+                and isinstance(right, IRConst)
+                and right.const_type == IRConst.ConstType.INT
+            ):
                 cand_local, cand_const = left, right
-            elif isinstance(right, IRLocal) and isinstance(left, IRConst) and left.const_type == IRConst.ConstType.INT:
+            elif (
+                isinstance(right, IRLocal)
+                and isinstance(left, IRConst)
+                and left.const_type == IRConst.ConstType.INT
+            ):
                 cand_local, cand_const = right, left
             else:
                 return None
@@ -296,7 +304,9 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
         if len(call.args) != 3:
             return None
         bytes_arg = call.args[0]
-        if not (isinstance(bytes_arg, IRField) and bytes_arg.field_name == "bytes" and bytes_arg.target == s_local):
+        if not (
+            isinstance(bytes_arg, IRField) and bytes_arg.field_name == "bytes" and bytes_arg.target == s_local
+        ):
             return None
         const_arg = call.args[1]
         if not isinstance(const_arg, IRConst) or const_arg.const_type != IRConst.ConstType.STRING:

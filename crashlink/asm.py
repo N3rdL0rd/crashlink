@@ -338,7 +338,9 @@ class AsmFile:
                 raise SyntaxError(f"Not enough arguments for opcode {name}, expected {k}")
             typ = Opcode.TYPE_MAP[v]
             parsed = self._parse_opcode_ref(parts[i + 1], typ)
-            assert isinstance(parsed, typ), f"Expected type {typ} for argument {k} of opcode {name}, got {type(parsed)}"
+            assert isinstance(parsed, typ), (
+                f"Expected type {typ} for argument {k} of opcode {name}, got {type(parsed)}"
+            )
             op.df[k] = parsed
 
         return op
@@ -529,7 +531,9 @@ _WIDTHS = {"db": 1, "dd": 4, "dq": 8}
 def _eval_expr(expr: str) -> int:
     expr = expr.strip()
     if not expr or not _EXPR_SAFE_RE.match(expr):
-        raise X86AsmError(f"Cannot evaluate expression '{expr}' (only integer constants, + and - are allowed)")
+        raise X86AsmError(
+            f"Cannot evaluate expression '{expr}' (only integer constants, + and - are allowed)"
+        )
     try:
         return int(eval(expr, {"__builtins__": {}}, {}))
     except Exception as e:
@@ -603,7 +607,7 @@ def _ks_asm(ks: Any, text: str, addr: int) -> bytes:
 
 def _cs() -> Any:
     try:
-        from capstone import CS_ARCH_X86, CS_MODE_64, Cs 
+        from capstone import CS_ARCH_X86, CS_MODE_64, Cs  # noqa: F401
     except ImportError as e:
         raise X86AsmError(
             "X86 disassembly requires capstone. Install it with `pip install capstone` or `pip install crashlink[extras]`."
@@ -713,4 +717,12 @@ def assemble_x86(source: str) -> bytes:
     return bytes(out)
 
 
-__all__ = ["AsmValue", "AsmValueStr", "AsmFile", "AsmSection", "assemble_x86", "disassemble_x86", "X86AsmError"]
+__all__ = [
+    "AsmValue",
+    "AsmValueStr",
+    "AsmFile",
+    "AsmSection",
+    "assemble_x86",
+    "disassemble_x86",
+    "X86AsmError",
+]

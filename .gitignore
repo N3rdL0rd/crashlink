@@ -84,3 +84,4 @@ sweep.hx
 /format/
 /local/heaps-win/
 *.h.gch
+.uv-cache/

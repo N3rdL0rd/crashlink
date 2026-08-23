@@ -535,7 +535,9 @@ class StringsBlock(Serialisable):
             strings_data.append(0)  # null terminator
 
         self.length.value = len(strings_data)
-        self.lengths = [VarInt(len(string.encode("utf-8", errors="surrogateescape"))) for string in self.value]
+        self.lengths = [
+            VarInt(len(string.encode("utf-8", errors="surrogateescape"))) for string in self.value
+        ]
 
         result = bytearray(self.length.serialise())
         result.extend(strings_data)
@@ -1771,7 +1773,9 @@ class Function(Serialisable):
         self.ops.insert(idx, op)
         if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo:  # fucking typing...
             if not debugRef:
-                debugRef = fileRef(fid=code.debugfiles.find_or_add("?"), line=42)  # life, the universe, and everything
+                debugRef = fileRef(
+                    fid=code.debugfiles.find_or_add("?"), line=42
+                )  # life, the universe, and everything
             self.debuginfo.value.insert(idx, debugRef)
 
     def push_op(self, code: "Bytecode", op: Opcode, debugRef: Optional[fileRef] = None) -> int:
@@ -1856,6 +1860,10 @@ class Bytecode(Serialisable):
 
     For more information about the overall structure, see [here](https://n3rdl0rd.github.io/ModDocCE/files/hlboot)
     """
+
+    # Populated by crashlink.decomp's static-initializer analysis.
+    _static_field_inits_cache: Optional[Dict[int, Dict[str, str]]] = None
+    _static_field_init_refs_cache: Optional[Dict[int, Dict[str, Set[str]]]] = None
 
     def __init__(self) -> None:
         self.deserialised = False
@@ -2002,7 +2010,9 @@ class Bytecode(Serialisable):
                 try:
                     super_type = obj_def.super.resolve(self)
                     # *** Add a check to prevent cycles in this helper too ***
-                    if id(super_type) == id(obj_def.get_containing_type(self)):  # Prevent self-inheritance loops
+                    if id(super_type) == id(
+                        obj_def.get_containing_type(self)
+                    ):  # Prevent self-inheritance loops
                         return {}
                     if isinstance(super_type.definition, Obj):
                         super_def = super_type.definition
@@ -2759,7 +2769,9 @@ class Bytecode(Serialisable):
         primitives_to_seed = [Void, U8, U16, I32, I64, F32, F64, Bool, TypeType, Dyn]
         primitive_kind_map = {p: i for i, p in enumerate(Type.TYPEDEFS)}
 
-        for prim_class in tqdm(primitives_to_seed, desc="Seeding primitives...") if USE_TQDM else primitives_to_seed:
+        for prim_class in (
+            tqdm(primitives_to_seed, desc="Seeding primitives...") if USE_TQDM else primitives_to_seed
+        ):
             kind_val = primitive_kind_map.get(prim_class)
             if kind_val is not None:
                 # Create a temporary Type object just for the traversal
@@ -3045,10 +3057,14 @@ class XrefIndex:
         ]
 
     def field_reads(self, tindex: int, field_slot: int) -> List[XRef]:
-        return [r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot) if r.ref_kind == RefKind.FIELD_READ]
+        return [
+            r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot) if r.ref_kind == RefKind.FIELD_READ
+        ]
 
     def field_writes(self, tindex: int, field_slot: int) -> List[XRef]:
-        return [r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot) if r.ref_kind == RefKind.FIELD_WRITE]
+        return [
+            r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot) if r.ref_kind == RefKind.FIELD_WRITE
+        ]
 
     def all_field_accesses(self, tindex: int, field_slot: int) -> List[XRef]:
         return [

@@ -85,7 +85,9 @@ class IRGlobalStringOptimizer(TraversingIROptimizer):
 
                 dbg_print(f"IRGlobalStringOptimizer: Optimizing GetGlobal for string '{string_value}'")
 
-                new_string_const = IRConst(self.func.code, IRConst.ConstType.GLOBAL_STRING, value=string_value)
+                new_string_const = IRConst(
+                    self.func.code, IRConst.ConstType.GLOBAL_STRING, value=string_value
+                )
 
                 assign_stmt.expr = new_string_const
 
@@ -115,7 +117,9 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
         For ftos, a separate int variable stores the byte count.
         """
         if not (
-            isinstance(expr, IRCall) and isinstance(expr.target, IRConst) and isinstance(expr.target.value, Native)
+            isinstance(expr, IRCall)
+            and isinstance(expr.target, IRConst)
+            and isinstance(expr.target.value, Native)
         ):
             return None
         func_name = expr.target.value.name.resolve(self.func.code)
@@ -136,7 +140,9 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
             return None
         return expr.args[0], count_ref
 
-    def _try_collapse_alloc(self, expr: IRExpression, current_assigns: Dict[str, "IRAssign"]) -> Optional[IRLocal]:
+    def _try_collapse_alloc(
+        self, expr: IRExpression, current_assigns: Dict[str, "IRAssign"]
+    ) -> Optional[IRLocal]:
         """
         If `expr` is __alloc__(itos/ftos_bytes, count_ref) with matching count_ref, return
         the value local (int for itos, float for ftos). `current_assigns` maps local names
@@ -197,7 +203,9 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
         """Recursively collapse __alloc__ within an expression."""
         collapsed = self._try_collapse_alloc(expr, current_assigns)
         if collapsed is not None:
-            dbg_print(f"IRStringIntConcatOptimizer: collapsing __alloc__(...,{collapsed.name}) → {collapsed.name}")
+            dbg_print(
+                f"IRStringIntConcatOptimizer: collapsing __alloc__(...,{collapsed.name}) → {collapsed.name}"
+            )
             return collapsed
         if isinstance(expr, IRCall):
             expr.args = [self._rewrite_expr(a, current_assigns) for a in expr.args]
@@ -366,7 +374,11 @@ class IRStringAllocOptimizer(TraversingIROptimizer):
                     if bytes_idx is None and self._match_bytes_assign(nxt, local) is not None:
                         bytes_idx = j
                         continue
-                    if bytes_idx is not None and len_idx is None and self._match_length_assign(nxt, local) is not None:
+                    if (
+                        bytes_idx is not None
+                        and len_idx is None
+                        and self._match_length_assign(nxt, local) is not None
+                    ):
                         len_idx = j
                         break
                     if self._statement_touches_local(nxt, local):
@@ -385,7 +397,9 @@ class IRStringAllocOptimizer(TraversingIROptimizer):
                     # or length expression is reassigned between the allocation and
                     # the field writes (e.g. String.fromUCS2 computes the length
                     # after creating the empty string).
-                    free_names = self._collect_free_locals(bytes_expr) | self._collect_free_locals(length_expr)
+                    free_names = self._collect_free_locals(bytes_expr) | self._collect_free_locals(
+                        length_expr
+                    )
                     free_names.discard(local.name)
                     safe = True
                     for k in range(i + 1, len_idx):
@@ -439,7 +453,11 @@ class IRTraceOptimizer(TraversingIROptimizer):
                 if DEBUG:
                     dbg_print(f"[TraceOpt] Analyzing statement {i}: {stmt}")
 
-                if isinstance(stmt, IRConditional) and stmt.true_block is not None and stmt.false_block is not None:
+                if (
+                    isinstance(stmt, IRConditional)
+                    and stmt.true_block is not None
+                    and stmt.false_block is not None
+                ):
                     branched = self._try_branched_trace(stmt, block.statements, i)
                     if branched is not None:
                         (
@@ -519,7 +537,9 @@ class IRTraceOptimizer(TraversingIROptimizer):
                             elif isinstance(next_stmt.expr, IRLocal):
                                 pos_info[field_name] = next_stmt.expr
                                 if DEBUG:
-                                    dbg_print(f"[TraceOpt]  -> Collected local field: {field_name} = {next_stmt.expr}")
+                                    dbg_print(
+                                        f"[TraceOpt]  -> Collected local field: {field_name} = {next_stmt.expr}"
+                                    )
                                 j += 1
                                 continue
                     elif isinstance(next_stmt, IRAssign) and isinstance(next_stmt.target, IRLocal):
@@ -583,10 +603,16 @@ class IRTraceOptimizer(TraversingIROptimizer):
                             if isinstance(v, IRLocal):
                                 for s_idx in range(start_idx, j):
                                     s = block.statements[s_idx]
-                                    if isinstance(s, IRAssign) and s.target == v and isinstance(s.expr, IRConst):
+                                    if (
+                                        isinstance(s, IRAssign)
+                                        and s.target == v
+                                        and isinstance(s.expr, IRConst)
+                                    ):
                                         try:
                                             resolved_pos[k] = int(
-                                                s.expr.value.value if hasattr(s.expr.value, "value") else s.expr.value
+                                                s.expr.value.value
+                                                if hasattr(s.expr.value, "value")
+                                                else s.expr.value
                                             )
                                         except (ValueError, TypeError):
                                             resolved_pos[k] = v
@@ -809,7 +835,9 @@ class IRStringConcatFolder(TraversingIROptimizer):
                 i += 1
             block.statements = new_statements
 
-    def _try_fold_concat_temp(self, statements: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int]]:
+    def _try_fold_concat_temp(
+        self, statements: List[IRStatement], start: int
+    ) -> Optional[Tuple[IRStatement, int]]:
         # Look for: temp = init_string_expr;
         #           temp = String.__add__(temp, rhs1);
         #           temp = String.__add__(temp, rhs2);
@@ -819,7 +847,11 @@ class IRStringConcatFolder(TraversingIROptimizer):
             return None
 
         first = statements[start]
-        if not (isinstance(first, IRAssign) and isinstance(first.target, IRLocal) and self._is_string_expr(first.expr)):
+        if not (
+            isinstance(first, IRAssign)
+            and isinstance(first.target, IRLocal)
+            and self._is_string_expr(first.expr)
+        ):
             return None
 
         temp = first.target

@@ -480,13 +480,11 @@ def pseudo_from_op(
             this = None
             for reg in regs:
                 # find first Obj reg
-                if type(reg.resolve(code).definition) == Obj:
+                if type(reg.resolve(code).definition) is Obj:
                     this = reg.resolve(code)
                     break
             if this:
-                return (
-                    f"reg{op.df['dst']} = this.{op.df['field'].resolve_obj(code, this.definition).name.resolve(code)}"
-                )
+                return f"reg{op.df['dst']} = this.{op.df['field'].resolve_obj(code, this.definition).name.resolve(code)}"
             return f"reg{op.df['dst']} = this.f@{op.df['field'].value} (this not found!)"
         case "GetGlobal":
             glob = type_name(code, op.df["global"].resolve(code))
@@ -517,7 +515,9 @@ def pseudo_from_op(
             if not func:
                 return f"reg{op.df['dst']} = this.field{op.df['field']}"
             obj = func.regs[0].resolve(code)
-            assert isinstance(obj.definition, Obj), "reg0 should be an Obj of the type of this (is this static?)"
+            assert isinstance(obj.definition, Obj), (
+                "reg0 should be an Obj of the type of this (is this static?)"
+            )
             fields = obj.definition.resolve_fields(code)
             field = fields[op.df["field"].value]
             return f"reg{op.df['dst']} = this.{field.name.resolve(code)}"
@@ -525,7 +525,9 @@ def pseudo_from_op(
             if not func:
                 return f"this.field{op.df['field']} = reg{op.df['src']}"
             obj = func.regs[0].resolve(code)
-            assert isinstance(obj.definition, Obj), "reg0 should be an Obj of the type of this (is this static?)"
+            assert isinstance(obj.definition, Obj), (
+                "reg0 should be an Obj of the type of this (is this static?)"
+            )
             fields = obj.definition.resolve_fields(code)
             field = fields[op.df["field"].value]
             return f"this.{field.name.resolve(code)} = reg{op.df['src']}"
@@ -585,7 +587,7 @@ def pseudo_from_op(
         # Function Calls
         case "CallClosure":
             args = ", ".join([f"reg{arg}" for arg in op.df["args"].value])
-            if type(regs[op.df["dst"].value].resolve(code).definition) == Void:
+            if type(regs[op.df["dst"].value].resolve(code).definition) is Void:
                 return f"reg{op.df['fun']}({args})"
             return f"reg{op.df['dst']} = reg{op.df['fun']}({args})"
         case "Call0":
@@ -593,10 +595,8 @@ def pseudo_from_op(
         case "Call1":
             return f"reg{op.df['dst']} = f@{op.df['fun']}(reg{op.df['arg0']})"
         case "Call2":
-            fun = code.full_func_name(code.fn(op.df["fun"].value))
-            return (
-                f"reg{op.df['dst']} = f@{op.df['fun']}({', '.join([f'reg{op.df[arg]}' for arg in ['arg0', 'arg1']])})"
-            )
+            _fun = code.full_func_name(code.fn(op.df["fun"].value))
+            return f"reg{op.df['dst']} = f@{op.df['fun']}({', '.join([f'reg{op.df[arg]}' for arg in ['arg0', 'arg1']])})"
         case "Call3":
             return f"reg{op.df['dst']} = f@{op.df['fun']}({', '.join([f'reg{op.df[arg]}' for arg in ['arg0', 'arg1', 'arg2']])})"
         case "Call4":
@@ -663,7 +663,7 @@ def pseudo_from_op(
 
         # Return
         case "Ret":
-            if type(regs[op.df["ret"].value].resolve(code).definition) == Void:
+            if type(regs[op.df["ret"].value].resolve(code).definition) is Void:
                 return "return"
             return f"return reg{op.df['ret']}"
 
@@ -943,7 +943,9 @@ def gen_docs_for_obj(code: Bytecode, obj: Obj, static_obj: Optional[Obj] = None)
     name = obj.name.resolve(code)
     res = "<!DOCTYPE html><html lang='en'><head>"
     res += "<meta charset='UTF-8'>"
-    res += "<link rel='stylesheet' href='https://cdn.jsdelivr.net/gh/N3rdL0rd/holiday.css/dist/holiday.min.css'>"
+    res += (
+        "<link rel='stylesheet' href='https://cdn.jsdelivr.net/gh/N3rdL0rd/holiday.css/dist/holiday.min.css'>"
+    )
     res += f"<title>{name} (crashlink auto API docs)</title></head><body>"
     res += f"<main><h1><code>{name}</code>"
     if obj.super.value > 0:
@@ -1079,9 +1081,13 @@ def gen_mkdocs_for_obj(code: Bytecode, obj: Obj, static_obj: Optional[Obj] = Non
     if instance_fields or static_fields:
         lines += ["| | Name | Type |", "|---|------|------|"]
         for field in instance_fields:
-            lines.append(f"| | `{field.name.resolve(code)}` | `{type_name(code, field.type.resolve(code))}` |")
+            lines.append(
+                f"| | `{field.name.resolve(code)}` | `{type_name(code, field.type.resolve(code))}` |"
+            )
         for field in static_fields:
-            lines.append(f"| *static* | `{field.name.resolve(code)}` | `{type_name(code, field.type.resolve(code))}` |")
+            lines.append(
+                f"| *static* | `{field.name.resolve(code)}` | `{type_name(code, field.type.resolve(code))}` |"
+            )
     else:
         lines.append("*No fields.*")
     lines.append("")
@@ -1334,7 +1340,9 @@ def file_class_map(code: Bytecode) -> Dict[str, List[ClassEntry]]:
             canonical = "(standalone)"
 
         key = (file_path, canonical)
-        _groups.setdefault(key, []).append(MethodEntry(findex=findex, method_name=method_name, first_line=first_line))
+        _groups.setdefault(key, []).append(
+            MethodEntry(findex=findex, method_name=method_name, first_line=first_line)
+        )
 
     # Sort methods within each class by first_line
     for entries in _groups.values():
@@ -1360,7 +1368,9 @@ def file_class_map(code: Bytecode) -> Dict[str, List[ClassEntry]]:
             existing.first_line = min(existing.first_line, class_first_line)
 
     # Sort classes within each file by first_line
-    return {fp: sorted(classes.values(), key=lambda c: c.first_line) for fp, classes in sorted(file_map.items())}
+    return {
+        fp: sorted(classes.values(), key=lambda c: c.first_line) for fp, classes in sorted(file_map.items())
+    }
 
 
 def full_func_name_str(code: Bytecode, func: Function) -> str:

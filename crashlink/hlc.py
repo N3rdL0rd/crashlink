@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, List, Literal, Optional, Dict, Set, Tuple
+from typing import Any, List, Literal, Optional, Dict, Set, Tuple
 
 from crashlink.errors import MalformedBytecode
 from crashlink.globals import DEBUG, VERSION
@@ -8,7 +8,9 @@ from crashlink.globals import DEBUG, VERSION
 from .core import *
 
 
-def _scaled_cb(progress_cb: Optional[ProgressCallback], start: float, end: float) -> Optional[ProgressCallback]:
+def _scaled_cb(
+    progress_cb: Optional[ProgressCallback], start: float, end: float
+) -> Optional[ProgressCallback]:
     """Wrap `progress_cb` so a sub-phase's own [0, 1] fraction reports as [start, end] overall."""
     if progress_cb is None:
         return None
@@ -264,7 +266,9 @@ class Indenter:
         self.current_indent = self.indent_char * self.level
         return self
 
-    def __exit__(self, exc_type: Optional[Any], exc_val: Optional[Any], exc_tb: Optional[Any]) -> Literal[False]:
+    def __exit__(
+        self, exc_type: Optional[Any], exc_val: Optional[Any], exc_tb: Optional[Any]
+    ) -> Literal[False]:
         self.level -= 1
         self.current_indent = self.indent_char * self.level
         return False
@@ -378,10 +382,14 @@ def generate_native_wrappers(code: Bytecode) -> List[str]:
         res.append(indent.current_indent + " ".join(str(arg) for arg in args))
 
     for native, c_func_name, ret_type_str, arg_types in _native_signatures(code):
-        args_with_names = ", ".join(f"{arg_type} r{i}" for i, arg_type in enumerate(arg_types)) if arg_types else "void"
+        args_with_names = (
+            ", ".join(f"{arg_type} r{i}" for i, arg_type in enumerate(arg_types)) if arg_types else "void"
+        )
         line(f"{ret_type_str} f${native.findex.value}({args_with_names}){{")
         with indent:
-            line(f"return {c_func_name}({', '.join(f'r{i}' for i in range(len(arg_types))) if arg_types else ''});")
+            line(
+                f"return {c_func_name}({', '.join(f'r{i}' for i in range(len(arg_types))) if arg_types else ''});"
+            )
         line("}")
     return res
 
@@ -397,10 +405,14 @@ def generate_natives(code: Bytecode) -> List[str]:
     for native, c_func_name, ret_type_str, arg_types in _native_signatures(code):
         args_str = ", ".join(arg_types) if arg_types else "void"
         line(f"HL_API {ret_type_str} {c_func_name}({args_str});")
-        args_with_names = ", ".join(f"{arg_type} r{i}" for i, arg_type in enumerate(arg_types)) if arg_types else "void"
+        args_with_names = (
+            ", ".join(f"{arg_type} r{i}" for i, arg_type in enumerate(arg_types)) if arg_types else "void"
+        )
         line(f"{ret_type_str} f${native.findex.value}({args_with_names}){{")
         with indent:
-            line(f"return {c_func_name}({', '.join(f'r{i}' for i in range(len(arg_types))) if arg_types else ''});")
+            line(
+                f"return {c_func_name}({', '.join(f'r{i}' for i in range(len(arg_types))) if arg_types else ''});"
+            )
         line("}")
     return res
 
@@ -421,7 +433,9 @@ def generate_structs(code: Bytecode) -> List[str]:
     line("// Class/Struct forward definitions")
     for i in sorted(struct_map.keys()):
         dfn = struct_map[i].definition
-        assert isinstance(dfn, (Obj, Struct)), f"Expected definition to be Obj or Struct, got {type(dfn).__name__}."
+        assert isinstance(dfn, (Obj, Struct)), (
+            f"Expected definition to be Obj or Struct, got {type(dfn).__name__}."
+        )
         line(f"typedef struct _obj${i} *obj${i}; /* {dfn.name.resolve(code)} */")
     res.append("")
 
@@ -444,7 +458,9 @@ def generate_structs(code: Bytecode) -> List[str]:
     line("// Class/Struct definitions")
     for i, typ in sorted(struct_map.items()):
         df = typ.definition
-        assert isinstance(df, (Obj, Struct)), f"Expected definition to be Obj or Struct, got {type(df).__name__}."
+        assert isinstance(df, (Obj, Struct)), (
+            f"Expected definition to be Obj or Struct, got {type(df).__name__}."
+        )
         is_struct = isinstance(df, Struct)
         root_is_struct = is_struct
         current = df
@@ -621,7 +637,7 @@ def generate_globals(code: Bytecode) -> List[str]:
         const_fields: List[str] = []
         for i, field in enumerate(const.fields):
             typd = fields[i].type.resolve(code).definition
-            name = fields[i].name.resolve(code)
+            _name = fields[i].name.resolve(code)
             if isinstance(typd, (Obj, Struct)):
                 raise MalformedBytecode("Global constants cannot contain other initialized Objs or Structs.")
             elif isinstance(typd, (I32, U8, U16, I64)):
@@ -632,7 +648,9 @@ def generate_globals(code: Bytecode) -> List[str]:
                 val = code.strings.value[field.value]
                 c_escaped_str = c_escape_string(val)
                 const_fields.append(f'(vbyte*)USTR("{c_escaped_str}")')
-        line(f"static struct _obj${objIdx} const_g${const._global.value} = {{&t${objIdx}, {', '.join(const_fields)}}};")
+        line(
+            f"static struct _obj${objIdx} const_g${const._global.value} = {{&t${objIdx}, {', '.join(const_fields)}}};"
+        )
 
     line("\n// Type initializer")
     line("void hl_init_types( hl_module_context *ctx ) {")
@@ -932,7 +950,8 @@ def generate_reflection(code: Bytecode) -> List[str]:
                 # --- FIX IS HERE ---
                 # Pass the correct index to ctype
                 c_args_typed = [
-                    f"{ctype(code, t, t_idx.value)} {name}" for t, t_idx, name in zip(arg_types, arg_tindices, c_args)
+                    f"{ctype(code, t, t_idx.value)} {name}"
+                    for t, t_idx, name in zip(arg_types, arg_tindices, c_args)
                 ]
                 # --- END OF FIX ---
                 c_args_str = ", ".join(c_args_typed)
@@ -1179,9 +1198,9 @@ def generate_functions(
 
         # -- Simple Pointer-based Types (Bytes, Arrays, Structs, etc.) --
         # These are compared by their memory address.
-        if isinstance(type_a_def, (Bytes, Array, Struct, Enum, DynObj, Abstract)) and type(type_a_def) == type(
-            type_b_def
-        ):
+        if isinstance(type_a_def, (Bytes, Array, Struct, Enum, DynObj, Abstract)) and type(
+            type_a_def
+        ) is type(type_b_def):
             return False, True, phys_compare()
 
         # -- HType --
@@ -1634,7 +1653,9 @@ def generate_functions(
                                     line(
                                         f"vdynamic *_ret = hl_dyn_call((vclosure*){closure_reg_str}, {args_name}, {len(call_arg_regs)});"
                                     )
-                                    line(f"r{dst_reg} = ({ret_ctype})hl_dyn_cast{prefix}(&_ret, &hlt_dyn{type_arg});")
+                                    line(
+                                        f"r{dst_reg} = ({ret_ctype})hl_dyn_cast{prefix}(&_ret, &hlt_dyn{type_arg});"
+                                    )
                             line("}")
                             continue
                         if closure_type.kind.value != Type.Kind.FUN.value:
@@ -1867,7 +1888,9 @@ def generate_functions(
                                 assert isinstance(dfn, (Obj, Struct)), "This check should pass."
 
                                 class_field = dfn.resolve_fields(code)[field_idx]
-                                field_name = sanitize_field_ident(class_field.name.resolve(code), f"_fld_{field_idx}")
+                                field_name = sanitize_field_ident(
+                                    class_field.name.resolve(code), f"_fld_{field_idx}"
+                                )
                                 field_type_idx = class_field.type
                                 val_cast = rcast(code, Reg(val_reg_idx), field_type_idx, function)
 
@@ -1897,7 +1920,9 @@ def generate_functions(
 
                                 dyn_set_call = f"hl_dyn_set{prefix}({obj_regs}->value, {field_hash}/*{field_name}*/{type_arg}, {val_regs})"
                                 val_cast = f"({field_ctype}){val_regs}"
-                                direct_set = f"*({field_ctype}*)(hl_vfields(r{obj_reg_idx})[{field_idx}]) = {val_cast}"
+                                direct_set = (
+                                    f"*({field_ctype}*)(hl_vfields(r{obj_reg_idx})[{field_idx}]) = {val_cast}"
+                                )
                                 rhs = f"if (hl_vfields(r{obj_reg_idx})[{field_idx}]) {direct_set}; else {dyn_set_call}"
                             case _:
                                 unknown_ops.add(f"SetField on {obj_tres.kind}")
@@ -1956,9 +1981,7 @@ def generate_functions(
                             else:
                                 rhs = f"(({val_ctype}*)r{df['array'].value})[r{df['index'].value}] = r{df['src'].value}"
                         else:
-                            rhs = (
-                                f"(({val_ctype}*)(r{df['array'].value} + 1))[r{df['index'].value}] = r{df['src'].value}"
-                            )
+                            rhs = f"(({val_ctype}*)(r{df['array'].value} + 1))[r{df['index'].value}] = r{df['src'].value}"
                         has_dst = False
                     case "SafeCast":
                         # Opcode: SafeCast: {"dst": Reg, "src": Reg}
@@ -2004,9 +2027,7 @@ def generate_functions(
                                     enum_value = f"((double)((venum*)r{src_reg})->index)"
                                 else:
                                     enum_value = f"((venum*)r{src_reg})->index"
-                                cast_value = (
-                                    f"({dst_ctype})hl_dyn_cast{prefix}(&r{src_reg}, &t${src_type_idx}{type_arg})"
-                                )
+                                cast_value = f"({dst_ctype})hl_dyn_cast{prefix}(&r{src_reg}, &t${src_type_idx}{type_arg})"
                                 rhs = f"{enum_check} ? {enum_value} : {cast_value}"
                             else:
                                 rhs = f"({dst_ctype})hl_dyn_cast{prefix}(&r{src_reg}, &t${src_type_idx}{type_arg})"
@@ -2172,7 +2193,7 @@ def generate_functions(
 
                         reg_to_switch = df["reg"].value
                         offsets = df["offsets"].value
-                        end_offset = df["end"].value
+                        _end_offset = df["end"].value
                         line(f"Op_{i}:")
                         with indent:
                             line(f"switch(r{reg_to_switch}) {{")
@@ -2250,7 +2271,9 @@ def generate_functions(
                                 try:
                                     resolved_fields = obj_def.resolve_fields(code)
                                     field = resolved_fields[field_index]
-                                    field_c_name = sanitize_field_ident(field.name.resolve(code), f"_fld_{field_index}")
+                                    field_c_name = sanitize_field_ident(
+                                        field.name.resolve(code), f"_fld_{field_index}"
+                                    )
                                     prefetch_expr = f"&{regstr(obj_r)}->{field_c_name}"
                                 except IndexError:
                                     raise MalformedBytecode(
@@ -2267,7 +2290,9 @@ def generate_functions(
                             "Asm is not supported by either the official HL/C compiler or crashlink. This is done intentionally for feature parity."
                         )
                     case "Catch":
-                        raise MalformedBytecode("Catch is not yet supported by crashlink HL/C code generation.")
+                        raise MalformedBytecode(
+                            "Catch is not yet supported by crashlink HL/C code generation."
+                        )
                     case _:
                         unknown_ops.add(op.op if op.op else "unknown?????")
                         continue
@@ -2308,7 +2333,9 @@ def generate_hashes(code: Bytecode) -> List[str]:
     line_h("void hl_init_hashes() {")
     with indent_h:
         for s in sorted(list(hashed_strings)):
-            c_escaped_str = s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+            c_escaped_str = (
+                s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+            )
             line_h(f'hl_hash((vbyte*)USTR("{c_escaped_str}"));')
     line_h("}")
     return res_h
@@ -2327,7 +2354,8 @@ def code_to_c(code: Bytecode, progress_cb: Optional[ProgressCallback] = None) ->
     def line(*args: Any) -> None:
         res.append(" ".join(str(arg) for arg in args))
 
-    sec: Callable[[str], None] = lambda section: res.append(f"\n\n/*---------- {section} ----------*/\n")
+    def sec(section: str) -> None:
+        res.append(f"\n\n/*---------- {section} ----------*/\n")
 
     def _p(frac: float, status: str) -> None:
         if progress_cb is not None:

@@ -148,7 +148,9 @@ class _PseudoClass:
 # unrelated Bytecode can be allocated at the same address and silently get
 # served someone else's stale registry. `Bytecode` (via Serialisable.__eq__)
 # isn't hashable, so a WeakKeyDictionary keyed on `code` itself isn't an option.
-_method_registry_cache: Dict[int, Tuple["weakref.ReferenceType[Bytecode]", Dict[int, Tuple[Obj, str, bool]]]] = {}
+_method_registry_cache: Dict[
+    int, Tuple["weakref.ReferenceType[Bytecode]", Dict[int, Tuple[Obj, str, bool]]]
+] = {}
 
 
 def _method_registry(code: Bytecode) -> Dict[int, Tuple[Obj, str, bool]]:
@@ -328,13 +330,15 @@ def _expr_to_haxe_with_precedence(
     if isinstance(expr, IRArithmetic):
         child_prec = _HAXE_OP_PRECEDENCE.get(expr.op.value, 10)
         parent_prec = _HAXE_OP_PRECEDENCE.get(parent_op, 10)
-        needs_parens = child_prec < parent_prec or (
-            is_right and parent_op in _HAXE_NON_ASSOC_OPS and child_prec == parent_prec
-        ) or (
-            is_right
-            and parent_op in _HAXE_BITWISE_OPS
-            and expr.op.value in _HAXE_BITWISE_OPS
-            and expr.op.value != parent_op
+        needs_parens = (
+            child_prec < parent_prec
+            or (is_right and parent_op in _HAXE_NON_ASSOC_OPS and child_prec == parent_prec)
+            or (
+                is_right
+                and parent_op in _HAXE_BITWISE_OPS
+                and expr.op.value in _HAXE_BITWISE_OPS
+                and expr.op.value != parent_op
+            )
         )
         if needs_parens:
             return f"({rendered})"
@@ -581,7 +585,11 @@ def _expression_to_haxe(
             # Normalize: constants on the right side for natural-reading output.
             actual_op: IRBoolExpr.CompareType = expr.op
             left_expr, right_expr = expr.left, expr.right
-            if isinstance(left_expr, IRConst) and not isinstance(right_expr, IRConst) and actual_op in swap_map:
+            if (
+                isinstance(left_expr, IRConst)
+                and not isinstance(right_expr, IRConst)
+                and actual_op in swap_map
+            ):
                 left_expr, right_expr = right_expr, left_expr
                 actual_op = swap_map[actual_op]
             typekind_render = _render_typekind_comparison(left_expr, right_expr, code, ir_function)
@@ -689,7 +697,11 @@ def _expression_to_haxe(
 
     elif isinstance(expr, IRCall):
         callee_str: str
-        if expr.target is not None and isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function):
+        if (
+            expr.target is not None
+            and isinstance(expr.target, IRConst)
+            and isinstance(expr.target.value, Function)
+        ):
             func = expr.target.value
             partial = code.partial_func_name(func)
             # Rewrite String.__add__ to Haxe's + operator (or interpolation).
@@ -730,7 +742,9 @@ def _expression_to_haxe(
         # The abstract `hl.types.ArrayBase`/`ArrayAccess` base classes (used
         # when the concrete element type isn't known statically) define no
         # such operator at all — bracket syntax on them doesn't compile.
-        if isinstance(expr.target, IRField) and not _is_untyped_array_access_class(expr.target.target.get_type(), code):
+        if isinstance(expr.target, IRField) and not _is_untyped_array_access_class(
+            expr.target.target.get_type(), code
+        ):
             if expr.target.field_name in ("getDyn", "get") and len(expr.args) == 1:
                 arr = _expression_to_haxe(expr.target.target, code, ir_function)
                 idx = _expression_to_haxe(expr.args[0], code, ir_function)
@@ -761,7 +775,9 @@ def _expression_to_haxe(
             # valid Haxe syntax. This also covers std static wrappers like
             # ArrayBytes.__expand(this, len) -> this.__expand(len).
             if isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function) and expr.args:
-                instance_method = _try_instance_method_call(expr.target.value, expr.args[0], code, ir_function)
+                instance_method = _try_instance_method_call(
+                    expr.target.value, expr.args[0], code, ir_function
+                )
                 if instance_method:
                     rest_args = expr.args[1:]
                     # get_X()/set_X(v) calls into a std-lib property accessor
@@ -773,7 +789,9 @@ def _expression_to_haxe(
                         obj_str = instance_method.rsplit(".", 1)[0]
                         if not rest_args:
                             return f"{obj_str}.{prop_name}"
-                        return f"{obj_str}.{prop_name} = {_expression_to_haxe(rest_args[0], code, ir_function)}"
+                        return (
+                            f"{obj_str}.{prop_name} = {_expression_to_haxe(rest_args[0], code, ir_function)}"
+                        )
                     callee_str = instance_method
                     args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in rest_args)
                     return f"{callee_str}({args_str})"
@@ -836,20 +854,32 @@ def _expression_to_haxe(
         # that are not directly assignable to Array<T> locals. Insert a cast so
         # the decompiled output recompiles without changing the underlying call.
         call_name = ""
-        if expr.target is not None and isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function):
-            call_name = code.full_func_name(expr.target.value) or code.partial_func_name(expr.target.value) or ""
+        if (
+            expr.target is not None
+            and isinstance(expr.target, IRConst)
+            and isinstance(expr.target.value, Function)
+        ):
+            call_name = (
+                code.full_func_name(expr.target.value) or code.partial_func_name(expr.target.value) or ""
+            )
         if "ArrayBase.alloc" in call_name:
             return f"cast {callee_str}({args_str})"
         # Mixed-type dynamic array literals lower to ArrayDyn.alloc([...], true).
         # Rendering the wrapper as the literal itself lets Haxe infer the target
         # as Array<Dynamic> and recompile.
-        if call_name.endswith("ArrayDyn.alloc") and len(expr.args) == 2 and isinstance(expr.args[0], IRArrayLiteral):
+        if (
+            call_name.endswith("ArrayDyn.alloc")
+            and len(expr.args) == 2
+            and isinstance(expr.args[0], IRArrayLiteral)
+        ):
             return f"({_expression_to_haxe(expr.args[0], code, ir_function)} : Array<Dynamic>)"
         return f"{callee_str}({args_str})"
 
     elif isinstance(expr, IRUnliftedOpcode):
         regs = ir_function.func.regs if ir_function is not None else []
-        return f"/* UNLIFTED OPCODE: {expr.op.op} {disasm.pseudo_from_op(expr.op, 0, regs, code, terse=True)} */"
+        return (
+            f"/* UNLIFTED OPCODE: {expr.op.op} {disasm.pseudo_from_op(expr.op, 0, regs, code, terse=True)} */"
+        )
 
     elif isinstance(expr, IRNew):
         type_name = disasm.type_name(code, expr.get_type())
@@ -1053,7 +1083,9 @@ def _is_read_in_while_condition(root: IRStatement, name: str) -> bool:
     return found
 
 
-def _source_redefined_before_use(root: IRStatement, def_stmt: IRStatement, target_name: str, source_names: Set[str]) -> bool:
+def _source_redefined_before_use(
+    root: IRStatement, def_stmt: IRStatement, target_name: str, source_names: Set[str]
+) -> bool:
     """True if a local in `source_names` is reassigned after `def_stmt` but before
     the (single, assumed) later read of `target_name`. Guards single-use render
     substitution: `varN = i; ...; i = 1; ...; use(varN)` must not fold to `use(i)`
@@ -1456,7 +1488,9 @@ def _generate_statements(
                 and isinstance(stmt.expr, IRArithmetic)
                 and _same_local(stmt.expr.left, stmt.target)
                 and stmt.expr.op in _compound_ops
-                and not (stmt.expr.op == IRArithmetic.ArithmeticType.SDIV and _is_int_kind(stmt.expr.get_type()))
+                and not (
+                    stmt.expr.op == IRArithmetic.ArithmeticType.SDIV and _is_int_kind(stmt.expr.get_type())
+                )
             ):
                 rhs_str = _expression_to_haxe(stmt.expr.right, code, ir_function)
                 output_lines.append(f"{indent}{target_str} {_compound_ops[stmt.expr.op]} {rhs_str};")
@@ -1541,7 +1575,9 @@ def _generate_statements(
                     )
                 )
                 # If the true block ends with a control-flow statement, the else is unnecessary.
-                true_ends_with_cf = bool(true_stmts) and isinstance(true_stmts[-1], (IRBreak, IRContinue, IRReturn))
+                true_ends_with_cf = bool(true_stmts) and isinstance(
+                    true_stmts[-1], (IRBreak, IRContinue, IRReturn)
+                )
                 false_subs = render_subs.copy()
                 if false_stmts and not true_ends_with_cf:
                     output_lines.append(f"{indent}}} else {{")
@@ -1697,7 +1733,10 @@ def _generate_statements(
 
         elif isinstance(stmt, IRReturn):
             if stmt.value:
-                if isinstance(stmt.value, IRLocal) and stmt.value.type.resolve(code).kind.value == Type.Kind.VOID.value:
+                if (
+                    isinstance(stmt.value, IRLocal)
+                    and stmt.value.type.resolve(code).kind.value == Type.Kind.VOID.value
+                ):
                     output_lines.append(
                         f"{indent}return; // implicit void return from reg{ir_function.locals.index(stmt.value) + 1}"
                     )
@@ -1732,7 +1771,9 @@ def _generate_statements(
                 target, case_exprs, default_expr = expr_switch
                 if stmt in inline_declarations:
                     local_name, type_str = inline_declarations[stmt]
-                    output_lines.append(f"{indent}var {local_name}: {type_str} = switch ({enum_value_str}) {{")
+                    output_lines.append(
+                        f"{indent}var {local_name}: {type_str} = switch ({enum_value_str}) {{"
+                    )
                     declared_vars_in_scope.add(local_name)
                 else:
                     output_lines.append(f"{indent}{target.name} = switch ({enum_value_str}) {{")
@@ -1881,7 +1922,9 @@ def _generate_statements(
                 output_lines.append(f"{indent}{expr_str};")
 
         else:
-            output_lines.append(f"{indent}// <Unhandled IRStatement: {type(stmt).__name__}> {str(stmt)[:50]}...")
+            output_lines.append(
+                f"{indent}// <Unhandled IRStatement: {type(stmt).__name__}> {str(stmt)[:50]}..."
+            )
 
         # Map every opcode this statement represents to the first line it produced
         # (absolute in the function body) — a statement folded from several opcodes
@@ -1904,7 +1947,11 @@ def _generate_statements(
         # Register simple assignments for render-time substitution into later uses.
         if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
             registerable = _is_simple_render_expr(stmt.expr)
-            if not registerable and re.fullmatch(r"var\d+", stmt.target.name) and _is_single_use_render_expr(stmt.expr):
+            if (
+                not registerable
+                and re.fullmatch(r"var\d+", stmt.target.name)
+                and _is_single_use_render_expr(stmt.expr)
+            ):
                 reads, writes = _count_local_reads_and_writes(ir_function.block, stmt.target.name)
                 registerable = (
                     reads == 1
@@ -2021,18 +2068,23 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             local_idx = start_arg + i
             if local_idx < len(ir_func.locals):
                 # Use the reg's entry-point local, not a later split (e.g. param reused for super()).
-                param_local = next((l for l in ir_func.all_locals if l.reg_idx == local_idx), ir_func.locals[local_idx])
+                param_local = next(
+                    (lc for lc in ir_func.all_locals if lc.reg_idx == local_idx), ir_func.locals[local_idx]
+                )
                 candidate = param_local.name
                 if candidate and candidate != "this":
                     param_name = candidate
                 elif candidate == "this" and getattr(ir_func, "_force_static", False):
                     # Lifted closure: rewrite all "this" locals for this reg to the new param name.
-                    for l in ir_func.all_locals:
-                        if l.reg_idx == local_idx and l.name == "this":
-                            l.name = param_name
+                    for loc in ir_func.all_locals:
+                        if loc.reg_idx == local_idx and loc.name == "this":
+                            loc.name = param_name
                 # If the param's IRLocal has a recovered array element type,
                 # render Array<T> instead of the erased Array<Dynamic>.
-                if arg_haxe_type_name == "Array<Dynamic>" and ir_func.locals[local_idx].array_elem_type is not None:
+                if (
+                    arg_haxe_type_name == "Array<Dynamic>"
+                    and ir_func.locals[local_idx].array_elem_type is not None
+                ):
                     elem_type = ir_func.locals[local_idx].array_elem_type
                     assert elem_type is not None  # narrowed by the guard above
                     elem_haxe = disasm.type_to_haxe(disasm.type_name(code, elem_type))
@@ -2056,7 +2108,9 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     params_joined_str = ", ".join(params_str_list)
     ret_decl = f": {return_type_str}" if return_type_str else ""
     access_kw = "public "
-    func_header = f"{access_kw}{static_kw}{override_kw}function {func_name_str}({params_joined_str}){ret_decl} {{"
+    func_header = (
+        f"{access_kw}{static_kw}{override_kw}function {func_name_str}({params_joined_str}){ret_decl} {{"
+    )
     output_lines.append(func_header)
 
     initial_declared_vars = {p.split(":")[0].strip() for p in params_str_list}
@@ -2283,7 +2337,10 @@ def _is_definitely_assigned_before_use(local_name: str, block: IRBlock) -> bool:
     local before any read of it.
     """
     for stmt in block.statements:
-        if not _contains_local_name(local_name, stmt) and _find_assignment_recursive(local_name, stmt) is None:
+        if (
+            not _contains_local_name(local_name, stmt)
+            and _find_assignment_recursive(local_name, stmt) is None
+        ):
             continue
         # First statement that touches the local.
         if isinstance(stmt, IRConditional):
@@ -2330,7 +2387,9 @@ def _branch_definitely_assigns(local_name: str, stmt: IRStatement) -> bool:
     if isinstance(stmt, IRConditional):
         if stmt.false_block is None or _contains_local_name(local_name, stmt.condition):
             return False
-        return _assigns_before_read(local_name, stmt.true_block) and _assigns_before_read(local_name, stmt.false_block)
+        return _assigns_before_read(local_name, stmt.true_block) and _assigns_before_read(
+            local_name, stmt.false_block
+        )
     if isinstance(stmt, IRSwitch):
         if stmt.default is None or _contains_local_name(local_name, stmt.value):
             return False
@@ -2404,12 +2463,14 @@ def _find_inner_defining_assignment(local_name: str, block: IRBlock) -> Optional
         in_try = _find_assignment_recursive(local_name, stmt.try_block) is not None or _contains_local_name(
             local_name, stmt.try_block
         )
-        in_catch = _find_assignment_recursive(local_name, stmt.catch_block) is not None or _contains_local_name(
-            local_name, stmt.catch_block
-        ) or any(
-            _find_assignment_recursive(local_name, extra_block) is not None
-            or _contains_local_name(local_name, extra_block)
-            for _, extra_block in stmt.extra_catches
+        in_catch = (
+            _find_assignment_recursive(local_name, stmt.catch_block) is not None
+            or _contains_local_name(local_name, stmt.catch_block)
+            or any(
+                _find_assignment_recursive(local_name, extra_block) is not None
+                or _contains_local_name(local_name, extra_block)
+                for _, extra_block in stmt.extra_catches
+            )
         )
         if in_try and not in_catch:
             # Use _find_defining_assignment on the sub-block to ensure it's safe.
@@ -2678,7 +2739,9 @@ def _render_interpolated(parts: List[Tuple[str, Any]]) -> str:
     return "".join(out)
 
 
-def _try_simplify_string_alloc(expr: IRExpression, code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
+def _try_simplify_string_alloc(
+    expr: IRExpression, code: Bytecode, ir_function: Optional[IRFunction]
+) -> Optional[str]:
     """
     HashLink compiles `string + int` as:
         String.__add__(left, String.__alloc__(std.itos(int, &int), int))
@@ -2692,7 +2755,9 @@ def _try_simplify_string_alloc(expr: IRExpression, code: Bytecode, ir_function: 
     if not (isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function)):
         return None
     func = expr.target.value
-    if not (_is_std_function(func, code) and code.partial_func_name(func) == "__alloc__" and len(expr.args) == 2):
+    if not (
+        _is_std_function(func, code) and code.partial_func_name(func) == "__alloc__" and len(expr.args) == 2
+    ):
         return None
 
     int_expr: Optional[IRExpression] = None
@@ -2900,7 +2965,9 @@ def _is_constructor_call(func: "Function", code: Bytecode) -> bool:
     return parts[1] == "__constructor__"
 
 
-def _rewrite_constructor_call(call: IRCall, code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
+def _rewrite_constructor_call(
+    call: IRCall, code: Bytecode, ir_function: Optional[IRFunction]
+) -> Optional[str]:
     """Rewrite a call to a static __constructor__ into Haxe syntax.
 
     - `__constructor__(new X())` -> `new X()`
@@ -2950,7 +3017,9 @@ def _rewrite_constructor_call(call: IRCall, code: Bytecode, ir_function: Optiona
                 if isinstance(super_type.definition, Obj):
                     super_name = destaticify(super_type.definition.name.resolve(code))
                     if ctor_class_name == super_name:
-                        rest_args = ", ".join(_expression_to_haxe(a, code, ir_function) for a in call.args[1:])
+                        rest_args = ", ".join(
+                            _expression_to_haxe(a, code, ir_function) for a in call.args[1:]
+                        )
                         return f"super({rest_args})"
         return ""
 
@@ -3124,7 +3193,11 @@ def _virtual_receiver_static_types(ir_function: IRFunction, code: Bytecode) -> D
         # already resolves to a specific, possibly-overridden implementation
         # regardless of how `obj` is declared, so widening obj's type here
         # would be both unnecessary and wrong.
-        if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRConst) and isinstance(stmt.expr.value, Function):
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.expr, IRConst)
+            and isinstance(stmt.expr.value, Function)
+        ):
             func = stmt.expr.value
             parts = _func_name_parts(func, code)
             if parts is not None:
@@ -3134,7 +3207,11 @@ def _virtual_receiver_static_types(ir_function: IRFunction, code: Bytecode) -> D
                     receiver = _find_receiver_local(class_name, ir_function, code)
                     if receiver is not None:
                         result[receiver] = base
-        if isinstance(stmt, IRField) and stmt.virtual_dispatch_fun is not None and isinstance(stmt.target, IRLocal):
+        if (
+            isinstance(stmt, IRField)
+            and stmt.virtual_dispatch_fun is not None
+            and isinstance(stmt.target, IRLocal)
+        ):
             base = _base_class_for_virtual_method(stmt.virtual_dispatch_fun, code)
             if base is not None:
                 result[stmt.target.name] = base
@@ -3247,7 +3324,11 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
         seen_upgrade.add(id(stmt))
         if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRCall):
             call = stmt.expr
-            if call.target is not None and isinstance(call.target, IRConst) and isinstance(call.target.value, Function):
+            if (
+                call.target is not None
+                and isinstance(call.target, IRConst)
+                and isinstance(call.target.value, Function)
+            ):
                 func = call.target.value
                 name = root.code.full_func_name(func) or root.code.partial_func_name(func) or ""
                 if "ArrayBase.alloc" in name and call.args:
@@ -3362,7 +3443,11 @@ def _collect_function_externs(root: IRStatement, code: Bytecode) -> Dict[int, Tu
         if id(stmt) in seen:
             return
         seen.add(id(stmt))
-        if isinstance(stmt, IRCall) and isinstance(stmt.target, IRConst) and isinstance(stmt.target.value, Function):
+        if (
+            isinstance(stmt, IRCall)
+            and isinstance(stmt.target, IRConst)
+            and isinstance(stmt.target.value, Function)
+        ):
             func = stmt.target.value
             if is_std_func(func) and _call_renders_as_std_stub(func, stmt, code):
                 name = _std_func_name(func, code)
@@ -3507,7 +3592,11 @@ def _collect_referenced_user_classes(root: IRStatement, code: Bytecode, exclude:
         if id(stmt) in seen:
             return
         seen.add(id(stmt))
-        if isinstance(stmt, IRConst) and isinstance(stmt.value, Type) and isinstance(stmt.value.definition, Obj):
+        if (
+            isinstance(stmt, IRConst)
+            and isinstance(stmt.value, Type)
+            and isinstance(stmt.value.definition, Obj)
+        ):
             name = destaticify(stmt.value.definition.name.resolve(code))
             if name not in exclude and is_user_type(stmt.value):
                 names.add(name)
@@ -3607,7 +3696,11 @@ def _collect_referenced_enums(root: IRStatement, code: Bytecode) -> Dict[str, "E
         if id(stmt) in seen:
             return
         seen.add(id(stmt))
-        if isinstance(stmt, IRConst) and isinstance(stmt.value, Type) and isinstance(stmt.value.definition, Enum):
+        if (
+            isinstance(stmt, IRConst)
+            and isinstance(stmt.value, Type)
+            and isinstance(stmt.value.definition, Enum)
+        ):
             add(stmt.value.definition)
         elif isinstance(stmt, IRField):
             target_type = stmt.target.get_type()
@@ -3752,7 +3845,9 @@ def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
             else:
                 init_str = f" = {init}" if init is not None else ""
                 comment = ""
-            output_lines.append(f"{indent_str}public static var {field_name}: {field_type_haxe}{init_str};{comment}")
+            output_lines.append(
+                f"{indent_str}public static var {field_name}: {field_type_haxe}{init_str};{comment}"
+            )
         output_lines.append("")
 
     if ir_class.fields:
@@ -4035,7 +4130,9 @@ def _stub_method(code: Bytecode, func: Function, is_instance: bool, dynamic: Opt
     ret_name = disasm.type_to_haxe(disasm.type_name(code, ret_type)) if ret_type is not None else "Void"
 
     static_kw = "" if is_instance else "static "
-    override_kw = "override " if (is_instance and not is_ctor and _overrides_super(code, dynamic, name)) else ""
+    override_kw = (
+        "override " if (is_instance and not is_ctor and _overrides_super(code, dynamic, name)) else ""
+    )
     ret_decl = "" if is_ctor else (f": {ret_name}" if ret_name else "")
     header = f"public {static_kw}{override_kw}function {name}({', '.join(params)}){ret_decl} {{"
 
@@ -4082,9 +4179,13 @@ def _stub_class(code: Bytecode, primary: Obj) -> str:
     static_fields = _obj_fields(code, static)
     inst_fields = _obj_fields(code, dynamic)
     for field_name, field_type in static_fields:
-        lines.append(f"    public static var {field_name}: {disasm.type_to_haxe(disasm.type_name(code, field_type))};")
+        lines.append(
+            f"    public static var {field_name}: {disasm.type_to_haxe(disasm.type_name(code, field_type))};"
+        )
     for field_name, field_type in inst_fields:
-        lines.append(f"    public var {field_name}: {disasm.type_to_haxe(disasm.type_name(code, field_type))};")
+        lines.append(
+            f"    public var {field_name}: {disasm.type_to_haxe(disasm.type_name(code, field_type))};"
+        )
     if static_fields or inst_fields:
         lines.append("")
 

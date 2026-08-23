@@ -72,8 +72,11 @@ def main_nix() -> None:
     subprocess.run(["tar", "-xf", "python.tar.xz"], check=True)
     print("Configuring...")
     os.chdir(DIR)
+    # gen_prefix() creates the install dir as a side effect; the return
     prefix = gen_prefix()
-    configure_cmd = f'./configure CFLAGS="-fPIC" --with-ensurepip=install --prefix="{prefix}" --disable-test-modules'
+    configure_cmd = (
+        f'./configure CFLAGS="-fPIC" --with-ensurepip=install --prefix="{prefix}" --disable-test-modules'
+    )
     subprocess.run(configure_cmd, shell=True, check=True)
     print("Building...")
     subprocess.run("make -j$(($(nproc) + 1))", shell=True, check=True)
@@ -96,7 +99,9 @@ def main_win() -> None:
     print("Downloading Python NuGet package...")
     download_file(nuget_python_url, "python.nupkg")
 
-    prefix = gen_prefix()
+    # gen_prefix() ensures the install directory exists;
+    # the returned value is not used on this path.
+    gen_prefix()
     include_dir = os.path.join(INITIAL_DIR, "include")
     if not os.path.exists(include_dir):
         os.makedirs(include_dir)

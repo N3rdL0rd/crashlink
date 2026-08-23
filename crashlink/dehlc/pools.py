@@ -4,27 +4,27 @@ Constant-pool synthesis from function-body immediates.
 
 from __future__ import annotations
 
-import re
 import struct
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 try:
-    from capstone import Cs, CS_ARCH_X86, CS_MODE_64, CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN
-    from capstone.x86 import X86_OP_MEM, X86_REG_RIP, X86_OP_IMM, X86_OP_REG, X86_REG_RDI, X86_REG_EDI
-    from capstone.arm64 import (
+    from capstone import Cs, CS_ARCH_X86, CS_MODE_64, CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN  # noqa: F401
+    from capstone.x86 import X86_OP_MEM, X86_REG_RIP, X86_OP_IMM, X86_OP_REG, X86_REG_RDI, X86_REG_EDI  # noqa: F401
+    from capstone.arm64 import (  # noqa: F401
         ARM64_OP_IMM,
         ARM64_OP_REG,
         ARM64_OP_MEM,
         ARM64_REG_X0,
         ARM64_REG_X17,
     )
-    import lief
+    import lief  # noqa: F401
 except ImportError:
     raise NotImplementedError(
         "Cannot run dehl without lief and capstone installed. Try `pip install crashlink[extras]` or `pip install lief capstone`."
     )
-from .binary import HLCBinary, PTR, _resolve_mem_target
+from .binary import HLCBinary, _resolve_mem_target
 from .context import DehlcContext
+
 
 def _recover_constant_pools(ctx: "DehlcContext", bin_view: "HLCBinary") -> Tuple[List[int], List[float]]:
     """
@@ -114,8 +114,10 @@ def _recover_constant_pools(ctx: "DehlcContext", bin_view: "HLCBinary") -> Tuple
             for insn in insns:
                 m, ops = insn.mnemonic, insn.operands
                 # zeroed vector register == float literal 0.0
-                if m in ("xorps", "xorpd", "pxor") and len(ops) == 2 and (
-                    ops[0].type == cs_x86.X86_OP_REG and ops[0].reg == ops[1].reg
+                if (
+                    m in ("xorps", "xorpd", "pxor")
+                    and len(ops) == 2
+                    and (ops[0].type == cs_x86.X86_OP_REG and ops[0].reg == ops[1].reg)
                 ):
                     add_float(0.0)
                     continue
@@ -139,18 +141,23 @@ def _recover_constant_pools(ctx: "DehlcContext", bin_view: "HLCBinary") -> Tuple
                     # skip branch targets and call targets
                     if m.startswith(("j", "call", "loop")):
                         continue
-                    if insn.operands and insn.operands[0].type == cs_x86.X86_OP_REG and m in (
-                        "mov",
-                        "cmp",
-                        "add",
-                        "sub",
-                        "and",
-                        "or",
-                        "xor",
-                        "shl",
-                        "shr",
-                        "sar",
-                        "test",
+                    if (
+                        insn.operands
+                        and insn.operands[0].type == cs_x86.X86_OP_REG
+                        and m
+                        in (
+                            "mov",
+                            "cmp",
+                            "add",
+                            "sub",
+                            "and",
+                            "or",
+                            "xor",
+                            "shl",
+                            "shr",
+                            "sar",
+                            "test",
+                        )
                     ):
                         if imm != 0 or True:
                             add_int(imm)
@@ -158,4 +165,3 @@ def _recover_constant_pools(ctx: "DehlcContext", bin_view: "HLCBinary") -> Tuple
                         add_int(imm)
 
     return ints, floats
-

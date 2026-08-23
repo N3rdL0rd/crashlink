@@ -108,7 +108,9 @@ class LocalsPanel(QWidget):
         name_item = self._table.item(row, 1)
         current_name = name_item.text() if name_item else loc.name
 
-        new_name, ok = QInputDialog.getText(self, "Rename local", f"New name for '{current_name}':", text=current_name)
+        new_name, ok = QInputDialog.getText(
+            self, "Rename local", f"New name for '{current_name}':", text=current_name
+        )
         if ok and new_name and new_name != current_name:
             self.rename_requested.emit(
                 self._findex,
