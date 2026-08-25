@@ -763,11 +763,11 @@ class MainWindow(QMainWindow):
         self._progress_bar.setVisible(True)
         self._progress_bar.setValue(0)
         self._status_label.setText(f"Loading {path}…")
-        self._busy.start("Reading bytecode…" if not self._loaded_via_dehlc else "De-HL/C…")
+        self._busy.start("Reading bytecode..." if not self._loaded_via_dehlc else "Reading binary...")
 
         if self._loaded_via_dehlc:
             thread: QThread = _DehlcLoadThread(path)
-            self._log_panel.info("HL/C image detected — running de-HL/C reconstruction…")
+            self._log_panel.info("De-HL/C: Loading binary...")
         else:
             thread = _LoadThread(path)
         self._load_thread = thread
@@ -797,11 +797,6 @@ class MainWindow(QMainWindow):
         suffix = f", {incomplete} without lifted bodies" if self._loaded_via_dehlc else ""
         self._status_label.setText(f"{label}, {n} functions{suffix}")
         self._log_panel.info(f"{label}, {n} functions{suffix}")
-        if code.hlc_binary is not None:
-            self._log_panel.info(
-                "Original machine code preserved per function - the Disassembly view "
-                "(Tab to cycle) shows it; 'nasm' in the CLI prints the same."
-            )
         self._log_panel.set_context(code=code)
         self._func_list.load(code)
 
