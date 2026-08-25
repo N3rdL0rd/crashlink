@@ -5,31 +5,32 @@ Entrypoint for the crashlink CLI.
 from __future__ import annotations
 
 import argparse
-import atexit
 import importlib
 import inspect
 import os
 import platform
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
-import textwrap
 import traceback
 import webbrowser
-from typing import Callable, Dict, Iterable, List, Optional, Tuple, Set
+from typing import Callable, Dict, List, Optional, Tuple, Set, cast
+from functools import wraps
 
-from crashlink.hlc import code_to_c, code_to_c_files
+from crashlink.hlc import code_to_c
 
 from . import decomp, disasm, globals
 from .core import (
     XRef,
+    XrefIndex,
     TargetKind,
     SourceKind,
     RefKind,
+    AnnotationStore,
     USE_TQDM,
     ProgressCallback,
+    AnalysisWorker,
 )
 from .asm import AsmFile
 from .core import (
@@ -105,12 +106,7 @@ def _make_progress_cb() -> "Optional[ProgressCallback]":
         if pct != _last_pct[0]:
             _last_pct[0] = pct
             end = "\n" if frac >= 1.0 else ""
-            print(
-                f"\r[{pct:3d}%] {status}" + " " * 20 + end,
-                end="",
-                file=sys.stderr,
-                flush=True,
-            )
+            print(f"\r[{pct:3d}%] {status}" + " " * 20 + end, end="", file=sys.stderr, flush=True)
 
     return _plain_cb
 
@@ -129,12 +125,22 @@ def _load_code_from_cli_path(path: str, no_constants: bool) -> Bytecode:
 
     if is_haxe:
         stripped = path.split(".")[0]
-        subprocess.run(["haxe", "-hl", f"{stripped}.hl", "-main", path])
+        os.system(f"haxe -hl {stripped}.hl -main {path}")
         with open(f"{stripped}.hl", "rb") as f:
             return Bytecode().deserialise(f, init_globals=not no_constants, progress_cb=_make_progress_cb())
 
-    with open(path, "rb") as f:
-        return Bytecode().deserialise(f, init_globals=not no_constants, progress_cb=_make_progress_cb())
+    if not path.endswith(".pkl"):
+        with open(path, "rb") as f:
+            return Bytecode().deserialise(f, init_globals=not no_constants, progress_cb=_make_progress_cb())
+
+    try:
+        import dill  # type: ignore[import-untyped]
+
+        with open(path, "rb") as f:
+            return cast(Bytecode, dill.load(f))
+    except ImportError:
+        print("Dill not found. Install dill to unpickle bytecode, or install crashlink with the [extras] option.")
+        sys.exit(1)
 
 
 def _default_hlc_output(path: str) -> str:
@@ -143,9 +149,7 @@ def _default_hlc_output(path: str) -> str:
 
 
 def _hlc_native_libs(code: Bytecode) -> List[str]:
-    return sorted(
-        {n.lib.resolve(code).lstrip("?") for n in code.natives if n.lib.resolve(code).lstrip("?") != "std"}
-    )
+    return sorted({n.lib.resolve(code).lstrip("?") for n in code.natives if n.lib.resolve(code).lstrip("?") != "std"})
 
 
 def _find_hdll(lib: str, search_dirs: List[Path]) -> Path | None:
@@ -210,39 +214,8 @@ def _resolve_native_hdlls(
     return resolved, missing
 
 
-def _compile_objects_parallel(
-    c_paths: List[str],
-    hashlink_dir: Path,
-    use_clang: bool,
-    use_ccache: bool,
-    opt_level: str,
-    obj_dir: Path,
-) -> List[str]:
-    """Compiles each C file to an object file, in parallel across cores.
-    Returns the object paths. Raises on the first compile failure."""
-    import concurrent.futures
-
-    obj_dir.mkdir(parents=True, exist_ok=True)
-    cc: List[str] = (["ccache"] if use_ccache else []) + ["clang" if use_clang else "cc"]
-    base_flags = [
-        opt_level,
-        "-Wno-incompatible-pointer-types",
-        f"-I{hashlink_dir / 'src'}",
-    ]
-
-    def compile_one(c_path: str) -> str:
-        obj = str(obj_dir / (Path(c_path).stem + ".o"))
-        cmd = cc + base_flags + ["-c", c_path, "-o", obj]
-        print("Compiling:", " ".join(cmd))
-        subprocess.run(cmd, check=True)
-        return obj
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count()) as pool:
-        return list(pool.map(compile_one, c_paths))
-
-
 def _build_compile_command(
-    c_paths: List[str],
+    c_path: str,
     bin_path: str,
     hashlink_dir: Path,
     hdll_paths: List[Path],
@@ -251,7 +224,6 @@ def _build_compile_command(
     use_clang: bool,
     use_ccache: bool,
     opt_level: str = "-O2",
-    include_hlc_main: bool = True,
 ) -> List[str]:
     search_dirs = _build_search_dirs(hashlink_dir, extra_hdll_dirs)
     cmd: List[str] = []
@@ -263,11 +235,10 @@ def _build_compile_command(
             opt_level,
             "-Wno-incompatible-pointer-types",
             f"-I{hashlink_dir / 'src'}",
-            *c_paths,
+            c_path,
+            str(hashlink_dir / "src" / "hlc_main.c"),
         ]
     )
-    if include_hlc_main:
-        cmd.append(str(hashlink_dir / "src" / "hlc_main.c"))
     cmd.extend(str(p) for p in hdll_paths)
     if "uv" in native_libs:
         explicit_uv = _find_any_shared_lib(["libuv.so", "libuv.so.1"], search_dirs)
@@ -276,9 +247,7 @@ def _build_compile_command(
             cmd.append(f"-Wl,-rpath-link,{explicit_uv.parent}")
         else:
             try:
-                uv_flags = (
-                    subprocess.check_output(["pkg-config", "--libs", "libuv"], text=True).strip().split()
-                )
+                uv_flags = subprocess.check_output(["pkg-config", "--libs", "libuv"], text=True).strip().split()
                 cmd.extend(uv_flags)
             except Exception:
                 cmd.append("-luv")
@@ -306,7 +275,7 @@ def _build_compile_command(
 
 
 def _build_hlc_script(
-    c_paths: List[str],
+    c_path: str,
     bin_path: str,
     native_libs: List[str],
     hashlink_dir: Path,
@@ -316,13 +285,12 @@ def _build_hlc_script(
     opt_level: str = "-O2",
 ) -> str:
     extra_dirs_literal = " ".join(f'"{d}"' for d in extra_hdll_dirs)
-    c_files_literal = " ".join(f'"{p}"' for p in c_paths)
     script = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
         "",
         f'HASHLINK_DIR="${{HASHLINK_DIR:-{hashlink_dir}}}"',
-        f"C_FILES=({c_files_literal})",
+        f'C_FILE="{c_path}"',
         f'OUT_FILE="{bin_path}"',
         f"EXTRA_HDLL_DIRS=({extra_dirs_literal})",
         f"USE_CLANG={'1' if use_clang else '0'}",
@@ -417,24 +385,9 @@ def _build_hlc_script(
         ]
     script += [
         "",
-        "# Compile each translation unit to an object file, in parallel across cores,",
-        "# then link. (With a single generated C file this is one compile job; with",
-        "# --split N it's N+2, which is the whole point of splitting.)",
-        "NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)",
-        "OBJ_DIR=$(mktemp -d)",
-        "trap 'rm -rf \"$OBJ_DIR\"' EXIT",
-        "OBJS=()",
-        'for c in "${C_FILES[@]}" "$HASHLINK_DIR/src/hlc_main.c"; do',
-        '  obj="$OBJ_DIR/$(basename "$c").o"',
-        '  OBJS+=("$obj")',
-        '  "${CC_PREFIX[@]}" "$CC_BIN" "$OPT_LEVEL" -Wno-incompatible-pointer-types \\',
-        '    -I"$HASHLINK_DIR/src" -c "$c" -o "$obj" &',
-        '  while [ "$(jobs -rp | wc -l)" -ge "$NPROC" ]; do wait -n; done',
-        "done",
-        "wait",
-        "",
-        '"${CC_PREFIX[@]}" "$CC_BIN" "$OPT_LEVEL" \\',
-        '  "${OBJS[@]}" \\',
+        '"${CC_PREFIX[@]}" "$CC_BIN" "$OPT_LEVEL" -Wno-incompatible-pointer-types \\',
+        '  -I"$HASHLINK_DIR/src" \\',
+        '  "$C_FILE" "$HASHLINK_DIR/src/hlc_main.c" \\',
         '  "${HDLL_ARGS[@]}" \\',
         "  ${EXTRA_LINK_ARGS[@]} \\",
         '  -L"$HASHLINK_DIR/build/bin" -lhl -lm -ldl -lpthread \\',
@@ -450,19 +403,7 @@ def _build_hlc_script(
 
 def info_main(argv: List[str]) -> None:
     parser = argparse.ArgumentParser(
-        description="Print summary information about a bytecode file.",
-        prog="crashlink info",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="\n".join(
-            [
-                "examples:",
-                "  crashlink info game.hl",
-                "      Print version, function/type/string counts, etc.",
-                "",
-                "  crashlink info game.hl -N",
-                "      Same, but skip constant resolution (useful for malformed files).",
-            ]
-        ),
+        description="Print summary information about a bytecode file.", prog="crashlink info"
     )
     parser.add_argument("file", help="Input .hl / .dat file")
     parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
@@ -481,19 +422,7 @@ def info_main(argv: List[str]) -> None:
 
 def disasm_main(argv: List[str]) -> None:
     parser = argparse.ArgumentParser(
-        description="Disassemble a function from a bytecode file.",
-        prog="crashlink disasm",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="\n".join(
-            [
-                "examples:",
-                "  crashlink disasm game.hl 42",
-                "      Disassemble the function with findex 42 (use 'crashlink funcs' to find indexes).",
-                "",
-                "  crashlink disasm game.hl 42 -N",
-                "      Disassemble without resolving constants first.",
-            ]
-        ),
+        description="Disassemble a function from a bytecode file.", prog="crashlink disasm"
     )
     parser.add_argument("file", help="Input .hl / .dat file")
     parser.add_argument("findex", type=int, help="Function index to disassemble")
@@ -513,21 +442,7 @@ def disasm_main(argv: List[str]) -> None:
 
 
 def search_main(argv: List[str]) -> None:
-    parser = argparse.ArgumentParser(
-        description="Search strings in a bytecode file.",
-        prog="crashlink search",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="\n".join(
-            [
-                "examples:",
-                "  crashlink search game.hl password",
-                "      Print every string containing 'password' (case-insensitive), with its s@ index.",
-                "",
-                '  crashlink search game.hl "http://"',
-                "      Find embedded URLs.",
-            ]
-        ),
-    )
+    parser = argparse.ArgumentParser(description="Search strings in a bytecode file.", prog="crashlink search")
     parser.add_argument("file", help="Input .hl / .dat file")
     parser.add_argument("query", help="Substring to search for (case-insensitive)")
     parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
@@ -543,59 +458,21 @@ def search_main(argv: List[str]) -> None:
 def db_main(argv: List[str]) -> None:
     from . import database as db
 
-    parser = argparse.ArgumentParser(
-        description="Work with .cldb analysis databases.",
-        prog="crashlink db",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="\n".join(
-            [
-                "examples:",
-                "  crashlink db info game.cldb",
-                "      Show format version, source hash, and counts of renames/comments/cached functions.",
-                "",
-                "  crashlink db check game.cldb game.hl",
-                "      Verify game.cldb still matches game.hl before trusting its cached data.",
-                "",
-                "  crashlink db renames game.cldb",
-                "  crashlink db comments game.cldb",
-                "      List the individual renames or comments stored in the database.",
-            ]
-        ),
-    )
+    parser = argparse.ArgumentParser(description="Work with .cldb analysis databases.", prog="crashlink db")
     sub = parser.add_subparsers(dest="action", required=True)
 
-    p_info = sub.add_parser(
-        "info",
-        help="Show summary info for a .cldb",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="example:\n  crashlink db info game.cldb",
-    )
+    p_info = sub.add_parser("info", help="Show summary info for a .cldb")
     p_info.add_argument("cldb", help="Path to the .cldb file")
 
-    p_check = sub.add_parser(
-        "check",
-        help="Validate a .cldb against a bytecode file",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="example:\n  crashlink db check game.cldb game.hl",
-    )
+    p_check = sub.add_parser("check", help="Validate a .cldb against a bytecode file")
     p_check.add_argument("cldb", help="Path to the .cldb file")
     p_check.add_argument("file", help="Bytecode (.hl/.dat) file to check against")
     p_check.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
 
-    p_renames = sub.add_parser(
-        "renames",
-        help="List renames stored in a .cldb",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="example:\n  crashlink db renames game.cldb",
-    )
+    p_renames = sub.add_parser("renames", help="List renames stored in a .cldb")
     p_renames.add_argument("cldb", help="Path to the .cldb file")
 
-    p_comments = sub.add_parser(
-        "comments",
-        help="List comments stored in a .cldb",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="example:\n  crashlink db comments game.cldb",
-    )
+    p_comments = sub.add_parser("comments", help="List comments stored in a .cldb")
     p_comments.add_argument("cldb", help="Path to the .cldb file")
 
     args = parser.parse_args(argv)
@@ -616,9 +493,7 @@ def db_main(argv: List[str]) -> None:
         print(f"Cached functions: {len(info.cache_findices)}")
         if info.session is not None:
             s = info.session
-            print(
-                f"Session: view_mode={s.view_mode}  theme={s.theme_name!r}  open_tabs={len(s.open_findices)}"
-            )
+            print(f"Session: view_mode={s.view_mode}  theme={s.theme_name!r}  open_tabs={len(s.open_findices)}")
         else:
             print("Session: none")
 
@@ -664,24 +539,7 @@ def db_main(argv: List[str]) -> None:
 
 
 def funcs_main(argv: List[str]) -> None:
-    parser = argparse.ArgumentParser(
-        description="List functions in a bytecode file.",
-        prog="crashlink funcs",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="\n".join(
-            [
-                "examples:",
-                "  crashlink funcs game.hl",
-                "      List user-code functions (stdlib and natives hidden by default).",
-                "",
-                "  crashlink funcs game.hl --std --natives",
-                "      Include stdlib functions and native stubs too.",
-                "",
-                "  crashlink funcs game.hl | grep -i update",
-                "      Find a function by name to get its findex for 'crashlink disasm'/'decompile'.",
-            ]
-        ),
-    )
+    parser = argparse.ArgumentParser(description="List functions in a bytecode file.", prog="crashlink funcs")
     parser.add_argument("file", help="Input .hl / .dat file")
     parser.add_argument("--std", action="store_true", help="Include stdlib functions")
     parser.add_argument("--natives", action="store_true", help="Include native stubs")
@@ -703,28 +561,11 @@ def decompile_main(argv: List[str]) -> None:
     parser = argparse.ArgumentParser(
         description="Decompile a function or class to pseudo-Haxe. INCOMPLETE — usually functional, but a work in progress.",
         prog="crashlink decompile",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="\n".join(
-            [
-                "examples:",
-                "  crashlink decompile game.hl 42",
-                "      Decompile the function with findex 42 to pseudo-Haxe.",
-                "",
-                "  crashlink decompile game.hl 17 --class",
-                "      Decompile the whole class at tIndex 17 (all of its methods).",
-                "",
-                "  crashlink funcs game.hl | grep -i MyClass",
-                "      Find the findex/tIndex to pass in, by name.",
-            ]
-        ),
     )
     parser.add_argument("file", help="Input .hl / .dat file")
     parser.add_argument("index", type=int, help="findex for a function, or tIndex with --class")
     parser.add_argument(
-        "--class",
-        dest="is_class",
-        action="store_true",
-        help="Treat index as a tIndex and decompile the whole class",
+        "--class", dest="is_class", action="store_true", help="Treat index as a tIndex and decompile the whole class"
     )
     parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
     args = parser.parse_args(argv)
@@ -762,27 +603,7 @@ def decompile_main(argv: List[str]) -> None:
 
 def hlc_main(argv: List[str]) -> None:
     parser = argparse.ArgumentParser(
-        description="Transpile HashLink bytecode to C and emit a matching build script.",
-        prog="crashlink hlc",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="\n".join(
-            [
-                "examples:",
-                "  crashlink hlc game.hl",
-                "      Emit game.c and a build script next to it, but don't compile.",
-                "",
-                "  crashlink hlc game.hl --build",
-                "      Emit and immediately compile/link against libhl (uses $HASHLINK_DIR or --hashlink-dir).",
-                "",
-                "  crashlink hlc game.hl --build -O0",
-                "      Faster dev builds: skip most C compiler optimization (a single generated",
-                "      file can't be parallelized across cores, so this is the main speed lever).",
-                "",
-                "  crashlink hlc game.hl --build --split 8 --hdll-dir ./hdll",
-                "      Split the generated C into 8 translation units for parallel compilation,",
-                "      and look in ./hdll for any HDLLs the bytecode depends on.",
-            ]
-        ),
+        description="Transpile HashLink bytecode to C and emit a matching build script.", prog="crashlink hlc"
     )
     parser.add_argument("file", help="Input .hl / .dat / Haxe source file")
     parser.add_argument("-o", "--output", help="Output C filename")
@@ -815,50 +636,28 @@ def hlc_main(argv: List[str]) -> None:
         help="Don't resolve constants during deserialisation",
         action="store_true",
     )
-    parser.add_argument(
-        "-j",
-        "--split",
-        type=int,
-        default=1,
-        metavar="N",
-        help="Split the generated C into N function translation units (plus a shared "
-        "header and a data/entry TU) so compilation can run in parallel across cores. "
-        "Default 1 = classic single-file output.",
-    )
     args = parser.parse_args(argv)
-    if args.split < 1:
-        parser.error("--split must be >= 1")
 
     code = _load_code_from_cli_path(args.file, args.no_constants)
     out_c = args.output or _default_hlc_output(args.file)
-    out_bin = str(Path(out_c).with_suffix(""))
+    out_dir = str(Path(out_c))
+    os.makedirs(out_dir, exist_ok=True)
+    out_build_c = str(Path(out_c).with_suffix(""))
+    out_bin = out_build_c
     build_script = str(Path(out_c).with_suffix(".build.sh"))
     hashlink_dir = Path(args.hashlink_dir).expanduser().resolve()
 
-    out_dir = Path(out_c).resolve().parent
-    out_dir.mkdir(parents=True, exist_ok=True)
-    basename = Path(out_c).stem
-    files = code_to_c_files(code, parts=args.split, basename=basename, progress_cb=_make_progress_cb())
-    c_files: List[str] = []
-    for rel_name, content in files.items():
-        path = out_dir / rel_name
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(content)
-        if rel_name.endswith(".c"):
-            c_files.append(str(path))
-    c_files.sort()  # data TU first, then parts (basename.c < basename.pNN.c)
+    files = code_to_c(code, progress_cb=_make_progress_cb(), split_files=True)
+    for fname, fcontent in files.items():
+        fpath = os.path.join(out_dir, fname)
+        with open(fpath, "w", encoding="utf-8") as f:
+            f.write(fcontent)
+    build_c_path = os.path.join(out_dir, "build.c")
 
     opt_level = f"-O{args.opt_level}"
     native_libs = _hlc_native_libs(code)
     script = _build_hlc_script(
-        c_files,
-        out_bin,
-        native_libs,
-        hashlink_dir,
-        args.hdll_dir,
-        args.clang,
-        args.ccache,
-        opt_level,
+        build_c_path, out_bin, native_libs, hashlink_dir, args.hdll_dir, args.clang, args.ccache, opt_level
     )
     with open(build_script, "w") as f:
         f.write(script)
@@ -866,10 +665,7 @@ def hlc_main(argv: List[str]) -> None:
 
     resolved_hdlls, missing_hdlls = _resolve_native_hdlls(native_libs, hashlink_dir, args.hdll_dir)
 
-    if len(c_files) == 1:
-        print(f"Wrote C output: {out_c}")
-    else:
-        print(f"Wrote C output: {len(c_files)} translation units + {basename}.h in {out_dir}")
+    print(f"Wrote {len(files)} C source files to: {out_dir}")
     print(f"Wrote build script: {build_script}")
     if native_libs:
         print("Native libraries:", ", ".join(native_libs))
@@ -883,40 +679,17 @@ def hlc_main(argv: List[str]) -> None:
         if missing_hdlls:
             print("Cannot build: missing required HDLLs")
             sys.exit(1)
-        if len(c_files) > 1:
-            # parallel per-TU compile, then a link-only invocation over the objects
-            objs = _compile_objects_parallel(
-                c_files + [str(hashlink_dir / "src" / "hlc_main.c")],
-                hashlink_dir,
-                args.clang,
-                args.ccache,
-                opt_level,
-                out_dir / f"{basename}.objs",
-            )
-            cmd = _build_compile_command(
-                objs,
-                out_bin,
-                hashlink_dir,
-                [resolved_hdlls[lib] for lib in native_libs],
-                native_libs,
-                args.hdll_dir,
-                args.clang,
-                args.ccache,
-                opt_level,
-                include_hlc_main=False,
-            )
-        else:
-            cmd = _build_compile_command(
-                c_files,
-                out_bin,
-                hashlink_dir,
-                [resolved_hdlls[lib] for lib in native_libs],
-                native_libs,
-                args.hdll_dir,
-                args.clang,
-                args.ccache,
-                opt_level,
-            )
+        cmd = _build_compile_command(
+            build_c_path,
+            out_bin,
+            hashlink_dir,
+            [resolved_hdlls[lib] for lib in native_libs],
+            native_libs,
+            args.hdll_dir,
+            args.clang,
+            args.ccache,
+            opt_level,
+        )
         print("Compiling:", " ".join(cmd))
         subprocess.run(cmd, check=True)
         print(f"Built binary: {out_bin}")
@@ -934,48 +707,6 @@ def primary(
         return func
 
     return decorator
-
-
-def _emit_haxe(res: str) -> None:
-    """Print Haxe pseudocode, syntax-highlighted when pygments is available."""
-    try:
-        from pygments import highlight
-        from pygments.lexers import HaxeLexer  # ty: ignore[unresolved-import]
-        from pygments.formatters import Terminal256Formatter  # ty: ignore[unresolved-import]
-
-        print(highlight(res, HaxeLexer(), Terminal256Formatter(style="dracula")))
-    except ImportError:
-        print(res)
-
-
-def _copy_to_clipboard(text: str) -> bool:
-    """Copy `text` to the system clipboard. Returns True on success.
-
-    Tries pyperclip, then platform CLIs (wl-copy/xclip/xsel on Linux, pbcopy on
-    macOS, clip on Windows), so it works without an extra dependency installed."""
-    try:
-        import pyperclip  # ty: ignore[unresolved-import]
-
-        pyperclip.copy(text)
-        return True
-    except Exception:
-        pass
-    candidates = [
-        ["wl-copy"],
-        ["xclip", "-selection", "clipboard"],
-        ["xsel", "--clipboard", "--input"],
-        ["pbcopy"],
-        ["clip"],
-    ]
-    for cmd in candidates:
-        if shutil.which(cmd[0]) is None:
-            continue
-        try:
-            subprocess.run(cmd, input=text.encode("utf-8"), check=True)
-            return True
-        except (subprocess.SubprocessError, OSError):
-            continue
-    return False
 
 
 def alias(
@@ -1007,73 +738,38 @@ class BaseCommands:
             return cmd, " ".join(s)
         return s[1], s[0]
 
-    def _short_desc(self, desc: str) -> str:
-        """Collapses a (possibly multi-line/multi-paragraph) description to a single summary line."""
-        first_para = textwrap.dedent(desc).strip().split("\n\n")[0]
-        return " ".join(first_para.split())
-
     def exit(self, args: List[str]) -> None:
         """Exit the program"""
         sys.exit()
 
     def help(self, args: List[str]) -> None:
-        """Prints this help message, or details on a specific command. `help [command]`"""
+        """Prints this help message or information on a specific command. `help (command)`"""
         commands = self._get_commands()
-        command_aliases = self._get_command_aliases()
-        term_width = shutil.get_terminal_size(fallback=(100, 24)).columns
-
         if args:
             for command in args:
-                if command not in commands:
-                    print(f"Unknown command: {command}")
-                    continue
-                doc: str = commands[command].__doc__ or ""
-                usage, desc = self._format_help(doc, command)
-                primary = getattr(commands[command], "_primary_alias", None) or command
-                aliases = command_aliases.get(primary, [])
-                print(f"usage: {usage}")
-                if aliases:
-                    print(f"aliases: {', '.join(sorted(aliases))}")
-                cleaned = textwrap.dedent(desc).strip()
-                if "\n" in cleaned:
-                    # Multi-line docstrings (e.g. with a worked-out "Usage:" block) are already
-                    # hand-formatted, so print them as-is instead of re-wrapping.
-                    print(cleaned)
+                if command in commands:
+                    doc: str = commands[command].__doc__ or ""
+                    usage, desc = self._format_help(doc, command)
+                    print(f"{usage} - {desc}")
                 else:
-                    for line in textwrap.wrap(cleaned, width=max(40, term_width - 2)) or [""]:
-                        print(line)
-                print()
+                    print(f"Unknown command: {command}")
             return
 
         print("Available commands:")
-        print()
 
         # Group commands by their primary name (avoid showing aliases as separate entries)
         primary_commands = self._get_primary_commands()
+        command_aliases = self._get_command_aliases()
 
-        rows: List[Tuple[str, str]] = []
         for cmd, func in sorted(primary_commands.items()):
             usage, desc = self._format_help(func.__doc__ or "", cmd)
             aliases = command_aliases.get(cmd, [])
-            label = usage if not aliases else f"{usage}  ({', '.join(sorted(aliases))})"
-            rows.append((label, self._short_desc(desc)))
-
-        label_width = min(max((len(label) for label, _ in rows), default=0) + 2, 36)
-        desc_width = max(30, term_width - label_width - 4)
-        for label, desc in rows:
-            wrapped = textwrap.wrap(desc, width=desc_width) or [""]
-            if len(label) >= label_width:
-                print(f"  {label}")
-                for cont in wrapped:
-                    print(f"  {'':<{label_width}}{cont}")
+            if aliases:
+                alias_str = f" (aliases: {', '.join(sorted(aliases))})"
+                print(f"\t{usage}{alias_str} - {desc}")
             else:
-                print(f"  {label:<{label_width}}{wrapped[0]}")
-                for cont in wrapped[1:]:
-                    print(f"  {'':<{label_width}}{cont}")
-
-        print()
-        print("Type 'help <command>' for details on a specific command.")
-        print("Up/down arrows browse command history; 'history' lists it; 'clear' clears the screen.")
+                print(f"\t{usage} - {desc}")
+        print("Type 'help <command>' for information on a specific command.")
 
     def _get_commands(self) -> Dict[str, Callable[[List[str]], None]]:
         """Get all command methods using reflection, including primary aliases and other aliases."""
@@ -1137,36 +833,6 @@ class Commands(BaseCommands):
     def exit(self, args: List[str]) -> None:
         """Exit the program"""
         sys.exit()
-
-    def clear(self, args: List[str]) -> None:
-        """Clears the terminal screen."""
-        if platform.system() == "Windows":
-            subprocess.run("cls", shell=True)  # cls is a cmd builtin, not an executable
-        else:
-            subprocess.run(["clear"])
-
-    @alias("hist")
-    def history(self, args: List[str]) -> None:
-        """Shows recently run REPL commands. `history [count]`"""
-        try:
-            # via importlib: typeshed hides readline's attributes on win32, but at
-            # runtime pyreadline3 can still provide the module there
-            readline = importlib.import_module("readline")
-        except ImportError:
-            print("readline is not available on this platform, so no history is kept.")
-            return
-        try:
-            count = int(args[0]) if args else 20
-        except ValueError:
-            print("Invalid count.")
-            return
-        length = readline.get_current_history_length()
-        if length == 0:
-            print("No history yet.")
-            return
-        start = max(1, length - count + 1)
-        for i in range(start, length + 1):
-            print(f"{i:>4}  {readline.get_history_item(i)}")
 
     def wiki(self, args: List[str]) -> None:
         """Open the ModDocCE wiki page on Hashlink bytecode in your default browser"""
@@ -1297,10 +963,8 @@ class Commands(BaseCommands):
                     else:
                         subprocess.run(["xdg-open", png_file])
                     os.unlink(dot_file)
-                except Exception:
-                    print(
-                        f"Control flow graph saved to {png_file}. Use your favourite image viewer to open it."
-                    )
+                except:
+                    print(f"Control flow graph saved to {png_file}. Use your favourite image viewer to open it.")
                 return
         print("Function not found.")
 
@@ -1333,121 +997,24 @@ class Commands(BaseCommands):
         for func in self.code.functions:
             if func.findex.value == index:
                 ir = decomp.IRFunction(self.code, func)
+                res = pseudo(ir)
+
                 print("\n")
-                _emit_haxe(pseudo(ir))
+
+                try:
+                    from pygments import highlight
+                    from pygments.lexers import HaxeLexer
+                    from pygments.formatters import Terminal256Formatter
+
+                    lexer = HaxeLexer()
+                    formatter = Terminal256Formatter(style="dracula")
+                    highlighted_output = highlight(res, lexer, formatter)
+                    print(highlighted_output)
+                except ImportError:
+                    print("[warning] pygments not found.")
+                    print(res)
                 return
         print("Function not found.")
-
-    @alias("df")
-    def decompfile(self, args: List[str]) -> None:
-        """Decompiles a whole debug file, grouped into its classes. `decompfile <file>`
-
-        `<file>` matches a debug file by full path, suffix, or basename (e.g.
-        `df Main.hx`). Classes are rendered with their fields and methods, in
-        source order. Pair with `copy` to grab it all: `copy df Main.hx`."""
-        if not args:
-            print("Usage: decompfile <file>")
-            return
-        if not self.code.has_debug_info:
-            print("Debug info not found.")
-            return
-        from .pseudo import decompile_file
-
-        out = decompile_file(self.code, args[0])
-        if out is None:
-            print(f"No debug file matching: {args[0]}")
-            return
-        _emit_haxe(out)
-
-    @alias("stubfile")
-    def stub(self, args: List[str]) -> None:
-        """Emit a compilable stub of a whole file — signatures kept, bodies stubbed. `stub <file>`
-
-        Every class keeps its fields and exact method signatures (arg + return
-        types); bodies become type-correct placeholders (`throw` / `super(...)`).
-        For large decompilation projects: stub the files you haven't reached so
-        the project keeps compiling. Pair with `copy`: `copy stub Foo.hx`."""
-        if not args:
-            print("Usage: stub <file>")
-            return
-        if not self.code.has_debug_info:
-            print("Debug info not found.")
-            return
-        from .pseudo import stub_file
-
-        out = stub_file(self.code, args[0])
-        if out is None:
-            print(f"No debug file matching: {args[0]}")
-            return
-        _emit_haxe(out)
-
-    def autostub(self, args: List[str]) -> None:
-        """Stub every file in the debug database to a target folder. `autostub <folder>`
-
-        Writes a compilable stub (see `stub`) for each source file, laid out under
-        <folder> mirroring each file's Haxe package (e.g. tool/log/LogUtils.hx).
-        For bootstrapping a large decompilation project: a whole compilable
-        skeleton you fill in file by file."""
-        if not args:
-            print("Usage: autostub <folder>")
-            return
-        if not self.code.has_debug_info:
-            print("Debug info not found.")
-            return
-        from .pseudo import stub_all
-
-        out_dir = args[0]
-        items: Iterable[Tuple[str, str]] = stub_all(self.code)
-        try:
-            from tqdm import tqdm
-
-            items = tqdm(items, unit="file", desc="stubbing")
-        except ImportError:
-            pass
-
-        written = 0
-        for rel_path, text in items:
-            dest = os.path.join(out_dir, rel_path)
-            try:
-                os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
-                with open(dest, "w", encoding="utf-8") as f:
-                    f.write(text + "\n")
-                written += 1
-            except OSError as e:
-                print(f"[warning] could not write {dest}: {e}", file=sys.stderr)
-        print(f"Wrote {written} stub file(s) to {out_dir}")
-
-    @alias("cp")
-    def copy(self, args: List[str]) -> None:
-        """Runs a command and copies its (plain-text) output to your clipboard. `copy <command> [args...]`
-
-        Example: `copy df Main.hx` decompiles the whole file and puts it on your
-        clipboard instead of the screen. ANSI colour is stripped before copying."""
-        if not args:
-            print("Usage: copy <command> [args...]")
-            return
-        commands = self._get_commands()
-        sub = args[0]
-        if sub not in commands or sub in ("copy", "cp"):
-            print(f"Unknown command: {sub}")
-            return
-        import io
-        from contextlib import redirect_stdout
-        from .decomp import _strip_ansi
-
-        buf = io.StringIO()
-        try:
-            with redirect_stdout(buf):
-                commands[sub](args[1:])
-        except Exception as e:
-            print(f"Command '{sub}' failed: {e}")
-            return
-        text = _strip_ansi(buf.getvalue()).strip("\n") + "\n"
-        if _copy_to_clipboard(text):
-            print(f"Copied {len(text)} chars from '{sub}' to clipboard.")
-        else:
-            print("Could not access clipboard (install pyperclip or xclip/wl-clipboard). Output:")
-            print(text, end="")
 
     @alias("edit")
     def patch(self, args: List[str]) -> None:
@@ -1496,9 +1063,9 @@ class Commands(BaseCommands):
             root.mainloop()
         except ImportError:
             if os.name == "nt":
-                subprocess.run(["notepad", file])
+                os.system(f'notepad "{file}"')
             elif os.name == "posix":
-                subprocess.run(["nano", file])
+                os.system(f'nano "{file}"')
             else:
                 print("No suitable editor found")
                 os.unlink(file)
@@ -1552,10 +1119,15 @@ class Commands(BaseCommands):
             print("Usage: hlc <output path>")
             return
         output_path = args[0]
+        out_dir = str(Path(output_path).with_suffix("")) + ".d"
+        os.makedirs(out_dir, exist_ok=True)
         print("Transpiling to cHL/C...")
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(code_to_c(self.code, progress_cb=_make_progress_cb()))
-        print(f"cHL/C code written to {output_path}")
+        files = code_to_c(self.code, progress_cb=_make_progress_cb(), split_files=True)
+        for fname, fcontent in files.items():
+            fpath = os.path.join(out_dir, fname)
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(fcontent)
+        print(f"Wrote {len(files)} C source files to {out_dir}/")
 
     @alias("strs")
     def strings(self, args: List[str]) -> None:
@@ -1755,7 +1327,7 @@ class Commands(BaseCommands):
             print(f"  Packed Inner Type: {inner_type_name} (t@{packed_def.inner.value})")
 
         elif isinstance(definition, GUID):
-            print("  GUID Type (no data)")
+            print(f"  GUID Type (no data)")
 
         elif isinstance(definition, Abstract):
             abs_def: Abstract = definition
@@ -1862,9 +1434,7 @@ class Commands(BaseCommands):
                 print(f"  Initialized Value: {initialized_global_data!r}")
         else:
             # The global gIndex is valid, but it's not in initialized_globals
-            print(
-                f"Global {gidx} (Type: {global_type_str}) exists, but has no initialized constant values recorded."
-            )
+            print(f"Global {gidx} (Type: {global_type_str}) exists, but has no initialized constant values recorded.")
 
     def setstring(self, args: List[str]) -> None:
         """
@@ -1974,9 +1544,7 @@ class Commands(BaseCommands):
 
             try:
                 obj_def = code.types[index].definition
-                field_name = (
-                    obj_def.fields[aux].name.resolve(code) if isinstance(obj_def, Obj) else f"slot{aux}"
-                )
+                field_name = obj_def.fields[aux].name.resolve(code) if isinstance(obj_def, Obj) else f"slot{aux}"
             except Exception:
                 field_name = f"slot{aux}"
             refs = xi.all_field_accesses(index, aux)
@@ -2045,9 +1613,7 @@ class Commands(BaseCommands):
 
             try:
                 edef = code.types[index].definition
-                cname = (
-                    edef.constructs[aux].name.resolve(code) if isinstance(edef, HLEnum) else f"construct{aux}"
-                )
+                cname = edef.constructs[aux].name.resolve(code) if isinstance(edef, HLEnum) else f"construct{aux}"
                 elabel = f"t@{index}.{cname}"
             except Exception:
                 elabel = f"t@{index} construct#{aux}"
@@ -2130,6 +1696,7 @@ class Commands(BaseCommands):
             return
         func = func_map[findex]
         from .decomp.function import IRFunction
+        from .core import Function
 
         if not isinstance(func, Function):
             print("Natives have no locals.")
@@ -2271,6 +1838,53 @@ class Commands(BaseCommands):
             return
         print(loc)
 
+    @alias("pkl")
+    def pickle(self, args: List[str]) -> None:
+        """Pickle the bytecode to a given path. `pickle <path>`"""
+        if len(args) == 0:
+            print("Usage: pickle <path>")
+            return
+        try:
+            import dill
+
+            with open(args[0], "wb") as f:
+                dill.dump(self.code, f)
+            print("Bytecode pickled.")
+        except ImportError:
+            print("dill not found. Install dill to pickle bytecode, or install crashlink with the [extras] option.")
+
+    def stub(self, args: List[str]) -> None:
+        """Generate files in the same structure as the original Haxe source. Requires debuginfo. `stub <path>`"""
+        if len(args) == 0:
+            print("Usage: stub <path>")
+            return
+        if not self.code.has_debug_info:
+            print("Debug info not found.")
+            return
+        path = args[0]
+        if not os.path.exists(path):
+            os.makedirs(path)
+        if not self.code.debugfiles:
+            print("No debug files found.")
+            return
+        for file in self.code.debugfiles.value:
+            if (
+                file == "std" or file == "?" or file.startswith("C:") or file.startswith("D:") or file.startswith("/")
+            ):  # FIXME: lazy sanitization
+                continue
+            try:
+                os.makedirs(os.path.join(path, os.path.dirname(file)), exist_ok=True)
+                with open(os.path.join(path, file), "w") as f:
+                    f.write("")
+            except OSError:
+                print(f"Failed to write to {os.path.join(path, file)}")
+        print(f"Files generated in {os.path.abspath(path)}")
+
+    @alias("run")
+    def interp(self, args: List[str]) -> None:
+        """Run the bytecode in crashlink's integrated interpreter."""
+        print("VM interpreter has been removed.")
+
     def repl(self, args: List[str]) -> None:
         """Drop into a Python REPL with direct access to the Bytecode object."""
         code = self.code
@@ -2297,52 +1911,6 @@ class Commands(BaseCommands):
             import code as cd
 
             cd.interact(banner=banner, local=local_vars)
-
-    @alias("shaders")
-    def shader(self, args: List[str]) -> None:
-        """Recover hxsl shaders from the image. `shader [name]`
-
-        With no argument, lists every shader and its var/function counts. With a
-        name (or substring), dumps that shader's interface — declared inputs,
-        params, textures, globals, outputs and functions — decoded from the
-        serialized `hxsl.ShaderData` in the string pool."""
-        from . import hxsl
-
-        shaders = hxsl.find_shaders(self.code)
-        if not shaders:
-            print("No hxsl shaders found in this image.")
-            return
-        if args:
-            needle = args[0].lower()
-            matches = [s for s in shaders if needle in s.name.lower()]
-            if not matches:
-                print(f"No shader matching {args[0]!r}.")
-                return
-            for s in matches:
-                _emit_haxe(hxsl.render_shader(s))
-                print()
-        else:
-            print(f"{len(shaders)} shader(s):\n")
-            for s in sorted(shaders, key=lambda s: s.name):
-                params = sum(1 for v in s.vars if v.kind == "Param")
-                print(f"  {s.name:36} {len(s.vars):3} vars, {params} params")
-
-    def sha(self, args: List[str]) -> None:
-        """Print the SHA-256 of the loaded bytecode image (used to pin plugins)."""
-        print(self.code.sha256 or "unknown (loaded without a file/bytes source)")
-
-    def plugins(self, args: List[str]) -> None:
-        """List discovered plugin optimizers and whether they apply to this image."""
-        from . import plugins as plugin_mod
-
-        entries = plugin_mod.registered()
-        if not entries:
-            print("No plugin optimizers found.")
-            print(f"Searched: {', '.join(plugin_mod.plugin_dirs())}")
-            return
-        for e in entries:
-            applies = "applies" if e.predicate(self.code) else "n/a"
-            print(f"  [{applies:7}] {e.name}  (position: {e.position})")
 
     def offset(self, args: List[str]) -> None:
         """Print the bytecode section at a given offset. `offset <offset in hex>`"""
@@ -2405,9 +1973,7 @@ class Commands(BaseCommands):
         print("Fields:")
         assert isinstance(virt.definition, Virtual), "Virtual type is not a Virtual."
         for field in virt.definition.fields:
-            print(
-                f"  {field.name.resolve(self.code)}: {disasm.type_name(self.code, field.type.resolve(self.code))}"
-            )
+            print(f"  {field.name.resolve(self.code)}: {disasm.type_name(self.code, field.type.resolve(self.code))}")
 
     def enum(self, args: List[str]) -> None:
         """Prints information about an enum by tIndex. `enum <index>`"""
@@ -2443,9 +2009,7 @@ class Commands(BaseCommands):
                 construct_name = construct.name.resolve(self.code)
                 if construct.params:
                     # Resolve the type name for each parameter
-                    param_types = [
-                        disasm.type_name(self.code, p.resolve(self.code)) for p in construct.params
-                    ]
+                    param_types = [disasm.type_name(self.code, p.resolve(self.code)) for p in construct.params]
                     print(f"  {i}: {construct_name}({', '.join(param_types)})")
                 else:
                     print(f"  {i}: {construct_name}")
@@ -2648,8 +2212,8 @@ class Commands(BaseCommands):
 
             try:
                 from pygments import highlight
-                from pygments.lexers import HaxeLexer  # ty: ignore[unresolved-import]
-                from pygments.formatters import Terminal256Formatter  # ty: ignore[unresolved-import]
+                from pygments.lexers import HaxeLexer
+                from pygments.formatters import Terminal256Formatter
 
                 lexer = HaxeLexer()
                 formatter = Terminal256Formatter(style="dracula")
@@ -2685,38 +2249,6 @@ def handle_cmd(code: Bytecode, cmd: str) -> None:
         print("Unknown command.")
 
 
-_HISTORY_FILE = Path.home() / ".crashlink_history"
-
-
-def _setup_repl_readline(code: Bytecode) -> None:
-    """Enables persistent history (up/down arrows) and tab-completion of command names for the REPL."""
-    try:
-        # via importlib: typeshed hides readline's attributes on win32, but at
-        # runtime pyreadline3 can still provide the module there
-        readline = importlib.import_module("readline")
-    except ImportError:
-        # Not available on stock Windows Python; the REPL still works, just without history/completion.
-        return
-
-    try:
-        readline.read_history_file(_HISTORY_FILE)
-    except (FileNotFoundError, OSError):
-        pass
-    readline.set_history_length(1000)
-    atexit.register(lambda: readline.write_history_file(_HISTORY_FILE))
-
-    command_names = sorted(Commands(code)._get_commands().keys())
-
-    def _completer(text: str, state: int) -> Optional[str]:
-        matches = [c for c in command_names if c.startswith(text)]
-        return matches[state] if state < len(matches) else None
-
-    readline.set_completer(_completer)
-    delims = readline.get_completer_delims().replace("-", "")
-    readline.set_completer_delims(delims)
-    readline.parse_and_bind("tab: complete")
-
-
 def mcp_main(argv: List[str]) -> None:
     try:
         from .mcp import run_mcp_server
@@ -2730,10 +2262,7 @@ def mcp_main(argv: List[str]) -> None:
     run_mcp_server(preload_path=preload)
 
 
-def _print_help_all(
-    parser: "argparse.ArgumentParser",
-    subcommands: Dict[str, Callable[[List[str]], None]],
-) -> None:
+def _print_help_all(parser: "argparse.ArgumentParser", subcommands: Dict[str, Callable[[List[str]], None]]) -> None:
     """Print the top-level help, then each subcommand's own -h output."""
     print(parser.format_help())
 
@@ -2777,36 +2306,10 @@ def main() -> None:
     epilog_lines += [f"  {name:<11}{desc}" for name, desc in _SUBCOMMAND_HELP.items()]
     epilog_lines += [
         "",
-        "Run 'crashlink <subcommand> -h' for subcommand-specific help and examples,",
-        "or 'crashlink --help-all' to print every subcommand's help at once.",
+        "Run 'crashlink <subcommand> -h' for subcommand-specific help.",
         "",
         "Without a subcommand, 'file' is opened directly for the options below",
         "(interactive REPL via -c, raw opcode patching via -p, assembly via -a).",
-        "",
-        "examples:",
-        "  crashlink funcs game.hl",
-        "      Quick look: list the functions in a bytecode file.",
-        "",
-        "  crashlink disasm game.hl 42",
-        "      Disassemble function f@42.",
-        "",
-        "  crashlink decompile game.hl 42",
-        "      Decompile function f@42 to pseudo-Haxe.",
-        "",
-        "  crashlink game.hl -c 'funcs'",
-        "      Open game.hl and immediately run the interactive REPL command 'funcs'.",
-        "",
-        "  crashlink game.hl -c ''",
-        "      Open game.hl and drop into the interactive REPL.",
-        "",
-        "  crashlink game.hl -p patch.txt -o patched.hl",
-        "      Apply patch.txt to game.hl and write the result to patched.hl.",
-        "",
-        "  crashlink game.asm -a -o game.hl",
-        "      Assemble a crashlink assembly file into bytecode.",
-        "",
-        "  crashlink hlc game.hl --build",
-        "      Transpile to C and compile it against libhl (see 'crashlink hlc -h').",
     ]
     parser = argparse.ArgumentParser(
         description=f"crashlink CLI ({VERSION})",
@@ -2857,7 +2360,7 @@ def main() -> None:
     parser.add_argument(
         "-C",
         "--dehlc",
-        help="Extracts information about a compiled HL/C binary (types, functions, natives, globals, strings, entrypoint). Works without debug info; DWARF (-g builds) improves global typing",
+        help="Extracts information about a compiled HL/C binary. Requires debug information (PDB for PE, DWARF for ELF)",
         action="store_true",
     )
     parser.add_argument(
@@ -2907,7 +2410,7 @@ def main() -> None:
             print("Opening file...")
             with open(args.file, "rb") as f:
                 print("Reading file...")
-                code = code_from_bin(data=f.read(), verbose=args.debug)
+                code = code_from_bin(data=f.read())
         except ImportError:
             print(
                 "You need to install crashlink with the [extras] group in order to use De-HL/C, since it requires `capstone` and `lief`. Sorry!"
@@ -2937,11 +2440,7 @@ def main() -> None:
                 args.output = args.file + ".patch"
             with open(args.output, "wb") as f:
                 f.write(code.serialise())
-            with open(
-                os.path.join(os.path.dirname(args.output), "crashlink_patch.py"),
-                "w",
-                encoding="utf-8",
-            ) as f:
+            with open(os.path.join(os.path.dirname(args.output), "crashlink_patch.py"), "w", encoding="utf-8") as f:
                 f.write(content)
         except ImportError as e:
             print(f"Failed to import patch module: {e}")
@@ -2958,17 +2457,12 @@ def main() -> None:
     if args.command:
         handle_cmd(code, args.command)
     else:
-        _setup_repl_readline(code)
         while True:
             try:
-                line = input("crashlink> ")
+                handle_cmd(code, input("crashlink> "))
             except KeyboardInterrupt:
                 print()
                 continue
-            except EOFError:
-                print()
-                break
-            handle_cmd(code, line)
 
 
 if __name__ == "__main__":
