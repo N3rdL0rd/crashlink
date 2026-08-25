@@ -1487,11 +1487,30 @@ class Commands(BaseCommands):
         lifted = lifter.lift(addr)
         ctx = EmitContext(self.code, bin_view)
         ops = emit_function(ctx, lifted)
+
+        # Attach the stream to the function so the normal decompiler (and every
+        # other opcode consumer) can work on it: `lift 18` then `decomp 18`.
+        from .core import Reg as _Reg, Regs as _Regs, tIndex as _tIndex, VarInt as _VarInt
+
+        maxreg = 0
+        for o in ops:
+            for v in o.df.values():
+                if isinstance(v, _Reg):
+                    maxreg = max(maxreg, v.value)
+                elif isinstance(v, _Regs):
+                    maxreg = max(maxreg, max((r.value for r in v.value), default=0))
+        fn.ops = ops
+        fn.nops = _VarInt(len(ops))
+        fn.nregs = _VarInt(maxreg + 1)
+        fn.regs = [_tIndex(0)] * (maxreg + 1)  # placeholder types; renderers guard
+
         try:
             fname = self.code.full_func_name(fn)
         except Exception:
             fname = f"f@{index}"
-        print(f"{fname}: {len(lifted)} lifted events -> {len(ops)} opcodes @ {addr:#x}")
+        print(
+            f"{fname}: {len(lifted)} lifted events -> {len(ops)} opcodes @ {addr:#x} (attached; try `decomp {index}`)"
+        )
 
         def fmt(v: Any) -> Any:
             return getattr(v, "value", v)

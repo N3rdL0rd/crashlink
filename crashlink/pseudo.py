@@ -877,9 +877,15 @@ def _expression_to_haxe(
 
     elif isinstance(expr, IRUnliftedOpcode):
         regs = ir_function.func.regs if ir_function is not None else []
-        return (
-            f"/* UNLIFTED OPCODE: {expr.op.op} {disasm.pseudo_from_op(expr.op, 0, regs, code, terse=True)} */"
-        )
+        try:
+            op_str = disasm.pseudo_from_op(expr.op, 0, regs, code, terse=True)
+        except Exception:
+            # Lifted/reconstructed streams carry placeholder register types;
+            # fall back to the exception-guarded compact printer.
+            op_str = disasm.fmt_op_compact(
+                code, regs, expr.op, 0, func=ir_function.func if ir_function else None
+            )
+        return f"/* UNLIFTED OPCODE: {expr.op.op} {op_str} */"
 
     elif isinstance(expr, IRNew):
         type_name = disasm.type_name(code, expr.get_type())
@@ -1503,10 +1509,15 @@ def _generate_statements(
             output_lines.append(f"{indent}trace({msg_str}); // {{ {pos_info_str} }}")
 
         elif isinstance(stmt, IRUnliftedOpcode):
-            output_lines.append(
-                f"{indent}// UNLIFTED OPCODE: {stmt.op.op} "
-                f"{disasm.pseudo_from_op(stmt.op, 0, ir_function.func.regs, code, terse=True)}"
-            )
+            try:
+                op_str = disasm.pseudo_from_op(stmt.op, 0, ir_function.func.regs, code, terse=True)
+            except Exception:
+                # Lifted/reconstructed streams carry placeholder register types;
+                # fall back to the exception-guarded compact printer.
+                op_str = disasm.fmt_op_compact(
+                    code, ir_function.func.regs, stmt.op, 0, func=ir_function.func
+                )
+            output_lines.append(f"{indent}// UNLIFTED OPCODE: {stmt.op.op} {op_str}")
 
         elif isinstance(stmt, IRNativeStub):
             name = ir_function.code.full_func_name(ir_function.func)
