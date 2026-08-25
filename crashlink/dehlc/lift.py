@@ -95,6 +95,12 @@ class LiftContext:
         from capstone.x86 import X86_REG_EBP, X86_REG_ESP, X86_REG_RBP, X86_REG_RSP
 
         self._spill_bases = {X86_REG_RSP, X86_REG_RBP, X86_REG_ESP, X86_REG_EBP}
+        # Per-backend state hooks: x86 keeps none; aarch64 tracks adrp/add
+        # resolved addresses per register (see ARM64LiftContext.track).
+        self.reg_addr: Dict[int, int] = {}
+
+    def track(self) -> None:
+        """Per-instruction backend bookkeeping; called before rule dispatch."""
 
     # -- instruction access -------------------------------------------------
 
@@ -218,10 +224,38 @@ def rule(*mnemonics: str) -> Callable[[Type["LiftRule"]], Type["LiftRule"]]:
 class NoiseRule(LiftRule):
     """Base for rules that consume compiler/ABI noise without emitting ops."""
 
+    def apply(self, ctx: LiftContext) -> bool:
+        return True
+
 
 # ---------------------------------------------------------------------------
 # x86-64 rules (ordered: specific -> general)
 # ---------------------------------------------------------------------------
+
+
+def _classify_call(ctx: LiftContext, addr: Optional[int], name: Optional[str]) -> None:
+    """Shared call semantics for all backends: allocator prims become New/Ref,
+    other libhl imports become Prim:<name>, module functions plain Call."""
+    if name is None:
+        ctx.emit("Call?", src_addr=ctx.insn.address, target_addr=addr)
+        return
+    if name.startswith("hl_"):
+        prim = name[3:]
+        mapped = {
+            "alloc_obj": "New",
+            "alloc_dynobj": "New",
+            "alloc_array": "New",
+            "alloc_bytes": "Prim:alloc_bytes",
+            "alloc_pointer_array": "New",
+            "alloc_closure_ptr": "Ref",
+            "get_virtual_value": "CallVirtual",
+        }.get(prim)
+        if mapped:
+            ctx.emit(mapped, src_addr=ctx.insn.address)
+        else:
+            ctx.emit(f"Prim:{prim}", src_addr=ctx.insn.address)
+        return
+    ctx.emit("Call", src_addr=ctx.insn.address, target=name, target_addr=addr)
 
 
 @rule("call")
@@ -231,26 +265,7 @@ class CallRule(LiftRule):
     Indirect calls through the GOT/PLT resolve to their import symbol."""
 
     def apply(self, ctx: LiftContext) -> bool:
-        addr = ctx.call_target_addr()
-        name = ctx.call_target_name()
-        if name is None:
-            ctx.emit("Call?", src_addr=ctx.insn.address, target_addr=addr)
-            return True
-        if name.startswith("hl_"):
-            prim = name[3:]
-            mapped = {
-                "alloc_obj": "New",
-                "alloc_dynobj": "New",
-                "alloc_array": "New",
-                "alloc_closure_ptr": "Ref",
-                "get_virtual_value": "CallVirtual",
-            }.get(prim)
-            if mapped:
-                ctx.emit(mapped, src_addr=ctx.insn.address, prim=prim)
-            else:
-                ctx.emit(f"Prim:{prim}", src_addr=ctx.insn.address)
-            return True
-        ctx.emit("Call", src_addr=ctx.insn.address, target=name, target_addr=addr)
+        _classify_call(ctx, ctx.call_target_addr(), ctx.call_target_name())
         return True
 
 
@@ -644,6 +659,8 @@ class FunctionLifter:
         if bin_view.arch in ("x86_64", "x86"):
             md_mode = CS_MODE_32 if bin_view.arch == "x86" else CS_MODE_64
             return X86FunctionLifter(bin_view, plt_map, md_mode, size_of=size_of)
+        if bin_view.arch == "aarch64":
+            return ARM64FunctionLifter(bin_view, plt_map, size_of=size_of)
         raise NotImplementedError(f"no lifting backend for arch {bin_view.arch!r}")
 
     def decode(self, addr: int, max_bytes: int = 65536) -> list:
@@ -671,7 +688,7 @@ class FunctionLifter:
     def lift(self, addr: int) -> List[LiftedOp]:
         insns = self.decode(addr)
         out: List[LiftedOp] = []
-        ctx = LiftContext(self.bin_view, addr, insns, 0, self.plt_map, out)
+        ctx = self._make_context(addr, insns, out)
         for i, _insn in enumerate(insns):
             ctx.index = i
             for rl in self._buckets.get(ctx.mnemonic, ()):
@@ -679,6 +696,9 @@ class FunctionLifter:
                     break
             # no rule matched -> instruction ignored (conservative)
         return out
+
+    def _make_context(self, addr: int, insns: list, out: List[LiftedOp]) -> LiftContext:
+        return LiftContext(self.bin_view, addr, insns, 0, self.plt_map, out)
 
 
 class X86FunctionLifter(FunctionLifter):
@@ -694,3 +714,462 @@ class X86FunctionLifter(FunctionLifter):
 
         self.md = Cs(CS_ARCH_X86, mode)
         self.md.detail = True
+
+
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# aarch64 rules
+# ---------------------------------------------------------------------------
+
+_ARM64_OP_IMM: int = 0  # capstone >= 5 ships the arm64 module under both names
+_ARM64_OP_MEM: int = 0
+_ARM64_OP_REG: int = 0
+_ARM64_REG_SP: int = 0
+_ARM64_REG_WZR: int = 0
+_ARM64_REG_XZR: int = 0
+try:
+    from capstone.arm64 import (  # noqa: F401
+        ARM64_OP_IMM as _ARM64_OP_IMM,
+        ARM64_OP_MEM as _ARM64_OP_MEM,
+        ARM64_OP_REG as _ARM64_OP_REG,
+        ARM64_REG_SP as _ARM64_REG_SP,
+        ARM64_REG_WZR as _ARM64_REG_WZR,
+        ARM64_REG_XZR as _ARM64_REG_XZR,
+    )
+except ImportError:  # pragma: no cover - non-aarch64 toolchains
+    pass
+
+_ARM64_CC_RENAME = {"mi": "l", "pl": "ge"}  # sign-flag conditions -> HL cc names
+
+
+class ARM64LiftContext(LiftContext):
+    """aarch64 services: adrp/add address tracking (mirrors init_analysis's
+    proven linear tracker) plus ARM-flavoured operand helpers."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._spill_bases = {_ARM64_REG_SP}
+
+    def call_target_addr(self) -> Optional[int]:
+        for op in self.ops:
+            if op.type == _ARM64_OP_IMM:
+                return op.imm  # bl encodes the absolute target
+        return None
+
+    def branch_target(self) -> Optional[int]:
+        for op in self.ops:
+            if op.type == _ARM64_OP_IMM:
+                return op.imm
+        return None
+
+    def resolve_mem_sym(self, mem_op) -> Optional[str]:
+        base = getattr(getattr(mem_op, "mem", None), "base", 0)
+        if base in self.reg_addr:
+            return self.bin_view.symbol_at(self.reg_addr[base] + mem_op.mem.disp)
+        return None
+
+    def track(self) -> None:
+        """Update the adrp/add address tracker for the current instruction."""
+        m, ops = self.mnemonic, self.ops
+        if m == "adrp" and len(ops) == 2 and ops[0].type == _ARM64_OP_REG and ops[1].type == _ARM64_OP_IMM:
+            self.reg_addr[ops[0].reg] = ops[1].imm
+            return
+        if (
+            m in ("add", "sub")
+            and len(ops) == 3
+            and ops[0].type == _ARM64_OP_REG
+            and ops[1].type == _ARM64_OP_REG
+            and ops[2].type == _ARM64_OP_IMM
+        ):
+            delta = ops[2].imm if m == "add" else -ops[2].imm
+            src = self.reg_addr.get(ops[1].reg)
+            if src is not None:
+                self.reg_addr[ops[0].reg] = src + delta
+            else:
+                self.reg_addr.pop(ops[0].reg, None)
+            return
+        # copies can propagate addresses (`mov x0, x19`)
+        if (
+            m in ("mov", "orr")
+            and len(ops) == 2
+            and ops[0].type == _ARM64_OP_REG
+            and ops[1].type == _ARM64_OP_REG
+        ):
+            src = self.reg_addr.get(ops[1].reg)
+            if src is not None:
+                self.reg_addr[ops[0].reg] = src
+                return
+        # any other definition kills tracked state for the destination
+        if ops and ops[0].type == _ARM64_OP_REG and not m.startswith(("cmp", "tst", "str")):
+            self.reg_addr.pop(ops[0].reg, None)
+
+
+def _classify_call_arm(ctx: LiftContext) -> None:
+    _classify_call(ctx, ctx.call_target_addr(), ctx.call_target_name())
+
+
+@rule("bl")
+class ArmCallRule(LiftRule):
+    """Direct calls; semantics shared with the x86 backend."""
+
+    def apply(self, ctx: LiftContext) -> bool:
+        _classify_call_arm(ctx)
+        return True
+
+
+@rule("b")
+class ArmJmpRule(LiftRule):
+    def apply(self, ctx: LiftContext) -> bool:
+        ctx.emit("JAlways", src_addr=ctx.insn.address, target=ctx.branch_target())
+        return True
+
+
+@rule(*[f"b.{c}" for c in ("eq", "ne", "lt", "le", "gt", "ge", "hi", "hs", "lo", "ls", "mi", "pl")])
+class ArmCondBranchRule(LiftRule):
+    """`b.cond`; signedness from the condition family like x86 jcc."""
+
+    SIGNED = {"eq", "ne", "lt", "le", "gt", "ge", "mi", "pl"}
+
+    def apply(self, ctx: LiftContext) -> bool:
+        cc = ctx.mnemonic[2:]
+        kind = "JIfS" if cc in self.SIGNED else "JIfU"
+        ctx.emit(kind, src_addr=ctx.insn.address, cc=_ARM64_CC_RENAME.get(cc, cc), target=ctx.branch_target())
+        return True
+
+
+@rule("cbz", "cbnz", "tbz", "tbnz")
+class ArmZeroBranchRule(LiftRule):
+    """Compare-against-zero / bit-test branches become equality branches."""
+
+    def apply(self, ctx: LiftContext) -> bool:
+        negated = ctx.mnemonic in ("cbnz", "tbnz")
+        ctx.emit(
+            "JIfS",
+            src_addr=ctx.insn.address,
+            cc="ne" if negated else "e",
+            target=ctx.branch_target(),
+        )
+        return True
+
+
+@rule("ret")
+class ArmRetRule(LiftRule):
+    def apply(self, ctx: LiftContext) -> bool:
+        ctx.emit("Ret", src_addr=ctx.insn.address)
+        return True
+
+
+@rule("cmp", "cmn", "subs", "adds")
+class ArmCompareRule(LiftRule):
+    """Immediate comparisons carry constants feeding branches (like x86 cmp);
+    register-register compares stay implicit. GCC spells many compares as
+    `subs/adds xzr, ...` (the CMP/CMN alias) - recognised by their zero
+    destination so they stop being swallowed as frame arithmetic."""
+
+    ZERO_DEST = {_ARM64_REG_XZR, _ARM64_REG_WZR}
+
+    def apply(self, ctx: LiftContext) -> bool:
+        ops = ctx.ops
+        is_cmp_alias = ctx.mnemonic in ("subs", "adds", "cmn") and (
+            ctx.mnemonic == "cmn" or (ops and ops[0].type == _ARM64_OP_REG and ops[0].reg in self.ZERO_DEST)
+        )
+        if not is_cmp_alias and ctx.mnemonic != "cmp":
+            return False
+        for op in ops:
+            if op.type == _ARM64_OP_IMM:
+                ctx.emit("Int", src_addr=ctx.insn.address, value=op.imm)
+                return True
+        return True
+
+
+@rule("cset", "csinc", "csinv")
+class ArmSetBoolRule(LiftRule):
+    """`cset dst, cond` materialises a comparison result - HL's Bool. The
+    condition is parsed from the printed operands' tail."""
+
+    def apply(self, ctx: LiftContext) -> bool:
+        tail = ctx.insn.op_str.split(",")[-1].strip().lstrip("#")
+        cc = tail if tail and not tail[0].isdigit() else "ne"
+        ctx.emit("Bool", src_addr=ctx.insn.address, cc=_ARM64_CC_RENAME.get(cc, cc))
+        return True
+
+
+@rule("movz")
+class ArmMovImmRule(LiftRule):
+    """Immediate moves materialise Int constants. `movz` with lsl feeds movk
+    continuation chains - the shifted chunk emits, movk chunks are consumed
+    as noise so constants are not double-counted."""
+
+    def apply(self, ctx: LiftContext) -> bool:
+        ops = ctx.ops
+        if len(ops) != 2 or ops[0].type != _ARM64_OP_REG or ops[1].type != _ARM64_OP_IMM:
+            return False
+        shift = 16 if "lsl" in ctx.insn.op_str else 0
+        ctx.emit("Int", src_addr=ctx.insn.address, value=ops[1].imm << shift)
+        return True
+
+
+@rule("mov", "orr")
+class ArmRegMoveRule(LiftRule):
+    """`mov xN, xzr` (and its orr encoding) materialises 0; other reg-reg moves
+    are allocation noise (measured on x86: emitting them desyncs streams)."""
+
+    def apply(self, ctx: LiftContext) -> bool:
+        ops = ctx.ops
+        if len(ops) != 2 or ops[0].type != _ARM64_OP_REG or ops[1].type != _ARM64_OP_REG:
+            return False
+        if ops[1].reg in (_ARM64_REG_XZR, _ARM64_REG_WZR):
+            ctx.emit("Int", src_addr=ctx.insn.address, value=0)
+        return True
+
+
+_ARM64_INT_ARITH = {
+    "add": "Add",
+    "sub": "Sub",
+    "mul": "Mul",
+    "mneg": "Mul",
+    "and": "And",
+    "eor": "Xor",
+    "lsl": "Shl",
+    "lsr": "UShr",
+    "asr": "SShr",
+    "sdiv": "SDiv",
+    "udiv": "UDiv",
+}
+
+
+@rule(*_ARM64_INT_ARITH)
+class ArmArithRule(LiftRule):
+    """Three-register integer arithmetic; SP forms are frame noise and
+    immediate forms are usually addressing (adrp/add chains), consumed by the
+    tracker upstream - only plain register arithmetic emits."""
+
+    def apply(self, ctx: LiftContext) -> bool:
+        fam = _ARM64_INT_ARITH.get(ctx.mnemonic)
+        ops = ctx.ops
+        if fam is None or len(ops) < 2:
+            return False
+        if any(o.type == _ARM64_OP_REG and o.reg == _ARM64_REG_SP for o in ops[:2]):
+            return True  # sp adjustment
+        if len(ops) >= 3 and ops[2].type == _ARM64_OP_IMM:
+            return True  # addressing / constant folding
+        ctx.emit(fam, src_addr=ctx.insn.address)
+        return True
+
+
+_ARM64_FP_ARITH = {"fadd": "Add", "fsub": "Sub", "fmul": "Mul"}
+
+
+@rule(*_ARM64_FP_ARITH)
+class ArmFpArithRule(LiftRule):
+    """SSE-equivalent float arithmetic maps onto the shared HL families."""
+
+    def apply(self, ctx: LiftContext) -> bool:
+        fam = _ARM64_FP_ARITH.get(ctx.mnemonic)
+        if fam is None:
+            return False
+        ctx.emit(fam, src_addr=ctx.insn.address)
+        return True
+
+
+@rule("fdiv")
+class ArmFpDivRule(LiftRule):
+    def apply(self, ctx: LiftContext) -> bool:
+        ctx.emit("SDiv", src_addr=ctx.insn.address, float=True)
+        return True
+
+
+@rule("scvtf", "ucvtf", "fcvtzs", "fcvtzu", "fcvtas", "fcvtau", "fcvtms", "fcvtmu", "fcvt")
+class ArmConvertRule(LiftRule):
+    def apply(self, ctx: LiftContext) -> bool:
+        ctx.emit("Convert", src_addr=ctx.insn.address, kind=ctx.mnemonic)
+        return True
+
+
+def _arm64_global_or_field_read(ctx: LiftContext, mem_op) -> bool:
+    from .binary import (
+        HL_CONST_STRING_PREFIX,
+        HL_STRING_GLOBAL_PREFIX,
+        HL_VALUE_GLOBAL_PREFIX,
+    )
+
+    sym = ctx.resolve_mem_sym(mem_op)
+    if sym is not None:
+        if sym.startswith(HL_VALUE_GLOBAL_PREFIX) or (
+            sym.startswith(HL_STRING_GLOBAL_PREFIX) and not sym.startswith(HL_CONST_STRING_PREFIX)
+        ):
+            ctx.emit("GetGlobal", src_addr=ctx.insn.address, gidx=sym)
+            return True
+        if _is_type_table_sym(sym):
+            ctx.emit("Type", src_addr=ctx.insn.address, sym=sym)
+            return True
+        ctx.emit("LeaSym", src_addr=ctx.insn.address, sym=sym)
+        return True
+    ctx.emit("LoadField", src_addr=ctx.insn.address, off=mem_op.mem.disp)
+    return True
+
+
+def _arm64_global_or_field_write(ctx: LiftContext, mem_op) -> bool:
+    from .binary import (
+        HL_CONST_STRING_PREFIX,
+        HL_STRING_GLOBAL_PREFIX,
+        HL_VALUE_GLOBAL_PREFIX,
+    )
+
+    sym = ctx.resolve_mem_sym(mem_op)
+    if sym is not None and (
+        sym.startswith(HL_VALUE_GLOBAL_PREFIX)
+        or (sym.startswith(HL_STRING_GLOBAL_PREFIX) and not sym.startswith(HL_CONST_STRING_PREFIX))
+    ):
+        ctx.emit("SetGlobal", src_addr=ctx.insn.address, gidx=sym)
+        return True
+    ctx.emit("StoreField", src_addr=ctx.insn.address, off=mem_op.mem.disp)
+    return True
+
+
+def _arm64_mem_base_addr(ctx: LiftContext, mem_op) -> Optional[int]:
+    base = getattr(mem_op.mem, "base", 0)
+    if base in ctx.reg_addr:
+        return ctx.reg_addr[base] + mem_op.mem.disp
+    return None
+
+
+@rule("ldr", "ldur", "ldrb", "ldrh", "ldrsb", "ldrsh", "ldrsw", "ldurb", "ldurh", "ldursb", "ldursw")
+class ArmLoadRule(LiftRule):
+    """Loads: spill slots are noise, tracked bases resolve globals/literals,
+    everything else is field traffic. FP literal loads read rodata floats."""
+
+    def apply(self, ctx: LiftContext) -> bool:
+        ops = ctx.ops
+        if len(ops) != 2:
+            return False
+        # literal-pool form: `ldr d0, <imm>` (single immediate operand)
+        if ops[1].type == _ARM64_OP_IMM:
+            dest = ctx.insn.op_str.split(",")[0].strip()
+            if dest[:1] in ("d", "s"):
+                val = ctx.read_float_at(ops[1].imm, 8 if dest[0] == "d" else 4)
+                if val is not None:
+                    ctx.emit("Float", src_addr=ctx.insn.address, value=val)
+                    return True
+            return False
+        if ops[1].type != _ARM64_OP_MEM or ctx.is_spill_slot(ops[1]):
+            return True if ops[1].type == _ARM64_OP_MEM else False
+        dest = ctx.insn.op_str.split(",")[0].strip()
+        if dest[:1] in ("d", "s"):
+            tgt = _arm64_mem_base_addr(ctx, ops[1])
+            val = ctx.read_float_at(tgt, 8 if dest[0] == "d" else 4) if tgt is not None else None
+            if val is not None:
+                ctx.emit("Float", src_addr=ctx.insn.address, value=val)
+                return True
+        return _arm64_global_or_field_read(ctx, ops[1])
+
+
+@rule("str", "stur", "strb", "strh", "sturb", "sturh")
+class ArmStoreRule(LiftRule):
+    def apply(self, ctx: LiftContext) -> bool:
+        ops = ctx.ops
+        if len(ops) != 2 or ops[1].type != _ARM64_OP_MEM:
+            return False
+        if ctx.is_spill_slot(ops[1]):
+            return True
+        return _arm64_global_or_field_write(ctx, ops[1])
+
+
+@rule("ldp")
+class ArmPairLoadRule(LiftRule):
+    """Register-pair loads; spill traffic stays silent, non-spill pair loads
+    emit their first field read in v1."""
+
+    def apply(self, ctx: LiftContext) -> bool:
+        mem_ops = [o for o in ctx.ops if o.type == _ARM64_OP_MEM]
+        if mem_ops and not ctx.is_spill_slot(mem_ops[0]):
+            _arm64_global_or_field_read(ctx, mem_ops[0])
+        return True
+
+
+@rule("stp")
+class ArmPairStoreRule(NoiseRule):
+    """Register-pair save/restore is frame management in practice."""
+
+    def apply(self, ctx: LiftContext) -> bool:
+        return True
+
+
+@rule(
+    "nop",
+    "adrp",
+    "adr",
+    "movk",
+    "sxtw",
+    "sxth",
+    "sxtb",
+    "uxtw",
+    "uxth",
+    "uxtb",
+    "mrs",
+    "msr",
+    "dmb",
+    "dsb",
+    "isb",
+    "brk",
+    "blr",
+    "br",
+    "tst",
+    "madd",
+    "msub",
+)
+class ArmNoiseRule(NoiseRule):
+    """Padding, extensions, barriers, indirect transfers consumed silently.
+    blr/br targets live in registers - v1 cannot resolve them; madd/msub fold
+    multiply-accumulate which v1 does not split into Mul+Add."""
+
+
+class ARM64FunctionLifter(FunctionLifter):
+    RULES: List[LiftRule] = [
+        ArmCallRule(),
+        ArmCondBranchRule(),
+        ArmZeroBranchRule(),
+        ArmJmpRule(),
+        ArmRetRule(),
+        ArmCompareRule(),
+        ArmSetBoolRule(),
+        ArmConvertRule(),
+        ArmFpArithRule(),
+        ArmFpDivRule(),
+        ArmMovImmRule(),
+        ArmRegMoveRule(),
+        ArmLoadRule(),
+        ArmStoreRule(),
+        ArmPairLoadRule(),
+        ArmPairStoreRule(),
+        ArmArithRule(),
+        ArmNoiseRule(),
+    ]
+
+    def __init__(
+        self,
+        bin_view: HLCBinary,
+        plt_map: Optional[Dict[int, str]] = None,
+        size_of: Optional[Callable[[int], int]] = None,
+    ):
+        super().__init__(bin_view, plt_map, size_of=size_of)
+        from capstone import CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN, Cs
+
+        self.md = Cs(CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN)
+        self.md.detail = True
+
+    def _make_context(self, addr: int, insns: list, out: List[LiftedOp]) -> LiftContext:
+        return ARM64LiftContext(self.bin_view, addr, insns, 0, self.plt_map, out)
+
+    def lift(self, addr: int) -> List[LiftedOp]:
+        insns = self.decode(addr)
+        out: List[LiftedOp] = []
+        ctx = self._make_context(addr, insns, out)
+        for i, _insn in enumerate(insns):
+            ctx.index = i
+            ctx.track()
+            for rl in self._buckets.get(ctx.mnemonic, ()):
+                if rl.apply(ctx):
+                    break
+        return out
