@@ -61,6 +61,7 @@ _SUBCOMMAND_HELP: Dict[str, str] = {
     "mcp": "Run crashlink as an MCP server for AI-assisted analysis",
     "info": "Print summary information about a bytecode file",
     "disasm": "Disassemble a function from a bytecode file",
+    "nasm": "Print the original compiled assembly of a function in an HL/C binary",
     "search": "Search strings in a bytecode file",
     "funcs": "List functions in a bytecode file",
     "decompile": "Decompile a function or class to pseudo-Haxe (INCOMPLETE, usually functional)",
@@ -510,6 +511,46 @@ def disasm_main(argv: List[str]) -> None:
             return
     print(f"Function f@{args.findex} not found.", file=sys.stderr)
     sys.exit(1)
+
+
+def nasm_main(argv: List[str]) -> None:
+    parser = argparse.ArgumentParser(
+        description="Print the original compiled assembly of a function in an HL/C-compiled binary.",
+        prog="crashlink nasm",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="\n".join(
+            [
+                "examples:",
+                "  crashlink nasm game 10400",
+                "      Disassemble f@10400 (the module initialiser) of an HL/C binary.",
+                "",
+                "  crashlink nasm game.exe 42 --limit 50",
+                "      Cap output at 50 instructions for huge bodies.",
+                "",
+                "Works directly on the native image - no de-HL/C reconstruction needed.",
+            ]
+        ),
+    )
+    parser.add_argument("file", help="HL/C-compiled binary (ELF or PE)")
+    parser.add_argument("findex", type=int, help="Function index to disassemble")
+    parser.add_argument(
+        "-l", "--limit", type=int, default=None, help="Maximum number of instructions to print"
+    )
+    args = parser.parse_args(argv)
+    try:
+        from .dehlc.asmview import format_function_asm
+        from .dehlc.binary import HLCBinary
+    except ImportError:
+        print(
+            "You need to install crashlink with the [extras] group in order to use De-HL/C, since it requires `capstone` and `lief`. Sorry!"
+        )
+        return
+    bin_view = HLCBinary(path=args.file)
+    text = format_function_asm(bin_view, args.findex, max_insns=args.limit)
+    if text is None:
+        print(f"No native code slot for f@{args.findex} (native primitives live in hdlls).", file=sys.stderr)
+        sys.exit(1)
+    print(text)
 
 
 def search_main(argv: List[str]) -> None:
@@ -1337,6 +1378,49 @@ class Commands(BaseCommands):
                 _emit_haxe(pseudo(ir))
                 return
         print("Function not found.")
+
+    @alias("na")
+    def nasm(self, args: List[str]) -> None:
+        """Prints the original compiled assembly of a function (de-HL/C images only). `nasm <idx> [count]`
+
+        Requires the image to have been opened with -C/--dehlc. Without `count`
+        every instruction of the function is printed; pass e.g. `nasm 42 50`
+        to cap the output for huge bodies like fun$init.
+        """
+        bin_view = getattr(self.code, "hlc_binary", None)
+        if bin_view is None:
+            print("nasm needs a de-HL/C image - reopen with crashlink -C <binary>.")
+            return
+        if len(args) == 0:
+            print("Usage: nasm <index> [count]")
+            return
+        try:
+            index = int(args[0])
+        except ValueError:
+            print("Invalid index.")
+            return
+        limit: Optional[int] = None
+        if len(args) > 1:
+            try:
+                limit = int(args[1])
+                if limit <= 0:
+                    limit = None
+            except ValueError:
+                print("Invalid count; printing the whole body.")
+                limit = None
+
+        from .dehlc.asmview import format_function_asm
+
+        text = format_function_asm(bin_view, index, max_insns=limit)
+        if text is None:
+            fmap = self.code.get_findex_map()
+            target = fmap.get(index)
+            if isinstance(target, Native):
+                print(f"f@{index} is a native primitive - its implementation lives in an hdll, not this binary.")
+            else:
+                print(f"No native code slot for f@{index}.")
+            return
+        print(text)
 
     @alias("df")
     def decompfile(self, args: List[str]) -> None:
@@ -2764,6 +2848,7 @@ def main() -> None:
         "mcp": mcp_main,
         "info": info_main,
         "disasm": disasm_main,
+        "nasm": nasm_main,
         "search": search_main,
         "funcs": funcs_main,
         "decompile": decompile_main,
@@ -2905,9 +2990,11 @@ def main() -> None:
                 "This will produce an in-memory bytecode image. If you want to work with any extracted information externally, use `save` to serialise it to the disk first."
             )
             print("Opening file...")
-            with open(args.file, "rb") as f:
-                print("Reading file...")
-                code = code_from_bin(data=f.read(), verbose=args.debug)
+            code = code_from_bin(path=args.file, verbose=args.debug)
+            print(
+                "Tip: use 'nasm <findex> [count]' in the REPL (or 'crashlink nasm <binary> <findex>') "
+                "to see a function's original compiled assembly."
+            )
         except ImportError:
             print(
                 "You need to install crashlink with the [extras] group in order to use De-HL/C, since it requires `capstone` and `lief`. Sorry!"

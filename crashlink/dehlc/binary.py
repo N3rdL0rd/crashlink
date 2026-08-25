@@ -77,6 +77,7 @@ SIMPLE_KINDS = {
     Type.Kind.ARRAY,
     Type.Kind.TYPETYPE,
     Type.Kind.DYNOBJ,
+    Type.Kind.GUID,  # 64-bit globally-unique id value type (t$_guid), no data
 }
 
 

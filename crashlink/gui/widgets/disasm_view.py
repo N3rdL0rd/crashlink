@@ -34,6 +34,8 @@ class _Rule:
 _DISASM_RULES: List[_Rule] = [
     _Rule(r'"(?:[^"\\]|\\.)*"', "string"),
     _Rule(r"(?<![\w@])-?\d+(?:\.\d+)?\b", "number"),
+    _Rule(r"\b0x[0-9a-fA-F]+\b", "number"),  # native-asm addresses / immediates
+    _Rule(r"^\s+0x[0-9a-f]+\s+[0-9a-f.]+\s+([a-z][a-z0-9.]*)", "opcode", group=1),  # mnemonic column
     _Rule(r"<[^<>]+>", "type_name"),  # reg<Type> / field<Type> annotation
     _Rule(r"\b(Int|Float|Bool|String|Dynamic|Void|Array|Bytes|Any|Dyn)\b", "type_name"),
     _Rule(r"\b(true|false)\b", "keyword"),
@@ -48,6 +50,7 @@ _DISASM_RULES: List[_Rule] = [
     _Rule(r"\breg\d+\b", "reg"),
     _Rule(r"^\s*(?:\[[^\]]*\]\s*)?\d+\.\s+(\w+)", "opcode", group=1),
     _Rule(r"^\s*(?:\[[^\]]*\]\s*)?(\d+)\.", "index", group=1),
+    _Rule(r"(?<![\w$/])(?:[a-zA-Z_][\w$.]*_)?(?:hl|fmt|sdl|ui|uv|openal)_[A-Za-z_]\w*", "func_name"),
     _Rule(r"\(from [^)]*\)", "comment"),
     _Rule(r"\[native\]", "comment"),
     _Rule(r"^\[[^\]]*\]", "comment"),  # [file:line] prefix
@@ -136,6 +139,9 @@ class DisasmView(DecompView):
         super().__init__(parent)
         self._op_ranges: List[Tuple[int, int, int]] = []  # (op_start_line, findex, n_ops)
         self._focused_findex: Optional[int] = None
+        # True while showing original machine code (de-HL/C images): rows carry
+        # no opcode semantics, so op_at_cursor must report None.
+        self._native_mode = False
         self.cursorPositionChanged.connect(self._on_cursor_moved)
 
     def set_theme(self, theme: Theme) -> None:
@@ -147,6 +153,7 @@ class DisasmView(DecompView):
 
     def load(self, code: Bytecode, methods: List[Tuple[int, "Function | Native"]]) -> None:
         """methods: list of (findex, Function|Native), rendered in order."""
+        self._native_mode = False
         saved_block = self.textCursor().blockNumber()
         saved_vscroll = self.verticalScrollBar().value()
         saved_hscroll = self.horizontalScrollBar().value()
@@ -194,6 +201,35 @@ class DisasmView(DecompView):
         self.verticalScrollBar().setValue(saved_vscroll)
         self.horizontalScrollBar().setValue(saved_hscroll)
 
+    def load_native(self, blocks: List[Tuple[int, str, List[str]]]) -> None:
+        """blocks: list of (findex, header, asm_rows) — original machine code for
+        de-HL/C images. Keeps the same focus-tracking ranges as `load`, but rows
+        carry no opcode mapping (op_at_cursor reports None)."""
+        saved_block = self.textCursor().blockNumber()
+        saved_vscroll = self.verticalScrollBar().value()
+        saved_hscroll = self.horizontalScrollBar().value()
+
+        lines: List[str] = []
+        self._op_ranges = []
+        self._native_mode = True
+
+        for findex, header, rows in blocks:
+            lines.append(header)
+            row_start = len(lines)
+            lines.extend(rows)
+            self._op_ranges.append((row_start, findex, len(rows)))
+            lines.append("")
+
+        self.setPlainText("\n".join(lines))
+
+        doc = self.document()
+        block = doc.findBlockByNumber(min(saved_block, doc.blockCount() - 1))
+        cursor = self.textCursor()
+        cursor.setPosition(block.position())
+        self.setTextCursor(cursor)
+        self.verticalScrollBar().setValue(saved_vscroll)
+        self.horizontalScrollBar().setValue(saved_hscroll)
+
     def combined_line_for_op(self, findex: int, op_idx: int) -> Optional[int]:
         for op_start, fi, n_ops in self._op_ranges:
             if fi == findex:
@@ -203,6 +239,8 @@ class DisasmView(DecompView):
         return None
 
     def op_at_cursor(self) -> Optional[Tuple[int, int]]:
+        if self._native_mode:
+            return None  # machine-code rows have no opcode mapping
         line = self.textCursor().blockNumber()
         for op_start, findex, n_ops in self._op_ranges:
             if op_start <= line < op_start + n_ops:

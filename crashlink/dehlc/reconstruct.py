@@ -4,7 +4,7 @@ Top-level reconstruction pipeline: binary image -> bytecode.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
 from ..core import (
     Bytecode,
@@ -43,11 +43,24 @@ def code_from_bin(
     path: str | None = None,
     data: bytes | None = None,
     verbose: bool = False,
+    progress_cb: Optional[Callable[[str], None]] = None,
 ) -> Bytecode:
     """
     Dumps extracted information from the HL/C binary located on the filesystem at `path`
-    or from the bytes in `data` to a new Bytecode instance.
+    or from the bytes in `data` to a new Bytecode instance. When `progress_cb` is
+    given it receives a short status line per pipeline pass (used by the GUI loader).
+
+    The returned bytecode carries `.hlc_binary` - the parsed native image it was
+    reconstructed from - so callers can inspect original machine code (`nasm`).
     """
+
+    def report(msg: str) -> None:
+        if progress_cb is not None:
+            try:
+                progress_cb(msg)
+            except Exception:
+                pass
+
     bin_view = HLCBinary(path=path, data=data)
     ctx = DehlcContext(bin_view, verbose=verbose)
     code = Bytecode.create_empty(no_extra_types=True)
@@ -55,6 +68,7 @@ def code_from_bin(
     # ------------------------------------------------------------------
     # Pass 1: types
     # ------------------------------------------------------------------
+    report("Analysing hl_init_types…")
     ctx.log("Pass 1: analysing hl_init_types...")
     init_analysis = analyse_init_types(bin_view)
     ctx.log(
@@ -63,6 +77,7 @@ def code_from_bin(
     )
 
     ctx.log("Pass 1.2: recovering type order...")
+    report("Recovering type order…")
     type_names, order_confident = recover_type_order(bin_view, init_analysis)
     ctx.log(f"  {len(type_names)} types (order {'confirmed' if order_confident else 'hybrid'})")
     for i, name in enumerate(type_names):
@@ -80,6 +95,7 @@ def code_from_bin(
     # Pass 2: strings
     # ------------------------------------------------------------------
     ctx.log("Pass 2: recovering strings...")
+    report("Recovering strings…")
     _recover_strings(ctx)
     _recover_hash_names(ctx, _resolve_plt_targets(bin_view))
     for name in _dwarf_local_names(bin_view):
@@ -94,6 +110,7 @@ def code_from_bin(
     # Pass 3: functions & natives
     # ------------------------------------------------------------------
     ctx.log("Pass 3: recovering functions & natives...")
+    report("Recovering functions & natives…")
     functions, natives, entrypoint = _recover_functions(ctx)
     _recover_native_names(ctx, natives, code.types)
 
@@ -116,6 +133,7 @@ def code_from_bin(
     # Pass 4: globals
     # ------------------------------------------------------------------
     ctx.log("Pass 4: recovering globals...")
+    report("Recovering globals…")
     global_types = _recover_globals(ctx, code, init_analysis, string_type_ti)
     code.nglobals = VarInt(len(global_types))
     code.global_types = global_types
@@ -125,6 +143,7 @@ def code_from_bin(
     # Pass 3.5: constant pools (synthesised from function-body immediates).
     # ------------------------------------------------------------------
     ctx.log("Pass 3.5: synthesising int/float pools...")
+    report("Synthesising constant pools…")
     rec_ints, rec_floats = _recover_constant_pools(ctx, bin_view)
     from ..core import SerialisableInt
 
@@ -173,5 +192,9 @@ def code_from_bin(
     # reserialisation produces a misaligned file.
     if code.strings.value is ctx.strs and len(ctx.strs) != code.nstrings.value:
         code.nstrings = VarInt(len(ctx.strs))
+
+    # Keep the native image alongside the reconstruction so assembly views and
+    # address lookups can see the code that actually runs.
+    code.hlc_binary = bin_view
 
     return code

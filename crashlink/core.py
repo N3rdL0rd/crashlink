@@ -22,6 +22,7 @@ import threading
 _EnumBase = _Enum
 from io import BytesIO
 from typing import (
+    TYPE_CHECKING,
     Any,
     BinaryIO,
     Callable,
@@ -36,6 +37,9 @@ from typing import (
 )
 
 T = TypeVar("T", bound="VarInt")  # easier than reimplementing deserialise for each subclass
+
+if TYPE_CHECKING:
+    from .dehlc.binary import HLCBinary
 
 from .errors import InvalidOpCode, MalformedBytecode, NoMagic
 from .globals import dbg_print, tell
@@ -1864,6 +1868,10 @@ class Bytecode(Serialisable):
     # Populated by crashlink.decomp's static-initializer analysis.
     _static_field_inits_cache: Optional[Dict[int, Dict[str, str]]] = None
     _static_field_init_refs_cache: Optional[Dict[int, Dict[str, Set[str]]]] = None
+
+    # Attached by crashlink.dehlc's code_from_bin: the native image this
+    # bytecode was reconstructed from (None for deserialised .hl/.dat files).
+    hlc_binary: Optional["HLCBinary"] = None
 
     def __init__(self) -> None:
         self.deserialised = False

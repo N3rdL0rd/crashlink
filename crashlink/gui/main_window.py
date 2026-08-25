@@ -43,7 +43,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from crashlink.core import AnalysisWorker, Bytecode, Native, destaticify
+from crashlink.core import AnalysisWorker, Bytecode, Function, Native, destaticify
 from crashlink.database import (
     DatabaseLoadResult,
     SessionState,
@@ -78,6 +78,17 @@ _VIEW_MODE_NAMES = {SPLIT: "Split", DISASM: "Disassembly", PSEUDO: "Decompiled"}
 _VIEW_MODE_GLYPHS = {SPLIT: "◧", DISASM: "⚙", PSEUDO: "{ }"}
 
 
+def _looks_like_native_image(path: str) -> bool:
+    """True when the file is an ELF image or PE executable (HL/C-compiled binary)
+    rather than serialised HashLink bytecode."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(4)
+    except OSError:
+        return False
+    return head[:4] == b"\x7fELF" or head[:2] == b"MZ"
+
+
 # ── Async helpers ─────────────────────────────────────────────────────────────
 
 
@@ -101,6 +112,33 @@ class _LoadThread(QThread):
 
             code = Bytecode.from_path(self.path, progress_cb=_cb)
             self.signals.finished.emit(code)
+        except Exception as e:
+            self.signals.error.emit(str(e))
+
+
+class _DehlcLoadThread(QThread):
+    """Loads an HL/C-compiled native image (ELF/PE) via the de-HL/C pipeline off
+    the UI thread. Emits phase-based progress (no fractions — pass durations vary
+    wildly between images)."""
+
+    def __init__(self, path: str) -> None:
+        super().__init__()
+        self.path = path
+        self.signals = _LoadSignals()
+
+    def run(self) -> None:
+        try:
+            from crashlink.dehlc import code_from_bin
+
+            def _cb(status: str) -> None:
+                self.signals.progress.emit(-1.0, f"de-HL/C: {status}")
+
+            code = code_from_bin(path=self.path, verbose=False, progress_cb=_cb)
+            self.signals.finished.emit(code)
+        except ImportError:
+            self.signals.error.emit(
+                "de-HL/C needs crashlink[extras] (`pip install lief capstone`) to open compiled binaries."
+            )
         except Exception as e:
             self.signals.error.emit(str(e))
 
@@ -321,8 +359,15 @@ class MainWindow(QMainWindow):
 
         self._code: Optional[Bytecode] = None
         self._worker = AnalysisWorker(max_workers=4)
-        self._load_thread: Optional[_LoadThread] = None
+        # Bytecode loader or de-HL/C image loader; both expose `.signals`.
+        self._load_thread: Optional[QThread] = None
         self._theme: Theme = DEFAULT_THEME
+        # True when the current file was opened through the de-HL/C pipeline.
+        self._loaded_via_dehlc = False
+        # de-HL/C images: findex -> (header, rows) rendered machine code (None =
+        # no code slot), plus the one-shot PLT map, both reset on file load.
+        self._native_asm_cache: Dict[int, Optional[Tuple[str, List[str]]]] = {}
+        self._plt_map: Optional[Dict[int, str]] = None
 
         # class_key → tab index; rebuilt on every add/remove
         self._open_tabs: Dict[str, int] = {}
@@ -412,7 +457,8 @@ class MainWindow(QMainWindow):
             return
         name = os.path.basename(self._source_path)
         star = "*" if self._dirty else ""
-        self.setWindowTitle(f"{name}{star} - crashlink")
+        mode = " [de-HL/C]" if self._loaded_via_dehlc else ""
+        self.setWindowTitle(f"{name}{star}{mode} - crashlink")
 
     def _on_undo_clean_changed(self, clean: bool) -> None:
         self._dirty = not clean
@@ -571,9 +617,9 @@ class MainWindow(QMainWindow):
     def _open_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Open HashLink bytecode",
+            "Open HashLink bytecode or HL/C-compiled binary",
             "",
-            "HashLink files (*.hl *.dat);;All files (*)",
+            "HashLink files (*.hl *.dat);;Executables (*.exe *.elf);;All files (*)",
         )
         if path and self._confirm_discard_changes():
             self._load_file(path)
@@ -647,6 +693,9 @@ class MainWindow(QMainWindow):
         self._undo_stack.clear()
         self._dirty = False
         self._code = None
+        self._loaded_via_dehlc = _looks_like_native_image(path)
+        self._native_asm_cache.clear()
+        self._plt_map = None
         self._log_panel.set_context(code=None, findex=None, func=None, irf=None)
         self._source_path = path
         self._update_window_title()
@@ -655,15 +704,25 @@ class MainWindow(QMainWindow):
         self._progress_bar.setVisible(True)
         self._progress_bar.setValue(0)
         self._status_label.setText(f"Loading {path}…")
-        self._busy.start("Reading bytecode…")
+        self._busy.start("Reading bytecode…" if not self._loaded_via_dehlc else "De-HL/C…")
 
-        self._load_thread = _LoadThread(path)
-        self._load_thread.signals.progress.connect(self._on_load_progress)
-        self._load_thread.signals.finished.connect(self._on_load_finished)
-        self._load_thread.signals.error.connect(self._on_load_error)
-        self._load_thread.start()
+        if self._loaded_via_dehlc:
+            thread: QThread = _DehlcLoadThread(path)
+            self._log_panel.info("HL/C image detected — running de-HL/C reconstruction…")
+        else:
+            thread = _LoadThread(path)
+        self._load_thread = thread
+        thread.signals.progress.connect(self._on_load_progress)
+        thread.signals.finished.connect(self._on_load_finished)
+        thread.signals.error.connect(self._on_load_error)
+        thread.start()
 
     def _on_load_progress(self, frac: float, status: str) -> None:
+        if frac < 0:
+            # Indeterminate progress (de-HL/C passes): hide the bar, show phase text.
+            self._progress_bar.setVisible(False)
+            self._status_label.setText(status)
+            return
         self._progress_bar.setValue(int(frac * 100))
         self._status_label.setText(status)
 
@@ -674,8 +733,16 @@ class MainWindow(QMainWindow):
         assert self._source_path is not None
         self._add_recent_file(self._source_path)
         n = len(code.functions)
-        self._status_label.setText(f"Loaded, {n} functions")
-        self._log_panel.info(f"Loaded, {n} functions")
+        label = "Loaded (de-HL/C)" if self._loaded_via_dehlc else "Loaded"
+        incomplete = sum(1 for f in code.functions if not f.ops)
+        suffix = f", {incomplete} without lifted bodies" if self._loaded_via_dehlc else ""
+        self._status_label.setText(f"{label}, {n} functions{suffix}")
+        self._log_panel.info(f"{label}, {n} functions{suffix}")
+        if code.hlc_binary is not None:
+            self._log_panel.info(
+                "Original machine code preserved per function - the Disassembly view "
+                "(Tab to cycle) shows it; 'nasm' in the CLI prints the same."
+            )
         self._log_panel.set_context(code=code)
         self._func_list.load(code)
 
@@ -922,6 +989,38 @@ class MainWindow(QMainWindow):
         self._add_close_btn(idx, key)
         self._tabs.setCurrentIndex(idx)
 
+    # ── Native assembly (de-HL/C images) ─────────────────────────────────────
+
+    def _native_asm_blocks(self, findices: List[int]) -> List[Tuple[int, str, List[str]]]:
+        """(findex, header, rows) machine-code blocks for a tab's disassembly pane.
+        Cached per findex; slots without code (natives) are skipped."""
+        bin_view = self._code.hlc_binary if self._code is not None else None
+        if bin_view is None:
+            return []
+        from crashlink.dehlc.asmview import function_asm_block
+        from crashlink.dehlc.binary import _resolve_plt_targets
+
+        if self._plt_map is None:
+            self._plt_map = _resolve_plt_targets(bin_view)
+        blocks: List[Tuple[int, str, List[str]]] = []
+        for fi in findices:
+            if fi not in self._native_asm_cache:
+                self._native_asm_cache[fi] = function_asm_block(bin_view, fi, plt_map=self._plt_map)
+            block = self._native_asm_cache[fi]
+            if block is not None:
+                blocks.append((fi, block[0], block[1]))
+        return blocks
+
+    def _load_disasm_pane(self, view: SyncView, all_fi: List[int]) -> None:
+        """Fills a SyncView's disassembly pane: original machine code for de-HL/C
+        images, HL opcodes otherwise."""
+        assert self._code is not None
+        if self._code.hlc_binary is not None:
+            view.disasm_view.load_native(self._native_asm_blocks(all_fi))
+        else:
+            findex_map = self._code.get_findex_map()
+            view.load_disasm(self._code, [(fi, findex_map[fi]) for fi in all_fi if fi in findex_map])
+
     def _open_class_tab(self, class_key: str, display_name: str, all_fi: List[int], jump_to: int) -> None:
         assert self._code is not None
 
@@ -951,17 +1050,44 @@ class MainWindow(QMainWindow):
         view.disasm_view.xref_requested.connect(self._on_xref_hotkey)
         view.comment_requested.connect(self._on_comment_hotkey)
 
-        placeholder = [
-            (
-                fi,
-                self._class_results[class_key][fi]
-                or f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}",
-            )
-            for fi in all_fi
-        ]
-        view.load_pseudo(display_name, placeholder)
         findex_map = self._code.get_findex_map()
-        view.load_disasm(self._code, [(fi, findex_map[fi]) for fi in all_fi if fi in findex_map])
+        methods: List[Tuple[int, str]] = []
+        to_decompile: List[int] = []
+        for fi in all_fi:
+            cached = self._db_cache.get(fi)
+            if cached is not None:
+                # Seed from a loaded .cldb so cached functions render immediately
+                # instead of flashing "decompiling…" — a real decompile still runs
+                # below to warm _ir_cache for rename/xref support.
+                text, opmap = cached
+                self._class_results[class_key][fi] = text
+                self._opline_cache[fi] = opmap
+                to_decompile.append(fi)
+                methods.append((fi, text))
+                continue
+            fn = findex_map.get(fi)
+            if isinstance(fn, Native):
+                methods.append((fi, f"// f@{fi}  native primitive (implemented in an hdll)\n// signature only"))
+            elif isinstance(fn, Function) and not fn.ops:
+                # Incomplete recovery: keep the function browsable instead of
+                # dropping it or spinning a doomed decompile job on zero opcodes.
+                hint = (
+                    "  // original machine code in the Disassembly view (Tab cycles views)"
+                    if self._code.hlc_binary is not None
+                    else "  // body not recovered"
+                )
+                methods.append((fi, f"f@{fi}() {{\n{hint}\n}}"))
+            else:
+                to_decompile.append(fi)
+                methods.append(
+                    (
+                        fi,
+                        f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}",
+                    )
+                )
+
+        view.load_pseudo(display_name, methods)
+        self._load_disasm_pane(view, all_fi)
 
         tab_label = _tab_label(display_name)
         idx = self._tabs.addTab(view, tab_label)
@@ -970,11 +1096,15 @@ class MainWindow(QMainWindow):
         self._add_close_btn(idx, class_key)
         self._tabs.setCurrentIndex(idx)
 
-        # Kick off decompile for every method concurrently
-        for fi in all_fi:
+        # Kick off decompile for every method that actually has opcodes.
+        for fi in to_decompile:
             self._start_decompile(class_key, fi)
 
-        self._status_label.setText(f"Decompiling {display_name} ({len(all_fi)} methods)…")
+        pending = len(to_decompile)
+        if pending:
+            self._status_label.setText(f"Decompiling {display_name} ({pending}/{len(all_fi)} methods)…")
+        else:
+            self._status_label.setText(f"{display_name}, {len(all_fi)} methods")
 
     def _start_decompile(self, class_key: str, findex: int) -> None:
         assert self._code is not None
@@ -1104,9 +1234,10 @@ class MainWindow(QMainWindow):
         view.load_pseudo(display_name, methods)
 
     def _refresh_disasm_view(self, class_key: str) -> None:
-        """Disasm rendering needs no decompile — re-render straight from opcodes so
-        an annotation change (e.g. a comment) shows up immediately, no waiting on
-        the background redecompile that updates the pseudocode pane."""
+        """Disasm rendering needs no decompile — re-render straight from opcodes (or
+        cached machine code) so an annotation change (e.g. a comment) shows up
+        immediately, no waiting on the background redecompile that updates the
+        pseudocode pane."""
         if self._code is None:
             return
         idx = self._open_tabs.get(class_key)
@@ -1116,8 +1247,7 @@ class MainWindow(QMainWindow):
         if not isinstance(view, SyncView):
             return
         all_fi = self._class_findices.get(class_key, [])
-        findex_map = self._code.get_findex_map()
-        view.load_disasm(self._code, [(fi, findex_map[fi]) for fi in all_fi if fi in findex_map])
+        self._load_disasm_pane(view, all_fi)
 
     # ── Focus tracking ────────────────────────────────────────────────────────
 
