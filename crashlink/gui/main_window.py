@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, cast
 
 from PySide6.QtCore import (
     QRect,
@@ -509,25 +509,27 @@ class MainWindow(QMainWindow):
         self._disasm_source_bar = QFrame()
         self._disasm_source_bar.setObjectName("viewModeBar")
         src_row = QHBoxLayout(self._disasm_source_bar)
-        src_row.setContentsMargins(0, 0, 10, 0)
+        src_row.setContentsMargins(0, 0, 8, 0)
         src_row.setSpacing(0)
-        self._disasm_source_label = QLabel("disasm:")
-        self._disasm_source_label.setObjectName("srcLabel")
-        src_row.addWidget(self._disasm_source_label)
         self._disasm_source_group = QButtonGroup(self)
         self._disasm_source_group.setExclusive(True)
         for i, (src, label, tip) in enumerate(
             (
-                ("asm", "Asm", "Original compiled machine code from the binary"),
-                ("ops", "Ops", "HL opcodes recovered by the experimental lifter"),
+                ("asm", "Asm", "Disassembly pane shows original compiled machine code"),
+                ("ops", "Ops", "Disassembly pane shows HL opcodes recovered by the experimental lifter"),
             )
         ):
             btn = QPushButton(label)
-            btn.setObjectName("modeBtnIcon")
+            btn.setObjectName("modeBtnText")
             btn.setProperty("segment", "first" if i == 0 else "last")
             btn.setCheckable(True)
             btn.setChecked(i == 0)
             btn.setToolTip(tip)
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setFixedHeight(22)
+            # QSS pads 10px/side (+2px borders); pin min width so the label can
+            # never clip under a different theme font.
+            btn.setMinimumWidth(btn.fontMetrics().horizontalAdvance(label) + 26)
             src_row.addWidget(btn)
             self._disasm_source_group.addButton(btn, i)
         self._disasm_source_group.idClicked.connect(
@@ -538,7 +540,7 @@ class MainWindow(QMainWindow):
         corner = QWidget()
         corner_row = QHBoxLayout(corner)
         corner_row.setContentsMargins(0, 0, 0, 0)
-        corner_row.setSpacing(0)
+        corner_row.setSpacing(6)
         corner_row.addWidget(self._disasm_source_bar)
         corner_row.addWidget(mode_bar)
         # Hold the container explicitly: QMenuBar.setCornerWidget does not take
@@ -752,7 +754,7 @@ class MainWindow(QMainWindow):
         self._lifter = None
         self._fidx_addr.clear()
         self._arm_lift_warned = False
-        self._disasm_source_bar.setVisible(self._loaded_via_dehlc)
+        self._set_disasm_toggle_visible(self._loaded_via_dehlc)
         self._log_panel.set_context(code=None, findex=None, func=None, irf=None)
         self._source_path = path
         self._update_window_title()
@@ -1148,6 +1150,20 @@ class MainWindow(QMainWindow):
         self._disasm_source = source
         for class_key in list(self._open_tabs):
             self._refresh_disasm_view(class_key)
+
+    def _set_disasm_toggle_visible(self, visible: bool) -> None:
+        """Shows/hides the Asm/Ops toggle. QMenuBar sizes AND positions its corner
+        widget from a cached size hint, so merely toggling an inner bar's visibility
+        leaves the corner clipped/overflowing - re-registering the corner forces the
+        menubar to re-measure it."""
+        self._disasm_source_bar.setVisible(visible)
+        mb = self.menuBar()
+        corner = self._view_mode_corner
+        if mb.cornerWidget(Qt.Corner.TopRightCorner) is corner:
+            # Qt's C++ API takes nullptr here to release the widget; the PySide6
+            # stubs only type the non-null overload.
+            mb.setCornerWidget(cast("QWidget", None), Qt.Corner.TopRightCorner)
+        mb.setCornerWidget(corner, Qt.Corner.TopRightCorner)
 
     def _open_class_tab(self, class_key: str, display_name: str, all_fi: List[int], jump_to: int) -> None:
         assert self._code is not None

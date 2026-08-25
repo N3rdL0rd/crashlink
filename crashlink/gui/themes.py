@@ -92,11 +92,6 @@ QFrame#viewModeBar {{
     background: transparent;
     border: none;
 }}
-QLabel#srcLabel {{
-    color: {t.overlay};
-    font-size: 11px;
-    padding-right: 6px;
-}}
 QPushButton#modeBtnIcon {{
     background-color: {t.surface0};
     color: {t.subtext};
@@ -120,6 +115,32 @@ QPushButton#modeBtnIcon:checked {{
     color: {t.accent};
 }}
 QPushButton#modeBtnIcon:hover:!checked {{
+    background-color: {t.surface1};
+    color: {t.text};
+}}
+QPushButton#modeBtnText {{
+    background-color: {t.surface0};
+    color: {t.subtext};
+    border: 1px solid {t.surface1};
+    border-left: none;
+    border-radius: 0px;
+    padding: 2px 10px;
+    font-size: 12px;
+}}
+QPushButton#modeBtnText[segment="first"] {{
+    border-left: 1px solid {t.surface1};
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+}}
+QPushButton#modeBtnText[segment="last"] {{
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+}}
+QPushButton#modeBtnText:checked {{
+    background-color: {t.surface2};
+    color: {t.accent};
+}}
+QPushButton#modeBtnText:hover:!checked {{
     background-color: {t.surface1};
     color: {t.text};
 }}
