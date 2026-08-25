@@ -1437,8 +1437,8 @@ class Commands(BaseCommands):
         if bin_view is None:
             print("lift needs a de-HL/C image - reopen with crashlink -C <binary>.")
             return
-        if bin_view.arch not in ("x86_64", "x86"):
-            print(f"Opcode lifting is x86-only right now (image arch: {bin_view.arch}).")
+        if bin_view.arch not in ("x86_64", "x86", "aarch64"):
+            print(f"Opcode lifting supports x86 and aarch64 (image arch: {bin_view.arch}).")
             return
         if len(args) == 0:
             print("Usage: lift <index> [count]")
@@ -3065,7 +3065,7 @@ def main() -> None:
             from .dehlc import code_from_bin
 
             print(
-                "crashlink De-HL/C is EXPERIMENTAL. Use at your own risk. Only x86 is well-supported, ARM is a work in progress."
+                "crashlink De-HL/C is EXPERIMENTAL. Use at your own risk. Opcode lifting supports x86 and aarch64."
             )
             print(
                 "This will produce an in-memory bytecode image. If you want to work with any extracted information externally, use `save` to serialise it to the disk first."

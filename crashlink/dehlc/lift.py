@@ -24,9 +24,10 @@ Design contract (mirrors crashlink.decomp.ir's extensibility rules):
 4. Architecture backends subclass `FunctionLifter` and supply their rule set;
    the dispatch loop itself is architecture-neutral.
 
-Nothing here feeds `dehlc.code_from_bin` yet by default - use it through the
-measurement harness (local/dehlc-tests/lift_ops.py) while fidelity is being
-evaluated.
+Lifting is available through the GUI's Asm/Ops toggle for de-HL/C images,
+the REPL `lift <findex>` command, and the measurement harness
+(local/dehlc-tests/lift_ops.py). x86-64 and aarch64 backends exist; both are
+scored against ground-truth .hl/.elf corpus pairs.
 """
 
 from __future__ import annotations

@@ -1104,11 +1104,11 @@ class MainWindow(QMainWindow):
                 todo.append(fi)
         if not todo:
             return
-        if bin_view.arch not in ("x86_64", "x86"):
+        if bin_view.arch not in ("x86_64", "x86", "aarch64"):
             if not self._arm_lift_warned:
                 self._arm_lift_warned = True
                 self._log_panel.warn(
-                    "Opcode lifting is x86-only right now - ARM bodies stay empty."
+                    f"Opcode lifting supports x86 and aarch64 - {bin_view.arch} bodies stay empty."
                 )
             return
         from crashlink.dehlc.binary import _resolve_plt_targets
