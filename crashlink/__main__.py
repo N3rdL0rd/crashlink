@@ -52,7 +52,6 @@ from .core import (
     Abstract,
 )
 from .globals import VERSION
-from .interp.vm import VM  # type: ignore
 from .opcodes import opcode_docs, opcodes
 from .pseudo import pseudo
 from hlrun.patch import Patch
@@ -1884,17 +1883,7 @@ class Commands(BaseCommands):
     @alias("run")
     def interp(self, args: List[str]) -> None:
         """Run the bytecode in crashlink's integrated interpreter."""
-        if len(args) == 0:
-            idx = self.code.entrypoint.value
-        else:
-            try:
-                idx = int(args[0])
-            except ValueError:
-                print("Invalid index.")
-                return
-
-        vm = VM(self.code)
-        vm.run(entry=idx)
+        print("VM interpreter has been removed.")
 
     def repl(self, args: List[str]) -> None:
         """Drop into a Python REPL with direct access to the Bytecode object."""
