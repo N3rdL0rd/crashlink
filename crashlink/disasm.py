@@ -5,7 +5,8 @@ Human-readable disassembly of opcodes and utilities to work at a relatively low 
 from __future__ import annotations
 
 from ast import literal_eval
-from typing import List, Optional, Dict, Tuple
+from collections import OrderedDict
+from typing import Any, List, Optional, Dict, Tuple
 
 try:
     from tqdm import tqdm
@@ -16,12 +17,16 @@ except ImportError:
 
 
 from .core import (
+    Abstract,
     Bytecode,
     Fun,
     Function,
     Native,
+    Null,
     Obj,
     Opcode,
+    Packed,
+    Ref,
     Reg,
     Type,
     Virtual,
@@ -49,8 +54,147 @@ def type_name(code: Bytecode, typ: Type) -> str:
             fields.append(field.name.resolve(code))
         return f"Virtual[{', '.join(fields)}]"
     elif typedef == Enum and isinstance(defn, Enum):
+        # Name index 0 marks a compiler-synthesized anonymous enum (e.g. a
+        # closure capture context) - its raw name collides with whatever
+        # string happens to sit at pool index 0 (often "String").
+        if defn.name.value == 0:
+            return f"__ClosureCtx_{defn._global.value}"
         return defn.name.resolve(code)
     return typedef.__name__
+
+
+def type_summary(code: Bytecode, index: int) -> str:
+    """One-line description of type t@index, e.g. 'fun(Foo) -> Bar' or 'class my.pack.Foo'."""
+    defn = code.types[index].definition
+
+    if isinstance(defn, Obj):
+        return f"class {defn.name.resolve(code)}"
+    if isinstance(defn, Enum):
+        return f"enum {defn.name.resolve(code)}"
+    if isinstance(defn, Virtual):
+        return "virtual"
+    if isinstance(defn, Fun):
+        args = ", ".join(type_name(code, a.resolve(code)) for a in defn.args)
+        ret = type_name(code, defn.ret.resolve(code))
+        return f"fun({args}) -> {ret}"
+    if isinstance(defn, Abstract):
+        return f"abstract {defn.name.resolve(code)}"
+    if isinstance(defn, Ref):
+        return f"ref -> {type_name(code, defn.type.resolve(code))}"
+    if isinstance(defn, Null):
+        return f"null of {type_name(code, defn.type.resolve(code))}"
+    if isinstance(defn, Packed):
+        return f"packed of {type_name(code, defn.inner.resolve(code))}"
+    return type_name(code, code.types[index])
+
+
+def type_users(code: Bytecode, index: int) -> List[str]:
+    """Everything whose declared type is Fun t@index: functions/natives with this
+    signature, fields typed as this Fun, globals typed as this Fun, and any opcode-level
+    references (closures, calls) picked up by the xref index."""
+    out: List[str] = []
+
+    for func in code.functions:
+        if func.type.value == index:
+            out.append(f"  function {func_header(code, func)}")
+    for native in code.natives:
+        if native.type.value == index:
+            out.append(f"  native {native.lib.resolve(code)}.{native.name.resolve(code)}")
+
+    for ti, typ in enumerate(code.types):
+        defn = typ.definition
+        if isinstance(defn, (Obj, Virtual)):
+            for field in defn.fields:
+                if field.type.value == index:
+                    owner = getattr(defn, "name", None)
+                    owner_name = owner.resolve(code) if owner is not None else f"t@{ti}"
+                    out.append(f"  field {owner_name}.{field.name.resolve(code)}")
+
+    for gi, gtype in enumerate(code.global_types):
+        if gtype.value == index:
+            out.append(f"  global g@{gi}")
+
+    xi = code.xref_index()
+    for ref in xi.type_refs(index):
+        if ref.source_kind.value == "function":
+            label = func_header(code, code.get_findex_map()[ref.source_index])
+        else:
+            label = f"{ref.source_kind.value}@{ref.source_index}"
+        out.append(f"  {ref.ref_kind.value} in {label}")
+
+    return out
+
+
+def describe_type(code: Bytecode, index: int) -> str:
+    """Render a human-readable layout for type t@index: fields, methods, enum
+    constructs, vtable slots, or (for Fun types) everything that uses it."""
+    typ = code.types[index]
+    defn = typ.definition
+    lines = [f"t@{index}  {type_summary(code, index)}  ({defn.__class__.__name__})"]
+
+    if isinstance(defn, Obj):
+        if defn.super and defn.super.value is not None:
+            try:
+                lines.append(f"extends {type_name(code, defn.super.resolve(code))}")
+            except Exception:
+                lines.append(f"extends t@{defn.super.value}")
+        lines.append("")
+        lines.append("Fields:")
+        if defn.fields:
+            for field in defn.fields:
+                try:
+                    ft = type_name(code, field.type.resolve(code))
+                except Exception:
+                    ft = f"t@{field.type.value}"
+                lines.append(f"  {field.name.resolve(code)}: {ft}")
+        else:
+            lines.append("  (none)")
+        lines.append("")
+        lines.append("Protos (instance methods):")
+        if defn.protos:
+            for proto in defn.protos:
+                header = func_header(code, proto.findex.resolve(code))
+                lines.append(f"  {header.replace(' static ', ' ')}")
+        else:
+            lines.append("  (none)")
+        lines.append("")
+        lines.append("Bindings (static methods):")
+        if defn.bindings:
+            for binding in defn.bindings:
+                lines.append(f"  {func_header(code, binding.findex.resolve(code))}")
+        else:
+            lines.append("  (none)")
+
+    elif isinstance(defn, Enum):
+        lines.append(f"global: g@{defn._global.value}")
+        lines.append("")
+        lines.append(f"Constructs ({defn.nconstructs.value}):")
+        if defn.constructs:
+            for i, construct in enumerate(defn.constructs):
+                if construct.params:
+                    params = ", ".join(type_name(code, p.resolve(code)) for p in construct.params)
+                    lines.append(f"  {i}: {construct.name.resolve(code)}({params})")
+                else:
+                    lines.append(f"  {i}: {construct.name.resolve(code)}")
+        else:
+            lines.append("  (none)")
+
+    elif isinstance(defn, Virtual):
+        lines.append("Fields:")
+        for field in defn.fields:
+            try:
+                ft = type_name(code, field.type.resolve(code))
+            except Exception:
+                ft = f"t@{field.type.value}"
+            lines.append(f"  {field.name.resolve(code)}: {ft}")
+
+    elif isinstance(defn, Fun):
+        lines.append("")
+        lines.append("Used by:")
+        users = type_users(code, index)
+        lines.extend(users if users else ["  (nothing found)"])
+
+    return "\n".join(lines)
 
 
 def type_to_haxe(type: str) -> str:
@@ -68,6 +212,7 @@ def type_to_haxe(type: str) -> str:
         "DynObj": "Dynamic",
         "Fun": "Dynamic",
         "TypeType": "hl.Type",
+        "hl.Class": "Class<Dynamic>",
     }
     if type.startswith("hl.types.ArrayBytes_"):
         suffix = type[len("hl.types.ArrayBytes_") :]
@@ -81,6 +226,11 @@ def type_to_haxe(type: str) -> str:
         return f"Array<{element_map.get(suffix, 'Dynamic')}>"
     if type in ("hl.types.ArrayObj", "hl.types.ArrayDyn"):
         return "Array<Dynamic>"
+    # HL erases Map<K,V>'s value type; these stay generic in Haxe source
+    if type in ("haxe.ds.StringMap", "haxe.ds.IntMap"):
+        return f"{type}<Dynamic>"
+    if type in ("haxe.ds.ObjectMap", "haxe.ds.EnumValueMap"):
+        return f"{type}<Dynamic,Dynamic>"
     if type == "Array":
         return "Array<Dynamic>"
     if type in ("Function", "Native"):
@@ -103,7 +253,11 @@ def func_header(code: Bytecode, func: Function | Native) -> str:
     fun_type = func.type.resolve(code).definition
     if isinstance(fun_type, Fun):
         fun: Fun = fun_type
-        return f"f@{func.findex.value} {'static ' if is_static(code, func) else ''}{name} ({', '.join([type_name(code, arg.resolve(code)) for arg in fun.args])}) -> {type_name(code, fun.ret.resolve(code))} (from {func.resolve_file(code)})"
+        try:
+            src = f" (from {func.resolve_file(code)})"
+        except ValueError:
+            src = ""
+        return f"f@{func.findex.value} {'static ' if is_static(code, func) else ''}{name} ({', '.join([type_name(code, arg.resolve(code)) for arg in fun.args])}) -> {type_name(code, fun.ret.resolve(code))}{src}"
     return f"f@{func.findex.value} {name} (no fun found!)"
 
 
@@ -171,6 +325,62 @@ def _method_name_for_field(code: Bytecode, obj_type: "Type", field_idx: int) -> 
     elif isinstance(defn, Virtual) and field_idx < len(defn.fields):
         return defn.fields[field_idx].name.resolve(code)
     return f"field{field_idx}"
+
+
+_X86_RUN_CACHE_MAX = 8
+_x86_run_cache: "OrderedDict[int, Dict[int, Tuple[int, str]]]" = OrderedDict()
+
+
+def _x86_runs_for(ops: List[Opcode]) -> Dict[int, Tuple[int, str]]:
+    """
+    Groups contiguous raw x86-byte `Asm` ops (mode 0) into instructions, returning a map
+    from the op-index starting each instruction to (byte length, decoded mnemonic text).
+    Cached per ops list (keyed by id, since a function's ops don't change between prints);
+    bounded LRU so stale entries from GC'd functions don't accumulate.
+    """
+    cache_key = id(ops)
+    cached = _x86_run_cache.get(cache_key)
+    if cached is not None:
+        _x86_run_cache.move_to_end(cache_key)
+        return cached
+
+    from .asm import X86AsmError, disassemble_x86
+
+    result: Dict[int, Tuple[int, str]] = {}
+    i = 0
+    n = len(ops)
+    while i < n:
+        if ops[i].op == "Asm" and ops[i].df["mode"].value == 0:
+            j = i
+            data = bytearray()
+            while j < n and ops[j].op == "Asm" and ops[j].df["mode"].value == 0:
+                data.append(ops[j].df["value"].value)
+                j += 1
+            try:
+                for offset, size, text in disassemble_x86(bytes(data)):
+                    result[i + offset] = (size, text)
+            except X86AsmError:
+                pass
+            i = j
+        else:
+            i += 1
+
+    _x86_run_cache[cache_key] = result
+    if len(_x86_run_cache) > _X86_RUN_CACHE_MAX:
+        _x86_run_cache.popitem(last=False)
+    return result
+
+
+def _x86_insn_text(ops: List[Opcode], idx: int) -> Optional[str]:
+    """Returns the decoded x86 mnemonic for the raw-byte `Asm` op at `idx`, if any."""
+    runs = _x86_runs_for(ops)
+    if idx in runs:
+        size, text = runs[idx]
+        return text if size == 1 else f"{text} ({size} bytes)"
+    for start, (size, _) in runs.items():
+        if start < idx < start + size:
+            return "..."
+    return None
 
 
 def pseudo_from_op(
@@ -270,13 +480,11 @@ def pseudo_from_op(
             this = None
             for reg in regs:
                 # find first Obj reg
-                if type(reg.resolve(code).definition) == Obj:
+                if type(reg.resolve(code).definition) is Obj:
                     this = reg.resolve(code)
                     break
             if this:
-                return (
-                    f"reg{op.df['dst']} = this.{op.df['field'].resolve_obj(code, this.definition).name.resolve(code)}"
-                )
+                return f"reg{op.df['dst']} = this.{op.df['field'].resolve_obj(code, this.definition).name.resolve(code)}"
             return f"reg{op.df['dst']} = this.f@{op.df['field'].value} (this not found!)"
         case "GetGlobal":
             glob = type_name(code, op.df["global"].resolve(code))
@@ -307,7 +515,9 @@ def pseudo_from_op(
             if not func:
                 return f"reg{op.df['dst']} = this.field{op.df['field']}"
             obj = func.regs[0].resolve(code)
-            assert isinstance(obj.definition, Obj), "reg0 should be an Obj of the type of this (is this static?)"
+            assert isinstance(obj.definition, Obj), (
+                "reg0 should be an Obj of the type of this (is this static?)"
+            )
             fields = obj.definition.resolve_fields(code)
             field = fields[op.df["field"].value]
             return f"reg{op.df['dst']} = this.{field.name.resolve(code)}"
@@ -315,7 +525,9 @@ def pseudo_from_op(
             if not func:
                 return f"this.field{op.df['field']} = reg{op.df['src']}"
             obj = func.regs[0].resolve(code)
-            assert isinstance(obj.definition, Obj), "reg0 should be an Obj of the type of this (is this static?)"
+            assert isinstance(obj.definition, Obj), (
+                "reg0 should be an Obj of the type of this (is this static?)"
+            )
             fields = obj.definition.resolve_fields(code)
             field = fields[op.df["field"].value]
             return f"this.{field.name.resolve(code)} = reg{op.df['src']}"
@@ -375,7 +587,7 @@ def pseudo_from_op(
         # Function Calls
         case "CallClosure":
             args = ", ".join([f"reg{arg}" for arg in op.df["args"].value])
-            if type(regs[op.df["dst"].value].resolve(code).definition) == Void:
+            if type(regs[op.df["dst"].value].resolve(code).definition) is Void:
                 return f"reg{op.df['fun']}({args})"
             return f"reg{op.df['dst']} = reg{op.df['fun']}({args})"
         case "Call0":
@@ -383,10 +595,8 @@ def pseudo_from_op(
         case "Call1":
             return f"reg{op.df['dst']} = f@{op.df['fun']}(reg{op.df['arg0']})"
         case "Call2":
-            fun = code.full_func_name(code.fn(op.df["fun"].value))
-            return (
-                f"reg{op.df['dst']} = f@{op.df['fun']}({', '.join([f'reg{op.df[arg]}' for arg in ['arg0', 'arg1']])})"
-            )
+            _fun = code.full_func_name(code.fn(op.df["fun"].value))
+            return f"reg{op.df['dst']} = f@{op.df['fun']}({', '.join([f'reg{op.df[arg]}' for arg in ['arg0', 'arg1']])})"
         case "Call3":
             return f"reg{op.df['dst']} = f@{op.df['fun']}({', '.join([f'reg{op.df[arg]}' for arg in ['arg0', 'arg1', 'arg2']])})"
         case "Call4":
@@ -453,7 +663,7 @@ def pseudo_from_op(
 
         # Return
         case "Ret":
-            if type(regs[op.df["ret"].value].resolve(code).definition) == Void:
+            if type(regs[op.df["ret"].value].resolve(code).definition) is Void:
                 return "return"
             return f"return reg{op.df['ret']}"
 
@@ -462,6 +672,23 @@ def pseudo_from_op(
             return "assert"
         case "Nop":
             return "nop"
+        case "Asm":
+            mode = op.df["mode"].value
+            if mode == 4:
+                return "naked function (raw x86 follows)"
+            if mode == 0:
+                if func is not None:
+                    text = _x86_insn_text(func.ops, idx)
+                    if text is not None:
+                        return text
+                return f"emit x86 byte 0x{op.df['value'].value:02X}"
+            if mode == 1:
+                return f"scratch cpu reg {op.df['value'].value}"
+            if mode == 2:
+                return f"cpu reg {op.df['value'].value} = reg{op.df['reg'].value - 1} (read vm reg)"
+            if mode == 3:
+                return f"reg{op.df['reg'].value - 1} = cpu reg {op.df['value'].value} (write vm reg)"
+            return f"asm mode {mode}"
 
         # Unknown
         case _:
@@ -506,33 +733,33 @@ def _field_label_compact(
     func: Optional[Function],
     regs: List[Reg] | List[tIndex],
     op_name: str,
-    df: Dict[str, object],
+    df: Dict[str, Any],
 ) -> str:
     """Best-effort human-readable name for a `RefField` operand, by opcode."""
     field_ref = df["field"]
-    fidx = field_ref.value  # type: ignore[attr-defined]
+    fidx = field_ref.value
     try:
         if op_name in ("Field", "SetField"):
-            owner = regs[df["obj"].value].resolve(code)  # type: ignore[attr-defined]
-            field = field_ref.resolve_obj(code, owner.definition)  # type: ignore[attr-defined]
+            owner = regs[df["obj"].value].resolve(code)
+            field = field_ref.resolve_obj(code, owner.definition)
             return f'"{field.name.resolve(code)}"'
         if op_name in ("GetThis", "SetThis") and func is not None:
             owner = func.regs[0].resolve(code)
-            field = field_ref.resolve_obj(code, owner.definition)  # type: ignore[attr-defined]
+            field = field_ref.resolve_obj(code, owner.definition)
             return f'"{field.name.resolve(code)}"'
         if op_name == "CallThis" and func is not None:
             method = _method_name_for_field(code, func.regs[0].resolve(code), fidx)
             return f'"{method}"'
         if op_name == "CallMethod":
-            args = df["args"].value  # type: ignore[attr-defined]
+            args = df["args"].value
             if args:
                 obj_reg = args[0].value
                 method = _method_name_for_field(code, regs[obj_reg].resolve(code), fidx)
                 return f'"{method}"'
         if op_name in ("EnumField", "SetEnumField"):
-            value_reg = df["value"].value  # type: ignore[attr-defined]
+            value_reg = df["value"].value
             enum_def = regs[value_reg].resolve(code).definition
-            construct = enum_def.constructs[df["construct"].value]  # type: ignore[attr-defined]
+            construct = enum_def.constructs[df["construct"].value]
             ptype = type_name(code, construct.params[fidx].resolve(code))
             return f"field{fidx}<{ptype}>"
     except Exception:
@@ -716,7 +943,9 @@ def gen_docs_for_obj(code: Bytecode, obj: Obj, static_obj: Optional[Obj] = None)
     name = obj.name.resolve(code)
     res = "<!DOCTYPE html><html lang='en'><head>"
     res += "<meta charset='UTF-8'>"
-    res += "<link rel='stylesheet' href='https://cdn.jsdelivr.net/gh/N3rdL0rd/holiday.css/dist/holiday.min.css'>"
+    res += (
+        "<link rel='stylesheet' href='https://cdn.jsdelivr.net/gh/N3rdL0rd/holiday.css/dist/holiday.min.css'>"
+    )
     res += f"<title>{name} (crashlink auto API docs)</title></head><body>"
     res += f"<main><h1><code>{name}</code>"
     if obj.super.value > 0:
@@ -852,9 +1081,13 @@ def gen_mkdocs_for_obj(code: Bytecode, obj: Obj, static_obj: Optional[Obj] = Non
     if instance_fields or static_fields:
         lines += ["| | Name | Type |", "|---|------|------|"]
         for field in instance_fields:
-            lines.append(f"| | `{field.name.resolve(code)}` | `{type_name(code, field.type.resolve(code))}` |")
+            lines.append(
+                f"| | `{field.name.resolve(code)}` | `{type_name(code, field.type.resolve(code))}` |"
+            )
         for field in static_fields:
-            lines.append(f"| *static* | `{field.name.resolve(code)}` | `{type_name(code, field.type.resolve(code))}` |")
+            lines.append(
+                f"| *static* | `{field.name.resolve(code)}` | `{type_name(code, field.type.resolve(code))}` |"
+            )
     else:
         lines.append("*No fields.*")
     lines.append("")
@@ -1107,7 +1340,9 @@ def file_class_map(code: Bytecode) -> Dict[str, List[ClassEntry]]:
             canonical = "(standalone)"
 
         key = (file_path, canonical)
-        _groups.setdefault(key, []).append(MethodEntry(findex=findex, method_name=method_name, first_line=first_line))
+        _groups.setdefault(key, []).append(
+            MethodEntry(findex=findex, method_name=method_name, first_line=first_line)
+        )
 
     # Sort methods within each class by first_line
     for entries in _groups.values():
@@ -1133,7 +1368,9 @@ def file_class_map(code: Bytecode) -> Dict[str, List[ClassEntry]]:
             existing.first_line = min(existing.first_line, class_first_line)
 
     # Sort classes within each file by first_line
-    return {fp: sorted(classes.values(), key=lambda c: c.first_line) for fp, classes in sorted(file_map.items())}
+    return {
+        fp: sorted(classes.values(), key=lambda c: c.first_line) for fp, classes in sorted(file_map.items())
+    }
 
 
 def full_func_name_str(code: Bytecode, func: Function) -> str:

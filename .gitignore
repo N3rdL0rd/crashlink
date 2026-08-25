@@ -12,6 +12,8 @@ hl/
 *.prof
 *.json
 !crashtest/runs/*
+!docs/package.json
+!docs/tsconfig.json
 build*.bat
 pypi_token.txt
 testenv
@@ -32,12 +34,21 @@ local/
 *crashlink_patch.py*
 histogram.svg
 test-docs/
+# griffe-generated API reference and crashtest result dashboards; built by
+# .github/workflows/docs.yml from committed source, not committed themselves
+/docs/content/reference/
+/docs/static/crashtest_out/
+# Docusaurus
+/docs/node_modules/
+/docs/.docusaurus/
+/docs/build/
 deadcells/
 .venv/
 tests/haxe/*.c
 tests/haxe/_std
 tests/haxe/haxe
 tests/haxe/hlc
+tests/haxe/_AbstractOps
 test.c
 tests/libhl.dll
 tests/generate_hashes.exe
@@ -55,3 +66,22 @@ steam_appid.txt
 save/
 logs/
 /hlboot
+IDEA.md
+sweep.hx
+# Generated HL/C trees and headers (haxe -hl output: unity .c + per-module C dirs)
+/Heaps3D.c
+/deadcells.c
+/*_win.c
+/hl/
+/_std/
+/_Xml/
+/haxe/
+/hxd/
+/hxsl/
+/h3d/
+/h2d/
+/sys/
+/format/
+/local/heaps-win/
+*.h.gch
+.uv-cache/

@@ -116,8 +116,8 @@ class NativesView(QWidget):
         if findex is not None:
             self.xref_requested.emit(findex)
 
-    def keyPressEvent(self, event: object) -> None:
-        if isinstance(event, QKeyEvent) and not event.modifiers() and event.key() == Qt.Key.Key_X:
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if not event.modifiers() and event.key() == Qt.Key.Key_X:
             item = self._table.currentItem()
             if item is not None:
                 self._on_activated(item)

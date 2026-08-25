@@ -15,14 +15,16 @@ from mcp.server.fastmcp import FastMCP
 
 from . import decomp as _decomp
 from . import disasm as _disasm
-from .core import Bytecode, Function, Native, Obj, Enum, Fun, Virtual
-from .core import XRef, TargetKind, SourceKind, RefKind
+from .core import Bytecode, Native, Obj, Enum, Fun
+from .core import XRef, TargetKind, SourceKind
 from .hlc import code_to_c
 from .opcodes import opcode_docs, opcodes
 from .pseudo import pseudo
 
 MAX_OUTPUT_CHARS = 8000
-_TRUNCATION_NOTE = "\n\n[Output truncated to {kept} of {total} chars. Use pagination or a more specific query.]"
+_TRUNCATION_NOTE = (
+    "\n\n[Output truncated to {kept} of {total} chars. Use pagination or a more specific query.]"
+)
 
 _code: Optional[Bytecode] = None
 
@@ -279,62 +281,18 @@ def list_types(
 @mcp.tool()
 def get_type(tindex: int) -> str:
     """
-    Get detailed information about a type by its tIndex.
+    Get detailed information about a type by its tIndex: kind, fields, methods, enum
+    constructs, or vtable slots as applicable. For Fun types, also lists every
+    function/native/field/global that declares that signature (its "users").
 
     Args:
         tindex: The type index
     """
     code = _require_code()
     try:
-        typ = code.types[tindex]
+        return _trim(_disasm.describe_type(code, tindex))
     except IndexError:
         raise RuntimeError(f"Type t@{tindex} not found.")
-
-    from .core import Type as _Type
-
-    lines = [f"Type t@{tindex}:"]
-    try:
-        kind_name = _Type.Kind(typ.kind.value).name
-    except (ValueError, AttributeError):
-        kind_name = str(typ.kind.value)
-    lines.append(f"  Kind: {typ.kind.value} ({kind_name})")
-
-    defn = typ.definition
-    lines.append(f"  Definition: {type(defn).__name__}")
-
-    if isinstance(defn, Fun):
-        args = []
-        for a in defn.args:
-            try:
-                args.append(_disasm.type_name(code, a.resolve(code)))
-            except Exception:
-                args.append(f"t@{a.value}")
-        try:
-            ret = _disasm.type_name(code, defn.ret.resolve(code))
-        except Exception:
-            ret = f"t@{defn.ret.value}"
-        lines.append(f"  Signature: ({', '.join(args)}) -> {ret}")
-
-    elif isinstance(defn, Obj):
-        lines.append(f"  Name: {defn.name.resolve(code)}")
-        lines.append(f"  Fields: {defn.nfields.value}")
-        lines.append(f"  Protos: {defn.nprotos.value}")
-        if defn.super and defn.super.value is not None:
-            try:
-                super_name = _disasm.type_name(code, defn.super.resolve(code))
-            except Exception:
-                super_name = f"t@{defn.super.value}"
-            lines.append(f"  Super: {super_name}")
-
-    elif isinstance(defn, Enum):
-        lines.append(f"  Name: {defn.name.resolve(code)}")
-        lines.append(f"  Constructs: {defn.nconstructs.value}")
-
-    elif isinstance(defn, Virtual):
-        field_names = [f.name.resolve(code) for f in defn.fields]
-        lines.append(f"  Fields: {', '.join(field_names)}")
-
-    return "\n".join(lines)
 
 
 @mcp.tool()
@@ -671,7 +629,9 @@ def functions_in_file(filename: str) -> str:
     code = _require_code()
     if not code.has_debug_info:
         return "No debug information in bytecode."
-    results = [_disasm.func_header(code, func) for func in code.functions if func.resolve_file(code) == filename]
+    results = [
+        _disasm.func_header(code, func) for func in code.functions if func.resolve_file(code) == filename
+    ]
     if not results:
         return f"No functions found in file '{filename}'."
     return _trim(f"Functions in {filename}:\n" + "\n".join(results))
@@ -694,6 +654,9 @@ def run_mcp_server(preload_path: Optional[str] = None) -> None:
                 _code = Bytecode().deserialise(f)
             print(f"[crashlink-mcp] Preloaded: {preload_path}", file=sys.stderr)
         except Exception as e:
-            print(f"[crashlink-mcp] Warning: failed to preload {preload_path}: {e}", file=sys.stderr)
+            print(
+                f"[crashlink-mcp] Warning: failed to preload {preload_path}: {e}",
+                file=sys.stderr,
+            )
 
     mcp.run(transport="stdio")

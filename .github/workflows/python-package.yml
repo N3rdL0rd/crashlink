@@ -22,28 +22,45 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
       with:
         python-version: ${{ matrix.python-version }}
 
     - name: Install dependencies
       run: |
-        python -m pip install -e .[dev]
+        uv sync --extra ci --extra dev
+
+    - name: Cache test samples
+      id: cache-hl
+      uses: actions/cache@v4
+      with:
+        path: tests/haxe/*.hl
+        key: haxe-samples-${{ hashFiles('tests/haxe/*.hx') }}
 
     - name: Set up Haxe
+      if: steps.cache-hl.outputs.cache-hit != 'true'
       uses: krdlab/setup-haxe@v1
       with:
         haxe-version: 4.3.4
 
     - name: Build test samples
+      if: steps.cache-hl.outputs.cache-hit != 'true'
       run: |
         bash -c 'cd tests/haxe && for f in *.hx; do haxe -hl "${f%.*}.hl" -main "$f"; done'
 
+    - name: Check formatting with ruff
+      run: |
+        uv run ruff format --check
+
+    - name: Lint with ruff
+      run: |
+        uv run ruff check
+
     - name: Test with pytest
       run: |
-        pytest
+        uv run pytest
 
-    - name: Check with mypy
+    - name: Check with ty
       run: |
-        mypy --strict --check-untyped-defs crashlink
+        uv run ty check

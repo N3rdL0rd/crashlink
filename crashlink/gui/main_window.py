@@ -6,10 +6,20 @@ import os
 import re
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QRect, QRunnable, QSettings, QThread, QThreadPool, QTimer, Qt, Signal, QObject, QSize
-from PySide6.QtGui import QColor, QPainter, QTextCursor, QTextDocument
+from PySide6.QtCore import (
+    QRect,
+    QRunnable,
+    QSettings,
+    QThread,
+    QThreadPool,
+    QTimer,
+    Qt,
+    Signal,
+    QObject,
+    QSize,
+)
+from PySide6.QtGui import QCloseEvent, QColor, QPainter, QPaintEvent, QTextCursor, QTextDocument, QUndoStack
 from PySide6.QtWidgets import (
-    QApplication,
     QButtonGroup,
     QDialog,
     QDockWidget,
@@ -28,24 +38,38 @@ from PySide6.QtWidgets import (
     QTabBar,
     QTabWidget,
     QToolButton,
+    QUndoView,
     QVBoxLayout,
     QWidget,
 )
 
 from crashlink.core import AnalysisWorker, Bytecode, Native, destaticify
-from crashlink.database import DatabaseLoadResult, SessionState, load_database, save_database
+from crashlink.database import (
+    DatabaseLoadResult,
+    SessionState,
+    load_database,
+    save_database,
+)
 from crashlink.decomp.function import IRFunction
 from crashlink.globals import VERSION, set_dbg_callback
 from crashlink.pseudo import pseudo_oplines, _method_registry
 
 from .themes import DEFAULT_THEME, THEMES, Theme, generate_qss
+from .undo import CommentCommand, RenameCommand, SetStringCommand
 from .widgets.cfg_view import CfgView
 from .widgets.class_view import ClassView
 from .widgets.function_list import FunctionList
 from .widgets.log_panel import LogPanel
 from .widgets.natives_view import NativesView
 from .widgets.sync_view import DISASM, PSEUDO, SPLIT, SyncView
-from .widgets.xref_panel import XrefPopup, resolve_targets, XrefGroup, XrefSite, _func_label
+from .widgets.types_view import TypesView
+from .widgets.xref_panel import (
+    XrefPopup,
+    resolve_targets,
+    XrefGroup,
+    XrefSite,
+    _func_label,
+)
 
 
 # View mode cycling: Tab steps through split → disassembly → decompiled → …
@@ -165,8 +189,8 @@ class _TabBar(QTabBar):
 
     _fill: QColor = QColor("#181825")
 
-    def paintEvent(self, event: object) -> None:
-        super().paintEvent(event)  # type: ignore[arg-type]
+    def paintEvent(self, event: QPaintEvent) -> None:
+        super().paintEvent(event)
         # Find where the last tab ends; fill everything to the right.
         empty_x = 0
         for i in range(self.count()):
@@ -186,7 +210,9 @@ class _WaitBox(QDialog):
         super().__init__(parent)
         self.setObjectName("waitBox")
         self.setWindowTitle("Please wait…")
-        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowTitleHint)
+        self.setWindowFlags(
+            Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowTitleHint
+        )
         self.setModal(False)  # informational only — never block input to the app
         self.setFixedSize(280, 70)
 
@@ -331,6 +357,8 @@ class MainWindow(QMainWindow):
         self._dirty = False
         self._recent_files: List[str] = []
         self._find_dialog: Optional[_FindDialog] = None
+        self._undo_stack = QUndoStack(self)
+        self._undo_stack.cleanChanged.connect(self._on_undo_clean_changed)
 
         self._build_ui()
         self._build_menu()
@@ -386,6 +414,10 @@ class MainWindow(QMainWindow):
         star = "*" if self._dirty else ""
         self.setWindowTitle(f"{name}{star} - crashlink")
 
+    def _on_undo_clean_changed(self, clean: bool) -> None:
+        self._dirty = not clean
+        self._update_window_title()
+
     # ── UI ────────────────────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
@@ -403,7 +435,10 @@ class MainWindow(QMainWindow):
         for i, mode in enumerate(_VIEW_MODE_CYCLE):
             btn = QPushButton(_VIEW_MODE_GLYPHS[mode])
             btn.setObjectName("modeBtnIcon")
-            btn.setProperty("segment", "first" if i == 0 else "last" if i == len(_VIEW_MODE_CYCLE) - 1 else "mid")
+            btn.setProperty(
+                "segment",
+                "first" if i == 0 else "last" if i == len(_VIEW_MODE_CYCLE) - 1 else "mid",
+            )
             btn.setCheckable(True)
             btn.setFixedWidth(32)
             btn.setToolTip(f"{_VIEW_MODE_NAMES[mode]} view  (Tab to cycle)")
@@ -446,6 +481,15 @@ class MainWindow(QMainWindow):
         self._log_dock.setWidget(self._log_panel)
         self._log_dock.setMinimumHeight(80)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._log_dock)
+
+        # ── Bottom dock: edit history (undo buffer) — off by default ──────────
+        self._history_view = QUndoView(self._undo_stack)
+        self._history_dock = QDockWidget("Edit History", self)
+        self._history_dock.setObjectName("historyDock")
+        self._history_dock.setWidget(self._history_view)
+        self._history_dock.setMinimumHeight(80)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._history_dock)
+        self._history_dock.hide()
 
         # ── Right dock: CFG viewer (off by default — opt in via Window menu) ──
         self._cfg_view = CfgView()
@@ -491,12 +535,21 @@ class MainWindow(QMainWindow):
         fm.addAction("Export Pseudocode…", self._export_pseudo)
         fm.addSeparator()
         fm.addAction("Quit", self.close, "Ctrl+Q")
+
+        em = mb.addMenu("Edit")
+        undo_action = self._undo_stack.createUndoAction(self, "Undo")
+        undo_action.setShortcut("Ctrl+Z")
+        redo_action = self._undo_stack.createRedoAction(self, "Redo")
+        redo_action.setShortcut("Ctrl+Shift+Z")
+        em.addAction(undo_action)
+        em.addAction(redo_action)
+
         vm = mb.addMenu("View")
         tm = vm.addMenu("Theme")
         for name in THEMES:
             tm.addAction(name, lambda n=name: self._apply_theme(THEMES[n]))
         vm.addSeparator()
-        vm.addAction("Cycle view (split/disasm/decompiled)\tTab", self._cycle_view_mode)
+        vm.addAction("Cycle view\tTab", self._cycle_view_mode)
         vm.addSeparator()
         vm.addAction("Find…\tCtrl+F", self._open_find)
 
@@ -504,8 +557,10 @@ class MainWindow(QMainWindow):
         wm.addAction(self._nav_dock.toggleViewAction())
         wm.addAction(self._log_dock.toggleViewAction())
         wm.addAction(self._cfg_dock.toggleViewAction())
-        wm.addSeparator()
-        wm.addAction("Natives Table", self._open_natives_tab)
+        wm.addAction(self._history_dock.toggleViewAction())
+        wm.addSection("Views")
+        wm.addAction("Natives", self._open_natives_tab)
+        wm.addAction("Types", self._open_types_tab)
 
         hm = mb.addMenu("Help")
         hm.addAction("Keyboard Shortcuts…", self._show_shortcuts)
@@ -515,7 +570,10 @@ class MainWindow(QMainWindow):
 
     def _open_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open HashLink bytecode", "", "HashLink files (*.hl *.dat);;All files (*)"
+            self,
+            "Open HashLink bytecode",
+            "",
+            "HashLink files (*.hl *.dat);;All files (*)",
         )
         if path and self._confirm_discard_changes():
             self._load_file(path)
@@ -561,7 +619,9 @@ class MainWindow(QMainWindow):
         box.setWindowTitle("Unsaved changes")
         box.setText("You have unsaved renames/comments. Save the analysis database before continuing?")
         box.setStandardButtons(
-            QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel
         )
         box.setDefaultButton(QMessageBox.StandardButton.Save)
         choice = box.exec()
@@ -584,6 +644,7 @@ class MainWindow(QMainWindow):
         self._cfg_view.clear_view()
         self._db_cache.clear()
         self._log_panel.clear()
+        self._undo_stack.clear()
         self._dirty = False
         self._code = None
         self._log_panel.set_context(code=None, findex=None, func=None, irf=None)
@@ -642,7 +703,9 @@ class MainWindow(QMainWindow):
         if self._code is None or self._source_path is None:
             self._log_panel.warn("Open a bytecode file first.")
             return
-        path, _ = QFileDialog.getOpenFileName(self, "Load analysis database", "", "crashlink database (*.cldb)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load analysis database", "", "crashlink database (*.cldb)"
+        )
         if path:
             self._load_database_from(path)
 
@@ -663,7 +726,9 @@ class MainWindow(QMainWindow):
         self._export_text(view.class_view.toPlainText(), "Export Pseudocode", "pseudo.hx")
 
     def _export_text(self, text: str, title: str, default_name: str) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, title, default_name, "Text files (*.txt *.hx);;All files (*)")
+        path, _ = QFileDialog.getSaveFileName(
+            self, title, default_name, "Text files (*.txt *.hx);;All files (*)"
+        )
         if not path:
             return
         try:
@@ -703,7 +768,9 @@ class MainWindow(QMainWindow):
         assert self._code is not None and self._source_path is not None
         self._db_load_thread = _DbLoadThread(cldb_path, self._code, self._source_path)
         self._db_load_thread.signals.finished.connect(self._on_db_load_finished)
-        self._db_load_thread.signals.error.connect(lambda msg: self._log_panel.error(f"Failed to load database: {msg}"))
+        self._db_load_thread.signals.error.connect(
+            lambda msg: self._log_panel.error(f"Failed to load database: {msg}")
+        )
         self._db_load_thread.start()
 
     def _on_db_load_finished(self, result: DatabaseLoadResult) -> None:
@@ -765,6 +832,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self._log_panel.error(f"Failed to save database: {e}")
             return
+        self._undo_stack.setClean()
         self._dirty = False
         self._update_window_title()
         self._log_panel.success(f"Saved database to {cldb_path}")
@@ -788,7 +856,9 @@ class MainWindow(QMainWindow):
         class_key = f"class:{canonical}"
 
         # Gather all findices that belong to this canonical class (static + instance)
-        all_fi = sorted(fi for fi, (o, _, _) in reg.items() if destaticify(o.name.resolve(self._code)) == canonical)
+        all_fi = sorted(
+            fi for fi, (o, _, _) in reg.items() if destaticify(o.name.resolve(self._code)) == canonical
+        )
         return class_key, canonical, all_fi
 
     # ── Natives table ────────────────────────────────────────────────────────
@@ -817,13 +887,40 @@ class MainWindow(QMainWindow):
         self._tabs.setCurrentIndex(idx)
 
     def _on_native_xref_requested(self, findex: int) -> None:
+        self._show_xrefs_for(f"f@{findex}")
+
+    def _show_xrefs_for(self, word: str) -> None:
         if self._code is None:
             return
-        word = f"f@{findex}"
         groups = resolve_targets(self._code, word)
         at = self.mapToGlobal(self.rect().center())
         self._xref_popup.show_results(word, groups, at)
         self._log_panel.result(f"Xrefs for '{word}': {len(groups)} target(s)")
+
+    # ── Types table ──────────────────────────────────────────────────────────
+
+    _TYPES_TAB_KEY = "__types__"
+
+    def _open_types_tab(self) -> None:
+        if self._code is None:
+            self._log_panel.warn("Open a bytecode file first.")
+            return
+        key = self._TYPES_TAB_KEY
+        if key in self._open_tabs:
+            self._tabs.setCurrentIndex(self._open_tabs[key])
+            return
+
+        view = TypesView()
+        view.setProperty("class_key", key)
+        view.set_theme(self._theme)
+        view.load(self._code)
+        view.xref_requested.connect(self._show_xrefs_for)
+
+        idx = self._tabs.addTab(view, "Types")
+        self._tabs.setTabToolTip(idx, f"{len(self._code.types)} types")
+        self._open_tabs[key] = idx
+        self._add_close_btn(idx, key)
+        self._tabs.setCurrentIndex(idx)
 
     def _open_class_tab(self, class_key: str, display_name: str, all_fi: List[int], jump_to: int) -> None:
         assert self._code is not None
@@ -855,7 +952,11 @@ class MainWindow(QMainWindow):
         view.comment_requested.connect(self._on_comment_hotkey)
 
         placeholder = [
-            (fi, self._class_results[class_key][fi] or f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}")
+            (
+                fi,
+                self._class_results[class_key][fi]
+                or f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}",
+            )
             for fi in all_fi
         ]
         view.load_pseudo(display_name, placeholder)
@@ -1078,13 +1179,39 @@ class MainWindow(QMainWindow):
         self._apply_rename(findex, loc.reg_idx, loc.defining_op_idx, new_name)
         self._log_panel.success(f"Renamed '{word}' → '{new_name}' in f@{findex}")
 
-    def _apply_rename(self, findex: int, reg_idx: int, def_op: Optional[int], new_name: str) -> None:
+    def _apply_rename(
+        self, findex: int, reg_idx: int, def_op: Optional[int], new_name: Optional[str]
+    ) -> None:
+        """new_name=None clears the rename (used by the CLI bridge's `unrename`)."""
         if self._code is None:
             return
-        def_op_int = def_op
-        self._code.annotations.rename(findex, reg_idx, def_op_int, new_name)
-        self._dirty = True
-        self._update_window_title()
+        old_name = self._code.annotations.get_rename(findex, reg_idx, def_op)
+        cmd = RenameCommand(
+            self._code, findex, reg_idx, def_op, old_name, new_name, self._on_annotation_applied
+        )
+        self._undo_stack.push(cmd)
+
+    def _apply_comment(self, findex: int, op_idx: int, text: Optional[str]) -> None:
+        """text=None clears the comment (used by the CLI bridge's `rmcomment`)."""
+        if self._code is None:
+            return
+        old_text = self._code.annotations.get_comment(findex, op_idx)
+        cmd = CommentCommand(self._code, findex, op_idx, old_text, text, self._on_annotation_applied)
+        self._undo_stack.push(cmd)
+
+    def _apply_setstring(self, index: int, new_value: str) -> None:
+        if self._code is None:
+            return
+        old_value = self._code.strings.value[index]
+        cmd = SetStringCommand(self._code, index, old_value, new_value, self._on_annotation_applied)
+        self._undo_stack.push(cmd)
+
+    def _on_annotation_applied(self, findex: Optional[int]) -> None:
+        """Shared undo/redo callback for rename and comment commands."""
+        if findex is None:
+            return
+        class_key, _, _ = self._class_key_for(findex)
+        self._refresh_disasm_view(class_key)
         self._invalidate_and_redecompile(findex)
 
     def _invalidate_and_redecompile(self, findex: int) -> None:
@@ -1111,23 +1238,19 @@ class MainWindow(QMainWindow):
     def _on_comment_hotkey(self, findex: int, op_idx: int) -> None:
         if self._code is None:
             return
-        existing = self._code.annotations.get_comment(findex, op_idx) or ""
-        text, ok = QInputDialog.getText(self, "Comment", f"Comment on op {op_idx} in f@{findex}:", text=existing)
+        existing = self._code.annotations.get_comment(findex, op_idx)
+        text, ok = QInputDialog.getText(
+            self, "Comment", f"Comment on op {op_idx} in f@{findex}:", text=existing or ""
+        )
         if not ok:
             return
         text = text.strip()
-        if text:
-            self._code.annotations.set_comment(findex, op_idx, text)
+        new_text = text or None
+        self._apply_comment(findex, op_idx, new_text)
+        if new_text:
             self._log_panel.success(f"Commented op {op_idx} in f@{findex}")
         else:
-            self._code.annotations.clear_comment(findex, op_idx)
             self._log_panel.info(f"Cleared comment on op {op_idx} in f@{findex}")
-        self._dirty = True
-        self._update_window_title()
-
-        class_key, _, _ = self._class_key_for(findex)
-        self._refresh_disasm_view(class_key)
-        self._invalidate_and_redecompile(findex)
 
     # ── Xrefs (X) ────────────────────────────────────────────────────────────
 
@@ -1295,25 +1418,27 @@ class MainWindow(QMainWindow):
             ("/", "Add/edit a comment on the opcode under the cursor"),
             ("Up / Down", "REPL command history (when the REPL input is focused)"),
         ]
-        rows_html = "".join(f"<tr><td><b>{key}</b></td><td>&nbsp;&nbsp;{desc}</td></tr>" for key, desc in rows)
+        rows_html = "".join(
+            f"<tr><td><b>{key}</b></td><td>&nbsp;&nbsp;{desc}</td></tr>" for key, desc in rows
+        )
         box = QMessageBox(self)
         box.setWindowTitle("Keyboard Shortcuts")
         box.setText(f"<table>{rows_html}</table>")
         # QMessageBox ignores resize()/setFixedWidth() directly — widening its
         # internal label is the standard way to give it a bit more breathing room.
-        box.setStyleSheet("QLabel{min-width: 400px;}")
+        # box.setStyleSheet("QLabel{min-width: 400px;}")
         box.exec()
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
-    def closeEvent(self, event: object) -> None:
+    def closeEvent(self, event: QCloseEvent) -> None:
         if not self._confirm_discard_changes():
-            event.ignore()  # type: ignore[attr-defined]
+            event.ignore()
             return
         self._save_settings()
         set_dbg_callback(None)
         self._worker.shutdown(wait=False)
-        super().closeEvent(event)  # type: ignore[arg-type]
+        super().closeEvent(event)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

@@ -9,6 +9,15 @@ opt        Optimizer base classes and sub-packages
 function   Top-level orchestrators (IRFunction, IRClass)
 """
 
+import sys
+
+# IR statement/block reprs and some optimizer walks recurse once per nesting
+# level (e.g. a deeply nested if/else chain, or a large lowered switch before
+# IRIntSwitchOptimizer restructures it). Real-world dispatch tables/parsers can
+# nest a few hundred levels deep, well past Python's default limit of 1000.
+if sys.getrecursionlimit() < 8000:
+    sys.setrecursionlimit(8000)
+
 from .cfg import (
     CFNode,
     CFOptimizer,
@@ -51,14 +60,19 @@ from .ir import (
     IRForEachLoop,
     IRIntRangeLoop,
     IRField,
+    IRBoundClosure,
     IRNew,
     IRNativeArrayNew,
     IRNativeMapNew,
+    IRBytesNew,
     IRCast,
     IRArrayLiteral,
     IRObjectLiteral,
     IRArrayAccess,
     IRRef,
+    IRRefNew,
+    IRRefGet,
+    IRRefSet,
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
@@ -85,6 +99,7 @@ from .opt.clean import (
     IRLoopConditionOptimizer,
     IRSelfAssignOptimizer,
     IRArrayGrowGuardEliminator,
+    IRArrayObjBoundsCheckCollapser,
     IRRedundantRecomputeEliminator,
     IRBlockFlattener,
     IRCommonBlockMerger,
@@ -96,9 +111,11 @@ from .opt.clean import (
     IRSequentialTempFolder,
     IRDeadAssignmentEliminator,
     IRConstructorFolder,
+    IREnumConstructorFolder,
     IRAnonObjectLiteralOptimizer,
     IRShiftConstantOptimizer,
     IRGuardOrMerger,
+    IRTypedCatchOptimizer,
 )
 from .opt.strings import (
     IRGlobalStringOptimizer,
@@ -127,6 +144,7 @@ from .function import (
     _build_enum_global_map,
     IRFunction,
     IRClass,
+    STATIC_INIT_UNRECOVERABLE,
 )
 
 __all__ = [
@@ -141,6 +159,7 @@ __all__ = [
     "IRAnonObjectLiteralOptimizer",
     "IRArrayAccess",
     "IRArrayGrowGuardEliminator",
+    "IRArrayObjBoundsCheckCollapser",
     "IRArrayLiteral",
     "IRArrayObjWrapperOptimizer",
     "IRArrayPatternOptimizer",
@@ -157,6 +176,7 @@ __all__ = [
     "IRContinue",
     "IRConst",
     "IRConstructorFolder",
+    "IREnumConstructorFolder",
     "IRCopyPropOptimizer",
     "IRDeadAssignmentEliminator",
     "IRDeadCodeEliminator",
@@ -168,6 +188,7 @@ __all__ = [
     "IREnumSwitchOptimizer",
     "IRExpression",
     "IRField",
+    "IRBoundClosure",
     "IRForEachLoop",
     "IRForEachLoopOptimizer",
     "IRFunction",
@@ -182,6 +203,7 @@ __all__ = [
     "IRNativeArrayNew",
     "IRNativeArrayAllocOptimizer",
     "IRNativeMapNew",
+    "IRBytesNew",
     "IRNativeMapAllocOptimizer",
     "IRNativeStub",
     "IRNeg",
@@ -195,6 +217,9 @@ __all__ = [
     "IRRedundantContinueEliminator",
     "IRRedundantRecomputeEliminator",
     "IRRef",
+    "IRRefNew",
+    "IRRefGet",
+    "IRRefSet",
     "IRReturn",
     "IRSelfAssignOptimizer",
     "IRSequentialTempFolder",
@@ -209,6 +234,7 @@ __all__ = [
     "IRTrace",
     "IRTraceOptimizer",
     "IRTryCatch",
+    "IRTypedCatchOptimizer",
     "IRThrow",
     "IRTypeKind",
     "IRTypeOf",

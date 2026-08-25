@@ -4,88 +4,31 @@ Switch-statement pattern optimizers.
 
 from __future__ import annotations
 
-import copy
-import re
-from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, cast
 
 if TYPE_CHECKING:
-    from ..function import IRFunction
+    pass
 
 from ...core import (
-    Bytecode,
-    DynObj,
     Enum,
-    Fun,
-    Function,
     Native,
-    Obj,
-    Opcode,
-    Ref,
-    ResolvableVarInt,
-    Type,
-    TypeDef,
-    Virtual,
-    Void,
-    fieldRef,
-    gIndex,
-    tIndex,
 )
-from ...errors import DecompError
-from ...globals import DEBUG, dbg_print
-from ... import disasm
-from ...opcodes import arithmetic, conditionals, terminal, simple_calls
 from ..ir import (
     IRStatement,
     IRExpression,
     IRBlock,
     IRLocal,
-    IRArithmetic,
-    IRNeg,
-    IRNot,
-    IRTypeOf,
-    IRTypeKind,
     IRAssign,
     IRCall,
     IRBoolExpr,
     IRConst,
     IRConditional,
-    IRPrimitiveLoop,
-    IRBreak,
-    IRContinue,
-    IRReturn,
-    IRThrow,
-    IRTrace,
-    IRTryCatch,
     IRSwitch,
-    IRPrimitiveJump,
-    IRWhileLoop,
-    IRForEachLoop,
-    IRIntRangeLoop,
     IRField,
-    IRNew,
-    IRNativeArrayNew,
-    IRNativeMapNew,
-    IRCast,
-    IRArrayLiteral,
-    IRArrayAccess,
-    IRRef,
-    IREnumConstruct,
     IREnumIndex,
-    IREnumField,
-    IRUnliftedOpcode,
-    IRNativeStub,
-    _get_type_in_code,
-    _strip_ansi,
 )
-from ..cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
 from . import (
-    IROptimizer,
     TraversingIROptimizer,
-    _ir_structurally_equal,
-    _structurally_equal,
-    _stmt_lists_structurally_equal,
-    _bytes_mem_kind,
     _int_const_value,
     _signed_i32,
 )
@@ -138,9 +81,17 @@ class IRIntSwitchOptimizer(TraversingIROptimizer):
             ):
                 return None
             left, right = cond.left, cond.right
-            if isinstance(left, IRLocal) and isinstance(right, IRConst) and right.const_type == IRConst.ConstType.INT:
+            if (
+                isinstance(left, IRLocal)
+                and isinstance(right, IRConst)
+                and right.const_type == IRConst.ConstType.INT
+            ):
                 cand_local, cand_const = left, right
-            elif isinstance(right, IRLocal) and isinstance(left, IRConst) and left.const_type == IRConst.ConstType.INT:
+            elif (
+                isinstance(right, IRLocal)
+                and isinstance(left, IRConst)
+                and left.const_type == IRConst.ConstType.INT
+            ):
                 cand_local, cand_const = right, left
             else:
                 return None
@@ -216,13 +167,6 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
                         switch.adopt(next_switch)
                         tail = next_tail
                         i += 1
-                    # Whatever's left once the chain stops matching is exactly
-                    # what runs when no case matched - that's the default body.
-                    if not tail and not switch.default.statements and i < len(block.statements):
-                        fallthrough = IRBlock(self.func.code)
-                        fallthrough.statements = block.statements[i:]
-                        switch.default = fallthrough
-                        i = len(block.statements)
                     new_statements.append(switch)
                     new_statements.extend(tail)
                     made_change = True
@@ -250,7 +194,16 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
             return None
         cases, default, tail, consumed = parsed
         if not default.statements:
-            default = stmt.false_block
+            # The chain's no-match `rest` was empty (no explicit default). Do
+            # NOT fall back to `stmt.false_block`: when the switch has no
+            # explicit default and multiple cases, the compiler factors the
+            # null check so the null path re-enters the next case's chain
+            # (the convergence node), which the lifter duplicates into
+            # `stmt.false_block`. That duplicate is NOT the switch's default —
+            # it's the continuation, and using it as `default` re-emits the
+            # remaining cases as a fabricated nested switch. Leave the
+            # default empty: the post-switch continuation is the siblings.
+            default = IRBlock(self.func.code)
         new_switch = IRSwitch(self.func.code, s_local, cases, default)
         new_switch.adopt(stmt, len_cond, *consumed)
         return new_switch, tail
@@ -293,14 +246,26 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
             elif isinstance(stmt, IRConditional) and temp_local is not None:
                 cond = stmt.condition
                 if isinstance(cond, IRBoolExpr) and cond.op == IRBoolExpr.CompareType.EQ:
+                    # A single-use temp (`temp = s.length`) may already have been inlined
+                    # directly into this comparison by an earlier pass, leaving `s.length`
+                    # in place of `temp` even though the assignment itself still exists
+                    # (kept alive by a later, non-adjacent use of `temp`, e.g. as a call
+                    # argument). Accept either form.
+                    def _is_len_ref(e: IRExpression) -> bool:
+                        return e == temp_local or (
+                            isinstance(e, IRField) and e.field_name == "length" and e.target == s_local
+                        )
+
                     if (
-                        cond.left == temp_local
+                        cond.left is not None
+                        and _is_len_ref(cond.left)
                         and isinstance(cond.right, IRConst)
                         and cond.right.const_type == IRConst.ConstType.INT
                     ):
                         return stmt, temp_local
                     if (
-                        cond.right == temp_local
+                        cond.right is not None
+                        and _is_len_ref(cond.right)
                         and isinstance(cond.left, IRConst)
                         and cond.left.const_type == IRConst.ConstType.INT
                     ):
@@ -339,7 +304,9 @@ class IRStringSwitchOptimizer(TraversingIROptimizer):
         if len(call.args) != 3:
             return None
         bytes_arg = call.args[0]
-        if not (isinstance(bytes_arg, IRField) and bytes_arg.field_name == "bytes" and bytes_arg.target == s_local):
+        if not (
+            isinstance(bytes_arg, IRField) and bytes_arg.field_name == "bytes" and bytes_arg.target == s_local
+        ):
             return None
         const_arg = call.args[1]
         if not isinstance(const_arg, IRConst) or const_arg.const_type != IRConst.ConstType.STRING:
@@ -450,7 +417,9 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
             # existing IRConst by changing its value to the constructor name
             # string, but create a fresh one to avoid side effects.
             new_case_val = IRConst(
-                self.func.code, IRConst.ConstType.GLOBAL_STRING, value=construct.name.resolve(self.func.code)
+                self.func.code,
+                IRConst.ConstType.GLOBAL_STRING,
+                value=construct.name.resolve(self.func.code),
             )
             new_cases[new_case_val] = case_block
 

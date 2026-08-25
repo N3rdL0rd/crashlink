@@ -1,5 +1,3 @@
-from typing import Tuple
-
 from crashlink import *
 
 

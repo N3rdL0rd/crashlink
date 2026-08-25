@@ -5,7 +5,7 @@ import subprocess
 import zipfile
 import glob
 
-import requests
+import requests  # ty: ignore[unresolved-import]  -- not a project dependency, install manually to run this script
 
 CURRENT_PYTHON = "https://www.python.org/ftp/python/3.14.0/Python-3.14.0a6.tar.xz"
 DIR = "Python-3.14.0a6"
@@ -72,8 +72,11 @@ def main_nix() -> None:
     subprocess.run(["tar", "-xf", "python.tar.xz"], check=True)
     print("Configuring...")
     os.chdir(DIR)
+    # gen_prefix() creates the install dir as a side effect; the return
     prefix = gen_prefix()
-    configure_cmd = f'./configure CFLAGS="-fPIC" --with-ensurepip=install --prefix="{prefix}" --disable-test-modules'
+    configure_cmd = (
+        f'./configure CFLAGS="-fPIC" --with-ensurepip=install --prefix="{prefix}" --disable-test-modules'
+    )
     subprocess.run(configure_cmd, shell=True, check=True)
     print("Building...")
     subprocess.run("make -j$(($(nproc) + 1))", shell=True, check=True)
@@ -84,9 +87,9 @@ def main_nix() -> None:
     subprocess.run(["rm", "-rf", DIR], check=True)
     subprocess.run(["rm", "python.tar.xz"], check=True)
     print("Copying libpython...")
-    os.system("cp python/lib/libpython3.14.a libpython.a")
+    subprocess.run(["cp", "python/lib/libpython3.14.a", "libpython.a"], check=True)
     print("Copying include...")
-    os.system("cp -r python/include/python* include")
+    subprocess.run("cp -r python/include/python* include", shell=True, check=True)
     print("Python built!")
 
 
@@ -96,7 +99,9 @@ def main_win() -> None:
     print("Downloading Python NuGet package...")
     download_file(nuget_python_url, "python.nupkg")
 
-    prefix = gen_prefix()
+    # gen_prefix() ensures the install directory exists;
+    # the returned value is not used on this path.
+    gen_prefix()
     include_dir = os.path.join(INITIAL_DIR, "include")
     if not os.path.exists(include_dir):
         os.makedirs(include_dir)
@@ -112,15 +117,14 @@ def main_win() -> None:
 
     if os.path.exists(include_src):
         print(f"Found include directory at {include_src}")
-        # Use os.system to avoid subprocess exceptions with xcopy
-        os.system(f'xcopy /E /I /Y "{include_src}" "{include_dir}"')
+        subprocess.run(f'xcopy /E /I /Y "{include_src}" "{include_dir}"', shell=True)
     else:
         print(f"Include directory not found at {include_src}, searching...")
         for root, dirs, files in os.walk("python_nuget"):
             if "include" in dirs:
                 include_src = os.path.join(root, "include")
                 print(f"Found include directory at {include_src}")
-                os.system(f'xcopy /E /I /Y "{include_src}" "{include_dir}"')
+                subprocess.run(f'xcopy /E /I /Y "{include_src}" "{include_dir}"', shell=True)
                 break
 
     print("Copying lib files...")
@@ -132,7 +136,7 @@ def main_win() -> None:
                 lib_src = os.path.join(lib_src_dir, file)
                 lib_dest = os.path.join(INITIAL_DIR, "python313.lib")
                 print(f"Copying {lib_src} to {lib_dest}")
-                os.system(f'copy /Y "{lib_src}" "{lib_dest}"')
+                subprocess.run(f'copy /Y "{lib_src}" "{lib_dest}"', shell=True)
                 break
     else:
         print(f"Lib directory not found at {lib_src_dir}, searching...")
@@ -142,24 +146,24 @@ def main_win() -> None:
                 lib_src = os.path.join(root, python_libs[0])
                 lib_dest = os.path.join(INITIAL_DIR, "python3.lib")
                 print(f"Found Python lib at {lib_src}")
-                os.system(f'copy /Y "{lib_src}" "{lib_dest}"')
+                subprocess.run(f'copy /Y "{lib_src}" "{lib_dest}"', shell=True)
                 break
 
-    os.system(f"copy /Y python_nuget\\tools\\python313.dll ")
+    subprocess.run("copy /Y python_nuget\\tools\\python313.dll ", shell=True)
 
     print("Copying Lib...")
     lib_src = os.path.join("python_nuget", "tools", "Lib")
     lib_dest = "lib-py"
     if os.path.exists(lib_src):
         print(f"Found Lib directory at {lib_src}")
-        os.system(f'xcopy /E /I /Y "{lib_src}" "{lib_dest}"')
+        subprocess.run(f'xcopy /E /I /Y "{lib_src}" "{lib_dest}"', shell=True)
     else:
         print(f"Lib directory not found at {lib_src}, searching...")
         for root, dirs, files in os.walk("python_nuget"):
             if "Lib" in dirs:
                 lib_src = os.path.join(root, "Lib")
                 print(f"Found Lib directory at {lib_src}")
-                os.system(f'xcopy /E /I /Y "{lib_src}" "{lib_dest}"')
+                subprocess.run(f'xcopy /E /I /Y "{lib_src}" "{lib_dest}"', shell=True)
                 break
 
     print("Cleaning up...")

@@ -4,20 +4,34 @@ Pseudocode generation routines to create a Haxe representation of the decompiled
 
 from __future__ import annotations
 
+import os
 import re
 import weakref
-from abc import ABC, abstractmethod
-from typing import Optional, List, Set, Dict, Tuple, Union, cast, Any
+from typing import Optional, List, Set, Dict, Tuple, Union, cast, Any, Iterator
 
-from .core import Bytecode, Obj, Ref, Type, Function, Fun, Native, Enum, destaticify, gIndex
+from .core import (
+    Bytecode,
+    Obj,
+    Ref,
+    Type,
+    Function,
+    Fun,
+    Native,
+    Enum,
+    destaticify,
+    gIndex,
+)
 from . import disasm
+from . import hxsl
 from .decomp import (
+    STATIC_INIT_UNRECOVERABLE,
     IRBreak,
     IRContinue,
     IRCast,
     IRNativeStub,
     IRClass,
     IRField,
+    IRBoundClosure,
     IRFunction,
     IRBlock,
     IRNew,
@@ -39,6 +53,9 @@ from .decomp import (
     IRUnliftedOpcode,
     IRArrayAccess,
     IRRef,
+    IRRefNew,
+    IRRefGet,
+    IRRefSet,
     IRArrayLiteral,
     IRObjectLiteral,
     IREnumConstruct,
@@ -49,17 +66,61 @@ from .decomp import (
     IRIntRangeLoop,
     IRNativeArrayNew,
     IRNativeMapNew,
+    IRBytesNew,
     IRPrimitiveLoop,
     IRReturn,
     IRThrow,
     IRPrimitiveJump,
     IRSwitch,
-    _get_type_in_code,
 )
 
 
 def _indent_str(level: int) -> str:
     return "    " * level  # 4 spaces for indentation
+
+
+def _is_int_kind(typ: "Type") -> bool:
+    # true for HL's integer kinds, where Haxe's `/` needs Std.int() to stay truncating
+    return typ.kind.value in (
+        Type.Kind.U8.value,
+        Type.Kind.U16.value,
+        Type.Kind.I32.value,
+        Type.Kind.I64.value,
+    )
+
+
+def _render_typekind_comparison(
+    left_expr: IRExpression,
+    right_expr: IRExpression,
+    code: Bytecode,
+    ir_function: Optional[IRFunction],
+) -> Optional[Tuple[str, str]]:
+    """
+    If one side is `IRTypeKind` and the other is a mapped integer constant,
+    render the type-kind read as `t.kind` (no cast) and the constant as the
+    corresponding `hl.TypeKind` enum abstract member name.
+    """
+    type_kind_expr: Optional[IRTypeKind] = None
+    const_expr: Optional[IRConst] = None
+
+    if isinstance(left_expr, IRTypeKind) and isinstance(right_expr, IRConst):
+        type_kind_expr = left_expr
+        const_expr = right_expr
+    elif isinstance(right_expr, IRTypeKind) and isinstance(left_expr, IRConst):
+        type_kind_expr = right_expr
+        const_expr = left_expr
+
+    if type_kind_expr is None or const_expr is None or const_expr.const_type != IRConst.ConstType.INT:
+        return None
+
+    kind_name = _TYPEKIND_NAMES.get(
+        int(const_expr.value.value if hasattr(const_expr.value, "value") else const_expr.value)
+    )
+    if kind_name is None:
+        return None
+
+    base = _expression_to_haxe(type_kind_expr.expr, code, ir_function)
+    return f"{base}.kind", kind_name
 
 
 class _PseudoClass:
@@ -87,7 +148,9 @@ class _PseudoClass:
 # unrelated Bytecode can be allocated at the same address and silently get
 # served someone else's stale registry. `Bytecode` (via Serialisable.__eq__)
 # isn't hashable, so a WeakKeyDictionary keyed on `code` itself isn't an option.
-_method_registry_cache: Dict[int, Tuple["weakref.ReferenceType[Bytecode]", Dict[int, Tuple[Obj, str, bool]]]] = {}
+_method_registry_cache: Dict[
+    int, Tuple["weakref.ReferenceType[Bytecode]", Dict[int, Tuple[Obj, str, bool]]]
+] = {}
 
 
 def _method_registry(code: Bytecode) -> Dict[int, Tuple[Obj, str, bool]]:
@@ -195,9 +258,10 @@ def _is_expression_switch(
 _HAXE_OP_PRECEDENCE = {
     "||": 1,
     "&&": 2,
+    # Haxe gives &, |, ^ equal precedence, left-to-right (not C-style tiers).
     "|": 3,
-    "^": 4,
-    "&": 5,
+    "^": 3,
+    "&": 3,
     "==": 6,
     "!=": 6,
     "<": 6,
@@ -214,19 +278,74 @@ _HAXE_OP_PRECEDENCE = {
     "%": 9,
 }
 
+# HashLink's `hl.TypeKind` is an enum abstract over Int.  The bytecode stores the
+# raw integer, but Haxe rejects `t.kind == 11` because the enum abstract expects
+# a `TypeKind` on the right.  Map known kind values to their source names so the
+# decompiled output matches the original `t.kind == HObj` style.
+_TYPEKIND_NAMES: Dict[int, str] = {
+    0: "HVoid",
+    1: "HUI8",
+    2: "HUI16",
+    3: "HI32",
+    4: "HI64",
+    5: "HF32",
+    6: "HF64",
+    7: "HBool",
+    8: "HBytes",
+    9: "HDyn",
+    10: "HFun",
+    11: "HObj",
+    12: "HArray",
+    13: "HType",
+    14: "HRef",
+    15: "HVirtual",
+    16: "HDynObj",
+    17: "HAbstract",
+    18: "HEnum",
+    19: "HNull",
+}
+
+
+# Operators that are not associative/distributive with same-tier siblings on
+# their right: a - (b + c) != a - b + c, a / (b * c) != a / b * c.
+_HAXE_NON_ASSOC_OPS = {"-", "/", "%"}
+
+# &, |, ^ share a precedence tier but aren't cross-associative: a & (b | c) != (a & b) | c.
+# Same-operator chains (a & b & c) ARE associative and stay flat.
+_HAXE_BITWISE_OPS = {"&", "|", "^"}
+
 
 def _expr_to_haxe_with_precedence(
-    expr: Optional[IRExpression], code: Bytecode, ir_function: Optional[IRFunction], parent_op: str
+    expr: Optional[IRExpression],
+    code: Bytecode,
+    ir_function: Optional[IRFunction],
+    parent_op: str,
+    is_right: bool = False,
 ) -> str:
     """Render an expression, wrapping it in parentheses if its operator is
-    lower-precedence than the parent's and would otherwise bind incorrectly."""
+    lower-precedence than the parent's and would otherwise bind incorrectly.
+    For the right operand of a non-associative op, same-tier children also
+    need parens since flattening would silently change the value."""
     rendered = _expression_to_haxe(expr, code, ir_function)
     if isinstance(expr, IRArithmetic):
         child_prec = _HAXE_OP_PRECEDENCE.get(expr.op.value, 10)
         parent_prec = _HAXE_OP_PRECEDENCE.get(parent_op, 10)
-        if child_prec < parent_prec:
+        needs_parens = (
+            child_prec < parent_prec
+            or (is_right and parent_op in _HAXE_NON_ASSOC_OPS and child_prec == parent_prec)
+            or (
+                is_right
+                and parent_op in _HAXE_BITWISE_OPS
+                and expr.op.value in _HAXE_BITWISE_OPS
+                and expr.op.value != parent_op
+            )
+        )
+        if needs_parens:
             return f"({rendered})"
-    elif isinstance(expr, IRBoolExpr) and expr.op in (IRBoolExpr.CompareType.OR, IRBoolExpr.CompareType.AND):
+    elif isinstance(expr, IRBoolExpr) and expr.op in (
+        IRBoolExpr.CompareType.OR,
+        IRBoolExpr.CompareType.AND,
+    ):
         child_sym = "||" if expr.op == IRBoolExpr.CompareType.OR else "&&"
         child_prec = _HAXE_OP_PRECEDENCE.get(child_sym, 10)
         parent_prec = _HAXE_OP_PRECEDENCE.get(parent_op, 10)
@@ -260,6 +379,16 @@ def _resolve_array_access(
     else:
         arr_str = _expression_to_haxe(expr.array, code, ir_function)
     idx_str = _expression_to_haxe(expr.index, code, ir_function)
+    # ArrayObj/ArrayDyn stores element data in a `.array` backing field, exposed
+    # via a plain `Field .array` read (unlike `.bytes`, no index shift). Strip
+    # it so `wrapper.array[i] = v` renders as the public `wrapper[i] = v`.
+    if isinstance(expr.array, IRField) and expr.array.field_name == "array":
+        try:
+            wrapper_type = disasm.type_name(code, expr.array.target.get_type())
+        except Exception:
+            wrapper_type = None
+        if wrapper_type in ("hl.types.ArrayObj", "hl.types.ArrayDyn"):
+            return _expression_to_haxe(expr.array.target, code, ir_function), idx_str, None
     # HashLink stores array data in a `.bytes` field and indexes by element
     # size. `this.bytes` inside an ArrayBytes impl indexes the BytesAccess<T>
     # backing buffer directly, so keep `.bytes[idx]`. A user-facing array local
@@ -290,7 +419,11 @@ def _resolve_array_access(
         and expr.index.op.value == "<<"
         and isinstance(expr.index.right, IRConst)
     ):
-        return expr.array.name, _expression_to_haxe(expr.index.left, code, ir_function), None
+        return (
+            expr.array.name,
+            _expression_to_haxe(expr.index.left, code, ir_function),
+            None,
+        )
     kind = getattr(expr, "bytes_access_kind", None)
     if kind and kind != "UI8":
         return arr_str, idx_str, kind
@@ -308,8 +441,9 @@ def _expression_to_haxe(
         if ir_function is not None:
             subs = getattr(ir_function, "_render_subs", None)
             if subs and expr in subs:
-                rendered = subs[expr][0]
-                return f"({rendered})"
+                # Already parenthesized at registration when the substituted
+                # expression is compound; bare atoms are stored without parens.
+                return str(subs[expr][0])
         return expr.name
 
     elif isinstance(expr, IRConst):
@@ -349,13 +483,23 @@ def _expression_to_haxe(
             return "null"
         elif isinstance(expr.value, Type):
             if isinstance(expr.original_index, gIndex):
-                # A real mutable global slot (from GetGlobal/SetGlobal), not a
-                # compile-time class/type reference (those come from the `Type`
-                # opcode). Mirrors Haxe's actual `untyped $name(...)` idiom for
-                # raw HL globals (zero-arg call to read, one-arg call to write
-                # — see e.g. `get_allTypes()`/`init()` in hl/_std/Type.hx),
-                # with a synthesized name (see varN) since there's no
-                # source-level name to recover.
+                # A global holding a class/enum's runtime type object — the base
+                # of `Std.isOfType(x, C)`, `Type.resolveClass`, static-field
+                # access (`C.field` lowers to GetGlobal C + Field), etc. Recover
+                # the source-level name (`C`) instead of the opaque
+                # `untyped $globalN()` fallback whenever the global's type is a
+                # named class or enum.
+                defn = expr.value.definition
+                if isinstance(defn, (Obj, Enum)):
+                    try:
+                        resolved = defn.name.resolve(code)
+                    except Exception:
+                        resolved = None
+                    if resolved:
+                        return destaticify(resolved)
+                # Otherwise a genuine raw HL global with no source-level name.
+                # Mirrors Haxe's `untyped $name(...)` idiom (zero-arg call to
+                # read — see e.g. `get_allTypes()` in hl/_std/Type.hx).
                 return f"untyped ${global_name(expr)}()"
             # Types as runtime values are used internally by the HashLink stdlib.
             # There is no direct Haxe equivalent, so emit null as a placeholder.
@@ -372,7 +516,10 @@ def _expression_to_haxe(
 
     elif isinstance(expr, IRArithmetic):
         left = _expr_to_haxe_with_precedence(expr.left, code, ir_function, expr.op.value)
-        right = _expr_to_haxe_with_precedence(expr.right, code, ir_function, expr.op.value)
+        right = _expr_to_haxe_with_precedence(expr.right, code, ir_function, expr.op.value, is_right=True)
+        if expr.op == IRArithmetic.ArithmeticType.SDIV and _is_int_kind(expr.get_type()):
+            # Haxe `/` is always float division; truncate to match HL's SDiv/UDiv on ints
+            return f"Std.int({left} {expr.op.value} {right})"
         return f"{left} {expr.op.value} {right}"
 
     elif isinstance(expr, IRNeg):
@@ -438,11 +585,19 @@ def _expression_to_haxe(
             # Normalize: constants on the right side for natural-reading output.
             actual_op: IRBoolExpr.CompareType = expr.op
             left_expr, right_expr = expr.left, expr.right
-            if isinstance(left_expr, IRConst) and not isinstance(right_expr, IRConst) and actual_op in swap_map:
+            if (
+                isinstance(left_expr, IRConst)
+                and not isinstance(right_expr, IRConst)
+                and actual_op in swap_map
+            ):
                 left_expr, right_expr = right_expr, left_expr
                 actual_op = swap_map[actual_op]
-            left = _expression_to_haxe(left_expr, code, ir_function)
-            right = _expression_to_haxe(right_expr, code, ir_function)
+            typekind_render = _render_typekind_comparison(left_expr, right_expr, code, ir_function)
+            if typekind_render is not None:
+                left, right = typekind_render
+            else:
+                left = _expression_to_haxe(left_expr, code, ir_function)
+                right = _expression_to_haxe(right_expr, code, ir_function)
             return f"{left} {op_map[actual_op]} {right}"
         elif expr.left:
             raise NotImplementedError(f"Unhandled unary IRBoolExpr op: {expr.op} on {expr.left}")
@@ -468,6 +623,17 @@ def _expression_to_haxe(
             return f"({target_str} : Dynamic).{expr.field_name}"
         return f"{target_str}.{expr.field_name}"
 
+    elif isinstance(expr, IRBoundClosure):
+        # Closure over an anonymous fun bound to a captured local: render as
+        # an arrow forwarding to the (helper-emitted) anon function.
+        fun_str = _expression_to_haxe(expr.fun_const, code, ir_function)
+        obj_str = _expression_to_haxe(expr.obj, code, ir_function)
+        fun_type = expr.fun.type.resolve(code).definition
+        extra_args = fun_type.args[1:] if isinstance(fun_type, Fun) else []
+        params = [f"a{i}" for i in range(len(extra_args))]
+        call_args = ", ".join([obj_str] + params)
+        return f"({', '.join(params)}) -> {fun_str}({call_args})"
+
     elif isinstance(expr, IRArrayAccess):
         arr_str, idx_str, method_kind = _resolve_array_access(expr, code, ir_function)
         if method_kind is not None:
@@ -487,15 +653,42 @@ def _expression_to_haxe(
         inner = _expression_to_haxe(expr.target, code, ir_function)
         return inner
 
+    elif isinstance(expr, IRRefNew):
+        inner = _expression_to_haxe(expr.target, code, ir_function)
+        # hl.Ref wrappers are sometimes compiler-generated by HashLink for
+        # value-type arguments that need boxing/addressing (e.g. the boolean
+        # flag to `ArrayDyn.alloc`). In those cases the target is a boolean
+        # constant or a compiler-materialized temp (`varN`) holding a boolean,
+        # and we should render the underlying value directly. For everything
+        # else (explicit `new hl.Ref(x)` in source, non-boolean values) keep
+        # the constructor visible.
+        if isinstance(expr.target, IRConst) and isinstance(expr.target.value, bool):
+            return inner
+        if isinstance(expr.target, IRLocal) and re.fullmatch(r"var\\d+", expr.target.name):
+            return inner
+        return f"new hl.Ref({inner})"
+
+    elif isinstance(expr, IRRefGet):
+        ref_str = _expression_to_haxe(expr.ref, code, ir_function)
+        return f"{ref_str}.get()"
+
     elif isinstance(expr, IREnumConstruct):
+        # A synthesized anonymous enum (see disasm.type_name) may name its
+        # sole construct with the same colliding raw pool string as the enum
+        # itself - qualify with the synthetic enum name so the call resolves
+        # to the construct, not to whatever real global shares that name.
+        construct_name = expr.construct_name
+        enum_def = expr.enum_type_idx.resolve(code).definition
+        if isinstance(enum_def, Enum) and enum_def.name.value == 0:
+            construct_name = f"__ClosureCtx_{enum_def._global.value}.{construct_name}"
         if expr.args:
             args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.args)
-            return f"{expr.construct_name}({args_str})"
-        return expr.construct_name
+            return f"{construct_name}({args_str})"
+        return construct_name
 
     elif isinstance(expr, IREnumIndex):
         inner = _expression_to_haxe(expr.value, code, ir_function)
-        return f"/* enum_index({inner}) */"
+        return f"Type.enumIndex({inner})"
 
     elif isinstance(expr, IREnumField):
         inner = _expression_to_haxe(expr.value, code, ir_function)
@@ -504,7 +697,11 @@ def _expression_to_haxe(
 
     elif isinstance(expr, IRCall):
         callee_str: str
-        if expr.target is not None and isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function):
+        if (
+            expr.target is not None
+            and isinstance(expr.target, IRConst)
+            and isinstance(expr.target.value, Function)
+        ):
             func = expr.target.value
             partial = code.partial_func_name(func)
             # Rewrite String.__add__ to Haxe's + operator (or interpolation).
@@ -545,7 +742,9 @@ def _expression_to_haxe(
         # The abstract `hl.types.ArrayBase`/`ArrayAccess` base classes (used
         # when the concrete element type isn't known statically) define no
         # such operator at all — bracket syntax on them doesn't compile.
-        if isinstance(expr.target, IRField) and not _is_untyped_array_access_class(expr.target.target.get_type(), code):
+        if isinstance(expr.target, IRField) and not _is_untyped_array_access_class(
+            expr.target.target.get_type(), code
+        ):
             if expr.target.field_name in ("getDyn", "get") and len(expr.args) == 1:
                 arr = _expression_to_haxe(expr.target.target, code, ir_function)
                 idx = _expression_to_haxe(expr.args[0], code, ir_function)
@@ -576,10 +775,25 @@ def _expression_to_haxe(
             # valid Haxe syntax. This also covers std static wrappers like
             # ArrayBytes.__expand(this, len) -> this.__expand(len).
             if isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function) and expr.args:
-                instance_method = _try_instance_method_call(expr.target.value, expr.args[0], code, ir_function)
+                instance_method = _try_instance_method_call(
+                    expr.target.value, expr.args[0], code, ir_function
+                )
                 if instance_method:
+                    rest_args = expr.args[1:]
+                    # get_X()/set_X(v) calls into a std-lib property accessor
+                    # collapse to `obj.X` / `obj.X = v` sugar, since the
+                    # accessor method itself is private and can't be called
+                    # directly.
+                    prop_name = _std_property_accessor_name(expr.target.value, code, len(rest_args))
+                    if prop_name is not None:
+                        obj_str = instance_method.rsplit(".", 1)[0]
+                        if not rest_args:
+                            return f"{obj_str}.{prop_name}"
+                        return (
+                            f"{obj_str}.{prop_name} = {_expression_to_haxe(rest_args[0], code, ir_function)}"
+                        )
                     callee_str = instance_method
-                    args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in expr.args[1:])
+                    args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in rest_args)
                     return f"{callee_str}({args_str})"
 
             # Anonymous ArrayObj alloc factory: render `alloc(arr)` instead of a
@@ -640,25 +854,44 @@ def _expression_to_haxe(
         # that are not directly assignable to Array<T> locals. Insert a cast so
         # the decompiled output recompiles without changing the underlying call.
         call_name = ""
-        if expr.target is not None and isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function):
-            call_name = code.full_func_name(expr.target.value) or code.partial_func_name(expr.target.value) or ""
+        if (
+            expr.target is not None
+            and isinstance(expr.target, IRConst)
+            and isinstance(expr.target.value, Function)
+        ):
+            call_name = (
+                code.full_func_name(expr.target.value) or code.partial_func_name(expr.target.value) or ""
+            )
         if "ArrayBase.alloc" in call_name:
             return f"cast {callee_str}({args_str})"
         # Mixed-type dynamic array literals lower to ArrayDyn.alloc([...], true).
         # Rendering the wrapper as the literal itself lets Haxe infer the target
         # as Array<Dynamic> and recompile.
-        if call_name.endswith("ArrayDyn.alloc") and len(expr.args) == 2 and isinstance(expr.args[0], IRArrayLiteral):
+        if (
+            call_name.endswith("ArrayDyn.alloc")
+            and len(expr.args) == 2
+            and isinstance(expr.args[0], IRArrayLiteral)
+        ):
             return f"({_expression_to_haxe(expr.args[0], code, ir_function)} : Array<Dynamic>)"
         return f"{callee_str}({args_str})"
 
     elif isinstance(expr, IRUnliftedOpcode):
         regs = ir_function.func.regs if ir_function is not None else []
-        return f"/* UNLIFTED OPCODE: {expr.op.op} {disasm.pseudo_from_op(expr.op, 0, regs, code, terse=True)} */"
+        return (
+            f"/* UNLIFTED OPCODE: {expr.op.op} {disasm.pseudo_from_op(expr.op, 0, regs, code, terse=True)} */"
+        )
 
     elif isinstance(expr, IRNew):
         type_name = disasm.type_name(code, expr.get_type())
         if type_name == "DynObj" or type_name.startswith("Virtual["):
             return "{}"
+        elif type_name == "hl.types.ArrayObj" and not expr.constructor_args:
+            # `new ArrayObj()` is Haxe's `new Array<T>()` / `[]` for typed
+            # object arrays. Render as `[]` so Haxe infers the element type
+            # from context (e.g. the local/param's declared Array<T>).
+            # ArrayDyn (`new Array<Dynamic>()`) uses a different allocation
+            # pattern, so leave it as `new Array<Dynamic>()`.
+            return "[]"
         else:
             args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args)
             return f"new {disasm.type_to_haxe(type_name)}({args_str})"
@@ -671,8 +904,18 @@ def _expression_to_haxe(
     elif isinstance(expr, IRNativeMapNew):
         return f"new {expr.haxe_class_name}()"
 
+    elif isinstance(expr, IRBytesNew):
+        return f"new hl.Bytes({_expression_to_haxe(expr.size, code, ir_function)})"
+
     elif isinstance(expr, IRCast):
         target_name = disasm.type_name(code, expr.get_type())
+        # `(T)null` for a non-nullable primitive T (a HL verifier-satisfying
+        # placeholder, e.g. pre-growing an Array<Int>'s backing storage) isn't
+        # valid Haxe on static targets — render the type's own default value.
+        if isinstance(expr.expr, IRConst) and expr.expr.const_type == IRConst.ConstType.NULL:
+            default_literal = {"I32": "0", "F32": "0.0", "F64": "0.0", "Bool": "false"}.get(target_name)
+            if default_literal is not None:
+                return default_literal
         source_name = disasm.type_name(code, expr.expr.get_type())
         inner = _expression_to_haxe(expr.expr, code, ir_function)
         if target_name == "I32" and source_name in {"F32", "F64"}:
@@ -782,6 +1025,110 @@ def _free_locals_in_expr(expr: IRExpression) -> Set[IRLocal]:
 
     walk(expr)
     return found
+
+
+def _has_nontrivial_computation_for_render(expr: IRExpression) -> bool:
+    """True if `expr` does real work (arithmetic or a cast) rather than just
+    naming a value. Mirrors the decomp-side `_has_nontrivial_computation` used
+    to gate IR-level inlining; needed again here because pseudo.py's own
+    single-use substitution (`_is_single_use_render_expr`) runs independently
+    of those IR passes, at print time."""
+    if isinstance(expr, (IRArithmetic, IRCast)):
+        return True
+    return False
+
+
+def _is_read_in_while_condition(root: IRStatement, name: str) -> bool:
+    """True if a local named `name` is read inside any IRWhileLoop's own
+    condition expression anywhere in `root`. A while condition re-evaluates
+    every iteration, so substituting a non-trivial expression there re-runs
+    that work each pass instead of the original's single computation before
+    the loop — unlike a substitution at an ordinary single-execution site."""
+    found = False
+
+    def walk_expr(e: Optional[IRExpression]) -> bool:
+        if e is None:
+            return False
+        if isinstance(e, IRLocal):
+            return e.name == name
+        if isinstance(e, (IRArithmetic, IRBoolExpr)):
+            return walk_expr(e.left) or walk_expr(e.right)
+        if isinstance(e, IRCall):
+            if e.target is not None and walk_expr(e.target):
+                return True
+            return any(walk_expr(arg) for arg in e.args)
+        if isinstance(e, IRField):
+            return walk_expr(e.target)
+        if isinstance(e, IRCast):
+            return walk_expr(e.expr)
+        if isinstance(e, IRArrayAccess):
+            return walk_expr(e.array) or walk_expr(e.index)
+        return False
+
+    def walk_stmt(s: Optional[IRStatement]) -> None:
+        nonlocal found
+        if found or s is None:
+            return
+        if isinstance(s, IRWhileLoop) and walk_expr(s.condition):
+            found = True
+            return
+        for child in s.get_children():
+            if isinstance(child, IRBlock):
+                for child_stmt in child.statements:
+                    walk_stmt(child_stmt)
+            else:
+                walk_stmt(child)
+
+    walk_stmt(root)
+    return found
+
+
+def _source_redefined_before_use(
+    root: IRStatement, def_stmt: IRStatement, target_name: str, source_names: Set[str]
+) -> bool:
+    """True if a local in `source_names` is reassigned after `def_stmt` but before
+    the (single, assumed) later read of `target_name`. Guards single-use render
+    substitution: `varN = i; ...; i = 1; ...; use(varN)` must not fold to `use(i)`
+    since `i`'s value changed between the copy and the use."""
+    started = False
+    hit = False
+    stopped = False
+
+    def walk(s: Optional[IRStatement]) -> None:
+        nonlocal started, hit, stopped
+        if stopped or s is None:
+            return
+        if not started:
+            if s is def_stmt:
+                started = True
+                return
+            for child in s.get_children():
+                if stopped:
+                    return
+                if isinstance(child, IRBlock):
+                    for cs in child.statements:
+                        walk(cs)
+                else:
+                    walk(child)
+            return
+        if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target.name in source_names:
+            hit = True
+            stopped = True
+            return
+        if isinstance(s, IRLocal) and s.name == target_name:
+            stopped = True
+            return
+        for child in s.get_children():
+            if stopped:
+                return
+            if isinstance(child, IRBlock):
+                for cs in child.statements:
+                    walk(cs)
+            else:
+                walk(child)
+
+    walk(root)
+    return hit
 
 
 def _count_local_reads_and_writes(root: IRStatement, name: str) -> Tuple[int, int]:
@@ -957,7 +1304,7 @@ def _generate_statements(
         )
 
     prev_render_subs = getattr(ir_function, "_render_subs", None)
-    ir_function._render_subs = render_subs  # type: ignore[attr-defined]
+    ir_function._render_subs = render_subs
 
     for stmt in statements:
         stmt_start_line = len(output_lines)
@@ -976,7 +1323,14 @@ def _generate_statements(
         if isinstance(stmt, IRBlock):  # Nested block, usually from if/else/loop bodies
             # HaxeBlock's content is generated by recursively calling _generate_statements
             # The parent (if/while) handles the "{" and "}"
-            output_lines.extend(_gen(stmt.statements, indent_level, declared_vars_in_scope.copy(), render_subs.copy()))
+            output_lines.extend(
+                _gen(
+                    stmt.statements,
+                    indent_level,
+                    declared_vars_in_scope.copy(),
+                    render_subs.copy(),
+                )
+            )
         elif isinstance(stmt, IRAssign) and stmt in inline_declarations:
             # Emit as `var name: type = value;` at its natural position.
             local_name, type_str = inline_declarations[stmt]
@@ -996,7 +1350,16 @@ def _generate_statements(
                 and _is_single_use_render_expr(stmt.expr)
             ):
                 reads, writes = _count_local_reads_and_writes(ir_function.block, local_name)
-                skip_declaration = reads == 1 and writes == 1
+                source_names = {loc.name for loc in _free_locals_in_expr(stmt.expr)}
+                skip_declaration = (
+                    reads == 1
+                    and writes == 1
+                    and not (
+                        _has_nontrivial_computation_for_render(stmt.expr)
+                        and _is_read_in_while_condition(ir_function.block, local_name)
+                    )
+                    and not _source_redefined_before_use(ir_function.block, stmt, local_name, source_names)
+                )
 
             if not skip_declaration:
                 value_str = _expression_to_haxe(stmt.expr, code, ir_function)
@@ -1125,6 +1488,9 @@ def _generate_statements(
                 and isinstance(stmt.expr, IRArithmetic)
                 and _same_local(stmt.expr.left, stmt.target)
                 and stmt.expr.op in _compound_ops
+                and not (
+                    stmt.expr.op == IRArithmetic.ArithmeticType.SDIV and _is_int_kind(stmt.expr.get_type())
+                )
             ):
                 rhs_str = _expression_to_haxe(stmt.expr.right, code, ir_function)
                 output_lines.append(f"{indent}{target_str} {_compound_ops[stmt.expr.op]} {rhs_str};")
@@ -1183,7 +1549,14 @@ def _generate_statements(
                     inv_cond = f"!({_expression_to_haxe(stmt.condition, code, ir_function)})"
                 false_subs = render_subs.copy()
                 output_lines.append(f"{indent}if ({inv_cond}) {{")
-                output_lines.extend(_gen(false_stmts, indent_level + 1, declared_vars_in_scope.copy(), false_subs))
+                output_lines.extend(
+                    _gen(
+                        false_stmts,
+                        indent_level + 1,
+                        declared_vars_in_scope.copy(),
+                        false_subs,
+                    )
+                )
                 output_lines.append(f"{indent}}}")
                 declared_vars_in_scope.update(_collect_assigned_names(false_stmts))
                 for key in list(render_subs.keys()):
@@ -1193,18 +1566,41 @@ def _generate_statements(
                 cond_str = _expression_to_haxe(stmt.condition, code, ir_function)
                 output_lines.append(f"{indent}if ({cond_str}) {{")
                 true_subs = render_subs.copy()
-                output_lines.extend(_gen(true_stmts, indent_level + 1, declared_vars_in_scope.copy(), true_subs))
+                output_lines.extend(
+                    _gen(
+                        true_stmts,
+                        indent_level + 1,
+                        declared_vars_in_scope.copy(),
+                        true_subs,
+                    )
+                )
                 # If the true block ends with a control-flow statement, the else is unnecessary.
-                true_ends_with_cf = bool(true_stmts) and isinstance(true_stmts[-1], (IRBreak, IRContinue, IRReturn))
+                true_ends_with_cf = bool(true_stmts) and isinstance(
+                    true_stmts[-1], (IRBreak, IRContinue, IRReturn)
+                )
                 false_subs = render_subs.copy()
                 if false_stmts and not true_ends_with_cf:
                     output_lines.append(f"{indent}}} else {{")
-                    output_lines.extend(_gen(false_stmts, indent_level + 1, declared_vars_in_scope.copy(), false_subs))
+                    output_lines.extend(
+                        _gen(
+                            false_stmts,
+                            indent_level + 1,
+                            declared_vars_in_scope.copy(),
+                            false_subs,
+                        )
+                    )
                     output_lines.append(f"{indent}}}")
                 elif false_stmts and true_ends_with_cf:
                     output_lines.append(f"{indent}}}")
                     # Render former else block as plain statements (no else keyword needed)
-                    output_lines.extend(_gen(false_stmts, indent_level, declared_vars_in_scope.copy(), false_subs))
+                    output_lines.extend(
+                        _gen(
+                            false_stmts,
+                            indent_level,
+                            declared_vars_in_scope.copy(),
+                            false_subs,
+                        )
+                    )
                 else:
                     output_lines.append(f"{indent}}}")
                 declared_vars_in_scope.update(_collect_assigned_names(true_stmts))
@@ -1234,7 +1630,12 @@ def _generate_statements(
                     output_lines.append(f"{indent}do {{")
                     body_subs = render_subs.copy()
                     output_lines.extend(
-                        _gen(stmt.body.statements[:-1], indent_level + 1, declared_vars_in_scope.copy(), body_subs)
+                        _gen(
+                            stmt.body.statements[:-1],
+                            indent_level + 1,
+                            declared_vars_in_scope.copy(),
+                            body_subs,
+                        )
                     )
                     cond_str = _inverted_bool_expr_to_haxe(last_stmt.condition, code, ir_function)
                     output_lines.append(f"{indent}}} while ({cond_str});")
@@ -1248,7 +1649,12 @@ def _generate_statements(
                 output_lines.append(f"{indent}while ({cond_str}) {{")
                 body_subs = render_subs.copy()
                 output_lines.extend(
-                    _gen(stmt.body.statements, indent_level + 1, declared_vars_in_scope.copy(), body_subs)
+                    _gen(
+                        stmt.body.statements,
+                        indent_level + 1,
+                        declared_vars_in_scope.copy(),
+                        body_subs,
+                    )
                 )
                 output_lines.append(f"{indent}}}")
                 for key in list(render_subs.keys()):
@@ -1260,12 +1666,24 @@ def _generate_statements(
             output_lines.append(f"{indent}{{ // Condition Block")
             cond_subs = render_subs.copy()
             output_lines.extend(
-                _gen(stmt.condition.statements, indent_level + 1, declared_vars_in_scope.copy(), cond_subs)
+                _gen(
+                    stmt.condition.statements,
+                    indent_level + 1,
+                    declared_vars_in_scope.copy(),
+                    cond_subs,
+                )
             )
             output_lines.append(f"{indent}}}")
             output_lines.append(f"{indent}{{ // Body Block")
             body_subs = render_subs.copy()
-            output_lines.extend(_gen(stmt.body.statements, indent_level + 1, declared_vars_in_scope.copy(), body_subs))
+            output_lines.extend(
+                _gen(
+                    stmt.body.statements,
+                    indent_level + 1,
+                    declared_vars_in_scope.copy(),
+                    body_subs,
+                )
+            )
             output_lines.append(f"{indent}}}")
             for key in list(render_subs.keys()):
                 if key not in cond_subs or key not in body_subs:
@@ -1276,7 +1694,14 @@ def _generate_statements(
             array_str = _expression_to_haxe(stmt.array, code, ir_function)
             output_lines.append(f"{indent}for ({elem_str} in {array_str}) {{")
             body_subs = render_subs.copy()
-            output_lines.extend(_gen(stmt.body.statements, indent_level + 1, declared_vars_in_scope.copy(), body_subs))
+            output_lines.extend(
+                _gen(
+                    stmt.body.statements,
+                    indent_level + 1,
+                    declared_vars_in_scope.copy(),
+                    body_subs,
+                )
+            )
             output_lines.append(f"{indent}}}")
             for key in list(render_subs.keys()):
                 if key not in body_subs:
@@ -1288,15 +1713,30 @@ def _generate_statements(
             end_str = _expression_to_haxe(stmt.end, code, ir_function)
             output_lines.append(f"{indent}for ({elem_str} in {start_str}...{end_str}) {{")
             body_subs = render_subs.copy()
-            output_lines.extend(_gen(stmt.body.statements, indent_level + 1, declared_vars_in_scope.copy(), body_subs))
+            output_lines.extend(
+                _gen(
+                    stmt.body.statements,
+                    indent_level + 1,
+                    declared_vars_in_scope.copy(),
+                    body_subs,
+                )
+            )
             output_lines.append(f"{indent}}}")
             for key in list(render_subs.keys()):
                 if key not in body_subs:
                     del render_subs[key]
 
+        elif isinstance(stmt, IRRefSet):
+            ref_str = _expression_to_haxe(stmt.ref, code, ir_function)
+            value_str = _expression_to_haxe(stmt.value, code, ir_function)
+            output_lines.append(f"{indent}{ref_str}.set({value_str});")
+
         elif isinstance(stmt, IRReturn):
             if stmt.value:
-                if isinstance(stmt.value, IRLocal) and stmt.value.type.resolve(code).kind.value == Type.Kind.VOID.value:
+                if (
+                    isinstance(stmt.value, IRLocal)
+                    and stmt.value.type.resolve(code).kind.value == Type.Kind.VOID.value
+                ):
                     output_lines.append(
                         f"{indent}return; // implicit void return from reg{ir_function.locals.index(stmt.value) + 1}"
                     )
@@ -1331,7 +1771,9 @@ def _generate_statements(
                 target, case_exprs, default_expr = expr_switch
                 if stmt in inline_declarations:
                     local_name, type_str = inline_declarations[stmt]
-                    output_lines.append(f"{indent}var {local_name}: {type_str} = switch ({enum_value_str}) {{")
+                    output_lines.append(
+                        f"{indent}var {local_name}: {type_str} = switch ({enum_value_str}) {{"
+                    )
                     declared_vars_in_scope.add(local_name)
                 else:
                     output_lines.append(f"{indent}{target.name} = switch ({enum_value_str}) {{")
@@ -1362,7 +1804,14 @@ def _generate_statements(
                 output_lines.append(f"{indent}    case {case_str}:")
                 case_statements = case_block.statements[len(param_names) if param_names else 0 :]
                 branch_subs = render_subs.copy()
-                output_lines.extend(_gen(case_statements, indent_level + 2, declared_vars_in_scope.copy(), branch_subs))
+                output_lines.extend(
+                    _gen(
+                        case_statements,
+                        indent_level + 2,
+                        declared_vars_in_scope.copy(),
+                        branch_subs,
+                    )
+                )
                 case_subs.append(branch_subs)
                 if param_names:
                     for name in param_names:
@@ -1375,7 +1824,12 @@ def _generate_statements(
                 output_lines.append(f"{indent}    default:")
                 default_subs = render_subs.copy()
                 output_lines.extend(
-                    _gen(stmt.default.statements, indent_level + 2, declared_vars_in_scope.copy(), default_subs)
+                    _gen(
+                        stmt.default.statements,
+                        indent_level + 2,
+                        declared_vars_in_scope.copy(),
+                        default_subs,
+                    )
                 )
                 case_subs.append(default_subs)
                 for s in stmt.default.statements:
@@ -1406,7 +1860,12 @@ def _generate_statements(
             output_lines.append(f"{indent}try {{")
             try_subs = render_subs.copy()
             output_lines.extend(
-                _gen(stmt.try_block.statements, indent_level + 1, declared_vars_in_scope.copy(), try_subs)
+                _gen(
+                    stmt.try_block.statements,
+                    indent_level + 1,
+                    declared_vars_in_scope.copy(),
+                    try_subs,
+                )
             )
             # An explicit `:Dynamic` annotation on the catch variable changes
             # Haxe's codegen (it emits an extra init op, and changes how the
@@ -1418,10 +1877,35 @@ def _generate_statements(
             output_lines.append(f"{indent}}} catch ({catch_decl}) {{")
             catch_subs = render_subs.copy()
             output_lines.extend(
-                _gen(stmt.catch_block.statements, indent_level + 1, declared_vars_in_scope.copy(), catch_subs)
+                _gen(
+                    stmt.catch_block.statements,
+                    indent_level + 1,
+                    declared_vars_in_scope.copy(),
+                    catch_subs,
+                )
             )
+            all_subs = [try_subs, catch_subs]
+            for extra_local, extra_block in stmt.extra_catches:
+                extra_name = extra_local.name
+                if not extra_name or extra_name.startswith("var"):
+                    extra_name = "e"
+                    extra_local.name = extra_name
+                extra_haxe = disasm.type_to_haxe(disasm.type_name(code, extra_local.get_type()))
+                output_lines.append(f"{indent}}} catch ({extra_name}:{extra_haxe}) {{")
+                extra_subs = render_subs.copy()
+                all_subs.append(extra_subs)
+                output_lines.extend(
+                    _gen(
+                        extra_block.statements,
+                        indent_level + 1,
+                        declared_vars_in_scope.copy(),
+                        extra_subs,
+                    )
+                )
             output_lines.append(f"{indent}}}")
-            valid_keys = set(render_subs.keys()) & set(try_subs.keys()) & set(catch_subs.keys())
+            valid_keys = set(render_subs.keys())
+            for subs in all_subs:
+                valid_keys &= set(subs.keys())
             for key in list(render_subs.keys()):
                 if key not in valid_keys:
                     del render_subs[key]
@@ -1434,10 +1918,13 @@ def _generate_statements(
 
         elif isinstance(stmt, IRExpression):  # e.g. a standalone IRCall not assigned
             expr_str = _expression_to_haxe(stmt, code, ir_function)
-            output_lines.append(f"{indent}{expr_str};")
+            if expr_str:  # elided redundant calls (e.g. double ctor) render as ""
+                output_lines.append(f"{indent}{expr_str};")
 
         else:
-            output_lines.append(f"{indent}// <Unhandled IRStatement: {type(stmt).__name__}> {str(stmt)[:50]}...")
+            output_lines.append(
+                f"{indent}// <Unhandled IRStatement: {type(stmt).__name__}> {str(stmt)[:50]}..."
+            )
 
         # Map every opcode this statement represents to the first line it produced
         # (absolute in the function body) — a statement folded from several opcodes
@@ -1460,13 +1947,33 @@ def _generate_statements(
         # Register simple assignments for render-time substitution into later uses.
         if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
             registerable = _is_simple_render_expr(stmt.expr)
-            if not registerable and re.fullmatch(r"var\d+", stmt.target.name) and _is_single_use_render_expr(stmt.expr):
+            if (
+                not registerable
+                and re.fullmatch(r"var\d+", stmt.target.name)
+                and _is_single_use_render_expr(stmt.expr)
+            ):
                 reads, writes = _count_local_reads_and_writes(ir_function.block, stmt.target.name)
-                registerable = reads == 1 and writes == 1
+                registerable = (
+                    reads == 1
+                    and writes == 1
+                    and not (
+                        _has_nontrivial_computation_for_render(stmt.expr)
+                        and _is_read_in_while_condition(ir_function.block, stmt.target.name)
+                    )
+                )
             if registerable:
                 free_locals = _free_locals_in_expr(stmt.expr)
                 if stmt.target not in free_locals:
                     rendered_expr = _expression_to_haxe(stmt.expr, code, ir_function)
+                    # Parenthesize compound expressions once here (parent op is
+                    # unknown, so wrap conservatively); leave atoms — locals,
+                    # constants, field/array accesses — bare so a substituted
+                    # single local doesn't render as `(var9)`.
+                    inner = stmt.expr
+                    while isinstance(inner, IRCast):
+                        inner = inner.expr
+                    if isinstance(inner, (IRArithmetic, IRBoolExpr, IRNeg, IRNot)):
+                        rendered_expr = f"({rendered_expr})"
                     render_subs[stmt.target] = (rendered_expr, free_locals)
 
         if stmt.comment:
@@ -1476,7 +1983,7 @@ def _generate_statements(
             else:  # Should not happen if statement generated something
                 output_lines.append(f"{indent}// {stmt.comment}")
 
-    ir_function._render_subs = prev_render_subs  # type: ignore[attr-defined]
+    ir_function._render_subs = prev_render_subs
     return output_lines
 
 
@@ -1510,7 +2017,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     if containing is None:
         containing = _containing_class_for(ir_func, code)
         if containing is not None:
-            ir_func._containing_class = containing  # type: ignore[attr-defined]
+            ir_func._containing_class = containing
     is_instance = containing is not None and ir_func in containing.methods
     if is_constructor:
         is_instance = True
@@ -1551,14 +2058,37 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         start_arg = 1 if is_instance or is_constructor else 0
         for i, arg_type_idx in enumerate(core_fun_type_def.args[start_arg:]):
             arg_core_type = arg_type_idx.resolve(code)
-            arg_haxe_type_name = disasm.type_to_haxe(disasm.type_name(code, arg_core_type))
+            if isinstance(arg_core_type.definition, Ref):
+                inner_type = arg_core_type.definition.type.resolve(code)
+                arg_haxe_type_name = f"hl.Ref<{disasm.type_to_haxe(disasm.type_name(code, inner_type))}>"
+            else:
+                arg_haxe_type_name = disasm.type_to_haxe(disasm.type_name(code, arg_core_type))
 
             param_name = f"arg{i}"
             local_idx = start_arg + i
             if local_idx < len(ir_func.locals):
-                candidate = ir_func.locals[local_idx].name
+                # Use the reg's entry-point local, not a later split (e.g. param reused for super()).
+                param_local = next(
+                    (lc for lc in ir_func.all_locals if lc.reg_idx == local_idx), ir_func.locals[local_idx]
+                )
+                candidate = param_local.name
                 if candidate and candidate != "this":
                     param_name = candidate
+                elif candidate == "this" and getattr(ir_func, "_force_static", False):
+                    # Lifted closure: rewrite all "this" locals for this reg to the new param name.
+                    for loc in ir_func.all_locals:
+                        if loc.reg_idx == local_idx and loc.name == "this":
+                            loc.name = param_name
+                # If the param's IRLocal has a recovered array element type,
+                # render Array<T> instead of the erased Array<Dynamic>.
+                if (
+                    arg_haxe_type_name == "Array<Dynamic>"
+                    and ir_func.locals[local_idx].array_elem_type is not None
+                ):
+                    elem_type = ir_func.locals[local_idx].array_elem_type
+                    assert elem_type is not None  # narrowed by the guard above
+                    elem_haxe = disasm.type_to_haxe(disasm.type_name(code, elem_type))
+                    arg_haxe_type_name = f"Array<{elem_haxe}>"
             elif func_core.has_debug and func_core.assigns:
                 # Fallback to raw debug assigns if locals aren't available.
                 arg_assigns = [a for a in func_core.assigns if a[1].value <= 0]
@@ -1578,7 +2108,9 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     params_joined_str = ", ".join(params_str_list)
     ret_decl = f": {return_type_str}" if return_type_str else ""
     access_kw = "public "
-    func_header = f"{access_kw}{static_kw}{override_kw}function {func_name_str}({params_joined_str}){ret_decl} {{"
+    func_header = (
+        f"{access_kw}{static_kw}{override_kw}function {func_name_str}({params_joined_str}){ret_decl} {{"
+    )
     output_lines.append(func_header)
 
     initial_declared_vars = {p.split(":")[0].strip() for p in params_str_list}
@@ -1605,13 +2137,17 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         if local_name in initial_declared_vars or local_name == "this":
             continue
         # Catch-clause locals are declared by the `catch (e:T)` syntax; skip them.
-        if local_name in catch_locals:
+        # But if the same name is also explicitly assigned elsewhere (register
+        # reuse for an unrelated local), it still needs a real declaration.
+        if local_name in catch_locals and not _has_explicit_assignment(local_name, ir_func.block):
             continue
         # Enum switch index temps are rendered as the enum expression, not declared.
         if local_name in enum_switch_index_vars:
             continue
-        # For-each loop variables are declared by the `for (x in y)` syntax.
-        if local_name in foreach_elem_names:
+        # For-each loop variables are declared by the `for (x in y)` syntax - unless
+        # the same name is also assigned somewhere else in the function (register
+        # reuse), in which case it still needs a real declaration.
+        if local_name in foreach_elem_names and not _has_explicit_assignment(local_name, ir_func.block):
             continue
         type_str = local_types[local_name]
         defining_stmt = _find_defining_assignment(local_name, ir_func.block)
@@ -1709,6 +2245,20 @@ def pseudo_oplines(ir_func: IRFunction) -> Tuple[str, Dict[int, int]]:
     return "\n".join(final_output), op_to_line
 
 
+def _has_explicit_assignment(local_name: str, stmt: IRStatement) -> bool:
+    """Recursively check for a genuine `IRAssign` to `local_name` anywhere in `stmt`.
+
+    HL bytecode reuses register names, so the same name can be bound as a
+    for-loop's element (an implicit binding, no `IRAssign` statement of its own)
+    *and* separately reused as an ordinary assigned variable elsewhere in the same
+    function. `_collect_foreach_elem_names` alone can't tell those cases apart; this
+    catches the "elsewhere" case so that variable still gets a hoisted declaration.
+    """
+    if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target.name == local_name:
+        return True
+    return any(_has_explicit_assignment(local_name, child) for child in stmt.get_children())
+
+
 def _collect_foreach_elem_names(block: IRBlock) -> Set[str]:
     """Collect names of IRForEachLoop element locals at any depth in block."""
     names: Set[str] = set()
@@ -1726,6 +2276,8 @@ def _collect_foreach_elem_names(block: IRBlock) -> Set[str]:
         elif isinstance(stmt, IRTryCatch):
             names.update(_collect_foreach_elem_names(stmt.try_block))
             names.update(_collect_foreach_elem_names(stmt.catch_block))
+            for _, extra_block in stmt.extra_catches:
+                names.update(_collect_foreach_elem_names(extra_block))
         elif isinstance(stmt, IRSwitch):
             for case_block in stmt.cases.values():
                 names.update(_collect_foreach_elem_names(case_block))
@@ -1741,6 +2293,9 @@ def _collect_catch_local_names(block: IRBlock) -> Set[str]:
         if isinstance(stmt, IRTryCatch):
             if stmt.catch_local and stmt.catch_local.name:
                 names.add(stmt.catch_local.name)
+            for extra_local, _ in stmt.extra_catches:
+                if extra_local.name:
+                    names.add(extra_local.name)
             names.update(_collect_catch_local_names(stmt.try_block))
             names.update(_collect_catch_local_names(stmt.catch_block))
         elif isinstance(stmt, IRConditional):
@@ -1782,7 +2337,10 @@ def _is_definitely_assigned_before_use(local_name: str, block: IRBlock) -> bool:
     local before any read of it.
     """
     for stmt in block.statements:
-        if not _contains_local_name(local_name, stmt) and _find_assignment_recursive(local_name, stmt) is None:
+        if (
+            not _contains_local_name(local_name, stmt)
+            and _find_assignment_recursive(local_name, stmt) is None
+        ):
             continue
         # First statement that touches the local.
         if isinstance(stmt, IRConditional):
@@ -1829,7 +2387,9 @@ def _branch_definitely_assigns(local_name: str, stmt: IRStatement) -> bool:
     if isinstance(stmt, IRConditional):
         if stmt.false_block is None or _contains_local_name(local_name, stmt.condition):
             return False
-        return _assigns_before_read(local_name, stmt.true_block) and _assigns_before_read(local_name, stmt.false_block)
+        return _assigns_before_read(local_name, stmt.true_block) and _assigns_before_read(
+            local_name, stmt.false_block
+        )
     if isinstance(stmt, IRSwitch):
         if stmt.default is None or _contains_local_name(local_name, stmt.value):
             return False
@@ -1903,8 +2463,14 @@ def _find_inner_defining_assignment(local_name: str, block: IRBlock) -> Optional
         in_try = _find_assignment_recursive(local_name, stmt.try_block) is not None or _contains_local_name(
             local_name, stmt.try_block
         )
-        in_catch = _find_assignment_recursive(local_name, stmt.catch_block) is not None or _contains_local_name(
-            local_name, stmt.catch_block
+        in_catch = (
+            _find_assignment_recursive(local_name, stmt.catch_block) is not None
+            or _contains_local_name(local_name, stmt.catch_block)
+            or any(
+                _find_assignment_recursive(local_name, extra_block) is not None
+                or _contains_local_name(local_name, extra_block)
+                for _, extra_block in stmt.extra_catches
+            )
         )
         if in_try and not in_catch:
             # Use _find_defining_assignment on the sub-block to ensure it's safe.
@@ -1986,6 +2552,12 @@ def _contains_local_name(local_name: str, stmt: IRStatement) -> bool:
         return _contains_local_name(local_name, stmt.expr)
     if isinstance(stmt, IRRef):
         return _contains_local_name(local_name, stmt.target)
+    if isinstance(stmt, IRRefNew):
+        return _contains_local_name(local_name, stmt.target)
+    if isinstance(stmt, IRRefGet):
+        return _contains_local_name(local_name, stmt.ref)
+    if isinstance(stmt, IRRefSet):
+        return _contains_local_name(local_name, stmt.ref) or _contains_local_name(local_name, stmt.value)
     if isinstance(stmt, IREnumConstruct):
         return any(_contains_local_name(local_name, arg) for arg in stmt.args)
     if isinstance(stmt, (IREnumIndex, IREnumField)):
@@ -2019,6 +2591,7 @@ def _contains_local_name(local_name: str, stmt: IRStatement) -> bool:
         return (
             _contains_local_name(local_name, stmt.try_block)
             or _contains_local_name(local_name, stmt.catch_block)
+            or any(_contains_local_name(local_name, extra_block) for _, extra_block in stmt.extra_catches)
             or (stmt.catch_local is not None and stmt.catch_local.name == local_name)
         )
     return any(_contains_local_name(local_name, child) for child in stmt.get_children())
@@ -2122,6 +2695,12 @@ def _render_string_concat(expr: IRCall, code: Bytecode, ir_function: Optional[IR
             simple = _try_simplify_string_alloc(operand, code, ir_function)
             if simple is None:
                 simple = _expression_to_haxe(operand, code, ir_function)
+                # A raw arithmetic/bool operand spliced into a flat `+` chain
+                # needs parens: Haxe re-parses the flattened text left-to-right,
+                # so `"c" + b + 1` silently becomes `("c"+b)+1` instead of the
+                # intended `"c" + (b+1)`.
+                if isinstance(operand, (IRArithmetic, IRBoolExpr)):
+                    simple = f"({simple})"
             parts.append(("val", (operand, simple)))
             interp_count += 1
 
@@ -2160,7 +2739,9 @@ def _render_interpolated(parts: List[Tuple[str, Any]]) -> str:
     return "".join(out)
 
 
-def _try_simplify_string_alloc(expr: IRExpression, code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
+def _try_simplify_string_alloc(
+    expr: IRExpression, code: Bytecode, ir_function: Optional[IRFunction]
+) -> Optional[str]:
     """
     HashLink compiles `string + int` as:
         String.__add__(left, String.__alloc__(std.itos(int, &int), int))
@@ -2174,7 +2755,9 @@ def _try_simplify_string_alloc(expr: IRExpression, code: Bytecode, ir_function: 
     if not (isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function)):
         return None
     func = expr.target.value
-    if not (_is_std_function(func, code) and code.partial_func_name(func) == "__alloc__" and len(expr.args) == 2):
+    if not (
+        _is_std_function(func, code) and code.partial_func_name(func) == "__alloc__" and len(expr.args) == 2
+    ):
         return None
 
     int_expr: Optional[IRExpression] = None
@@ -2218,6 +2801,29 @@ def _try_simplify_string_alloc(expr: IRExpression, code: Bytecode, ir_function: 
     if second_arg.name != int_expr.name:
         return None
     return _expression_to_haxe(int_expr, code, ir_function)
+
+
+def _std_property_accessor_name(func: "Function", code: Bytecode, remaining_args: int) -> Optional[str]:
+    """If func is a std-lib get_X()/set_X(v) property accessor, return X.
+
+    The accessor method is private, so a decompiled direct call to it (as
+    opposed to via the property it backs) fails to recompile. User-defined
+    classes aren't affected here since their accessors are usually reachable
+    (default Haxe visibility already allows same-class/subclass calls).
+    """
+    parts = _func_name_parts(func, code)
+    if not parts:
+        return None
+    name = parts[-1]
+    if name.startswith("get_") and remaining_args == 0:
+        prop_name = name[4:]
+    elif name.startswith("set_") and remaining_args == 1:
+        prop_name = name[4:]
+    else:
+        return None
+    if not prop_name or not _is_std_function(func, code):
+        return None
+    return prop_name
 
 
 def _is_std_function(func: "Function", code: Bytecode) -> bool:
@@ -2359,7 +2965,9 @@ def _is_constructor_call(func: "Function", code: Bytecode) -> bool:
     return parts[1] == "__constructor__"
 
 
-def _rewrite_constructor_call(call: IRCall, code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
+def _rewrite_constructor_call(
+    call: IRCall, code: Bytecode, ir_function: Optional[IRFunction]
+) -> Optional[str]:
     """Rewrite a call to a static __constructor__ into Haxe syntax.
 
     - `__constructor__(new X())` -> `new X()`
@@ -2382,6 +2990,17 @@ def _rewrite_constructor_call(call: IRCall, code: Bytecode, ir_function: Optiona
         # object; the Haxe `new` expression already includes the constructor.
         return _expression_to_haxe(arg, code, ir_function)
 
+    if isinstance(arg, IRLocal) and ir_function is not None:
+        # The receiver is a local defined by New earlier in the same block
+        # (not inlined, e.g. because it's used again later). The New's own
+        # rendering already reads as `new X(...)`, so this call is a
+        # redundant second invocation of the constructor; drop it.
+        defining = _find_defining_assignment(arg.name, ir_function.block)
+        if isinstance(defining, IRAssign) and isinstance(defining.expr, IRNew):
+            new_type_name = destaticify(disasm.type_name(code, defining.expr.get_type()))
+            if new_type_name == ctor_class_name:
+                return ""
+
     if (
         isinstance(arg, IRLocal)
         and arg.name in ("this", "var0")
@@ -2398,7 +3017,9 @@ def _rewrite_constructor_call(call: IRCall, code: Bytecode, ir_function: Optiona
                 if isinstance(super_type.definition, Obj):
                     super_name = destaticify(super_type.definition.name.resolve(code))
                     if ctor_class_name == super_name:
-                        rest_args = ", ".join(_expression_to_haxe(a, code, ir_function) for a in call.args[1:])
+                        rest_args = ", ".join(
+                            _expression_to_haxe(a, code, ir_function) for a in call.args[1:]
+                        )
                         return f"super({rest_args})"
         return ""
 
@@ -2406,7 +3027,10 @@ def _rewrite_constructor_call(call: IRCall, code: Bytecode, ir_function: Optiona
 
 
 def _try_instance_method_call(
-    func: "Function", first_arg: IRExpression, code: Bytecode, ir_function: Optional[IRFunction] = None
+    func: "Function",
+    first_arg: IRExpression,
+    code: Bytecode,
+    ir_function: Optional[IRFunction] = None,
 ) -> Optional[str]:
     """If func is an instance method and first_arg is the `this` argument,
     return Haxe syntax `expr.methodName` for the call target.
@@ -2569,7 +3193,11 @@ def _virtual_receiver_static_types(ir_function: IRFunction, code: Bytecode) -> D
         # already resolves to a specific, possibly-overridden implementation
         # regardless of how `obj` is declared, so widening obj's type here
         # would be both unnecessary and wrong.
-        if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRConst) and isinstance(stmt.expr.value, Function):
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.expr, IRConst)
+            and isinstance(stmt.expr.value, Function)
+        ):
             func = stmt.expr.value
             parts = _func_name_parts(func, code)
             if parts is not None:
@@ -2579,7 +3207,11 @@ def _virtual_receiver_static_types(ir_function: IRFunction, code: Bytecode) -> D
                     receiver = _find_receiver_local(class_name, ir_function, code)
                     if receiver is not None:
                         result[receiver] = base
-        if isinstance(stmt, IRField) and stmt.virtual_dispatch_fun is not None and isinstance(stmt.target, IRLocal):
+        if (
+            isinstance(stmt, IRField)
+            and stmt.virtual_dispatch_fun is not None
+            and isinstance(stmt.target, IRLocal)
+        ):
             base = _base_class_for_virtual_method(stmt.virtual_dispatch_fun, code)
             if base is not None:
                 result[stmt.target.name] = base
@@ -2626,14 +3258,17 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
                 type_name = f"hl.NativeArray<{elem_haxe_type}>"
             elif stmt.native_map_class is not None:
                 type_name = stmt.native_map_class
+            elif stmt.array_elem_type is not None:
+                elem_haxe_type = disasm.type_to_haxe(disasm.type_name(stmt.code, stmt.array_elem_type))
+                type_name = f"Array<{elem_haxe_type}>"
             else:
                 local_type = stmt.get_type()
                 if isinstance(local_type.definition, Ref):
-                    # hl.Ref<T> is modelled transparently (Ref/Unref/Setref all
-                    # lift to plain copies), so the local just holds a T value;
-                    # declaring it as the opaque "Ref" type isn't valid Haxe.
-                    local_type = local_type.definition.type.resolve(stmt.code)
-                type_name = disasm.type_to_haxe(disasm.type_name(stmt.code, local_type))
+                    inner_type = local_type.definition.type.resolve(stmt.code)
+                    inner_type_name = disasm.type_to_haxe(disasm.type_name(stmt.code, inner_type))
+                    type_name = f"hl.Ref<{inner_type_name}>"
+                else:
+                    type_name = disasm.type_to_haxe(disasm.type_name(stmt.code, local_type))
                 if stmt.is_unsigned and type_name == "Int":
                     type_name = "UInt"
             if stmt.name in locals and locals[stmt.name] != type_name:
@@ -2659,6 +3294,28 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
             return "Int"
         return "Int"
 
+    # A name that's also used as a raw hl.Bytes buffer elsewhere (explicit
+    # .setI32()/.getI32()-style accessor calls, rendered whenever an
+    # IRArrayAccess carries a bytes_access_kind) must keep the hl.Bytes
+    # declaration -- those accessors don't exist on hl.BytesAccess<T>. A
+    # register can legitimately feed ArrayBase.alloc* at one point (e.g. an
+    # empty-array fast path) and be manually byte-written at another (e.g.
+    # building a single-element literal), so the upgrade below can't apply
+    # per-name unconditionally.
+    raw_bytes_required: Set[str] = set()
+
+    def _collect_raw_bytes_required(stmt: IRStatement, _seen: Set[int]) -> None:
+        if id(stmt) in _seen:
+            return
+        _seen.add(id(stmt))
+        if isinstance(stmt, IRArrayAccess) and getattr(stmt, "bytes_access_kind", None):
+            if isinstance(stmt.array, IRLocal):
+                raw_bytes_required.add(stmt.array.name)
+        for child in stmt.get_children():
+            _collect_raw_bytes_required(child, _seen)
+
+    _collect_raw_bytes_required(root, set())
+
     seen_upgrade: Set[int] = set()
 
     def _upgrade_bytes(stmt: IRStatement) -> None:
@@ -2667,12 +3324,20 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
         seen_upgrade.add(id(stmt))
         if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRCall):
             call = stmt.expr
-            if call.target is not None and isinstance(call.target, IRConst) and isinstance(call.target.value, Function):
+            if (
+                call.target is not None
+                and isinstance(call.target, IRConst)
+                and isinstance(call.target.value, Function)
+            ):
                 func = call.target.value
                 name = root.code.full_func_name(func) or root.code.partial_func_name(func) or ""
                 if "ArrayBase.alloc" in name and call.args:
                     first_arg = call.args[0]
-                    if isinstance(first_arg, IRLocal) and locals.get(first_arg.name) == "hl.Bytes":
+                    if (
+                        isinstance(first_arg, IRLocal)
+                        and locals.get(first_arg.name) == "hl.Bytes"
+                        and first_arg.name not in raw_bytes_required
+                    ):
                         locals[first_arg.name] = f"hl.BytesAccess<{_alloc_element_type(name)}>"
         for child in stmt.get_children():
             _upgrade_bytes(child)
@@ -2778,13 +3443,20 @@ def _collect_function_externs(root: IRStatement, code: Bytecode) -> Dict[int, Tu
         if id(stmt) in seen:
             return
         seen.add(id(stmt))
-        if isinstance(stmt, IRCall) and isinstance(stmt.target, IRConst) and isinstance(stmt.target.value, Function):
+        if (
+            isinstance(stmt, IRCall)
+            and isinstance(stmt.target, IRConst)
+            and isinstance(stmt.target.value, Function)
+        ):
             func = stmt.target.value
             if is_std_func(func) and _call_renders_as_std_stub(func, stmt, code):
                 name = _std_func_name(func, code)
                 arity = len(stmt.args)
                 if func.findex.value in externs:
-                    externs[func.findex.value] = (name, max(externs[func.findex.value][1], arity))
+                    externs[func.findex.value] = (
+                        name,
+                        max(externs[func.findex.value][1], arity),
+                    )
                 else:
                     externs[func.findex.value] = (name, arity)
         for child in stmt.get_children():
@@ -2860,6 +3532,46 @@ def _native_extern(natives: List[Native], code: Bytecode) -> str:
     return "\n".join(lines)
 
 
+# Std classes that expose only static fields (no functions), so the file-path
+# check below never sees them. Fields carry no source-path info in HL bytecode.
+_FIELD_ONLY_STD_CLASSES = {"Math"}
+
+
+def _is_std_class_obj(code: Bytecode, obj: Obj) -> bool:
+    """
+    True when the Obj (or its static/dynamic counterpart) has member functions
+    and every one of them comes from a /std/ file — i.e. a standard-library
+    class. Memberless classes are treated as user data classes (bytecode holds
+    no source path to prove otherwise).
+    """
+    if destaticify(obj.name.resolve(code)) in _FIELD_ONLY_STD_CLASSES:
+        return True
+    objs = [obj]
+    for attr in ("static", "dynamic"):
+        try:
+            other = getattr(obj, attr)
+        except (ValueError, AttributeError):
+            continue
+        if isinstance(other, Obj):
+            objs.append(other)
+    has_members = False
+    for o in objs:
+        for member in list(o.protos) + list(o.bindings):
+            try:
+                fn = member.findex.resolve(code)
+            except Exception:
+                continue
+            if isinstance(fn, Function):
+                has_members = True
+                try:
+                    path = fn.resolve_file(code).replace("\\", "/")
+                except Exception:
+                    return False
+                if "/std/" not in path:
+                    return False
+    return has_members
+
+
 def _collect_referenced_user_classes(root: IRStatement, code: Bytecode, exclude: Set[str]) -> Set[str]:
     """
     Recursively collect names of user-defined (non-std) classes referenced in the
@@ -2872,16 +3584,7 @@ def _collect_referenced_user_classes(root: IRStatement, code: Bytecode, exclude:
         if not isinstance(typ.definition, Obj):
             return False
         try:
-            obj = typ.definition
-            for proto in obj.protos:
-                fn = proto.findex.resolve(code)
-                if isinstance(fn, Function) and "/std/" not in fn.resolve_file(code).replace("\\", "/"):
-                    return True
-            for binding in obj.bindings:
-                fn = binding.findex.resolve(code)
-                if isinstance(fn, Function) and "/std/" not in fn.resolve_file(code).replace("\\", "/"):
-                    return True
-            return not obj.protos and not obj.bindings
+            return not _is_std_class_obj(code, typ.definition)
         except Exception:
             return False
 
@@ -2889,10 +3592,28 @@ def _collect_referenced_user_classes(root: IRStatement, code: Bytecode, exclude:
         if id(stmt) in seen:
             return
         seen.add(id(stmt))
-        if isinstance(stmt, IRConst) and isinstance(stmt.value, Type) and isinstance(stmt.value.definition, Obj):
+        if (
+            isinstance(stmt, IRConst)
+            and isinstance(stmt.value, Type)
+            and isinstance(stmt.value.definition, Obj)
+        ):
             name = destaticify(stmt.value.definition.name.resolve(code))
             if name not in exclude and is_user_type(stmt.value):
                 names.add(name)
+        elif isinstance(stmt, IRConst) and isinstance(stmt.value, Function):
+            # A call target's owning class (e.g. `Meter_Impl_.add(...)`) isn't
+            # referenced via any Type/Field/New node, so it wouldn't otherwise
+            # be pulled in as a class the recompiled output needs to compile.
+            findex = stmt.value.findex.value
+            owner_obj = None
+            if code._proto_owner_map:
+                owner_obj = code._proto_owner_map.get(findex)
+            if owner_obj is None and code._field_owner_map:
+                owner_obj = code._field_owner_map.get(findex)
+            if owner_obj is not None:
+                name = destaticify(owner_obj.name.resolve(code))
+                if name not in exclude and not _is_std_class_obj(code, owner_obj):
+                    names.add(name)
         elif isinstance(stmt, IRNew):
             new_type = stmt.get_type()
             if isinstance(new_type.definition, Obj):
@@ -2905,6 +3626,19 @@ def _collect_referenced_user_classes(root: IRStatement, code: Bytecode, exclude:
                 name = destaticify(target_type.definition.name.resolve(code))
                 if name not in exclude and is_user_type(target_type):
                     names.add(name)
+        elif isinstance(stmt, IRTryCatch):
+            # Restored typed catches may bind a class that is never otherwise
+            # referenced in the bodies (`catch (e:Unused)`); the clause types
+            # still need to exist for recompilation.
+            clause_locals = [stmt.catch_local] + [loc for loc, _ in stmt.extra_catches]
+            for loc in clause_locals:
+                if loc is None:
+                    continue
+                loc_type = loc.get_type()
+                if isinstance(loc_type.definition, Obj):
+                    name = destaticify(loc_type.definition.name.resolve(code))
+                    if name not in exclude and is_user_type(loc_type):
+                        names.add(name)
         for child in stmt.get_children():
             visit(child)
 
@@ -2945,37 +3679,71 @@ def _collect_anonymous_functions(root: IRStatement, code: Bytecode) -> Dict[int,
 
 
 def _collect_referenced_enums(root: IRStatement, code: Bytecode) -> Dict[str, "Enum"]:
-    """Collect enum types referenced in the IR."""
-    enums: Dict[str, "Enum"] = {}
+    """Collect enum types referenced in the IR.
+
+    Keyed by the Enum *definition object*, not its display name: HashLink
+    reuses name index 0 for anonymous/synthetic enum types (e.g. closure
+    capture contexts), so distinct enum types can legitimately share a raw
+    name. A name-keyed dict would silently drop one of them.
+    """
+    enums: Dict[int, "Enum"] = {}
     seen: Set[int] = set()
+
+    def add(definition: "Enum") -> None:
+        enums[id(definition)] = definition
 
     def visit(stmt: IRStatement) -> None:
         if id(stmt) in seen:
             return
         seen.add(id(stmt))
-        if isinstance(stmt, IRConst) and isinstance(stmt.value, Type) and isinstance(stmt.value.definition, Enum):
-            name = destaticify(stmt.value.definition.name.resolve(code))
-            enums[name] = stmt.value.definition
+        if (
+            isinstance(stmt, IRConst)
+            and isinstance(stmt.value, Type)
+            and isinstance(stmt.value.definition, Enum)
+        ):
+            add(stmt.value.definition)
         elif isinstance(stmt, IRField):
             target_type = stmt.target.get_type()
             if isinstance(target_type.definition, Enum):
-                name = destaticify(target_type.definition.name.resolve(code))
-                enums[name] = target_type.definition
+                add(target_type.definition)
         elif isinstance(stmt, IREnumConstruct):
             target_type = stmt.get_type()
             if isinstance(target_type.definition, Enum):
-                name = destaticify(target_type.definition.name.resolve(code))
-                enums[name] = target_type.definition
+                add(target_type.definition)
         for child in stmt.get_children():
             visit(child)
 
     visit(root)
-    return enums
+    # Assign display names, disambiguating raw-name collisions between
+    # distinct enum definitions (see docstring).
+    by_name: Dict[str, int] = {}
+    result: Dict[str, "Enum"] = {}
+    for definition in enums.values():
+        # Name index 0 marks a synthesized anonymous enum (e.g. closure
+        # capture context); give it a unique name instead of its raw
+        # (colliding) resolved name - mirrors disasm.type_name's handling.
+        if definition.name.value == 0:
+            base_name = f"__ClosureCtx_{definition._global.value}"
+        else:
+            base_name = destaticify(definition.name.resolve(code))
+        name = base_name
+        if name in by_name and result[name] is not definition:
+            suffix = 2
+            while f"{base_name}_{suffix}" in by_name:
+                suffix += 1
+            name = f"{base_name}_{suffix}"
+        by_name[name] = id(definition)
+        result[name] = definition
+    return result
 
 
-def _enum_pseudo(enum_def: "Enum", code: Bytecode) -> str:
+def _enum_pseudo(enum_def: "Enum", code: Bytecode, name: Optional[str] = None) -> str:
     """Generate a Haxe enum declaration from a HashLink Enum definition."""
-    name = destaticify(enum_def.name.resolve(code))
+    if name is None:
+        if enum_def.name.value == 0:
+            name = f"__ClosureCtx_{enum_def._global.value}"
+        else:
+            name = destaticify(enum_def.name.resolve(code))
     lines = [f"enum {name} {{"]
     for construct in enum_def.constructs:
         cname = construct.name.resolve(code)
@@ -3000,21 +3768,30 @@ def class_pseudo(ir_class: "IRClass") -> str:
     return "\n\n".join(_class_pseudo_recursive(ir_class, set()))
 
 
-def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]:
-    """
-    Recursive helper for class_pseudo. Returns a list of class source strings.
+def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
+    """Render one class's own body — header, static + instance fields, methods and
+    anonymous-closure helpers — with no cross-file recursion.
+
+    Returns (source, referenced_class_names, super_name). This is the single place
+    class bodies are rendered: `class_pseudo` wraps it with recursive emission of
+    referenced classes (for single-class recompilation), while `decompile_file`
+    calls it flat per class for a whole-file dump.
     """
     code: Bytecode = ir_class.code
-
     primary_obj = ir_class.dynamic if ir_class.dynamic else ir_class.static
     if not primary_obj:
-        return ["// Error: IRClass contains no valid Obj definitions."]
+        return "// Error: IRClass contains no valid Obj definitions.", set(), None
 
     class_name = destaticify(primary_obj.name.resolve(code))
-    if class_name in emitted:
-        return []
-    emitted.add(class_name)
 
+    # If this class is an hxsl shader, its real source is the serialized ShaderData
+    # (the bytecode only holds generated uniform-plumbing). Recover and render it.
+    try:
+        shader = hxsl.shader_for_class(code, class_name)
+        if shader is not None:
+            return hxsl.render_shader(shader), set(), "hxsl.Shader"
+    except Exception:
+        pass  # never let shader recovery break normal decompilation
     output_lines: List[str] = []
     indent_str = _indent_str(1)
 
@@ -3037,6 +3814,8 @@ def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]
         func_externs.update(_collect_function_externs(ir_func.block, code))
         referenced_classes.update(_collect_referenced_user_classes(ir_func.block, code, {class_name}))
         referenced_enums.update(_collect_referenced_enums(ir_func.block, code))
+    for ref_set in getattr(ir_class, "static_field_init_refs", {}).values():
+        referenced_classes.update(ref_set - {class_name})
     native_extern = _native_extern(natives, code)
     func_extern = _function_extern(func_externs, code)
     if native_extern:
@@ -3046,7 +3825,7 @@ def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]
         output_lines.append(func_extern)
         output_lines.append("")
     for enum_name in sorted(referenced_enums):
-        output_lines.append(_enum_pseudo(referenced_enums[enum_name], code))
+        output_lines.append(_enum_pseudo(referenced_enums[enum_name], code, name=enum_name))
         output_lines.append("")
 
     output_lines.append(header)
@@ -3054,12 +3833,31 @@ def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]
     if ir_class.static_fields:
         for field_name, field_type in ir_class.static_fields:
             field_type_haxe = disasm.type_to_haxe(disasm.type_name(code, field_type))
-            output_lines.append(f"{indent_str}public static var {field_name}: {field_type_haxe};")
+            if field_type_haxe == "Array<Dynamic>":
+                elem_types = getattr(ir_class, "field_elem_types", {})
+                if field_name in elem_types:
+                    elem_haxe = disasm.type_to_haxe(disasm.type_name(code, elem_types[field_name]))
+                    field_type_haxe = f"Array<{elem_haxe}>"
+            init = getattr(ir_class, "static_field_inits", {}).get(field_name)
+            if init == STATIC_INIT_UNRECOVERABLE:
+                init_str = ""
+                comment = "  // initializer not recovered"
+            else:
+                init_str = f" = {init}" if init is not None else ""
+                comment = ""
+            output_lines.append(
+                f"{indent_str}public static var {field_name}: {field_type_haxe}{init_str};{comment}"
+            )
         output_lines.append("")
 
     if ir_class.fields:
         for field_name, field_type in ir_class.fields:
             field_type_haxe = disasm.type_to_haxe(disasm.type_name(code, field_type))
+            if field_type_haxe == "Array<Dynamic>":
+                elem_types = getattr(ir_class, "field_elem_types", {})
+                if field_name in elem_types:
+                    elem_haxe = disasm.type_to_haxe(disasm.type_name(code, elem_types[field_name]))
+                    field_type_haxe = f"Array<{elem_haxe}>"
             output_lines.append(f"{indent_str}public var {field_name}: {field_type_haxe};")
         output_lines.append("")
 
@@ -3081,6 +3879,15 @@ def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]
     anon_funcs: Dict[int, "Function"] = {}
     for ir_func in ir_class.static_methods + ir_class.methods:
         anon_funcs.update(_collect_anonymous_functions(ir_func.block, code))
+    # Static-init recovery renders anonymous closures as bare `__anon_<findex>`
+    # identifiers (see _collect_static_field_inits); pull those in too.
+    for init in getattr(ir_class, "static_field_inits", {}).values():
+        for m in re.finditer(r"__anon_(\d+)", init):
+            findex = int(m.group(1))
+            if findex not in anon_funcs:
+                func = next((f for f in code.functions if f.findex.value == findex), None)
+                if func is not None:
+                    anon_funcs[findex] = func
     for findex in sorted(anon_funcs):
         func = anon_funcs[findex]
         helper_ir = IRFunction(code, func)
@@ -3096,10 +3903,31 @@ def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]
         output_lines.pop()
 
     output_lines.append("}")
-    result = ["\n".join(output_lines)]
+    return "\n".join(output_lines), referenced_classes, super_name
+
+
+def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]:
+    """
+    Recursive helper for class_pseudo. Returns a list of class source strings:
+    the class itself plus its super and referenced user classes (for recompile-
+    ability), each emitted once.
+    """
+    code: Bytecode = ir_class.code
+
+    primary_obj = ir_class.dynamic if ir_class.dynamic else ir_class.static
+    if not primary_obj:
+        return ["// Error: IRClass contains no valid Obj definitions."]
+
+    class_name = destaticify(primary_obj.name.resolve(code))
+    if class_name in emitted:
+        return []
+    emitted.add(class_name)
+
+    body, referenced_classes, super_name = _class_body(ir_class)
+    result = [body]
 
     # Recursively emit the super class and any other referenced user classes.
-    to_emit: Set[str] = referenced_classes
+    to_emit: Set[str] = set(referenced_classes)
     if super_name and super_name != class_name:
         to_emit.add(super_name)
 
@@ -3108,6 +3936,17 @@ def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]
             continue
         try:
             other_obj = code.get_test_obj(other_name)
+        except Exception:
+            # Fall back to a stub if the class cannot be found.
+            result.append(f"class {other_name} {{}}")
+            emitted.add(other_name)
+            continue
+        # Std classes (e.g. a user exception's `extends haxe.Exception`) are
+        # referenced by path in the header, never inlined.
+        if _is_std_class_obj(code, other_obj):
+            emitted.add(other_name)
+            continue
+        try:
             other_ir = IRClass(code, other_obj)
             result.extend(_class_pseudo_recursive(other_ir, emitted))
         except Exception:
@@ -3116,3 +3955,339 @@ def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]
             emitted.add(other_name)
 
     return result
+
+
+def decompile_file(code: Bytecode, needle: str) -> Optional[str]:
+    """Decompile every class/function of a debug source file into one dump.
+
+    The single source of by-file decompilation, shared by the CLI (`df`) and GUI.
+    Classes are grouped and ordered by `disasm.file_class_map` (the one place file
+    ordering lives) and each is rendered once via `_class_body` — no cross-file
+    recursion, so the dump stays scoped to the file. `needle` matches a debug file
+    by full path, path suffix, or basename. Returns None if nothing matches.
+    """
+    fmap = disasm.file_class_map(code)
+    keys = [k for k in fmap if k == needle or k.endswith(needle) or os.path.basename(k) == needle]
+    if not keys:
+        return None
+
+    reg = _method_registry(code)
+    findex_map = code.get_findex_map()
+    chunks: List[str] = []
+    emitted: Set[str] = set()
+
+    for key in keys:
+        for entry in fmap[key]:
+            if entry.canonical_name == "(standalone)":
+                for m in entry.methods:
+                    fn = findex_map.get(m.findex)
+                    if fn is None or isinstance(fn, Native):
+                        continue
+                    try:
+                        chunks.append(pseudo(IRFunction(code, fn)))
+                    except Exception as e:
+                        chunks.append(f"// f@{m.findex}: decompilation failed: {e}")
+                continue
+            if entry.canonical_name in emitted:
+                continue
+            emitted.add(entry.canonical_name)
+            reg_entry = reg.get(entry.methods[0].findex) if entry.methods else None
+            if reg_entry is None:
+                continue
+            try:
+                chunks.append(_class_body(IRClass(code, reg_entry[0]))[0])
+            except Exception as e:
+                chunks.append(f"// class {entry.canonical_name}: decompilation failed: {e}")
+
+    return "\n\n".join(chunks)
+
+
+# --- stub generation -------------------------------------------------------
+#
+# For large decompilation projects: emit a whole file as a *compilable stub* —
+# every class with its fields and its methods' exact signatures (names, argument
+# types, return types), but with bodies replaced by a type-correct placeholder.
+# Other files that reference this one compile against a faithful API surface,
+# while the un-decompiled bodies fail loudly if actually called.
+
+
+def _stub_default(typ: Type) -> str:
+    """A type-correct default *expression* for a stub value of `typ`."""
+    k = typ.kind.value
+    K = Type.Kind
+    if k in (K.U8.value, K.U16.value, K.I32.value, K.I64.value):
+        return "0"
+    if k in (K.F32.value, K.F64.value):
+        return "0.0"
+    if k == K.BOOL.value:
+        return "false"
+    return "null"
+
+
+def _find_constructor(code: Bytecode, obj: Obj) -> Optional[Function]:
+    """The `__constructor__` function of a class, searching protos and bindings."""
+    entries = list(getattr(obj, "protos", [])) + list(getattr(obj, "bindings", []))
+    for entry in entries:
+        try:
+            fn = entry.findex.resolve(code)
+        except Exception:
+            continue
+        if isinstance(fn, Function) and code.partial_func_name(fn) == "__constructor__":
+            return fn
+    return None
+
+
+def _obj_pair(obj: Obj) -> Tuple[Optional[Obj], Optional[Obj]]:
+    """(dynamic, static) halves of a class from either one (needs map_statics)."""
+    dynamic: Optional[Obj]
+    static: Optional[Obj]
+    if obj.is_static:
+        static = obj
+        try:
+            dynamic = obj.dynamic
+        except (ValueError, AttributeError):
+            dynamic = None
+    else:
+        dynamic = obj
+        try:
+            static = obj.static
+        except (ValueError, AttributeError):
+            static = None
+    return dynamic, static
+
+
+def _obj_functions(code: Bytecode, obj: Optional[Obj]) -> List[Function]:
+    """Non-native functions bound to a class half (protos + bindings), deduped."""
+    if obj is None:
+        return []
+    res: List[Function] = []
+    seen: Set[int] = set()
+    for entry in list(getattr(obj, "protos", [])) + list(getattr(obj, "bindings", [])):
+        try:
+            fn = entry.findex.resolve(code)
+        except Exception:
+            continue
+        if isinstance(fn, Function) and fn.findex.value not in seen:
+            seen.add(fn.findex.value)
+            res.append(fn)
+    return res
+
+
+def _obj_fields(code: Bytecode, obj: Optional[Obj]) -> List[Tuple[str, Type]]:
+    """Data fields of a class half (mirrors IRClass.gather_fields, no lifting)."""
+    if obj is None:
+        return []
+    binding_names: Set[str] = set()
+    for binding in getattr(obj, "bindings", []):
+        try:
+            binding_names.add(binding.field.resolve_obj(code, obj).name.resolve(code))
+        except Exception:
+            pass
+    res: List[Tuple[str, Type]] = []
+    for field in getattr(obj, "fields", []):
+        try:
+            name = field.name.resolve(code)
+            if name not in binding_names:
+                res.append((name, field.type.resolve(code)))
+        except Exception:
+            pass
+    return res
+
+
+def _overrides_super(code: Bytecode, dynamic: Optional[Obj], method_name: str) -> bool:
+    """True if `method_name` is declared by the direct super class (needs `override`)."""
+    if dynamic is None or not dynamic.super or dynamic.super.value <= 0:
+        return False
+    try:
+        super_def = dynamic.super.resolve(code).definition
+        if isinstance(super_def, Obj):
+            return any(p.name.resolve(code) == method_name for p in super_def.protos)
+    except Exception:
+        pass
+    return False
+
+
+def _stub_method(code: Bytecode, func: Function, is_instance: bool, dynamic: Optional[Obj]) -> Optional[str]:
+    """One method rendered as a compilable stub from its type alone (no decompile)."""
+    if isinstance(func, Native):
+        return None
+
+    raw = code.partial_func_name(func)
+    is_ctor = raw == "__constructor__"
+    name = "new" if is_ctor else (raw if raw and raw != "<none>" else f"f{func.findex.value}")
+    if is_ctor:
+        is_instance = True
+
+    fun_def = func.type.resolve(code).definition
+    params: List[str] = []
+    ret_type: Optional[Type] = None
+    if isinstance(fun_def, Fun):
+        start = 1 if is_instance else 0
+        for i, arg_idx in enumerate(fun_def.args[start:]):
+            t = disasm.type_to_haxe(disasm.type_name(code, arg_idx.resolve(code)))
+            params.append(f"arg{i}: {t}" if t else f"arg{i}")
+        ret_type = fun_def.ret.resolve(code)
+    ret_name = disasm.type_to_haxe(disasm.type_name(code, ret_type)) if ret_type is not None else "Void"
+
+    static_kw = "" if is_instance else "static "
+    override_kw = (
+        "override " if (is_instance and not is_ctor and _overrides_super(code, dynamic, name)) else ""
+    )
+    ret_decl = "" if is_ctor else (f": {ret_name}" if ret_name else "")
+    header = f"public {static_kw}{override_kw}function {name}({', '.join(params)}){ret_decl} {{"
+
+    body: Optional[str] = None
+    if is_ctor:
+        # A derived class must call super(); supply type-correct default args so
+        # the stub compiles even when we don't reproduce the real constructor.
+        if dynamic is not None and dynamic.super and dynamic.super.value > 0:
+            parent_def = dynamic.super.resolve(code).definition
+            super_args = ""
+            if isinstance(parent_def, Obj):
+                pctor = _find_constructor(code, parent_def)
+                if pctor is not None:
+                    pfun = pctor.type.resolve(code).definition
+                    if isinstance(pfun, Fun) and len(pfun.args) > 1:
+                        super_args = ", ".join(_stub_default(a.resolve(code)) for a in pfun.args[1:])
+            body = f"    super({super_args});"
+    elif ret_type is not None and ret_type.kind.value != Type.Kind.VOID.value:
+        # `throw` type-checks against any return type — the standard stub body.
+        body = f'    throw "stub: {name} not decompiled";'
+
+    return f"{header}\n{body}\n}}" if body else f"{header}\n}}"
+
+
+def _stub_class(code: Bytecode, primary: Obj) -> str:
+    """A class rendered as a compilable stub straight from its Obj: fields + method
+    signatures, no decompilation (so it's fast and can't crash on hard bodies)."""
+    dynamic, static = _obj_pair(primary)
+    named = dynamic if dynamic is not None else static
+    assert named is not None
+    # Short name only: the package is declared once per file (a dotted name in a
+    # `class` declaration isn't valid Haxe). `extends`/type refs stay qualified.
+    class_name = destaticify(named.name.resolve(code)).rsplit(".", 1)[-1]
+
+    lines: List[str] = []
+    header = f"class {class_name}"
+    if dynamic is not None and dynamic.super and dynamic.super.value > 0:
+        super_def = dynamic.super.resolve(code).definition
+        if isinstance(super_def, Obj):
+            header += f" extends {destaticify(super_def.name.resolve(code))}"
+    header += " {"
+    lines.append(header)
+
+    static_fields = _obj_fields(code, static)
+    inst_fields = _obj_fields(code, dynamic)
+    for field_name, field_type in static_fields:
+        lines.append(
+            f"    public static var {field_name}: {disasm.type_to_haxe(disasm.type_name(code, field_type))};"
+        )
+    for field_name, field_type in inst_fields:
+        lines.append(
+            f"    public var {field_name}: {disasm.type_to_haxe(disasm.type_name(code, field_type))};"
+        )
+    if static_fields or inst_fields:
+        lines.append("")
+
+    # Static methods (from the static half) then instance methods, deduped by findex.
+    seen: Set[int] = set()
+    ordered: List[Tuple[Function, bool]] = []
+    for func in _obj_functions(code, static):
+        seen.add(func.findex.value)
+        ordered.append((func, False))
+    for func in _obj_functions(code, dynamic):
+        if func.findex.value not in seen:
+            seen.add(func.findex.value)
+            ordered.append((func, True))
+
+    for func, is_instance in ordered:
+        stub = _stub_method(code, func, is_instance, dynamic)
+        if stub is None:
+            continue
+        for line in stub.split("\n"):
+            lines.append(f"    {line}")
+        lines.append("")
+
+    if lines and lines[-1] == "":
+        lines.pop()
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def stub_file(code: Bytecode, needle: str) -> Optional[str]:
+    """Emit a compilable stub of a whole debug file: every class with its fields
+    and exact method signatures, bodies replaced by type-correct placeholders.
+
+    For large decompilation projects — stub the files you haven't reached yet so
+    the project keeps compiling and the API surface other files see stays faithful.
+    `needle` matches a debug file by full path, suffix, or basename; None if no
+    match. Classes are ordered by `disasm.file_class_map`.
+    """
+    fmap = disasm.file_class_map(code)
+    keys = [k for k in fmap if k == needle or k.endswith(needle) or os.path.basename(k) == needle]
+    if not keys:
+        return None
+
+    reg = _method_registry(code)
+    return _stub_from_entries(code, reg, [e for k in keys for e in fmap[k]])
+
+
+def _stub_from_entries(code: Bytecode, reg: Dict[int, Any], entries: List[Any]) -> str:
+    """Render a stub for one file's ClassEntry list, straight from each class's Obj
+    (no decompilation, so it's fast and can't crash on a hard-to-lift body)."""
+    chunks: List[str] = []
+    emitted: Set[str] = set()
+    package = ""
+    for entry in entries:
+        if entry.canonical_name == "(standalone)" or entry.canonical_name in emitted:
+            continue
+        emitted.add(entry.canonical_name)
+        reg_entry = reg.get(entry.methods[0].findex) if entry.methods else None
+        if reg_entry is None:
+            continue
+        if not package and "." in entry.canonical_name:
+            package = entry.canonical_name.rsplit(".", 1)[0]
+        try:
+            chunks.append(_stub_class(code, reg_entry[0]))
+        except Exception as e:
+            chunks.append(f"// class {entry.canonical_name}: stub failed: {e}")
+    body = "\n\n".join(chunks)
+    # A packaged file needs a matching `package` declaration to compile under its
+    # directory on the classpath.
+    return f"package {package};\n\n{body}" if package else body
+
+
+def _stub_output_path(file_path: str, entries: List[Any], reg: Dict[int, Any], code: Bytecode) -> str:
+    """Relative on-disk path for a file's stub, mirroring its Haxe package.
+
+    A file's package comes from its first class's dotted name (`tool.log.LogUtils`
+    -> `tool/log/`), which is stable even when the debug path is an absolute
+    build-machine path (`/home/.../std/hl/_std/String.hx`). The filename is the
+    debug path's basename."""
+    filename = os.path.basename(file_path.replace("\\", "/"))
+    pkg = ""
+    for entry in entries:
+        if entry.canonical_name == "(standalone)" or not entry.methods:
+            continue
+        reg_entry = reg.get(entry.methods[0].findex)
+        if reg_entry is None:
+            continue
+        canonical = destaticify(reg_entry[0].name.resolve(code))
+        if "." in canonical:
+            pkg = canonical.rsplit(".", 1)[0].replace(".", "/")
+        break
+    return f"{pkg}/{filename}" if pkg else filename
+
+
+def stub_all(code: Bytecode) -> Iterator[Tuple[str, str]]:
+    """Yield (relative-output-path, stub-source) for every debug file with classes.
+
+    Computes the file→class map once (unlike calling `stub_file` per file), so it
+    scales to a whole image. Files with only standalone functions are skipped."""
+    reg = _method_registry(code)
+    for file_path, entries in disasm.file_class_map(code).items():
+        if all(e.canonical_name == "(standalone)" for e in entries):
+            continue
+        text = _stub_from_entries(code, reg, entries)
+        if text.strip():
+            yield _stub_output_path(file_path, entries, reg, code), text

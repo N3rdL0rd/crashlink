@@ -4,39 +4,31 @@ IRFunction and IRClass — the top-level decompilation orchestrators.
 
 from __future__ import annotations
 
-import copy
-import re
 from dataclasses import dataclass
 from enum import Enum as _Enum
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Set, Tuple, cast
 
 from ..core import (
     Bytecode,
-    DynObj,
     Enum,
+    destaticify,
     Fun,
     Function,
     Native,
     Obj,
     Opcode,
-    Ref,
     Reg,
     Regs,
-    ResolvableVarInt,
     Type,
-    TypeDef,
     Virtual,
     Void,
-    fieldRef,
-    gIndex,
     tIndex,
 )
 from ..errors import DecompError
 from ..globals import DEBUG, dbg_print
 from .. import disasm
-from ..opcodes import arithmetic, conditionals, terminal, simple_calls
+from ..opcodes import arithmetic, conditionals, simple_calls
 from .ir import (
-    IRStatement,
     IRExpression,
     IRBlock,
     IRLocal,
@@ -55,55 +47,48 @@ from .ir import (
     IRContinue,
     IRReturn,
     IRThrow,
-    IRTrace,
     IRTryCatch,
     IRSwitch,
     IRPrimitiveJump,
     IRWhileLoop,
-    IRForEachLoop,
-    IRIntRangeLoop,
     IRField,
+    IRBoundClosure,
     IRNew,
-    IRNativeArrayNew,
-    IRNativeMapNew,
     IRCast,
-    IRArrayLiteral,
     IRArrayAccess,
-    IRRef,
+    IRRefNew,
+    IRRefGet,
+    IRRefSet,
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
     IRUnliftedOpcode,
     IRNativeStub,
-    _get_type_in_code,
     _strip_ansi,
-    _type_by_name_cache,
-    _repr_rendered_blocks,
 )
-from .cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
+from .cfg import CFNode, CFGraph
 from .opt import (
     IROptimizer,
-    TraversingIROptimizer,
-    _ir_structurally_equal,
-    _structurally_equal,
-    _stmt_lists_structurally_equal,
     _bytes_mem_kind,
-    _int_const_value,
-    _signed_i32,
 )
 from .opt.inliner import (
     IRPrimitiveJumpLifter,
     IRConditionInliner,
     IRTempAssignmentInliner,
     IRCopyPropOptimizer,
+    IRTerminalValueInliner,
 )
 from .opt.clean import (
     IRLoopConditionOptimizer,
     IRSelfAssignOptimizer,
+    IRBoolMaterializationCollapser,
     IRArrayGrowGuardEliminator,
+    IRArrayObjBoundsCheckCollapser,
     IRRedundantRecomputeEliminator,
     IRBlockFlattener,
-    IRCommonBlockMerger,
+    IREmptyConditionalNormalizer,
+    IRTypedCatchOptimizer,
+    IRElseFlattener,
     IRRedundantContinueEliminator,
     IRVoidAssignOptimizer,
     IRDeadTempEliminator,
@@ -112,6 +97,7 @@ from .opt.clean import (
     IRSequentialTempFolder,
     IRDeadAssignmentEliminator,
     IRConstructorFolder,
+    IREnumConstructorFolder,
     IRAnonObjectLiteralOptimizer,
     IRShiftConstantOptimizer,
     IRGuardOrMerger,
@@ -127,6 +113,7 @@ from .opt.arrays import (
     IRNativeArrayAllocOptimizer,
     IRArrayObjWrapperOptimizer,
     IRNativeMapAllocOptimizer,
+    IRBytesAllocOptimizer,
     IRArrayPatternOptimizer,
 )
 from .opt.loops import (
@@ -139,6 +126,14 @@ from .opt.switches import (
     IRStringSwitchOptimizer,
     IREnumSwitchOptimizer,
 )
+
+
+def _obj_field_name(field_core: Any, field_index: int, code: Bytecode) -> str:
+    """Resolve an Obj field's debug name, falling back to a synthesized name
+    when it's empty (e.g. HL's per-interface Virtual-typed dispatch cache
+    slot, which has no source-level name)."""
+    name = field_core.name.resolve(code)
+    return name if name else f"__hidden{field_index}"
 
 
 def _build_enum_global_map(code: Bytecode) -> Dict[int, Tuple[str, tIndex]]:
@@ -202,7 +197,10 @@ def _build_enum_global_map(code: Bytecode) -> Dict[int, Tuple[str, tIndex]]:
                         construct_idx = reg_array_index[src_reg]
                         if 0 <= construct_idx < len(enum_def.constructs):
                             construct = enum_def.constructs[construct_idx]
-                            result[gi] = (construct.name.resolve(code), code.global_types[gi])
+                            result[gi] = (
+                                construct.name.resolve(code),
+                                code.global_types[gi],
+                            )
                             resolved_globals.add(gi)
 
     # Pass 2: fall back to the declaration-order guess for anything the
@@ -244,11 +242,13 @@ class IRFunction:
         self.locals: List[IRLocal] = []
         self.all_locals: List[IRLocal] = []  # all created locals including superseded splits
         self.opcodes: str = ""
-        self.cfg_data: Dict[str, List[Dict[str, Any]]] = {"nodes": [], "edges": []}
+        self.cfg_data: Dict[str, Any] = {"nodes": [], "edges": []}
         self.layer_snapshots: List[Tuple[str, str, bool]] = []
         self._lift_cache: Dict[Tuple[Optional[CFNode], Optional[CFNode], int], IRBlock] = {}
         self._enum_global_map: Dict[int, Tuple[str, tIndex]] = {}
         self.capture_layers: bool = capture_layers
+        self._render_subs: Optional[Any] = None
+        self._containing_class: Optional[Any] = None
         if isinstance(func, Native):
             # Native entries have no HL bytecode; represent them as a stub block.
             self.block.statements.append(IRNativeStub(code, func))
@@ -258,11 +258,17 @@ class IRFunction:
         self.cfg.build()
         self._enum_global_map = _build_enum_global_map(code)
         self.ops = func.ops
+        # Depth of Trap regions currently being lifted; a backedge jump to the
+        # enclosing loop header inside a trap is an explicit `continue` in the
+        # source (Haxe's HL codegen is sensitive to it: without the continue a
+        # constant-bounds loop with a catch can be unrolled by the compiler).
+        self._trap_depth = 0
         self._lift(no_lift=no_lift)
         if do_optimize:
             self.optimizers: List[IROptimizer] = [
                 IRBlockFlattener(self),
                 IRConstructorFolder(self),
+                IREnumConstructorFolder(self),
                 IRPrimitiveJumpLifter(self),
                 IRGlobalStringOptimizer(self),
                 IRStringIntConcatOptimizer(self),
@@ -272,7 +278,9 @@ class IRFunction:
                 IRSelfAssignOptimizer(self),
                 IRRedundantContinueEliminator(self),
                 IRCopyPropOptimizer(self),
+                IRBoolMaterializationCollapser(self),
                 IRShiftConstantOptimizer(self),
+                IRElseFlattener(self),
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRTempAssignmentInliner(self, aggressive=True),
                 IRStringAllocOptimizer(self),
@@ -283,26 +291,63 @@ class IRFunction:
                 IRNativeArrayAllocOptimizer(self),
                 IRArrayObjWrapperOptimizer(self),
                 IRNativeMapAllocOptimizer(self),
+                IRBytesAllocOptimizer(self),
+                # past_kills only after the pattern optimizers: they match raw lowering shapes
+                IRTempAssignmentInliner(self, aggressive=True, past_kills=True),
                 IRTempAssignmentInliner(self, aggressive=False),
+                # only after temp inlining has folded the register chain into a
+                # single `this.field.array[idx]` shape for it to match
+                IRArrayObjBoundsCheckCollapser(self),
                 IRVoidAssignOptimizer(self),
                 IRDeadCodeEliminator(self),
                 IRSelfAssignOptimizer(self),
                 IRTraceOptimizer(self),
+                # trace()'s DynObj scaffolding collapses above, bringing a dead
+                # user-local-register reassignment adjacent to its sole use for the
+                # first time; re-run so IRTempAssignmentInliner's user-local-reuse
+                # fold (see _visit_block_conservative) can now see and fold it.
+                IRTempAssignmentInliner(self, aggressive=False),
                 IRAnonObjectLiteralOptimizer(self),
                 IRStringConcatFolder(self),
                 IRIntSwitchOptimizer(self),
                 IRStringSwitchOptimizer(self),
                 IREnumSwitchOptimizer(self),
+                IRTerminalValueInliner(self),
                 IRDeadTempEliminator(self),
                 IRDeadCodeEliminator(self),
                 IRBlockFlattener(self),
                 IRLoopRerollOptimizer(self),
                 IRForEachLoopOptimizer(self),
                 IRIntRangeLoopOptimizer(self),
+                IRBoolMaterializationCollapser(self),
                 IRDeadStoreEliminator(self),
+                IRDeadAssignmentEliminator(self),
                 IRGuardOrMerger(self),
                 IRRedundantRecomputeEliminator(self),
+                IREmptyConditionalNormalizer(self),
+                IRTerminalValueInliner(self),
+                # Late second pass: in larger functions the `this.field.array[idx]`
+                # shape this targets doesn't fully materialize until after loop/switch
+                # restructuring and the later cleanup passes above have run.
+                IRArrayObjBoundsCheckCollapser(self),
+                # Restore typed/multi catch clauses; runs last because it matches
+                # the copy-propagated shape of HL's catch dispatch lowering.
+                IRTypedCatchOptimizer(self),
             ]
+            # Splice in plugin optimizers gated to this bytecode (see
+            # crashlink.plugins). Which classes apply is a property of the image,
+            # so resolve it once per Bytecode and cache it on the code object.
+            plugin_classes = self.code._plugin_optimizer_classes
+            if plugin_classes is None:
+                from ..plugins import optimizers_for
+
+                plugin_classes = (
+                    optimizers_for(self.code, "start"),
+                    optimizers_for(self.code, "end"),
+                )
+                self.code._plugin_optimizer_classes = plugin_classes
+            starts, ends = plugin_classes
+            self.optimizers = [cls(self) for cls in starts] + self.optimizers + [cls(self) for cls in ends]
             self._optimize()
             self.apply_annotations()
 
@@ -314,10 +359,15 @@ class IRFunction:
             self.locals.append(local)
             self.all_locals.append(local)
         self._build_assign_map()
+        self._new_defined_regs: Set[int] = set()
         self._name_locals()
         if not no_lift:
             if self.cfg.entry:
                 self.block = self._lift_block(self.cfg.entry, set())
+            elif not self.func.ops:
+                # Opcode-less functions (e.g. de-HL/C reconstructions) keep the
+                # initial empty block - surrounding structure is still useful.
+                pass
             else:
                 raise DecompError("Function CFG has no entry node, cannot lift to IR")
         else:
@@ -340,6 +390,7 @@ class IRFunction:
     def _build_assign_map(self) -> None:
         """Build a mapping from op index to (register, name) for SSA-esque splitting."""
         self._op_assigns: Dict[int, Dict[int, str]] = {}
+        self._op_aliases: Dict[int, List[Tuple[int, str]]] = {}
         self._user_reg_indices: Set[int] = set()
         self._reg_first_assign: Dict[int, int] = {}
         self._op_id_to_idx: Dict[int, int] = {id(op): i for i, op in enumerate(self.ops)}
@@ -369,7 +420,16 @@ class IRFunction:
             self._user_reg_indices.add(reg)
             if val not in self._op_assigns:
                 self._op_assigns[val] = {}
-            self._op_assigns[val][reg] = name
+            # Keep the first debug name for a given op+reg: later names at the
+            # same op are aliases (e.g. `var b = a` compiled to the same
+            # register), and the earlier name is the one used by subsequent
+            # expressions.
+            if reg not in self._op_assigns[val]:
+                self._op_assigns[val][reg] = name
+            elif name != self._op_assigns[val][reg]:
+                # `var b = a;` compiled away to the same register: keep the alias
+                # so lifting can re-emit it as an explicit copy.
+                self._op_aliases.setdefault(val, []).append((reg, name))
             if reg not in self._reg_first_assign or val < self._reg_first_assign[reg]:
                 self._reg_first_assign[reg] = val
 
@@ -377,20 +437,39 @@ class IRFunction:
         """Get the current IRLocal for a register, respecting SSA-esque name transitions."""
         return self.locals[reg_idx]
 
-    def _split_local(self, reg_idx: int, name: str, defining_op_idx: Optional[int] = None) -> IRLocal:
-        """Create a new IRLocal for a register with a specific name (SSA-esque split)."""
+    def _split_local(
+        self, reg_idx: int, name: str, defining_op_idx: Optional[int] = None, avoid_same_reg: bool = False
+    ) -> IRLocal:
+        """Create a new IRLocal for a register with a specific name (SSA-esque split).
+        avoid_same_reg also forces a name distinct from the register's current local."""
         reg_type = self.func.regs[reg_idx]
         new_type = reg_type.resolve(self.code)
         # Avoid name collisions only with a different register of a different
-        # type.  Same-type duplicates are usually the same source variable split
-        # across registers.
+        # type. Same-type duplicates are usually the same source variable split
+        # across registers -- unless that other register is later recycled as
+        # an anonymous compiler temp (self._has_untracked_reuse), in which case
+        # its debug name isn't reliably "the same variable" and must not be
+        # allowed to silently collide with a genuinely different one that
+        # happens to share both the name and the type.
         base_name = name
         suffix = 1
-        existing_names = {loc.name for i, loc in enumerate(self.locals) if i != reg_idx and loc.get_type() != new_type}
+        existing_names = {
+            loc.name
+            for i, loc in enumerate(self.locals)
+            if i != reg_idx and (loc.get_type() != new_type or self._has_untracked_reuse(i))
+        }
+        if avoid_same_reg:
+            existing_names.add(self.locals[reg_idx].name)
         while name in existing_names:
             name = f"{base_name}{suffix}"
             suffix += 1
-        new_local = IRLocal(name, reg_type, code=self.code, reg_idx=reg_idx, defining_op_idx=defining_op_idx)
+        new_local = IRLocal(
+            name,
+            reg_type,
+            code=self.code,
+            reg_idx=reg_idx,
+            defining_op_idx=defining_op_idx,
+        )
         self.locals[reg_idx] = new_local
         self.all_locals.append(new_local)
         # Cached blocks may still reference the old local object; force them to
@@ -398,13 +477,90 @@ class IRFunction:
         self._lift_cache.clear()
         return new_local
 
+    def _has_untracked_reuse(self, reg: int) -> bool:
+        """True if register `reg` is written again, after its own first debug-named
+        definition, by an op that isn't itself a debug-named assignment for `reg` —
+        i.e. the register gets recycled as an anonymous compiler temp somewhere in
+        its remaining lifetime, rather than staying the same named source variable
+        for every subsequent write."""
+        first_assign = self._reg_first_assign.get(reg)
+        if first_assign is None or first_assign < 0:
+            return False
+        for op_idx in range(first_assign + 1, len(self.ops)):
+            op = self.ops[op_idx]
+            if op.op == "Setref":
+                continue  # "dst" is a read (the ref being written through), not a write
+            if not (op.df and "dst" in op.df) or op.df["dst"].value != reg:
+                continue
+            named_here = self._op_assigns.get(op_idx, {})
+            if reg not in named_here:
+                # A self-referential write (b++, b = b + 1, b += 5) continues
+                # the same source variable rather than recycling the register
+                # as an anonymous temp. Counting it as reuse would make
+                # _split_local disambiguate an unrelated register that shares
+                # the name (e.g. `b += 5` lifted into a fresh reg rendering as
+                # `var b1` instead of `b = b + 5`).
+                if self._is_continuation_write(op):
+                    continue
+                return True
+        return False
+
+    def _is_continuation_write(self, op: Opcode) -> bool:
+        """True if `op`'s dst-write plausibly continues the register's current named
+        variable (e.g. `i++`, `i = i + 1`) rather than starting an unrelated value."""
+        if op.op in ("Incr", "Decr"):
+            return True
+        if op.op in arithmetic and op.df and "dst" in op.df:
+            dst_val = op.df["dst"].value
+            a, b = op.df.get("a"), op.df.get("b")
+            if (a is not None and a.value == dst_val) or (b is not None and b.value == dst_val):
+                return True
+        return False
+
     def _check_assign(self, op_idx: int) -> None:
         """Check if this op index has an assign entry and split the local if needed."""
+        op = self.ops[op_idx]
+        new_reg_idx: Optional[int] = None
+        prior_name: Optional[str] = None
+        if op.op == "New" and op.df and "dst" in op.df:
+            new_reg_idx = op.df["dst"].value
+            prior_name = self.locals[new_reg_idx].name
+        self._check_assign_inner(op_idx, op)
+        if new_reg_idx is not None:
+            # Two `New`s reusing one register must not share an IRLocal, or a stored reference aliases the later alloc.
+            if new_reg_idx in self._new_defined_regs and self.locals[new_reg_idx].name == prior_name:
+                self._split_local(
+                    new_reg_idx, self.locals[new_reg_idx].name, defining_op_idx=op_idx, avoid_same_reg=True
+                )
+            self._new_defined_regs.add(new_reg_idx)
+
+    def _check_assign_inner(self, op_idx: int, op: Opcode) -> None:
         if op_idx in self._op_assigns:
             for reg_idx, name in self._op_assigns[op_idx].items():
                 current = self.locals[reg_idx]
                 if current.name != name:
                     self._split_local(reg_idx, name, defining_op_idx=op_idx)
+            return
+        # No debug name at this op. If it still writes a register that currently
+        # holds a real (debug-sourced) name, and the write clearly doesn't derive
+        # from that register's own prior value, the register is being recycled as
+        # an anonymous compiler temp — split it back to a synthetic name so later
+        # reads of it aren't mistaken for reads of the earlier named variable
+        # (e.g. a loop counter's register reused afterward to hold an unrelated
+        # `.length` value, which would otherwise still render as the loop
+        # variable's name and get protected from inlining as if it were real).
+        if not (op.df and "dst" in op.df):
+            return
+        if op.op == "Setref":
+            # Setref's "dst" is the ref pointer being written *through*, not a
+            # register receiving a fresh value -- it's a read of the register
+            # holding the ref, same as any other operand.
+            return
+        reg_idx = op.df["dst"].value
+        current = self.locals[reg_idx]
+        default_name = f"var{reg_idx}"
+        if current.name != default_name and not self._is_continuation_write(op):
+            self._split_local(reg_idx, default_name, defining_op_idx=op_idx)
 
     def apply_annotations(self) -> None:
         """Apply renames and comments from code.annotations to this IR function in-place."""
@@ -433,12 +589,11 @@ class IRFunction:
 
     def _optimize(self) -> None:
         """Optimize the IR"""
-        from ..globals import DEBUG
 
         if DEBUG:
             dbg_print("----- Disasm -----")
             dbg_print(disasm.func(self.code, self.func))
-            dbg_print(f"----- LLIL -----")
+            dbg_print("----- LLIL -----")
             dbg_print(self.block.pprint())
         if self.capture_layers:
             self.opcodes = disasm.func(self.code, self.func)
@@ -655,8 +810,15 @@ class IRFunction:
                 typed_regs.setdefault(typ_key, []).append(r)
             # Only rename when the same debug name is used for variables with
             # different types.  Same-type duplicates are usually just different
-            # registers for a single source variable.
-            if len(typed_regs) <= 1:
+            # registers for a single source variable — UNLESS one of them gets
+            # reused as an anonymous compiler temp somewhere in between its own
+            # debug-named point and the end of the function (e.g. a register
+            # named "i" for one `for` loop, later recycled as a scratch temp
+            # for an unrelated computation, with no debug name at that reuse
+            # site to trigger `_check_assign`'s split). That register would
+            # otherwise keep the stale debug name for its entire remaining
+            # lifetime, corrupting every later use of it.
+            if len(typed_regs) <= 1 and not any(self._has_untracked_reuse(r) for r in regs):
                 # Exception: a parameter shadowed by a body local with the same
                 # name must be disambiguated (e.g. ArrayBytes.getDyn's `pos`).
                 ordered = sorted(regs, key=lambda r: self._reg_first_assign.get(r, float("inf")))
@@ -670,27 +832,22 @@ class IRFunction:
                         suffix += 1
                 continue
             ordered = sorted(regs, key=lambda r: self._reg_first_assign.get(r, float("inf")))
-            by_type: Dict[int, List[int]] = {}
-            for r in ordered:
-                typ = self.func.regs[r]
-                typ_key = id(typ.resolve(self.code))
-                by_type.setdefault(typ_key, []).append(r)
-            # Keep the earliest register of the first-seen type as the base name;
-            # rename duplicates of other types.
-            kept = set()
-            for r in ordered:
+            # Keep earliest reg's type as base name; suffix any other-typed regs sharing this name.
+            first_type = id(self.func.regs[ordered[0]].resolve(self.code))
+            suffix = 1
+            for r in ordered[1:]:
                 typ_key = id(self.func.regs[r].resolve(self.code))
-                if typ_key not in kept:
-                    kept.add(typ_key)
-                else:
-                    self.locals[r].name = f"{name}{len(kept)}"
-                    kept.add(typ_key)
+                if typ_key != first_type:
+                    self.locals[r].name = f"{name}{suffix}"
+                    suffix += 1
 
         if self.locals and self.locals[0].name == "var0" and has_this:
             self.locals[0].name = "this"
         dbg_print("Named locals:", self.locals)
 
-    def _find_convergence(self, true_node: CFNode, false_node: CFNode, visited: Set[CFNode]) -> Optional[CFNode]:
+    def _find_convergence(
+        self, true_node: CFNode, false_node: CFNode, visited: Set[CFNode]
+    ) -> Optional[CFNode]:
         """Find where two branches of a conditional converge by following their control flow"""
         true_visited = set()
         false_visited = set()
@@ -754,7 +911,9 @@ class IRFunction:
                 return True
         return False
 
-    def _resolve_method_field(self, obj_local: "IRLocal", obj_type: Type, field_idx: int) -> Optional["IRField"]:
+    def _resolve_method_field(
+        self, obj_local: "IRLocal", obj_type: Type, field_idx: int
+    ) -> Optional["IRField"]:
         """Build the `obj.method` IRField targeted by a CallMethod/CallThis/
         InstanceClosure `field` operand.
 
@@ -774,7 +933,12 @@ class IRFunction:
             if field_idx >= len(defn.fields):
                 return None
             field_core = defn.fields[field_idx]
-            return IRField(self.code, obj_local, field_core.name.resolve(self.code), field_core.type)
+            return IRField(
+                self.code,
+                obj_local,
+                field_core.name.resolve(self.code),
+                field_core.type,
+            )
         return None
 
     def _lift_ops_into_block(self, block: IRBlock, ops: List[Opcode]) -> None:
@@ -804,7 +968,14 @@ class IRFunction:
                 rhs = source_locals[op.df["b"].value]
                 block.statements.append(
                     IRAssign(
-                        self.code, dst, IRArithmetic(self.code, lhs, rhs, IRArithmetic.ArithmeticType[op.op.upper()])
+                        self.code,
+                        dst,
+                        IRArithmetic(
+                            self.code,
+                            lhs,
+                            rhs,
+                            IRArithmetic.ArithmeticType[op.op.upper()],
+                        ),
                     )
                 )
             elif op.op in ["Int", "Float", "Bool", "Bytes", "String", "Null"]:
@@ -865,7 +1036,11 @@ class IRFunction:
                     block.statements.append(IRAssign(self.code, dst, IRUnliftedOpcode(self.code, op)))
             elif op.op == "Mov":
                 block.statements.append(
-                    IRAssign(self.code, self.locals[op.df["dst"].value], source_locals[op.df["src"].value])
+                    IRAssign(
+                        self.code,
+                        self.locals[op.df["dst"].value],
+                        source_locals[op.df["src"].value],
+                    )
                 )
             elif op.op == "GetGlobal":
                 global_idx = op.df["global"].value
@@ -900,7 +1075,12 @@ class IRFunction:
                 if not isinstance(obj_type.definition, (Obj, Virtual)):
                     raise DecompError(f"Field opcode used on non-object type: {obj_type.definition}")
                 field_core = op.df["field"].resolve_obj(self.code, obj_type.definition)
-                field_expr = IRField(self.code, obj_local, field_core.name.resolve(self.code), field_core.type)
+                field_expr = IRField(
+                    self.code,
+                    obj_local,
+                    _obj_field_name(field_core, op.df["field"].value, self.code),
+                    field_core.type,
+                )
                 block.statements.append(IRAssign(self.code, dst_local, field_expr))
             elif op.op == "GetThis":
                 dst_local = self.locals[op.df["dst"].value]
@@ -908,7 +1088,12 @@ class IRFunction:
                 this_type_def = self.code.types[self.func.regs[0].value]
                 if isinstance(this_type_def.definition, (Obj, Virtual)):
                     field_core = op.df["field"].resolve_obj(self.code, this_type_def.definition)
-                    field_expr = IRField(self.code, this_local, field_core.name.resolve(self.code), field_core.type)
+                    field_expr = IRField(
+                        self.code,
+                        this_local,
+                        _obj_field_name(field_core, op.df["field"].value, self.code),
+                        field_core.type,
+                    )
                     block.statements.append(IRAssign(self.code, dst_local, field_expr))
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
@@ -918,7 +1103,12 @@ class IRFunction:
                 this_type_def = self.code.types[self.func.regs[0].value]
                 if isinstance(this_type_def.definition, (Obj, Virtual)):
                     field_core = op.df["field"].resolve_obj(self.code, this_type_def.definition)
-                    field_expr = IRField(self.code, this_local, field_core.name.resolve(self.code), field_core.type)
+                    field_expr = IRField(
+                        self.code,
+                        this_local,
+                        _obj_field_name(field_core, op.df["field"].value, self.code),
+                        field_core.type,
+                    )
                     block.statements.append(IRAssign(self.code, field_expr, src_local))
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
@@ -960,7 +1150,12 @@ class IRFunction:
                     IRAssign(
                         self.code,
                         dst_local,
-                        IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df["dst"].value]),
+                        IRArrayAccess(
+                            self.code,
+                            arr_local,
+                            idx_local,
+                            self.func.regs[op.df["dst"].value],
+                        ),
                     )
                 )
             elif op.op == "ArraySize":
@@ -973,13 +1168,21 @@ class IRFunction:
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = source_locals[op.df["src"].value]
                 block.statements.append(
-                    IRAssign(self.code, dst_local, IRTypeOf(self.code, src_local, self.func.regs[op.df["dst"].value]))
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRTypeOf(self.code, src_local, self.func.regs[op.df["dst"].value]),
+                    )
                 )
             elif op.op == "GetTID":
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = source_locals[op.df["src"].value]
                 block.statements.append(
-                    IRAssign(self.code, dst_local, IRTypeKind(self.code, src_local, self.func.regs[op.df["dst"].value]))
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRTypeKind(self.code, src_local, self.func.regs[op.df["dst"].value]),
+                    )
                 )
             elif op.op == "Incr":
                 dst_local = self.locals[op.df["dst"].value]
@@ -1053,7 +1256,11 @@ class IRFunction:
                 idx_local = source_locals[op.df["index"].value]
                 src_local = source_locals[op.df["src"].value]
                 block.statements.append(
-                    IRAssign(self.code, IRArrayAccess(self.code, arr_local, idx_local, src_local.get_type()), src_local)
+                    IRAssign(
+                        self.code,
+                        IRArrayAccess(self.code, arr_local, idx_local, src_local.get_type()),
+                        src_local,
+                    )
                 )
             elif op.op == "DynSet":
                 obj_local = source_locals[op.df["obj"].value]
@@ -1073,32 +1280,42 @@ class IRFunction:
                 obj_type = obj_local.get_type()
                 if isinstance(obj_type.definition, (Obj, Virtual)):
                     field_core = op.df["field"].resolve_obj(self.code, obj_type.definition)
-                    field_expr = IRField(self.code, obj_local, field_core.name.resolve(self.code), field_core.type)
+                    field_expr = IRField(
+                        self.code,
+                        obj_local,
+                        _obj_field_name(field_core, op.df["field"].value, self.code),
+                        field_core.type,
+                    )
                     block.statements.append(IRAssign(self.code, field_expr, src_local))
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
             elif op.op == "Type":
                 dst_local = self.locals[op.df["dst"].value]
                 block.statements.append(
-                    IRAssign(self.code, dst_local, IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df["ty"]))
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IRConst(self.code, IRConst.ConstType.GLOBAL_OBJ, idx=op.df["ty"]),
+                    )
                 )
             elif op.op == "Ref":
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = source_locals[op.df["src"].value]
-                block.statements.append(IRAssign(self.code, dst_local, IRRef(self.code, src_local)))
+                ref_new = IRRefNew(self.code, src_local)
+                ref_new.src_op_idx = op_idx
+                block.statements.append(IRAssign(self.code, dst_local, ref_new))
             elif op.op == "Unref":
-                # References are modelled transparently (IRRef renders as its
-                # inner expression), so dereferencing one is just a copy of the
-                # underlying value.
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = source_locals[op.df["src"].value]
-                block.statements.append(IRAssign(self.code, dst_local, src_local))
+                ref_get = IRRefGet(self.code, src_local)
+                ref_get.src_op_idx = op_idx
+                block.statements.append(IRAssign(self.code, dst_local, ref_get))
             elif op.op == "Setref":
-                # References are modelled transparently; writing through one is
-                # represented as a copy to the reference register itself.
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = source_locals[op.df["value"].value]
-                block.statements.append(IRAssign(self.code, dst_local, src_local))
+                ref_set = IRRefSet(self.code, dst_local, src_local)
+                ref_set.src_op_idx = op_idx
+                block.statements.append(ref_set)
             elif op.op == "StaticClosure":
                 dst_local = self.locals[op.df["dst"].value]
                 fun_const = IRConst(self.code, IRConst.ConstType.FUN, idx=op.df["fun"])
@@ -1109,7 +1326,7 @@ class IRFunction:
                 fun = op.df["fun"].resolve(self.code)
                 method_name = self.code.partial_func_name(fun)
                 obj_def = obj_local.get_type().definition
-                if method_name in (None, "<none>") or not isinstance(obj_def, (Obj, Virtual)):
+                if method_name in (None, "<none>") and not isinstance(obj_def, (Obj, Virtual)):
                     # Not a real `obj.method` binding: the compiler also uses
                     # InstanceClosure to wrap a `Dynamic` value as the captured
                     # `this` of a small synthesized adapter function (e.g. the
@@ -1122,8 +1339,19 @@ class IRFunction:
                     # observable result without inventing a bogus field name.
                     cast_expr = IRCast(self.code, self.func.regs[op.df["dst"].value], obj_local)
                     block.statements.append(IRAssign(self.code, dst_local, cast_expr))
+                elif method_name in (None, "<none>") and isinstance(fun, Function):
+                    # Genuine closure over a captured local: `fun` is a real
+                    # synthesized function with no resolvable method name and
+                    # `obj` is its captured environment, not a `this` receiver.
+                    bound_expr = IRBoundClosure(self.code, fun, obj_local)
+                    block.statements.append(IRAssign(self.code, dst_local, bound_expr))
                 else:
-                    field_expr = IRField(self.code, obj_local, method_name, self.func.regs[op.df["dst"].value])
+                    field_expr = IRField(
+                        self.code,
+                        obj_local,
+                        method_name,
+                        self.func.regs[op.df["dst"].value],
+                    )
                     block.statements.append(IRAssign(self.code, dst_local, field_expr))
             elif op.op == "VirtualClosure":
                 dst_local = self.locals[op.df["dst"].value]
@@ -1167,7 +1395,11 @@ class IRFunction:
                 )
                 args = [source_locals[arg.value] for arg in op.df["args"].value]
                 block.statements.append(
-                    IRAssign(self.code, dst_local, IREnumConstruct(self.code, construct_name, args, enum_type))
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IREnumConstruct(self.code, construct_name, args, enum_type),
+                    )
                 )
             elif op.op == "EnumAlloc":
                 dst_local = self.locals[op.df["dst"].value]
@@ -1180,7 +1412,11 @@ class IRFunction:
                     else f"construct_{cid}"
                 )
                 block.statements.append(
-                    IRAssign(self.code, dst_local, IREnumConstruct(self.code, construct_name, [], enum_type))
+                    IRAssign(
+                        self.code,
+                        dst_local,
+                        IREnumConstruct(self.code, construct_name, [], enum_type),
+                    )
                 )
             elif op.op == "EnumField":
                 dst_local = self.locals[op.df["dst"].value]
@@ -1194,7 +1430,11 @@ class IRFunction:
                     construct = enum_def.constructs[cid]
                     field_type = construct.params[fid]
                     block.statements.append(
-                        IRAssign(self.code, dst_local, IREnumField(self.code, src_local, field_name, field_type))
+                        IRAssign(
+                            self.code,
+                            dst_local,
+                            IREnumField(self.code, src_local, field_name, field_type),
+                        )
                     )
                 else:
                     block.statements.append(IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op)))
@@ -1219,14 +1459,22 @@ class IRFunction:
                     field_name = f"param{fid}"
                     field_type = construct.params[fid]
                     block.statements.append(
-                        IRAssign(self.code, IREnumField(self.code, value_local, field_name, field_type), src_local)
+                        IRAssign(
+                            self.code,
+                            IREnumField(self.code, value_local, field_name, field_type),
+                            src_local,
+                        )
                     )
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
             else:
                 if "dst" in op.df:
                     block.statements.append(
-                        IRAssign(self.code, self.locals[op.df["dst"].value], IRUnliftedOpcode(self.code, op))
+                        IRAssign(
+                            self.code,
+                            self.locals[op.df["dst"].value],
+                            IRUnliftedOpcode(self.code, op),
+                        )
                     )
                 else:
                     block.statements.append(IRUnliftedOpcode(self.code, op))
@@ -1242,6 +1490,13 @@ class IRFunction:
                         stmt.src_file_idx = ref.value
                     except IndexError:
                         pass
+            # Re-emit register aliases (`var b = a;` folded into one register).
+            if op_idx is not None:
+                for reg, alias in self._op_aliases.get(op_idx, ()):
+                    src_local = self.locals[reg]
+                    alias_local = IRLocal(alias, self.func.regs[reg], code=self.code)
+                    self.all_locals.append(alias_local)
+                    block.statements.append(IRAssign(self.code, alias_local, src_local))
 
     def _shortest_distances(
         self,
@@ -1285,7 +1540,13 @@ class IRFunction:
         if not common_nodes:
             return None
 
-        return min(common_nodes, key=lambda node: (left_distances[node] + right_distances[node], node.base_offset))
+        return min(
+            common_nodes,
+            key=lambda node: (
+                left_distances[node] + right_distances[node],
+                node.base_offset,
+            ),
+        )
 
     def _is_terminal_branch_node(self, node: Optional[CFNode], loop_ctx: Optional[_LoopContext]) -> bool:
         """Return True if a branch target has no live successors within the current region."""
@@ -1325,17 +1586,38 @@ class IRFunction:
         # exits (e.g. String.lastIndexOf).
         exit_node: Optional[CFNode] = None
         header_last_op = header.ops[-1] if header.ops else None
-        if header_last_op and header_last_op.op in conditionals:
-            outside_header_successors = [target for target, _ in header.branches if target not in loop_nodes]
-            if len(outside_header_successors) == 1:
-                exit_node = outside_header_successors[0]
+        outside_header_successors = (
+            [target for target, _ in header.branches if target not in loop_nodes] if header_last_op else []
+        )
+        # Non-exit successors: everything the conditional can fall into that stays in
+        # the loop, including a direct self-edge back to the header (a body folded
+        # entirely into the condition block, e.g. `while(true) { x *= 2; if (x > n) break; }`).
+        non_exit_successors = (
+            [target for target, _ in header.branches if target not in outside_header_successors]
+            if header_last_op
+            else []
+        )
+        # The header only *is* the loop's condition when its branch cleanly gates the
+        # loop: exactly one edge stays inside (continue) and exactly one leaves (exit).
+        # A header that ends in a conditional for other reasons (e.g. an inline bounds
+        # check while computing an array index) can have both edges land inside the
+        # loop without either being the exit; treating that conditional as the loop
+        # condition then drops the real body.
+        header_is_loop_gate = (
+            header_last_op is not None
+            and header_last_op.op in conditionals
+            and len(outside_header_successors) == 1
+            and len(non_exit_successors) == 1
+        )
+        if header_is_loop_gate:
+            exit_node = outside_header_successors[0]
         if exit_node is None:
             exit_nodes = self._loop_exit_nodes(loop_nodes)
             exit_node = exit_nodes[0] if len(exit_nodes) == 1 else None
         loop_ctx = self._LoopContext(header, loop_nodes, exit_node)
 
-        header_last_op = header.ops[-1] if header.ops else None
-        if header_last_op and header_last_op.op in conditionals:
+        if header_is_loop_gate:
+            assert header_last_op is not None
             cond_block = IRBlock(self.code)
             self._lift_ops_into_block(cond_block, header.ops[:-1])
 
@@ -1347,21 +1629,35 @@ class IRFunction:
             pj_left = _jump_operand("a")
             pj_right = _jump_operand("b")
             pj_cond = _jump_operand("cond") if "cond" in header_last_op.df else _jump_operand("reg")
-            cond_block.statements.append(IRPrimitiveJump(self.code, header_last_op, pj_left, pj_right, pj_cond))
+            cond_block.statements.append(
+                IRPrimitiveJump(self.code, header_last_op, pj_left, pj_right, pj_cond)
+            )
 
-            inside_successors = [target for target, _ in header.branches if target in loop_nodes and target != header]
-            body_start = inside_successors[0] if len(inside_successors) == 1 else None
+            body_start = non_exit_successors[0]
             body_block = (
                 self._lift_block(body_start, visited.copy(), stop_at=header, loop_ctx=loop_ctx)
-                if body_start is not None
+                if body_start != header
                 else IRBlock(self.code)
             )
 
             block.statements.append(IRPrimitiveLoop(self.code, cond_block, body_block))
         else:
-            body_block = self._lift_block(header, visited.copy(), stop_at=header, loop_ctx=loop_ctx)
+            # `header` was marked visited above so the outer caller won't re-descend into
+            # it, but the body traversal genuinely starts at the header's own content
+            # here (no separate condition block was carved out of it) - excluding it from
+            # this copy lets `_lift_block` actually process it instead of immediately
+            # bailing out on the "already visited" check.
+            body_visited = visited.copy()
+            body_visited.discard(header)
+            body_block = self._lift_block(
+                header, body_visited, stop_at=header, loop_ctx=loop_ctx, is_loop_entry=True
+            )
             block.statements.append(
-                IRWhileLoop(self.code, IRBoolExpr(self.code, IRBoolExpr.CompareType.TRUE), body_block)
+                IRWhileLoop(
+                    self.code,
+                    IRBoolExpr(self.code, IRBoolExpr.CompareType.TRUE),
+                    body_block,
+                )
             )
 
         next_block_ir = self._lift_block(exit_node, visited, stop_at, loop_ctx=parent_loop)
@@ -1451,6 +1747,7 @@ class IRFunction:
         visited: Set[CFNode],
         stop_at: Optional[CFNode] = None,
         loop_ctx: Optional[_LoopContext] = None,
+        is_loop_entry: bool = False,
     ) -> IRBlock:
         """
         Recursively lifts a CFNode and its successors into an IRBlock.
@@ -1460,6 +1757,9 @@ class IRFunction:
             visited: A set of nodes already processed in the current traversal path to prevent infinite loops.
             stop_at: A CFNode that signals the end of the current branch (the convergence point).
                      When this node is reached, the recursive call terminates.
+            is_loop_entry: True for the one call that starts lifting a loop body at its own
+                header node (stop_at == node); skips the immediate self-stop so the header's
+                content is actually processed instead of yielding an empty block.
 
         Returns:
             An IRBlock containing the lifted IR statements.
@@ -1467,7 +1767,7 @@ class IRFunction:
         # --- Base Cases for Recursion Termination ---
         assert self.cfg is not None
         cfg = self.cfg
-        if node is None or node == stop_at or node in visited:
+        if node is None or (node == stop_at and not is_loop_entry) or node in visited:
             return IRBlock(self.code)
         if loop_ctx and node not in loop_ctx.nodes and node.branches:
             block = IRBlock(self.code)
@@ -1542,6 +1842,7 @@ class IRFunction:
                         not target.branches
                         and target.ops
                         and target.ops[-1].op == "Ret"
+                        and target != loop_ctx.exit_node
                         and loop_ctx.header not in cfg.post_dominators.get(target, set())
                     ):
                         return None
@@ -1554,9 +1855,14 @@ class IRFunction:
                         # its statements are preserved; stop at the loop's normal exit
                         # node so post-loop code is not duplicated here.
                         branch_block = self._lift_block(
-                            target, visited.copy(), stop_at=loop_ctx.exit_node, loop_ctx=None
+                            target,
+                            visited.copy(),
+                            stop_at=loop_ctx.exit_node,
+                            loop_ctx=None,
                         )
-                        if branch_block.statements and isinstance(branch_block.statements[-1], (IRReturn, IRThrow)):
+                        if branch_block.statements and isinstance(
+                            branch_block.statements[-1], (IRReturn, IRThrow)
+                        ):
                             return branch_block
                         branch_block.statements.append(IRBreak(self.code))
                         return branch_block
@@ -1580,6 +1886,32 @@ class IRFunction:
 
             if convergence_node is None and node in cfg.immediate_post_dominators:
                 convergence_node = cfg.immediate_post_dominators[node]
+
+            # `_find_convergence_node`'s shortest-combined-distance heuristic can pick
+            # one of the branch targets itself as the "convergence" when that target is
+            # *also* reachable from the other branch — but only via one of that other
+            # branch's own internal sub-paths, not every path (e.g. an inner
+            # `if (a) sharedCall(); else skip;` nested in one arm of this outer `if`,
+            # where sharedCall()'s node gets picked as the outer merge point instead of
+            # the node both arms actually always reach afterward). Detect that precisely
+            # with real post-dominance (every path, not just the shortest one) rather than
+            # overriding every self-referential pick: the simple "if with no else" shape
+            # legitimately wants the branch target itself as convergence (that *is* its
+            # only continuation), and forcing the post-dominator there would wrongly pull
+            # the tail inside the conditional instead of leaving it as the fall-through.
+            if (
+                loop_ctx is None
+                and convergence_node is not None
+                and convergence_node in (jump_target, fall_through)
+            ):
+                other_branch = fall_through if convergence_node == jump_target else jump_target
+                dominates_other = other_branch is None or convergence_node in cfg.post_dominators.get(
+                    other_branch, set()
+                )
+                if not dominates_other and node in cfg.immediate_post_dominators:
+                    pd = cfg.immediate_post_dominators[node]
+                    if pd is not None and pd != convergence_node:
+                        convergence_node = pd
 
             # If the branches do not share a real convergence point because one of
             # them terminates (e.g. returns), use the post-dominator of the live
@@ -1620,11 +1952,17 @@ class IRFunction:
 
             if then_block_ir is None:
                 then_block_ir = self._lift_block(
-                    fall_through, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                    fall_through,
+                    visited.copy(),
+                    stop_at=convergence_node,
+                    loop_ctx=loop_ctx,
                 )
             if else_block_ir is None:
                 else_block_ir = self._lift_block(
-                    jump_target, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                    jump_target,
+                    visited.copy(),
+                    stop_at=convergence_node,
+                    loop_ctx=loop_ctx,
                 )
 
             conditional_stmt = IRConditional(self.code, cond_expr, then_block_ir, else_block_ir)
@@ -1648,7 +1986,10 @@ class IRFunction:
 
             for target_node, edge_type in node.branches:
                 case_block_ir = self._lift_block(
-                    target_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                    target_node,
+                    visited.copy(),
+                    stop_at=convergence_node,
+                    loop_ctx=loop_ctx,
                 )
                 if edge_type.startswith("switch: case:"):
                     case_val = int(edge_type.split(":")[-1].strip())
@@ -1678,18 +2019,36 @@ class IRFunction:
                 stop_nodes=stop_nodes,
             )
 
+            self._trap_depth += 1
             try_block_ir = self._lift_block(
-                try_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                try_branch_node,
+                visited.copy(),
+                stop_at=convergence_node,
+                loop_ctx=loop_ctx,
             )
+            # Trap rebinds this register fresh -- split it before lifting the catch block.
+            exc_reg = last_op.df["exc"].value
+            catch_local = self._split_local(exc_reg, f"var{exc_reg}", defining_op_idx=None)
             catch_block_ir = self._lift_block(
-                catch_branch_node, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                catch_branch_node,
+                visited.copy(),
+                stop_at=convergence_node,
+                loop_ctx=loop_ctx,
             )
-            catch_local = self.locals[last_op.df["exc"].value]
+            self._trap_depth -= 1
+            # Split again after the catch so later code can't inherit catch_local's identity.
+            self._split_local(exc_reg, f"var{exc_reg}", defining_op_idx=None)
             explicit_catch_type = (
                 self._catch_has_explicit_type(catch_branch_node) if catch_branch_node is not None else False
             )
             block.statements.append(
-                IRTryCatch(self.code, try_block_ir, catch_block_ir, catch_local, explicit_catch_type)
+                IRTryCatch(
+                    self.code,
+                    try_block_ir,
+                    catch_block_ir,
+                    catch_local,
+                    explicit_catch_type,
+                )
             )
 
             # Must bound this by the enclosing stop_at, like the conditional case
@@ -1704,7 +2063,9 @@ class IRFunction:
 
         elif last_op and last_op.op == "Ret":
             ret_type = self.func.regs[last_op.df["ret"].value].resolve(self.code)
-            ret_val = self.locals[last_op.df["ret"].value] if not isinstance(ret_type.definition, Void) else None
+            ret_val = (
+                self.locals[last_op.df["ret"].value] if not isinstance(ret_type.definition, Void) else None
+            )
             block.statements.append(IRReturn(self.code, ret_val))
 
         elif last_op and last_op.op in ("Throw", "Rethrow"):
@@ -1722,6 +2083,8 @@ class IRFunction:
             if node.branches:
                 successor_node, _ = node.branches[0]
                 if loop_ctx and successor_node == loop_ctx.header:
+                    if self._trap_depth:
+                        block.statements.append(IRContinue(self.code))
                     return block
                 if loop_ctx and successor_node not in loop_ctx.nodes:
                     block.statements.append(IRBreak(self.code))
@@ -1734,6 +2097,345 @@ class IRFunction:
 
     def print(self) -> None:
         print(self.block.pprint())
+
+
+STATIC_INIT_UNRECOVERABLE = "<unrecoverable static initializer>"
+
+
+def _static_call_name_parts(func: Function, code: Bytecode) -> Optional[Tuple[str, str]]:
+    """Return (class_name, method_name) for a static function, e.g. for rendering `Class.method(...)` call text."""
+    name = code.partial_func_name(func)
+    if not name or name == "<none>":
+        name = None
+    if name and "." in name:
+        class_name, method_name = name.rsplit(".", 1)
+        return class_name, method_name
+    full = code.full_func_name(func)
+    if full and full != "<none>.<none>" and "." in full:
+        class_name, method_name = full.rsplit(".", 1)
+        return destaticify(class_name), method_name
+    return None
+
+
+def _static_default_value(code: Bytecode, t: "tIndex") -> str:
+    """Zero/default value HL gives a static field read before its own initializer has run."""
+    try:
+        kind = t.resolve(code).kind.value
+    except Exception:
+        return "null"
+    if kind in (Type.Kind.I32.value, Type.Kind.U8.value, Type.Kind.U16.value, Type.Kind.I64.value):
+        return "0"
+    if kind in (Type.Kind.F32.value, Type.Kind.F64.value):
+        return "0.0"
+    if kind == Type.Kind.BOOL.value:
+        return "false"
+    return "null"
+
+
+def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
+    """Scan the entrypoint for SetField writes to class statics with simple constant/arith/enum initializers, keyed by the static Obj's id() then field name."""
+    cache: Optional[Dict[int, Dict[str, str]]] = getattr(code, "_static_field_inits_cache", None)
+    if cache is not None:
+        return cache
+    result: Dict[int, Dict[str, str]] = {}
+    field_refs: Dict[int, Dict[str, Set[str]]] = {}
+    arith_syms = {"Add": "+", "Sub": "-", "Mul": "*", "Div": "/"}
+    # preset string-literal globals (from the bytecode constants table) resolve to a value
+    # even though they're loaded via GetGlobal rather than the String opcode
+    const_strings: Dict[int, str] = {}
+    try:
+        for const in code.constants:
+            gi = const._global.value
+            if const.fields:
+                gtype = code.global_types[gi].resolve(code)
+                if isinstance(gtype.definition, Obj) and gtype.definition.name.resolve(code) == "String":
+                    const_strings[gi] = (
+                        '"' + code.strings.value[const.fields[0].value].replace('"', '\\"') + '"'
+                    )
+    except Exception:
+        pass
+    try:
+        entry = code.entrypoint.resolve(code)
+        if not isinstance(entry, Function):
+            raise ValueError
+        reg_value: Dict[int, str] = {}
+        reg_refs: Dict[int, Set[str]] = {}
+        reg_global: Dict[int, int] = {}
+        pending_new: Dict[int, str] = {}
+        empty_array_regs: Set[int] = set()
+        # in-progress array-literal builds: alloc reg -> (declared length, {index: (value, refs)})
+        array_builds: Dict[int, Tuple[int, Dict[int, Tuple[str, Set[str]]]]] = {}
+        for op in entry.ops:
+            dst: Any = op.df.get("dst")
+            if (op.op or "").startswith("J") or op.op in ("Switch", "Label", "Trap"):
+                # branchy control flow (e.g. switch-computed initializers): can't safely
+                # track a single value across merge points with a flat linear scan
+                reg_value.clear()
+                reg_refs.clear()
+                empty_array_regs.clear()
+                array_builds.clear()
+                continue
+            if op.op in ("Int", "Float"):
+                try:
+                    resolved = op.df["ptr"].resolve(code)
+                    reg_value[dst.value] = str(getattr(resolved, "value", resolved))
+                    reg_refs.pop(dst.value, None)
+                except Exception:
+                    reg_value.pop(dst.value, None)
+            elif op.op == "Bool":
+                reg_value[dst.value] = "true" if op.df["value"].value else "false"
+                reg_refs.pop(dst.value, None)
+            elif op.op == "Null":
+                reg_value[dst.value] = "null"
+                reg_refs.pop(dst.value, None)
+            elif op.op == "String":
+                try:
+                    s = op.df["ptr"].resolve(code)
+                    reg_value[dst.value] = '"' + str(s).replace('"', '\\"') + '"'
+                    reg_refs.pop(dst.value, None)
+                except Exception:
+                    reg_value.pop(dst.value, None)
+            elif op.op in arith_syms:
+                a, b = op.df["a"].value, op.df["b"].value
+                if a in reg_value and b in reg_value:
+                    reg_value[dst.value] = f"({reg_value[a]} {arith_syms[op.op]} {reg_value[b]})"
+                    reg_refs[dst.value] = reg_refs.get(a, set()) | reg_refs.get(b, set())
+                else:
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+            elif op.op in ("MakeEnum", "EnumAlloc"):
+                try:
+                    enum_type = entry.regs[dst.value].resolve(code)
+                    enum_def = enum_type.definition
+                    cid = op.df["construct"].value
+                    cname = (
+                        enum_def.constructs[cid].name.resolve(code)
+                        if cid < len(enum_def.constructs)
+                        else f"construct_{cid}"
+                    )
+                    if op.op == "MakeEnum":
+                        arg_regs = [a.value for a in op.df["args"].value]
+                        if all(a in reg_value for a in arg_regs):
+                            reg_value[dst.value] = f"{cname}({', '.join(reg_value[a] for a in arg_regs)})"
+                        else:
+                            reg_value[dst.value] = STATIC_INIT_UNRECOVERABLE
+                    else:
+                        reg_value[dst.value] = cname
+                except Exception:
+                    reg_value.pop(dst.value, None)
+            elif op.op == "New":
+                try:
+                    typ = entry.regs[dst.value].resolve(code)
+                    if isinstance(typ.definition, Obj):
+                        pending_new[dst.value] = destaticify(typ.definition.name.resolve(code))
+                except Exception:
+                    pass
+                reg_value.pop(dst.value, None)
+                reg_refs.pop(dst.value, None)
+            elif (
+                op.op == "CallMethod" and op.df["args"].value and op.df["args"].value[0].value in pending_new
+            ):
+                obj_reg = op.df["args"].value[0].value
+                cname = pending_new.pop(obj_reg)
+                is_ctor = False
+                try:
+                    obj_type = entry.regs[obj_reg].resolve(code)
+                    if isinstance(obj_type.definition, Obj):
+                        proto = code.proto_by_pindex(obj_type.definition, op.df["field"].value)
+                        is_ctor = proto is not None and proto.name.resolve(code) in ("new", "__constructor__")
+                except Exception:
+                    is_ctor = False
+                call_args = [a.value for a in op.df["args"].value[1:]]
+                if is_ctor and all(a in reg_value for a in call_args):
+                    reg_value[obj_reg] = f"new {cname}({', '.join(reg_value[a] for a in call_args)})"
+                    reg_refs[obj_reg] = {cname}
+                    for a in call_args:
+                        reg_refs[obj_reg] |= reg_refs.get(a, set())
+                else:
+                    reg_value[obj_reg] = STATIC_INIT_UNRECOVERABLE
+                    reg_refs.pop(obj_reg, None)
+                if dst is not None:
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+            elif op.op in simple_calls:
+                fname_parts = None
+                fun = None
+                try:
+                    fun = op.df["fun"].resolve(code)
+                    fname_parts = _static_call_name_parts(fun, code) if isinstance(fun, Function) else None
+                except Exception:
+                    fname_parts = None
+                call_arg_regs = (
+                    [op.df["args"].value[i].value for i in range(len(op.df["args"].value))]
+                    if op.op == "CallN"
+                    else [op.df[f"arg{i}"].value for i in range(int(op.op[-1]))]
+                )
+                # `[]` literal lowers to native alloc_array(type, 0) then a synthetic
+                # wrapper call turning the raw array into an Array<T>; the wrapper has
+                # no resolvable name, so match on the alloc_array(.., 0) shape instead
+                if (
+                    isinstance(fun, Native)
+                    and fun.name.resolve(code) == "alloc_array"
+                    and len(call_arg_regs) == 2
+                    and reg_value.get(call_arg_regs[1]) == "0"
+                ):
+                    empty_array_regs.add(dst.value)
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+                # non-empty array literal: alloc_array(type, N) followed by N
+                # SetArray element writes, then the same synthetic wrap call
+                elif (
+                    isinstance(fun, Native)
+                    and fun.name.resolve(code) == "alloc_array"
+                    and len(call_arg_regs) == 2
+                    and reg_value.get(call_arg_regs[1], "").isdigit()
+                    and int(reg_value[call_arg_regs[1]]) > 0
+                ):
+                    array_builds[dst.value] = (int(reg_value[call_arg_regs[1]]), {})
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+                elif op.op == "Call1" and call_arg_regs[0] in empty_array_regs:
+                    reg_value[dst.value] = "[]"
+                    reg_refs.pop(dst.value, None)
+                elif op.op == "Call1" and call_arg_regs[0] in array_builds:
+                    length, elems = array_builds.pop(call_arg_regs[0])
+                    if len(elems) == length and all(i in elems for i in range(length)):
+                        reg_value[dst.value] = "[" + ", ".join(elems[i][0] for i in range(length)) + "]"
+                        refs: Set[str] = set()
+                        for i in range(length):
+                            refs |= elems[i][1]
+                        reg_refs[dst.value] = refs
+                    else:
+                        reg_value[dst.value] = STATIC_INIT_UNRECOVERABLE
+                        reg_refs.pop(dst.value, None)
+                # constructors are compiled as direct calls to the `new` findex, obj as arg0,
+                # not dispatched through the vtable, so catch them here too
+                elif (
+                    fname_parts is not None
+                    and fname_parts[1] in ("new", "__constructor__")
+                    and call_arg_regs
+                    and call_arg_regs[0] in pending_new
+                ):
+                    obj_reg = call_arg_regs[0]
+                    cname = pending_new.pop(obj_reg)
+                    ctor_args = call_arg_regs[1:]
+                    if all(a in reg_value for a in ctor_args):
+                        reg_value[obj_reg] = f"new {cname}({', '.join(reg_value[a] for a in ctor_args)})"
+                        reg_refs[obj_reg] = {cname}
+                        for a in ctor_args:
+                            reg_refs[obj_reg] |= reg_refs.get(a, set())
+                    else:
+                        reg_value[obj_reg] = STATIC_INIT_UNRECOVERABLE
+                        reg_refs.pop(obj_reg, None)
+                    if dst is not None:
+                        reg_value.pop(dst.value, None)
+                        reg_refs.pop(dst.value, None)
+                elif fname_parts is not None and all(a in reg_value for a in call_arg_regs):
+                    cname, mname = fname_parts
+                    reg_value[dst.value] = (
+                        f"{cname}.{mname}({', '.join(reg_value[a] for a in call_arg_regs)})"
+                    )
+                    reg_refs[dst.value] = {cname}
+                    for a in call_arg_regs:
+                        reg_refs[dst.value] |= reg_refs.get(a, set())
+                else:
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+            elif op.op == "StaticClosure":
+                try:
+                    fun = op.df["fun"].resolve(code)
+                    parts = _static_call_name_parts(fun, code) if isinstance(fun, Function) else None
+                    if parts:
+                        cname, mname = parts
+                        reg_value[dst.value] = f"{cname}.{mname}"
+                        reg_refs[dst.value] = {cname}
+                    else:
+                        # anonymous closure: rendered by pseudo.py as a private
+                        # static helper named __anon_<findex>
+                        reg_value[dst.value] = f"__anon_{fun.findex.value}"
+                        reg_refs.pop(dst.value, None)
+                except Exception:
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+            elif op.op == "SetArray":
+                array_reg = op.df["array"].value
+                if array_reg in array_builds:
+                    idx_reg = op.df["index"].value
+                    src_reg = op.df["src"].value
+                    length, elems = array_builds[array_reg]
+                    idx_str = reg_value.get(idx_reg)
+                    if idx_str is not None and idx_str.isdigit() and src_reg in reg_value:
+                        idx = int(idx_str)
+                        if 0 <= idx < length:
+                            elems[idx] = (reg_value[src_reg], reg_refs.get(src_reg, set()))
+            elif op.op == "GetGlobal":
+                gi = op.df["global"].value
+                if gi in const_strings:
+                    reg_value[dst.value] = const_strings[gi]
+                    reg_refs.pop(dst.value, None)
+                else:
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+                reg_global[dst.value] = gi
+            elif op.op == "Field":
+                obj_reg = op.df["obj"].value
+                gi = reg_global.get(obj_reg)
+                if gi is not None:
+                    try:
+                        defn = code.global_types[gi].resolve(code).definition
+                        if isinstance(defn, Obj):
+                            field_core = op.df["field"].resolve_obj(code, defn)
+                            fname = field_core.name.resolve(code)
+                            field_dict = result.get(id(defn), {})
+                            if fname in field_dict:
+                                known = field_dict[fname]
+                                if known != STATIC_INIT_UNRECOVERABLE:
+                                    # reference the field itself rather than inlining its init
+                                    # expression: inlining would re-run any side effects (e.g. a
+                                    # call) that already ran once when that field was initialized
+                                    owner_name = destaticify(defn.name.resolve(code))
+                                    reg_value[dst.value] = f"{owner_name}.{fname}"
+                                    reg_refs[dst.value] = {owner_name} | field_refs.get(id(defn), {}).get(
+                                        fname, set()
+                                    )
+                                else:
+                                    reg_value.pop(dst.value, None)
+                                    reg_refs.pop(dst.value, None)
+                            else:
+                                # field not yet assigned in scan order (forward reference, same
+                                # or later class): reads the type's zero/default value at runtime
+                                reg_value[dst.value] = _static_default_value(code, field_core.type)
+                                reg_refs.pop(dst.value, None)
+                    except Exception:
+                        reg_value.pop(dst.value, None)
+                        reg_refs.pop(dst.value, None)
+                else:
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+            elif op.op == "SetField":
+                obj_reg = op.df["obj"].value
+                src_reg = op.df["src"].value
+                gi = reg_global.get(obj_reg)
+                if gi is not None:
+                    try:
+                        defn = code.global_types[gi].resolve(code).definition
+                        if isinstance(defn, Obj):
+                            field_core = op.df["field"].resolve_obj(code, defn)
+                            fname = field_core.name.resolve(code)
+                            value = reg_value.get(src_reg, STATIC_INIT_UNRECOVERABLE)
+                            result.setdefault(id(defn), {})[fname] = value
+                            field_refs.setdefault(id(defn), {})[fname] = reg_refs.get(src_reg, set())
+                    except Exception:
+                        pass
+            elif dst is not None:
+                reg_value.pop(dst.value, None)
+                reg_refs.pop(dst.value, None)
+                reg_global.pop(dst.value, None)
+    except Exception:
+        pass
+    code._static_field_inits_cache = result
+    code._static_field_init_refs_cache = field_refs
+    return result
 
 
 class IRClass:
@@ -1762,6 +2464,9 @@ class IRClass:
         self.static_methods: List[IRFunction] = []
         self.fields: List[Tuple[str, Type]] = []
         self.static_fields: List[Tuple[str, Type]] = []
+        self.field_elem_types: Dict[str, Type] = {}
+        self.static_field_inits: Dict[str, str] = {}
+        self.static_field_init_refs: Dict[str, Set[str]] = {}
         if self.dynamic is None and self.static is None:
             raise ValueError(
                 "IRClass needs at least one valid Obj that has been preprocessed by `Bytecode.map_statics`!"
@@ -1773,6 +2478,19 @@ class IRClass:
         if self.static:
             self.static_methods += self.gather_methods(self.static)
             self.static_fields += self.gather_fields(self.static)
+            try:
+                self.static_field_inits = _collect_static_field_inits(self.code).get(id(self.static), {})
+                self.static_field_init_refs = getattr(self.code, "_static_field_init_refs_cache", {}).get(
+                    id(self.static), {}
+                )
+            except Exception:
+                pass
+
+        # Recover erased Array<T> element types from usage now that all
+        # methods are lifted and optimized. Must run before pseudo rendering.
+        from .opt.arraytypes import recover_array_element_types
+
+        recover_array_element_types(self)
 
     def gather_methods(self, obj: Obj) -> List[IRFunction]:
         """
@@ -1781,11 +2499,15 @@ class IRClass:
         res: List[IRFunction] = []
         for proto in obj.protos:
             fn = proto.findex.resolve(self.code)
-            assert isinstance(fn, Function), "Native protos aren't supported! Not even sure if this is possible tbh"
+            assert isinstance(fn, Function), (
+                "Native protos aren't supported! Not even sure if this is possible tbh"
+            )
             res.append(IRFunction(self.code, fn, capture_layers=self.capture_layers))
         for binding in obj.bindings:
             fn = binding.findex.resolve(self.code)
-            assert isinstance(fn, Function), "Native bindings aren't supported! Not even sure if this is possible tbh"
+            assert isinstance(fn, Function), (
+                "Native bindings aren't supported! Not even sure if this is possible tbh"
+            )
             # Avoid adding duplicates if a proto is also bound
             if fn not in [r.func for r in res]:
                 res.append(IRFunction(self.code, fn, capture_layers=self.capture_layers))
@@ -1796,9 +2518,14 @@ class IRClass:
         binding_names: List[str] = []
         for binding in obj.bindings:
             binding_names.append(binding.field.resolve_obj(self.code, obj).name.resolve(self.code))
-        for field in obj.fields:
-            if not field.name.resolve(self.code) in binding_names:
-                res.append((field.name.resolve(self.code), field.type.resolve(self.code)))
+        # Own fields sit at the end of resolve_fields() (parent fields first),
+        # so this offset keeps the synthesized fallback name aligned with the
+        # index Field/SetField ops actually resolve against.
+        own_start = len(obj.resolve_fields(self.code)) - len(obj.fields)
+        for i, field in enumerate(obj.fields):
+            name = _obj_field_name(field, own_start + i, self.code)
+            if field.name.resolve(self.code) not in binding_names:
+                res.append((name, field.type.resolve(self.code)))
         return res
 
     def pseudo(self) -> str:

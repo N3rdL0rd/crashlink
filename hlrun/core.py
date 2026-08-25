@@ -127,7 +127,7 @@ class HlObj(HlValue):
         """
         return hl_obj_classname(self.__dict__["__ptr_impossible_to_overlap_this_name"])
 
-    def __init__(self, ptr):  # type: ignore
+    def __init__(self, ptr):
         self.__dict__["__ptr_impossible_to_overlap_this_name"] = ptr  # HACK: yeah... sorry.
 
 

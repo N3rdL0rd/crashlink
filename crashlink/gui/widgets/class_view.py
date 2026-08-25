@@ -8,8 +8,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeyEvent, QTextCursor
 from PySide6.QtWidgets import QWidget
 
-from .decomp_view import DecompView, _NAV_KEYS
-from ..themes import Theme
+from .decomp_view import DecompView
 
 
 class ClassView(DecompView):
@@ -101,8 +100,8 @@ class ClassView(DecompView):
             self._focused_findex = findex
             self.function_focused.emit(findex)
 
-    def keyPressEvent(self, event: object) -> None:
-        if isinstance(event, QKeyEvent) and not event.modifiers():
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if not event.modifiers():
             findex = self.findex_at_cursor()
             word = self._word_at_cursor()
             if event.key() == Qt.Key.Key_N and findex is not None:

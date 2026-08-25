@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
 
 SIMILARITY_THRESHOLD = 0.90
+TIME_LIMIT_SECONDS = 120.0
+MEMORY_LIMIT_MB = 4096.0
 
 
 @dataclass
@@ -98,6 +100,8 @@ class TestCase:
     error: Optional[str] = None
     opcode_comparison: Optional[OpcodeComparison] = None
     layers: Optional[Dict[str, Any]] = None
+    elapsed_seconds: float = 0.0
+    peak_memory_mb: float = 0.0
 
     def to_json(self) -> dict:
         return {
@@ -110,6 +114,8 @@ class TestCase:
             "error": self.error,
             "opcode_comparison": self.opcode_comparison.to_json() if self.opcode_comparison else None,
             "layers": self.layers,
+            "elapsed_seconds": self.elapsed_seconds,
+            "peak_memory_mb": self.peak_memory_mb,
         }
 
     @classmethod
@@ -125,6 +131,8 @@ class TestCase:
             error=data["error"] if data.get("error") else None,
             opcode_comparison=OpcodeComparison.from_json(oc_data) if oc_data else None,
             layers=data.get("layers"),
+            elapsed_seconds=data.get("elapsed_seconds", 0.0),
+            peak_memory_mb=data.get("peak_memory_mb", 0.0),
         )
 
 
@@ -197,6 +205,20 @@ class Run:
             "timestamp": self.timestamp,
             "status": self.status,
             "status_color": self.status_color,
+        }
+
+    def to_summary_json(self) -> dict:
+        """A small subset of `to_json`, without the (potentially huge) per-case
+        disassembly/decompiled text - for listing runs, not inspecting one."""
+        return {
+            "git": self.git.to_json(),
+            "version": self.context.version,
+            "id": self.id,
+            "timestamp": self.timestamp,
+            "status": self.status,
+            "status_color": self.status_color,
+            "case_count": len(self.cases),
+            "avg_similarity": self.avg_similarity(),
         }
 
     @classmethod

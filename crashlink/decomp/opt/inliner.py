@@ -4,37 +4,17 @@ Inlining and copy-propagation optimizers.
 
 from __future__ import annotations
 
-import copy
 import re
-from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, Union, cast
 
 if TYPE_CHECKING:
     from ..function import IRFunction
 
 from ...core import (
-    Bytecode,
-    DynObj,
-    Enum,
-    Fun,
-    Function,
-    Native,
-    Obj,
     Opcode,
-    Ref,
-    ResolvableVarInt,
     Type,
-    TypeDef,
-    Virtual,
-    Void,
-    fieldRef,
-    gIndex,
-    tIndex,
 )
-from ...errors import DecompError
 from ...globals import DEBUG, dbg_print
-from ... import disasm
-from ...opcodes import arithmetic, conditionals, terminal, simple_calls
 from ..ir import (
     IRStatement,
     IRExpression,
@@ -51,12 +31,9 @@ from ..ir import (
     IRConst,
     IRConditional,
     IRPrimitiveLoop,
-    IRBreak,
-    IRContinue,
     IRReturn,
     IRThrow,
     IRTrace,
-    IRTryCatch,
     IRSwitch,
     IRPrimitiveJump,
     IRWhileLoop,
@@ -65,29 +42,19 @@ from ..ir import (
     IRField,
     IRNew,
     IRNativeArrayNew,
-    IRNativeMapNew,
     IRCast,
     IRArrayLiteral,
     IRArrayAccess,
     IRRef,
+    IRRefNew,
+    IRRefGet,
+    IRRefSet,
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
-    IRUnliftedOpcode,
-    IRNativeStub,
-    _get_type_in_code,
-    _strip_ansi,
 )
-from ..cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
 from . import (
-    IROptimizer,
     TraversingIROptimizer,
-    _ir_structurally_equal,
-    _structurally_equal,
-    _stmt_lists_structurally_equal,
-    _bytes_mem_kind,
-    _int_const_value,
-    _signed_i32,
 )
 
 
@@ -138,7 +105,9 @@ class IRPrimitiveJumpLifter(TraversingIROptimizer):
         }
 
         if original_jump_op.op not in jump_to_bool_expr_map:
-            dbg_print(f"IRPrimitiveJumpLifter: Jump op {original_jump_op.op} not supported for BoolExpr conversion.")
+            dbg_print(
+                f"IRPrimitiveJumpLifter: Jump op {original_jump_op.op} not supported for BoolExpr conversion."
+            )
             return
 
         condition_type = jump_to_bool_expr_map[original_jump_op.op]
@@ -168,14 +137,18 @@ class IRPrimitiveJumpLifter(TraversingIROptimizer):
                 local = self.func.locals[reg_idx]
                 return local if isinstance(local, IRLocal) else None
             except (AttributeError, IndexError, KeyError):
-                dbg_print(f"IRPrimitiveJumpLifter: Could not resolve local for key {key_name} in {original_jump_op}")
+                dbg_print(
+                    f"IRPrimitiveJumpLifter: Could not resolve local for key {key_name} in {original_jump_op}"
+                )
                 return None
 
         if condition_type in [
             IRBoolExpr.CompareType.ISTRUE,
             IRBoolExpr.CompareType.ISFALSE,
         ]:
-            cond_operand_expr = resolve_operand("cond") if primitive_jump.cond is None else primitive_jump.cond
+            cond_operand_expr = (
+                resolve_operand("cond") if primitive_jump.cond is None else primitive_jump.cond
+            )
             if not cond_operand_expr:
                 return  # Failed to create
         elif condition_type in [
@@ -272,12 +245,36 @@ class IRConditionInliner(TraversingIROptimizer):
                 return True
         return False
 
+    def _has_loop_condition_cost(self, expr: IRExpression) -> bool:
+        """True if folding `expr` directly into a while-loop's condition would
+        make it re-execute real work (arithmetic or a narrowing/widening cast)
+        every iteration, instead of the original's single computation before
+        the loop. Even a lone remaining use is unsafe to inline here — unlike
+        an `if` condition (evaluated once either way), a loop condition is
+        evaluated every pass, and Haxe's own compiler additionally lowers a
+        non-trivial while-condition through a costlier `while(true){if(!c)
+        break;}` shape instead of a direct comparison."""
+        if isinstance(expr, (IRConst, IRLocal)):
+            return False
+        if isinstance(expr, (IRArithmetic, IRCast, IRNeg)):
+            return True
+        if isinstance(expr, IRField):
+            return self._has_loop_condition_cost(expr.target)
+        if isinstance(expr, IRArrayAccess):
+            return self._has_loop_condition_cost(expr.array) or self._has_loop_condition_cost(expr.index)
+        if isinstance(expr, (IRNot, IRTypeKind)):
+            for child in expr.get_children():
+                if isinstance(child, IRExpression) and self._has_loop_condition_cost(child):
+                    return True
+            return False
+        return True
+
     def _is_safe_to_duplicate(self, expr: IRExpression) -> bool:
         """Return True for side-effect-free expressions that can be duplicated
         without changing program behavior. Calls and allocations are excluded."""
         if isinstance(expr, (IRConst, IRLocal)):
             return True
-        if isinstance(expr, (IRField, IRCast, IRNeg, IRNot)):
+        if isinstance(expr, (IRField, IRCast, IRNeg, IRNot, IRTypeKind)):
             for child in expr.get_children():
                 if isinstance(child, IRExpression) and not self._is_safe_to_duplicate(child):
                     return False
@@ -293,16 +290,13 @@ class IRConditionInliner(TraversingIROptimizer):
         if isinstance(stmt, IRAssign):
             if self._expr_contains_local(stmt.expr, local):
                 return True
-            # A compound target (`obj.field = ...`) still reads `local` to
-            # compute the field's containing object — only a bare local
-            # target (`local = ...`) is a pure redefinition with no read of
-            # the old value. (Deliberately narrower than IRField: treating
-            # an IRArrayAccess target's index as a "read" here blocks the
-            # generic IRAssign-pair fold below from ever reaching it, since
-            # that fold only substitutes into the *value* side, not the
-            # target — see the dedicated IRArrayAccess substitution path
-            # there instead.)
-            if isinstance(stmt.target, IRField) and self._expr_contains_local(stmt.target, local):
+            # A compound target (`obj.field = ...` or `arr[idx] = ...`) still
+            # reads `local` to compute the field's containing object or the
+            # array/index — only a bare local target (`local = ...`) is a
+            # pure redefinition with no read of the old value.
+            if isinstance(stmt.target, (IRField, IRArrayAccess)) and self._expr_contains_local(
+                stmt.target, local
+            ):
                 return True
             return False
         if isinstance(stmt, IRExpression):
@@ -320,6 +314,36 @@ class IRConditionInliner(TraversingIROptimizer):
             if child is not stmt and self._stmt_contains_local_read(child, local):
                 return True
         return False
+
+    def _local_reassigned_in_conditional(
+        self,
+        local: IRLocal,
+        conditional_stmt: Union[IRConditional, IRWhileLoop],
+    ) -> bool:
+        """True if a branch/body of the conditional reassigns `local` itself.
+
+        Inlining `local`'s defining expression into the condition (and dropping
+        the original assignment) is unsound when a branch overwrites `local`:
+        the branch's new value would never reach any later read of `local`."""
+        if isinstance(conditional_stmt, IRConditional):
+            blocks = [conditional_stmt.true_block]
+            if conditional_stmt.false_block:
+                blocks.append(conditional_stmt.false_block)
+        else:
+            blocks = [conditional_stmt.body]
+
+        def walk(s: IRStatement) -> bool:
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target.name == local.name:
+                return True
+            for child in s.get_children():
+                if isinstance(child, IRBlock):
+                    if any(walk(cs) for cs in child.statements):
+                        return True
+                elif isinstance(child, IRStatement) and walk(child):
+                    return True
+            return False
+
+        return any(walk(s) for blk in blocks for s in blk.statements)
 
     def _local_used_outside_condition(
         self,
@@ -341,6 +365,9 @@ class IRConditionInliner(TraversingIROptimizer):
         for s in later_statements:
             if self._stmt_contains_local_read(s, local):
                 return True
+            # a top-level reassignment kills the value; later reads don't count
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target.name == local.name:
+                break
         return False
 
     def visit_block(self, block: IRBlock) -> None:
@@ -374,9 +401,18 @@ class IRConditionInliner(TraversingIROptimizer):
 
                     if isinstance(next_stmt, IRConditional):
                         conditional_stmt: IRConditional = next_stmt
-                        used_outside = isinstance(assigned_local, IRLocal) and self._local_used_outside_condition(
+                        used_outside = isinstance(
+                            assigned_local, IRLocal
+                        ) and self._local_used_outside_condition(
                             assigned_local, conditional_stmt, block.statements[i + 2 :]
                         )
+                        reassigned_in_branch = isinstance(
+                            assigned_local, IRLocal
+                        ) and self._local_reassigned_in_conditional(assigned_local, conditional_stmt)
+                        if reassigned_in_branch:
+                            new_statements.append(current_stmt)
+                            i += 1
+                            continue
                         if conditional_stmt.condition == assigned_local:
                             if used_outside and not self._is_safe_to_duplicate(expr_to_inline):
                                 new_statements.append(current_stmt)
@@ -418,11 +454,22 @@ class IRConditionInliner(TraversingIROptimizer):
 
                     elif not inlined_something and isinstance(next_stmt, IRWhileLoop):
                         while_loop_stmt: IRWhileLoop = next_stmt
-                        used_outside = isinstance(assigned_local, IRLocal) and self._local_used_outside_condition(
+                        used_outside = isinstance(
+                            assigned_local, IRLocal
+                        ) and self._local_used_outside_condition(
                             assigned_local, while_loop_stmt, block.statements[i + 2 :]
                         )
+                        reassigned_in_branch = isinstance(
+                            assigned_local, IRLocal
+                        ) and self._local_reassigned_in_conditional(assigned_local, while_loop_stmt)
+                        if reassigned_in_branch:
+                            new_statements.append(current_stmt)
+                            i += 1
+                            continue
                         if while_loop_stmt.condition == assigned_local:
-                            if used_outside and not self._is_safe_to_duplicate(expr_to_inline):
+                            if (used_outside and not self._is_safe_to_duplicate(expr_to_inline)) or (
+                                self._has_loop_condition_cost(expr_to_inline)
+                            ):
                                 new_statements.append(current_stmt)
                                 i += 1
                                 continue
@@ -438,7 +485,9 @@ class IRConditionInliner(TraversingIROptimizer):
                             i += 2
                             inlined_something = True
                         elif isinstance(while_loop_stmt.condition, IRBoolExpr):
-                            if used_outside and not self._is_safe_to_duplicate(expr_to_inline):
+                            if (used_outside and not self._is_safe_to_duplicate(expr_to_inline)) or (
+                                self._has_loop_condition_cost(expr_to_inline)
+                            ):
                                 new_statements.append(current_stmt)
                                 i += 1
                                 continue
@@ -560,7 +609,10 @@ class IRConditionInliner(TraversingIROptimizer):
         return changed
 
     def _try_inline_into_boolexpr(
-        self, bool_expr: IRBoolExpr, target: IRLocal | IRField | IRArrayAccess, expr_to_inline: IRExpression
+        self,
+        bool_expr: IRBoolExpr,
+        target: IRLocal | IRField | IRArrayAccess,
+        expr_to_inline: IRExpression,
     ) -> Optional[IRBoolExpr]:
         modified = False
         new_left = bool_expr.left
@@ -636,7 +688,9 @@ class IRConditionInliner(TraversingIROptimizer):
                     made_change = True
 
             if isinstance(call_expr.target, IRExpression):
-                inlined_target_expr = self._try_inline_into_generic_expr(call_expr.target, target, expr_to_inline)
+                inlined_target_expr = self._try_inline_into_generic_expr(
+                    call_expr.target, target, expr_to_inline
+                )
                 if inlined_target_expr:
                     if isinstance(inlined_target_expr, (IRConst, IRLocal, IRField, type(None))):
                         call_expr.target = inlined_target_expr
@@ -683,9 +737,11 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
       is not redefined.
     """
 
-    def __init__(self, function: "IRFunction", aggressive: bool = False):
+    def __init__(self, function: "IRFunction", aggressive: bool = False, past_kills: bool = False):
         super().__init__(function)
         self.aggressive = aggressive
+        # past_kills: a later redefinition bounds the substitution range instead of blocking inlining
+        self.past_kills = past_kills
 
         # --- NEW: Pre-calculate the set of all user-named variables ---
         self._user_variable_names: Set[str] = set()
@@ -705,7 +761,17 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         dbg_print(f"IRTempAssignmentInliner: Protecting user reg indices: {self._user_reg_indices}")
 
     def _is_user_local(self, local: IRLocal) -> bool:
-        return local.name in self._user_variable_names
+        if local.name in self._user_variable_names:
+            return True
+        # Preserve names like `b1` that _name_locals generated to disambiguate
+        # two user-named locals sharing a debug name (see IRDeadTempEliminator's
+        # identical check) -- without this, a disambiguated local silently loses
+        # its "real variable" protection and gets inlined away like an anonymous
+        # temp, since its suffixed name never matches the raw debug name set.
+        for name in self._user_variable_names:
+            if local.name.startswith(name) and local.name[len(name) :].isdigit():
+                return True
+        return False
 
     def _substitute_in_expr(
         self, expr: IRExpression, target: IRLocal, replacement: IRExpression
@@ -753,6 +819,12 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             expr.constructor_args = new_args
         elif isinstance(expr, IRRef):
             expr.target, changed = self._substitute_in_expr(expr.target, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(expr, IRRefNew):
+            expr.target, changed = self._substitute_in_expr(expr.target, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(expr, IRRefGet):
+            expr.ref, changed = self._substitute_in_expr(expr.ref, target, replacement)
             made_change = made_change or changed
         elif isinstance(expr, IREnumConstruct):
             new_args = []
@@ -827,7 +899,11 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         return False
 
     def _substitute_in_statement(
-        self, stmt: IRStatement, target: IRLocal, replacement: IRExpression, _visited: Optional[Set[int]] = None
+        self,
+        stmt: IRStatement,
+        target: IRLocal,
+        replacement: IRExpression,
+        _visited: Optional[Set[int]] = None,
     ) -> bool:
         """
         Recursively traverses a statement to perform substitutions.
@@ -852,12 +928,18 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 stmt.expr, changed = self._substitute_in_expr(stmt.expr, target, replacement)
                 made_change = made_change or changed
         elif isinstance(stmt, IRExpression):
-            _, changed = self._substitute_in_expr(stmt, target, replacement)
-            made_change = made_change or changed
+            # a root-equal match can't be replaced in place; don't report a phantom change
+            if stmt != target:
+                _, changed = self._substitute_in_expr(stmt, target, replacement)
+                made_change = made_change or changed
         elif isinstance(stmt, IRReturn):
             if stmt.value:
                 stmt.value, changed = self._substitute_in_expr(stmt.value, target, replacement)
                 made_change = made_change or changed
+        elif isinstance(stmt, IRTrace):
+            stmt.msg, changed = self._substitute_in_expr(stmt.msg, target, replacement)
+            made_change = made_change or changed
+            return made_change
 
         for child in stmt.get_children():
             if child is not stmt:
@@ -901,6 +983,11 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             if stmt.value:
                 stmt.value, changed = self._substitute_in_expr(stmt.value, target, replacement)
                 made_change = made_change or changed
+        elif isinstance(stmt, IRRefSet):
+            stmt.ref, changed = self._substitute_in_expr(stmt.ref, target, replacement)
+            made_change = made_change or changed
+            stmt.value, changed = self._substitute_in_expr(stmt.value, target, replacement)
+            made_change = made_change or changed
         elif isinstance(stmt, IRConditional):
             stmt.condition, changed = self._substitute_in_expr(stmt.condition, target, replacement)
             made_change = made_change or changed
@@ -965,6 +1052,11 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 for arg in e.args:
                     walk(arg)
             elif isinstance(e, IRField):
+                # An intervening write to this field invalidates a captured
+                # read of it just like a reassigned local; track it the same
+                # way as a "free var" so the reassignment-boundary check below
+                # also blocks substitution across a SetField.
+                names.add(f"field:{e.field_name}")
                 walk(e.target)
             elif isinstance(e, IRCast):
                 walk(e.expr)
@@ -989,6 +1081,12 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         """Return True if `stmt` (or any nested statement) assigns to a local in `names`."""
         if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target.name in names:
             return True
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRField)
+            and f"field:{stmt.target.field_name}" in names
+        ):
+            return True
         for child in stmt.get_children():
             if child is not stmt and self._stmt_reassigns_any(child, names):
                 return True
@@ -1005,8 +1103,12 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             return self.is_safe_to_inline_aggressively(expr.target)
         if isinstance(expr, IRCast):
             return self.is_safe_to_inline_aggressively(expr.expr)
+        if isinstance(expr, (IRTypeOf, IRTypeKind)):
+            return self.is_safe_to_inline_aggressively(expr.expr)
         if isinstance(expr, IRArrayAccess):
-            return self.is_safe_to_inline_aggressively(expr.array) and self.is_safe_to_inline_aggressively(expr.index)
+            return self.is_safe_to_inline_aggressively(expr.array) and self.is_safe_to_inline_aggressively(
+                expr.index
+            )
         if isinstance(expr, IRRef):
             return False
         if isinstance(expr, IREnumConstruct):
@@ -1019,8 +1121,172 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         if isinstance(expr, IREnumField):
             return self.is_safe_to_inline_aggressively(expr.value)
         if isinstance(expr, IRArithmetic):
-            return self.is_safe_to_inline_aggressively(expr.left) and self.is_safe_to_inline_aggressively(expr.right)
+            return self.is_safe_to_inline_aggressively(expr.left) and self.is_safe_to_inline_aggressively(
+                expr.right
+            )
         return False
+
+    def _count_expr_local(self, expr: IRExpression, local: IRLocal) -> int:
+        """Like `_expr_contains_local` but counting every occurrence instead of
+        stopping at the first. Mirrors its explicit per-node-type dispatch:
+        most IRExpression subclasses don't implement get_children(), so a
+        blind get_children() walk silently misses reads nested in arithmetic,
+        casts, calls, etc."""
+        if expr == local:
+            return 1
+        count = 0
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            if expr.left:
+                count += self._count_expr_local(expr.left, local)
+            if expr.right:
+                count += self._count_expr_local(expr.right, local)
+        elif isinstance(expr, IRCall):
+            if expr.target is not None:
+                count += self._count_expr_local(expr.target, local)
+            for arg in expr.args:
+                count += self._count_expr_local(arg, local)
+        elif isinstance(expr, IRField):
+            count += self._count_expr_local(expr.target, local)
+        elif isinstance(expr, IRCast):
+            count += self._count_expr_local(expr.expr, local)
+        elif isinstance(expr, IRArrayAccess):
+            count += self._count_expr_local(expr.array, local)
+            count += self._count_expr_local(expr.index, local)
+        elif isinstance(expr, IRRef):
+            count += self._count_expr_local(expr.target, local)
+        elif isinstance(expr, IREnumConstruct):
+            for arg in expr.args:
+                count += self._count_expr_local(arg, local)
+        elif isinstance(expr, (IREnumIndex, IREnumField)):
+            count += self._count_expr_local(expr.value, local)
+        elif isinstance(expr, (IRNeg, IRNot, IRTypeOf, IRTypeKind)):
+            count += self._count_expr_local(expr.expr, local)
+        elif isinstance(expr, IRNew):
+            for arg in expr.constructor_args:
+                count += self._count_expr_local(arg, local)
+        elif isinstance(expr, IRArrayLiteral):
+            for element in expr.elements:
+                count += self._count_expr_local(element, local)
+        elif isinstance(expr, IRNativeArrayNew):
+            count += self._count_expr_local(expr.size, local)
+        return count
+
+    def _count_local_reads(
+        self, stmt: IRStatement, local: IRLocal, _visited: Optional[Set[int]] = None
+    ) -> int:
+        """Count read occurrences of `local` within `stmt`, recursing into
+        nested blocks. Unlike `_stmt_contains_local` (which just answers "does
+        this statement touch it anywhere", so an IRConditional whose condition
+        AND branch body both read the same temp still counts as a single
+        "use"), this counts every read site separately so callers can tell
+        "one remaining use" from "several"."""
+        if _visited is None:
+            _visited = set()
+        if isinstance(stmt, IRBlock):
+            if id(stmt) in _visited:
+                return 0
+            _visited.add(id(stmt))
+            count = 0
+            for s in stmt.statements:
+                count += self._count_local_reads(s, local, _visited)
+            return count
+
+        count = 0
+        if isinstance(stmt, IRAssign):
+            if isinstance(stmt.target, IRExpression) and not isinstance(stmt.target, IRLocal):
+                count += self._count_expr_local(stmt.target, local)
+            if isinstance(stmt.expr, IRExpression):
+                count += self._count_expr_local(stmt.expr, local)
+            return count
+        if isinstance(stmt, IRExpression):
+            return self._count_expr_local(stmt, local)
+        if isinstance(stmt, IRReturn):
+            if stmt.value is not None:
+                count += self._count_expr_local(stmt.value, local)
+        elif isinstance(stmt, IRConditional):
+            count += self._count_expr_local(stmt.condition, local)
+        elif isinstance(stmt, IRWhileLoop):
+            count += self._count_expr_local(stmt.condition, local)
+        elif isinstance(stmt, IRSwitch):
+            count += self._count_expr_local(stmt.value, local)
+
+        for child in stmt.get_children():
+            if isinstance(child, IRBlock):
+                count += self._count_local_reads(child, local, _visited)
+        return count
+
+    def _count_local_reads_pruned(
+        self,
+        node: IRStatement,
+        local: IRLocal,
+        path_ids: Set[int],
+        _visited: Optional[Set[int]] = None,
+    ) -> int:
+        """Like `_count_local_reads` but, at an IRConditional/IRSwitch that sits
+        on the ancestor path to the candidate's own block, only descends into the
+        on-path branch: a temp fresh-defined in that branch can't be read from a
+        sibling branch, since they're mutually exclusive control flow. Avoids
+        re-walking every other switch case/if-branch in the function for each
+        candidate (was the O(cases^2) hot path on large switch statements)."""
+        if _visited is None:
+            _visited = set()
+        if isinstance(node, IRBlock):
+            if id(node) in _visited:
+                return 0
+            _visited.add(id(node))
+            count = 0
+            for s in node.statements:
+                count += self._count_local_reads_pruned(s, local, path_ids, _visited)
+            return count
+
+        count = 0
+        if isinstance(node, IRAssign):
+            if isinstance(node.target, IRExpression) and not isinstance(node.target, IRLocal):
+                count += self._count_expr_local(node.target, local)
+            if isinstance(node.expr, IRExpression):
+                count += self._count_expr_local(node.expr, local)
+            return count
+        if isinstance(node, IRExpression):
+            return self._count_expr_local(node, local)
+        if isinstance(node, IRReturn):
+            if node.value is not None:
+                count += self._count_expr_local(node.value, local)
+        elif isinstance(node, IRConditional):
+            count += self._count_expr_local(node.condition, local)
+        elif isinstance(node, IRWhileLoop):
+            count += self._count_expr_local(node.condition, local)
+        elif isinstance(node, IRSwitch):
+            count += self._count_expr_local(node.value, local)
+
+        children = [c for c in node.get_children() if isinstance(c, IRBlock)]
+        if isinstance(node, (IRConditional, IRSwitch)):
+            on_path = [c for c in children if id(c) in path_ids]
+            children = on_path if on_path else children
+        for child in children:
+            count += self._count_local_reads_pruned(child, local, path_ids, _visited)
+        return count
+
+    def _has_nontrivial_computation(self, expr: IRExpression) -> bool:
+        """True if duplicating `expr` would re-execute real work (arithmetic or a
+        narrowing/widening cast) rather than just re-reading a field chain.
+        Field/array-access chains (`.bytes`, `.array`, ...) are cheap to
+        duplicate and later pattern-matching passes rely on seeing them at
+        every use site; a division or int/float cast is not, and duplicating
+        those recomputes something the original bytecode only did once.
+        """
+        if isinstance(expr, (IRConst, IRLocal)):
+            return False
+        if isinstance(expr, (IRArithmetic, IRCast, IRNeg)):
+            return True
+        if isinstance(expr, IRField):
+            return self._has_nontrivial_computation(expr.target)
+        if isinstance(expr, IRArrayAccess):
+            return self._has_nontrivial_computation(expr.array) or self._has_nontrivial_computation(
+                expr.index
+            )
+        if isinstance(expr, (IRTypeOf, IRTypeKind, IRNot)):
+            return self._has_nontrivial_computation(expr.expr)
+        return True
 
     def is_safe_to_inline_conservatively(self, expr: IRExpression) -> bool:
         # Avoid inlining calls in conservative mode: they can have side effects
@@ -1059,6 +1325,36 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         ):
             return True
         return False
+
+    def _call_move_ok(self, stmt: IRStatement, temp: IRLocal) -> bool:
+        """True if `stmt` is a local assignment reading `temp` exactly once in an
+        expression built only from consts, locals, and arithmetic — so moving a
+        call into it preserves evaluation order and count."""
+        if not (isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)):
+            return False
+
+        count = 0
+
+        def walk(e: Optional[IRExpression]) -> bool:
+            nonlocal count
+            if e is None:
+                return True
+            if e == temp:
+                count += 1
+                return True
+            if isinstance(e, IRConst):
+                return True
+            if isinstance(e, IRLocal):
+                return True
+            if isinstance(e, IRArithmetic):
+                return walk(e.left) and walk(e.right)
+            if isinstance(e, IRCast):
+                return walk(e.expr)
+            if isinstance(e, IRNativeArrayNew):
+                return walk(e.size)
+            return False
+
+        return walk(stmt.expr) and count == 1
 
     def visit_block(self, block: IRBlock) -> None:
         if self.aggressive:
@@ -1101,13 +1397,41 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             and getattr(parent, "body", None) is child
         )
 
-    def _visit_block_conservative(self, block: IRBlock, inside_loop_body: bool = False) -> None:
+    def _flatten_stmts(self, stmts: List[IRStatement]) -> List[IRStatement]:
+        """Document-order flattening of a statement list and their nested blocks."""
+        out: List[IRStatement] = []
+        for s in stmts:
+            out.append(s)
+            for child in s.get_children():
+                if isinstance(child, IRBlock):
+                    out.extend(self._flatten_stmts(child.statements))
+        return out
+
+    def _local_read_in_continuation(self, continuation: List[IRStatement], local: IRLocal) -> bool:
+        """Whether `local` is read anywhere in `continuation` (what executes after
+        the current block, e.g. code following the enclosing if/loop). Unlike a
+        whole-function scan, this only looks at statements actually reachable after
+        the current point — it deliberately excludes sibling branches (e.g. the
+        `else` of the `if` we're inside), which are mutually exclusive with us and
+        would otherwise cause false "still read" positives for register reuse
+        across branches.
+        """
+        return any(self._stmt_contains_local(s, local) for s in self._flatten_stmts(continuation))
+
+    def _visit_block_conservative(
+        self,
+        block: IRBlock,
+        inside_loop_body: bool = False,
+        continuation: Optional[List[IRStatement]] = None,
+    ) -> None:
         """Only inlines an assignment if it is used in the very next statement.
 
         Inside a loop body we still perform the inline substitution, but we keep
         the original assignment. Removing it would destroy the loop-carried value
         that is live after the loop (e.g. String.indexOf's search result).
         """
+        if continuation is None:
+            continuation = []
         if not block.statements:
             return
 
@@ -1121,12 +1445,49 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             if isinstance(current_stmt, IRAssign) and isinstance(current_stmt.target, IRLocal):
                 temp_local = current_stmt.target
 
-                if not self._is_user_local(temp_local):
+                # A debug-named register can still be reused by the compiler for an
+                # unrelated, short-lived value (e.g. a string literal fed straight
+                # into the next call) after the named variable's real last read has
+                # already happened. Allow folding that case too, but only when the
+                # value is consumed by the very next statement, nothing else in this
+                # block follows, we're not inside a loop body (which needs the
+                # variable to stay live past the loop), and the whole rest of the
+                # function never reads it again — i.e. it's truly dead, not just
+                # locally dead within this block. Excluding a bare-IRLocal RHS keeps
+                # `s = var1; return s.bytes;` copy-propagation renames intact: that
+                # pattern intentionally gives a synthetic temp a readable name, and
+                # folding it back would just undo the rename.
+                _reuse_expr = current_stmt.expr
+                while isinstance(_reuse_expr, IRCast):
+                    _reuse_expr = _reuse_expr.expr
+                user_local_reuse = (
+                    self._is_user_local(temp_local)
+                    and not isinstance(_reuse_expr, IRLocal)
+                    and not inside_loop_body
+                    and i + 2 == len(statements)
+                )
+
+                if not self._is_user_local(temp_local) or (
+                    user_local_reuse
+                    and i + 1 < len(statements)
+                    and not getattr(statements[i + 1], "_no_user_inline", False)
+                ):
                     expr_to_inline = current_stmt.expr
                     if not self.is_safe_to_inline_conservatively(expr_to_inline):
-                        new_statements.append(current_stmt)
-                        i += 1
-                        continue
+                        # A call can still be moved (not duplicated) into an adjacent
+                        # single use whose other operands are just consts/locals —
+                        # locals can't be mutated by the call, so order is preserved.
+                        # Only when the assignment gets dropped (never inside a loop
+                        # body, where it is kept and the call would run twice).
+                        if not (
+                            isinstance(expr_to_inline, IRCall)
+                            and not inside_loop_body
+                            and i + 1 < len(statements)
+                            and self._call_move_ok(statements[i + 1], temp_local)
+                        ):
+                            new_statements.append(current_stmt)
+                            i += 1
+                            continue
                     if isinstance(expr_to_inline, IRExpression) and self._expr_contains_local(
                         expr_to_inline, temp_local
                     ):
@@ -1138,15 +1499,46 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                         if self._stmt_contains_local(next_stmt, temp_local) and not self._is_local_redefined(
                             temp_local, [next_stmt]
                         ):
-                            later_uses = any(self._stmt_contains_local(s, temp_local) for s in statements[i + 2 :])
+                            # Reads after a top-level reassignment belong to the new value.
+                            later_uses = False
+                            for s in statements[i + 2 :]:
+                                if (
+                                    isinstance(s, IRAssign)
+                                    and isinstance(s.target, IRLocal)
+                                    and (s.target == temp_local or s.target.same_register(temp_local))
+                                ):
+                                    # the kill's own RHS may still read the old value
+                                    if isinstance(s.expr, IRExpression) and self._expr_contains_local(
+                                        s.expr, temp_local
+                                    ):
+                                        later_uses = True
+                                    break
+                                if self._stmt_contains_local(s, temp_local):
+                                    later_uses = True
+                                    break
+                            if (
+                                not later_uses
+                                and user_local_reuse
+                                and self._local_read_in_continuation(continuation, temp_local)
+                            ):
+                                later_uses = True
                             if not later_uses:
-                                substituted = self._substitute_in_statement(next_stmt, temp_local, expr_to_inline)
+                                substituted = self._substitute_in_statement(
+                                    next_stmt, temp_local, expr_to_inline
+                                )
                                 if substituted:
-                                    dbg_print(f"Conservatively inlining assignment for temporary '{temp_local.name}'.")
+                                    dbg_print(
+                                        f"Conservatively inlining assignment for temporary '{temp_local.name}'."
+                                    )
                                     if inside_loop_body:
                                         new_statements.append(current_stmt)
                                     else:
                                         next_stmt.adopt(current_stmt)  # current_stmt is dropped
+                                        # If this inline merged a user variable into a conditional,
+                                        # the resulting statement is a synthetic merge — don't let it
+                                        # become a target for further user-var inlining.
+                                        if self._is_user_local(temp_local):
+                                            next_stmt._no_user_inline = True
                                     new_statements.append(next_stmt)
                                     i += 2
                                     inlined = True
@@ -1157,19 +1549,29 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
 
         block.statements = new_statements
 
-        for stmt in block.statements:
+        for idx, stmt in enumerate(block.statements):
+            child_continuation = block.statements[idx + 1 :] + continuation
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self._visit_block_conservative(
-                        child, inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child)
+                        child,
+                        inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child),
+                        continuation=child_continuation,
                     )
 
-    def _visit_block_aggressive(self, block: IRBlock, inside_loop_body: bool = False) -> None:
+    def _visit_block_aggressive(
+        self,
+        block: IRBlock,
+        inside_loop_body: bool = False,
+        _ancestor_path_ids: Optional[Set[int]] = None,
+    ) -> None:
         """Inlines safe expressions everywhere they are used, until no more changes can be made.
 
         As in conservative mode, assignments inside a loop body are preserved so
         loop-carried values remain live after the loop.
         """
+        if _ancestor_path_ids is None:
+            _ancestor_path_ids = {id(self.func.block), id(block)}
         made_change_in_pass = True
         while made_change_in_pass:
             made_change_in_pass = False
@@ -1194,7 +1596,32 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                     continue
 
                 remaining_statements = block.statements[i + 1 :]
-                if self._is_local_redefined(temp_local, remaining_statements):
+                must_keep_assign = False
+                boundary_stmt: Optional[IRStatement] = None
+                if self.past_kills:
+                    # A top-level reassign is a guaranteed kill: substitute up to and
+                    # including it (its RHS still reads the old value). A nested
+                    # redefinition only kills on some paths, so stop before it and
+                    # keep the assignment.
+                    for j, s in enumerate(remaining_statements):
+                        if self._is_local_redefined(temp_local, [s]):
+                            is_top_level_kill = (
+                                isinstance(s, IRAssign)
+                                and isinstance(s.target, IRLocal)
+                                and (s.target == temp_local or s.target.same_register(temp_local))
+                            )
+                            if is_top_level_kill:
+                                remaining_statements = remaining_statements[: j + 1]
+                            else:
+                                remaining_statements = remaining_statements[:j]
+                                must_keep_assign = True
+                                # A conditional/switch subject is evaluated before any
+                                # branch can redefine the temp, so it can still be
+                                # substituted into even though the branches can't.
+                                if isinstance(s, (IRConditional, IRSwitch)):
+                                    boundary_stmt = s
+                            break
+                elif self._is_local_redefined(temp_local, remaining_statements):
                     continue
 
                 # The inlined expression reads other locals (its free variables).
@@ -1216,12 +1643,54 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                 use_indices = [
                     j for j, s in enumerate(remaining_statements) if self._stmt_contains_local(s, temp_local)
                 ]
-                if not use_indices:
+                boundary_subject: Optional[IRExpression] = None
+                if boundary_stmt is not None:
+                    subject = (
+                        boundary_stmt.condition
+                        if isinstance(boundary_stmt, IRConditional)
+                        else cast(IRSwitch, boundary_stmt).value
+                    )
+                    if self._expr_contains_local(subject, temp_local) and not (
+                        free_vars
+                        and any(self._stmt_reassigns_any(s, free_vars) for s in remaining_statements)
+                    ):
+                        boundary_subject = subject
+                if not use_indices and boundary_subject is None:
+                    continue
+                # Inlining duplicates expr_to_inline's computation into every use
+                # site. For a bare const/local that's free (same op count either
+                # way); for anything else (casts, arithmetic, field reads...)
+                # duplicating it into 2+ sites re-executes work the original
+                # bytecode only did once. Keep the temp (and let a single-use
+                # pass, or copy-prop, handle it) once there's more than one use.
+                total_uses = sum(
+                    self._count_local_reads(remaining_statements[j], temp_local) for j in use_indices
+                )
+                if boundary_subject is not None:
+                    total_uses += self._count_local_reads(boundary_subject, temp_local)
+                if total_uses > 1 and self._has_nontrivial_computation(expr_to_inline):
+                    continue
+                # A while-loop condition re-evaluates on every iteration, so even
+                # a single logical use there is unsafe to inline when it's real
+                # computation (arithmetic/casts): the original only paid that cost
+                # once, before the loop, and Haxe's own compiler additionally
+                # lowers a non-trivial while-condition through a costlier
+                # `while(true){if(!c)break;}` shape instead of a direct compare.
+                if self._has_nontrivial_computation(expr_to_inline) and any(
+                    isinstance(remaining_statements[j], IRWhileLoop)
+                    and self._count_expr_local(
+                        cast(IRWhileLoop, remaining_statements[j]).condition, temp_local
+                    )
+                    > 0
+                    for j in use_indices
+                ):
                     continue
                 blocked = False
                 if free_vars:
                     for ui in use_indices:
-                        if any(self._stmt_reassigns_any(remaining_statements[k], free_vars) for k in range(ui)):
+                        if any(
+                            self._stmt_reassigns_any(remaining_statements[k], free_vars) for k in range(ui)
+                        ):
                             blocked = True
                             break
                 if blocked:
@@ -1234,11 +1703,30 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
                         any_substituted = True
                         substituted_into.append(subsequent_stmt)
 
+                if boundary_subject is not None and boundary_stmt is not None:
+                    new_subject, changed = self._substitute_in_expr(
+                        boundary_subject, temp_local, expr_to_inline
+                    )
+                    if changed:
+                        if isinstance(boundary_stmt, IRConditional):
+                            boundary_stmt.condition = new_subject
+                        else:
+                            cast(IRSwitch, boundary_stmt).value = new_subject
+                        any_substituted = True
+                        substituted_into.append(boundary_stmt)
+
                 if not any_substituted:
                     continue
 
                 dbg_print(f"Aggressively inlining safe expression from temporary '{temp_local.name}'.")
-                if not inside_loop_body:
+                # This pass only sees `remaining_statements` in the current block —
+                # a read in an enclosing scope after this block merges back is
+                # invisible here. Dropping the assignment is only safe if the whole
+                # function has no more reads of it than the ones just substituted.
+                whole_function_reads = self._count_local_reads_pruned(
+                    self.func.block, temp_local, _ancestor_path_ids
+                )
+                if not inside_loop_body and not must_keep_assign and whole_function_reads <= total_uses:
                     # stmt is dropped below; every site the expression got inlined
                     # into inherits its opcode (setdefault means whichever renders
                     # first in output wins, so adopting onto all of them is safe).
@@ -1255,8 +1743,100 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self._visit_block_aggressive(
-                        child, inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child)
+                        child,
+                        inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child),
+                        _ancestor_path_ids=_ancestor_path_ids | {id(child)},
                     )
+
+
+class IRTerminalValueInliner(TraversingIROptimizer):
+    """
+    Folds `temp = expr; return temp` / `throw temp` into `return expr` / `throw expr`
+    for compiler temporaries. Because the use is adjacent and terminal, the
+    expression is moved (not duplicated), so even calls are safe to inline here.
+    """
+
+    def __init__(self, function: "IRFunction"):
+        super().__init__(function)
+        self._user_variable_names: Set[str] = set()
+        if self.func.func.has_debug and self.func.func.assigns:
+            for name_ref, _ in self.func.func.assigns:
+                self._user_variable_names.add(name_ref.resolve(self.func.code))
+
+    def visit_block(self, block: IRBlock) -> None:
+        changed = True
+        while changed:
+            changed = False
+            for i in range(len(block.statements) - 1):
+                stmt = block.statements[i]
+                nxt = block.statements[i + 1]
+                if not (isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)):
+                    continue
+                if stmt.target.name in self._user_variable_names:
+                    continue
+                if not isinstance(nxt, (IRReturn, IRThrow)) or nxt.value is None:
+                    continue
+                if not isinstance(stmt.expr, IRExpression):
+                    continue
+                if nxt.value == stmt.target:
+                    nxt.value = stmt.expr
+                elif not self._subst_leftmost(nxt, stmt.target, stmt.expr):
+                    continue
+                nxt.adopt(stmt)
+                del block.statements[i]
+                changed = True
+                break
+
+    def _count_reads(self, expr: Optional[IRExpression], local: IRLocal) -> int:
+        if expr is None:
+            return 0
+        if expr == local:
+            return 1
+        n = 0
+        # expression nodes don't expose operands via get_children()
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            n += self._count_reads(expr.left, local) + self._count_reads(expr.right, local)
+        elif isinstance(expr, IRCall):
+            if isinstance(expr.target, IRExpression):
+                n += self._count_reads(expr.target, local)
+            for arg in expr.args:
+                n += self._count_reads(arg, local)
+        elif isinstance(expr, IRField):
+            n += self._count_reads(expr.target, local)
+        elif isinstance(expr, IRCast):
+            n += self._count_reads(expr.expr, local)
+        elif isinstance(expr, IRArrayAccess):
+            n += self._count_reads(expr.array, local) + self._count_reads(expr.index, local)
+        else:
+            for child in expr.get_children():
+                if isinstance(child, IRExpression):
+                    n += self._count_reads(child, local)
+        return n
+
+    def _subst_leftmost(
+        self, stmt: Union[IRReturn, IRThrow], local: IRLocal, replacement: IRExpression
+    ) -> bool:
+        # Only fold into the leftmost operand of an arithmetic chain: it is
+        # evaluated first, so moving a (possibly side-effecting) expression
+        # there preserves evaluation order.
+        if self._count_reads(stmt.value, local) != 1:
+            return False
+        # Descend to the first-evaluated leaf: left of arithmetic, or arg 0 of a
+        # const-target call (args evaluate left-to-right).
+        node: Optional[IRExpression] = stmt.value
+        while True:
+            if isinstance(node, IRArithmetic):
+                if node.left == local:
+                    node.left = replacement
+                    return True
+                node = node.left
+            elif isinstance(node, IRCall) and node.args and isinstance(node.target, IRConst):
+                if node.args[0] == local:
+                    node.args[0] = replacement
+                    return True
+                node = node.args[0]
+            else:
+                return False
 
 
 class IRCopyPropOptimizer(TraversingIROptimizer):
@@ -1316,6 +1896,7 @@ class IRCopyPropOptimizer(TraversingIROptimizer):
                         if not self._is_synthetic_temp(phantom):
                             continue
                         self._replace_local_shallow(later, phantom, user_local)
+                        self._replace_in_branches(later, phantom, user_local)
                     if isinstance(later, IRAssign) and isinstance(later.target, IRLocal):
                         if later.target == user_local:
                             break
@@ -1351,6 +1932,25 @@ class IRCopyPropOptimizer(TraversingIROptimizer):
                         break
                     self._replace_local_shallow(later, temp_local, user_local)
         return None
+
+    def _replace_in_branches(self, stmt: IRStatement, temp: IRLocal, user: IRLocal) -> None:
+        """Replace reads of `temp` with `user` inside a switch/conditional's branch
+        bodies, stopping at (but still substituting into the RHS of) a statement
+        that reassigns `temp` — reads past that point belong to the new value."""
+        branches: List[IRBlock] = []
+        if isinstance(stmt, IRConditional):
+            branches.append(stmt.true_block)
+            if stmt.false_block:
+                branches.append(stmt.false_block)
+        elif isinstance(stmt, IRSwitch):
+            branches.extend(stmt.cases.values())
+            if stmt.default:
+                branches.append(stmt.default)
+        for branch in branches:
+            for s in branch.statements:
+                self._replace_local_shallow(s, temp, user)
+                if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target == temp:
+                    break
 
     @staticmethod
     def _is_synthetic_temp(local: IRLocal) -> bool:

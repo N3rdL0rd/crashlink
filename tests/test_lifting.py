@@ -30,7 +30,9 @@ def _decompile_named(path: str, name_suffix: str) -> str:
 
 def _decompile_at(path: str, findex: int) -> str:
     code = Bytecode.from_path(path)
-    return pseudo.pseudo(IRFunction(code, code.fn(findex)))
+    fn = code.fn(findex)
+    assert isinstance(fn, Function)
+    return pseudo.pseudo(IRFunction(code, fn))
 
 
 def _unlifted(out: str) -> set:
@@ -82,6 +84,22 @@ def test_gettype_gettid_lifted():
     assert "GetTID" not in _unlifted(out)
     assert "Type.getDynamic(" in out
     assert ".kind" in out
+    # The kind comparison should be folded into the if condition, not kept as a
+    # separate temporary assignment.  There are many correct spellings, so just
+    # make sure no compiler temporary survives between the .kind read and the
+    # comparison (the renderer uses `cast t.kind` because the Int register is
+    # lifted from the enum abstract).
+    assert re.search(r"if \(t\.kind == HObj\)", out)
+    assert "t.kind" in out
+    assert "cast t.kind" not in out
+    assert "var3" not in out
+    # Each branch reuses `v`'s dead register for a fresh string constant fed
+    # straight into trace(); that reuse shouldn't surface as a fake `v = "..."`
+    # reassignment, it should inline directly into the call like the source does.
+    assert 'trace("object")' in out
+    assert 'trace("not object")' in out
+    assert 'v = "object"' not in out
+    assert 'v = "not object"' not in out
 
 
 def test_setglobal_lifted():
@@ -268,7 +286,7 @@ def test_arraydyn_concat_map_copy_not_folded_to_empty_literal():
     for findex, native_name in [(270, "anew"), (290, "a"), (287, "a")]:
         out = _decompile_at("tests/haxe/Clazz.hl", findex)
         assert f"ArrayObj.alloc({native_name})" in out, f"f@{findex}: missing ArrayObj.alloc({native_name})"
-        assert re.search(r"alloc\(\w+, true\)", out), f"f@{findex}: missing alloc(..., true)"
+        assert re.search(r"alloc\(.+,\s*(?:true|\(true\))\)", out), f"f@{findex}: missing alloc(..., true)"
         assert "([] : Array<Dynamic>)" not in out, f"f@{findex}: empty literal folded incorrectly"
 
 
@@ -277,7 +295,7 @@ def test_string_alloc_folded_from_inline_pattern():
     # `new String(); s.bytes = ...; s.length = ...;`. The decompiler should fold
     # those back into __alloc__ calls.
     out = _decompile_at("tests/haxe/Clazz.hl", 0)
-    assert "__alloc__(var1, this.length)" in out
+    assert "__alloc__(Native.ucs2_upper(this.bytes, 0, this.length), this.length)" in out
     out = _decompile_at("tests/haxe/Clazz.hl", 2)
     assert "__alloc__(b, 1)" in out
     out = _decompile_at("tests/haxe/Clazz.hl", 20)
@@ -403,3 +421,19 @@ def test_throw_lifted():
     out = _decompile_named("tests/haxe/ThrowCase.hl", "ThrowCase.decode")
     assert "throw " in out
     assert "UNLIFTED OPCODE: Throw" not in out
+
+
+def test_stub_file_signatures_and_bodies():
+    from crashlink import Bytecode
+    from crashlink.pseudo import stub_file
+
+    out = stub_file(Bytecode.from_path("tests/haxe/Clazz.hl"), "Clazz.hx")
+    assert out is not None
+    # class + field kept
+    assert "class Clazz extends Parent" in out
+    assert "public var b: Int;" in out
+    # constructor calls super so it compiles
+    assert "public function new()" in out and "super(" in out
+    # void method is empty, non-void method stubs with a throw (type-checks)
+    assert "function main(): Void" in out
+    assert 'throw "stub' in out and "function method(): Int" in out

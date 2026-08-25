@@ -4,38 +4,16 @@ Control-flow graph construction and optimization.
 
 from __future__ import annotations
 
-import copy
-import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from enum import Enum as _Enum
-from pprint import pformat
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import Dict, List, Optional, Set, Tuple
 
 from ..core import (
     Bytecode,
-    DynObj,
-    Enum,
-    Fun,
     Function,
-    Native,
-    Obj,
     Opcode,
-    Reg,
-    Regs,
-    ResolvableVarInt,
-    Type,
-    TypeDef,
-    Virtual,
-    Void,
-    fieldRef,
-    gIndex,
-    tIndex,
 )
-from ..errors import DecompError
 from ..globals import DEBUG, dbg_print
 from .. import disasm
-from ..opcodes import arithmetic, conditionals, terminal, simple_calls
 
 
 class CFNode:
@@ -86,7 +64,8 @@ class CFJumpThreader(CFOptimizer):
                     # redirect all predecessors to target_node
                     for pred in predecessors.get(node, []):
                         pred.branches = [
-                            (target_node if branch == node else branch, etype) for branch, etype in pred.branches
+                            (target_node if branch == node else branch, etype)
+                            for branch, etype in pred.branches
                         ]
                         predecessors.setdefault(target_node, []).append(pred)
                     nodes_to_remove.add(node)
@@ -159,6 +138,9 @@ class CFGraph:
                         "JEq", "JNotEq", "JAlways", "Trap"]:
             # fmt: on
                 jump_targets.add(i + op.df["offset"].value + 1)
+            elif op.op == "Switch":
+                for offset in op.df["offsets"].value:
+                    jump_targets.add(i + offset.value + 1)
 
         current_ops: List[Opcode] = []
         current_start = 0
@@ -177,7 +159,7 @@ class CFGraph:
                         "JSLt", "JSGte", "JSGt", "JSLte", 
                         "JULt", "JUGte", "JNotLt", "JNotGte",
                         "JEq", "JNotEq", "JAlways", "Switch", "Ret",
-                        "Trap", "EndTrap"]:
+                        "Trap", "EndTrap", "Throw", "Rethrow"]:
             # fmt: on
                 blocks.append((current_start, current_ops))
                 current_ops = []
@@ -251,8 +233,17 @@ class CFGraph:
                     self.add_branch(
                         src_node, nodes_by_idx[jump_idx], "unconditional")
             elif last_op.op != "Ret" and next_idx in nodes_by_idx:
-                self.add_branch(
-                    src_node, nodes_by_idx[next_idx], "unconditional")
+                next_node = nodes_by_idx[next_idx]
+                # A throw never continues into its paired EndTrap; that edge
+                # would let the trap's catch entry pose as the try/catch
+                # convergence point and leave the catch block empty. Every
+                # other successor keeps the edge (it is what lets `if (...) throw;`
+                # restructure with the throw as the if-body).
+                if last_op.op in ("Throw", "Rethrow") and next_node.ops and next_node.ops[0].op == "EndTrap":
+                    pass
+                else:
+                    self.add_branch(
+                        src_node, next_node, "unconditional")
 
         if do_optimize:
             # fmt: off
@@ -286,7 +277,9 @@ class CFGraph:
                 )
             for node, ipd in self.immediate_post_dominators.items():
                 if len(node.branches) > 1:
-                    dbg_print(f"Conditional node {node.base_offset} converges at {ipd.base_offset if ipd else 'None'}")
+                    dbg_print(
+                        f"Conditional node {node.base_offset} converges at {ipd.base_offset if ipd else 'None'}"
+                    )
             dbg_print("-----------------------------")
 
     def _compute_predecessors(self) -> None:

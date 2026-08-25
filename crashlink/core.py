@@ -10,6 +10,7 @@ you.
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import struct
 from abc import ABC, abstractmethod
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -20,7 +21,19 @@ import threading
 
 _EnumBase = _Enum
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Dict, ItemsView, List, Literal, Optional, Set, Tuple, TypeVar
+from typing import (
+    Any,
+    BinaryIO,
+    Callable,
+    Dict,
+    ItemsView,
+    List,
+    Literal,
+    Optional,
+    Set,
+    Tuple,
+    TypeVar,
+)
 
 T = TypeVar("T", bound="VarInt")  # easier than reimplementing deserialise for each subclass
 
@@ -59,6 +72,12 @@ def destaticify(s: str) -> str:
     path, _, class_name = s.rpartition(".")
     if class_name.startswith("$"):
         class_name = class_name[1:]
+    # HL prefixes local/private types (e.g. an abstract's impl class) with
+    # their declaring module: `_Module.Type`. That prefix is an internal HL
+    # naming detail, not a real Haxe package -- packages never start with
+    # `_`. Strip it so the name is a valid, in-scope Haxe identifier.
+    if path.startswith("_") and "." not in path:
+        path = ""
     return f"{path}.{class_name}" if path else class_name
 
 
@@ -516,7 +535,9 @@ class StringsBlock(Serialisable):
             strings_data.append(0)  # null terminator
 
         self.length.value = len(strings_data)
-        self.lengths = [VarInt(len(string.encode("utf-8", errors="surrogateescape"))) for string in self.value]
+        self.lengths = [
+            VarInt(len(string.encode("utf-8", errors="surrogateescape"))) for string in self.value
+        ]
 
         result = bytearray(self.length.serialise())
         result.extend(strings_data)
@@ -1752,7 +1773,9 @@ class Function(Serialisable):
         self.ops.insert(idx, op)
         if code.debugfiles and code.has_debug_info and self.has_debug and self.debuginfo:  # fucking typing...
             if not debugRef:
-                debugRef = fileRef(fid=code.debugfiles.find_or_add("?"), line=42)  # life, the universe, and everything
+                debugRef = fileRef(
+                    fid=code.debugfiles.find_or_add("?"), line=42
+                )  # life, the universe, and everything
             self.debuginfo.value.insert(idx, debugRef)
 
     def push_op(self, code: "Bytecode", op: Opcode, debugRef: Optional[fileRef] = None) -> int:
@@ -1790,9 +1813,14 @@ class Function(Serialisable):
         )
         if self.has_debug and self.debuginfo:
             res += self.debuginfo.serialise()
-            if self.version and self.version >= 3 and self.nassigns and self.assigns is not None:
-                res += self.nassigns.serialise()
-                res += b"".join([b"".join([v.serialise() for v in assign]) for assign in self.assigns])
+            if self.version and self.version >= 3:
+                # HL's loader always reads nassigns+assigns here for v>=3 with
+                # debug info; write an empty list if we have none to keep the
+                # stream aligned.
+                nassigns = self.nassigns if self.nassigns else VarInt(0)
+                assigns = self.assigns if self.assigns is not None else []
+                res += nassigns.serialise()
+                res += b"".join([b"".join([v.serialise() for v in assign]) for assign in assigns])
         return res
 
 
@@ -1833,8 +1861,17 @@ class Bytecode(Serialisable):
     For more information about the overall structure, see [here](https://n3rdl0rd.github.io/ModDocCE/files/hlboot)
     """
 
+    # Populated by crashlink.decomp's static-initializer analysis.
+    _static_field_inits_cache: Optional[Dict[int, Dict[str, str]]] = None
+    _static_field_init_refs_cache: Optional[Dict[int, Dict[str, Set[str]]]] = None
+
     def __init__(self) -> None:
         self.deserialised = False
+        # SHA-256 of the raw image and where it was loaded from, set by
+        # from_path/from_bytes. Used to gate plugin optimizers to a specific
+        # bytecode (see crashlink.plugins).
+        self.sha256: Optional[str] = None
+        self.source_path: Optional[str] = None
         self.magic = RawData(3)
         self.version = SerialisableInt()
         self.version.length = 1
@@ -1880,6 +1917,9 @@ class Bytecode(Serialisable):
         self._xref_lock = threading.Lock()
         self._search_lock = threading.Lock()
         self._source_map_lock = threading.Lock()
+        self._plugin_optimizer_classes: Optional[Tuple[List[Any], List[Any]]] = None
+        self._global_field_elem_types: Dict[Tuple[str, str], "Type"] = {}
+        self._hxsl_shaders_cache: Optional[Any] = None
         self.annotations: AnnotationStore = AnnotationStore()
 
         self.virtuals_built = False
@@ -1970,7 +2010,9 @@ class Bytecode(Serialisable):
                 try:
                     super_type = obj_def.super.resolve(self)
                     # *** Add a check to prevent cycles in this helper too ***
-                    if id(super_type) == id(obj_def.get_containing_type(self)):  # Prevent self-inheritance loops
+                    if id(super_type) == id(
+                        obj_def.get_containing_type(self)
+                    ):  # Prevent self-inheritance loops
                         return {}
                     if isinstance(super_type.definition, Obj):
                         super_def = super_type.definition
@@ -2056,7 +2098,10 @@ class Bytecode(Serialisable):
 
     @classmethod
     def from_path(
-        cls, path: str, search_magic: bool = True, progress_cb: Optional[ProgressCallback] = None
+        cls,
+        path: str,
+        search_magic: bool = True,
+        progress_cb: Optional[ProgressCallback] = None,
     ) -> "Bytecode":
         """
         Create a new Bytecode instance from a file path.
@@ -2064,11 +2109,20 @@ class Bytecode(Serialisable):
         f = open(path, "rb")
         instance = cls().deserialise(f, search_magic=search_magic, progress_cb=progress_cb)
         f.close()
+        try:
+            with open(path, "rb") as hf:
+                instance.sha256 = hashlib.sha256(hf.read()).hexdigest()
+            instance.source_path = path
+        except OSError:
+            pass
         return instance
 
     @classmethod
     def from_bytes(
-        cls, data: bytes, search_magic: bool = True, progress_cb: Optional[ProgressCallback] = None
+        cls,
+        data: bytes,
+        search_magic: bool = True,
+        progress_cb: Optional[ProgressCallback] = None,
     ) -> "Bytecode":
         """
         Create a new Bytecode instance from a `bytes` object.
@@ -2076,6 +2130,7 @@ class Bytecode(Serialisable):
         f = BytesIO(data)
         instance = cls().deserialise(f, search_magic=search_magic, progress_cb=progress_cb)
         f.close()
+        instance.sha256 = hashlib.sha256(data).hexdigest()
         return instance
 
     @classmethod
@@ -2495,7 +2550,8 @@ class Bytecode(Serialisable):
     def get_test_obj(self, test_name: str) -> Obj:
         for t in self.types:
             if isinstance(t.definition, Obj):
-                if t.definition.name.resolve(self) == test_name:
+                raw_name = t.definition.name.resolve(self)
+                if raw_name == test_name or destaticify(raw_name) == test_name:
                     return t.definition
         raise ValueError("No test class found!")
 
@@ -2713,7 +2769,9 @@ class Bytecode(Serialisable):
         primitives_to_seed = [Void, U8, U16, I32, I64, F32, F64, Bool, TypeType, Dyn]
         primitive_kind_map = {p: i for i, p in enumerate(Type.TYPEDEFS)}
 
-        for prim_class in tqdm(primitives_to_seed, desc="Seeding primitives...") if USE_TQDM else primitives_to_seed:
+        for prim_class in (
+            tqdm(primitives_to_seed, desc="Seeding primitives...") if USE_TQDM else primitives_to_seed
+        ):
             kind_val = primitive_kind_map.get(prim_class)
             if kind_val is not None:
                 # Create a temporary Type object just for the traversal
@@ -2999,10 +3057,14 @@ class XrefIndex:
         ]
 
     def field_reads(self, tindex: int, field_slot: int) -> List[XRef]:
-        return [r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot) if r.ref_kind == RefKind.FIELD_READ]
+        return [
+            r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot) if r.ref_kind == RefKind.FIELD_READ
+        ]
 
     def field_writes(self, tindex: int, field_slot: int) -> List[XRef]:
-        return [r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot) if r.ref_kind == RefKind.FIELD_WRITE]
+        return [
+            r for r in self.refs_to(TargetKind.FIELD, tindex, field_slot) if r.ref_kind == RefKind.FIELD_WRITE
+        ]
 
     def all_field_accesses(self, tindex: int, field_slot: int) -> List[XRef]:
         return [
@@ -3099,7 +3161,11 @@ class XrefIndex:
                         if isinstance(t.definition, Obj):
                             proto = code.proto_by_pindex(t.definition, pindex)
                             if proto is not None:
-                                _emit(TargetKind.FUNCTION, proto.findex.value, RefKind.CALL_VIRTUAL)
+                                _emit(
+                                    TargetKind.FUNCTION,
+                                    proto.findex.value,
+                                    RefKind.CALL_VIRTUAL,
+                                )
 
                 elif op_name in ("StaticClosure", "InstanceClosure"):
                     _emit(TargetKind.FUNCTION, df["fun"].value, RefKind.CLOSURE)
@@ -3112,7 +3178,11 @@ class XrefIndex:
                         if isinstance(t.definition, Obj):
                             proto = code.proto_by_pindex(t.definition, pindex)
                             if proto is not None:
-                                _emit(TargetKind.FUNCTION, proto.findex.value, RefKind.CLOSURE)
+                                _emit(
+                                    TargetKind.FUNCTION,
+                                    proto.findex.value,
+                                    RefKind.CLOSURE,
+                                )
 
                 elif op_name == "Field":
                     obj_t = _reg_tindex(df["obj"].value)
@@ -3122,7 +3192,12 @@ class XrefIndex:
                             try:
                                 flat = df["field"].value
                                 owner_t, own_slot = _field_owner(flat, obj_t, t.definition)
-                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_READ, own_slot)
+                                _emit(
+                                    TargetKind.FIELD,
+                                    owner_t,
+                                    RefKind.FIELD_READ,
+                                    own_slot,
+                                )
                             except (IndexError, KeyError):
                                 pass
 
@@ -3134,7 +3209,12 @@ class XrefIndex:
                             try:
                                 flat = df["field"].value
                                 owner_t, own_slot = _field_owner(flat, this_t, t.definition)
-                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_READ, own_slot)
+                                _emit(
+                                    TargetKind.FIELD,
+                                    owner_t,
+                                    RefKind.FIELD_READ,
+                                    own_slot,
+                                )
                             except (IndexError, KeyError):
                                 pass
 
@@ -3146,7 +3226,12 @@ class XrefIndex:
                             try:
                                 flat = df["field"].value
                                 owner_t, own_slot = _field_owner(flat, obj_t, t.definition)
-                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_WRITE, own_slot)
+                                _emit(
+                                    TargetKind.FIELD,
+                                    owner_t,
+                                    RefKind.FIELD_WRITE,
+                                    own_slot,
+                                )
                             except (IndexError, KeyError):
                                 pass
 
@@ -3158,7 +3243,12 @@ class XrefIndex:
                             try:
                                 flat = df["field"].value
                                 owner_t, own_slot = _field_owner(flat, this_t, t.definition)
-                                _emit(TargetKind.FIELD, owner_t, RefKind.FIELD_WRITE, own_slot)
+                                _emit(
+                                    TargetKind.FIELD,
+                                    owner_t,
+                                    RefKind.FIELD_WRITE,
+                                    own_slot,
+                                )
                             except (IndexError, KeyError):
                                 pass
 
@@ -3189,11 +3279,21 @@ class XrefIndex:
                 elif op_name == "MakeEnum":
                     dst_t = _reg_tindex(df["dst"].value)
                     if dst_t is not None:
-                        _emit(TargetKind.ENUM_CONSTRUCT, dst_t, RefKind.ENUM_CONSTRUCT, df["construct"].value)
+                        _emit(
+                            TargetKind.ENUM_CONSTRUCT,
+                            dst_t,
+                            RefKind.ENUM_CONSTRUCT,
+                            df["construct"].value,
+                        )
                 elif op_name == "EnumField":
                     val_t = _reg_tindex(df["value"].value)
                     if val_t is not None:
-                        _emit(TargetKind.ENUM_CONSTRUCT, val_t, RefKind.ENUM_FIELD_READ, df["construct"].value)
+                        _emit(
+                            TargetKind.ENUM_CONSTRUCT,
+                            val_t,
+                            RefKind.ENUM_FIELD_READ,
+                            df["construct"].value,
+                        )
                 elif op_name == "EnumIndex":
                     val_t = _reg_tindex(df["value"].value)
                     if val_t is not None:
@@ -3227,7 +3327,17 @@ class XrefIndex:
                     _struct(TargetKind.TYPE, f.type.value, RefKind.FIELD_DECL)
 
         for gindex, gt in enumerate(code.global_types):
-            idx._add(XRef(SourceKind.GLOBAL, gindex, TargetKind.TYPE, gt.value, None, RefKind.GLOBAL_TYPE, None))
+            idx._add(
+                XRef(
+                    SourceKind.GLOBAL,
+                    gindex,
+                    TargetKind.TYPE,
+                    gt.value,
+                    None,
+                    RefKind.GLOBAL_TYPE,
+                    None,
+                )
+            )
 
         return idx
 

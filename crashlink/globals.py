@@ -5,6 +5,7 @@ Global configuration.
 from __future__ import annotations
 
 import os
+from importlib.metadata import PackageNotFoundError, version
 from io import BytesIO
 from typing import Any, BinaryIO, Callable, Optional
 
@@ -20,7 +21,11 @@ def _is_debug() -> bool:
     )
 
 
-VERSION: str = "v0.0.7"
+try:
+    VERSION: str = "v" + version("crashlink")
+except PackageNotFoundError:
+    # Running from a source checkout without an install (editable or otherwise).
+    VERSION = "v0.0.0-dev"
 """
 The version of crashlink.
 """

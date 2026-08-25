@@ -3,7 +3,7 @@ from __future__ import annotations
 from .core import HlObj
 from typing import Optional, List, Dict, Type, TypeVar, Callable, Any
 from functools import wraps
-from typing import TypeVar, Callable, Any, ParamSpec, cast
+from typing import ParamSpec, cast
 
 R = TypeVar("R")
 P = ParamSpec("P")
@@ -31,7 +31,7 @@ def method(func: Callable[..., R]) -> Callable[..., R]:
 
     Preserves the original function's return type and parameter types.
     """
-    method_name = func.__name__
+    method_name = func.__name__  # ty: ignore[unresolved-attribute]  # decorator is only ever applied to real functions
 
     @wraps(func)
     def wrapper(self: HlObj, *args: Any) -> R:

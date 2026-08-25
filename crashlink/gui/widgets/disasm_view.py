@@ -6,11 +6,11 @@ import re
 from typing import List, Optional, Tuple
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFont, QKeyEvent, QTextCharFormat, QTextCursor, QTextDocument
+from PySide6.QtGui import QColor, QFont, QKeyEvent, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import QWidget
 
 from ... import disasm
-from ...core import Bytecode, Function
+from ...core import Bytecode, Function, Native
 from ..themes import Theme
 from .decomp_view import DecompHighlighter, DecompView
 
@@ -145,7 +145,7 @@ class DisasmView(DecompView):
         else:
             self._highlighter.apply_theme(theme)
 
-    def load(self, code: Bytecode, methods: List[Tuple[int, object]]) -> None:
+    def load(self, code: Bytecode, methods: List[Tuple[int, "Function | Native"]]) -> None:
         """methods: list of (findex, Function|Native), rendered in order."""
         saved_block = self.textCursor().blockNumber()
         saved_vscroll = self.verticalScrollBar().value()
@@ -157,7 +157,7 @@ class DisasmView(DecompView):
 
         for findex, fn in methods:
             try:
-                header = disasm.func_header(code, fn)  # type: ignore[arg-type]
+                header = disasm.func_header(code, fn)
             except Exception:
                 header = f"f@{findex}"
             entries.append(header + ":")
@@ -180,7 +180,9 @@ class DisasmView(DecompView):
         # lines up without ballooning the gap for classes with only short filenames.
         prefix_width = max((len(e[0]) for e in entries if isinstance(e, tuple)), default=0)
 
-        lines: List[str] = [f"{e[0].ljust(prefix_width)} {e[1]}" if isinstance(e, tuple) else e for e in entries]
+        lines: List[str] = [
+            f"{e[0].ljust(prefix_width)} {e[1]}" if isinstance(e, tuple) else e for e in entries
+        ]
 
         self.setPlainText("\n".join(lines))
 
@@ -233,8 +235,8 @@ class DisasmView(DecompView):
         c.select(QTextCursor.SelectionType.WordUnderCursor)
         return c.selectedText()
 
-    def keyPressEvent(self, event: object) -> None:
-        if isinstance(event, QKeyEvent) and not event.modifiers() and event.key() == Qt.Key.Key_X:
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if not event.modifiers() and event.key() == Qt.Key.Key_X:
             findex = self.findex_at_cursor()
             if findex is not None:
                 self.xref_requested.emit(findex, self._word_at_cursor())

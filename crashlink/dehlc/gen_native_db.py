@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""
+Generates crashlink/dehlc/hlnative_db.py from the HashLink C sources.
+
+Parses DEFINE_PRIM(...) declarations (the macros that define HL natives) out of
+hashlink's src/std/*.c (plus optional hdll dirs under libs/), expands the HL type
+macros using the same encoding as hashlink's runtime sign strings (TYPE_STR +
+append_type in module.c), and emits a name -> signature database used by
+crashlink.dehlc to recover native lib/name strings from compiled binaries.
+
+Run from the repository root so package-relative stdlib resolution is clean:
+
+    python3 -m crashlink.dehlc.gen_native_db /path/to/hashlink > crashlink/dehlc/hlnative_db.py
+
+(Running it as a plain script from inside the package directory shadows the
+stdlib `types` module with dehlc.types.)
+"""
+
+import re
+import sys
+import glob
+import os.path
+
+BUILTIN = {
+    "_VOID": "v",
+    "_I16": "s",
+    "_I32": "i",
+    "_I64": "l",
+    "_F32": "f",
+    "_F64": "d",
+    "_BOOL": "b",
+    "_BYTES": "B",
+    "_DYN": "D",
+    "_ARR": "A",
+    "_TYPE": "T",
+    "_STRUCT": "S",
+    "_GUID": "g",
+    "_NO_ARG": "",
+    "_STRING": "OBi_",  # _OBJ(_BYTES _I32)
+}
+
+
+class Expander:
+    def __init__(self, local_defines):
+        self.local = dict(local_defines)
+
+    def find_group(self, s, start):
+        """s[start] == '('; returns index of matching ')'."""
+        depth = 0
+        for i in range(start, len(s)):
+            if s[i] == "(":
+                depth += 1
+            elif s[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    return i
+        raise ValueError(f"unbalanced parens in {s!r}")
+
+    def split_top(self, s, sep):
+        """Split s on `sep` (single char) at paren depth 0."""
+        parts, depth, cur = [], 0, []
+        for ch in s:
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            if ch == sep and depth == 0:
+                parts.append("".join(cur))
+                cur = []
+            else:
+                cur.append(ch)
+        parts.append("".join(cur))
+        return parts
+
+    def expand(self, expr):
+        expr = expr.strip()
+        if not expr:
+            return ""
+        out = []
+        for tok in self.split_top(expr, " "):
+            out.append(self.expand_token(tok.strip()))
+        return "".join(out)
+
+    def expand_token(self, tok):
+        if not tok:
+            return ""
+        if "(" in tok:
+            head = tok[: tok.index("(")].strip()
+            g0 = tok.index("(")
+            g1 = self.find_group(tok, g0)
+            inner = tok[g0 + 1 : g1]
+            tail = tok[g1 + 1 :].strip()
+            if tail:
+                raise ValueError(f"trailing junk {tok!r}")
+            if head == "_FUN":
+                parts = self.split_top(inner, ",")
+                if len(parts) != 2:
+                    raise ValueError(f"_FUN needs 2 parts: {tok!r}")
+                ret, args = parts
+                return "P" + self.expand(args) + "_" + self.expand(ret)
+            if head == "_OBJ":
+                return "O" + self.expand(inner) + "_"
+            if head == "_REF":
+                return "R" + self.expand(inner)
+            if head == "_NULL":
+                return "N" + self.expand(inner)
+            if head == "_ABSTRACT":
+                return "X" + inner.strip() + "_"
+            raise ValueError(f"unknown composite {head!r} in {tok!r}")
+        if tok in BUILTIN:
+            return BUILTIN[tok]
+        if tok in self.local:
+            return self.expand(self.local[tok])
+        raise ValueError(f"unknown token {tok!r}")
+
+
+DEFINE_RE = re.compile(r"\bDEFINE_PRIM\s*\(\s*([^,]+?)\s*,\s*([A-Za-z0-9_]+)\s*,\s*(.*?)\)\s*;", re.S)
+LOCAL_DEF_RE = re.compile(r"^\s*#\s*define\s+(_[A-Za-z0-9_]+)\s+(.+?)\s*$", re.M)
+
+
+def collect(hashlink_dir, lib_dirs=("std",)):
+    entries = {}
+    skipped = 0
+    for lib in lib_dirs:
+        pattern = (
+            os.path.join(hashlink_dir, "src", lib, "*.c")
+            if lib != "."
+            else os.path.join(hashlink_dir, "src", "*.c")
+        )
+        for path in sorted(glob.glob(pattern)):
+            src = open(path, encoding="utf-8", errors="replace").read()
+            local = {}
+            for m in LOCAL_DEF_RE.finditer(src):
+                local[m.group(1)] = m.group(2)
+            ex = Expander(local)
+            for m in DEFINE_RE.finditer(src):
+                ret_expr, name, args_expr = m.groups()
+                try:
+                    sign = "P" + ex.expand(args_expr) + "_" + ex.expand(ret_expr)
+                except ValueError:
+                    skipped += 1
+                    continue
+                entries.setdefault(name, (lib if lib != "std" else "std", sign))
+    return entries, skipped
+
+
+def main():
+    hl_dir = sys.argv[1] if len(sys.argv) > 1 else "/home/nerd/code/hashlink"
+    entries, skipped = collect(hl_dir, lib_dirs=(".", "std"))
+    print(f"# Generated by gen_native_db.py from HashLink sources at {hl_dir}")
+    print(f"# {len(entries)} primitives ({skipped} unparseable definitions skipped)")
+    print("# Signatures use hashlink runtime encoding: TYPE_STR chars, FUN = P<args>_<ret>,")
+    print("# OBJ = O<fieldtypes>_, REF/NULL = R/N + inner, ABSTRACT = X<name>_.")
+    print("HL_NATIVE_SIGNATURES = {")
+    for name in sorted(entries):
+        lib, sign = entries[name]
+        print(f"    {name!r}: ({lib!r}, {sign!r}),")
+    print("}")
+
+
+if __name__ == "__main__":
+    main()

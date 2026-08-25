@@ -4,90 +4,55 @@ Array and bytes-buffer pattern optimizers.
 
 from __future__ import annotations
 
-import copy
 import re
-from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, cast
 
 if TYPE_CHECKING:
-    from ..function import IRFunction
+    pass
 
 from ...core import (
-    Bytecode,
-    DynObj,
-    Enum,
     Fun,
     Function,
     Native,
-    Obj,
-    Opcode,
-    Ref,
-    ResolvableVarInt,
     Type,
-    TypeDef,
-    Virtual,
-    Void,
-    fieldRef,
-    gIndex,
-    tIndex,
 )
-from ...errors import DecompError
-from ...globals import DEBUG, dbg_print
 from ... import disasm
-from ...opcodes import arithmetic, conditionals, terminal, simple_calls
 from ..ir import (
     IRStatement,
     IRExpression,
     IRBlock,
     IRLocal,
     IRArithmetic,
-    IRNeg,
-    IRNot,
-    IRTypeOf,
-    IRTypeKind,
     IRAssign,
     IRCall,
     IRBoolExpr,
     IRConst,
     IRConditional,
     IRPrimitiveLoop,
-    IRBreak,
-    IRContinue,
     IRReturn,
-    IRThrow,
     IRTrace,
     IRTryCatch,
     IRSwitch,
-    IRPrimitiveJump,
     IRWhileLoop,
-    IRForEachLoop,
-    IRIntRangeLoop,
     IRField,
     IRNew,
     IRNativeArrayNew,
     IRNativeMapNew,
+    IRBytesNew,
     IRCast,
     IRArrayLiteral,
     IRArrayAccess,
     IRRef,
+    IRRefNew,
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
-    IRUnliftedOpcode,
-    IRNativeStub,
     _get_type_in_code,
-    _strip_ansi,
 )
-from ..cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
 from . import (
-    IROptimizer,
     TraversingIROptimizer,
-    _ir_structurally_equal,
-    _structurally_equal,
-    _stmt_lists_structurally_equal,
-    _bytes_mem_kind,
     _int_const_value,
-    _signed_i32,
+    _structurally_equal,
 )
 
 
@@ -218,18 +183,251 @@ class IRArrayObjWrapperOptimizer(TraversingIROptimizer):
             return self._is_empty_array_alloc(local_defs.get(expr), local_defs, seen)
         return False
 
+    def _empty_array_elem_type(
+        self,
+        expr: Optional[IRExpression],
+        local_defs: Dict["IRLocal", IRExpression],
+        seen: Optional[Set[int]] = None,
+    ) -> Optional[Type]:
+        """Element type recovered from an empty-array alloc chain, if any.
+
+        Mirrors `_is_empty_array_alloc`'s traversal but also surfaces the `Type`
+        argument HL's `alloc_array(ty, 0)` native carries — the only place the
+        element type survives erasure — so the caller can stamp it onto the
+        folded literal instead of discarding it.
+        """
+        if expr is None or not isinstance(expr, IRStatement):
+            return None
+        if seen is None:
+            seen = set()
+        if id(expr) in seen:
+            return None
+        seen.add(id(expr))
+
+        if isinstance(expr, IRNativeArrayNew):
+            return expr.elem_type
+        if isinstance(expr, IRCall) and len(expr.args) == 2:
+            target = expr.target
+            if (
+                isinstance(target, IRConst)
+                and isinstance(target.value, Native)
+                and target.value.name.resolve(self.func.code) == "alloc_array"
+            ):
+                ty_arg = expr.args[0]
+                if isinstance(ty_arg, IRLocal):
+                    ty_arg = local_defs.get(ty_arg, ty_arg)
+                if isinstance(ty_arg, IRConst) and ty_arg.const_type == IRConst.ConstType.GLOBAL_OBJ:
+                    if isinstance(ty_arg.value, Type):
+                        return ty_arg.value
+        if isinstance(expr, IRLocal):
+            return self._empty_array_elem_type(local_defs.get(expr), local_defs, seen)
+        return None
+
+    def _reads_or_writes(self, stmt: IRStatement, local: IRLocal) -> bool:
+        """True if `stmt` touches `local` anywhere (target or expression), used to make
+        sure nothing but the alloc/index-stores we're about to fold away references it."""
+        if isinstance(stmt, IRAssign):
+            if stmt.target == local:
+                return True
+            if isinstance(stmt.target, IRArrayAccess) and (
+                stmt.target.array == local or self._expr_reads(stmt.target.index, local)
+            ):
+                return True
+            return self._expr_reads(stmt.expr, local)
+        return any(self._expr_reads(c, local) for c in stmt.get_children() if isinstance(c, IRExpression))
+
+    def _expr_reads(self, expr: Optional[IRExpression], local: IRLocal) -> bool:
+        if expr is None:
+            return False
+        if expr == local:
+            return True
+        return any(self._expr_reads(c, local) for c in expr.get_children() if isinstance(c, IRExpression))
+
+    def _try_fold_array_literal(
+        self, stmts: List[IRStatement], call_idx: int, arr_local: IRLocal
+    ) -> Optional[Tuple[List[IRExpression], List[int]]]:
+        """Find the `hl.NativeArray<T>(n)` alloc that sized `arr_local` and the n
+        index-stores populating it, anywhere before `call_idx` (other, unrelated
+        statements — e.g. constructing the values being stored — may sit between
+        them). Returns (values in index order, indices of every statement to drop)
+        so the caller can remove just those and splice in a single array literal.
+        """
+        alloc_idx: Optional[int] = None
+        size: Optional[int] = None
+        for j in range(call_idx - 1, -1, -1):
+            s = stmts[j]
+            if isinstance(s, IRAssign) and s.target == arr_local:
+                if not isinstance(s.expr, IRNativeArrayNew):
+                    return None
+                size_expr = s.expr.size
+                if not isinstance(size_expr, IRConst) or size_expr.const_type != IRConst.ConstType.INT:
+                    return None
+                size = int(getattr(size_expr.value, "value", size_expr.value))
+                alloc_idx = j
+                break
+        if alloc_idx is None or size is None or size <= 0:
+            return None
+
+        values: Dict[int, IRExpression] = {}
+        store_indices: List[int] = []
+        for j in range(alloc_idx + 1, call_idx):
+            s = stmts[j]
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRArrayAccess)
+                and s.target.array == arr_local
+                and isinstance(s.target.index, IRConst)
+                and s.target.index.const_type == IRConst.ConstType.INT
+            ):
+                idx = int(getattr(s.target.index.value, "value", s.target.index.value))
+                if idx in values:
+                    return None
+                values[idx] = s.expr
+                store_indices.append(j)
+                continue
+            if self._reads_or_writes(s, arr_local):
+                # Something else touches the array between alloc and use (a blit,
+                # a partial store we don't recognize, ...) — bail, too risky to fold.
+                return None
+
+        if set(values) != set(range(size)):
+            return None
+        consumed = [alloc_idx, *store_indices]
+        result_values = [values[i] for i in range(size)]
+        # Inline single-use element-construction temps (e.g. `var10 = new X(...)`)
+        # that live between the alloc and the wrapper call. Without this, an
+        # element constructed in its own statement before the store folds into
+        # `[var10]`, leaving `var10 = new X(...)` as a separate preceding
+        # statement — which recompiles with the constructor *before* the array
+        # allocation, diverging from the original `[new X(...)]` source order
+        # (Haxe allocates the enclosing array first when the element is inline).
+        # Inlining the temp into the literal restores that order. This is a *move*
+        # (the temp is single-use), never a duplication, so side effects run once.
+        for k, val in enumerate(result_values):
+            inlined = self._try_inline_element_temp(stmts, val, alloc_idx, call_idx, consumed)
+            if inlined is not None:
+                inlined_expr, def_idx = inlined
+                result_values[k] = inlined_expr
+                consumed.append(def_idx)
+        return result_values, consumed
+
+    def _try_inline_element_temp(
+        self,
+        stmts: List[IRStatement],
+        val: IRExpression,
+        alloc_idx: int,
+        call_idx: int,
+        already_consumed: List[int],
+    ) -> Optional[Tuple[IRExpression, int]]:
+        """If `val` is a single-use synthetic local whose sole definition sits
+        between the array alloc and the wrapper call, return its defining
+        expression and the index of that definition so the caller can splice it
+        into the array literal (a move, not a copy) and drop the definition."""
+        if not isinstance(val, IRLocal):
+            return None
+        temp = val
+        def_idx: Optional[int] = None
+        for j in range(alloc_idx + 1, call_idx):
+            s = stmts[j]
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target == temp:
+                if def_idx is not None:
+                    return None  # redefined — not a single def
+                def_idx = j
+        if def_idx is None:
+            return None
+        def_stmt = stmts[def_idx]
+        assert isinstance(def_stmt, IRAssign)
+        def_expr = def_stmt.expr
+        if not isinstance(def_expr, (IRNew, IRArrayLiteral, IRConst, IRArithmetic, IRCast, IRField, IRLocal)):
+            return None
+        # The temp must be read exactly once in the whole block, and that read
+        # must be the store we're folding (one of the already-consumed stores).
+        # The definition itself is a write, not a read.
+        read_count = 0
+        for j, s in enumerate(stmts):
+            if j == def_idx:
+                continue
+            if self._stmt_reads(s, temp):
+                read_count += 1
+        if read_count != 1:
+            return None
+        # Nothing between the def and the wrapper call may reassign any free
+        # local of the moved expression — otherwise moving the def to the
+        # literal's position would change which value those locals hold.
+        free_locals: Set[IRLocal] = set()
+        self._collect_locals(def_expr, free_locals)
+        for j in range(def_idx + 1, call_idx):
+            if j in already_consumed:
+                continue
+            s = stmts[j]
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target in free_locals:
+                return None
+        return def_expr, def_idx
+
+    def _reads_in_assign(self, stmt: IRAssign, local: IRLocal) -> bool:
+        """True if `stmt` reads `local` (in its target's array/index or in expr),
+        ignoring a write to `local` itself."""
+        if isinstance(stmt.target, IRArrayAccess):
+            if self._expr_reads(stmt.target.index, local) or self._expr_reads(stmt.target.array, local):
+                return True
+        elif isinstance(stmt.target, IRField):
+            # `obj.field = ...` reads `obj` (the base) to know what to mutate.
+            if self._expr_reads(stmt.target.target, local):
+                return True
+        elif stmt.target == local:
+            # A write to `local` itself; the RHS may still read the old value,
+            # but for a single-def temp that can't happen — treat as no read.
+            return self._expr_reads(stmt.expr, local)
+        return self._expr_reads(stmt.expr, local)
+
+    def _stmt_reads(self, stmt: IRStatement, local: IRLocal) -> bool:
+        """True if `stmt` reads `local` anywhere, treating a bare write to
+        `local` itself as a read only via its RHS."""
+        if isinstance(stmt, IRAssign):
+            return self._reads_in_assign(stmt, local)
+        return any(self._expr_reads(c, local) for c in stmt.get_children() if isinstance(c, IRExpression))
+
+    def _collect_locals(self, expr: Optional[IRExpression], out: Set[IRLocal]) -> None:
+        if expr is None:
+            return
+        if isinstance(expr, IRLocal):
+            out.add(expr)
+            return
+        for c in expr.get_children():
+            if isinstance(c, IRExpression):
+                self._collect_locals(c, out)
+
     def visit_block(self, block: IRBlock) -> None:
         local_defs: Dict[IRLocal, IRExpression] = {}
-        new_statements: List[IRStatement] = []
-        for stmt in block.statements:
+        stmts = block.statements
+        drop: Set[int] = set()
+        for i, stmt in enumerate(stmts):
             if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
                 local_defs[stmt.target] = stmt.expr
-            if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRCall) and self._is_array_wrapper_call(stmt.expr):
+            if (
+                isinstance(stmt, IRAssign)
+                and isinstance(stmt.expr, IRCall)
+                and self._is_array_wrapper_call(stmt.expr)
+            ):
                 if self._is_empty_array_alloc(stmt.expr.args[0], local_defs):
-                    stmt.expr = IRArrayLiteral(self.func.code, [])
-                # Non-empty wrappers (e.g. ArrayObj.alloc(anew) after blitting)
-                # must stay so pseudo can render `alloc(anew)`.
-            elif isinstance(stmt, IRCall) and self._is_array_wrapper_call(stmt):
+                    literal = IRArrayLiteral(self.func.code, [])
+                    literal.recovered_elem_type = self._empty_array_elem_type(stmt.expr.args[0], local_defs)
+                    stmt.expr = literal
+                elif isinstance(stmt.expr.args[0], IRLocal):
+                    folded = self._try_fold_array_literal(stmts, i, stmt.expr.args[0])
+                    if folded is not None:
+                        values, consumed = folded
+                        drop.update(consumed)
+                        stmt.expr = IRArrayLiteral(self.func.code, values)
+                # Any other non-empty wrapper (e.g. after a blit into an
+                # already-populated array) must stay so pseudo can render
+                # `alloc(anew)`.
+
+        new_statements: List[IRStatement] = []
+        for i, stmt in enumerate(stmts):
+            if i in drop:
+                continue
+            if isinstance(stmt, IRCall) and self._is_array_wrapper_call(stmt):
                 # Bare wrapper call (typically a constructor wrapper on a fresh
                 # `new ArrayObj()`).  It has no observable effect beyond
                 # initializing the array, so drop it.
@@ -302,6 +500,39 @@ class IRNativeMapAllocOptimizer(TraversingIROptimizer):
                     self.visit_block(child)
 
 
+class IRBytesAllocOptimizer(TraversingIROptimizer):
+    """
+    Folds `Native.alloc_bytes(n)` into `new hl.Bytes(n)` (hl.Bytes's inline
+    constructor is exactly that native call). Must run after
+    IRArrayPatternOptimizer, which consumes the alloc_bytes calls backing
+    fixed-size array literals.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        for stmt in block.statements:
+            if not isinstance(stmt, IRAssign):
+                continue
+            expr = stmt.expr
+            if not (isinstance(expr, IRCall) and len(expr.args) == 1):
+                continue
+            if not (isinstance(expr.target, IRConst) and isinstance(expr.target.value, Native)):
+                continue
+            native = expr.target.value
+            if native.lib.resolve(self.func.code) != "std":
+                continue
+            if native.name.resolve(self.func.code) != "alloc_bytes":
+                continue
+            fun_def = native.type.resolve(self.func.code).definition
+            assert isinstance(fun_def, Fun)
+            new_expr = IRBytesNew(self.func.code, fun_def.ret, expr.args[0])
+            new_expr.adopt(expr)
+            stmt.expr = new_expr
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
+
+
 class IRArrayPatternOptimizer(TraversingIROptimizer):
     """
     Recognise low-level HashLink array implementation patterns and rewrite them
@@ -330,6 +561,14 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                     arr_assign, consumed, preceding_to_pop = access_match
                     for _ in range(preceding_to_pop):
                         new_statements.pop()
+                    new_statements.append(arr_assign)
+                    i += consumed
+                    made_change = True
+                    continue
+
+                empty_typed_match = self._try_empty_typed_array_alloc(block.statements, i)
+                if empty_typed_match:
+                    arr_assign, consumed = empty_typed_match
                     new_statements.append(arr_assign)
                     i += consumed
                     made_change = True
@@ -414,12 +653,16 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         if isinstance(arr_expr, IRLocal) and arr_expr.name == "this":
             arr_expr = stmt.expr
 
-        # Scan forward for the first use of temp in an array access. The shift
+        # Scan forward and rewrite every use of temp in an array access (there
+        # can be more than one, e.g. a read followed by a write to the same
+        # index in a closure body: `total[0] = total[0] + 10`). The shift
         # offset may have been hoisted into its own temp (`idxTmp = idx << n`)
         # rather than appearing inline in the access; track those as we go.
         idx_temp_map: Dict[str, IRExpression] = {}
+        rewritten = list(stmts)
+        found_any = False
         for j in range(start + 1, len(stmts)):
-            use = stmts[j]
+            use = rewritten[j]
             if (
                 isinstance(use, IRAssign)
                 and isinstance(use.target, IRLocal)
@@ -432,14 +675,31 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             if accesses:
                 new_use = self._replace_temp_accesses(use, accesses)
                 new_use.adopt(stmt)  # `stmt` (the bytes-temp definition) is dropped below
-                # Drop only the temp definition itself; the statements between
-                # it and the use (start+1..j-1) must stay in their original
-                # relative order *before* the (now-collapsed) use — moving the
-                # use back to the definition's old position would run it
-                # before intervening statements it may depend on (e.g. an
-                # index-shift temp recomputed in between).
-                return stmts[:start] + stmts[start + 1 : j] + [new_use] + stmts[j + 1 :], 1
-        return None
+                rewritten[j] = new_use
+                found_any = True
+        if not found_any:
+            return None
+        # Only safe to drop the def if every reference to temp got rewritten
+        # above — a leftover raw use (e.g. as a call receiver) would otherwise
+        # be left dangling once the definition is removed.
+        for j in range(start + 1, len(rewritten)):
+            if self._contains_local(rewritten[j], temp.name):
+                return None
+        return rewritten[:start] + rewritten[start + 1 :], 1
+
+    def _contains_local(self, node: IRStatement, name: str, _seen: Optional[Set[int]] = None) -> bool:
+        """True if `node` (recursively) still references a local named `name`."""
+        if _seen is None:
+            _seen = set()
+        if id(node) in _seen:
+            return False
+        _seen.add(id(node))
+        if isinstance(node, IRLocal):
+            return node.name == name
+        for child in node.get_children():
+            if self._contains_local(child, name, _seen):
+                return True
+        return False
 
     def _find_temp_accesses(
         self,
@@ -471,7 +731,12 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                     ):
                         result.append((node, IRArrayAccess(node.code, arr_expr, node.index.left)))
                     elif isinstance(node.index, IRLocal) and node.index.name in idx_temp_map:
-                        result.append((node, IRArrayAccess(node.code, arr_expr, idx_temp_map[node.index.name])))
+                        result.append(
+                            (
+                                node,
+                                IRArrayAccess(node.code, arr_expr, idx_temp_map[node.index.name]),
+                            )
+                        )
             for child in node.get_children():
                 visit(child)
 
@@ -569,6 +834,11 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                 parent.try_block = new
             elif parent.catch_block is old:
                 parent.catch_block = new
+            else:
+                for i, (extra_local, extra_block) in enumerate(parent.extra_catches):
+                    if extra_block is old:
+                        parent.extra_catches[i] = (extra_local, new)
+                        break
         elif isinstance(parent, IRTrace):
             if parent.msg is old:
                 parent.msg = new
@@ -696,7 +966,9 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                     return found
         return None
 
-    def _try_array_obj_literal(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int]]:
+    def _try_array_obj_literal(
+        self, stmts: List[IRStatement], start: int
+    ) -> Optional[Tuple[IRStatement, int]]:
         # Pattern:
         #   arr = alloc_array(type, size)
         #   [elem = expr;] arr[i] = elem
@@ -774,28 +1046,42 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         use_stmt.adopt(*stmts[start:i])  # alloc + element/store statements are dropped
         return use_stmt, i - start + 1
 
-    def _is_empty_alloc_array(self, expr: IRStatement) -> bool:
+    def _is_empty_alloc_array(
+        self,
+        expr: IRStatement,
+        local_defs: Optional[Dict[IRLocal, IRExpression]] = None,
+    ) -> bool:
+        if isinstance(expr, IRLocal) and local_defs is not None:
+            expr = local_defs.get(expr, expr)
         if not self._is_alloc_array(expr):
             return False
         call = cast(IRCall, expr)
         if len(call.args) != 2:
             return False
         type_arg, size_arg = call.args
+        if isinstance(size_arg, IRLocal) and local_defs is not None:
+            size_arg = local_defs.get(size_arg, size_arg)
         if not isinstance(size_arg, IRConst) or size_arg.const_type != IRConst.ConstType.INT:
             return False
         if int(size_arg.value.value if hasattr(size_arg.value, "value") else size_arg.value) != 0:
             return False
+        if isinstance(type_arg, IRLocal) and local_defs is not None:
+            type_arg = local_defs.get(type_arg, type_arg)
         if isinstance(type_arg, IRConst) and (
             type_arg.const_type == IRConst.ConstType.NULL or isinstance(type_arg.value, Type)
         ):
             return True
         return False
 
-    def _is_empty_arrayobj_anon(self, expr: IRStatement) -> bool:
+    def _is_empty_arrayobj_anon(
+        self,
+        expr: IRStatement,
+        local_defs: Optional[Dict[IRLocal, IRExpression]] = None,
+    ) -> bool:
         if not self._is_arrayobj_anon(expr):
             return False
         call = cast(IRCall, expr)
-        return len(call.args) == 1 and self._is_empty_alloc_array(call.args[0])
+        return len(call.args) == 1 and self._is_empty_alloc_array(call.args[0], local_defs)
 
     def _is_arraydyn_alloc(self, expr: IRStatement) -> bool:
         if not isinstance(expr, IRCall):
@@ -812,24 +1098,49 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
 
     def _try_empty_array_dyn(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int]]:
         # Pattern:
-        #   temp = ArrayObj.anon(alloc_array(null, 0))
-        #   target = ArrayDyn.alloc(temp, true)
-        # Rewrite both statements to target = [] when temp has no later uses.
+        #   temp = ArrayObj.anon(alloc_array(null, 0))   (or already-simplified temp = [])
+        #   [flag = true]                                 (optional HashLink 1.15+ boilerplate)
+        #   target = ArrayDyn.alloc(temp, true_or_new_ref(flag))
+        # Rewrite to target = [] when temp has no later uses.
         if start + 1 >= len(stmts):
             return None
         s0 = stmts[start]
         if not isinstance(s0, IRAssign) or not isinstance(s0.target, IRLocal):
             return None
         temp = s0.target
-        if not self._is_empty_arrayobj_anon(s0.expr):
+
+        local_defs: Dict[IRLocal, IRExpression] = {}
+        for stmt in stmts[:start]:
+            if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+                local_defs[stmt.target] = stmt.expr
+
+        s0_expr_is_empty_literal = isinstance(s0.expr, IRArrayLiteral) and len(s0.expr.elements) == 0
+        if not (s0_expr_is_empty_literal or self._is_empty_arrayobj_anon(s0.expr, local_defs)):
             return None
 
-        s1 = stmts[start + 1]
-        if not isinstance(s1, IRAssign) or not isinstance(s1.expr, IRCall):
+        # Look for the ArrayDyn.alloc call. HashLink 1.15+ inserts a boolean flag
+        # temp assignment between the temp and the alloc call, so scan forward.
+        alloc_idx = -1
+        _flag_local: Optional[IRLocal] = None
+        for j in range(start + 1, min(len(stmts), start + 4)):
+            s = stmts[j]
+            if isinstance(s, IRAssign) and isinstance(s.expr, IRConst) and isinstance(s.expr.value, bool):
+                # Optional flag assignment, keep looking.
+                if isinstance(s.target, IRLocal):
+                    _flag_local = s.target
+                continue
+            if isinstance(s, IRAssign) and isinstance(s.expr, IRCall) and self._is_arraydyn_alloc(s.expr):
+                alloc_idx = j
+                break
+            # Stop scanning if we hit a non-boilerplate statement.
+            break
+
+        if alloc_idx == -1:
             return None
+        s1 = stmts[alloc_idx]
+        assert isinstance(s1, IRAssign)
         call = s1.expr
-        if not self._is_arraydyn_alloc(call):
-            return None
+        assert isinstance(call, IRCall)
         if len(call.args) != 2:
             return None
         first_arg, second_arg = call.args
@@ -840,23 +1151,38 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         if isinstance(second_arg, IRConst) and isinstance(second_arg.value, bool) and second_arg.value:
             true_ok = True
         elif (
-            isinstance(second_arg, IRRef)
+            isinstance(second_arg, (IRRef, IRRefNew))
             and isinstance(second_arg.target, IRConst)
             and isinstance(second_arg.target.value, bool)
             and second_arg.target.value
         ):
             true_ok = True
+        elif isinstance(second_arg, IRRefNew) and isinstance(second_arg.target, IRLocal):
+            # HashLink 1.15+ lowers the boolean flag to a stack-allocated Ref.
+            ref_local = second_arg.target
+            for prior in stmts[:alloc_idx]:
+                if (
+                    isinstance(prior, IRAssign)
+                    and isinstance(prior.target, IRLocal)
+                    and prior.target.name == ref_local.name
+                    and isinstance(prior.expr, IRConst)
+                    and isinstance(prior.expr.value, bool)
+                    and prior.expr.value
+                ):
+                    true_ok = True
+                    break
         if not true_ok:
             return None
 
-        for later in stmts[start + 2 :]:
+        for later in stmts[alloc_idx + 1 :]:
             if self._local_in_stmt(later, temp):
                 return None
 
         literal = IRArrayLiteral(self.func.code, [])
         new_assign = IRAssign(self.func.code, s1.target, literal)
-        new_assign.adopt(s0, s1)
-        return new_assign, 2
+        consume_count = alloc_idx - start + 1
+        new_assign.adopt(*stmts[start : alloc_idx + 1])
+        return new_assign, consume_count
 
     def _index_shift(self, idx: IRStatement, local: IRLocal) -> Optional[int]:
         """Return the shift amount if `idx` is `local << const`."""
@@ -981,6 +1307,73 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                 return i + inc_offset + 1, shift
         return None
 
+    _ALLOC_ELEM_TYPE_NAMES: Dict[str, str] = {
+        "allocI32": "I32",
+        "allocF32": "F32",
+        "allocF64": "F64",
+        "allocUI16": "U16",
+    }
+
+    def _try_empty_typed_array_alloc(
+        self, stmts: List[IRStatement], start: int
+    ) -> Optional[Tuple[IRStatement, int]]:
+        # bytes_var = alloc_bytes(0); arr_var = allocXXX(bytes_var, 0)
+        # -> arr_var = [] (element type recovered from the alloc helper name).
+        # This is the growable-array shape used for both `new Array<T>()` and
+        # `new haxe.ds.Vector<T>(n)` (which reads back .length and __expands
+        # on each indexed write, same as an ordinary Array).
+        if start >= len(stmts):
+            return None
+        alloc_stmt = stmts[start]
+        if not isinstance(alloc_stmt, IRAssign) or not isinstance(alloc_stmt.target, IRLocal):
+            return None
+        if not self._is_alloc_bytes(alloc_stmt.expr):
+            return None
+        assert isinstance(alloc_stmt.expr, IRCall)
+        if len(alloc_stmt.expr.args) != 1 or not self._is_int_const(alloc_stmt.expr.args[0], 0):
+            return None
+        # The wrap call is usually the very next statement, but harmless
+        # register-reuse noise (e.g. a redundant `idx = 0` reassign not yet
+        # cleaned up at this point in the pipeline) can sit in between.
+        j = start + 1
+        while j < len(stmts) and j < start + 6:
+            s = stmts[j]
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and not isinstance(s.expr, IRCall):
+                j += 1
+                continue
+            break
+        if j >= len(stmts):
+            return None
+        wrap_stmt = stmts[j]
+        if not isinstance(wrap_stmt, IRAssign) or not isinstance(wrap_stmt.target, IRLocal):
+            return None
+        alloc_name = self._is_alloc_typed_array(wrap_stmt.expr)
+        if alloc_name is None:
+            return None
+        assert isinstance(wrap_stmt.expr, IRCall)
+        call = wrap_stmt.expr
+        if (
+            len(call.args) != 2
+            or not isinstance(call.args[0], IRLocal)
+            or call.args[0].name != alloc_stmt.target.name
+        ):
+            return None
+        if not self._is_int_const(call.args[1], 0):
+            return None
+        literal = IRArrayLiteral(self.func.code, [])
+        elem_type_name = self._ALLOC_ELEM_TYPE_NAMES.get(alloc_name)
+        if elem_type_name is not None:
+            literal.recovered_elem_type = _get_type_in_code(self.func.code, elem_type_name)
+        new_assign = IRAssign(self.func.code, wrap_stmt.target, literal)
+        new_assign.adopt(*stmts[start : j + 1])
+        return new_assign, j - start + 1
+
+    def _is_int_const(self, expr: IRStatement, value: int) -> bool:
+        if not isinstance(expr, IRConst) or expr.const_type != IRConst.ConstType.INT:
+            return False
+        v = expr.value.value if hasattr(expr.value, "value") else expr.value
+        return int(v) == value
+
     def _try_array_literal(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int]]:
         # bytes_var = alloc_bytes(...)
         if start >= len(stmts):
@@ -1005,7 +1398,8 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                 and isinstance(stmt2.target, IRLocal)
                 and isinstance(stmt2.expr, IRConst)
                 and stmt2.expr.const_type == IRConst.ConstType.INT
-                and int(stmt2.expr.value.value if hasattr(stmt2.expr.value, "value") else stmt2.expr.value) == 0
+                and int(stmt2.expr.value.value if hasattr(stmt2.expr.value, "value") else stmt2.expr.value)
+                == 0
             ):
                 idx_var = stmt2.target
                 parsed = self._parse_store_and_increment(stmts, start + 2, bytes_var, idx_var, values)
@@ -1064,11 +1458,15 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                         == 1
                     ):
                         idx_var = inc_stmt.target
-                        parsed = self._parse_store_and_increment(stmts, start + 3, bytes_var, idx_var, values, shift)
+                        parsed = self._parse_store_and_increment(
+                            stmts, start + 3, bytes_var, idx_var, values, shift
+                        )
                         if parsed is not None:
                             i, _ = parsed
                             while True:
-                                nxt = self._parse_store_and_increment(stmts, i, bytes_var, idx_var, values, shift)
+                                nxt = self._parse_store_and_increment(
+                                    stmts, i, bytes_var, idx_var, values, shift
+                                )
                                 if nxt is None:
                                     break
                                 i, _ = nxt
@@ -1111,10 +1509,10 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         if len(call.args) != 2 or (isinstance(call.args[0], IRLocal) and call.args[0].name != bytes_var.name):
             return None
 
-        arr_type = _get_type_in_code(self.func.code, "Dyn")
+        _arr_type = _get_type_in_code(self.func.code, "Dyn")
         for t in self.func.code.types:
             if disasm.type_name(self.func.code, t) == "Array":
-                arr_type = t
+                _arr_type = t
                 break
         literal = IRArrayLiteral(self.func.code, values)
 
@@ -1122,7 +1520,9 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         # Haxe compiler will often constant-fold the whole array away.  Keep the
         # low-level allocation in that case so the recompiled bytecode stays close
         # to the original.
-        if isinstance(return_target, IRLocal) and not self._array_literal_is_worth_recovering(return_target, stmts, i):
+        if isinstance(return_target, IRLocal) and not self._array_literal_is_worth_recovering(
+            return_target, stmts, i
+        ):
             return None
 
         if return_target is not None:
@@ -1134,7 +1534,9 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             new_return.adopt(*stmts[start : i + 1])
             return new_return, i - start + 1
 
-    def _array_literal_is_worth_recovering(self, arr_local: IRLocal, stmts: List[IRStatement], end_idx: int) -> bool:
+    def _array_literal_is_worth_recovering(
+        self, arr_local: IRLocal, stmts: List[IRStatement], end_idx: int
+    ) -> bool:
         """Return True if `arr_local` is used for anything other than a bounds
         guard after the literal allocation.
 
@@ -1148,7 +1550,11 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                 return True
             if node == arr_local:
                 return False
-            if isinstance(node, IRField) and node.target == arr_local and node.field_name in ("length", "bytes"):
+            if (
+                isinstance(node, IRField)
+                and node.target == arr_local
+                and node.field_name in ("length", "bytes")
+            ):
                 return True
             for child in node.get_children():
                 if not _only_guard_fields(child):
@@ -1172,13 +1578,18 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
 
     def _array_from_length_expr(
         self, stmts: List[IRStatement], start: int, expr: IRExpression
-    ) -> Optional[Tuple[IRLocal, int]]:
-        """Resolve the array variable behind a `.length` expression or a temp holding it.
+    ) -> Optional[Tuple[IRExpression, int]]:
+        """Resolve the array expression behind a `.length` expression or a temp holding it.
 
-        Returns the array local and the index of the statement that produced the
-        length value, so the caller can consume it.
+        Returns the array expression (a local or a field access like `this.weights`)
+        and the index of the statement that produced the length value, so the caller
+        can consume it.
         """
         if isinstance(expr, IRField) and expr.field_name == "length" and isinstance(expr.target, IRLocal):
+            return expr.target, start
+        # Field-based array: `this.field.length` — the array is the field access
+        # itself, read inline (no length temp to consume).
+        if isinstance(expr, IRField) and expr.field_name == "length" and isinstance(expr.target, IRField):
             return expr.target, start
         if not isinstance(expr, IRLocal):
             return None
@@ -1190,12 +1601,13 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                 and prev.target.same_register(expr)
                 and isinstance(prev.expr, IRField)
                 and prev.expr.field_name == "length"
-                and isinstance(prev.expr.target, IRLocal)
             ):
                 return prev.expr.target, j
         return None
 
-    def _try_array_access(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int, int]]:
+    def _try_array_access(
+        self, stmts: List[IRStatement], start: int
+    ) -> Optional[Tuple[IRStatement, int, int]]:
         # Pattern:
         #   if (idx >= arr.length) { value = default; } else { value = arr.bytes[idx << 2]; }
         # Returns (replacement_stmt, consumed_from_start, preceding_statements_to_pop).
@@ -1250,9 +1662,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         access = else_assign.expr
         if not isinstance(access.array, IRField):
             return None
-        if not isinstance(access.array.target, IRLocal):
-            return None
-        if access.array.field_name != "bytes" or access.array.target.name != arr_var.name:
+        if access.array.field_name != "bytes" or not _structurally_equal(access.array.target, arr_var):
             return None
         if not isinstance(access.index, IRArithmetic) or access.index.op.value != "<<":
             return None
@@ -1319,7 +1729,9 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                     return None
         return None
 
-    def _try_array_dyn_literal(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int]]:
+    def _try_array_dyn_literal(
+        self, stmts: List[IRStatement], start: int
+    ) -> Optional[Tuple[IRStatement, int]]:
         """Rewrite `target = ArrayDyn.alloc([...], true)` to `target = [...]`.
 
         The ArrayObj.anon + ArrayDyn.alloc pair is already lowered to a typed
@@ -1338,21 +1750,54 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         if len(call.args) != 2:
             return None
         first_arg, second_arg = call.args
-        if not isinstance(first_arg, IRArrayLiteral):
+        literal: Optional[IRArrayLiteral] = None
+        _array_temp: Optional[IRLocal] = None
+        if isinstance(first_arg, IRArrayLiteral):
+            literal = first_arg
+        elif isinstance(first_arg, IRLocal):
+            _array_temp = first_arg
+            # Scan backward from `start` so a name reused by an earlier,
+            # unrelated array build (register reuse) doesn't shadow the
+            # nearest actual definition feeding this use.
+            for prior in reversed(stmts[:start]):
+                if (
+                    isinstance(prior, IRAssign)
+                    and isinstance(prior.target, IRLocal)
+                    and prior.target.name == first_arg.name
+                    and isinstance(prior.expr, IRArrayLiteral)
+                ):
+                    literal = prior.expr
+                    break
+        if literal is None:
             return None
+
         true_ok = False
         if isinstance(second_arg, IRConst) and isinstance(second_arg.value, bool) and second_arg.value:
             true_ok = True
         elif (
-            isinstance(second_arg, IRRef)
+            isinstance(second_arg, (IRRef, IRRefNew))
             and isinstance(second_arg.target, IRConst)
             and isinstance(second_arg.target.value, bool)
             and second_arg.target.value
         ):
             true_ok = True
+        elif isinstance(second_arg, IRRefNew) and isinstance(second_arg.target, IRLocal):
+            # HashLink 1.15+ lowers the boolean flag to a stack-allocated Ref.
+            ref_local = second_arg.target
+            for prior in reversed(stmts[:start]):
+                if (
+                    isinstance(prior, IRAssign)
+                    and isinstance(prior.target, IRLocal)
+                    and prior.target.name == ref_local.name
+                    and isinstance(prior.expr, IRConst)
+                    and isinstance(prior.expr.value, bool)
+                    and prior.expr.value
+                ):
+                    true_ok = True
+                    break
         if not true_ok:
             return None
-        return IRAssign(self.func.code, s.target, first_arg).adopt(s), 1
+        return IRAssign(self.func.code, s.target, literal).adopt(s), 1
 
     @staticmethod
     def _expr_eq(a: Optional[IRExpression], b: Optional[IRExpression]) -> bool:
@@ -1478,7 +1923,11 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             if not self._expr_eq(access.index, idx_expr):
                 return None
         # Low-level store via the hoisted bytes temp: tmp[idx << 2]
-        elif bytes_temp_name is not None and isinstance(access.array, IRLocal) and access.array.name == bytes_temp_name:
+        elif (
+            bytes_temp_name is not None
+            and isinstance(access.array, IRLocal)
+            and access.array.name == bytes_temp_name
+        ):
             if not _matches_shifted_index(access.index):
                 return None
         # Low-level store: a.bytes[idx << 2]

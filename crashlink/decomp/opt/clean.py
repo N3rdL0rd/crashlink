@@ -6,35 +6,24 @@ from __future__ import annotations
 
 import copy
 import re
-from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, cast
 
 if TYPE_CHECKING:
     from ..function import IRFunction
 
 from ...core import (
-    Bytecode,
     DynObj,
     Enum,
-    Fun,
     Function,
-    Native,
     Obj,
-    Opcode,
-    Ref,
-    ResolvableVarInt,
     Type,
-    TypeDef,
     Virtual,
-    Void,
-    fieldRef,
-    gIndex,
+    destaticify,
     tIndex,
 )
 from ...errors import DecompError
-from ...globals import DEBUG, dbg_print
 from ... import disasm
-from ...opcodes import arithmetic, conditionals, terminal, simple_calls
+from ...globals import DEBUG, dbg_print
 from ..ir import (
     IRStatement,
     IRExpression,
@@ -65,30 +54,23 @@ from ..ir import (
     IRField,
     IRNew,
     IRNativeArrayNew,
-    IRNativeMapNew,
     IRCast,
     IRArrayLiteral,
     IRObjectLiteral,
     IRArrayAccess,
     IRRef,
+    IRRefNew,
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
-    IRUnliftedOpcode,
-    IRNativeStub,
-    _get_type_in_code,
-    _strip_ansi,
 )
-from ..cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
+
 from . import (
     IROptimizer,
     TraversingIROptimizer,
     _ir_structurally_equal,
     _structurally_equal,
     _stmt_lists_structurally_equal,
-    _bytes_mem_kind,
-    _int_const_value,
-    _signed_i32,
 )
 
 
@@ -105,10 +87,16 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
     """
 
     def _clone_bool_expr(self, expr: IRBoolExpr) -> IRBoolExpr:
-        return cast(IRBoolExpr, IRBoolExpr(expr.code, expr.op, expr.left, expr.right).adopt(expr))
+        return cast(
+            IRBoolExpr,
+            IRBoolExpr(expr.code, expr.op, expr.left, expr.right).adopt(expr),
+        )
 
     def _inline_into_boolexpr(
-        self, bool_expr: IRBoolExpr, target: IRLocal | IRField | IRArrayAccess, expr_to_inline: IRExpression
+        self,
+        bool_expr: IRBoolExpr,
+        target: IRLocal | IRField | IRArrayAccess,
+        expr_to_inline: IRExpression,
     ) -> Optional[IRBoolExpr]:
         modified = False
         new_left = bool_expr.left
@@ -127,12 +115,30 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
             return bool_expr
         return None
 
-    def _statement_reads_target(self, statement: IRStatement, target: IRLocal | IRField | IRArrayAccess) -> bool:
+    def _reads_target_before_redefine(
+        self, statements: List[IRStatement], target: IRLocal | IRField | IRArrayAccess
+    ) -> bool:
+        """Scan a top-level statement list in order for a read of `target`, stopping at
+        the first statement that reassigns it. HL freely reuses dead registers, so a
+        later statement matching `target` by name/register may be a genuine read of our
+        value, or it may be operating on the register after it's been overwritten for an
+        unrelated purpose - once reassigned, later statements can no longer be reading
+        the value we're trying to inline."""
+        for stmt in statements:
+            if self._statement_reads_target(stmt, target):
+                return True
+            if isinstance(stmt, IRAssign) and stmt.target == target:
+                return False
+        return False
+
+    def _statement_reads_target(
+        self, statement: IRStatement, target: IRLocal | IRField | IRArrayAccess
+    ) -> bool:
         if statement == target:
             return True
         if isinstance(statement, IRAssign):
             return self._statement_reads_target(statement.expr, target)
-        if isinstance(statement, IRBoolExpr):
+        if isinstance(statement, (IRBoolExpr, IRArithmetic)):
             return (statement.left is not None and self._statement_reads_target(statement.left, target)) or (
                 statement.right is not None and self._statement_reads_target(statement.right, target)
             )
@@ -190,12 +196,21 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
                 and isinstance(stmt.expr, IRExpression)
                 and isinstance(stmt.target, (IRLocal, IRField, IRArrayAccess))
             ):
-                later_statements = list(setup_statements_for_body[i + 1 :]) + list(loop.body.statements)
-                reads_later = any(
-                    self._statement_reads_target(later_stmt, stmt.target) for later_stmt in later_statements
+                # The loop wraps around: after this statement, execution continues to
+                # the end of the condition block, then to the body, then back to the
+                # top of the condition block for the next iteration. Include that
+                # wrap-around (ending at `stmt` itself, which is a natural
+                # redefinition boundary) so a read at the very top of the next
+                # iteration - like a do-while's condition setup feeding straight
+                # back into its own body - isn't missed.
+                later_statements = (
+                    list(setup_statements_for_body[i + 1 :])
+                    + list(loop.body.statements)
+                    + list(setup_statements_for_body[: i + 1])
                 )
+                reads_later = self._reads_target_before_redefine(later_statements, stmt.target)
                 reads_in_condition = self._statement_reads_target(working_exit_condition, stmt.target)
-                if reads_later or reads_in_condition:
+                if reads_later or not reads_in_condition:
                     remaining_setup.append(stmt)
                     continue
 
@@ -223,26 +238,162 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
         new_while_loop.comment = loop.comment
         new_while_loop.adopt(loop, loop_continuation_expr)
 
-        dbg_print(f"IRLoopCondOpt: Converted IRPrimitiveLoop to IRWhileLoop. While condition: {loop_continuation_expr}")
+        dbg_print(
+            f"IRLoopCondOpt: Converted IRPrimitiveLoop to IRWhileLoop. While condition: {loop_continuation_expr}"
+        )
         return new_while_loop
 
 
 class IRSelfAssignOptimizer(TraversingIROptimizer):
     """
-    Optimizes away redundant assignments like `x = x`.
+    Optimizes away redundant assignments like `x = x`, including cases where
+    `x` is wrapped in round-trip casts back to its own type (e.g. HL's
+    Dyn->I32->Dyn unboxing shim on generic-method results).
     """
+
+    @staticmethod
+    def _strip_casts(expr: IRExpression) -> IRExpression:
+        while isinstance(expr, IRCast):
+            expr = expr.expr
+        return expr
 
     def visit_block(self, block: IRBlock) -> None:
         new_statements = []
 
         for stmt in block.statements:
-            if isinstance(stmt, IRAssign):
-                if isinstance(stmt.target, IRLocal) and stmt.target == stmt.expr:
+            if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+                # only elide if the assignment's own outer type is a no-op
+                # round-trip back to the target's declared type
+                if isinstance(stmt.expr, IRCast) and stmt.expr.get_type() is not stmt.target.get_type():
+                    new_statements.append(stmt)
+                    continue
+                inner = self._strip_casts(stmt.expr)
+                if stmt.target == inner:
                     if DEBUG:
                         dbg_print(f"IRSelfAssignOptimizer: Removing redundant assignment: {stmt}")
                     continue
             new_statements.append(stmt)
 
+        block.statements = new_statements
+
+
+def _next_stmt_is_return_of(stmts: List[IRStatement], idx: int, target: IRLocal) -> bool:
+    """True if the statement right after `idx` is `return target;`."""
+    if idx + 1 >= len(stmts):
+        return False
+    nxt = stmts[idx + 1]
+    return isinstance(nxt, IRReturn) and nxt.value is not None and nxt.value == target
+
+
+class IRBoolMaterializationCollapser(TraversingIROptimizer):
+    """
+    Collapses `if (cond) { t = true; } else { t = false; }` into `t = cond`,
+    the inverted constant pair into `t = !cond`, and unwraps double negation.
+    """
+
+    @staticmethod
+    def _negated_operand(expr: IRExpression) -> Optional[IRExpression]:
+        if isinstance(expr, IRNot):
+            return expr.expr
+        if (
+            isinstance(expr, IRBoolExpr)
+            and expr.op in (IRBoolExpr.CompareType.ISFALSE, IRBoolExpr.CompareType.NOT)
+            and expr.left is not None
+        ):
+            return expr.left
+        return None
+
+    @staticmethod
+    def _strip_istrue(expr: IRExpression) -> IRExpression:
+        while (
+            isinstance(expr, IRBoolExpr)
+            and expr.op == IRBoolExpr.CompareType.ISTRUE
+            and expr.left is not None
+        ):
+            expr = expr.left
+        return expr
+
+    @classmethod
+    def _unwrap_double_not(cls, expr: IRExpression) -> IRExpression:
+        inner = cls._negated_operand(cls._strip_istrue(expr))
+        if inner is None:
+            return expr
+        inner2 = cls._negated_operand(cls._strip_istrue(inner))
+        if inner2 is None:
+            return expr
+        return cls._unwrap_double_not(inner2)
+
+    @staticmethod
+    def _branch_bool_assign(block: Optional[IRBlock]) -> Optional[Tuple[IRLocal, bool]]:
+        if block is None or len(block.statements) != 1:
+            return None
+        stmt = block.statements[0]
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRLocal)
+            and isinstance(stmt.expr, IRConst)
+            and stmt.expr.const_type == IRConst.ConstType.BOOL
+        ):
+            return stmt.target, bool(stmt.expr.value)
+        return None
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements: List[IRStatement] = []
+        for idx, stmt in enumerate(block.statements):
+            if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRExpression):
+                stmt.expr = self._unwrap_double_not(stmt.expr)
+            elif isinstance(stmt, IRConditional):
+                stmt.condition = self._unwrap_double_not(stmt.condition)
+            elif isinstance(stmt, IRWhileLoop):
+                stmt.condition = self._unwrap_double_not(stmt.condition)
+            elif isinstance(stmt, IRReturn) and stmt.value is not None:
+                stmt.value = self._unwrap_double_not(stmt.value)
+            if isinstance(stmt, IRConditional):
+                true_assign = self._branch_bool_assign(stmt.true_block)
+                false_assign = self._branch_bool_assign(stmt.false_block)
+                if (
+                    true_assign is not None
+                    and false_assign is not None
+                    and true_assign[0] == false_assign[0]
+                    and true_assign[1] != false_assign[1]
+                    and not (
+                        isinstance(true_assign[0], IRLocal)
+                        and re.match(r"^var\d+$", true_assign[0].name)
+                        # Exception: collapse `if (cond) { t = C1; } else { t = C2; }
+                        # return t;` into `return cond;` even for varN temps, so
+                        # `return x != null` doesn't decompile as a 4-line if/else.
+                        and not _next_stmt_is_return_of(block.statements, idx, true_assign[0])
+                    )
+                ):
+                    target = true_assign[0]
+                    cond = stmt.condition
+                    if not true_assign[1]:
+                        # Negate: prefer inverting a comparison in-place over
+                        # wrapping in IRNot to avoid `!(a >= b)` → `a < b`.
+                        if isinstance(cond, IRBoolExpr) and cond.op in (
+                            IRBoolExpr.CompareType.LT,
+                            IRBoolExpr.CompareType.LTE,
+                            IRBoolExpr.CompareType.GT,
+                            IRBoolExpr.CompareType.GTE,
+                            IRBoolExpr.CompareType.EQ,
+                            IRBoolExpr.CompareType.NEQ,
+                            IRBoolExpr.CompareType.NULL,
+                            IRBoolExpr.CompareType.NOT_NULL,
+                        ):
+                            cond = copy.copy(cond)
+                            cond.invert()
+                        else:
+                            cond = cond.expr if isinstance(cond, IRNot) else IRNot(self.func.code, cond)
+                    assign = IRAssign(self.func.code, target, cond)
+                    assign.adopt(stmt)
+                    # The collapsed `t = cond` is a synthetic merge of the original
+                    # branch — folding constants into it would lose the branch
+                    # structure on recompile (e.g. `cond = 4 != 3` → `Bool True`).
+                    assign._no_user_inline = True
+                    dbg_print(f"IRBoolMaterializationCollapser: {stmt} -> {assign}")
+                    new_statements.append(assign)
+                    continue
+            new_statements.append(stmt)
         block.statements = new_statements
 
 
@@ -289,6 +440,98 @@ class IRArrayGrowGuardEliminator(TraversingIROptimizer):
         block.statements = new_statements
 
 
+class IRArrayObjBoundsCheckCollapser(TraversingIROptimizer):
+    """
+    Collapses HL's compiler-emitted null-safe bounds check for reading an
+    `Array<T>` of objects (backed by ArrayObj) into a plain bracket access:
+
+        if (idx >= arr.length) x = null; else x = (T) arr.array[idx];
+        ->
+        x = arr[idx];
+
+    `.array` is ArrayObj's internal backing-storage field — not a real,
+    user-visible field of `Array<T>` — so rendering it literally produces
+    Haxe that doesn't recompile. The collapse is semantics-preserving:
+    Haxe's `Array<T>.__get` already returns null for an out-of-range index,
+    which is exactly what the guard being removed was open-coding.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements = []
+        for stmt in block.statements:
+            collapsed = self._try_collapse(stmt)
+            if collapsed is not None:
+                if DEBUG:
+                    dbg_print(f"IRArrayObjBoundsCheckCollapser: {stmt} -> {collapsed}")
+                new_statements.append(collapsed)
+                continue
+            new_statements.append(stmt)
+        block.statements = new_statements
+
+    def _try_collapse(self, stmt: IRStatement) -> Optional[IRStatement]:
+        if not isinstance(stmt, IRConditional):
+            return None
+        cond = stmt.condition
+        if not (isinstance(cond, IRBoolExpr) and cond.op == IRBoolExpr.CompareType.GTE):
+            return None
+
+        true_stmts = stmt.true_block.statements if stmt.true_block else []
+        false_stmts = stmt.false_block.statements if stmt.false_block else []
+        if len(true_stmts) != 1 or len(false_stmts) != 1:
+            return None
+        true_stmt, false_stmt = true_stmts[0], false_stmts[0]
+        if not (isinstance(true_stmt, IRAssign) and isinstance(false_stmt, IRAssign)):
+            return None
+        if not (isinstance(true_stmt.expr, IRConst) and true_stmt.expr.const_type == IRConst.ConstType.NULL):
+            return None
+        if not _structurally_equal(true_stmt.target, false_stmt.target):
+            return None
+
+        false_value = false_stmt.expr
+        # Preserve the element type the cast was introducing (e.g.
+        # `(Item) arr.array[i]`) so downstream Array<T> element-type recovery
+        # can read it from the collapsed access instead of losing it.
+        cast_elem_type: Optional[tIndex] = None
+        if isinstance(false_value, IRCast):
+            cast_elem_type = false_value.target_type_idx
+            false_value = false_value.expr
+        if not isinstance(false_value, IRArrayAccess):
+            return None
+        arr_field = false_value.array
+        if not (isinstance(arr_field, IRField) and arr_field.field_name == "array"):
+            return None
+
+        length_field = cond.right
+        if not (isinstance(length_field, IRField) and length_field.field_name == "length"):
+            return None
+        if not _structurally_equal(length_field.target, arr_field.target):
+            return None
+        if not _structurally_equal(cond.left, false_value.index):
+            return None
+
+        new_access = IRArrayAccess(self.func.code, arr_field.target, false_value.index, cast_elem_type)
+        assign = IRAssign(self.func.code, true_stmt.target, new_access)
+        assign.adopt(stmt)
+        return assign
+
+
+def _is_closure_producing_field(expr: IRExpression) -> bool:
+    """True if `expr` is a field read whose value is a function/method.
+
+    `obj.method` allocates a fresh bound-closure object on every evaluation
+    (HL's InstanceClosure), unlike a data field read which just observes a
+    value — so two syntactically identical `obj.method` reads are NOT the
+    same value and must never be deduplicated to one.
+    """
+    if not isinstance(expr, IRField):
+        return False
+    try:
+        kind = expr.get_type().kind.value
+    except Exception:
+        return False
+    return kind in (Type.Kind.FUN.value, Type.Kind.METHOD.value)
+
+
 class IRRedundantRecomputeEliminator(TraversingIROptimizer):
     """
     Rewrites `t1 = E; t2 = E;` (the same expression recomputed verbatim in the
@@ -317,6 +560,7 @@ class IRRedundantRecomputeEliminator(TraversingIROptimizer):
                 and isinstance(nxt.target, IRLocal)
                 and nxt.target != stmt.target
                 and not isinstance(stmt.expr, (IRLocal, IRConst))
+                and not _is_closure_producing_field(stmt.expr)
                 and _structurally_equal(stmt.expr, nxt.expr)
             ):
                 new_statements.append(stmt)
@@ -377,6 +621,79 @@ class IRBlockFlattener(TraversingIROptimizer):
             dbg_print(
                 f"IRBlockFlattener: Processed block. Original item count: {len(original_statements)}, New item count: {len(new_statements)}"
             )
+
+
+class IREmptyConditionalNormalizer(TraversingIROptimizer):
+    """
+    Un-inverts `if (a >= b) {}` (both branches emptied by dead-store
+    elimination, e.g. a dead bool materialization) back to `if (a < b) {}`.
+    Lifting negates the bytecode jump's condition to make the fallthrough the
+    true branch; with both branches empty the negation is pure residue, and
+    the jump's own comparison is what the source contained (and what Haxe
+    re-lowers an empty if back to).
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        for s in block.statements:
+            if (
+                isinstance(s, IRConditional)
+                and not (s.true_block and s.true_block.statements)
+                and not (s.false_block and s.false_block.statements)
+                and isinstance(s.condition, IRBoolExpr)
+                and s.condition.op
+                in (
+                    IRBoolExpr.CompareType.LT,
+                    IRBoolExpr.CompareType.LTE,
+                    IRBoolExpr.CompareType.GT,
+                    IRBoolExpr.CompareType.GTE,
+                    IRBoolExpr.CompareType.EQ,
+                    IRBoolExpr.CompareType.NEQ,
+                )
+            ):
+                s.condition.invert()
+
+
+class IRElseFlattener(TraversingIROptimizer):
+    """
+    Flattens `if (c) { ...; return } else { A }` into `if (c) { ...; return } A`.
+    When the true branch always terminates, the else block is the only
+    continuation, so hoisting it exposes its statements to the sequential
+    inliners. Skips DAG-shared else blocks to avoid duplicating statements.
+    """
+
+    def optimize(self) -> None:
+        self._block_refs: Dict[int, int] = {}
+        if hasattr(self.func, "block"):
+            self._count_refs(self.func.block, set())
+        super().optimize()
+
+    def _count_refs(self, block: IRBlock, visited: Set[int]) -> None:
+        for stmt in block.statements:
+            for child in stmt.get_children():
+                if isinstance(child, IRBlock):
+                    self._block_refs[id(child)] = self._block_refs.get(id(child), 0) + 1
+                    if id(child) not in visited:
+                        visited.add(id(child))
+                        self._count_refs(child, visited)
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements: List[IRStatement] = []
+        for stmt in block.statements:
+            new_statements.append(stmt)
+            if (
+                isinstance(stmt, IRConditional)
+                and stmt.false_block is not None
+                and stmt.false_block.statements
+                and stmt.true_block.statements
+                and isinstance(
+                    stmt.true_block.statements[-1],
+                    (IRReturn, IRThrow, IRBreak, IRContinue),
+                )
+                and self._block_refs.get(id(stmt.false_block), 0) <= 1
+            ):
+                new_statements.extend(stmt.false_block.statements)
+                stmt.false_block = IRBlock(self.func.code)
+        block.statements = new_statements
 
 
 class IRCommonBlockMerger(TraversingIROptimizer):
@@ -619,6 +936,11 @@ class IRDeadTempEliminator(IROptimizer):
             if isinstance(stmt.target, IRArrayAccess):
                 self._collect_used_in_expr(stmt.target.array, used)
                 self._collect_used_in_expr(stmt.target.index, used)
+            # For field-store assignments (`obj.field = value`), the object
+            # expression is still a read, even though the statement as a whole
+            # is a write.
+            elif isinstance(stmt.target, IRField):
+                self._collect_used_in_expr(stmt.target.target, used)
         elif isinstance(stmt, IRReturn) and stmt.value:
             self._collect_used_in_expr(stmt.value, used)
         elif isinstance(stmt, IRThrow):
@@ -637,6 +959,12 @@ class IRDeadTempEliminator(IROptimizer):
             used.update(self._collect_all_used_names(stmt.condition))
         elif isinstance(stmt, IRSwitch):
             self._collect_used_in_expr(stmt.value, used)
+        else:
+            # Generic fallback (e.g. IRRefSet): treat any expression child as a
+            # read, so a missing case can't delete a still-needed assignment.
+            for child in stmt.get_children():
+                if isinstance(child, IRExpression):
+                    self._collect_used_in_expr(child, used)
 
     def _collect_used_in_expr(self, expr: Optional[IRExpression], used: Set[str]) -> None:
         if expr is None:
@@ -748,7 +1076,11 @@ class IRDeadCodeEliminator(TraversingIROptimizer):
         if isinstance(cond, IRBoolExpr):
             if cond.op == IRBoolExpr.CompareType.TRUE:
                 return True
-            if cond.op == IRBoolExpr.CompareType.ISTRUE and isinstance(cond.left, IRConst) and cond.left.value is True:
+            if (
+                cond.op == IRBoolExpr.CompareType.ISTRUE
+                and isinstance(cond.left, IRConst)
+                and cond.left.value is True
+            ):
                 return True
         return False
 
@@ -778,10 +1110,6 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
     """Removes local assignments that are overwritten before being read within a block."""
 
     def visit_block(self, block: IRBlock) -> None:
-        new_stmts: List[IRStatement] = []
-        # local -> index in new_stmts of its pending assignment
-        pending: Dict[IRLocal, int] = {}
-
         def _locals_in_expr(expr: Optional[IRExpression]) -> Set[IRLocal]:
             found: Set[IRLocal] = set()
             if expr is None:
@@ -878,37 +1206,131 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
                 return stmt.target
             return None
 
-        for stmt in block.statements:
-            reads = _reads_in_stmt(stmt)
-            for local in reads:
-                pending.pop(local, None)
+        # First use of `local` along every path through a statement:
+        # "read" (value needed), "kill" (dead on all paths: overwritten before
+        # any read, or the path terminates), or "none" (untouched).
+        def _first_use(stmt: IRStatement, local: IRLocal, _visited: Optional[Set[int]] = None) -> str:
+            if _visited is None:
+                _visited = set()
+            if id(stmt) in _visited:
+                return "none"
+            _visited.add(id(stmt))
 
-            target = _written_local(stmt)
-            if target is not None:
-                _pending_idx = pending.get(target)
-                _pending_s = new_stmts[_pending_idx] if _pending_idx is not None else None
-                if (
-                    _pending_idx is not None
-                    and _pending_s is not None
-                    and isinstance(_pending_s, IRAssign)
-                    and not _has_side_effects(_pending_s.expr)
+            if isinstance(stmt, IRAssign):
+                if _reads_in_stmt(stmt) & {local}:
+                    return "read"
+                if isinstance(stmt.target, IRLocal) and (
+                    stmt.target == local or stmt.target.same_register(local)
                 ):
-                    dead_idx: int = _pending_idx
-                    del new_stmts[dead_idx]
-                    # adjust indices after removal
-                    for loc, idx in list(pending.items()):
-                        if idx > dead_idx:
-                            pending[loc] = idx - 1
-                new_stmts.append(stmt)
-                pending[target] = len(new_stmts) - 1
-            else:
-                new_stmts.append(stmt)
+                    return "kill"
+                return "none"
+            if isinstance(stmt, (IRBreak, IRContinue)):
+                # jumps to a continuation this block-level scan can't see
+                return "read"
+            if isinstance(stmt, (IRReturn, IRThrow)):
+                if _reads_in_stmt(stmt) & {local}:
+                    return "read"
+                return "kill"
+            if isinstance(stmt, IRConditional):
+                if _locals_in_expr(stmt.condition) & {local}:
+                    return "read"
+                branches = [stmt.true_block.statements]
+                branches.append(stmt.false_block.statements if stmt.false_block else [])
+                results = [_first_use_in_list(b, local, _visited) for b in branches]
+                if "read" in results:
+                    return "read"
+                if all(r == "kill" for r in results):
+                    return "kill"
+                return "none"
+            if isinstance(stmt, IRSwitch):
+                if _locals_in_expr(stmt.value) & {local}:
+                    return "read"
+                branches = [c.statements for c in stmt.cases.values()]
+                branches.append(stmt.default.statements if stmt.default else [])
+                results = [_first_use_in_list(b, local, _visited) for b in branches]
+                if "read" in results:
+                    return "read"
+                if all(r == "kill" for r in results):
+                    return "kill"
+                return "none"
+            if isinstance(stmt, IRExpression):
+                return "read" if local in _locals_in_expr(stmt) else "none"
+            # Loops, try/catch and anything else with nested blocks: any
+            # occurrence at all is conservatively a read.
+            if _reads_in_stmt(stmt) & {local}:
+                return "read"
+            for child in stmt.get_children():
+                child_stmts = child.statements if isinstance(child, IRBlock) else [child]
+                for s in child_stmts:
+                    if _first_use(s, local, set()) != "none":
+                        return "read"
+            return "none"
+
+        def _first_use_in_list(stmts: List[IRStatement], local: IRLocal, _visited: Set[int]) -> str:
+            for s in stmts:
+                r = _first_use(s, local, _visited)
+                if r != "none":
+                    return r
+            return "none"
+
+        user_names = self._collect_user_names()
+        user_regs = self._collect_user_reg_indices()
+
+        new_stmts = []
+        for i, stmt in enumerate(block.statements):
+            target = _written_local(stmt)
+            if (
+                target is not None
+                and isinstance(stmt, IRAssign)
+                and not _has_side_effects(stmt.expr)
+                and _first_use_in_list(block.statements[i + 1 :], target, set()) == "kill"
+                and not self._is_user_local(target, user_names, user_regs)
+            ):
+                if DEBUG:
+                    dbg_print(f"IRDeadStoreEliminator: removing dead store {stmt}")
+                continue
+            new_stmts.append(stmt)
 
         block.statements = new_stmts
         for stmt in block.statements:
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
+
+    def _collect_user_names(self) -> Set[str]:
+        names: Set[str] = set()
+        if self.func.func.has_debug and self.func.func.assigns:
+            for name_ref, _ in self.func.func.assigns:
+                names.add(name_ref.resolve(self.func.code))
+        return names
+
+    def _collect_user_reg_indices(self) -> Set[int]:
+        indices: Set[int] = set()
+        if self.func.func.has_debug and self.func.func.assigns:
+            for _, op_idx in self.func.func.assigns:
+                val = op_idx.value - 1
+                if val >= 0 and val < len(self.func.ops):
+                    op = self.func.ops[val]
+                    try:
+                        indices.add(op.df["dst"].value)
+                    except KeyError:
+                        pass
+        return indices
+
+    def _is_user_local(self, local: IRLocal, user_names: Set[str], user_regs: Set[int]) -> bool:
+        if local.name in user_names:
+            return True
+        for name in user_names:
+            if local.name.startswith(name) and local.name[len(name) :].isdigit():
+                return True
+        if local.name.startswith("var"):
+            try:
+                idx = int(local.name[3:])
+                if idx in user_regs:
+                    return True
+            except ValueError:
+                pass
+        return False
 
 
 class IRSequentialTempFolder(TraversingIROptimizer):
@@ -968,7 +1390,9 @@ class IRSequentialTempFolder(TraversingIROptimizer):
         if expr == local:
             return True
         return any(
-            self._expr_uses_local(child, local) for child in expr.get_children() if isinstance(child, IRExpression)
+            self._expr_uses_local(child, local)
+            for child in expr.get_children()
+            if isinstance(child, IRExpression)
         )
 
     def _replace_local_in_expr(self, expr: IRExpression, local: IRLocal, replacement: IRExpression) -> bool:
@@ -1096,12 +1520,18 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
                 and isinstance(stmt.target, IRLocal)
                 and self._local_name(stmt.target) not in live
             ):
-                if self._has_side_effects(stmt.expr):
+                if self._is_user_local_name(self._local_name(stmt.target)):
+                    # Preserve dead stores to user-named locals so the source
+                    # round-trip stays faithful to the original bytecode.
+                    new_stmts.append(stmt)
+                elif self._has_side_effects(stmt.expr):
                     # Keep the side effects as a bare expression statement.
                     stmt.expr.adopt(stmt)  # opcode was tagged on the assign, not its expr
                     new_stmts.append(stmt.expr)
-                    live.update(uses)
-                # else: drop the dead assignment entirely.
+                # else: drop the dead assignment entirely for compiler temps.
+                # For kept statements, still update liveness; dropped ones don't.
+                live.difference_update(defs)
+                live.update(uses)
                 continue
             if mutate:
                 new_stmts.append(stmt)
@@ -1141,17 +1571,29 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
             uses.update(self._locals_in_expr(stmt.condition))
         elif isinstance(stmt, IRSwitch):
             uses.update(self._locals_in_expr(stmt.value))
+        else:
+            # Generic fallback (e.g. IRRefSet): expression children are reads.
+            for child in stmt.get_children():
+                if isinstance(child, IRExpression):
+                    uses.update(self._locals_in_expr(child))
 
         # Recursively process nested blocks with the correct live-out sets.
         if isinstance(stmt, IRConditional):
             child_out = set(live_after_stmt)
-            true_in = self._process_block(stmt.true_block, child_out, mutate=mutate) if stmt.true_block else set()
-            false_in = self._process_block(stmt.false_block, child_out, mutate=mutate) if stmt.false_block else set()
+            true_in = (
+                self._process_block(stmt.true_block, child_out, mutate=mutate) if stmt.true_block else set()
+            )
+            false_in = (
+                self._process_block(stmt.false_block, child_out, mutate=mutate) if stmt.false_block else set()
+            )
             uses.update(true_in)
             uses.update(false_in)
         elif isinstance(stmt, IRWhileLoop):
             body_in = self._process_loop_body(
-                stmt.body, live_after_stmt, self._locals_in_expr(stmt.condition), mutate=mutate
+                stmt.body,
+                live_after_stmt,
+                self._locals_in_expr(stmt.condition),
+                mutate=mutate,
             )
             uses.update(body_in)
         elif isinstance(stmt, IRPrimitiveLoop):
@@ -1181,11 +1623,17 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
             catch_in = self._process_block(stmt.catch_block, child_out, mutate=mutate)
             uses.update(try_in)
             uses.update(catch_in)
+            for _, extra_block in stmt.extra_catches:
+                uses.update(self._process_block(extra_block, child_out, mutate=mutate))
 
         return uses, defs
 
     def _process_loop_body(
-        self, body: IRBlock, live_after: Set[str], header_uses: Set[str], mutate: bool = True
+        self,
+        body: IRBlock,
+        live_after: Set[str],
+        header_uses: Set[str],
+        mutate: bool = True,
     ) -> Set[str]:
         """Process a loop body to a fixed point so loop-carried assignments live.
 
@@ -1213,6 +1661,17 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
             live.difference_update(defs)
             live.update(uses)
         return live
+
+    def _is_user_local_name(self, name: str) -> bool:
+        if not self.func.func.has_debug or not self.func.func.assigns:
+            return False
+        user_names = {name_ref.resolve(self.func.code) for name_ref, _ in self.func.func.assigns}
+        if name in user_names:
+            return True
+        for un in user_names:
+            if name.startswith(un) and name[len(un) :].isdigit():
+                return True
+        return False
 
     def _locals_in_expr(self, expr: Optional[IRExpression]) -> Set[str]:
         found: Set[str] = set()
@@ -1247,6 +1706,14 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
             found.update(self._locals_in_expr(expr.value))
         elif isinstance(expr, IRRef):
             found.update(self._locals_in_expr(expr.target))
+        elif isinstance(expr, IRRefNew):
+            found.update(self._locals_in_expr(expr.target))
+        else:
+            # Generic fallback (e.g. IRNativeArrayNew, IRRefGet): a missing case
+            # here must not hide a read and let a live assignment be dropped.
+            for child in expr.get_children():
+                if isinstance(child, IRExpression):
+                    found.update(self._locals_in_expr(child))
         return found
 
     def _has_side_effects(self, expr: Optional[IRExpression]) -> bool:
@@ -1283,7 +1750,14 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
         code = self.func.code
         name = code.full_func_name(target.value) or code.partial_func_name(target.value) or ""
         # Array read-only inspectors.
-        if any(s in name for s in ("ArrayAccess.getDyn", "ArrayAccess.get_length", "ArrayBase.indexOf")):
+        if any(
+            s in name
+            for s in (
+                "ArrayAccess.getDyn",
+                "ArrayAccess.get_length",
+                "ArrayBase.indexOf",
+            )
+        ):
             return True
         # String read-only inspectors / factories whose result is unused.
         if any(
@@ -1305,7 +1779,16 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
         ):
             return True
         # Byte/string comparison/search helpers.
-        if any(s in name for s in ("bytes_find", "bytes_compare", "ucs2_length", "ucs2_upper", "ucs2_lower")):
+        if any(
+            s in name
+            for s in (
+                "bytes_find",
+                "bytes_compare",
+                "ucs2_length",
+                "ucs2_upper",
+                "ucs2_lower",
+            )
+        ):
             return True
         return False
 
@@ -1359,7 +1842,9 @@ class IRConstructorFolder(TraversingIROptimizer):
                 if isinstance(child, IRBlock):
                     self.visit_block(child)
 
-    def _match_constructor_call(self, stmt: IRStatement, instance_local: IRLocal) -> Optional[List[IRExpression]]:
+    def _match_constructor_call(
+        self, stmt: IRStatement, instance_local: IRLocal
+    ) -> Optional[List[IRExpression]]:
         if not isinstance(stmt, IRCall):
             return None
         if stmt.call_type != IRCall.CallType.FUNC:
@@ -1395,6 +1880,66 @@ class IRConstructorFolder(TraversingIROptimizer):
         if expr == local:
             return True
         return any(self._expr_uses_local(child, local) for child in expr.get_children())
+
+
+class IREnumConstructorFolder(TraversingIROptimizer):
+    """Folds `t = EnumAlloc; t.param0 = a; t.param1 = b; ...` into `t = Construct(a, b, ...)`.
+
+    HL sometimes lowers an enum construction as a bare alloc followed by
+    per-field SetEnumField writes instead of a single MakeEnum. Left
+    unfolded, the empty-args IREnumConstruct renders as a bare constructor
+    name (valid only for a truly argument-less case) — for a construct that
+    actually has params, that's a bare type/case reference assigned as a
+    value, which Haxe rejects.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements: List[IRStatement] = []
+        i = 0
+        stmts = block.statements
+        while i < len(stmts):
+            stmt = stmts[i]
+            if (
+                isinstance(stmt, IRAssign)
+                and isinstance(stmt.target, IRLocal)
+                and isinstance(stmt.expr, IREnumConstruct)
+                and not stmt.expr.args
+            ):
+                enum_def = stmt.expr.enum_type_idx.resolve(self.func.code).definition
+                construct = None
+                if isinstance(enum_def, Enum):
+                    for c in enum_def.constructs:
+                        if c.name.resolve(self.func.code) == stmt.expr.construct_name:
+                            construct = c
+                            break
+                if construct is not None and construct.params:
+                    field_names = [f"param{n}" for n in range(len(construct.params))]
+                    collected: Dict[str, IRExpression] = {}
+                    j = i + 1
+                    while (
+                        j < len(stmts)
+                        and isinstance(stmts[j], IRAssign)
+                        and isinstance(cast(IRAssign, stmts[j]).target, IREnumField)
+                        and cast(IREnumField, cast(IRAssign, stmts[j]).target).value == stmt.target
+                        and cast(IREnumField, cast(IRAssign, stmts[j]).target).field_name in field_names
+                        and cast(IREnumField, cast(IRAssign, stmts[j]).target).field_name not in collected
+                    ):
+                        field_stmt = cast(IRAssign, stmts[j])
+                        collected[cast(IREnumField, field_stmt.target).field_name] = field_stmt.expr
+                        j += 1
+                    if len(collected) == len(field_names):
+                        stmt.expr.args = [collected[n] for n in field_names]
+                        stmt.adopt(*stmts[i + 1 : j])
+                        new_statements.append(stmt)
+                        i = j
+                        continue
+            new_statements.append(stmt)
+            i += 1
+        block.statements = new_statements
+        for s in block.statements:
+            for child in s.get_children():
+                if isinstance(child, IRBlock):
+                    self.visit_block(child)
 
 
 class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
@@ -1690,6 +2235,16 @@ class IRGuardOrMerger(TraversingIROptimizer):
                     new_statements.append(merged)
                     i += 1
                     continue
+                merged_true = self._try_merge_true(stmt)
+                if merged_true is not None:
+                    new_statements.append(merged_true)
+                    i += 1
+                    continue
+                merged_and = self._try_merge_and_else(stmt)
+                if merged_and is not None:
+                    new_statements.append(merged_and)
+                    i += 1
+                    continue
                 merged2 = self._try_merge_sibling(stmt, stmts[i + 1 :])
                 if merged2 is not None:
                     new_cond, consumed_siblings = merged2
@@ -1716,8 +2271,144 @@ class IRGuardOrMerger(TraversingIROptimizer):
         if not isinstance(inner, IRConditional):
             return None
         if _stmt_lists_structurally_equal(outer_true, inner.true_block.statements):
-            or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, stmt.condition, inner.condition)
+            or_cond = IRBoolExpr(
+                self.func.code,
+                IRBoolExpr.CompareType.OR,
+                stmt.condition,
+                inner.condition,
+            )
             merged = IRConditional(self.func.code, or_cond, inner.true_block, inner.false_block)
+            merged.adopt(stmt, inner)
+            return merged
+        return None
+
+    def _try_merge_true(self, stmt: IRConditional) -> Optional[IRConditional]:
+        """if (A) { if (B) { T } } else { T } -> if (!A || B) { T } { inner's else }
+
+        Mirror of _try_merge_else with the nested conditional in the TRUE branch
+        instead of the FALSE branch — the shape HL's short-circuit-OR lowering
+        produces when the "taken" (throwing/returning) action is reached via the
+        *first* condition being true, and the second check sits inside the
+        "first condition false" arm instead of the other way around.
+
+        Also handles the common staged-RHS shape where Haxe evaluates the second
+        condition into a temp first::
+
+            if (A) { t = B(); if (t) { T } } else { T }
+                -> if (!A || B()) { T }
+
+        The temp is moved (it is single-use), not duplicated, so B() runs once
+        either way — only when A is false, exactly as the short-circuit requires.
+        """
+        outer_true = stmt.true_block.statements
+        false_stmts = stmt.false_block.statements
+        if not false_stmts:
+            return None
+        resolved = self._resolve_or_inner(outer_true)
+        if resolved is None:
+            return None
+        inner, rhs_cond, temp_assign = resolved
+        if _stmt_lists_structurally_equal(false_stmts, inner.true_block.statements):
+            not_a = self._invert(stmt.condition)
+            or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, not_a, rhs_cond)
+            merged = IRConditional(self.func.code, or_cond, inner.true_block, inner.false_block)
+            if temp_assign is not None:
+                merged.adopt(stmt, inner, temp_assign)
+            else:
+                merged.adopt(stmt, inner)
+            return merged
+        return None
+
+    def _resolve_or_inner(
+        self, outer_true: List[IRStatement]
+    ) -> Optional[Tuple[IRConditional, IRExpression, Optional[IRStatement]]]:
+        """Extract the inner conditional and the expression to use as the OR
+        right-hand side from a short-circuit-OR true branch.
+
+        Returns (inner_conditional, rhs_expression, temp_definition_or_None).
+        The temp_definition is the staged `t = B()` assignment, when present,
+        so the caller can drop it (the RHS is folded into the merged condition).
+        """
+        if not outer_true:
+            return None
+        # Bare shape: [if (B) { T }] — RHS is the inner condition itself.
+        if len(outer_true) == 1:
+            inner = outer_true[0]
+            if isinstance(inner, IRConditional):
+                return inner, inner.condition, None
+            return None
+        # Staged shape: [t = B(); if (t) { T }] — fold B() into the condition.
+        if len(outer_true) == 2:
+            temp_stmt, inner = outer_true
+            if not (isinstance(temp_stmt, IRAssign) and isinstance(temp_stmt.target, IRLocal)):
+                return None
+            if not isinstance(inner, IRConditional):
+                return None
+            temp = temp_stmt.target
+            cond = inner.condition
+            if not self._condition_is_temp(cond, temp):
+                return None
+            # The temp must be read only here (single-use) so folding is a move.
+            if self._count_reads(outer_true, temp) != 1:
+                return None
+            return inner, temp_stmt.expr, temp_stmt
+        return None
+
+    def _condition_is_temp(self, cond: IRExpression, temp: IRLocal) -> bool:
+        """True if `cond` is `temp is true` / `temp` (the staged temp being tested."""
+        if cond == temp:
+            return True
+        return isinstance(cond, IRBoolExpr) and cond.op == IRBoolExpr.CompareType.ISTRUE and cond.left == temp
+
+    def _count_reads(self, stmts: List[IRStatement], local: IRLocal) -> int:
+        """Count reads of `local` across `stmts`, ignoring a bare write to it."""
+        count = 0
+
+        def walk(e: Optional[IRExpression]) -> None:
+            nonlocal count
+            if e is None:
+                return
+            if e == local:
+                count += 1
+                return
+            for c in e.get_children():
+                if isinstance(c, IRExpression):
+                    walk(c)
+
+        for s in stmts:
+            if isinstance(s, IRAssign):
+                tgt = s.target
+                if isinstance(tgt, IRArrayAccess):
+                    walk(tgt.index)
+                    walk(tgt.array)
+                elif tgt == local:
+                    walk(s.expr)
+                    continue
+                walk(s.expr)
+            else:
+                for c in s.get_children():
+                    if isinstance(c, IRExpression):
+                        walk(c)
+        return count
+
+    def _try_merge_and_else(self, stmt: IRConditional) -> Optional[IRConditional]:
+        """if (A) { if (B) { X } else { Y } } else { Y } -> if (A && B) { X } else { Y }
+
+        The shape Haxe's short-circuit-&& lowering produces when both arms of
+        the inner conditional have real bodies and the outer else duplicates
+        the inner else. Without this merge the decompiled source duplicates Y
+        under two separate branches, recompiling to a second copy of Y.
+        """
+        outer_true = stmt.true_block.statements
+        false_stmts = stmt.false_block.statements
+        if len(outer_true) != 1 or not false_stmts:
+            return None
+        inner = outer_true[0]
+        if not isinstance(inner, IRConditional) or not inner.false_block.statements:
+            return None
+        if _stmt_lists_structurally_equal(false_stmts, inner.false_block.statements):
+            and_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.AND, stmt.condition, inner.condition)
+            merged = IRConditional(self.func.code, and_cond, inner.true_block, inner.false_block)
             merged.adopt(stmt, inner)
             return merged
         return None
@@ -1757,24 +2448,46 @@ class IRGuardOrMerger(TraversingIROptimizer):
         the parent block by Y then TAIL again (the fallthrough-when-!A path
         repeats the else-action and shared tail-code) -> if (A && B) { X }
         else { Y } TAIL, consuming Y+TAIL's statements from the parent block.
+
+        Also handles B's else being empty with Y living in TAIL instead, when
+        X is terminal (continue/break/return/throw): since X never falls
+        through, TAIL is only reachable via B-false, so it plays the same
+        role as an inline else -- if (A) { if (B) { X } TAIL } (empty else),
+        followed by TAIL again -> if (A && B) { X } else { TAIL }, consuming
+        all of TAIL's duplicate from the parent block (there's no separate
+        shared-tail remainder left over, unlike the inline-else case above).
         """
         outer_true = stmt.true_block.statements
         if stmt.false_block.statements or not outer_true:
             return None
         inner = outer_true[0]
-        if not isinstance(inner, IRConditional) or not inner.false_block.statements:
+        if not isinstance(inner, IRConditional):
             return None
         tail = outer_true[1:]
         inner_false = inner.false_block.statements
-        wanted = inner_false + tail
+        if inner_false:
+            wanted = inner_false + tail
+            false_block = inner.false_block
+            consumed = len(inner_false)
+        elif (
+            tail
+            and inner.true_block.statements
+            and isinstance(inner.true_block.statements[-1], (IRContinue, IRBreak, IRReturn, IRThrow))
+        ):
+            wanted = tail
+            false_block = IRBlock(self.func.code)
+            false_block.statements = tail
+            consumed = len(wanted)
+        else:
+            return None
         if not wanted or len(following) < len(wanted):
             return None
         if not _stmt_lists_structurally_equal(wanted, following[: len(wanted)]):
             return None
         and_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.AND, stmt.condition, inner.condition)
-        merged = IRConditional(self.func.code, and_cond, inner.true_block, inner.false_block)
+        merged = IRConditional(self.func.code, and_cond, inner.true_block, false_block)
         merged.adopt(stmt, inner, *following[: len(wanted)])
-        return merged, len(inner_false)
+        return merged, consumed
 
     def _invert(self, cond: IRExpression) -> IRExpression:
         """Return a negated copy of a boolean expression. Flips simple
@@ -1793,3 +2506,417 @@ class IRGuardOrMerger(TraversingIROptimizer):
             except DecompError:
                 pass
         return IRBoolExpr(self.func.code, IRBoolExpr.CompareType.NOT, cond)
+
+
+class IRTypedCatchOptimizer(IROptimizer):
+    """
+    Restores typed catch clauses from HL's dynamic dispatch lowering.
+
+    Haxe lowers `try T catch (e:X1) C1 ... catch (e:Xn) Cn` into a single
+    dynamic trap whose catch block is a dispatch chain:
+
+        t = X1.check(e); if (t) C1 else { ... t = Xn.check(e); if (t) Cn else {
+        t = haxe.ValueException.check(e); if (t) { ve = cast(e, haxe.ValueException);
+            t = Std.isOfType(ve.value, Xj); if (t) Cj ... else throw ve }
+        else throw e }}
+
+    (the ValueException arm unwraps values thrown via `throw value`). When
+    every arm transfers control (throw/return/continue), restructuring flattens
+    the chain into sequential `if (t) {...}` guards with empty else-blocks and
+    the terminal throw at the same level; the walkers below accept the nested,
+    flat, and mixed shapes.
+
+    The native `Xi.check` arms and the unwrap arm's `isOfType` sub-arms are two
+    copies of the same clause bodies; the unwrap copies keep the cleanest
+    binding shape, so clauses are restored from them (the native arms only
+    contribute the type list, cross-checked against the unwrap sub-arms).
+
+    Further handled: clause bodies that use the caught value start with
+    `v = cast(ve.value, Xi)` (or `v = ve.value`) and may reuse the catch
+    register as scratch — the restored clause binds `v`; statements after the
+    terminal `throw e` (the trap region's continuation, lifted into the catch
+    block when the try side never falls through) are spliced back out after
+    the restored try/catch.
+    """
+
+    TARGET_OPCODES = {"Trap"}
+
+    def optimize(self) -> None:
+        self._process_block(self.func.block)
+
+    def _process_block(self, block: IRBlock) -> None:
+        new_stmts: List[IRStatement] = []
+        for stmt in list(block.statements):
+            new_stmts.extend(self._process_stmt(stmt))
+        block.statements = new_stmts
+
+    def _process_stmt(self, stmt: IRStatement) -> List[IRStatement]:
+        """Process one statement; returns the statement plus any continuation
+        a restore spliced after it (which itself may hold try/catches, so it is
+        processed recursively)."""
+        if isinstance(stmt, IRTryCatch):
+            trail = self._restore(stmt)
+            self._process_block(stmt.try_block)
+            self._process_block(stmt.catch_block)
+            for _, extra_block in stmt.extra_catches:
+                self._process_block(extra_block)
+            out: List[IRStatement] = [stmt]
+            for trail_stmt in trail:
+                out.extend(self._process_stmt(trail_stmt))
+            return out
+        if isinstance(stmt, IRConditional):
+            self._process_block(stmt.true_block)
+            if stmt.false_block is not None:
+                self._process_block(stmt.false_block)
+        elif isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop, IRForEachLoop, IRIntRangeLoop)):
+            self._process_block(stmt.body)
+        elif isinstance(stmt, IRSwitch):
+            for case_block in stmt.cases.values():
+                self._process_block(case_block)
+            if stmt.default is not None:
+                self._process_block(stmt.default)
+        return [stmt]
+
+    def _restore(self, tc: IRTryCatch) -> List[IRStatement]:
+        """Restore typed catches on `tc`. Returns continuation statements to
+        splice after the try/catch (empty on no match)."""
+        e = tc.catch_local
+        if e is None or tc.extra_catches:
+            return []
+        stmts = tc.catch_block.statements
+        arms: List[Tuple[Type, IRBlock]] = []
+        unwrap_arms: List[Tuple[Type, IRBlock]] = []
+        consumed = self._parse_check_chain(stmts, 0, e, arms, unwrap_arms)
+        if consumed is None or not arms:
+            return []
+        # haxe.Exception-subclass catch types never arrive wrapped in a
+        # ValueException, so HL emits no isOfType sub-arm for them: the unwrap
+        # arm re-dispatches exactly the non-exception caught types (and is
+        # absent entirely when every caught type is an exception subclass).
+        non_exc_arms = [(t, b) for t, b in arms if not self._is_exception_type(t)]
+        if sorted(self._type_name(t) for t, _ in unwrap_arms) != sorted(
+            self._type_name(t) for t, _ in non_exc_arms
+        ):
+            return []
+        bodies_by_name = {self._type_name(t): b for t, b in unwrap_arms}
+        clauses = []
+        for typ, native_body in arms:
+            if self._is_exception_type(typ):
+                # No unwrap copy exists; the native arm body is the clause body.
+                clause = self._make_clause(typ, native_body, e, native=True)
+            else:
+                clause = self._make_clause(typ, bodies_by_name[self._type_name(typ)], e)
+            clauses.append(clause)
+        if any(clause is None for clause in clauses):
+            return []
+        assert clauses[0] is not None
+        first_local, first_body = clauses[0]
+        tc.catch_local = first_local
+        tc.catch_block = first_body
+        tc.extra_catches = [clause for clause in clauses[1:] if clause is not None]
+        return list(stmts[consumed:])
+
+    # --- dispatch-chain walkers -------------------------------------------
+    #
+    # Both chains are sequences of `t = <call>; if (t) ARM else NEXT` pairs
+    # terminated by `throw <local>`. NEXT is one of:
+    #   - [throw local]            -> nested terminal
+    #   - []                       -> flat continuation (next pair or the
+    #                                 terminal throw follows at this level)
+    #   - more pairs               -> nested continuation (must consume all)
+
+    def _parse_check_chain(
+        self,
+        stmts: List[IRStatement],
+        i: int,
+        e: IRLocal,
+        arms: List[Tuple[Type, IRBlock]],
+        unwrap_arms: List[Tuple[Type, IRBlock]],
+    ) -> Optional[int]:
+        """Walk native `X.check(e)` arms. Returns the index just past the
+        terminal `throw e`, or None if the shape breaks."""
+        while True:
+            if i >= len(stmts):
+                return None
+            stmt = stmts[i]
+            if isinstance(stmt, IRThrow) and stmt.value is e:
+                return i + 1
+            if i + 1 >= len(stmts):
+                return None
+            matched = self._match_check_pair(stmts[i], stmts[i + 1], e)
+            if matched is None:
+                return None
+            typ, tname, body, cond = matched
+            if tname == "haxe.ValueException":
+                if unwrap_arms:
+                    return None
+                if self._parse_unwrap(body, e, unwrap_arms) != len(body.statements):
+                    return None
+            else:
+                arms.append((typ, body))
+            else_stmts = cond.false_block.statements
+            if len(else_stmts) == 1 and isinstance(else_stmts[0], IRThrow) and else_stmts[0].value is e:
+                return i + 2
+            if len(else_stmts) == 0:
+                i += 2
+                continue
+            if self._parse_check_chain(else_stmts, 0, e, arms, unwrap_arms) != len(else_stmts):
+                return None
+            return i + 2
+
+    def _parse_unwrap(self, body: IRBlock, e: IRLocal, sub_arms: List[Tuple[Type, IRBlock]]) -> Optional[int]:
+        """Match the ValueException arm body: `ve = cast(e, haxe.ValueException)`,
+        optional catch-register plumbing, then an isOfType chain. Returns the
+        consumed statement count, or None."""
+        stmts = body.statements
+        if len(stmts) < 3:
+            return None
+        cast_assign = stmts[0]
+        if not (
+            isinstance(cast_assign, IRAssign)
+            and isinstance(cast_assign.target, IRLocal)
+            and isinstance(cast_assign.expr, IRCast)
+            and cast_assign.expr.expr is e
+            and self._type_name(cast_assign.expr.get_type()) == "haxe.ValueException"
+        ):
+            return None
+        ve = cast_assign.target
+        # Skip catch-register plumbing the wrapped path emits before the
+        # isOfType chain (e.g. `e = ve.value`, kept inside loops).
+        start = 1
+        while start < len(stmts):
+            plumbing = stmts[start]
+            if (
+                isinstance(plumbing, IRAssign)
+                and plumbing.target is e
+                and (
+                    (
+                        isinstance(plumbing.expr, IRField)
+                        and plumbing.expr.target is ve
+                        and plumbing.expr.field_name == "value"
+                    )
+                    or (isinstance(plumbing.expr, IRConst) and plumbing.expr.value is None)
+                )
+            ):
+                start += 1
+                continue
+            break
+        return self._parse_isotype_chain(stmts, start, ve, sub_arms)
+
+    def _parse_isotype_chain(
+        self,
+        stmts: List[IRStatement],
+        i: int,
+        ve: IRLocal,
+        sub_arms: List[Tuple[Type, IRBlock]],
+    ) -> Optional[int]:
+        """Walk `isOfType(ve.value, Xj)` sub-arms. Returns the index just past
+        the terminal `throw ve` (or len(stmts) for the guard variant), or None."""
+        while True:
+            if i >= len(stmts):
+                return None
+            stmt = stmts[i]
+            if isinstance(stmt, IRThrow) and stmt.value is ve:
+                return i + 1
+            if i + 1 >= len(stmts):
+                return None
+            assign = stmts[i]
+            call = self._std_call(assign, "isOfType")
+            if (
+                call is None
+                or len(call.args) != 2
+                or not isinstance(assign, IRAssign)
+                or not isinstance(assign.target, IRLocal)
+            ):
+                return None
+            field, type_const = call.args
+            if not (
+                isinstance(field, IRField)
+                and field.target is ve
+                and field.field_name == "value"
+                and isinstance(type_const, IRConst)
+                and isinstance(type_const.value, Type)
+            ):
+                return None
+            cond = stmts[i + 1]
+            if not isinstance(cond, IRConditional):
+                return None
+            typ = type_const.value
+            cond_expr = cond.condition
+            if self._is_true_cond(cond_expr, assign.target):
+                sub_arms.append((typ, cond.true_block))
+                else_stmts = cond.false_block.statements
+                if len(else_stmts) == 1 and isinstance(else_stmts[0], IRThrow) and else_stmts[0].value is ve:
+                    return i + 2
+                if len(else_stmts) == 0:
+                    i += 2
+                    continue
+                if self._parse_isotype_chain(else_stmts, 0, ve, sub_arms) != len(else_stmts):
+                    return None
+                return i + 2
+            if (
+                isinstance(cond_expr, IRBoolExpr)
+                and cond_expr.op == IRBoolExpr.CompareType.ISFALSE
+                and cond_expr.left is assign.target
+            ):
+                # Final arm as a guard: `if (!t) throw ve;` with the arm body
+                # inline after it.
+                then_stmts = cond.true_block.statements
+                if not (
+                    len(then_stmts) == 1 and isinstance(then_stmts[0], IRThrow) and then_stmts[0].value is ve
+                ):
+                    return None
+                tail = IRBlock(self.func.code)
+                tail.statements = list(stmts[i + 2 :])
+                sub_arms.append((typ, tail))
+                return len(stmts)
+            return None
+
+    # --- arm-pair and clause helpers ---------------------------------------
+
+    def _match_check_pair(
+        self, assign: IRStatement, cond: IRStatement, e: IRLocal
+    ) -> Optional[Tuple[Type, str, IRBlock, IRConditional]]:
+        """Match `t = X.check(e); if (t) ...`."""
+        call = self._std_call(assign, "check")
+        if (
+            call is None
+            or len(call.args) != 2
+            or not isinstance(assign, IRAssign)
+            or not isinstance(assign.target, IRLocal)
+        ):
+            return None
+        type_const, arg1 = call.args
+        if not (isinstance(type_const, IRConst) and isinstance(type_const.value, Type)):
+            return None
+        if arg1 is not e:
+            return None
+        if not (isinstance(cond, IRConditional) and self._is_true_cond(cond.condition, assign.target)):
+            return None
+        typ = type_const.value
+        return typ, self._type_name(typ), cond.true_block, cond
+
+    def _make_clause(
+        self, typ: Type, body: IRBlock, e: IRLocal, native: bool = False
+    ) -> Optional[Tuple[IRLocal, IRBlock]]:
+        """Return (binding_local, body) for one restored clause, or None if the
+        body uses the caught value in a shape we don't recognize."""
+        stmts = body.statements
+        first = stmts[0] if stmts else None
+        if isinstance(first, IRAssign) and isinstance(first.target, IRLocal):
+            expr = first.expr
+            cast_inner = expr.expr if isinstance(expr, IRCast) else None
+            bound = (
+                cast_inner is not None and (self._is_value_field(cast_inner) or cast_inner is e)
+            ) or self._is_value_field(expr)
+            if bound:
+                # `v = cast(ve.value, T)` / `v = ve.value` (unwrap bodies) or
+                # `v = cast(e, T)` (native bodies of exception-subclass arms)
+                # binds the caught value; the clause binds `v`. Any later use
+                # of the dispatch registers in the body is scratch reuse.
+                body.statements = stmts[1:]
+                return first.target, body
+        try:
+            idx = self.func.code.types.index(typ)
+        except ValueError:
+            return None
+        if native:
+            # Exception arms have no unwrap copy; when the body reads the catch
+            # register inline (no binding assignment), the clause binds `e`
+            # itself — but only if the body never writes it (scratch reuse).
+            if self._assigns_local(body, e) or self._references_plumbing(body):
+                return None
+            if self._references_local(body, e):
+                e.type = tIndex(idx)
+                return e, body
+            return IRLocal("e", tIndex(idx), self.func.code), body
+        if self._references_dispatch(body, e):
+            return None
+        return IRLocal("e", tIndex(idx), self.func.code), body
+
+    def _is_value_field(self, expr: IRStatement) -> bool:
+        """True for `<something>.value` field reads (the ValueException payload)."""
+        return isinstance(expr, IRField) and expr.field_name == "value"
+
+    def _references_dispatch(self, stmt: IRStatement, e: IRLocal) -> bool:
+        """True if stmt still reads/writes the dispatch plumbing: the catch
+        register `e`, any `_.value` unwrap field, or a ValueException local."""
+        if stmt is e:
+            return True
+        return self._references_plumbing(stmt)
+
+    def _references_plumbing(self, stmt: IRStatement) -> bool:
+        """Dispatch plumbing other than the catch register itself."""
+        if self._is_value_field(stmt):
+            return True
+        if isinstance(stmt, IRLocal) and self._type_name(stmt.get_type()) in (
+            "haxe.ValueException",
+            "haxe.Exception",
+        ):
+            return True
+        return any(self._references_plumbing(child) for child in stmt.get_children())
+
+    def _assigns_local(self, stmt: IRStatement, local: IRLocal) -> bool:
+        if isinstance(stmt, IRAssign) and stmt.target is local:
+            return True
+        return any(self._assigns_local(child, local) for child in stmt.get_children())
+
+    def _references_local(self, stmt: IRStatement, local: IRLocal) -> bool:
+        if stmt is local:
+            return True
+        return any(self._references_local(child, local) for child in stmt.get_children())
+
+    def _is_exception_type(self, typ: Type) -> bool:
+        """True if typ is or subclasses haxe.Exception/haxe.ValueException;
+        such caught values are exceptions themselves and never arrive wrapped
+        in a ValueException, so HL emits no unwrap sub-arm for them."""
+        defn = typ.definition
+        for _ in range(32):
+            if not isinstance(defn, Obj):
+                return False
+            # Type constants often carry the static counterpart ($Foo), whose
+            # super chain is the metaclass chain; walk the instance class chain.
+            try:
+                dyn = defn.dynamic
+                if isinstance(dyn, Obj):
+                    defn = dyn
+            except (ValueError, AttributeError):
+                pass
+            if destaticify(defn.name.resolve(self.func.code)) in ("haxe.Exception", "haxe.ValueException"):
+                return True
+            if defn.super.value <= 0:
+                return False
+            try:
+                defn = defn.super.resolve(self.func.code).definition
+            except Exception:
+                return False
+        return False
+
+    def _type_name(self, typ: Type) -> str:
+        return destaticify(disasm.type_name(self.func.code, typ))
+
+    def _std_call(self, stmt: IRStatement, want_name: str) -> Optional[IRCall]:
+        """If stmt is `t = <std fn named want_name>(...)`, return the call."""
+        if not (isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)):
+            return None
+        call = stmt.expr
+        if not isinstance(call, IRCall):
+            return None
+        target = call.target
+        if not (isinstance(target, IRConst) and isinstance(target.value, Function)):
+            return None
+        fname = self.func.code.partial_func_name(target.value)
+        if not (fname == want_name or fname.endswith("." + want_name)):
+            return None
+        try:
+            path = target.value.resolve_file(self.func.code).replace("\\", "/")
+        except Exception:
+            return None
+        if "/std/" not in path:
+            return None
+        return call
+
+    def _is_true_cond(self, cond: IRStatement, local: IRLocal) -> bool:
+        return (
+            isinstance(cond, IRBoolExpr) and cond.op == IRBoolExpr.CompareType.ISTRUE and cond.left is local
+        )

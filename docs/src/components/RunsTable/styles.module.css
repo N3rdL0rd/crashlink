@@ -1,0 +1,35 @@
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.table th,
+.table td {
+  padding: 0.6rem 0.9rem;
+  text-align: left;
+  border-bottom: 1px solid var(--ifm-table-border-color);
+  white-space: nowrap;
+}
+
+.table tbody tr:hover {
+  background: var(--ifm-table-stripe-background);
+}
+
+.dirtyBadge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ifm-color-warning-darkest);
+  background: var(--ifm-color-warning-contrast-background);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  margin-left: 0.5rem;
+}
+
+.muted {
+  color: var(--ifm-color-emphasis-600);
+}

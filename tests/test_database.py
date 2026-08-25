@@ -1,6 +1,7 @@
 """Round-trip tests for the .cldb analysis-database format (crashlink.database)."""
 
 import os
+from typing import Dict, Optional
 
 from crashlink import database as db
 from crashlink.core import Bytecode
@@ -34,11 +35,19 @@ def test_round_trip_renames_and_comments(tmp_path):
 def test_round_trip_decompile_cache(tmp_path):
     code = _fresh_code()
     findex = code.functions[0].findex.value
-    class_results = {"class:Foo": {findex: "class Foo { function main() {} }"}}
+    class_results: Dict[str, Dict[int, Optional[str]]] = {
+        "class:Foo": {findex: "class Foo { function main() {} }"}
+    }
     opline_cache = {findex: {0: 0, 1: 1, 2: 1}}
 
     cldb_path = str(tmp_path / "test.cldb")
-    db.save_database(cldb_path, code=code, source_path=SAMPLE, class_results=class_results, opline_cache=opline_cache)
+    db.save_database(
+        cldb_path,
+        code=code,
+        source_path=SAMPLE,
+        class_results=class_results,
+        opline_cache=opline_cache,
+    )
 
     fresh = _fresh_code()
     result = db.load_database(cldb_path, code=fresh, source_path=SAMPLE)
@@ -54,10 +63,16 @@ def test_pending_results_are_not_cached(tmp_path):
     """None entries (still-decompiling placeholders) must never be persisted."""
     code = _fresh_code()
     findex = code.functions[0].findex.value
-    class_results = {"class:Foo": {findex: None}}
+    class_results: Dict[str, Dict[int, Optional[str]]] = {"class:Foo": {findex: None}}
 
     cldb_path = str(tmp_path / "test.cldb")
-    db.save_database(cldb_path, code=code, source_path=SAMPLE, class_results=class_results, opline_cache={})
+    db.save_database(
+        cldb_path,
+        code=code,
+        source_path=SAMPLE,
+        class_results=class_results,
+        opline_cache={},
+    )
 
     fresh = _fresh_code()
     result = db.load_database(cldb_path, code=fresh, source_path=SAMPLE)
@@ -70,10 +85,16 @@ def test_cache_entry_invalidated_by_rename_after_save(tmp_path):
     matches (SRCI passes)."""
     code = _fresh_code()
     findex = code.functions[0].findex.value
-    class_results = {"class:Foo": {findex: "stale cached text"}}
+    class_results: Dict[str, Dict[int, Optional[str]]] = {"class:Foo": {findex: "stale cached text"}}
 
     cldb_path = str(tmp_path / "test.cldb")
-    db.save_database(cldb_path, code=code, source_path=SAMPLE, class_results=class_results, opline_cache={})
+    db.save_database(
+        cldb_path,
+        code=code,
+        source_path=SAMPLE,
+        class_results=class_results,
+        opline_cache={},
+    )
 
     fresh = _fresh_code()
     fresh.annotations.rename(findex, 0, None, "somethingNew")
@@ -89,7 +110,14 @@ def test_session_round_trip(tmp_path):
     session = db.SessionState(view_mode=2, theme_name="Mocha", open_findices=[findex], current_tab_index=0)
 
     cldb_path = str(tmp_path / "test.cldb")
-    db.save_database(cldb_path, code=code, source_path=SAMPLE, class_results={}, opline_cache={}, session=session)
+    db.save_database(
+        cldb_path,
+        code=code,
+        source_path=SAMPLE,
+        class_results={},
+        opline_cache={},
+        session=session,
+    )
 
     fresh = _fresh_code()
     result = db.load_database(cldb_path, code=fresh, source_path=SAMPLE)
@@ -122,10 +150,16 @@ def test_hash_mismatch_rejects_everything(tmp_path):
     code = _fresh_code()
     findex = code.functions[0].findex.value
     code.annotations.rename(findex, 0, None, "shouldNotApply")
-    class_results = {"class:Foo": {findex: "shouldNotApply either"}}
+    class_results: Dict[str, Dict[int, Optional[str]]] = {"class:Foo": {findex: "shouldNotApply either"}}
 
     cldb_path = str(tmp_path / "test.cldb")
-    db.save_database(cldb_path, code=code, source_path=SAMPLE, class_results=class_results, opline_cache={})
+    db.save_database(
+        cldb_path,
+        code=code,
+        source_path=SAMPLE,
+        class_results=class_results,
+        opline_cache={},
+    )
 
     other_sample = "tests/haxe/Enums.hl"
     fresh = Bytecode.from_path(other_sample)
@@ -157,7 +191,13 @@ def test_save_writes_next_to_source_path_convention(tmp_path):
     src_copy.write_bytes(open(SAMPLE, "rb").read())
     cldb_path = str(src_copy) + ".cldb"
 
-    db.save_database(cldb_path, code=code, source_path=str(src_copy), class_results={}, opline_cache={})
+    db.save_database(
+        cldb_path,
+        code=code,
+        source_path=str(src_copy),
+        class_results={},
+        opline_cache={},
+    )
     assert os.path.exists(cldb_path)
 
     fresh = Bytecode.from_path(str(src_copy))

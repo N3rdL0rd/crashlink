@@ -6,13 +6,20 @@ optional — if either is missing we show a clear message instead of crashing.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter, QWheelEvent
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtSvgWidgets import QGraphicsSvgItem
-from PySide6.QtWidgets import QGraphicsScene, QGraphicsView, QLabel, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QGraphicsScene,
+    QGraphicsView,
+    QLabel,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ..themes import Theme
 
@@ -21,7 +28,7 @@ try:
 
     GRAPHVIZ_IMPORT_ERROR: Optional[str] = None
 except ImportError as e:
-    graphviz = None
+    graphviz: Any = None
     GRAPHVIZ_IMPORT_ERROR = str(e)
 
 _PAGE_MESSAGE = 0

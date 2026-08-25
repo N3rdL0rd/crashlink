@@ -7,33 +7,21 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from enum import Enum as _Enum
-from pprint import pformat
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..core import (
     Bytecode,
-    DynObj,
-    Enum,
-    Fun,
     Function,
     Native,
-    Obj,
     Opcode,
     Ref,
-    Reg,
     ResolvableVarInt,
     Type,
-    TypeDef,
-    Virtual,
-    Void,
-    fieldRef,
-    gIndex,
     tIndex,
 )
 from .. import disasm
 from ..errors import DecompError
-from ..globals import DEBUG, dbg_print
-from ..opcodes import arithmetic, conditionals, terminal, simple_calls
+from ..opcodes import conditionals
 
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -75,6 +63,11 @@ class IRStatement(ABC):
         # disasm<->pseudocode sync and per-opcode comments) instead of only
         # whichever one happened to seed the replacement statement.
         self.src_op_idxs: Set[int] = set()
+        # Set by IRTempAssignmentInliner when a user-variable assignment is folded
+        # into a conditional. Prevents further user-var inlining into this statement,
+        # which would fold constants into conditions (e.g. `a = 4; if (a == 3)` →
+        # `if (4 == 3)`) and break recompilation.
+        self._no_user_inline: bool = False
 
     @property
     def src_op_idx(self) -> Optional[int]:
@@ -134,7 +127,9 @@ class IRBlock(IRStatement):
             _repr_rendered_blocks.add(id(self))  # type: ignore[union-attr]
             try:
                 # uniform indentation
-                statements = pformat(self.statements, indent=0).replace("\n", "\n\t")
+                # plain join, not pformat: pformat repr()s each item twice (fit-check + render),
+                # which compounds exponentially through nested block reprs
+                statements = "\n".join(repr(s) for s in self.statements).replace("\n", "\n\t")
             finally:
                 _repr_rendered_blocks.discard(id(self))  # type: ignore[union-attr]
         finally:
@@ -158,7 +153,7 @@ class IRBlock(IRStatement):
                 return "[...]"
             _repr_rendered_blocks.add(id(self))  # type: ignore[union-attr]
             try:
-                statements = pformat(self.statements, indent=0).replace("\n", "\n\t")
+                statements = "\n".join(repr(s) for s in self.statements).replace("\n", "\n\t")
             finally:
                 _repr_rendered_blocks.discard(id(self))  # type: ignore[union-attr]
         finally:
@@ -209,6 +204,12 @@ class IRLocal(IRExpression):
         # so this records the `T` recovered from the allocation site for the
         # declared-type renderer to use instead of the generic Array<Dynamic>.
         self.native_elem_type: Optional[Type] = None
+        # Set by IRArrayElementTypeRecovery when this local/param is an
+        # ArrayObj/ArrayDyn whose element type was recovered from usage (element
+        # reads, stores, or array-literal allocation). The bytecode type is
+        # element-type-erased, so without this the declared type renders as
+        # Array<Dynamic> and recompiles to ArrayDyn instead of a typed array.
+        self.array_elem_type: Optional[Type] = None
         # Set by IRNativeMapAllocOptimizer when this local is bound to one of
         # HL's raw map-abstract allocators (e.g. `Native.hballoc()`): the
         # bytecode's Abstract type carries no usable name (see
@@ -285,6 +286,9 @@ class IRArithmetic(IRExpression):
         result = node.get_type()
         self._cached_type = result
         return result
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.left, self.right]
 
     def __repr__(self) -> str:
         return f"<IRArithmetic: {self.left} {self.op.value} {self.right}>"
@@ -572,13 +576,18 @@ class IRConst(IRExpression):
             return _get_type_in_code(self.code, "Bool")
         elif self.const_type == IRConst.ConstType.BYTES:
             return _get_type_in_code(self.code, "Bytes")
-        elif self.const_type in [IRConst.ConstType.STRING, IRConst.ConstType.GLOBAL_STRING]:
+        elif self.const_type in [
+            IRConst.ConstType.STRING,
+            IRConst.ConstType.GLOBAL_STRING,
+        ]:
             return _get_type_in_code(self.code, "String")
         elif self.const_type == IRConst.ConstType.NULL:
             return _get_type_in_code(self.code, "Null")  # FIXME: null is of a type...
         elif self.const_type == IRConst.ConstType.FUN:
             if not (isinstance(self.value, Function) or isinstance(self.value, Native)):
-                raise DecompError(f"Expected function index to resolve to a function or native, got {self.value}")
+                raise DecompError(
+                    f"Expected function index to resolve to a function or native, got {self.value}"
+                )
             res = self.value.type.resolve(self.code)
             if isinstance(res, Type):
                 return res
@@ -722,11 +731,16 @@ class IRTryCatch(IRStatement):
         catch_block: IRBlock,
         catch_local: Optional[IRLocal] = None,
         explicit_catch_type: bool = False,
+        extra_catches: Optional[List[Tuple["IRLocal", "IRBlock"]]] = None,
     ):
         super().__init__(code)
         self.try_block = try_block
         self.catch_block = catch_block
         self.catch_local = catch_local
+        # Additional `catch (_:T) {...}` clauses after the primary one
+        # (restored multi-catch, see IRTypedCatchOptimizer): (binding local,
+        # body) pairs; each local carries the clause's restored type.
+        self.extra_catches: List[Tuple["IRLocal", "IRBlock"]] = list(extra_catches or [])
         # Haxe's codegen for a catch clause differs depending on whether the
         # source wrote an explicit `catch (e: Dynamic)` or just `catch (e)`,
         # even though both infer the same type — see
@@ -737,6 +751,7 @@ class IRTryCatch(IRStatement):
         children: List[IRStatement] = [self.try_block, self.catch_block]
         if self.catch_local is not None:
             children.insert(0, self.catch_local)
+        children.extend(block for _, block in self.extra_catches)
         return children
 
     def __repr__(self) -> str:
@@ -824,7 +839,7 @@ class IRWhileLoop(IRStatement):
         return children
 
     def __repr__(self) -> str:
-        body_repr = pformat(self.body, indent=0).replace("\n", "\n\t")
+        body_repr = repr(self.body).replace("\n", "\n\t")
         return f"<IRWhileLoop: while ({self.condition}) {{\n\t{body_repr}\n}}>"
 
     def __str__(self) -> str:
@@ -851,7 +866,7 @@ class IRForEachLoop(IRStatement):
         return [self.elem, self.array, self.body]
 
     def __repr__(self) -> str:
-        body_repr = pformat(self.body, indent=0).replace("\n", "\n\t")
+        body_repr = repr(self.body).replace("\n", "\n\t")
         return f"<IRForEachLoop: for ({self.elem} in {self.array}) {{\n\t{body_repr}\n}}>"
 
     def __str__(self) -> str:
@@ -868,7 +883,14 @@ class IRIntRangeLoop(IRStatement):
     end: IRExpression
     body: IRBlock
 
-    def __init__(self, code: Bytecode, elem: IRLocal, start: IRExpression, end: IRExpression, body: IRBlock):
+    def __init__(
+        self,
+        code: Bytecode,
+        elem: IRLocal,
+        start: IRExpression,
+        end: IRExpression,
+        body: IRBlock,
+    ):
         super().__init__(code)
         self.elem = elem
         self.start = start
@@ -880,7 +902,7 @@ class IRIntRangeLoop(IRStatement):
         return [self.elem, self.start, self.end, self.body]
 
     def __repr__(self) -> str:
-        body_repr = pformat(self.body, indent=0).replace("\n", "\n\t")
+        body_repr = repr(self.body).replace("\n", "\n\t")
         return f"<IRIntRangeLoop: for ({self.elem} in {self.start}...{self.end}) {{\n\t{body_repr}\n}}>"
 
     def __str__(self) -> str:
@@ -911,10 +933,34 @@ class IRField(IRExpression):
         return f"<IRField: {self.target}.{self.field_name}>"
 
 
+class IRBoundClosure(IRExpression):
+    """A closure over a synthesized/anonymous function bound to a captured object (InstanceClosure with no resolvable method name)."""
+
+    def __init__(self, code: Bytecode, fun: Function, obj: IRExpression):
+        super().__init__(code)
+        self.fun = fun
+        self.fun_const = IRConst(code, IRConst.ConstType.FUN, idx=fun.findex)
+        self.obj = obj
+
+    def get_type(self) -> Type:
+        return self.fun.type.resolve(self.code)
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.fun_const, self.obj]
+
+    def __repr__(self) -> str:
+        return f"<IRBoundClosure: {self.fun_const}({self.obj}, ...)>"
+
+
 class IRNew(IRExpression):
     """Represents object allocation, e.g., `new MyClass()` or `{}`"""
 
-    def __init__(self, code: Bytecode, alloc_type: tIndex, constructor_args: Optional[List[IRExpression]] = None):
+    def __init__(
+        self,
+        code: Bytecode,
+        alloc_type: tIndex,
+        constructor_args: Optional[List[IRExpression]] = None,
+    ):
         super().__init__(code)
         self.alloc_type_idx = alloc_type
         self.constructor_args = constructor_args or []
@@ -986,6 +1032,24 @@ class IRNativeMapNew(IRExpression):
         return f"<IRNativeMapNew: new {self.haxe_class_name}()>"
 
 
+class IRBytesNew(IRExpression):
+    """Represents `new hl.Bytes(size)`, lifted from the std `alloc_bytes` native."""
+
+    def __init__(self, code: Bytecode, bytes_type: tIndex, size: IRExpression):
+        super().__init__(code)
+        self.bytes_type_idx = bytes_type
+        self.size = size
+
+    def get_type(self) -> Type:
+        return self.bytes_type_idx.resolve(self.code)
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.size] if isinstance(self.size, IRStatement) else []
+
+    def __repr__(self) -> str:
+        return f"<IRBytesNew: new hl.Bytes({self.size})>"
+
+
 class IRCast(IRExpression):
     """Represents a type cast, e.g., `(MyType)value`"""
 
@@ -1008,10 +1072,19 @@ class IRCast(IRExpression):
 class IRArrayLiteral(IRExpression):
     """Represents a Haxe array literal, e.g. [1, 2, 3]."""
 
-    def __init__(self, code: Bytecode, elements: List[IRExpression], elem_type: Optional[tIndex] = None):
+    def __init__(
+        self,
+        code: Bytecode,
+        elements: List[IRExpression],
+        elem_type: Optional[tIndex] = None,
+    ):
         super().__init__(code)
         self.elements = elements
         self.elem_type_idx = elem_type
+        # The recovered element type (a resolved Type) for this array literal,
+        # set by IRArrayElementTypeRecovery from the alloc_array type argument
+        # or from the element expressions. Used to type the target local/param.
+        self.recovered_elem_type: Optional[Type] = None
 
     def get_type(self) -> Type:
         if self.elem_type_idx:
@@ -1054,7 +1127,13 @@ class IRObjectLiteral(IRExpression):
 class IRArrayAccess(IRExpression):
     """Represents an array/memory access expression, e.g., `arr[idx]`"""
 
-    def __init__(self, code: Bytecode, array: IRExpression, index: IRExpression, elem_type: Optional[tIndex] = None):
+    def __init__(
+        self,
+        code: Bytecode,
+        array: IRExpression,
+        index: IRExpression,
+        elem_type: Optional[tIndex] = None,
+    ):
         super().__init__(code)
         self.array = array
         self.index = index
@@ -1098,10 +1177,71 @@ class IRRef(IRExpression):
         return f"<IRRef: &{self.target}>"
 
 
+class IRRefNew(IRExpression):
+    """Represents `new hl.Ref(value)`"""
+
+    def __init__(self, code: Bytecode, target: IRExpression):
+        super().__init__(code)
+        self.target = target
+
+    def get_type(self) -> Type:
+        return _get_type_in_code(self.code, "Ref")
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.target]
+
+    def __repr__(self) -> str:
+        return f"<IRRefNew: new Ref({self.target})>"
+
+
+class IRRefGet(IRExpression):
+    """Represents reading the value stored in an `hl.Ref`, e.g. `r.get()`"""
+
+    def __init__(self, code: Bytecode, ref: IRExpression):
+        super().__init__(code)
+        self.ref = ref
+
+    def get_type(self) -> Type:
+        ref_type = self.ref.get_type()
+        if isinstance(ref_type.definition, Ref):
+            return ref_type.definition.type.resolve(self.code)
+        return ref_type
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.ref]
+
+    def __repr__(self) -> str:
+        return f"<IRRefGet: {self.ref}.get()>"
+
+
+class IRRefSet(IRStatement):
+    """Represents writing to an `hl.Ref`, e.g. `r.set(value)`"""
+
+    def __init__(self, code: Bytecode, ref: IRExpression, value: IRExpression):
+        super().__init__(code)
+        self.ref = ref
+        self.value = value
+
+    def get_type(self) -> Type:
+        return _get_type_in_code(self.code, "Void")
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.ref, self.value]
+
+    def __repr__(self) -> str:
+        return f"<IRRefSet: {self.ref}.set({self.value})>"
+
+
 class IREnumConstruct(IRExpression):
     """Represents enum construction, e.g., `Rgb(255, 255, 0)`"""
 
-    def __init__(self, code: Bytecode, construct_name: str, args: List[IRExpression], enum_type: tIndex):
+    def __init__(
+        self,
+        code: Bytecode,
+        construct_name: str,
+        args: List[IRExpression],
+        enum_type: tIndex,
+    ):
         super().__init__(code)
         self.construct_name = construct_name
         self.args = args

@@ -1,0 +1,60 @@
+.version 5
+
+# Self-modifying code example: f@1 is a "naked" function whose entire body is raw
+# x86-64 emitted via the Asm opcode. It keeps a call counter in its own code
+# page (the JIT emits into RWX memory), increments it on every call, converts
+# it to a UTF-16 string in place, and returns a pointer to it.
+#
+# Expected output: 1 2 3 (each on its own line).
+
+.types
+    Bytes               # t@1
+    Fun (t@1) -> t@0    # t@2: sys_print
+    Fun () -> t@1       # t@3: counter
+
+.natives
+    f@2 (t@2) std.sys_print
+
+.f@1
+    .returns t@1
+    .regs
+    .ops
+        AsmNaked
+        X86 lea rcx, [rip+cnt]
+        X86 inc dword [rcx]
+        X86 mov eax, [rcx]
+        X86 lea rdi, [rip+buf+24]
+        X86 mov word [rdi], 10      # '\n' as UTF-16
+        X86 mov word [rdi+2], 0     # NUL terminator
+        X86 mov rsi, 10
+        digit_loop:
+        X86 xor edx, edx
+        X86 div rsi                 # rax = quot, rdx = rem
+        X86 add dl, 0x30
+        X86 dec rdi                 # one UTF-16 unit back
+        X86 dec rdi
+        X86 mov [rdi], dl
+        X86 test eax, eax
+        X86 jnz digit_loop
+        X86 mov rax, rdi            # return pointer to string
+        X86 ret
+        cnt:
+        X86 dd 0
+        buf:
+        X86 times 26 db 0
+
+.f@0
+    .returns t@0
+    .regs
+        t@0     # reg0: void
+        t@1     # reg1: bytes
+    .ops
+        Call0 reg1, f@1
+        Call1 reg0, f@2, reg1
+        Call0 reg1, f@1
+        Call1 reg0, f@2, reg1
+        Call0 reg1, f@1
+        Call1 reg0, f@2, reg1
+        Ret reg0
+
+.entrypoint f@0

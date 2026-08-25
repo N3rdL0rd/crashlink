@@ -1,0 +1,37 @@
+.version 5
+
+# A plain counting loop: prints "tick" 3 times. Every
+# loop in HashLink bytecode starts with a Label opcode at the head of the
+# back-edge, marking where control returns to on each iteration (see the
+# Decompilation Notes "Loops" section for why this matters beyond readability:
+# the JIT's register allocator relies on it too).
+
+.types
+    Bytes                   # t@1
+    I32                     # t@2
+    Fun (t@1) -> t@0        # t@3
+    Bool                    # t@4
+
+.natives
+    f@1 (t@3) std.sys_print
+
+.f@0
+    .returns t@0
+    .regs
+        t@0     # reg0: void
+        t@1     # reg1: message
+        t@2     # reg2: counter
+        t@2     # reg3: constant 1
+        t@2     # reg4: constant 0
+    .ops
+        Int reg2, 3          # 0: counter = 3
+        Int reg3, 1          # 1: constant 1
+        Int reg4, 0          # 2: constant 0
+        Label                # 3: loop head
+        String reg1, "tick\n" # 4
+        Call1 reg0, f@1, reg1 # 5: print
+        Sub reg2, reg2, reg3  # 6: counter -= 1
+        JSLt reg4, reg2, -5   # 7: if 0 < counter, jump back to op 3 (Label)
+        Ret reg0               # 8
+
+.entrypoint f@0
