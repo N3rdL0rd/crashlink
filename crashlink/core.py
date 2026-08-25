@@ -1872,6 +1872,9 @@ class Bytecode(Serialisable):
     # Attached by crashlink.dehlc's code_from_bin: the native image this
     # bytecode was reconstructed from (None for deserialised .hl/.dat files).
     hlc_binary: Optional["HLCBinary"] = None
+    # Symbol name (e.g. "g$42") -> recovered global index; set by de-HL/C
+    # reconstruction so lifting can resolve GetGlobal/SetGlobal operands.
+    hlc_global_index: Optional[Dict[str, int]] = None
 
     def __init__(self) -> None:
         self.deserialised = False

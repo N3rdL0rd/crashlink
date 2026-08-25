@@ -132,14 +132,38 @@ class LiftContext:
 
     def call_target_name(self) -> Optional[str]:
         """Resolved symbol name of this instruction's direct call target."""
-        target = None
-        for op in self.ops:
-            if op.type == X86_OP_IMM:
-                target = op.imm
-                break
+        target = self.call_target_addr()
         if target is None:
             return None
         return self.plt_map.get(target) or self.bin_view.symbol_at(target)
+
+    def call_target_addr(self) -> Optional[int]:
+        """Absolute target address of this call - direct immediate or indirect
+        through an import/GOT memory operand."""
+        for op in self.ops:
+            if op.type == X86_OP_IMM:
+                return op.imm
+            if op.type == X86_OP_MEM:
+                from .binary import _resolve_mem_target
+
+                return _resolve_mem_target(self.insn, op)
+        return None
+
+    def branch_target(self) -> Optional[int]:
+        """Absolute target of this relative branch. Capstone already normalises
+        x86 branch immediates to absolute addresses."""
+        for op in self.ops:
+            if op.type == X86_OP_IMM:
+                return op.imm
+        return None
+
+    def resolve_mem_sym(self, mem_op) -> Optional[str]:
+        """Symbol name of a memory operand's effective address (globals,
+        string/type table slots, rodata literals)."""
+        tgt = self.resolve_mem(mem_op)
+        if tgt is None:
+            return None
+        return self.bin_view.symbol_at(tgt)
 
     def read_float_at(self, addr: int, size: int) -> Optional[float]:
         import struct as _struct
@@ -203,12 +227,14 @@ class NoiseRule(LiftRule):
 @rule("call")
 class CallRule(LiftRule):
     """Direct calls resolve to New/Ref for allocator prims, Prim:* for other
-    libhl imports, and plain Call for module functions."""
+    libhl imports, and plain Call (with target address) for module functions.
+    Indirect calls through the GOT/PLT resolve to their import symbol."""
 
     def apply(self, ctx: LiftContext) -> bool:
+        addr = ctx.call_target_addr()
         name = ctx.call_target_name()
         if name is None:
-            ctx.emit("Call?", src_addr=ctx.insn.address)
+            ctx.emit("Call?", src_addr=ctx.insn.address, target_addr=addr)
             return True
         if name.startswith("hl_"):
             prim = name[3:]
@@ -224,14 +250,14 @@ class CallRule(LiftRule):
             else:
                 ctx.emit(f"Prim:{prim}", src_addr=ctx.insn.address)
             return True
-        ctx.emit("Call", src_addr=ctx.insn.address, target=name)
+        ctx.emit("Call", src_addr=ctx.insn.address, target=name, target_addr=addr)
         return True
 
 
 @rule("jmp")
 class JmpRule(LiftRule):
     def apply(self, ctx: LiftContext) -> bool:
-        ctx.emit("JAlways", src_addr=ctx.insn.address)
+        ctx.emit("JAlways", src_addr=ctx.insn.address, target=ctx.branch_target())
         return True
 
 
@@ -257,7 +283,7 @@ class CondBranchRule(LiftRule):
     def apply(self, ctx: LiftContext) -> bool:
         cc = ctx.mnemonic[1:]
         kind = "JIfS" if cc in self.SIGNED else "JIfU"
-        ctx.emit(kind, src_addr=ctx.insn.address, cc=cc)
+        ctx.emit(kind, src_addr=ctx.insn.address, cc=cc, target=ctx.branch_target())
         return True
 
 
@@ -309,7 +335,8 @@ class CompareImmRule(LiftRule):
 
 @rule("mov")
 class MovRule(LiftRule):
-    """Splits into immediate loads, field traffic, vreg shuffles and copies.
+    """Splits into immediate loads, global/string access, field traffic, vreg
+    shuffles and copies.
 
     Register allocation noise ([rsp+N] slots, reg-to-reg moves that only feed
     spills) is consumed silently so the lifted stream reflects semantics.
@@ -319,27 +346,99 @@ class MovRule(LiftRule):
         if len(ctx.ops) != 2:
             return False
         dst, src = ctx.ops
-        # immediate -> register: pool-style constant
+        # immediate -> register: pool constant, or a symbol address materialised
+        # as an immediate (mov edi, <&t$_foo>) - never a real Int.
         if src.type == X86_OP_IMM and dst.type == X86_OP_REG:
-            ctx.emit("Int", src_addr=ctx.insn.address, value=src.imm)
+            sym = ctx.bin_view.symbol_at(src.imm)
+            if sym is None:
+                ctx.emit("Int", src_addr=ctx.insn.address, value=src.imm)
+            elif _is_type_table_sym(sym):
+                ctx.emit("Type", src_addr=ctx.insn.address, sym=sym)
+            else:
+                ctx.emit("LeaSym", src_addr=ctx.insn.address, sym=sym)
             return True
-        # field/array load: [base+disp] with a non-spill base
-        if src.type == X86_OP_MEM and dst.type == X86_OP_REG and not ctx.is_spill_slot(src):
-            disp = src.mem.disp
-            ctx.emit("LoadField", src_addr=ctx.insn.address, off=disp)
-            return True
-        # store to field
-        if dst.type == X86_OP_MEM and not ctx.is_spill_slot(dst):
-            ctx.emit("StoreField", src_addr=ctx.insn.address, off=dst.mem.disp)
-            return True
-        # everything else is register management
+        # load from memory
+        if src.type == X86_OP_MEM and dst.type == X86_OP_REG:
+            if ctx.is_spill_slot(src):
+                return True
+            return _emit_mem_read(ctx, src)
+        # store to memory
+        if dst.type == X86_OP_MEM:
+            if ctx.is_spill_slot(dst):
+                return True
+            return _emit_mem_write(ctx, dst)
+        # reg-to-reg moves stay silent: compilers emit many times more copies
+        # than truth carries explicit Mov opcodes (measured - emitting them
+        # desyncs streams).
         return True
+
+
+def _emit_mem_read(ctx: LiftContext, mem) -> bool:
+    """Classify one non-spill memory read: module global (value OR string -
+    in HL bytecode even literals live in the global table), type-table slot,
+    other rodata, or object field traffic."""
+    from .binary import (
+        HL_CONST_STRING_PREFIX,
+        HL_STRING_GLOBAL_PREFIX,
+        HL_VALUE_GLOBAL_PREFIX,
+    )
+
+    sym = ctx.resolve_mem_sym(mem)
+    if sym is not None and _mem_base_is_rip(mem):
+        if sym.startswith(HL_VALUE_GLOBAL_PREFIX) or (
+            sym.startswith(HL_STRING_GLOBAL_PREFIX) and not sym.startswith(HL_CONST_STRING_PREFIX)
+        ):
+            ctx.emit("GetGlobal", src_addr=ctx.insn.address, gidx=sym)
+            return True
+        if _is_type_table_sym(sym):
+            ctx.emit("Type", src_addr=ctx.insn.address, sym=sym)
+            return True
+        # other rodata: keep provenance, no HL mapping yet
+        ctx.emit("LeaSym", src_addr=ctx.insn.address, sym=sym)
+        return True
+    ctx.emit("LoadField", src_addr=ctx.insn.address, off=mem.mem.disp)
+    return True
+
+
+_TYPE_TABLE_PREFIXES = ("t$", "objt$", "enumt$", "virtt$", "tfunt$")
+
+
+def _is_type_table_sym(sym: str) -> bool:
+    """True when a symbol names a recovered-type table slot (class/enum/vtable)."""
+    return any(sym.startswith(p) for p in _TYPE_TABLE_PREFIXES)
+
+
+def _emit_mem_write(ctx: LiftContext, mem) -> bool:
+    from .binary import (
+        HL_CONST_STRING_PREFIX,
+        HL_STRING_GLOBAL_PREFIX,
+        HL_VALUE_GLOBAL_PREFIX,
+    )
+
+    sym = ctx.resolve_mem_sym(mem)
+    if sym is not None and _mem_base_is_rip(mem):
+        if sym.startswith(HL_VALUE_GLOBAL_PREFIX) or (
+            sym.startswith(HL_STRING_GLOBAL_PREFIX) and not sym.startswith(HL_CONST_STRING_PREFIX)
+        ):
+            ctx.emit("SetGlobal", src_addr=ctx.insn.address, gidx=sym)
+            return True
+    ctx.emit("StoreField", src_addr=ctx.insn.address, off=mem.mem.disp)
+    return True
+
+
+def _mem_base_is_rip(mem) -> bool:
+    from capstone.x86 import X86_REG_RIP
+
+    try:
+        return mem.mem.base == X86_REG_RIP
+    except Exception:
+        return False
 
 
 @rule("lea")
 class LeaRule(LiftRule):
-    """Address materialisation: vreg slots are ABI, symbol addresses may be
-    string/type literals. Kept minimal until literal typing lands."""
+    """Address materialisation: vreg slots are ABI noise; string/type table
+    addresses become literals; the rest keeps symbol provenance."""
 
     def apply(self, ctx: LiftContext) -> bool:
         if len(ctx.ops) != 2 or ctx.ops[0].type != X86_OP_REG:
@@ -347,11 +446,13 @@ class LeaRule(LiftRule):
         mem = ctx.ops[1]
         if mem.type != X86_OP_MEM:
             return False
-        if mem.mem.base in ctx._spill_bases:
+        if mem.mem.base in ctx._spill_bases and not _mem_base_is_rip(mem):
             return True  # &r_i - consumed as noise
-        tgt = ctx.resolve_mem(mem)
-        sym = ctx.bin_view.symbol_at(tgt) if tgt is not None else None
-        ctx.emit("LeaSym", src_addr=ctx.insn.address, sym=sym or "")
+        sym = ctx.resolve_mem_sym(mem)
+        if sym is not None and _is_type_table_sym(sym):
+            ctx.emit("Type", src_addr=ctx.insn.address, sym=sym)
+        else:
+            ctx.emit("LeaSym", src_addr=ctx.insn.address, sym=sym or "")
         return True
 
 
@@ -374,18 +475,10 @@ class ArithRule(LiftRule):
     adjustment and reg-zeroing xors are consumed upstream/downstream."""
 
     def apply(self, ctx: LiftContext) -> bool:
-        from capstone.x86 import X86_REG_RSP  # noqa: F401
+        from capstone.x86 import X86_REG_RSP
 
-        if len(ctx.ops) >= 1 and ctx.ops[0].type == X86_OP_REG:
-            if ctx.ops[0].reg == X86_REG_RSP:
-                return True  # frame adjustment
-        if (
-            ctx.mnemonic == "sub"
-            and len(ctx.ops) == 2
-            and all(o.type == X86_OP_REG for o in ctx.ops)
-            and False
-        ):
-            pass
+        if ctx.ops and ctx.ops[0].type == X86_OP_REG and ctx.ops[0].reg == X86_REG_RSP:
+            return True  # frame adjustment
         fam = _ARITH_MAP.get(ctx.mnemonic)
         if fam is None:
             return False
@@ -393,9 +486,42 @@ class ArithRule(LiftRule):
         return True
 
 
+_SSE_ARITH_MAP = {
+    "addsd": "Add",
+    "addss": "Add",
+    "subsd": "Sub",
+    "subss": "Sub",
+    "mulsd": "Mul",
+    "mulss": "Mul",
+}
+
+
+@rule(*_SSE_ARITH_MAP)
+class SSEArithRule(LiftRule):
+    """SSE float arithmetic maps onto the same HL arithmetic families - the
+    register's type (float vs int) is what disambiguates downstream."""
+
+    def apply(self, ctx: LiftContext) -> bool:
+        fam = _SSE_ARITH_MAP.get(ctx.mnemonic)
+        if fam is None:
+            return False
+        ctx.emit(fam, src_addr=ctx.insn.address)
+        return True
+
+
+@rule("divsd", "divss")
+class SSEDivRule(LiftRule):
+    """SSE float division; HL models float div with the same SDiv family."""
+
+    def apply(self, ctx: LiftContext) -> bool:
+        ctx.emit("SDiv", src_addr=ctx.insn.address, float=True)
+        return True
+
+
 @rule("xor")
 class XorRule(LiftRule):
-    """`xor r,r` zeroing is common idiom; treat as constant, not arithmetic."""
+    """`xor r,r` zeroing materialises the constant 0 - HL emits an explicit Int
+    for default values, so keep it."""
 
     def apply(self, ctx: LiftContext) -> bool:
         if len(ctx.ops) == 2 and ctx.ops[0].type == X86_OP_REG and ctx.ops[0].reg == ctx.ops[1].reg:
@@ -413,10 +539,11 @@ class ConvertRule(LiftRule):
 
 @rule("div", "idiv")
 class DivRule(LiftRule):
-    """x86 division uses RDX:RAX implicitly; HL models it as SDiv/UDiv + SMod/UMod."""
+    """x86 division uses RDX:RAX implicitly; HL models it as SDiv/UDiv (+SMod/UMod
+    via the paired remainder)."""
 
     def apply(self, ctx: LiftContext) -> bool:
-        ctx.emit("Div", src_addr=ctx.insn.address, signed=ctx.mnemonic == "idiv")
+        ctx.emit("SDiv" if ctx.mnemonic == "idiv" else "UDiv", src_addr=ctx.insn.address)
         return True
 
 
@@ -477,6 +604,8 @@ class FunctionLifter:
         CompareImmRule(),
         ConvertRule(),
         SetBoolRule(),
+        SSEArithRule(),
+        SSEDivRule(),
         DivRule(),
         XorRule(),
         MovRule(),
@@ -499,6 +628,11 @@ class FunctionLifter:
         # function table), preferred over symbol-table sizes which can be
         # misleading when alias symbols sit adjacent to the entry point.
         self.size_of = size_of
+        # Mnemonic -> candidate rules; avoids scanning every rule per insn.
+        self._buckets: Dict[str, List[LiftRule]] = {}
+        for rl in self.rules:
+            for mn in rl.MNEMONICS:
+                self._buckets.setdefault(mn, []).append(rl)
 
     @staticmethod
     def for_binary(
@@ -513,12 +647,22 @@ class FunctionLifter:
         raise NotImplementedError(f"no lifting backend for arch {bin_view.arch!r}")
 
     def decode(self, addr: int, max_bytes: int = 65536) -> list:
-        if self.size_of is not None:
+        """Decode one function body.
+
+        Size resolution order: exact ELF symbol size (GCC emits precise st_size,
+        and trusting it prevents runaway decodes past the body into neighbouring
+        functions/data - measured to matter a lot), then the module function
+        table gap, then a conservative default.
+        """
+        sym_name = self.bin_view.symbol_at(addr)
+        sym = self.bin_view.symbol(sym_name) if sym_name else None
+        sym_size = sym.size if sym is not None and sym.size else 0
+        if sym_size:
+            size = sym_size
+        elif self.size_of is not None:
             size = self.size_of(addr)
         else:
-            sym_name = self.bin_view.symbol_at(addr)
-            sym = self.bin_view.symbol(sym_name) if sym_name else None
-            size = min(sym.size, max_bytes) if sym is not None and sym.size else 2048
+            size = 2048
         if size <= 0:
             size = 2048
         code = self.bin_view.read_bytes(addr, min(size, max_bytes))
@@ -530,10 +674,9 @@ class FunctionLifter:
         ctx = LiftContext(self.bin_view, addr, insns, 0, self.plt_map, out)
         for i, _insn in enumerate(insns):
             ctx.index = i
-            for rl in self.rules:
-                if rl.handles(ctx.mnemonic):
-                    if rl.apply(ctx):
-                        break
+            for rl in self._buckets.get(ctx.mnemonic, ()):
+                if rl.apply(ctx):
+                    break
             # no rule matched -> instruction ignored (conservative)
         return out
 

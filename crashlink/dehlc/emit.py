@@ -27,6 +27,7 @@ from ..core import (
     fIndex,
     fieldRef,
     floatRef,
+    gIndex,
     intRef,
 )
 from .binary import HLCBinary, _resolve_plt_targets
@@ -55,7 +56,13 @@ _ARITH_OPS = {
     "UShr": "UShr",
     "And": "And",
     "Or": "Or",
+    "SDiv": "SDiv",
+    "UDiv": "UDiv",
 }
+
+# Cold-path libhl prims that HL bytecode represents implicitly (checks the
+# compiler hoisted around accesses); emitting them would only desync streams.
+_PRIM_NOISE = {"null_access", "invalid_cast"}
 
 _FIELD_SIZES = {"i32": 4, "u32": 4, "f32": 4, "i16": 2, "u16": 2, "i8": 1, "u8": 1, "bool": 1}
 
@@ -76,6 +83,26 @@ class EmitContext:
                     self.addr2findex[p] = k
         self._int_pool: Dict[int, int] = {int(i.value): k for k, i in enumerate(code.ints)}
         self._float_pool: Dict[float, int] = {}
+        # libhl prim name (without the "hl_" prefix) -> native findex, so lifted
+        # `Prim:*` events materialise as real calls into the natives table.
+        # Recovered native names may or may not carry the prefix depending on
+        # how the hdll symbol table was parsed; normalise it away.
+        self.native_findex: Dict[str, int] = {}
+        for nat in code.natives or []:
+            try:
+                nm = str(nat.name.resolve(code))
+            except Exception:
+                continue
+            if nm.startswith("hl_"):
+                nm = nm[len("hl_") :]
+            if nm and nat.findex is not None:
+                self.native_findex[nm] = nat.findex.value
+        # Recovered global symbol names -> gindex (see globals.py).
+        self.global_index: Dict[str, int] = dict(getattr(code, "hlc_global_index", None) or {})
+        # findex -> position in code.natives, for arity lookups of native calls.
+        self._native_pos_by_findex: Dict[int, int] = {
+            nat.findex.value: k for k, nat in enumerate(code.natives or []) if nat.findex is not None
+        }
 
     def int_ref(self, value: int) -> intRef:
         value &= 0xFFFFFFFF
@@ -99,6 +126,15 @@ class EmitContext:
         return floatRef(self._float_pool[value])
 
     def arity_of(self, fidx: int) -> int:
+        """Arity of a module function OR a native, by findex."""
+        pos = self._native_pos_by_findex.get(fidx)
+        if pos is not None:
+            try:
+                d = self.code.types[self.code.natives[pos].type.value].definition
+                nargs = getattr(d, "nargs", None)
+                return int(nargs.value) if nargs is not None else 0
+            except (IndexError, AttributeError):
+                return 0
         try:
             f = self.code.functions[fidx]
         except IndexError:
@@ -143,6 +179,30 @@ def emit_function(ctx: EmitContext, ops: List[LiftedOp], max_regs: int = 512) ->
             reg = 1
         return reg
 
+    def materialise_call(fidx: int) -> None:
+        """Emit a Call0..4/N against findex `fidx`, arity from its signature."""
+        nonlocal last_value
+        dst = new_reg()
+        nargs = ctx.arity_of(fidx)
+        fun = fIndex(fidx)
+        if nargs == 0:
+            out.append(Opcode("Call0", {"dst": Reg(dst), "fun": fun}))
+        else:
+            names = ["arg0", "arg1", "arg2", "arg3"]
+            df: dict = {"dst": Reg(dst), "fun": fun}
+            for k in range(min(nargs, 4)):
+                ar = new_reg()
+                df[names[k]] = Reg(ar)
+                last_value = ar
+            if nargs > 4:
+                rg = Regs()
+                rg.value = [Reg(new_reg()) for _ in range(nargs - 4)]
+                df["args"] = rg
+                out.append(Opcode("CallN", df))
+            else:
+                out.append(Opcode(f"Call{nargs}", df))
+        last_value = dst
+
     for lo in ops:
         if lo.src_addr:
             addr_index.setdefault(lo.src_addr, len(out))
@@ -167,28 +227,31 @@ def emit_function(ctx: EmitContext, ops: List[LiftedOp], max_regs: int = 512) ->
         elif nm in ("Call", "CallVirtual"):
             tgt = a.get("target_addr")
             fidx = ctx.addr2findex.get(tgt) if tgt is not None else None
-            if fidx is None:
-                continue
-            dst = new_reg()
-            nargs = ctx.arity_of(fidx)
-            fun = fIndex(fidx)
-            if nargs == 0:
-                out.append(Opcode("Call0", {"dst": Reg(dst), "fun": fun}))
+            if fidx is not None:
+                materialise_call(fidx)
+        elif nm.startswith("Prim:"):
+            prim = nm[len("Prim:") :]
+            if prim == "throw":
+                out.append(Opcode("Throw", {"exc": Reg(last_value or new_reg())}))
+                last_value = 0
+            elif prim in _PRIM_NOISE:
+                pass
             else:
-                names = ["arg0", "arg1", "arg2", "arg3"]
-                df: dict = {"dst": Reg(dst), "fun": fun}
-                for k in range(min(nargs, 4)):
-                    ar = new_reg()
-                    df[names[k]] = Reg(ar)
-                    last_value = ar
-                if nargs > 4:
-                    rg = Regs()
-                    rg.value = [Reg(new_reg()) for _ in range(nargs - 4)]
-                    df["args"] = rg
-                    out.append(Opcode("CallN", df))
-                else:
-                    out.append(Opcode(f"Call{nargs}", df))
-            last_value = dst
+                nfidx = ctx.native_findex.get(prim)
+                if nfidx is not None:
+                    materialise_call(nfidx)
+        elif nm == "GetGlobal":
+            gi = ctx.global_index.get(str(a.get("gidx", "")))
+            if gi is not None:
+                r = new_reg()
+                out.append(Opcode("GetGlobal", {"dst": Reg(r), "global": gIndex(gi)}))
+                last_value = r
+        elif nm == "SetGlobal":
+            gi = ctx.global_index.get(str(a.get("gidx", "")))
+            if gi is not None:
+                src_v = last_value or new_reg()
+                out.append(Opcode("SetGlobal", {"global": gIndex(gi), "src": Reg(src_v)}))
+                # stores don't produce a value; keep last_value as-is
         elif nm == "StoreField":
             fi = last_type_fields.get(a.get("off", 0), 0) if last_type_fields else 0
             src_v = last_value or new_reg()
@@ -226,13 +289,21 @@ def emit_function(ctx: EmitContext, ops: List[LiftedOp], max_regs: int = 512) ->
                 Opcode(_ARITH_OPS[nm], {"dst": Reg(r), "a": Reg(last_value or 0), "b": Reg(new_reg())})
             )
             last_value = r
-        # Convert / Div / LeaSym / Call? / Prim:* / Mov: skipped in v1
+        # Convert / LeaSym / StringRef / Call? / unmapped prims: skipped in v1
 
     # Branch fixup: offsets are relative to the instruction after the branch.
+    # A branch target frequently lands on machine instructions that produced no
+    # lifted op (spill reloads, padding), so resolve to the FIRST EMITTED op at
+    # or after the target address instead of requiring an exact match.
+    import bisect as _bisect
+
+    addrs = sorted(addr_index)
     for idx, tgt_addr in fixups:
-        tgt_idx = addr_index.get(tgt_addr)
-        if tgt_idx is not None:
-            out[idx].df["offset"].value = tgt_idx - (idx + 1)
+        if not tgt_addr or not addrs:
+            continue
+        k = _bisect.bisect_left(addrs, tgt_addr)
+        if k < len(addrs):
+            out[idx].df["offset"].value = addr_index[addrs[k]] - (idx + 1)
 
     return out
 

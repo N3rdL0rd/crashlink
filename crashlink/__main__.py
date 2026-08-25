@@ -18,7 +18,7 @@ import tempfile
 import textwrap
 import traceback
 import webbrowser
-from typing import Callable, Dict, Iterable, List, Optional, Tuple, Set
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Set
 
 from crashlink.hlc import code_to_c, code_to_c_files
 
@@ -1416,11 +1416,92 @@ class Commands(BaseCommands):
             fmap = self.code.get_findex_map()
             target = fmap.get(index)
             if isinstance(target, Native):
-                print(f"f@{index} is a native primitive - its implementation lives in an hdll, not this binary.")
+                print(
+                    f"f@{index} is a native primitive - its implementation lives in an hdll, not this binary."
+                )
             else:
                 print(f"No native code slot for f@{index}.")
             return
         print(text)
+
+    @alias("lift")
+    def lift(self, args: List[str]) -> None:
+        """Lifts a function's machine code back to HL opcodes (de-HL/C images only). `lift <idx> [count]`
+
+        Runs the experimental x86 lifter over the function's compiled body and
+        prints the materialised opcode stream. Without `count` the whole stream
+        is printed; pass e.g. `lift 42 30` to cap it. This is heuristic
+        reconstruction - expect approximate register allocation.
+        """
+        bin_view = getattr(self.code, "hlc_binary", None)
+        if bin_view is None:
+            print("lift needs a de-HL/C image - reopen with crashlink -C <binary>.")
+            return
+        if bin_view.arch not in ("x86_64", "x86"):
+            print(f"Opcode lifting is x86-only right now (image arch: {bin_view.arch}).")
+            return
+        if len(args) == 0:
+            print("Usage: lift <index> [count]")
+            return
+        try:
+            index = int(args[0])
+        except ValueError:
+            print("Invalid index.")
+            return
+        limit: Optional[int] = None
+        if len(args) > 1:
+            try:
+                limit = int(args[1])
+                if limit <= 0:
+                    limit = None
+            except ValueError:
+                print("Invalid count; printing the whole stream.")
+                limit = None
+
+        from .core import Function as _Function
+        from .dehlc.emit import EmitContext, emit_function
+        from .dehlc.lift import FunctionLifter
+
+        try:
+            fn = self.code.functions[index]
+            assert isinstance(fn, _Function)
+        except (IndexError, AssertionError):
+            print(f"f@{index} is not a module function with a body here.")
+            return
+        addr = None
+        ps = bin_view.symbol("hl_functions_ptrs")
+        if ps is not None and index < ps.size // bin_view.PTR:
+            addr = bin_view.read_ptr(ps.value + bin_view.PTR * index)
+        if not addr or not bin_view.symbol_at(addr):
+            print(f"No native code slot for f@{index} - nothing to lift.")
+            return
+
+        plt_map = {}
+        try:
+            from .dehlc.binary import _resolve_plt_targets
+
+            plt_map = _resolve_plt_targets(bin_view)
+        except Exception:
+            pass
+        lifter = FunctionLifter.for_binary(bin_view, plt_map)
+        lifted = lifter.lift(addr)
+        ctx = EmitContext(self.code, bin_view)
+        ops = emit_function(ctx, lifted)
+        try:
+            fname = self.code.full_func_name(fn)
+        except Exception:
+            fname = f"f@{index}"
+        print(f"{fname}: {len(lifted)} lifted events -> {len(ops)} opcodes @ {addr:#x}")
+
+        def fmt(v: Any) -> Any:
+            return getattr(v, "value", v)
+
+        shown = ops if limit is None else ops[:limit]
+        for i, op in enumerate(shown):
+            args_txt = ", ".join(f"{k}={fmt(v)}" for k, v in op.df.items())
+            print(f"  {i:>4}. {op.op}{(' ' + args_txt) if args_txt else ''}")
+        if limit is not None and len(ops) > limit:
+            print(f"  ... ({len(ops) - limit} more)")
 
     @alias("df")
     def decompfile(self, args: List[str]) -> None:

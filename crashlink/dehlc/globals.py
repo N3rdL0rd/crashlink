@@ -228,4 +228,7 @@ def _recover_globals(
             global_types.append(ti)
     if unresolved:
         print(f"Note: {unresolved} globals could not be linked to a type statically.")
+    # Persist symbol-name -> global index so lifting can resolve GetGlobal/SetGlobal
+    # against the recovered table order (positional by construction above).
+    code.hlc_global_index = {str(sym.name): i for i, sym in enumerate(global_syms)}
     return global_types
