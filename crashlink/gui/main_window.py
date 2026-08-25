@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 from PySide6.QtCore import (
     QRect,
@@ -43,7 +43,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from crashlink.core import AnalysisWorker, Bytecode, Function, Native, destaticify
+from crashlink.core import AnalysisWorker, Bytecode, Function, Native, VarInt, destaticify
+
+if TYPE_CHECKING:
+    from crashlink.dehlc.emit import EmitContext
+    from crashlink.dehlc.lift import FunctionLifter
 from crashlink.database import (
     DatabaseLoadResult,
     SessionState,
@@ -368,6 +372,13 @@ class MainWindow(QMainWindow):
         # no code slot), plus the one-shot PLT map, both reset on file load.
         self._native_asm_cache: Dict[int, Optional[Tuple[str, List[str]]]] = {}
         self._plt_map: Optional[Dict[int, str]] = None
+        # Which content the disassembly pane shows for de-HL/C images.
+        self._disasm_source = "asm"
+        # On-demand lifting state (reset per file).
+        self._emit_ctx: Optional["EmitContext"] = None
+        self._lifter: Optional["FunctionLifter"] = None
+        self._fidx_addr: Dict[int, int] = {}
+        self._arm_lift_warned = False
 
         # class_key → tab index; rebuilt on every add/remove
         self._open_tabs: Dict[str, int] = {}
@@ -493,7 +504,47 @@ class MainWindow(QMainWindow):
             self._view_mode_buttons[mode] = btn
         self._view_mode_group.idClicked.connect(self._set_view_mode)
 
-        self.menuBar().setCornerWidget(mode_bar, Qt.Corner.TopRightCorner)
+        # ── Disassembly source toggle (de-HL/C images only): original machine
+        # code vs lifted HL opcodes ───────────────────────────────────────────
+        self._disasm_source_bar = QFrame()
+        self._disasm_source_bar.setObjectName("viewModeBar")
+        src_row = QHBoxLayout(self._disasm_source_bar)
+        src_row.setContentsMargins(0, 0, 10, 0)
+        src_row.setSpacing(0)
+        self._disasm_source_label = QLabel("disasm:")
+        self._disasm_source_label.setObjectName("srcLabel")
+        src_row.addWidget(self._disasm_source_label)
+        self._disasm_source_group = QButtonGroup(self)
+        self._disasm_source_group.setExclusive(True)
+        for i, (src, label, tip) in enumerate(
+            (
+                ("asm", "Asm", "Original compiled machine code from the binary"),
+                ("ops", "Ops", "HL opcodes recovered by the experimental lifter"),
+            )
+        ):
+            btn = QPushButton(label)
+            btn.setObjectName("modeBtnIcon")
+            btn.setProperty("segment", "first" if i == 0 else "last")
+            btn.setCheckable(True)
+            btn.setChecked(i == 0)
+            btn.setToolTip(tip)
+            src_row.addWidget(btn)
+            self._disasm_source_group.addButton(btn, i)
+        self._disasm_source_group.idClicked.connect(
+            lambda i: self._set_disasm_source("asm" if i == 0 else "ops")
+        )
+        self._disasm_source_bar.hide()
+
+        corner = QWidget()
+        corner_row = QHBoxLayout(corner)
+        corner_row.setContentsMargins(0, 0, 0, 0)
+        corner_row.setSpacing(0)
+        corner_row.addWidget(self._disasm_source_bar)
+        corner_row.addWidget(mode_bar)
+        # Hold the container explicitly: QMenuBar.setCornerWidget does not take
+        # C++ ownership, and a local would be GC'd along with every button in it.
+        self._view_mode_corner = corner
+        self.menuBar().setCornerWidget(corner, Qt.Corner.TopRightCorner)
         self._update_view_mode_label()
 
         # ── Central: tab widget ───────────────────────────────
@@ -696,6 +747,12 @@ class MainWindow(QMainWindow):
         self._loaded_via_dehlc = _looks_like_native_image(path)
         self._native_asm_cache.clear()
         self._plt_map = None
+        self._disasm_source = "asm"
+        self._emit_ctx = None
+        self._lifter = None
+        self._fidx_addr.clear()
+        self._arm_lift_warned = False
+        self._disasm_source_bar.setVisible(self._loaded_via_dehlc)
         self._log_panel.set_context(code=None, findex=None, func=None, irf=None)
         self._source_path = path
         self._update_window_title()
@@ -1012,14 +1069,85 @@ class MainWindow(QMainWindow):
         return blocks
 
     def _load_disasm_pane(self, view: SyncView, all_fi: List[int]) -> None:
-        """Fills a SyncView's disassembly pane: original machine code for de-HL/C
-        images, HL opcodes otherwise."""
+        """Fills a SyncView's disassembly pane: for de-HL/C images either the
+        original machine code or lifted HL opcodes (per the toolbar toggle),
+        HL opcodes for ordinary bytecode."""
         assert self._code is not None
-        if self._code.hlc_binary is not None:
-            view.disasm_view.load_native(self._native_asm_blocks(all_fi))
-        else:
+        if self._code.hlc_binary is None:
             findex_map = self._code.get_findex_map()
             view.load_disasm(self._code, [(fi, findex_map[fi]) for fi in all_fi if fi in findex_map])
+            return
+        if self._disasm_source == "ops":
+            self._ensure_lifted(all_fi)
+            findex_map = self._code.get_findex_map()
+            view.load_disasm(self._code, [(fi, findex_map[fi]) for fi in all_fi if fi in findex_map])
+        else:
+            view.disasm_view.load_native(self._native_asm_blocks(all_fi))
+
+    def _ensure_lifted(self, findices: List[int]) -> None:
+        """
+        Runs the experimental machine-code lifter on functions still lacking
+        bodies and stores the synthesised opcode streams on them, so the
+        standard disassembly (and later decompile) paths can render them.
+        x86-64 only; other architectures log a one-time note.
+        """
+        assert self._code is not None
+        bin_view = self._code.hlc_binary
+        assert bin_view is not None
+        findex_map = self._code.get_findex_map()
+        todo = []
+        for fi in findices:
+            fn = findex_map.get(fi)
+            if isinstance(fn, Function) and not fn.ops:
+                todo.append(fi)
+        if not todo:
+            return
+        if bin_view.arch not in ("x86_64", "x86"):
+            if not self._arm_lift_warned:
+                self._arm_lift_warned = True
+                self._log_panel.warn(
+                    "Opcode lifting is x86-only right now - ARM bodies stay empty."
+                )
+            return
+        from crashlink.dehlc.binary import _resolve_plt_targets
+        from crashlink.dehlc.emit import EmitContext, emit_function
+        from crashlink.dehlc.lift import FunctionLifter
+
+        if self._emit_ctx is None or self._lifter is None:
+            if self._plt_map is None:
+                self._plt_map = _resolve_plt_targets(bin_view)
+            self._emit_ctx = EmitContext(self._code, bin_view)
+            self._fidx_addr = {v: k for k, v in self._emit_ctx.addr2findex.items()}
+            self._lifter = FunctionLifter.for_binary(bin_view, self._plt_map)
+        ctx = self._emit_ctx
+        lifter = self._lifter
+        lifted = 0
+        for fi in todo:
+            addr = self._fidx_addr.get(fi)
+            if not addr:
+                continue  # native slot / padding entry
+            try:
+                stream = lifter.lift(addr)
+                ops = emit_function(ctx, stream)
+            except Exception as e:
+                self._log_panel.warn(f"lifting failed for f@{fi}: {e}")
+                continue
+            fn = findex_map[fi]
+            assert isinstance(fn, Function)
+            fn.ops = ops
+            fn.nregs = VarInt(0)
+            lifted += 1
+        if lifted:
+            self._log_panel.info(f"Lifted {lifted} function body/bodies to opcodes (experimental).")
+
+    def _set_disasm_source(self, source: str) -> None:
+        """Toolbar toggle: 'asm' (original machine code) vs 'ops' (lifted HL
+        opcodes). Re-renders every open tab's disassembly pane."""
+        if source == self._disasm_source:
+            return
+        self._disasm_source = source
+        for class_key in list(self._open_tabs):
+            self._refresh_disasm_view(class_key)
 
     def _open_class_tab(self, class_key: str, display_name: str, all_fi: List[int], jump_to: int) -> None:
         assert self._code is not None

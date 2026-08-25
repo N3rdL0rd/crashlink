@@ -92,6 +92,11 @@ QFrame#viewModeBar {{
     background: transparent;
     border: none;
 }}
+QLabel#srcLabel {{
+    color: {t.overlay};
+    font-size: 11px;
+    padding-right: 6px;
+}}
 QPushButton#modeBtnIcon {{
     background-color: {t.surface0};
     color: {t.subtext};
