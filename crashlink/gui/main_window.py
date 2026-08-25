@@ -1206,7 +1206,9 @@ class MainWindow(QMainWindow):
                 continue
             fn = findex_map.get(fi)
             if isinstance(fn, Native):
-                methods.append((fi, f"// f@{fi}  native primitive (implemented in an hdll)\n// signature only"))
+                methods.append(
+                    (fi, f"// f@{fi}  native primitive (implemented in an hdll)\n// signature only")
+                )
             elif isinstance(fn, Function) and not fn.ops:
                 # Incomplete recovery: keep the function browsable instead of
                 # dropping it or spinning a doomed decompile job on zero opcodes.

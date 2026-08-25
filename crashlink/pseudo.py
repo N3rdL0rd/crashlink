@@ -1514,9 +1514,7 @@ def _generate_statements(
             except Exception:
                 # Lifted/reconstructed streams carry placeholder register types;
                 # fall back to the exception-guarded compact printer.
-                op_str = disasm.fmt_op_compact(
-                    code, ir_function.func.regs, stmt.op, 0, func=ir_function.func
-                )
+                op_str = disasm.fmt_op_compact(code, ir_function.func.regs, stmt.op, 0, func=ir_function.func)
             output_lines.append(f"{indent}// UNLIFTED OPCODE: {stmt.op.op} {op_str}")
 
         elif isinstance(stmt, IRNativeStub):
