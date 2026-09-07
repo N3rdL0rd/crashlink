@@ -24,10 +24,24 @@ Design contract (mirrors crashlink.decomp.ir's extensibility rules):
 4. Architecture backends subclass `FunctionLifter` and supply their rule set;
    the dispatch loop itself is architecture-neutral.
 
+5. A rule may span several instructions. HL opcodes are frequently N:1 with
+   machine code - a null guard is a test plus a branch, a virtual call is a
+   proto load plus an indirect call - so `apply` can consume a window via
+   `ctx.consume_through(n)` and the dispatcher resumes after it.
+
+6. `LiftContext` carries an abstract value per register (`ctx.vals`: immediate,
+   symbol address, or incoming argument). That is what separates argument
+   set-up from a real constant, and a `this` field access (GetThis/SetThis)
+   from an arbitrary pointer dereference. x86 maintains it in
+   `X86LiftContext.track`; aarch64 still tracks only adrp/add addresses.
+
 Lifting is available through the GUI's Asm/Ops toggle for de-HL/C images,
-the REPL `lift <findex>` command, and the measurement harness
-(local/dehlc-tests/lift_ops.py). x86-64 and aarch64 backends exist; both are
-scored against ground-truth .hl/.elf corpus pairs.
+the REPL `lift <findex>` command, and two measurement harnesses:
+`local/dehlc-tests/lift_ops.py` (per-function sequence similarity) and
+`local/dehlc-tests/lift_confusion.py`, which scores every instruction against a
+ground-truth oracle recovered from haxe's generated C plus DWARF and prints a
+confusion matrix. Use the latter to decide what to work on - it names the
+highest-volume mistakes instead of averaging them away.
 """
 
 from __future__ import annotations
@@ -99,6 +113,102 @@ class LiftContext:
         # Per-backend state hooks: x86 keeps none; aarch64 tracks adrp/add
         # resolved addresses per register (see ARM64LiftContext.track).
         self.reg_addr: Dict[int, int] = {}
+        # Abstract value per register and per spill slot. Values are small tags:
+        #   ("imm", n) ("sym", name) ("arg", i) - anything untracked is absent.
+        # This is what lets a rule tell an argument set-up from a real constant,
+        # and a `this` field access from an arbitrary pointer dereference.
+        self.vals: Dict[int, Tuple[str, Any]] = {}
+        self.slots: Dict[int, Tuple[str, Any]] = {}
+        self.md: Any = None  # capstone engine, set by the lifter
+        # Entry addresses listed in hl_functions_ptrs - the authority on what is
+        # a module function rather than a runtime primitive.
+        self.module_funcs: set = set()
+        self._stable_this: set = set()
+
+    def canon_reg(self, reg: int) -> int:
+        """Register id collapsed across width aliases (eax and rax are one)."""
+        return reg
+
+    def val_of(self, reg: int) -> Optional[Tuple[str, Any]]:
+        return self.vals.get(self.canon_reg(reg))
+
+    def set_val(self, reg: int, val: Optional[Tuple[str, Any]]) -> None:
+        r = self.canon_reg(reg)
+        if val is None:
+            self.vals.pop(r, None)
+        else:
+            self.vals[r] = val
+
+    def seed_args(self) -> None:
+        """Mark the argument registers at function entry, so `this` (arg 0) and
+        call operands stay identifiable."""
+
+    # Operand-type id for a register, per backend (capstone's X86_OP_REG etc).
+    OP_REG: int = 0
+
+    def is_this(self, reg: int) -> bool:
+        """True when `reg` still holds argument 0 - hl2c's `this` pointer, which
+        is what separates HL's GetThis/SetThis from plain Field/SetField."""
+        return self.canon_reg(reg) in self._stable_this or self.val_of(reg) == ("arg", 0)
+
+    def _compute_stable_this(self, arg0: int) -> None:
+        """
+        Find registers that hold `this` for the whole function.
+
+        The per-instruction value map is linear, so it loses `this` at a branch
+        join - but GCC's usual move is to park `this` in one callee-saved
+        register at entry and never touch it again. A register written exactly
+        once in the body, from argument 0, before argument 0 is itself
+        clobbered, is `this` everywhere; that survives joins without needing a
+        full dataflow pass.
+        """
+        # Callee-saved registers are spilled in the prologue and reloaded in the
+        # epilogue. That reload writes the register but restores the value it
+        # already had, so it must not count as a redefinition.
+        saved: set = set()
+        for ins in self.insns:
+            mems = [o for o in ins.operands if o.type != self.OP_REG]
+            regs = [o for o in ins.operands if o.type == self.OP_REG]
+            if mems and regs and self.is_spill_slot(mems[0]) and ins.operands[0].type != self.OP_REG:
+                for k, o in enumerate(regs):
+                    saved.add((mems[0].mem.disp + k * 8, self.canon_reg(o.reg)))
+
+        defs: Dict[int, int] = {}
+        for ins in self.insns:
+            ops = ins.operands
+            if not ops or ops[0].type != self.OP_REG or self._defines_nothing(ins.mnemonic):
+                continue
+            mems = [o for o in ops if o.type != self.OP_REG]
+            regs = [o for o in ops if o.type == self.OP_REG]
+            if (
+                mems
+                and self.is_spill_slot(mems[0])
+                and all(
+                    (mems[0].mem.disp + k * 8, self.canon_reg(o.reg)) in saved for k, o in enumerate(regs)
+                )
+            ):
+                continue  # epilogue restore, not a new value
+            defs[self.canon_reg(ops[0].reg)] = defs.get(self.canon_reg(ops[0].reg), 0) + 1
+        stable = set()
+        for ins in self.insns:
+            ops = ins.operands
+            if len(ops) == 2 and ops[0].type == self.OP_REG and ops[1].type == self.OP_REG:
+                dst, src = self.canon_reg(ops[0].reg), self.canon_reg(ops[1].reg)
+                if src == arg0 and dst != arg0 and defs.get(dst) == 1:
+                    stable.add(dst)
+            if ops and ops[0].type == self.OP_REG and self.canon_reg(ops[0].reg) == arg0:
+                break  # argument 0 is gone from here on
+        self._stable_this = stable
+
+    def _defines_nothing(self, mnemonic: str) -> bool:
+        """Instructions whose first operand is a source, not a destination."""
+        return False
+
+    def mem_base_is_this(self, mem_op) -> bool:
+        try:
+            return not _mem_base_is_rip(mem_op) and self.is_this(mem_op.mem.base)
+        except Exception:
+            return False
 
     def track(self) -> None:
         """Per-instruction backend bookkeeping; called before rule dispatch."""
@@ -121,6 +231,63 @@ class LiftContext:
         """Instruction at +ahead positions, or None."""
         j = self.index + ahead
         return self.insns[j] if 0 <= j < len(self.insns) else None
+
+    # Mnemonic classes the shared helpers need; overridden per backend.
+    CALL_MNEMONICS: Tuple[str, ...] = ("call",)
+    TERMINATORS: Tuple[str, ...] = ("ret",)
+    BRANCH_PREFIXES: Tuple[str, ...] = ("j",)
+
+    def index_at(self, addr: int) -> Optional[int]:
+        """Position of the instruction starting at `addr`, if it was decoded."""
+        if not hasattr(self, "_by_addr"):
+            self._by_addr = {ins.address: k for k, ins in enumerate(self.insns)}
+        return self._by_addr.get(addr)
+
+    def leads_to_call(self, addr: int, names: Tuple[str, ...], limit: int = 6) -> bool:
+        """
+        True when the straight-line run starting at `addr` calls one of `names`.
+
+        Used to recognise the cold half of a compiler-emitted guard (a null or
+        bounds check) by where it lands, which is the only thing that separates
+        such a branch from a real HL conditional jump.
+        """
+        k = self.index_at(addr)
+        if k is None:
+            return False
+        saved, self.index = self.index, k
+        try:
+            for j in range(k, min(k + limit, len(self.insns))):
+                self.index = j
+                ins = self.insns[j]
+                if ins.mnemonic in self.CALL_MNEMONICS:
+                    nm = self.call_target_name()
+                    return bool(nm and nm in names)
+                if ins.mnemonic in self.TERMINATORS or ins.mnemonic.startswith(self.BRANCH_PREFIXES):
+                    return False
+            return False
+        finally:
+            self.index = saved
+
+    COMPARE_MNEMONICS: Tuple[str, ...] = ("cmp", "test")
+
+    def compare_used_immediate(self, back: int = 6) -> bool:
+        """
+        Whether the compare governing this branch tested against a constant.
+
+        It is the one feature that meaningfully splits a condition code's
+        possible HL opcodes: `a >= K` gets rewritten to `a > K-1` only when K is
+        a literal, so an immediate compare and a register compare behind the
+        same `jle` came from different opcodes.
+        """
+        for j in range(self.index - 1, max(self.index - back, -1), -1):
+            ins = self.insns[j]
+            if ins.mnemonic in self.COMPARE_MNEMONICS:
+                return any(o.type == X86_OP_IMM for o in ins.operands)
+        return False
+
+    def consume_through(self, ahead: int) -> None:
+        """Mark the next `ahead` instructions as consumed by this rule."""
+        self.index = min(self.index + ahead, len(self.insns) - 1)
 
     # -- operand helpers ----------------------------------------------------
 
@@ -234,23 +401,112 @@ class NoiseRule(LiftRule):
 # ---------------------------------------------------------------------------
 
 
+# libhl runtime helpers that hl2c emits *as* an HL opcode rather than as a
+# native call. Without this they surface as `Prim:<name>`, resolve to no entry
+# in the natives table, and get dropped - which is why SafeCast/ToVirtual used
+# to vanish entirely. Measured against the corpus oracle: the dyn_set*/dyn_get*
+# helpers back SetField/Field roughly 93% of the time and DynSet/DynGet the
+# rest, and nothing in the machine code distinguishes the two, so they take the
+# common reading.
+_PRIM_TO_OPCODE = {
+    "alloc_obj": "New",
+    "alloc_dynobj": "New",
+    "alloc_array": "New",
+    "alloc_bytes": "Prim:alloc_bytes",
+    "alloc_pointer_array": "New",
+    "alloc_virtual": "New",
+    "alloc_closure_ptr": "InstanceClosure",  # measured: never a Ref
+    "get_virtual_value": "CallVirtual",
+    "to_virtual": "ToVirtual",
+    "dyn_castp": "SafeCast",
+    "dyn_casti": "SafeCast",
+    "dyn_castf": "SafeCast",
+    "dyn_castd": "SafeCast",
+    "dyn_setp": "SetField",
+    "dyn_seti": "SetField",
+    "dyn_setf": "SetField",
+    "dyn_setd": "SetField",
+    "dyn_getp": "LoadField",
+    "dyn_geti": "LoadField",
+    "dyn_getf": "LoadField",
+    "dyn_getd": "LoadField",
+    "dyn_call": "CallClosure",
+    "rethrow": "Rethrow",
+}
+
+# `hl_get_thread` backs both halves of a try block - hl_trap() entering and
+# hl_endtrap() leaving - so the name alone cannot say which. Only the entering
+# form goes on to install a jump buffer.
+_TRAP_PRIM = "get_thread"
+_SETJMP = ("setjmp", "_setjmp", "__sigsetjmp", "setjmp@plt", "_setjmp@plt")
+
+
+# Suffixes gcc appends when it splits or specialises a function at -O2/-O3.
+_CLONE_SUFFIXES = (".part.", ".constprop.", ".isra.", ".lto_priv.", ".cold", ".localalias")
+
+
+def _clone_origin(ctx: LiftContext, name: str) -> Optional[int]:
+    """Entry address of the module function a gcc clone was derived from."""
+    for suffix in _CLONE_SUFFIXES:
+        idx = name.find(suffix)
+        if idx <= 0:
+            continue
+        base = ctx.bin_view.symbol(name[:idx])
+        if base is not None and base.value in ctx.module_funcs:
+            return int(base.value)
+    return None
+
+
+def _dynamic_dispatch_kind(ctx: LiftContext) -> Optional[str]:
+    """`CallMethod` for a call through an object slot, `CallClosure` for one
+    through a register, None when the target is not dynamic at all."""
+    for op in ctx.ops:
+        if op.type == X86_OP_REG:
+            return "CallClosure"
+        if op.type == X86_OP_MEM:
+            # Unoptimised builds route every indirect call through a stack slot,
+            # so the slot's base cannot separate a closure from a dispatch
+            # there; only the register form is a reliable closure signal.
+            return None if _mem_base_is_rip(op) else "CallMethod"
+    return None
+
+
 def _classify_call(ctx: LiftContext, addr: Optional[int], name: Optional[str]) -> None:
     """Shared call semantics for all backends: allocator prims become New/Ref,
     other libhl imports become Prim:<name>, module functions plain Call."""
     if name is None:
-        ctx.emit("Call?", src_addr=ctx.insn.address, target_addr=addr)
+        # An unresolvable target is dynamic dispatch, and how it is reached says
+        # which kind: hl2c compiles a virtual call as a load from the proto
+        # table followed by `call [slot]`, while a closure is already a value in
+        # a register and becomes `call reg`. A rip-relative slot is an ordinary
+        # import instead, and stays unknown.
+        ctx.emit(
+            _dynamic_dispatch_kind(ctx) or "Call?",
+            src_addr=ctx.insn.address,
+            target_addr=addr,
+        )
+        return
+    # The `hl_` prefix does not imply a runtime primitive: Haxe classes in the
+    # `hl.types` package compile to `hl_types_ArrayObj_new` and friends. Only
+    # the module function table can tell them apart, so ask it first.
+    if addr is not None and addr in ctx.module_funcs:
+        ctx.emit("Call", src_addr=ctx.insn.address, target=name, target_addr=addr)
+        return
+    # -O2/-O3 clone functions (`foo.part.0`, `foo.constprop.0`, `foo.isra.0`).
+    # The clone is not in the function table, but it *is* the module function it
+    # was split from, so resolve through the base symbol to keep the call - and
+    # its arity - instead of dropping it as an unknown primitive.
+    base_addr = _clone_origin(ctx, name)
+    if base_addr is not None:
+        ctx.emit("Call", src_addr=ctx.insn.address, target=name, target_addr=base_addr)
         return
     if name.startswith("hl_"):
         prim = name[3:]
-        mapped = {
-            "alloc_obj": "New",
-            "alloc_dynobj": "New",
-            "alloc_array": "New",
-            "alloc_bytes": "Prim:alloc_bytes",
-            "alloc_pointer_array": "New",
-            "alloc_closure_ptr": "Ref",
-            "get_virtual_value": "CallVirtual",
-        }.get(prim)
+        if prim == _TRAP_PRIM:
+            entering = ctx.leads_to_call(ctx.insn.address + ctx.insn.size, _SETJMP, limit=10)
+            ctx.emit("Trap" if entering else "EndTrap", src_addr=ctx.insn.address)
+            return
+        mapped = _PRIM_TO_OPCODE.get(prim)
         if mapped:
             ctx.emit(mapped, src_addr=ctx.insn.address)
         else:
@@ -268,6 +524,36 @@ class CallRule(LiftRule):
     def apply(self, ctx: LiftContext) -> bool:
         _classify_call(ctx, ctx.call_target_addr(), ctx.call_target_name())
         return True
+
+
+_EPILOGUE_NOISE = ("pop", "leave", "nop", "add", "mov", "endbr64")
+
+
+@rule("jmp")
+class TailJmpRule(LiftRule):
+    """
+    A `jmp` into a shared epilogue is a return, not an HL jump.
+
+    GCC routes several `return;` statements through one epilogue, so the jump
+    that gets there carries the Ret. Only a target that falls straight into
+    `ret` through frame teardown qualifies.
+    """
+
+    def apply(self, ctx: LiftContext) -> bool:
+        target = ctx.branch_target()
+        if target is None:
+            return False
+        k = ctx.index_at(target)
+        if k is None:
+            return False
+        for j in range(k, min(k + 14, len(ctx.insns))):
+            m = ctx.insns[j].mnemonic
+            if m == "ret":
+                ctx.emit("Ret", src_addr=ctx.insn.address)
+                return True
+            if not m.startswith(_EPILOGUE_NOISE):
+                return False
+        return False
 
 
 @rule("jmp")
@@ -299,7 +585,13 @@ class CondBranchRule(LiftRule):
     def apply(self, ctx: LiftContext) -> bool:
         cc = ctx.mnemonic[1:]
         kind = "JIfS" if cc in self.SIGNED else "JIfU"
-        ctx.emit(kind, src_addr=ctx.insn.address, cc=cc, target=ctx.branch_target())
+        ctx.emit(
+            kind,
+            src_addr=ctx.insn.address,
+            cc=cc,
+            imm=ctx.compare_used_immediate(),
+            target=ctx.branch_target(),
+        )
         return True
 
 
@@ -323,7 +615,28 @@ class FloatLoadRule(LiftRule):
             if val is not None:
                 ctx.emit("Float", src_addr=ctx.insn.address, value=val)
                 return True
-        return False
+        # Not a literal: a float read out of an object or an array is the same
+        # field/element traffic as the integer case.
+        if ctx.is_spill_slot(ctx.ops[1]):
+            return True
+        return _emit_mem_read(ctx, ctx.ops[1])
+
+
+@rule("movsd", "movss", "movaps", "movapd", "movups", "movupd", "movq")
+class FloatStoreRule(LiftRule):
+    """
+    SSE stores. Float field and array writes go through these, and without a
+    rule they lift to nothing at all - `movsd [rax + r9], xmm0` is an array
+    element store exactly like its integer counterpart.
+    """
+
+    def apply(self, ctx: LiftContext) -> bool:
+        ops = ctx.ops
+        if len(ops) != 2 or ops[0].type != X86_OP_MEM:
+            return False
+        if ctx.is_spill_slot(ops[0]):
+            return True
+        return _emit_mem_write(ctx, ops[0])
 
 
 @rule("xorps", "xorpd", "pxor")
@@ -335,6 +648,87 @@ class FloatZeroRule(LiftRule):
             ctx.emit("Float", src_addr=ctx.insn.address, value=0.0)
             return True
         return False
+
+
+_NULL_ACCESS = ("hl_null_access", "hl_null_access@plt")
+
+
+@rule("cmp", "test")
+class NullCheckRule(LiftRule):
+    """
+    hl2c writes a null guard as `if( r == NULL ) hl_null_access();`, which
+    compiles to a zero test plus a branch into a cold block that calls
+    `hl_null_access`. That landing site is what distinguishes the pair from a
+    real HL conditional jump, so both instructions collapse to one `NullCheck`.
+    """
+
+    def apply(self, ctx: LiftContext) -> bool:
+        ops = ctx.ops
+        if len(ops) != 2:
+            return False
+        # Unoptimised builds keep the value in its stack slot and compare the
+        # memory directly (`cmp qword [rbp-0x28], 0`), so accept either form -
+        # the branch's landing site is what actually identifies the guard.
+        is_zero_test = (
+            ctx.mnemonic == "test"
+            and ops[0].type == X86_OP_REG
+            and ops[1].type == X86_OP_REG
+            and ops[0].reg == ops[1].reg
+        ) or (ops[1].type == X86_OP_IMM and ops[1].imm == 0)
+        if not is_zero_test:
+            return False
+        nxt = ctx.peek(1)
+        if nxt is None or nxt.mnemonic not in ("je", "jne"):
+            return False
+        target = next((o.imm for o in nxt.operands if o.type == X86_OP_IMM), None)
+        if target is None:
+            return False
+        # `je` takes the branch when the value *is* null, so that side is cold;
+        # `jne` skips the guard, leaving the fallthrough cold.
+        cold = target if nxt.mnemonic == "je" else nxt.address + nxt.size
+        if not ctx.leads_to_call(cold, _NULL_ACCESS):
+            return False
+        ctx.emit("NullCheck", src_addr=ctx.insn.address)
+        ctx.consume_through(1)  # the branch belongs to the guard, not the stream
+        return True
+
+
+@rule("cmp", "test")
+class NullCompareRule(LiftRule):
+    """
+    A pointer-width comparison against zero is HL's JNull/JNotNull, not an
+    integer JEq/JNotEq. The operand width is what separates them: hl2c compares
+    references with `r == NULL` on a 64-bit value, integers with `r == 0` on a
+    32-bit one. (A guard whose branch lands in `hl_null_access` was already
+    claimed by NullCheckRule, which runs first.)
+    """
+
+    def apply(self, ctx: LiftContext) -> bool:
+        ops = ctx.ops
+        if len(ops) != 2 or ops[0].size != 8:
+            return False
+        is_zero = (
+            ctx.mnemonic == "test"
+            and ops[0].type == X86_OP_REG
+            and ops[1].type == X86_OP_REG
+            and ops[0].reg == ops[1].reg
+        ) or (ops[1].type == X86_OP_IMM and ops[1].imm == 0)
+        if not is_zero:
+            return False
+        nxt = ctx.peek(1)
+        if nxt is None or nxt.mnemonic not in ("je", "jne"):
+            return False
+        target = next((o.imm for o in nxt.operands if o.type == X86_OP_IMM), None)
+        # Same inversion as the ordered compares: gcc negates so the common path
+        # falls through, and HL emits far more JNotNull than JNull, so `je` is
+        # the usual spelling of "not null".
+        ctx.emit(
+            "JNotNull" if nxt.mnemonic == "je" else "JNull",
+            src_addr=ctx.insn.address,
+            target=target,
+        )
+        ctx.consume_through(1)
+        return True
 
 
 @rule("cmp", "test")
@@ -381,12 +775,71 @@ class MovRule(LiftRule):
         # store to memory
         if dst.type == X86_OP_MEM:
             if ctx.is_spill_slot(dst):
+                # An immediate written straight into a vreg's stack slot *is* the
+                # constant-materialising opcode. Unoptimised builds spell every
+                # Int/Null/Bool this way, so consuming it as spill noise drops
+                # them all.
+                if src.type == X86_OP_IMM:
+                    op, extra = _constant_op(src.imm, dst.size)
+                    ctx.emit(op, src_addr=ctx.insn.address, **extra)
+                elif src.type == X86_OP_REG:
+                    # Slot -> slot through a scratch register is a register copy
+                    # in the source: HL's `Mov`. A store of a freshly computed
+                    # value is not, so require the value to have come from
+                    # another slot.
+                    val = ctx.val_of(src.reg)
+                    if val is not None and val[0] == "slot" and val[1] != dst.mem.disp:
+                        ctx.emit("Mov", src_addr=ctx.insn.address)
                 return True
             return _emit_mem_write(ctx, dst)
         # reg-to-reg moves stay silent: compilers emit many times more copies
         # than truth carries explicit Mov opcodes (measured - emitting them
         # desyncs streams).
         return True
+
+
+def _constant_op(value: int, width: int) -> Tuple[str, Dict[str, Any]]:
+    """
+    Which constant-materialising opcode an immediate of this width denotes.
+
+    HL keeps Null, Bool and Int apart, and the store width is what distinguishes
+    them: a pointer-sized zero is `null`, a byte-sized 0/1 is a bool, everything
+    else is an integer literal.
+    """
+    if width == 8 and value == 0:
+        return "Null", {}
+    if width == 1 and value in (0, 1):
+        return "Bool", {"value": bool(value)}
+    return "Int", {"value": value}
+
+
+# Indexed addressing (`[base + index*scale]`) -> the HL opcode it came from,
+# keyed by (is a store, access width).
+#
+# An object field is always reached at a constant offset, so a *variable* index
+# means the access is into an array or a byte buffer instead. Which of the two,
+# and at what element type, is not visible in the machine code - only the access
+# width is - so this is a prior like the branch table: fitted on 40 corpus
+# samples, 81.4% correct on 20 disjoint ones, against ~0% for reading them all
+# as field traffic.
+_INDEXED_MEM_OP = {
+    (False, 2): "GetI16",
+    (False, 4): "GetMem",
+    (False, 8): "GetMem",
+    (True, 2): "SetI16",
+    (True, 4): "SetMem",
+    (True, 8): "SetArray",
+}
+
+
+def _indexed_mem_op(mem, store: bool) -> Optional[str]:
+    """HL opcode for an indexed memory access, or None when not indexed."""
+    try:
+        if not mem.mem.index or _mem_base_is_rip(mem) or not mem.mem.base:
+            return None
+    except Exception:
+        return None
+    return _INDEXED_MEM_OP.get((store, mem.size))
 
 
 def _emit_mem_read(ctx: LiftContext, mem) -> bool:
@@ -412,7 +865,12 @@ def _emit_mem_read(ctx: LiftContext, mem) -> bool:
         # other rodata: keep provenance, no HL mapping yet
         ctx.emit("LeaSym", src_addr=ctx.insn.address, sym=sym)
         return True
-    ctx.emit("LoadField", src_addr=ctx.insn.address, off=mem.mem.disp)
+    indexed = _indexed_mem_op(mem, store=False)
+    if indexed is not None:
+        ctx.emit(indexed, src_addr=ctx.insn.address)
+        return True
+    op = "GetThis" if ctx.mem_base_is_this(mem) else "LoadField"
+    ctx.emit(op, src_addr=ctx.insn.address, off=mem.mem.disp)
     return True
 
 
@@ -438,7 +896,12 @@ def _emit_mem_write(ctx: LiftContext, mem) -> bool:
         ):
             ctx.emit("SetGlobal", src_addr=ctx.insn.address, gidx=sym)
             return True
-    ctx.emit("StoreField", src_addr=ctx.insn.address, off=mem.mem.disp)
+    indexed = _indexed_mem_op(mem, store=True)
+    if indexed is not None:
+        ctx.emit(indexed, src_addr=ctx.insn.address)
+        return True
+    op = "SetThis" if ctx.mem_base_is_this(mem) else "StoreField"
+    ctx.emit(op, src_addr=ctx.insn.address, off=mem.mem.disp)
     return True
 
 
@@ -449,6 +912,35 @@ def _mem_base_is_rip(mem) -> bool:
         return mem.mem.base == X86_REG_RIP
     except Exception:
         return False
+
+
+def _lea_arithmetic(mem) -> Optional[Tuple[str, Dict[str, Any]]]:
+    """
+    Classify a `lea` operand that is really arithmetic, not an address.
+
+    Returns (op name, extra payload), or None when the operand is a genuine
+    address (rip-relative, or a plain base+displacement that names a symbol).
+    """
+    if _mem_base_is_rip(mem):
+        return None
+    m = mem.mem
+    base, index, scale, disp = m.base, m.index, m.scale, m.disp
+    if index:
+        # base + index*scale
+        if scale > 1 and not base:
+            return ("Shl", {"amount": scale.bit_length() - 1})  # a * 2^k
+        if base == index:
+            # `lea [r + r*k]` computes r*(k+1) - a multiply, not an addition.
+            # k==1 doubles, which HL more often spells as a shift.
+            return ("Shl", {"amount": 1}) if scale == 1 else ("Mul", {"by": scale + 1})
+        if base:
+            return ("Add", {})
+        return ("Shl", {"amount": 0}) if scale == 1 else ("Add", {})
+    if base and disp:
+        # `lea r, [b - N]` is a subtraction; capstone reports it as a negative
+        # displacement, and reading it as an Add loses the Sub it came from.
+        return ("Sub", {"imm": -disp}) if disp < 0 else ("Add", {"imm": disp})
+    return None
 
 
 @rule("lea")
@@ -464,6 +956,15 @@ class LeaRule(LiftRule):
             return False
         if mem.mem.base in ctx._spill_bases and not _mem_base_is_rip(mem):
             return True  # &r_i - consumed as noise
+        # `lea` is the compiler's cheap arithmetic unit long before it is an
+        # address-of: GCC lowers `a * 2` to `lea [rax+rax]`, `a * 8` to
+        # `lea [,rax*8]` and `a + b` to `lea [rax+rbx]`. Reading those as symbol
+        # references loses the Shl/Add opcode they came from.
+        fam = _lea_arithmetic(mem)
+        if fam is not None:
+            op, extra = fam
+            ctx.emit(op, src_addr=ctx.insn.address, **extra)
+            return True
         sym = ctx.resolve_mem_sym(mem)
         if sym is not None and _is_type_table_sym(sym):
             ctx.emit("Type", src_addr=ctx.insn.address, sym=sym)
@@ -483,6 +984,30 @@ _ARITH_MAP = {
     "sar": "SShr",
     "shr": "UShr",
 }
+
+
+@rule("add", "sub", "inc", "dec")
+class IncrDecrRule(LiftRule):
+    """
+    A read-modify-write of +/-1 on a variable's own storage is HL's Incr/Decr,
+    not a general Add/Sub - the destination is also the source operand.
+    """
+
+    def apply(self, ctx: LiftContext) -> bool:
+        ops = ctx.ops
+        if ctx.mnemonic in ("inc", "dec"):
+            ctx.emit("Incr" if ctx.mnemonic == "inc" else "Decr", src_addr=ctx.insn.address)
+            return True
+        if len(ops) != 2 or ops[1].type != X86_OP_IMM or ops[1].imm != 1:
+            return False
+        # x86's two-operand form is destructive, so `add r, 1` is an in-place
+        # increment; a non-destructive `+ 1` would have been lowered to `lea`.
+        # The register form is a guess - measured net positive on every
+        # optimised tier, and restricting to memory costs ~0.5pp.
+        if ops[0].type == X86_OP_MEM and not ctx.is_spill_slot(ops[0]):
+            return False
+        ctx.emit("Incr" if ctx.mnemonic == "add" else "Decr", src_addr=ctx.insn.address)
+        return True
 
 
 @rule("add", "sub", "imul", "mul", "and", "or", "shl", "sar", "shr")
@@ -581,11 +1106,38 @@ _SETCC = {
 
 @rule(*_SETCC)
 class SetBoolRule(LiftRule):
-    """`setcc` materialises a comparison result - HL's `Bool` opcode."""
+    """
+    `setcc` materialises a comparison result.
+
+    That is HL's `Bool` only when the result is used as a *value*. When it is
+    immediately re-tested and branched on, gcc has merely split one comparison
+    across three instructions, and the opcode is the branch - emitting a Bool
+    there is a phantom (measured: 64% of setcc sit inside a compare-and-jump).
+    """
 
     def apply(self, ctx: LiftContext) -> bool:
+        if self._feeds_branch(ctx):
+            return True  # consumed; the branch rule emits the real opcode
         ctx.emit("Bool", src_addr=ctx.insn.address, cc=ctx.mnemonic[3:])
         return True
+
+    @staticmethod
+    def _feeds_branch(ctx: LiftContext, window: int = 3) -> bool:
+        ops = ctx.ops
+        if not ops or ops[0].type != X86_OP_REG:
+            return False
+        dst = ctx.canon_reg(ops[0].reg)
+        for k in range(1, window + 1):
+            nxt = ctx.peek(k)
+            if nxt is None:
+                return False
+            if nxt.mnemonic in ("test", "cmp"):
+                if any(o.type == X86_OP_REG and ctx.canon_reg(o.reg) == dst for o in nxt.operands):
+                    after = ctx.peek(k + 1)
+                    return after is not None and after.mnemonic.startswith("j") and after.mnemonic != "jmp"
+            elif nxt.mnemonic.startswith("j"):
+                return False
+        return False
 
 
 @rule("push", "pop", "endbr64", "nop", "cdq", "cqo", "leave", "ud2")
@@ -611,10 +1163,14 @@ class FunctionLifter:
 
     md: Any  # capstone engine, set by architecture subclasses
     RULES: List[LiftRule] = [
+        NullCheckRule(),  # before CompareImm: the guard pair is not a real branch
+        NullCompareRule(),  # pointer-width == 0 is JNull/JNotNull, not JEq
         FloatZeroRule(),  # before Arith/Xor fallbacks
         FloatLoadRule(),
+        FloatStoreRule(),
         CallRule(),
         CondBranchRule(),
+        TailJmpRule(),  # before JmpRule: a jump into the epilogue is a Ret
         JmpRule(),
         RetRule(),
         CompareImmRule(),
@@ -624,6 +1180,7 @@ class FunctionLifter:
         SSEDivRule(),
         DivRule(),
         XorRule(),
+        IncrDecrRule(),  # before Arith: a +/-1 read-modify-write is Incr/Decr
         MovRule(),
         LeaRule(),
         ArithRule(),
@@ -644,6 +1201,7 @@ class FunctionLifter:
         # function table), preferred over symbol-table sizes which can be
         # misleading when alias symbols sit adjacent to the entry point.
         self.size_of = size_of
+        self._module_funcs: Optional[set] = None
         # Mnemonic -> candidate rules; avoids scanning every rule per insn.
         self._buckets: Dict[str, List[LiftRule]] = {}
         for rl in self.rules:
@@ -663,6 +1221,20 @@ class FunctionLifter:
         if bin_view.arch == "aarch64":
             return ARM64FunctionLifter(bin_view, plt_map, size_of=size_of)
         raise NotImplementedError(f"no lifting backend for arch {bin_view.arch!r}")
+
+    @property
+    def module_funcs(self) -> set:
+        """Entry addresses of every module function, from hl_functions_ptrs."""
+        if self._module_funcs is None:
+            out: set = set()
+            ps = self.bin_view.symbol("hl_functions_ptrs")
+            if ps is not None and ps.size:
+                for k in range(ps.size // self.bin_view.PTR):
+                    p = self.bin_view.read_ptr(ps.value + self.bin_view.PTR * k)
+                    if p:
+                        out.add(p)
+            self._module_funcs = out
+        return self._module_funcs
 
     def decode(self, addr: int, max_bytes: int = 65536) -> list:
         """Decode one function body.
@@ -690,16 +1262,159 @@ class FunctionLifter:
         insns = self.decode(addr)
         out: List[LiftedOp] = []
         ctx = self._make_context(addr, insns, out)
-        for i, _insn in enumerate(insns):
+        ctx.seed_args()
+        i = 0
+        while i < len(insns):
             ctx.index = i
             for rl in self._buckets.get(ctx.mnemonic, ()):
                 if rl.apply(ctx):
                     break
-            # no rule matched -> instruction ignored (conservative)
+            # A rule may consume a window by advancing ctx.index; remember it
+            # before resetting for bookkeeping.
+            consumed = ctx.index
+            # Bookkeeping runs *after* the rule: operands describe the state
+            # before the instruction executes, and the destination often aliases
+            # a source (`mov rdi, [rdi+8]` loads a field of `this` into `this`).
+            # Tracking first would kill the value the rule needs to read.
+            ctx.index = i
+            ctx.track()
+            i = max(i + 1, consumed + 1)
         return out
 
     def _make_context(self, addr: int, insns: list, out: List[LiftedOp]) -> LiftContext:
-        return LiftContext(self.bin_view, addr, insns, 0, self.plt_map, out)
+        ctx = LiftContext(self.bin_view, addr, insns, 0, self.plt_map, out)
+        ctx.md = self.md
+        ctx.module_funcs = self.module_funcs
+        return ctx
+
+
+def _x86_parent_names() -> Dict[str, str]:
+    """Sub-register name -> its 64-bit parent name."""
+    out: Dict[str, str] = {}
+    for b in ("ax", "bx", "cx", "dx"):
+        q = "r" + b
+        out.update({q: q, "e" + b: q, b: q, b[0] + "l": q, b[0] + "h": q})
+    for b in ("si", "di", "bp", "sp"):
+        q = "r" + b
+        out.update({q: q, "e" + b: q, b: q, b + "l": q})
+    for n in range(8, 16):
+        q = f"r{n}"
+        out.update({q: q, q + "d": q, q + "w": q, q + "b": q})
+    return out
+
+
+_X86_PARENT_NAMES = _x86_parent_names()
+# SysV argument registers, in order.
+_X86_ARG_NAMES = ("rdi", "rsi", "rdx", "rcx", "r8", "r9")
+# Survive a call under SysV, so a value parked here stays known across one.
+_X86_CALLEE_SAVED = ("rbx", "rbp", "r12", "r13", "r14", "r15")
+
+
+class X86LiftContext(LiftContext):
+    OP_REG = X86_OP_REG
+
+    """x86-64 value tracking: immediates, symbol addresses, argument registers
+    and spill slots, so rules can ask what a register holds instead of guessing
+    from the mnemonic alone."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._canon: Dict[int, int] = {}
+        self._arg_regs: List[int] = []
+        self._callee_saved: set = set()
+
+    def canon_reg(self, reg: int) -> int:
+        """Collapse width aliases: eax, ax and al all canonicalise to rax."""
+        hit = self._canon.get(reg)
+        if hit is not None:
+            return hit
+        name = self.md.reg_name(reg) if self.md is not None else None
+        parent = _X86_PARENT_NAMES.get(name or "", name or "")
+        # Resolve the parent name back to an id via the first reg that maps to
+        # it; ids are stable per engine, so cache aggressively.
+        self._canon[reg] = reg if parent == name else self._name_to_id(parent, reg)
+        return self._canon[reg]
+
+    def _name_to_id(self, parent: str, fallback: int) -> int:
+        from capstone import x86 as _x86
+
+        return getattr(_x86, f"X86_REG_{parent.upper()}", fallback)
+
+    def seed_args(self) -> None:
+        for i, nm in enumerate(_X86_ARG_NAMES):
+            rid = self._name_to_id(nm, 0)
+            if rid:
+                self._arg_regs.append(rid)
+                self.vals[rid] = ("arg", i)
+        if not self._has_frame_pointer():
+            # Without a frame-pointer prologue, rbp is just another callee-saved
+            # register and routinely holds an object pointer. Treating it as a
+            # spill base swallows real field traffic, so only trust rsp.
+            from capstone.x86 import X86_REG_EBP, X86_REG_RBP
+
+            self._spill_bases = self._spill_bases - {X86_REG_RBP, X86_REG_EBP}
+        self._callee_saved = {r for r in (self._name_to_id(n, 0) for n in _X86_CALLEE_SAVED) if r}
+        self._compute_stable_this(self._name_to_id("rdi", 0))
+
+    def _defines_nothing(self, mnemonic: str) -> bool:
+        return mnemonic in ("cmp", "test", "push", "jmp", "ret", "call") or mnemonic.startswith("j")
+
+    def _has_frame_pointer(self) -> bool:
+        """True for the classic `push rbp; mov rbp, rsp` prologue."""
+        from capstone.x86 import X86_REG_RBP, X86_REG_RSP
+
+        for ins in self.insns[:4]:
+            if ins.mnemonic != "mov" or len(ins.operands) != 2:
+                continue
+            dst, src = ins.operands
+            if (
+                dst.type == X86_OP_REG
+                and src.type == X86_OP_REG
+                and dst.reg == X86_REG_RBP
+                and src.reg == X86_REG_RSP
+            ):
+                return True
+        return False
+
+    def track(self) -> None:
+        m, ops = self.mnemonic, self.ops
+        if m == "call":
+            # Only the caller-saved set is clobbered. Keeping the callee-saved
+            # registers matters: GCC parks `this` in one across a call, and
+            # forgetting it there costs every GetThis after the first call.
+            for r in list(self.vals):
+                if r not in self._callee_saved:
+                    del self.vals[r]
+            return
+        if m == "xor" and len(ops) == 2 and ops[0].type == X86_OP_REG and ops[0].reg == ops[1].reg:
+            self.set_val(ops[0].reg, ("imm", 0))
+            return
+        if m in ("mov", "movsxd", "movzx", "movsx", "lea") and len(ops) == 2:
+            dst, src = ops
+            if dst.type == X86_OP_REG:
+                self.set_val(dst.reg, self._src_val(src, lea=(m == "lea")))
+                return
+            if dst.type == X86_OP_MEM and self.is_spill_slot(dst) and src.type == X86_OP_REG:
+                self.slots[dst.mem.disp] = self.val_of(src.reg)  # type: ignore[assignment]
+                return
+        # any other write kills the destination
+        if ops and ops[0].type == X86_OP_REG and m not in ("cmp", "test", "push"):
+            self.set_val(ops[0].reg, None)
+
+    def _src_val(self, src, lea: bool) -> Optional[Tuple[str, Any]]:
+        if src.type == X86_OP_IMM:
+            return ("imm", src.imm)
+        if src.type == X86_OP_REG:
+            return self.val_of(src.reg)
+        if src.type == X86_OP_MEM:
+            if self.is_spill_slot(src) and not _mem_base_is_rip(src):
+                # Remember which slot a value came out of even when its content
+                # is unknown: a slot-to-slot copy is HL's `Mov`.
+                return self.slots.get(src.mem.disp) or ("slot", src.mem.disp)
+            sym = self.resolve_mem_sym(src)
+            if sym and _mem_base_is_rip(src):
+                return ("sym", sym)
+        return None
 
 
 class X86FunctionLifter(FunctionLifter):
@@ -715,6 +1430,12 @@ class X86FunctionLifter(FunctionLifter):
 
         self.md = Cs(CS_ARCH_X86, mode)
         self.md.detail = True
+
+    def _make_context(self, addr: int, insns: list, out: List[LiftedOp]) -> LiftContext:
+        ctx = X86LiftContext(self.bin_view, addr, insns, 0, self.plt_map, out)
+        ctx.md = self.md
+        ctx.module_funcs = self.module_funcs
+        return ctx
 
 
 # ---------------------------------------------------------------------------
@@ -748,9 +1469,58 @@ class ARM64LiftContext(LiftContext):
     """aarch64 services: adrp/add address tracking (mirrors init_analysis's
     proven linear tracker) plus ARM-flavoured operand helpers."""
 
+    CALL_MNEMONICS = ("bl", "blr")
+    TERMINATORS = ("ret",)
+    BRANCH_PREFIXES = ("b.", "cb", "tb")
+    OP_REG = _ARM64_OP_REG
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._spill_bases = {_ARM64_REG_SP}
+        self._arg_regs: List[int] = []
+        self._callee_saved: set = set()
+
+    def _reg(self, name: str) -> int:
+        from capstone import arm64 as _a
+
+        return getattr(_a, f"ARM64_REG_{name.upper()}", 0)
+
+    def canon_reg(self, reg: int) -> int:
+        """Collapse the w/x views of one register (w0 and x0 are the same)."""
+        name = self.md.reg_name(reg) if self.md is not None else None
+        if name and name[:1] == "w" and name[1:].isdigit():
+            return self._reg("x" + name[1:]) or reg
+        return reg
+
+    def seed_args(self) -> None:
+        for i in range(8):  # AAPCS passes the first eight arguments in x0-x7
+            rid = self._reg(f"x{i}")
+            if rid:
+                self._arg_regs.append(rid)
+                self.vals[rid] = ("arg", i)
+        self._callee_saved = {r for r in (self._reg(f"x{n}") for n in range(19, 29)) if r}
+        self._compute_stable_this(self._reg("x0"))
+
+    def _defines_nothing(self, mnemonic: str) -> bool:
+        return mnemonic.startswith(("cmp", "cmn", "tst", "st", "b", "cb", "tb", "ret"))
+
+    def _track_vals(self, m: str, ops) -> None:
+        """Maintain the abstract value map alongside the address tracker."""
+        if m in self.CALL_MNEMONICS:
+            for r in list(self.vals):
+                if r not in self._callee_saved:
+                    del self.vals[r]
+            return
+        if m in ("mov", "orr") and len(ops) == 2 and all(o.type == _ARM64_OP_REG for o in ops):
+            self.set_val(ops[0].reg, self.val_of(ops[1].reg))
+            return
+        if m in ("mov", "movz") and len(ops) == 2 and ops[1].type == _ARM64_OP_IMM:
+            self.set_val(ops[0].reg, ("imm", ops[1].imm))
+            return
+        # Stores name the value first, so they define nothing; compares define
+        # only flags. Everything else kills its destination.
+        if ops and ops[0].type == _ARM64_OP_REG and not m.startswith(("cmp", "cmn", "tst", "st")):
+            self.set_val(ops[0].reg, None)
 
     def call_target_addr(self) -> Optional[int]:
         for op in self.ops:
@@ -773,6 +1543,7 @@ class ARM64LiftContext(LiftContext):
     def track(self) -> None:
         """Update the adrp/add address tracker for the current instruction."""
         m, ops = self.mnemonic, self.ops
+        self._track_vals(m, ops)
         if m == "adrp" and len(ops) == 2 and ops[0].type == _ARM64_OP_REG and ops[1].type == _ARM64_OP_IMM:
             self.reg_addr[ops[0].reg] = ops[1].imm
             return
@@ -836,6 +1607,27 @@ class ArmCondBranchRule(LiftRule):
         cc = ctx.mnemonic[2:]
         kind = "JIfS" if cc in self.SIGNED else "JIfU"
         ctx.emit(kind, src_addr=ctx.insn.address, cc=_ARM64_CC_RENAME.get(cc, cc), target=ctx.branch_target())
+        return True
+
+
+@rule("cbz", "cbnz")
+class ArmNullCheckRule(LiftRule):
+    """
+    aarch64 spelling of the null guard: `cbz x, <cold>` where the cold block
+    calls `hl_null_access`. Same reasoning as the x86 `NullCheckRule` - the
+    landing site is what separates the guard from a real conditional jump.
+    """
+
+    def apply(self, ctx: LiftContext) -> bool:
+        target = ctx.branch_target()
+        if target is None:
+            return False
+        # `cbz` branches when the value *is* null, so that side is the cold one;
+        # `cbnz` skips the guard, leaving the fallthrough cold.
+        cold = target if ctx.mnemonic == "cbz" else ctx.insn.address + ctx.insn.size
+        if not ctx.leads_to_call(cold, _NULL_ACCESS):
+            return False
+        ctx.emit("NullCheck", src_addr=ctx.insn.address)
         return True
 
 
@@ -1007,7 +1799,8 @@ def _arm64_global_or_field_read(ctx: LiftContext, mem_op) -> bool:
             return True
         ctx.emit("LeaSym", src_addr=ctx.insn.address, sym=sym)
         return True
-    ctx.emit("LoadField", src_addr=ctx.insn.address, off=mem_op.mem.disp)
+    op = "GetThis" if ctx.mem_base_is_this(mem_op) else "LoadField"
+    ctx.emit(op, src_addr=ctx.insn.address, off=mem_op.mem.disp)
     return True
 
 
@@ -1025,7 +1818,8 @@ def _arm64_global_or_field_write(ctx: LiftContext, mem_op) -> bool:
     ):
         ctx.emit("SetGlobal", src_addr=ctx.insn.address, gidx=sym)
         return True
-    ctx.emit("StoreField", src_addr=ctx.insn.address, off=mem_op.mem.disp)
+    op = "SetThis" if ctx.mem_base_is_this(mem_op) else "StoreField"
+    ctx.emit(op, src_addr=ctx.insn.address, off=mem_op.mem.disp)
     return True
 
 
@@ -1129,6 +1923,7 @@ class ArmNoiseRule(NoiseRule):
 class ARM64FunctionLifter(FunctionLifter):
     RULES: List[LiftRule] = [
         ArmCallRule(),
+        ArmNullCheckRule(),  # before ArmZeroBranch: a guard is not a real jump
         ArmCondBranchRule(),
         ArmZeroBranchRule(),
         ArmJmpRule(),
@@ -1161,16 +1956,7 @@ class ARM64FunctionLifter(FunctionLifter):
         self.md.detail = True
 
     def _make_context(self, addr: int, insns: list, out: List[LiftedOp]) -> LiftContext:
-        return ARM64LiftContext(self.bin_view, addr, insns, 0, self.plt_map, out)
-
-    def lift(self, addr: int) -> List[LiftedOp]:
-        insns = self.decode(addr)
-        out: List[LiftedOp] = []
-        ctx = self._make_context(addr, insns, out)
-        for i, _insn in enumerate(insns):
-            ctx.index = i
-            ctx.track()
-            for rl in self._buckets.get(ctx.mnemonic, ()):
-                if rl.apply(ctx):
-                    break
-        return out
+        ctx = ARM64LiftContext(self.bin_view, addr, insns, 0, self.plt_map, out)
+        ctx.md = self.md
+        ctx.module_funcs = self.module_funcs
+        return ctx

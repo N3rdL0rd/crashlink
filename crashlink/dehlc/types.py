@@ -456,7 +456,6 @@ def _find_leftover_anchors(
                     continue
                 if not bin_view.is_static_data(s):
                     continue
-                _sec = str(getattr(s, "section", ""))
                 name = str(s.name)
                 if not name or name.startswith(("fun$", "__", "_")):
                     continue
@@ -489,7 +488,7 @@ def _find_leftover_anchors(
                         if r is not None and (best_rank is None or r < best_rank):
                             best, best_rank = ref, r
                         nxt.append(ref)
-                if best is not None:
+                if best is not None or not nxt:
                     break
                 frontier = nxt
             if best is not None:

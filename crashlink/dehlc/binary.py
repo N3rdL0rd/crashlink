@@ -148,7 +148,12 @@ class HLCBinary:
                 continue
             seen.add((name, symbol.value))
             self.symbols_by_name.setdefault(name, symbol)  # ty: ignore[no-matching-overload]
-            self.symbols_by_addr.setdefault(symbol.value, []).append(symbol)  # ty: ignore[invalid-argument-type]
+            # Undefined/imported symbols carry st_value 0. Address 0 is never a
+            # real location, so indexing them makes symbol_at(0) answer with an
+            # arbitrary import - which silently turns every `mov reg, 0` into a
+            # symbol reference instead of the constant it is.
+            if symbol.value:
+                self.symbols_by_addr.setdefault(symbol.value, []).append(symbol)  # ty: ignore[invalid-argument-type]
 
         # Architecture detection - drives capstone engine choice and code analysis.
         machine = getattr(getattr(self.binary, "header", None), "machine_type", None)

@@ -33,7 +33,8 @@ from ..core import (
 from .binary import HLCBinary, _resolve_plt_targets
 from .lift import LiftedOp
 
-# cc -> conditional opcode family (signed/unsigned branches map directly).
+# cc -> conditional opcode, reading the machine condition literally. Used as the
+# fallback when the idiom table below has nothing for a condition.
 _CC_TO_OP = {
     "l": "JSLt",
     "ge": "JSGte",
@@ -46,6 +47,49 @@ _CC_TO_OP = {
     "s": "JSLt",
     "ns": "JSGte",  # sign-flag branches approximate
 }
+
+# (cc, compare-was-against-an-immediate) -> the HL opcode that most often
+# produced it.
+#
+# Reading the machine condition literally is wrong far more often than it is
+# right, because the spelling is not recoverable from the branch alone: hl2c
+# emits `if (cond) goto L;` and gcc is free to negate the condition so the
+# common path falls through, and to rewrite `a >= K` as `a > K-1`. Measured on
+# the corpus, one mnemonic covers several HL opcodes - `je` alone backs JNotEq,
+# JNotNull, JNull and JAlways - so no mapping can be exact.
+#
+# This table is therefore a prior over compiler idiom, not a derivation. It was
+# fitted on 40 corpus samples and validated on 20 disjoint ones, where it picks
+# the right opcode for 61.7% of conditional branches against 22.4% for the
+# literal reading. Entries need >=20 training instances, and only genuine
+# conditional opcodes are allowed - mapping a conditional branch onto JAlways
+# would score well on some rows and silently corrupt the CFG.
+_CC_IMM_TO_OP = {
+    ("ae", False): "JUGte",
+    ("b", False): "JSLt",
+    ("be", True): "JSLt",
+    ("e", False): "JNotEq",
+    ("e", True): "JNotEq",
+    ("g", False): "JSLt",
+    ("g", True): "JSGte",
+    ("ge", False): "JSGte",
+    ("l", False): "JSGte",
+    ("le", False): "JSGte",
+    ("le", True): "JSLt",
+    ("ne", False): "JNotEq",
+    ("ne", True): "JTrue",
+    ("ns", False): "JSGte",
+    ("s", False): "JSGte",
+}
+
+
+def cc_to_opcode(cc: str, imm: bool) -> str:
+    """HL conditional opcode for a machine condition code (see _CC_IMM_TO_OP)."""
+    hit = _CC_IMM_TO_OP.get((cc, bool(imm)))
+    if hit is not None:
+        return hit
+    return _CC_TO_OP.get(cc, "JNotEq")
+
 
 _ARITH_OPS = {
     "Add": "Add",
@@ -99,6 +143,7 @@ class EmitContext:
                 self.native_findex[nm] = nat.findex.value
         # Recovered global symbol names -> gindex (see globals.py).
         self.global_index: Dict[str, int] = dict(getattr(code, "hlc_global_index", None) or {})
+        self._function_by_findex = {f.findex.value: f for f in (code.functions or []) if f.findex is not None}
         # findex -> position in code.natives, for arity lookups of native calls.
         self._native_pos_by_findex: Dict[int, int] = {
             nat.findex.value: k for k, nat in enumerate(code.natives or []) if nat.findex is not None
@@ -135,9 +180,10 @@ class EmitContext:
                 return int(nargs.value) if nargs is not None else 0
             except (IndexError, AttributeError):
                 return 0
-        try:
-            f = self.code.functions[fidx]
-        except IndexError:
+        # `code.functions` is a list in file order - a function's position in it
+        # is not its findex, so it has to be looked up by index.
+        f = self._function_by_findex.get(fidx)
+        if f is None:
             return 0
         d = self.code.types[f.type.value].definition
         nargs = getattr(d, "nargs", None)
@@ -224,6 +270,12 @@ def emit_function(ctx: EmitContext, ops: List[LiftedOp], max_regs: int = 512) ->
             out.append(Opcode("New", {"dst": Reg(r)}))
             last_obj = r
             last_type_fields = None
+        elif nm == "CallMethod":
+            # Dynamic dispatch: the callee is not statically known, so arity
+            # cannot come from a signature. Emit the dispatch itself.
+            r = new_reg()
+            out.append(Opcode("CallMethod", {"dst": Reg(r), "field": fieldRef(0), "args": Regs()}))
+            last_value = r
         elif nm in ("Call", "CallVirtual"):
             tgt = a.get("target_addr")
             fidx = ctx.addr2findex.get(tgt) if tgt is not None else None
@@ -261,8 +313,16 @@ def emit_function(ctx: EmitContext, ops: List[LiftedOp], max_regs: int = 512) ->
             fi = last_type_fields.get(a.get("off", 0), 0) if last_type_fields else 0
             out.append(Opcode("Field", {"dst": Reg(r), "obj": Reg(last_obj), "field": fieldRef(fi)}))
             last_value = r
+        elif nm == "GetThis":
+            r = new_reg()
+            fi = last_type_fields.get(a.get("off", 0), 0) if last_type_fields else 0
+            out.append(Opcode("GetThis", {"dst": Reg(r), "field": fieldRef(fi)}))
+            last_value = r
+        elif nm == "SetThis":
+            fi = last_type_fields.get(a.get("off", 0), 0) if last_type_fields else 0
+            out.append(Opcode("SetThis", {"field": fieldRef(fi), "src": Reg(last_value or new_reg())}))
         elif nm in ("JIfS", "JIfU"):
-            op_name = _CC_TO_OP.get(a.get("cc", "ne"), "JNotEq")
+            op_name = cc_to_opcode(a.get("cc", "ne"), a.get("imm", False))
             b = last_value or new_reg()
             fixups.append((len(out), a.get("target", 0)))
             out.append(Opcode(op_name, {"a": Reg(b), "b": Reg(new_reg()), "offset": VarInt(0)}))
@@ -282,6 +342,20 @@ def emit_function(ctx: EmitContext, ops: List[LiftedOp], max_regs: int = 512) ->
         elif nm == "Null":
             r = new_reg()
             out.append(Opcode("Null", {"dst": Reg(r)}))
+            last_value = r
+        elif nm == "InstanceClosure":
+            r = new_reg()
+            out.append(Opcode("InstanceClosure", {"dst": Reg(r), "fun": fIndex(0), "obj": Reg(last_obj)}))
+            last_value = r
+        elif nm in ("SafeCast", "ToVirtual"):
+            r = new_reg()
+            out.append(Opcode(nm, {"dst": Reg(r), "src": Reg(last_value or new_reg())}))
+            last_value = r
+        elif nm == "CallClosure":
+            r = new_reg()
+            out.append(
+                Opcode("CallClosure", {"dst": Reg(r), "fun": Reg(last_value or new_reg()), "args": Regs()})
+            )
             last_value = r
         elif nm in _ARITH_OPS:
             r = new_reg()
