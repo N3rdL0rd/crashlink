@@ -3,17 +3,17 @@ slug: /crashtest
 title: The crashtest Regression Suite
 ---
 
-crashtest is crashlink's regression suite for the decompiler. Rather than asserting against hand-written expected output, it checks a stronger property: that decompiling a piece of bytecode and recompiling the result gets you something semantically equivalent to what you started with.
+crashtest recompiles decompiled Haxe and executes both bytecode images on the real HashLink runtime. It checks the observable behavior of deterministic corpus paths, not equivalence of every possible execution.
 
 ## What it measures
 
-For each test case, crashtest decompiles the original HashLink bytecode to Haxe, then hands that generated Haxe to the real `haxe` compiler and recompiles it back to bytecode. It then compares the two bytecode files method by method, scoring opcode-level similarity between the original and the recompiled version (see `_fmt_operand` and the comparison logic in `crashtest/run.py`). A method that decompiled and recompiled cleanly should produce nearly identical opcodes; drift shows where the decompiler folded, reordered, or misrepresented control flow.
+Each case is decompiled and recompiled with `haxe`. Both `.hl` files run twice in fresh working directories, with closed stdin and bounded execution time/output. A passing case requires successful, repeatable, matching stdout, stderr and exit status. Fixtures expose return values, mutations and caught exceptions through output. Missing tools, compilation errors, uncaught exceptions, timeouts and nondeterminism fail the case rather than producing a success without evidence.
 
-The pass/fail line is `SIMILARITY_THRESHOLD = 0.90` in `crashtest/models.py`. Any case whose overall opcode similarity comes in under 90% is marked a failure (`Run.avg_similarity()` in the same file aggregates this across all cases in a run). The result types (`Run`, `TestCase`, `OpcodeComparison`, `MethodComparison`) also carry the original source, decompiled source, IR, and per-method disassembly, so a failing case can be inspected down to the actual opcode diff rather than just a pass/fail bit.
+Opcode-name similarity remains a diagnostic: changing constants or operands can leave that score at 100%. It no longer controls pass/fail. Reports retain original/recompiled execution observations alongside source, IR and disassembly. Only the current module's Haxe `trace` line prefixes are normalized; other output differences are preserved.
 
 ## Running it
 
-From the repo root:
+Install `haxe` and the HashLink runtime (`hl` on PATH, or an absolute executable path in `HL_RUNTIME`). This does not require the deprecated `pyhl` bridge. From the repo root:
 
 ```sh
 crashtest auto
@@ -21,7 +21,22 @@ crashtest auto
 python -m crashtest auto
 ```
 
-This must be run from the repo root, not from inside `crashtest/`, since it locates test fixtures relative to it. `just test` runs crashtest as part of the full test suite alongside pytest.
+`python -m crashtest run Arithmetic --no-decompiled` runs a single case; an explicit `.hx` path with a sibling `.hl` artifact is also accepted. The CLI exits nonzero when a case fails. `just test` runs pytest; use the commands above to run the full crashtest corpus.
+
+## Reproducible quality corpus
+
+`tests/quality/` contains a small self-contained behavioral corpus and a native recovery fixture. Build them with:
+
+```sh
+python tests/quality/build.py --out /tmp/crashlink-quality --native \
+  --hl-source /path/to/hashlink --hl-library-dir /path/to/libhl-directory
+HL_RUNTIME=/path/to/hl CRASHLINK_QUALITY_DIR=/tmp/crashlink-quality \
+  CRASHLINK_REQUIRE_QUALITY=1 pytest -q tests/test_crashtest_behavior.py tests/test_dehlc_native_corpus.py
+```
+
+Native coverage uses unstripped x86-64 Linux ELF at `-O0` and `-O2`. Tests compare the original native executable with bytecode execution and check recovered signatures, operation families and machine addresses. They do not claim faithful executable reconstruction, or coverage of stripped images, PE or aarch64. CI builds this corpus and requires it; no gitignored helpers are needed. The larger optional local lifting-accuracy corpus remains useful for broader measurement.
+
+These executions use temporary working directories, not a security sandbox. Run only trusted fixtures.
 
 ## Reading the results
 

@@ -39,7 +39,6 @@ jobs:
         key: haxe-samples-${{ hashFiles('tests/haxe/*.hx') }}
 
     - name: Set up Haxe
-      if: steps.cache-hl.outputs.cache-hit != 'true'
       uses: krdlab/setup-haxe@v1
       with:
         haxe-version: 4.3.4
@@ -47,7 +46,7 @@ jobs:
     - name: Build test samples
       if: steps.cache-hl.outputs.cache-hit != 'true'
       run: |
-        bash -c 'cd tests/haxe && for f in *.hx; do haxe -hl "${f%.*}.hl" -main "$f"; done'
+        bash -c 'set -e; cd tests/haxe; for f in *.hx; do haxe -hl "${f%.*}.hl" -main "${f%.*}"; done'
 
     - name: Check formatting with ruff
       run: |
@@ -64,3 +63,37 @@ jobs:
     - name: Check with ty
       run: |
         uv run ty check
+
+  behavioral-native:
+    runs-on: ubuntu-latest
+    env:
+      CRASHLINK_REQUIRE_QUALITY: "1"
+      CRASHLINK_QUALITY_DIR: ${{ runner.temp }}/crashlink-quality
+      HL_SOURCE: ${{ runner.temp }}/hashlink
+      HL_LIBRARY_DIR: ${{ runner.temp }}/hashlink/build/bin
+      HL_RUNTIME: ${{ runner.temp }}/hashlink/build/bin/hl
+      LD_LIBRARY_PATH: ${{ runner.temp }}/hashlink/build/bin
+    steps:
+    - uses: actions/checkout@v4
+    - uses: astral-sh/setup-uv@v5
+      with:
+        python-version: "3.13"
+    - uses: krdlab/setup-haxe@v1
+      with:
+        haxe-version: 4.3.4
+    - name: Install Python and native toolchains
+      run: |
+        uv sync --extra ci --extra dev
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake
+    - name: Build real HashLink runtime
+      run: |
+        git clone --depth 1 --branch 1.15 https://github.com/HaxeFoundation/hashlink.git "$HL_SOURCE"
+        cmake -S "$HL_SOURCE" -B "$HL_SOURCE/build" -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DWITH_FMT=OFF -DWITH_OPENAL=OFF -DWITH_SDL=OFF -DWITH_SQLITE=OFF -DWITH_SSL=OFF -DWITH_UI=OFF -DWITH_UV=OFF -DWITH_VIDEO=OFF -DWITH_HEAPS=OFF
+        cmake --build "$HL_SOURCE/build" --target hl libhl --parallel 2
+    - name: Build shipped bytecode and native corpus
+      run: uv run python tests/quality/build.py --out "$CRASHLINK_QUALITY_DIR" --native
+    - name: Require behavioral and native regression coverage
+      run: uv run pytest -q tests/test_crashtest_behavior.py tests/test_dehlc_native_corpus.py
+    - name: Exercise crashtest CLI behavioral verdict
+      run: uv run python -m crashtest run "$CRASHLINK_QUALITY_DIR/QualityConstants.hx" --no-decompiled --no-diff

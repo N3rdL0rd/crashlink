@@ -7,7 +7,8 @@ import os
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
 
-SIMILARITY_THRESHOLD = 0.90
+from .behavior import BehavioralComparison
+
 TIME_LIMIT_SECONDS = 120.0
 MEMORY_LIMIT_MB = 4096.0
 
@@ -102,6 +103,7 @@ class TestCase:
     layers: Optional[Dict[str, Any]] = None
     elapsed_seconds: float = 0.0
     peak_memory_mb: float = 0.0
+    behavioral_comparison: Optional[BehavioralComparison] = None
 
     def to_json(self) -> dict:
         return {
@@ -113,6 +115,9 @@ class TestCase:
             "failed": self.failed,
             "error": self.error,
             "opcode_comparison": self.opcode_comparison.to_json() if self.opcode_comparison else None,
+            "behavioral_comparison": self.behavioral_comparison.to_json()
+            if self.behavioral_comparison
+            else None,
             "layers": self.layers,
             "elapsed_seconds": self.elapsed_seconds,
             "peak_memory_mb": self.peak_memory_mb,
@@ -121,6 +126,7 @@ class TestCase:
     @classmethod
     def from_json(cls, data: dict) -> "TestCase":
         oc_data = data.get("opcode_comparison")
+        bc_data = data.get("behavioral_comparison")
         return cls(
             original=TestFile.from_json(data["original"]),
             decompiled=TestFile.from_json(data["decompiled"]),
@@ -130,6 +136,7 @@ class TestCase:
             failed=data["failed"],
             error=data["error"] if data.get("error") else None,
             opcode_comparison=OpcodeComparison.from_json(oc_data) if oc_data else None,
+            behavioral_comparison=BehavioralComparison.from_json(bc_data) if bc_data else None,
             layers=data.get("layers"),
             elapsed_seconds=data.get("elapsed_seconds", 0.0),
             peak_memory_mb=data.get("peak_memory_mb", 0.0),

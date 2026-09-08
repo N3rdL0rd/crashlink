@@ -40,7 +40,7 @@ def main() -> None:
         "--no-recompile",
         "-n",
         action="store_true",
-        help="Skip recompilation and opcode comparison",
+        help="Hide opcode diagnostics (behavioral execution is always required)",
     )
     run_parser.add_argument("--no-diff", action="store_true", help="Skip opcode diff output")
     run_parser.add_argument("--verbose", "-v", action="store_true", help="Show all available details")
@@ -58,18 +58,20 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "run":
         if args.name:
-            run_single_case(args)
+            success = run_single_case(args)
         else:
-            run()
+            success = run()
+        raise SystemExit(0 if success else 1)
     elif args.command == "sweep":
         sweep(args.bytecode, args.count, args.out)
     elif args.command == "build":
         build()
     elif args.command == "auto":
         print("Running tests...")
-        run()
+        success = run()
         print("Building site...")
         build()
+        raise SystemExit(0 if success else 1)
 
 
 if __name__ == "__main__":

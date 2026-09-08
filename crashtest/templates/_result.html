@@ -671,18 +671,23 @@
          data-sim="{{ sim_pct }}"
          data-failed="{{ '1' if case.failed else '0' }}"
          data-index="{{ loop.index0 }}">
-        <div class="test-header {% if case.failed %}fail{% elif sim_pct >= 0 and sim_pct < 70 %}warn{% else %}pass{% endif %}">
+        <div class="test-header {% if case.failed %}fail{% elif not case.behavioral_comparison %}warn{% else %}pass{% endif %}">
             <h2>
                 <a href="#{{ case.test_id }}"><i class="fa fa-link"></i></a>
                 {{ case.test_name }}
             </h2>
             <div class="header-right">
+                {% if case.behavioral_comparison %}
+                <span class="badge {{ 'badge-green' if case.behavioral_comparison.passed else 'badge-red' }}">HashLink behavior {{ 'passed' if case.behavioral_comparison.passed else 'failed' }}</span>
+                {% else %}
+                <span class="badge badge-gray">Behavior not evaluated (legacy result)</span>
+                {% endif %}
                 {% if oc %}
                     {% if oc.recompile_error and not oc.methods %}
                         <span class="badge badge-gray" title="{{ oc.recompile_error }}">recompile failed</span>
                     {% elif sim_pct >= 0 %}
                         <span class="badge {% if sim_pct >= 90 %}badge-green{% elif sim_pct >= 70 %}badge-yellow{% else %}badge-red{% endif %}">
-                            {{ sim_pct }}% opcode match
+                            {{ sim_pct }}% opcode match (diagnostic)
                         </span>
                     {% endif %}
                 {% endif %}
@@ -705,6 +710,14 @@
         {% if oc and oc.recompile_error %}
         <div class="error-box">Recompile failed:
 {{ oc.recompile_error }}</div>
+        {% endif %}
+
+        {% if case.behavioral_comparison and not case.behavioral_comparison.passed %}
+        <div class="error-box">{{ case.behavioral_comparison.error|e }}
+Original stdout: {{ case.behavioral_comparison.original.stdout|e }}
+Recompiled stdout: {{ case.behavioral_comparison.recompiled.stdout|e }}
+Original stderr: {{ case.behavioral_comparison.original.stderr|e }}
+Recompiled stderr: {{ case.behavioral_comparison.recompiled.stderr|e }}</div>
         {% endif %}
 
         <div class="container" style="--visible-columns: 2;">

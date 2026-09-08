@@ -171,7 +171,7 @@ You can use the following pre-defined commands with `just`:
 
 ### `crashtest` CLI
 
-`crashtest` is a built-in testing system that is used to score the decompiler's output against the original source code. It is used to ensure that the decompiler is working correctly, that the output is correct, that the decompiler is not regressing, and to allow those interested in the project to easily see the state of the decompiler without installing it or running the test suite themselves. You can call it with `crashtest auto` (or `python -m crashtest auto`). Make sure you call it from the root of the repository, since it uses relative paths to find the test files and the output directory.
+`crashtest` recompiles decompiled Haxe and runs both bytecode images on the real HashLink runtime. Passing requires repeatable, matching observable output and successful termination; opcode-name similarity is diagnostic only. Install `haxe` and put `hl` on PATH (or set `HL_RUNTIME` to its absolute path), then run `crashtest auto` from the repository root. Missing tools, mismatches and timeouts fail rather than being reported as successful verification. The checked-in `tests/quality/` corpus supplies behavioral and native recovery CI coverage without gitignored helper scripts; see `docs/content/docs/crashtest.md` for build commands and coverage limits.
 
 ## Architecture
 

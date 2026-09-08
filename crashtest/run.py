@@ -7,7 +7,6 @@ import html
 import multiprocessing as mp
 import os
 import re
-import resource
 import subprocess
 import tempfile
 import threading
@@ -15,6 +14,7 @@ import time
 import traceback
 from difflib import SequenceMatcher, unified_diff
 from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
 from markupsafe import escape
 
 from crashlink import decomp, globals
@@ -33,9 +33,10 @@ from crashlink.core import (
 from crashlink.disasm import type_name
 from crashlink.pseudo import pseudo
 
+from .behavior import BehavioralComparison, Execution, compare_programs, compile_haxe
+
 from .models import (
     MEMORY_LIMIT_MB,
-    SIMILARITY_THRESHOLD,
     TIME_LIMIT_SECONDS,
     GitInfo,
     MethodComparison,
@@ -57,7 +58,12 @@ _POLL_INTERVAL_S = 0.05
 def _case_worker(case: str, id: int, queue: "mp.Queue[Tuple[str, Any]]") -> None:
     """Runs in an isolated subprocess so a runaway case can be killed without
     taking down the test runner or the host."""
-    resource.setrlimit(resource.RLIMIT_AS, (_RLIMIT_AS_BYTES, resource.RLIM_INFINITY))
+    try:
+        import resource
+    except ImportError:  # Windows has no POSIX resource module.
+        pass
+    else:
+        resource.setrlimit(resource.RLIMIT_AS, (_RLIMIT_AS_BYTES, resource.RLIM_INFINITY))
     try:
         result = run_case(case, id)
         queue.put(("ok", result.to_json()))
@@ -80,7 +86,7 @@ def run_case_isolated(case: str, id: int) -> TestCase:
     """Runs `run_case` in a subprocess, enforcing TIME_LIMIT_SECONDS and
     MEMORY_LIMIT_MB. Exceeding either is reported as a failed case rather than
     hanging or OOMing the host."""
-    ctx = mp.get_context("fork")
+    ctx = mp.get_context("spawn")
     queue: "mp.Queue[Tuple[str, Any]]" = ctx.Queue()
     proc = ctx.Process(target=_case_worker, args=(case, id, queue))
     start = time.monotonic()
@@ -353,43 +359,36 @@ def compare_opcodes(original_code: Bytecode, recompiled_code: Bytecode, class_na
     return OpcodeComparison(overall_similarity=overall, methods=method_results)
 
 
-def recompile_pseudo(pseudo_content: str, class_name: str) -> Tuple[Optional[Bytecode], Optional[str]]:
-    """Write pseudocode to a temp file, compile with haxe, return loaded Bytecode or error string."""
+def recompile_pseudo(
+    pseudo_content: str, class_name: str, original_path: Path
+) -> Tuple[Optional[Bytecode], Optional[str], BehavioralComparison]:
+    """Compile pseudo and execute both artifacts before the temporary one disappears."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        hx_path = os.path.join(tmpdir, f"{class_name}.hx")
-        hl_path = os.path.join(tmpdir, f"{class_name}.hl")
-        with open(hx_path, "w", encoding="utf-8") as f:
-            f.write(pseudo_content)
+        target, error = compile_haxe(pseudo_content, class_name, Path(tmpdir))
+        if error:
+            return None, error, BehavioralComparison(False, Execution(), Execution(), error)
         try:
-            result = subprocess.run(
-                ["haxe", "-hl", hl_path, "-cp", tmpdir, "-main", class_name],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-        except subprocess.TimeoutExpired:
-            return None, "Haxe compiler timed out"
-        except FileNotFoundError:
-            return None, "haxe compiler not found on PATH"
-        if result.returncode != 0:
-            stderr = result.stderr.strip()
-            return None, f"Compilation failed:\n{stderr[:500]}"
-        try:
-            code = Bytecode.from_path(hl_path)
-        except Exception as e:
-            return None, f"Failed to load recompiled bytecode: {e}"
-        return code, None
+            code = Bytecode.from_path(str(target))
+        except Exception as exc:
+            error = f"Failed to load recompiled bytecode: {exc}"
+            return None, error, BehavioralComparison(False, Execution(), Execution(), error)
+        return code, None, compare_programs(original_path, target, class_name)
 
 
 def run_case(case: str, id: int) -> TestCase:
     """
     Runs a single test case by decompiling the main class in the file.
     It generates both class-level pseudocode and a combined IR view of all methods,
-    then recompiles the pseudocode and compares opcodes with the original.
+    then recompiles and executes both versions. Opcode similarity is diagnostic only.
     """
+    case_path = Path(case)
+    if not case_path.is_file():
+        case_path = Path(__file__).parent.parent / "tests" / "haxe" / case
+    case_path = case_path.resolve()
+    class_name = case_path.stem
     try:
         original_content = open(
-            os.path.join(os.path.dirname(__file__), "..", "tests", "haxe", case),
+            case_path,
             "r",
         ).read()
     except Exception as e:
@@ -412,17 +411,7 @@ def run_case(case: str, id: int) -> TestCase:
     layers: Optional[Dict[str, Any]] = None
 
     try:
-        original_code = Bytecode.from_path(
-            os.path.join(
-                os.path.dirname(__file__),
-                "..",
-                "tests",
-                "haxe",
-                case.replace(".hx", ".hl"),
-            )
-        )
-
-        class_name = case.replace(".hx", "")
+        original_code = Bytecode.from_path(str(case_path.with_suffix(".hl")))
         test_obj = original_code.get_test_obj(class_name)
 
         ir_class = decomp.IRClass(original_code, test_obj, capture_layers=True)
@@ -470,9 +459,11 @@ def run_case(case: str, id: int) -> TestCase:
         error_message = escape(f"An error occurred during decompilation: {str(e)}\n{tb_last}")
 
     opcode_comparison: Optional[OpcodeComparison] = None
+    behavioral_comparison: Optional[BehavioralComparison] = None
     if raw_pseudo_content and original_code is not None:
-        class_name = case.replace(".hx", "")
-        recompiled, recompile_error = recompile_pseudo(raw_pseudo_content, class_name)
+        recompiled, recompile_error, behavioral_comparison = recompile_pseudo(
+            raw_pseudo_content, class_name, case_path.with_suffix(".hl")
+        )
         if recompiled is not None:
             opcode_comparison = compare_opcodes(original_code, recompiled, class_name)
         else:
@@ -481,9 +472,7 @@ def run_case(case: str, id: int) -> TestCase:
                 recompile_error=recompile_error,
             )
 
-    similarity_failed = (
-        opcode_comparison is not None and 0.0 <= opcode_comparison.overall_similarity < SIMILARITY_THRESHOLD
-    )
+    behavior_failed = behavioral_comparison is None or not behavioral_comparison.passed
     recompile_failed = opcode_comparison is not None and opcode_comparison.recompile_error is not None
 
     return TestCase(
@@ -496,17 +485,20 @@ def run_case(case: str, id: int) -> TestCase:
             content=escape(pseudo_content),
         ),
         ir=TestFile(name=f"{case.replace('.hx', '')} (IR)", content=escape(ir_content)),
-        failed=bool(error_message) or similarity_failed or recompile_failed,
+        failed=bool(error_message) or behavior_failed or recompile_failed,
         test_name=file_to_name(case),
         test_id=id,
         error=error_message,
         opcode_comparison=opcode_comparison,
+        behavioral_comparison=behavioral_comparison,
         layers=layers,
     )
 
 
 def _find_case_file(name: str) -> Optional[str]:
     """Resolve a user-provided test case name to a .hx filename."""
+    if Path(name).is_file() and Path(name).suffix == ".hx":
+        return str(Path(name).resolve())
     hx_dir = os.path.join(os.path.dirname(__file__), "..", "tests", "haxe")
     target = name.lower()
     if not target.endswith(".hx"):
@@ -522,12 +514,12 @@ def _find_case_file(name: str) -> Optional[str]:
     return None
 
 
-def run_single_case(args: Any) -> None:
+def run_single_case(args: Any) -> bool:
     """Run a single test case by name and print results to the terminal."""
     case_file = _find_case_file(args.name)
     if case_file is None:
         print(f"No test case matching '{args.name}' found.")
-        return
+        return False
 
     result = run_case_isolated(case_file, 0)
 
@@ -540,10 +532,18 @@ def run_single_case(args: Any) -> None:
     print(f"== {result.test_name} ({result.original.name}) ==")
     if result.error:
         print(f"Error: {html.unescape(result.error)}")
-        return
+        return False
 
     print(f"Failed: {result.failed}")
     print(f"Time: {result.elapsed_seconds:.2f}s  Peak memory: {result.peak_memory_mb:.0f}MB")
+    behavior = result.behavioral_comparison
+    print(f"Behavior (HashLink): {'PASS' if behavior and behavior.passed else 'FAIL'}")
+    if behavior and behavior.error:
+        print(f"  {behavior.error}")
+        print(f"  original stdout: {behavior.original.stdout!r}")
+        print(f"  recompiled stdout: {behavior.recompiled.stdout!r}")
+        print(f"  original stderr: {behavior.original.stderr!r}")
+        print(f"  recompiled stderr: {behavior.recompiled.stderr!r}")
 
     if args.show_orig:
         print("\n--- Original ---")
@@ -561,8 +561,8 @@ def run_single_case(args: Any) -> None:
         oc = result.opcode_comparison
         if oc is None:
             print("\nNo opcode comparison available.")
-            return
-        print(f"\nOpcode similarity: {oc.overall_similarity:.4f}")
+            return not result.failed
+        print(f"\nOpcode similarity (diagnostic only): {oc.overall_similarity:.4f}")
         if oc.recompile_error:
             print(f"Recompile error: {oc.recompile_error}")
         for m in oc.methods:
@@ -583,6 +583,7 @@ def run_single_case(args: Any) -> None:
                 print("    diff:")
                 for line in diff:
                     print(f"      {line}")
+    return not result.failed
 
 
 def gen_id() -> str:
@@ -627,7 +628,7 @@ def gen_status(results: List[TestCase]) -> Tuple[str, str]:
             return f"Critical failures ({failure_rate:.1f}%)", "#DC2626"
 
 
-def run() -> None:
+def run() -> bool:
     """
     Run all tests.
     """
@@ -637,19 +638,12 @@ def run() -> None:
         print(
             "Cannot run tests from a release build (eg. installed fro PyPI). Please clone the repo and run from there."
         )
-        return  # TODO: add support for autodownloading and building test samples
+        return False
 
     print("Finding test cases...")
     files = os.listdir(os.path.join(os.path.dirname(__file__), "..", "tests", "haxe"))
-    cases = [f for f in files if f.endswith(".hx")]
-    skip_cases = {"LongString.hx"}
-    for case in cases:
-        if case.replace(".hx", ".hl") not in files:
-            print(f"Warning: no compiled bytecode found for {case}. Skipping.")
-            cases.remove(case)
-        elif case in skip_cases:
-            print(f"Skipping excluded sample {case}.")
-            cases.remove(case)
+    cases = sorted(f for f in files if f.endswith(".hx") and f != "LongString.hx")
+    # Missing compiled fixtures must fail, not silently disappear from the verdict.
 
     print("Running tests...")
     results = []
@@ -673,6 +667,8 @@ def run() -> None:
     )
     os.makedirs(os.path.join(os.path.dirname(__file__), "runs"), exist_ok=True)
     save_run(r, os.path.join(os.path.dirname(__file__), "runs", f"{gen_id()}.json"))
+    print(status)
+    return bool(results) and all(not case.failed for case in results)
 
 
 def sweep(bytecode_path: str, count: int, out_path: str) -> None:
