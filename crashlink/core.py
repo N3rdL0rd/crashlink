@@ -3709,25 +3709,40 @@ class AnalysisWorker:
     """
     Thread-pool backed worker for off-thread bytecode analysis.
 
-    One instance per loaded file. All public methods are thread-safe.
+    Cache entries are scoped by document identity. All public methods are thread-safe.
     Callers receive standard :class:`concurrent.futures.Future` objects and can
     integrate with any event loop or signal system.
     """
 
     def __init__(self, max_workers: int = 2) -> None:
         self._pool = ThreadPoolExecutor(max_workers=max_workers)
-        self._cache: Dict[int, Any] = {}  # findex → IRFunction (Any avoids circular import)
+        # Keep the document alive while its identity is used as a key. Futures
+        # represent both pending and completed work, so concurrent callers share it.
+        self._cache: Dict[Tuple[int, int], Tuple[Bytecode, Future[Any]]] = {}
         self._cache_lock = threading.Lock()
 
     def decompile(self, code: "Bytecode", findex: int) -> "Future[Any]":
-        """Return a Future[IRFunction], served from cache if available."""
+        """Return a shared Future[IRFunction] for this document and function."""
+        key = (id(code), findex)
         with self._cache_lock:
-            cached = self._cache.get(findex)
-        if cached is not None:
-            f: Future[Any] = Future()
-            f.set_result(cached)
-            return f
-        return self._pool.submit(self._do_decompile, code, findex)
+            cached = self._cache.get(key)
+            if cached is not None:
+                future = cached[1]
+                if not future.done() or (not future.cancelled() and future.exception() is None):
+                    return future
+            future = self._pool.submit(self._do_decompile, code, findex)
+            self._cache[key] = (code, future)
+        # Register outside the lock: an already-completed Future calls back inline.
+        future.add_done_callback(lambda done: self._discard_failed(key, done))
+        return future
+
+    def _discard_failed(self, key: Tuple[int, int], future: "Future[Any]") -> None:
+        if not future.cancelled() and future.exception() is None:
+            return
+        with self._cache_lock:
+            cached = self._cache.get(key)
+            if cached is not None and cached[1] is future:
+                self._cache.pop(key)
 
     def _do_decompile(self, code: "Bytecode", findex: int) -> Any:
         from .decomp.function import IRFunction  # lazy to avoid circular import
@@ -3735,18 +3750,24 @@ class AnalysisWorker:
         func = code.get_findex_map()[findex]
         if not isinstance(func, Function):
             raise ValueError(f"findex {findex} refers to a Native, not a Function")
-        ir = IRFunction(code, func)
-        with self._cache_lock:
-            self._cache[findex] = ir
-        return ir
+        return IRFunction(code, func)
 
     def invalidate(self, findex: Optional[int] = None) -> None:
-        """Evict decompile cache entries. Omit findex to clear all."""
+        """Evict matching work in every document and cancel it if not yet running.
+
+        Running callers may still receive their old result, but completion cannot
+        repopulate an evicted entry. Omit findex to clear all decompile entries.
+        """
         with self._cache_lock:
             if findex is None:
+                evicted = list(self._cache.values())
                 self._cache.clear()
             else:
-                self._cache.pop(findex, None)
+                keys = [key for key in self._cache if key[1] == findex]
+                evicted = [self._cache.pop(key) for key in keys]
+        # Cancellation can invoke callbacks synchronously; never hold the lock here.
+        for _code, future in evicted:
+            future.cancel()
 
     def build_indices(
         self,

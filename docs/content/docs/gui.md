@@ -55,3 +55,13 @@ A few flat, table-style views are available alongside the Navigator for scanning
 ## Errors and stability
 
 The decompiler is still marked experimental, so the GUI installs a global exception hook that routes uncaught exceptions (a bad CFG render, a failed xref resolution, a broken REPL command) into the Log panel with a full traceback, instead of letting an unhandled exception take the whole window down.
+
+Background loads and decompilation results belong to a specific document generation.
+Switching files cancels pending work and ignores late results from the old document;
+closing waits for owned analysis threads to finish. Cached analysis is scoped by
+document identity, and invalidating it prevents an in-flight result from restoring
+the old cache entry.
+
+If saving an analysis database fails, choosing **Save** in the unsaved-changes
+dialog does not close or replace the document. Its annotations remain dirty so you
+can retry saving or explicitly choose **Discard**.

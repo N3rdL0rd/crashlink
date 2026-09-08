@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from copy import copy, deepcopy
 import os
 import re
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, cast
 
 from PySide6.QtCore import (
     QRect,
@@ -15,6 +16,7 @@ from PySide6.QtCore import (
     QTimer,
     Qt,
     Signal,
+    Slot,
     QObject,
     QSize,
 )
@@ -43,7 +45,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from crashlink.core import AnalysisWorker, Bytecode, Function, Native, VarInt, destaticify
+from crashlink.core import AnalysisWorker, AnnotationStore, Bytecode, Function, Native, VarInt, destaticify
 
 if TYPE_CHECKING:
     from crashlink.dehlc.emit import EmitContext
@@ -97,125 +99,134 @@ def _looks_like_native_image(path: str) -> bool:
 
 
 class _LoadSignals(QObject):
-    progress = Signal(float, str)
-    finished = Signal(object)
-    error = Signal(str)
+    progress = Signal(int, float, str)
+    finished = Signal(int, object)
+    error = Signal(int, str)
 
 
 class _LoadThread(QThread):
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, generation: int) -> None:
         super().__init__()
         self.path = path
+        self.generation = generation
         self.signals = _LoadSignals()
 
     def run(self) -> None:
         try:
 
             def _cb(frac: float, status: str) -> None:
-                self.signals.progress.emit(frac, status)
+                if self.isInterruptionRequested():
+                    raise InterruptedError("Document load cancelled")
+                self.signals.progress.emit(self.generation, frac, status)
 
             code = Bytecode.from_path(self.path, progress_cb=_cb)
-            self.signals.finished.emit(code)
+            self.signals.finished.emit(self.generation, code)
         except Exception as e:
-            self.signals.error.emit(str(e))
+            self.signals.error.emit(self.generation, str(e))
 
 
-class _DehlcLoadThread(QThread):
-    """Loads an HL/C-compiled native image (ELF/PE) via the de-HL/C pipeline off
-    the UI thread. Emits phase-based progress (no fractions — pass durations vary
-    wildly between images)."""
-
-    def __init__(self, path: str) -> None:
-        super().__init__()
-        self.path = path
-        self.signals = _LoadSignals()
+class _DehlcLoadThread(_LoadThread):
+    """Loads a native image off the UI thread, with cancellation between phases."""
 
     def run(self) -> None:
         try:
             from crashlink.dehlc import code_from_bin
 
             def _cb(status: str) -> None:
-                self.signals.progress.emit(-1.0, f"de-HL/C: {status}")
+                if self.isInterruptionRequested():
+                    raise InterruptedError("Document load cancelled")
+                self.signals.progress.emit(self.generation, -1.0, f"de-HL/C: {status}")
 
             code = code_from_bin(path=self.path, verbose=False, progress_cb=_cb)
-            self.signals.finished.emit(code)
+            self.signals.finished.emit(self.generation, code)
         except ImportError:
             self.signals.error.emit(
-                "de-HL/C needs crashlink[extras] (`pip install lief capstone`) to open compiled binaries."
+                self.generation,
+                "de-HL/C needs crashlink[extras] (`pip install lief capstone`) to open compiled binaries.",
             )
         except Exception as e:
-            self.signals.error.emit(str(e))
+            self.signals.error.emit(self.generation, str(e))
 
 
 class _DbLoadSignals(QObject):
-    finished = Signal(object)  # DatabaseLoadResult
-    error = Signal(str)
+    finished = Signal(object, object, object)  # token, DatabaseLoadResult, annotations
+    error = Signal(object, str)
 
 
 class _DbLoadThread(QThread):
-    """Loads and validates a .cldb off the UI thread — hashing the source file to
-    check against SRCI can take a moment for larger bytecode."""
+    """Load against private annotations; only the UI may apply accepted results."""
 
-    def __init__(self, cldb_path: str, code: Bytecode, source_path: str) -> None:
+    def __init__(self, cldb_path: str, code: Bytecode, source_path: str, token: tuple) -> None:
         super().__init__()
         self.cldb_path = cldb_path
-        self.code = code
+        self.code = copy(code)
+        self.code.annotations = deepcopy(code.annotations)
         self.source_path = source_path
+        self.token = token
         self.signals = _DbLoadSignals()
 
     def run(self) -> None:
         try:
+            if self.isInterruptionRequested():
+                return
             result = load_database(self.cldb_path, code=self.code, source_path=self.source_path)
-            self.signals.finished.emit(result)
+            self.signals.finished.emit(self.token, result, self.code.annotations)
         except Exception as e:
-            self.signals.error.emit(str(e))
+            self.signals.error.emit(self.token, str(e))
 
 
 class _DecompSignals(QObject):
-    finished = Signal(str, int, object)  # class_key, findex, IRFunction
-    error = Signal(str, int, str)  # class_key, findex, message
+    finished = Signal(object, str, int, object)  # token, class_key, findex, IRFunction
+    error = Signal(object, str, int, str)
 
 
 class _DecompRunnable(QRunnable):
-    def __init__(self, worker: AnalysisWorker, code: Bytecode, class_key: str, findex: int) -> None:
+    def __init__(
+        self, worker: AnalysisWorker, code: Bytecode, class_key: str, findex: int, token: tuple
+    ) -> None:
         super().__init__()
-        self._worker = worker
-        self._code = code
+        self._future = worker.decompile(code, findex)
         self._class_key = class_key
         self._findex = findex
+        self._token = token
         self.signals = _DecompSignals()
 
     def run(self) -> None:
         try:
-            ir = self._worker.decompile(self._code, self._findex).result()
-            self.signals.finished.emit(self._class_key, self._findex, ir)
+            ir = self._future.result()
+            self.signals.finished.emit(self._token, self._class_key, self._findex, ir)
         except Exception as e:
-            self.signals.error.emit(self._class_key, self._findex, str(e))
+            self.signals.error.emit(self._token, self._class_key, self._findex, str(e))
 
 
 class _IndexBuildSignals(QObject):
-    finished = Signal()
-    error = Signal(str)
+    finished = Signal(int)
+    error = Signal(int, str)
 
 
 class _IndexBuildThread(QThread):
-    """Builds the xref/search/source-map indices off the UI thread — the first
-    access to any of them otherwise blocks the caller for however long the
-    (uncached) build takes, which for the xref index in particular walks
-    every opcode in every function."""
+    """Pre-warm document indices without blocking the UI."""
 
-    def __init__(self, worker: AnalysisWorker, code: Bytecode) -> None:
+    def __init__(self, worker: AnalysisWorker, code: Bytecode, generation: int) -> None:
         super().__init__()
-        self._worker = worker
-        self._code = code
+        self.generation = generation
         self.signals = _IndexBuildSignals()
+        self._future = worker.build_indices(code, self._progress)
+
+    def _progress(self, _frac: float, _status: str) -> None:
+        if self.isInterruptionRequested():
+            raise InterruptedError("Index build cancelled")
 
     def run(self) -> None:
         try:
-            self._worker.build_indices(self._code).result()
-            self.signals.finished.emit()
+            self._future.result()
+            self.signals.finished.emit(self.generation)
         except Exception as e:
-            self.signals.error.emit(str(e))
+            self.signals.error.emit(self.generation, str(e))
+
+    def requestInterruption(self) -> None:
+        self._future.cancel()
+        super().requestInterruption()
 
 
 # ── Main window ───────────────────────────────────────────────────────────────
@@ -363,6 +374,14 @@ class MainWindow(QMainWindow):
 
         self._code: Optional[Bytecode] = None
         self._worker = AnalysisWorker(max_workers=4)
+        self._decomp_pool = QThreadPool(self)
+        self._decomp_pool.setMaxThreadCount(4)
+        self._generation = 0
+        self._closing = False
+        self._threads: Set[QThread] = set()
+        self._db_request = 0
+        self._decomp_request = 0
+        self._decomp_tokens: Dict[Tuple[str, int], tuple] = {}
         # Bytecode loader or de-HL/C image loader; both expose `.signals`.
         self._load_thread: Optional[QThread] = None
         self._theme: Theme = DEFAULT_THEME
@@ -405,8 +424,7 @@ class MainWindow(QMainWindow):
         self._db_cache: Dict[int, Tuple[str, Dict[int, int]]] = {}
         self._db_load_thread: Optional[_DbLoadThread] = None
         self._index_build_thread: Optional[_IndexBuildThread] = None
-        # Number of _DecompRunnables currently in flight, so the busy indicator
-        # only hides once every concurrent decompile in a batch has finished.
+        # Number of current-document decompiles still awaiting their result.
         self._active_decompiles = 0
         # True once a rename/comment has been applied since the last save/load,
         # so closing/opening another file can prompt instead of discarding silently.
@@ -415,6 +433,7 @@ class MainWindow(QMainWindow):
         self._find_dialog: Optional[_FindDialog] = None
         self._undo_stack = QUndoStack(self)
         self._undo_stack.cleanChanged.connect(self._on_undo_clean_changed)
+        self._undo_stack.indexChanged.connect(self._on_edit_index_changed)
 
         self._build_ui()
         self._build_menu()
@@ -474,6 +493,11 @@ class MainWindow(QMainWindow):
     def _on_undo_clean_changed(self, clean: bool) -> None:
         self._dirty = not clean
         self._update_window_title()
+
+    @Slot(int)
+    def _on_edit_index_changed(self, _index: int) -> None:
+        # A database snapshot must never overwrite edits made while it was loading.
+        self._db_request += 1
 
     # ── UI ────────────────────────────────────────────────────────────────────
 
@@ -727,10 +751,17 @@ class MainWindow(QMainWindow):
         if choice == QMessageBox.StandardButton.Cancel:
             return False
         if choice == QMessageBox.StandardButton.Save:
-            self._save_database()
-        return True
+            return self._save_database()
+        return choice == QMessageBox.StandardButton.Discard
 
     def _load_file(self, path: str) -> None:
+        self._generation += 1
+        for old_thread in self._threads:
+            old_thread.requestInterruption()
+        self._active_decompiles = 0
+        self._decomp_tokens.clear()
+        self._busy.stop()
+        self._decomp_pool.clear()
         self._tabs.clear()
         self._open_tabs.clear()
         self._class_findices.clear()
@@ -766,17 +797,39 @@ class MainWindow(QMainWindow):
         self._busy.start("Reading bytecode..." if not self._loaded_via_dehlc else "Reading binary...")
 
         if self._loaded_via_dehlc:
-            thread: QThread = _DehlcLoadThread(path)
+            thread: QThread = _DehlcLoadThread(path, self._generation)
             self._log_panel.info("De-HL/C: Loading binary...")
         else:
-            thread = _LoadThread(path)
+            thread = _LoadThread(path, self._generation)
         self._load_thread = thread
         thread.signals.progress.connect(self._on_load_progress)
         thread.signals.finished.connect(self._on_load_finished)
         thread.signals.error.connect(self._on_load_error)
+        self._start_thread(thread)
+
+    def _start_thread(self, thread: QThread) -> None:
+        self._threads.add(thread)
+        thread.finished.connect(self._release_thread)
         thread.start()
 
-    def _on_load_progress(self, frac: float, status: str) -> None:
+    @Slot()
+    def _release_thread(self) -> None:
+        thread = self.sender()
+        if isinstance(thread, QThread):
+            thread.wait()
+            self._threads.discard(thread)
+            for attr in ("_load_thread", "_db_load_thread", "_index_build_thread"):
+                if getattr(self, attr) is thread:
+                    setattr(self, attr, None)
+            thread.deleteLater()
+
+    def _is_current(self, generation: int) -> bool:
+        return not self._closing and generation == self._generation
+
+    @Slot(int, float, str)
+    def _on_load_progress(self, generation: int, frac: float, status: str) -> None:
+        if not self._is_current(generation):
+            return
         if frac < 0:
             # Indeterminate progress (de-HL/C passes): hide the bar, show phase text.
             self._progress_bar.setVisible(False)
@@ -785,7 +838,10 @@ class MainWindow(QMainWindow):
         self._progress_bar.setValue(int(frac * 100))
         self._status_label.setText(status)
 
-    def _on_load_finished(self, code: Bytecode) -> None:
+    @Slot(int, object)
+    def _on_load_finished(self, generation: int, code: Bytecode) -> None:
+        if not self._is_current(generation):
+            return
         self._code = code
         self._progress_bar.setVisible(False)
         self._busy.stop()
@@ -808,12 +864,26 @@ class MainWindow(QMainWindow):
         # Pre-warm the xref/search/source-map indices in the background so the
         # first 'X' lookup doesn't stall the UI thread building them on demand.
         self._busy.start("Building xref table…")
-        self._index_build_thread = _IndexBuildThread(self._worker, code)
-        self._index_build_thread.signals.finished.connect(self._busy.stop)
-        self._index_build_thread.signals.error.connect(lambda msg: self._busy.stop())
-        self._index_build_thread.start()
+        self._index_build_thread = _IndexBuildThread(self._worker, code, generation)
+        self._index_build_thread.signals.finished.connect(self._on_index_finished)
+        self._index_build_thread.signals.error.connect(self._on_index_error)
+        self._start_thread(self._index_build_thread)
 
-    def _on_load_error(self, msg: str) -> None:
+    @Slot(int)
+    def _on_index_finished(self, generation: int) -> None:
+        if self._is_current(generation) and not self._active_decompiles:
+            self._busy.stop()
+
+    @Slot(int, str)
+    def _on_index_error(self, generation: int, msg: str) -> None:
+        if self._is_current(generation):
+            self._on_index_finished(generation)
+            self._log_panel.error(f"Failed to build indices: {msg}")
+
+    @Slot(int, str)
+    def _on_load_error(self, generation: int, msg: str) -> None:
+        if not self._is_current(generation):
+            return
         self._progress_bar.setVisible(False)
         self._busy.stop()
         self._status_label.setText(f"Error: {msg}")
@@ -827,7 +897,7 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(
             self, "Load analysis database", "", "crashlink database (*.cldb)"
         )
-        if path:
+        if path and self._confirm_discard_changes():
             self._load_database_from(path)
 
     # ── Export ───────────────────────────────────────────────────────────────
@@ -887,18 +957,41 @@ class MainWindow(QMainWindow):
 
     def _load_database_from(self, cldb_path: str) -> None:
         assert self._code is not None and self._source_path is not None
-        self._db_load_thread = _DbLoadThread(cldb_path, self._code, self._source_path)
+        self._db_request += 1
+        token = (self._generation, self._db_request)
+        self._db_load_thread = _DbLoadThread(cldb_path, self._code, self._source_path, token)
         self._db_load_thread.signals.finished.connect(self._on_db_load_finished)
-        self._db_load_thread.signals.error.connect(
-            lambda msg: self._log_panel.error(f"Failed to load database: {msg}")
-        )
-        self._db_load_thread.start()
+        self._db_load_thread.signals.error.connect(self._on_db_load_error)
+        self._start_thread(self._db_load_thread)
 
-    def _on_db_load_finished(self, result: DatabaseLoadResult) -> None:
+    def _accept_db_token(self, token: tuple) -> bool:
+        return self._is_current(token[0]) and token[1] == self._db_request
+
+    @Slot(object, str)
+    def _on_db_load_error(self, token: tuple, msg: str) -> None:
+        if self._accept_db_token(token):
+            self._log_panel.error(f"Failed to load database: {msg}")
+
+    @Slot(object, object, object)
+    def _on_db_load_finished(
+        self, token: tuple, result: DatabaseLoadResult, annotations: AnnotationStore
+    ) -> None:
+        if not self._accept_db_token(token) or self._code is None:
+            return
         for w in result.warnings:
             self._log_panel.warn(w)
         if not result.matched:
             return
+        self._code.annotations = annotations
+        self._worker.invalidate()
+        self._ir_cache.clear()
+        self._opline_cache.clear()
+        self._undo_stack.clear()
+        self._dirty = False
+        self._update_window_title()
+        for class_key, findices in self._class_findices.items():
+            for findex in findices:
+                self._start_decompile(class_key, findex)
 
         self._db_cache = dict(result.cache)
         self._log_panel.success(
@@ -920,10 +1013,10 @@ class MainWindow(QMainWindow):
         if session.current_tab_index is not None and 0 <= session.current_tab_index < self._tabs.count():
             self._tabs.setCurrentIndex(session.current_tab_index)
 
-    def _save_database(self) -> None:
+    def _save_database(self) -> bool:
         if self._code is None or self._source_path is None:
             self._log_panel.warn("Open a bytecode file first.")
-            return
+            return False
 
         open_findices: List[int] = []
         for i in range(self._tabs.count()):
@@ -952,11 +1045,13 @@ class MainWindow(QMainWindow):
             )
         except Exception as e:
             self._log_panel.error(f"Failed to save database: {e}")
-            return
+            return False
         self._undo_stack.setClean()
         self._dirty = False
+        self._db_request += 1
         self._update_window_title()
         self._log_panel.success(f"Saved database to {cldb_path}")
+        return True
 
     # ── Tab management ────────────────────────────────────────────────────────
 
@@ -1258,10 +1353,13 @@ class MainWindow(QMainWindow):
         assert self._code is not None
         self._active_decompiles += 1
         self._busy.start("Decompiling…")
-        r = _DecompRunnable(self._worker, self._code, class_key, findex)
-        r.signals.finished.connect(self._on_decompile_finished)
-        r.signals.error.connect(self._on_decompile_error)
-        QThreadPool.globalInstance().start(r)
+        self._decomp_request += 1
+        token = (self._generation, self._decomp_request)
+        self._decomp_tokens[(class_key, findex)] = token
+        runnable = _DecompRunnable(self._worker, self._code, class_key, findex, token)
+        runnable.signals.finished.connect(self._on_decompile_finished)
+        runnable.signals.error.connect(self._on_decompile_error)
+        self._decomp_pool.start(runnable)
 
     def _decompile_batch_done(self) -> None:
         self._active_decompiles = max(0, self._active_decompiles - 1)
@@ -1317,8 +1415,16 @@ class MainWindow(QMainWindow):
 
     # ── Decompilation callbacks ───────────────────────────────────────────────
 
-    def _on_decompile_finished(self, class_key: str, findex: int, ir: object) -> None:
+    def _accept_decompile(self, token: tuple, class_key: str, findex: int) -> bool:
+        if not self._is_current(token[0]):
+            return False
         self._decompile_batch_done()
+        return self._decomp_tokens.get((class_key, findex)) == token
+
+    @Slot(object, str, int, object)
+    def _on_decompile_finished(self, token: tuple, class_key: str, findex: int, ir: object) -> None:
+        if not self._accept_decompile(token, class_key, findex):
+            return
         if not isinstance(ir, IRFunction):
             return
 
@@ -1352,8 +1458,10 @@ class MainWindow(QMainWindow):
             name = self._class_names.get(class_key, class_key)
             self._status_label.setText(f"{name}, {len(results)} methods")
 
-    def _on_decompile_error(self, class_key: str, findex: int, msg: str) -> None:
-        self._decompile_batch_done()
+    @Slot(object, str, int, str)
+    def _on_decompile_error(self, token: tuple, class_key: str, findex: int, msg: str) -> None:
+        if not self._accept_decompile(token, class_key, findex):
+            return
         if class_key not in self._class_results:
             return
         err_text = f"class ? {{\n    // f@{findex} error: {msg}\n}}"
@@ -1715,7 +1823,18 @@ class MainWindow(QMainWindow):
             return
         self._save_settings()
         set_dbg_callback(None)
-        self._worker.shutdown(wait=False)
+        self._closing = True
+        self._generation += 1
+        self._busy.stop()
+        self._decomp_pool.clear()
+        self._worker.invalidate()
+        for thread in self._threads:
+            thread.requestInterruption()
+        for thread in self._threads:
+            thread.wait()
+        self._decomp_pool.waitForDone()
+        self._worker.shutdown(wait=True)
+        self._threads.clear()
         super().closeEvent(event)
 
 
