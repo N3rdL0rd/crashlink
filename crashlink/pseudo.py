@@ -328,7 +328,7 @@ def _expr_to_haxe_with_precedence(
     need parens since flattening would silently change the value."""
     rendered = _expression_to_haxe(expr, code, ir_function)
     if isinstance(expr, IRArithmetic):
-        child_prec = _HAXE_OP_PRECEDENCE.get(expr.op.value, 10)
+        child_prec = _HAXE_OP_PRECEDENCE.get(expr.op.symbol, 10)
         parent_prec = _HAXE_OP_PRECEDENCE.get(parent_op, 10)
         needs_parens = (
             child_prec < parent_prec
@@ -336,8 +336,8 @@ def _expr_to_haxe_with_precedence(
             or (
                 is_right
                 and parent_op in _HAXE_BITWISE_OPS
-                and expr.op.value in _HAXE_BITWISE_OPS
-                and expr.op.value != parent_op
+                and expr.op.symbol in _HAXE_BITWISE_OPS
+                and expr.op.symbol != parent_op
             )
         )
         if needs_parens:
@@ -515,12 +515,56 @@ def _expression_to_haxe(
         return str(expr.value)
 
     elif isinstance(expr, IRArithmetic):
-        left = _expr_to_haxe_with_precedence(expr.left, code, ir_function, expr.op.value)
-        right = _expr_to_haxe_with_precedence(expr.right, code, ir_function, expr.op.value, is_right=True)
-        if expr.op == IRArithmetic.ArithmeticType.SDIV and _is_int_kind(expr.get_type()):
-            # Haxe `/` is always float division; truncate to match HL's SDiv/UDiv on ints
-            return f"Std.int({left} {expr.op.value} {right})"
-        return f"{left} {expr.op.value} {right}"
+        symbol = expr.op.symbol
+        left = _expr_to_haxe_with_precedence(expr.left, code, ir_function, symbol)
+        right = _expr_to_haxe_with_precedence(expr.right, code, ir_function, symbol, is_right=True)
+        arithmetic = IRArithmetic.ArithmeticType
+        if expr.get_type().kind.value == Type.Kind.I64.value:
+            if expr.op in (arithmetic.SDIV, arithmetic.SMOD):
+                return f"({left} : hl.I64) {symbol} ({right} : hl.I64)"
+            if expr.op in (arithmetic.UDIV, arithmetic.UMOD):
+                # Haxe has no UInt64. For a positive divisor, dividing half
+                # the unsigned dividend gives a signed-safe quotient estimate
+                # that needs at most one correction. A high-bit divisor fits
+                # at most once. Flipping the sign bit gives unsigned ordering.
+                result = "q" if expr.op == arithmetic.UDIV else "r"
+                return (
+                    "(function(a:hl.I64, b:hl.I64):hl.I64 { "
+                    "var q:hl.I64 = 0; var r:hl.I64 = 0; "
+                    "var sign:hl.I64 = (1 : hl.I64) << 63; "
+                    "if (b != (0 : hl.I64)) { "
+                    "if (b < (0 : hl.I64)) { "
+                    "q = (a ^ sign) >= (b ^ sign) ? (1 : hl.I64) : (0 : hl.I64); r = a - q * b; "
+                    "} else { "
+                    "q = ((a >>> 1) / b) << 1; r = a - q * b; "
+                    "if ((r ^ sign) >= (b ^ sign)) { q++; r -= b; } "
+                    "} } "
+                    f"return {result}; }})( {left}, {right} )"
+                )
+        if expr.op == arithmetic.UDIV and _is_int_kind(expr.get_type()):
+            # UInt division is floating-point in Haxe. Std.int() cannot convert
+            # quotients >= 2^31 back to their original I32 bit pattern. Widen
+            # each operand once, zero-extend its low 32 bits, divide as I64,
+            # then explicitly narrow the quotient without a float conversion.
+            left = f"((({left} : hl.I64) << 32) >>> 32)"
+            right = f"((({right} : hl.I64) << 32) >>> 32)"
+            return f"(({left} / {right}) : hl.I64).toInt()"
+        if _is_int_kind(expr.get_type()) and expr.op in (
+            arithmetic.SDIV,
+            arithmetic.SMOD,
+            arithmetic.UMOD,
+        ):
+            # HL stores UInt in I32 registers. Explicit operand types prevent
+            # signedness from being lost (or leaking in from another use).
+            operand_type = "UInt" if expr.op == arithmetic.UMOD else "Int"
+            left = f"({left} : {operand_type})"
+            right = f"({right} : {operand_type})"
+            result = f"{left} {symbol} {right}"
+            if expr.op == arithmetic.SDIV:
+                # Haxe recognizes Std.int(integer / integer) as integer division.
+                return f"Std.int({result})"
+            return result
+        return f"{left} {symbol} {right}"
 
     elif isinstance(expr, IRNeg):
         inner = _expression_to_haxe(expr.expr, code, ir_function)
@@ -562,6 +606,25 @@ def _expression_to_haxe(
             IRBoolExpr.CompareType.GT: IRBoolExpr.CompareType.LT,
             IRBoolExpr.CompareType.GTE: IRBoolExpr.CompareType.LTE,
         }
+        negated_ops = {
+            IRBoolExpr.CompareType.NOT_LT: "<",
+            IRBoolExpr.CompareType.NOT_LTE: "<=",
+            IRBoolExpr.CompareType.NOT_GT: ">",
+            IRBoolExpr.CompareType.NOT_GTE: ">=",
+        }
+        if expr.op in negated_ops:
+            symbol = negated_ops[expr.op]
+            left = _expr_to_haxe_with_precedence(expr.left, code, ir_function, symbol)
+            right = _expr_to_haxe_with_precedence(expr.right, code, ir_function, symbol, is_right=True)
+            return f"!({left} {symbol} {right})"
+        if expr.op in (IRBoolExpr.CompareType.ULT, IRBoolExpr.CompareType.UGTE):
+            symbol = "<" if expr.op == IRBoolExpr.CompareType.ULT else ">="
+            left = _expression_to_haxe(expr.left, code, ir_function)
+            right = _expression_to_haxe(expr.right, code, ir_function)
+            if expr.left is not None and expr.left.get_type().kind.value == Type.Kind.I64.value:
+                sign = "((1 : hl.I64) << 63)"
+                return f"(({left} : hl.I64) ^ {sign}) {symbol} (({right} : hl.I64) ^ {sign})"
+            return f"({left} : UInt) {symbol} ({right} : UInt)"
         if expr.op == IRBoolExpr.CompareType.NULL:
             return f"{_expression_to_haxe(expr.left, code, ir_function)} == null"
         elif expr.op == IRBoolExpr.CompareType.NOT_NULL:
@@ -571,7 +634,7 @@ def _expression_to_haxe(
         elif expr.op == IRBoolExpr.CompareType.ISFALSE:
             return f"!{_expression_to_haxe(expr.left, code, ir_function)}"
         elif expr.op == IRBoolExpr.CompareType.NOT:
-            return f"!{_expression_to_haxe(expr.left, code, ir_function)}"
+            return f"!({_expression_to_haxe(expr.left, code, ir_function)})"
         elif expr.op == IRBoolExpr.CompareType.TRUE:
             return "true"
         elif expr.op == IRBoolExpr.CompareType.FALSE:
@@ -613,6 +676,18 @@ def _expression_to_haxe(
             target_str = _expression_to_haxe(expr.target, code, ir_function)
         target_type = expr.target.get_type()
         type_name = disasm.type_name(code, target_type)
+        # Public Array<T> hides the fields of its concrete HL representation.
+        # Retained reads still need to evaluate that field (including a possible
+        # null fault), not become invalid `array.bytes` source or disappear.
+        backing_type = None
+        if type_name.startswith("hl.types.ArrayBytes_") and expr.field_name in ("bytes", "size"):
+            backing_type = disasm.type_to_haxe(type_name).replace("Array<", "hl.types.ArrayBytes<", 1)
+        elif type_name == "hl.types.ArrayObj" and expr.field_name == "array":
+            backing_type = "hl.types.ArrayObj<Dynamic>"
+        elif type_name == "hl.types.ArrayDyn" and expr.field_name in ("array", "allowReinterpret"):
+            backing_type = "hl.types.ArrayDyn"
+        if backing_type is not None:
+            return f"(@:privateAccess (cast {target_str} : {backing_type}).{expr.field_name})"
         # Static field access on a class type constant: Type.field -> Class.field
         if isinstance(expr.target, IRConst) and isinstance(expr.target.value, Type):
             defn = expr.target.value.definition
@@ -1453,9 +1528,7 @@ def _generate_statements(
                 IRArithmetic.ArithmeticType.SUB: "-=",
                 IRArithmetic.ArithmeticType.MUL: "*=",
                 IRArithmetic.ArithmeticType.SDIV: "/=",
-                IRArithmetic.ArithmeticType.UDIV: "/=",
                 IRArithmetic.ArithmeticType.SMOD: "%=",
-                IRArithmetic.ArithmeticType.UMOD: "%=",
             }
 
             # Detect x++ / x-- patterns: target = target ± 1
@@ -1495,7 +1568,8 @@ def _generate_statements(
                 and _same_local(stmt.expr.left, stmt.target)
                 and stmt.expr.op in _compound_ops
                 and not (
-                    stmt.expr.op == IRArithmetic.ArithmeticType.SDIV and _is_int_kind(stmt.expr.get_type())
+                    stmt.expr.op in (IRArithmetic.ArithmeticType.SDIV, IRArithmetic.ArithmeticType.SMOD)
+                    and _is_int_kind(stmt.expr.get_type())
                 )
             ):
                 rhs_str = _expression_to_haxe(stmt.expr.right, code, ir_function)

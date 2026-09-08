@@ -81,6 +81,41 @@ from ..ir import (
 from ..cfg import CFNode, CFGraph, IsolatedCFGraph, _find_jumps_to_label
 
 
+def _has_observable_effects(expr: Optional[IRExpression]) -> bool:
+    """Whether discarding or speculating evaluation could change behavior.
+
+    Absence of writes is not enough: calls (including natives), allocation,
+    checked casts and memory reads can throw. Unknown node kinds fail closed;
+    a new IR expression must be proven harmless before optimizers discard it.
+    """
+    if expr is None or isinstance(expr, IRLocal):
+        return False
+    if isinstance(expr, IRConst):
+        return expr.const_type == IRConst.ConstType.GLOBAL_OBJ
+    if isinstance(expr, IRArithmetic):
+        if expr.op in (
+            IRArithmetic.ArithmeticType.SDIV,
+            IRArithmetic.ArithmeticType.UDIV,
+            IRArithmetic.ArithmeticType.SMOD,
+            IRArithmetic.ArithmeticType.UMOD,
+        ):
+            return True
+        if expr.get_type().kind.value not in (
+            Type.Kind.U8.value,
+            Type.Kind.U16.value,
+            Type.Kind.I32.value,
+            Type.Kind.I64.value,
+            Type.Kind.F32.value,
+            Type.Kind.F64.value,
+        ):
+            return True
+    elif not isinstance(expr, (IRBoolExpr, IRNeg, IRNot)):
+        return True
+    return any(
+        _has_observable_effects(child) for child in expr.get_children() if isinstance(child, IRExpression)
+    )
+
+
 class IROptimizer(ABC):
     """
     Base class for intermediate representation optimization routines.

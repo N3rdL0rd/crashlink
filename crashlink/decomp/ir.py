@@ -251,15 +251,20 @@ class IRArithmetic(IRExpression):
         SUB = "-"
         MUL = "*"
         SDIV = "/"
-        UDIV = "/"
+        UDIV = "u/"
         SMOD = "%"
-        UMOD = "%"
+        UMOD = "u%"
         SHL = "<<"
         SSHR = ">>"
         USHR = ">>>"
         AND = "&"
         OR = "|"
         XOR = "^"
+
+        @property
+        def symbol(self) -> str:
+            """Surface operator, independent of the opcode's signedness."""
+            return self.value[1:] if self in (self.UDIV, self.UMOD) else self.value
 
     def __init__(
         self,
@@ -443,6 +448,12 @@ class IRBoolExpr(IRExpression):
         LTE = "<="
         GT = ">"
         GTE = ">="
+        ULT = "u<"
+        UGTE = "u>="
+        NOT_LT = "not <"
+        NOT_LTE = "not <="
+        NOT_GT = "not >"
+        NOT_GTE = "not >="
         NULL = "is null"
         NOT_NULL = "is not null"
         ISTRUE = "is true"
@@ -472,6 +483,23 @@ class IRBoolExpr(IRExpression):
         return _get_type_in_code(self.code, "Bool")
 
     def invert(self) -> None:
+        # Ordered comparisons are not complements on floats: NaN makes all
+        # four false. Preserve an explicit negation instead of swapping < / >=.
+        cmp = IRBoolExpr.CompareType
+        negated = {cmp.NOT_LT: cmp.LT, cmp.NOT_LTE: cmp.LTE, cmp.NOT_GT: cmp.GT, cmp.NOT_GTE: cmp.GTE}
+        if self.op in negated:
+            self.op = negated[self.op]
+            return
+        if self.op in (cmp.ULT, cmp.UGTE):
+            self.op = cmp.UGTE if self.op == cmp.ULT else cmp.ULT
+            return
+        if self.op in negated.values() and any(
+            operand is not None
+            and operand.get_type().kind.value in (Type.Kind.F32.value, Type.Kind.F64.value)
+            for operand in (self.left, self.right)
+        ):
+            self.op = next(negative for negative, ordered in negated.items() if ordered == self.op)
+            return
         if self.op == IRBoolExpr.CompareType.NOT:
             raise DecompError("Cannot invert NOT operation")
         elif self.op == IRBoolExpr.CompareType.TRUE:

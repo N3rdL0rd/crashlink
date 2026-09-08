@@ -12,7 +12,6 @@ if TYPE_CHECKING:
 
 from ...core import (
     Opcode,
-    Type,
 )
 from ...globals import DEBUG, dbg_print
 from ..ir import (
@@ -55,6 +54,7 @@ from ..ir import (
 )
 from . import (
     TraversingIROptimizer,
+    _has_observable_effects,
 )
 
 
@@ -96,10 +96,10 @@ class IRPrimitiveJumpLifter(TraversingIROptimizer):
             "JSGte": IRBoolExpr.CompareType.GTE,
             "JSGt": IRBoolExpr.CompareType.GT,
             "JSLte": IRBoolExpr.CompareType.LTE,
-            "JULt": IRBoolExpr.CompareType.LT,
-            "JUGte": IRBoolExpr.CompareType.GTE,
-            "JNotLt": IRBoolExpr.CompareType.GTE,
-            "JNotGte": IRBoolExpr.CompareType.LT,
+            "JULt": IRBoolExpr.CompareType.ULT,
+            "JUGte": IRBoolExpr.CompareType.UGTE,
+            "JNotLt": IRBoolExpr.CompareType.NOT_LT,
+            "JNotGte": IRBoolExpr.CompareType.NOT_GTE,
             "JEq": IRBoolExpr.CompareType.EQ,
             "JNotEq": IRBoolExpr.CompareType.NEQ,
         }
@@ -270,20 +270,7 @@ class IRConditionInliner(TraversingIROptimizer):
         return True
 
     def _is_safe_to_duplicate(self, expr: IRExpression) -> bool:
-        """Return True for side-effect-free expressions that can be duplicated
-        without changing program behavior. Calls and allocations are excluded."""
-        if isinstance(expr, (IRConst, IRLocal)):
-            return True
-        if isinstance(expr, (IRField, IRCast, IRNeg, IRNot, IRTypeKind)):
-            for child in expr.get_children():
-                if isinstance(child, IRExpression) and not self._is_safe_to_duplicate(child):
-                    return False
-            return True
-        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
-            return (expr.left is not None and self._is_safe_to_duplicate(expr.left)) and (
-                expr.right is not None and self._is_safe_to_duplicate(expr.right)
-            )
-        return False
+        return not _has_observable_effects(expr)
 
     def _stmt_contains_local_read(self, stmt: IRStatement, local: IRLocal) -> bool:
         """Like _stmt_contains_local but ignoring assignment targets (redefinitions)."""
@@ -390,6 +377,11 @@ class IRConditionInliner(TraversingIROptimizer):
                     "IRLocal | IRField | IRArrayAccess", current_stmt.target
                 )
                 expr_to_inline: IRExpression = current_stmt.expr
+
+                if not isinstance(assigned_local, IRLocal) or _has_observable_effects(expr_to_inline):
+                    new_statements.append(current_stmt)
+                    i += 1
+                    continue
 
                 if isinstance(assigned_local, IRLocal) and self._is_user_local(assigned_local):
                     new_statements.append(current_stmt)
@@ -1093,38 +1085,7 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         return False
 
     def is_safe_to_inline_aggressively(self, expr: IRExpression) -> bool:
-        """
-        Determines if an expression can be safely copied multiple times
-        without changing the program's semantics.
-        """
-        if isinstance(expr, (IRConst, IRLocal)):
-            return True
-        if isinstance(expr, IRField):
-            return self.is_safe_to_inline_aggressively(expr.target)
-        if isinstance(expr, IRCast):
-            return self.is_safe_to_inline_aggressively(expr.expr)
-        if isinstance(expr, (IRTypeOf, IRTypeKind)):
-            return self.is_safe_to_inline_aggressively(expr.expr)
-        if isinstance(expr, IRArrayAccess):
-            return self.is_safe_to_inline_aggressively(expr.array) and self.is_safe_to_inline_aggressively(
-                expr.index
-            )
-        if isinstance(expr, IRRef):
-            return False
-        if isinstance(expr, IREnumConstruct):
-            # An EnumAlloc produces an empty-args IREnumConstruct that represents
-            # a mutable allocation site (subsequent SetEnumField writes mutate it).
-            # Do not inline it, or each use site would get a distinct value.
-            return bool(expr.args) and all(self.is_safe_to_inline_aggressively(a) for a in expr.args)
-        if isinstance(expr, IREnumIndex):
-            return self.is_safe_to_inline_aggressively(expr.value)
-        if isinstance(expr, IREnumField):
-            return self.is_safe_to_inline_aggressively(expr.value)
-        if isinstance(expr, IRArithmetic):
-            return self.is_safe_to_inline_aggressively(expr.left) and self.is_safe_to_inline_aggressively(
-                expr.right
-            )
-        return False
+        return not _has_observable_effects(expr)
 
     def _count_expr_local(self, expr: IRExpression, local: IRLocal) -> int:
         """Like `_expr_contains_local` but counting every occurrence instead of
@@ -1289,41 +1250,18 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
         return True
 
     def is_safe_to_inline_conservatively(self, expr: IRExpression) -> bool:
-        # Avoid inlining calls in conservative mode: they can have side effects
-        # and removing the assignment eliminates evidence needed by pattern
-        # optimizers (e.g. alloc_bytes for array literals).
-        if isinstance(expr, IRCall):
+        # Unknown expressions, calls, allocations and potentially throwing
+        # reads must not migrate into conditional or repeated evaluation sites.
+        if _has_observable_effects(expr):
             return False
-        if isinstance(expr, IRArrayLiteral):
-            return True
         if isinstance(expr, (IRConst, IRLocal)):
             return True
-        if isinstance(expr, IRCast):
-            return self.is_safe_to_inline_conservatively(expr.expr)
         # Allow flat arithmetic (both operands are leaves) to enable compound assignment detection.
         # Nested arithmetic is excluded to prevent exponential chaining.
         if isinstance(expr, IRArithmetic):
             return isinstance(expr.left, (IRConst, IRLocal)) and isinstance(expr.right, (IRConst, IRLocal))
-        # A read with simple (non-side-effecting) array/index operands is moved, not
-        # duplicated, by inlining into its sole immediately-following use, so it's
-        # still evaluated exactly once: safe even though it can in principle throw.
-        if isinstance(expr, IRArrayAccess):
-            return isinstance(expr.array, (IRConst, IRLocal)) and isinstance(expr.index, (IRConst, IRLocal))
-        # Same reasoning as IRArrayAccess: an `arr.length` read on a simple target
-        # is moved, not duplicated, by this inliner. This matters for recovering
-        # for-loops: `len = arr.length;` immediately followed by `while (idx < len)`
-        # needs to fold into `while (idx < arr.length)` for IRForEachLoopOptimizer's
-        # pattern match to fire. Deliberately narrow to the Array kind (not e.g.
-        # String, whose `.length` IRStringSwitchOptimizer expects to find un-inlined
-        # in its own specific shape) — array length is a plain struct read with no
-        # room for that kind of downstream pattern dependency.
-        if (
-            isinstance(expr, IRField)
-            and expr.field_name == "length"
-            and isinstance(expr.target, (IRConst, IRLocal))
-            and expr.target.get_type().kind.value == Type.Kind.ARRAY.value
-        ):
-            return True
+        if isinstance(expr, (IRNeg, IRNot)):
+            return self.is_safe_to_inline_conservatively(expr.expr)
         return False
 
     def _call_move_ok(self, stmt: IRStatement, temp: IRLocal) -> bool:
@@ -1342,14 +1280,10 @@ class IRTempAssignmentInliner(TraversingIROptimizer):
             if e == temp:
                 count += 1
                 return True
-            if isinstance(e, IRConst):
-                return True
-            if isinstance(e, IRLocal):
-                return True
+            if isinstance(e, (IRConst, IRLocal)):
+                return not _has_observable_effects(e)
             if isinstance(e, IRArithmetic):
-                return walk(e.left) and walk(e.right)
-            if isinstance(e, IRCast):
-                return walk(e.expr)
+                return not _has_observable_effects(e) and walk(e.left) and walk(e.right)
             if isinstance(e, IRNativeArrayNew):
                 return walk(e.size)
             return False

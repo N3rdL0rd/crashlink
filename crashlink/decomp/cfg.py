@@ -50,28 +50,36 @@ class CFJumpThreader(CFOptimizer):
     """
 
     def optimize(self) -> None:
-        # map each node to its predecessors
-        predecessors: Dict[CFNode, List[CFNode]] = {}
-        for node in self.graph.nodes:
-            for branch, _ in node.branches:
-                predecessors.setdefault(branch, []).append(node)
+        # Resolve whole chains before mutating edges. Keep every member of a
+        # jump-only cycle: removing its last node would erase an infinite loop.
+        jumps = {
+            node: node.branches[0][0]
+            for node in self.graph.nodes
+            if len(node.ops) == 1 and node.ops[0].op == "JAlways" and len(node.branches) == 1
+        }
+        resolved: Dict[CFNode, CFNode] = {}
+        for start in jumps:
+            path: List[CFNode] = []
+            positions: Dict[CFNode, int] = {}
+            node = start
+            while node in jumps and node not in resolved and node not in positions:
+                positions[node] = len(path)
+                path.append(node)
+                node = jumps[node]
+            if node in positions:
+                cycle_start = positions[node]
+                for member in path[cycle_start:]:
+                    resolved[member] = member
+                path = path[:cycle_start]
+            target = resolved.get(node, node)
+            for member in reversed(path):
+                resolved[member] = target
 
-        nodes_to_remove = set()
         for node in self.graph.nodes:
-            if len(node.ops) == 1 and node.ops[0].op == "JAlways":
-                if len(node.branches) == 1:
-                    target_node, edge_type = node.branches[0]
-                    # redirect all predecessors to target_node
-                    for pred in predecessors.get(node, []):
-                        pred.branches = [
-                            (target_node if branch == node else branch, etype)
-                            for branch, etype in pred.branches
-                        ]
-                        predecessors.setdefault(target_node, []).append(pred)
-                    nodes_to_remove.add(node)
-
-        # remove nodes from graph
-        self.graph.nodes = [n for n in self.graph.nodes if n not in nodes_to_remove]
+            node.branches = [(resolved.get(dst, dst), kind) for dst, kind in node.branches]
+        if self.graph.entry is not None:
+            self.graph.entry = resolved.get(self.graph.entry, self.graph.entry)
+        self.graph.nodes = [node for node in self.graph.nodes if resolved.get(node, node) is node]
 
 
 class CFDeadCodeEliminator(CFOptimizer):

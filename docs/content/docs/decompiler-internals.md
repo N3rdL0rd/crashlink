@@ -17,6 +17,10 @@ Once the blocks (as `CFNode`s) exist, `build()` wires up `branches` between them
 
 After the graph is built, `build()` runs two `CFOptimizer` passes if `do_optimize` is set: `CFJumpThreader`, which collapses blocks that are nothing but a single unconditional `JAlways` by redirecting their predecessors straight to the target, and `CFDeadCodeEliminator`, a simple reachability sweep from `self.entry` that drops unreachable nodes. Both operate purely on the graph shape, before any IR exists.
 
+Jump threading resolves chains before rewriting edges and retargets the entry
+node. Jump-only cycles, including a one-instruction self-loop, remain in the graph:
+removing them would erase nontermination.
+
 Finally `analyze()` computes the structural facts the lifter depends on: predecessors, dominators and post-dominators (iterative fixed-point algorithms, `_find_dominators`/`_find_post_dominators`), natural loops via back-edge detection (`_find_loops`: an edge `u -> v` is a back edge if `v` dominates `u`, and the loop body is everything that can reach `u` without leaving `v`'s dominance), and immediate post-dominators (`_find_immediate_post_dominators`). The post-dominator info in particular is what later lets the IR lifter figure out where an `if`/`else`'s two branches reconverge.
 
 ### Worked example
@@ -63,6 +67,16 @@ One more thing worth knowing before touching this code: `_lift_block` memoizes o
 
 The opcode-to-IR mapping in `_lift_ops_into_block` (~line 901) is mostly a big `if/elif` matched on `op.op`. A few representative cases: arithmetic ops (`Add`, `Sub`, `Mul`, ...) become `IRAssign(dst, IRArithmetic(lhs, rhs, type))`; constant-loading ops (`Int`, `Float`, `Bool`, `Bytes`, `String`, `Null`) become `IRAssign(dst, IRConst(...))`; `CallMethod`/`CallThis` resolve the callee through `_resolve_method_field` and become `IRAssign(dst, IRCall(METHOD, field_expr, args))`, or fall back to an `IRUnliftedOpcode` wrapper if the field can't be resolved. One subtlety in `_lift_ops_into_block`: it snapshots `source_locals = self.locals.copy()` *before* checking for a debug-name split on this op's destination, and operands read from that snapshot while the destination write reads from `self.locals` after the split. This exists because HashLink frequently reuses a register as both source and destination in the same op (`reg0 = String.__add__(reg0, reg1)`); splitting the destination local first would make the source operand pick up the freshly-split (empty) local instead of the value actually being read.
 
+Numeric operations retain semantic distinctions independently of printed operator
+spelling. Signed and unsigned division/remainder are distinct IR operators, and
+unsigned integer division is rendered through zero-extended `hl.I64` operands to
+avoid Haxe's lossy float-to-Int conversion for high-bit quotients. Negated floating
+comparisons retain their explicit negation so NaN behavior survives inversion.
+I64 operations retain all 64 bits: signed operations use `hl.I64` directly, while
+unsigned division/remainder use a signed-safe quotient estimate and correction.
+Unsigned comparisons flip the sign bit before comparing. Operand evaluations stay
+single and ordered, including when the renderer must emit an immediate function.
+
 ## Stage 3: the optimizer pipeline
 
 Once lifting produces the raw IR tree, `IRFunction.__init__` builds `self.optimizers`, a list of roughly 40 optimizer instances (some pass classes appear more than once with different flags), and runs them in `_optimize()` (~line 544) by iterating the list, calling `o.should_run()` first (a cheap early-exit gate many passes implement to skip themselves when their target opcodes/patterns don't appear at all) and then `o.optimize()`.
@@ -76,6 +90,12 @@ This list, defined inline in `__init__` (~line 251-315), is not sorted alphabeti
 **Copy propagation and temp inlining.** `IRCopyPropOptimizer` runs first, then later `IRTempAssignmentInliner` runs *twice*, once conservative (`aggressive=False`) then once aggressive (`aggressive=True`). The class docstring spells out the difference: conservative mode only inlines `temp = expr` into the *immediately following* statement's use of `temp`; aggressive mode inlines "safe" expressions (constants and similar) into *all* subsequent uses as long as the temp isn't redefined in between. Running conservative first and aggressive second lets the cheap, narrowly-safe fold happen without accidentally being blocked by the aggressive pass's broader substitution reach, then the aggressive pass mops up what's left. The pass never touches a variable that has an explicit debug name from the source; it only targets compiler-generated temporaries.
 
 **Dead code and dead temp elimination.** `IRStringAllocOptimizer`, `IRSequentialTempFolder`, `IRDeadTempEliminator`, `IRDeadCodeEliminator` run after the first inlining round to clean up assignments that inlining just made unreachable or unused.
+
+Discarding a value is not permission to discard its evaluation. Dead-value cleanup
+and general inlining share a conservative effect classifier: unknown/native/indirect
+calls, allocations, checked casts and potentially throwing memory reads are not
+assumed harmless. These expressions may remain as temporaries or standalone
+evaluations instead of being discarded, duplicated, or moved across control flow.
 
 **Array/collection pattern recognizers, deliberately positioned after temp inlining.** `IRArrayPatternOptimizer`, `IRNativeArrayAllocOptimizer`, `IRArrayObjWrapperOptimizer`, `IRNativeMapAllocOptimizer`, `IRBytesAllocOptimizer` run only once the earlier inlining passes have collapsed multi-register lowering sequences into a single expression shape these optimizers can pattern-match. `IRArrayPatternOptimizer`'s own docstring says as much: it recognizes low-level patterns like "fixed-size integer array literal built with alloc_bytes + stores + allocI32" or "`temp = arr.bytes; ...; x = temp[idx << 2]` -> `x = arr[idx]`", and that second pattern only exists as a matchable shape once `temp` has actually been folded away by the inliner.
 

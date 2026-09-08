@@ -68,6 +68,7 @@ from ..ir import (
 from . import (
     IROptimizer,
     TraversingIROptimizer,
+    _has_observable_effects,
     _ir_structurally_equal,
     _structurally_equal,
     _stmt_lists_structurally_equal,
@@ -194,7 +195,8 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
             if (
                 isinstance(stmt, IRAssign)
                 and isinstance(stmt.expr, IRExpression)
-                and isinstance(stmt.target, (IRLocal, IRField, IRArrayAccess))
+                and isinstance(stmt.target, IRLocal)
+                and not _has_observable_effects(stmt.expr)
             ):
                 # The loop wraps around: after this statement, execution continues to
                 # the end of the condition block, then to the body, then back to the
@@ -1036,15 +1038,9 @@ class IRDeadTempEliminator(IROptimizer):
                 and self._is_dead_removable(stmt.target, user_names, user_regs)
             ):
                 dbg_print(f"Removing dead temp assignment '{stmt.target.name}'.")
-                # Preserve user-visible function calls as bare statements (side effects).
-                # Native calls (itos, ftos, alloc_array, etc.) can be dropped entirely
-                # when their result is dead — they have no user-visible side effects beyond
-                # writing through a ref argument that is itself dead.
-                if (
-                    isinstance(stmt.expr, IRCall)
-                    and isinstance(stmt.expr.target, IRConst)
-                    and isinstance(stmt.expr.target.value, Function)
-                ):
+                # Preserve the entire evaluation, including nested calls and
+                # exceptions from reads/casts, even when its result is dead.
+                if _has_observable_effects(stmt.expr):
                     stmt.expr.adopt(stmt)  # opcode was tagged on the assign, not its expr
                     new_stmts.append(stmt.expr)
                 continue
@@ -1153,28 +1149,6 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
                         found.update(_locals_in_expr(child))
             return found
 
-        def _has_side_effects(expr: Optional[IRExpression]) -> bool:
-            if expr is None:
-                return False
-            if isinstance(expr, (IRCall, IRNew)):
-                return True
-            if isinstance(expr, IREnumConstruct):
-                return any(_has_side_effects(arg) for arg in expr.args)
-            if isinstance(expr, (IRArithmetic, IRBoolExpr)):
-                return _has_side_effects(expr.left) or _has_side_effects(expr.right)
-            if isinstance(expr, (IRField, IRCast, IRNeg, IRNot, IRTypeOf, IRTypeKind, IREnumIndex)):
-                target = getattr(expr, "target", getattr(expr, "expr", getattr(expr, "value", None)))
-                return _has_side_effects(target)
-            if isinstance(expr, IRArrayAccess):
-                return _has_side_effects(expr.array) or _has_side_effects(expr.index)
-            if isinstance(expr, IRArrayLiteral):
-                return any(_has_side_effects(e) for e in expr.elements)
-            if isinstance(expr, IREnumField):
-                return _has_side_effects(expr.value)
-            if isinstance(expr, IRRef):
-                return _has_side_effects(expr.target)
-            return False
-
         def _reads_in_stmt(stmt: IRStatement) -> Set[IRLocal]:
             reads: Set[IRLocal] = set()
             if isinstance(stmt, IRAssign):
@@ -1282,7 +1256,7 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
             if (
                 target is not None
                 and isinstance(stmt, IRAssign)
-                and not _has_side_effects(stmt.expr)
+                and not _has_observable_effects(stmt.expr)
                 and _first_use_in_list(block.statements[i + 1 :], target, set()) == "kill"
                 and not self._is_user_local(target, user_names, user_regs)
             ):
@@ -1379,12 +1353,7 @@ class IRSequentialTempFolder(TraversingIROptimizer):
                     self.visit_block(child)
 
     def _is_simple_expr(self, expr: IRExpression) -> bool:
-        if isinstance(expr, (IRCall, IRNew)):
-            return False
-        for child in expr.get_children():
-            if isinstance(child, IRExpression) and not self._is_simple_expr(child):
-                return False
-        return True
+        return not _has_observable_effects(expr)
 
     def _expr_uses_local(self, expr: IRExpression, local: IRLocal) -> bool:
         if expr == local:
@@ -1524,7 +1493,7 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
                     # Preserve dead stores to user-named locals so the source
                     # round-trip stays faithful to the original bytecode.
                     new_stmts.append(stmt)
-                elif self._has_side_effects(stmt.expr):
+                elif _has_observable_effects(stmt.expr):
                     # Keep the side effects as a bare expression statement.
                     stmt.expr.adopt(stmt)  # opcode was tagged on the assign, not its expr
                     new_stmts.append(stmt.expr)
@@ -1715,82 +1684,6 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
                 if isinstance(child, IRExpression):
                     found.update(self._locals_in_expr(child))
         return found
-
-    def _has_side_effects(self, expr: Optional[IRExpression]) -> bool:
-        if expr is None:
-            return False
-        if isinstance(expr, IRNew):
-            return True
-        if isinstance(expr, IRCall):
-            # Keep side effects for calls whose result is discarded.  Pure-ish
-            # stdlib helpers (String.substr, indexOf, etc.) can be dropped safely.
-            return not self._is_pure_call(expr)
-        if isinstance(expr, IREnumConstruct):
-            return any(self._has_side_effects(arg) for arg in expr.args)
-        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
-            return self._has_side_effects(expr.left) or self._has_side_effects(expr.right)
-        if isinstance(expr, (IRField, IRCast, IRNeg, IRNot, IRTypeOf, IRTypeKind, IREnumIndex)):
-            target = getattr(expr, "target", getattr(expr, "expr", getattr(expr, "value", None)))
-            return self._has_side_effects(target)
-        if isinstance(expr, IRArrayAccess):
-            return self._has_side_effects(expr.array) or self._has_side_effects(expr.index)
-        if isinstance(expr, IRArrayLiteral):
-            return any(self._has_side_effects(e) for e in expr.elements)
-        if isinstance(expr, IREnumField):
-            return self._has_side_effects(expr.value)
-        if isinstance(expr, IRRef):
-            return self._has_side_effects(expr.target)
-        return False
-
-    def _is_pure_call(self, call: IRCall) -> bool:
-        """True for calls that are safe to drop when their result is unused."""
-        target = call.target
-        if not isinstance(target, IRConst) or not isinstance(target.value, Function):
-            return False
-        code = self.func.code
-        name = code.full_func_name(target.value) or code.partial_func_name(target.value) or ""
-        # Array read-only inspectors.
-        if any(
-            s in name
-            for s in (
-                "ArrayAccess.getDyn",
-                "ArrayAccess.get_length",
-                "ArrayBase.indexOf",
-            )
-        ):
-            return True
-        # String read-only inspectors / factories whose result is unused.
-        if any(
-            s in name
-            for s in (
-                "String.substr",
-                "String.substring",
-                "String.charAt",
-                "String.charCodeAt",
-                "String.indexOf",
-                "String.lastIndexOf",
-                "String.findChar",
-                "String.toUpperCase",
-                "String.toLowerCase",
-                "String.toString",
-                "String.__alloc__",
-                "$String.__alloc__",
-            )
-        ):
-            return True
-        # Byte/string comparison/search helpers.
-        if any(
-            s in name
-            for s in (
-                "bytes_find",
-                "bytes_compare",
-                "ucs2_length",
-                "ucs2_upper",
-                "ucs2_lower",
-            )
-        ):
-            return True
-        return False
 
 
 class IRConstructorFolder(TraversingIROptimizer):
