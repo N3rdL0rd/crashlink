@@ -24,6 +24,17 @@ assembled and checked, both by disassembling the result to confirm the op
 sequence matches what was intended and by running it through crashlink's own
 decompiler to confirm the control flow reconstructs correctly.
 
+Loading and saving bytecode validates opcode operand schemas, register and pool
+references, function/type references, and branch targets. Truncated tables and
+invalid counts are rejected with `MalformedBytecode`; invalid opcode schemas
+raise `InvalidOpCode`. `Bytecode.is_ok()` also checks these structural invariants;
+it is not a complete verifier of runtime type compatibility.
+
+Integer literals accept signed 32-bit values and raw unsigned 32-bit words.
+The pool retains their raw bit patterns, so `-1` is read back as `0xffffffff`.
+Programmatic opcode operands are serialized in schema order, independently of
+the order in which their dictionary entries were inserted.
+
 ## A minimal program
 
 `examples/hlasm/hello.hlasm`:

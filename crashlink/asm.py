@@ -31,7 +31,6 @@ from .core import (
     Ref,
     ResolvableVarInt,
     SerialisableF64,
-    SerialisableInt,
     Type,
     TypeType,
     VarInt,
@@ -483,9 +482,7 @@ class AsmFile:
 
     def _add_ints(self, code: Bytecode) -> None:
         for n in self.ints:
-            si = SerialisableInt()
-            si.value = n
-            code.ints.append(si)
+            code.add_i32(n)
 
     def _add_floats(self, code: Bytecode) -> None:
         for n in self.floats:

@@ -21,6 +21,7 @@ import threading
 
 _EnumBase = _Enum
 from io import BytesIO
+from itertools import chain
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -45,6 +46,9 @@ from .errors import InvalidOpCode, MalformedBytecode, NoMagic
 from .globals import dbg_print, tell
 from .opcodes import opcodes, simple_calls
 
+_OPCODE_NAMES = tuple(opcodes)
+_OPCODE_IDS = {name: index for index, name in enumerate(_OPCODE_NAMES)}
+
 try:
     import platform
 
@@ -67,6 +71,26 @@ except ImportError:
     USE_TQDM = False
 
 ProgressCallback = Callable[[float, str], None]
+
+
+def _read_exact(f: BinaryIO | BytesIO, size: int) -> bytes:
+    if size < 0:
+        raise MalformedBytecode(f"Negative byte length: {size}")
+    data = f.read(size)
+    if len(data) != size:
+        raise MalformedBytecode(f"Truncated data at {tell(f)}: expected {size} bytes, got {len(data)}")
+    return data
+
+
+def _check_count(f: BinaryIO | BytesIO, count: int, minimum_size: int = 1) -> None:
+    """Reject negative counts and tables larger than the remaining input."""
+    if count < 0:
+        raise MalformedBytecode(f"Negative item count at {tell(f)}: {count}")
+    pos = f.tell()
+    end = f.seek(0, 2)
+    f.seek(pos)
+    if count * minimum_size > end - pos:
+        raise MalformedBytecode(f"Item count {count} exceeds remaining input at {tell(f)}")
 
 
 def destaticify(s: str) -> str:
@@ -160,7 +184,7 @@ class RawData(Serialisable):
         self.length = length
 
     def deserialise(self, f: BinaryIO | BytesIO) -> "RawData":
-        self.value = f.read(self.length)
+        self.value = _read_exact(f, self.length)
         return self
 
     def serialise(self) -> bytes:
@@ -190,12 +214,7 @@ class SerialisableInt(Serialisable):
         self.length = length
         self.byteorder = byteorder
         self.signed = signed
-        bytes_read = f.read(length)
-        if all(b == 0 for b in bytes_read):
-            self.value = 0
-            return self
-        while len(bytes_read) > 1 and bytes_read[-1] == 0:
-            bytes_read = bytes_read[:-1]
+        bytes_read = _read_exact(f, length)
         self.value = int.from_bytes(bytes_read, byteorder, signed=signed)
         return self
 
@@ -214,7 +233,7 @@ class SerialisableF64(Serialisable):
         self.value = 0.0
 
     def deserialise(self, f: BinaryIO | BytesIO) -> "SerialisableF64":
-        self.value = struct.unpack("<d", f.read(8))[0]
+        self.value = struct.unpack("<d", _read_exact(f, 8))[0]
         return self
 
     def serialise(self) -> bytes:
@@ -236,18 +255,16 @@ class VarInt(Serialisable):
         self.value: int = value
 
     def deserialise(self: T, f: BinaryIO | BytesIO) -> T:
-        b = f.read(1)[0]
+        b = _read_exact(f, 1)[0]
         if b < 0x80:
             self.value = b
             return self
         if b < 0xC0:
-            second = f.read(1)[0]
+            second = _read_exact(f, 1)[0]
             val = ((b & 0x1F) << 8) | second
             self.value = (val ^ -((b >> 5) & 1)) + ((b >> 5) & 1)
             return self
-        remaining_bytes = f.read(3)
-        if len(remaining_bytes) < 3:
-            raise ValueError("Incomplete VarInt at end of stream")
+        remaining_bytes = _read_exact(f, 3)
         remaining = int.from_bytes(remaining_bytes, "big")
         val = ((b & 0x1F) << 24) | remaining
         self.value = (val ^ -((b >> 5) & 1)) + ((b >> 5) & 1)
@@ -459,6 +476,7 @@ class VarInts(Serialisable):
 
     def deserialise(self, f: BinaryIO | BytesIO) -> "VarInts":
         self.n.deserialise(f)
+        _check_count(f, self.n.value)
         for _ in range(self.n.value):
             self.value.append(VarInt().deserialise(f))
         return self
@@ -481,6 +499,7 @@ class Regs(Serialisable):
 
     def deserialise(self, f: BinaryIO | BytesIO) -> "Regs":
         self.n.deserialise(f)
+        _check_count(f, self.n.value)
         for _ in range(self.n.value):
             self.value.append(Reg().deserialise(f))
         return self
@@ -506,7 +525,9 @@ class StringsBlock(Serialisable):
     def deserialise(self, f: BinaryIO | BytesIO, nstrings: int) -> "StringsBlock":
         self.length.deserialise(f, length=4)
         size = self.length.value
-        sdata: bytes = f.read(size)
+        _check_count(f, nstrings)
+        _check_count(f, size)
+        sdata = _read_exact(f, size)
         strings: List[str] = []
         lengths: List[VarInt] = []
         curpos = 0
@@ -514,18 +535,21 @@ class StringsBlock(Serialisable):
         for _ in range(nstrings):
             sz = VarInt().deserialise(f)
             # Check if we can read string + null terminator
-            if curpos + sz.value + 1 > size:
-                raise ValueError("Invalid string")
+            if sz.value < 0 or curpos + sz.value + 1 > size:
+                raise MalformedBytecode("Invalid string length")
 
             # Verify null terminator
             if sdata[curpos + sz.value] != 0:
-                raise ValueError("Invalid string")
+                raise MalformedBytecode("Missing string terminator")
 
             str_value = sdata[curpos : curpos + sz.value]
             strings.append(str_value.decode("utf-8", errors="surrogateescape"))
             lengths.append(sz)
 
             curpos += sz.value + 1  # Move past string and null terminator
+
+        if curpos != size:
+            raise MalformedBytecode("Unreferenced data in string block")
 
         self.value = strings
         self.lengths = lengths
@@ -577,13 +601,22 @@ class BytesBlock(Serialisable):
     def deserialise(self, f: BinaryIO | BytesIO, nbytes: int) -> "BytesBlock":
         self.nbytes = nbytes
         self.size.deserialise(f, length=4)
-        raw = f.read(self.size.value)
+        _check_count(f, nbytes)
+        _check_count(f, self.size.value)
+        raw = _read_exact(f, self.size.value)
         positions: List[VarInt] = []
         for _ in range(nbytes):
             pos = VarInt()
             pos.deserialise(f)
             positions.append(pos)
         positions_int = [pos.value for pos in positions]
+        if (positions_int and positions_int[0] != 0) or (not positions_int and raw):
+            raise MalformedBytecode("Unreferenced data in bytes block")
+        previous = 0
+        for position in positions_int:
+            if not previous <= position <= len(raw):
+                raise MalformedBytecode("Invalid bytes block offset")
+            previous = position
         for i in range(len(positions_int)):
             start = positions_int[i]
             end = positions_int[i + 1] if i + 1 < len(positions_int) else len(raw)
@@ -728,6 +761,7 @@ class Fun(TypeDef):
 
     def deserialise(self, f: BinaryIO | BytesIO) -> "Fun":
         self.nargs.deserialise(f)
+        _check_count(f, self.nargs.value)
         for _ in range(self.nargs.value):
             self.args.append(tIndex().deserialise(f))
         self.ret.deserialise(f)
@@ -954,6 +988,9 @@ class Obj(TypeDef):
         self.nfields.deserialise(f)
         self.nprotos.deserialise(f)
         self.nbindings.deserialise(f)
+        _check_count(f, self.nfields.value, 2)
+        _check_count(f, self.nprotos.value, 3)
+        _check_count(f, self.nbindings.value, 2)
         for _ in range(self.nfields.value):
             self.fields.append(Field().deserialise(f))
         for _ in range(self.nprotos.value):
@@ -1086,6 +1123,7 @@ class Virtual(TypeDef):
 
     def deserialise(self, f: BinaryIO | BytesIO) -> "Virtual":
         self.nfields.deserialise(f)
+        _check_count(f, self.nfields.value, 2)
         for _ in range(self.nfields.value):
             self.fields.append(Field().deserialise(f))
         return self
@@ -1156,6 +1194,7 @@ class EnumConstruct(Serialisable):
     def deserialise(self, f: BinaryIO | BytesIO) -> "EnumConstruct":
         self.name.deserialise(f)
         self.nparams.deserialise(f)
+        _check_count(f, self.nparams.value)
         for _ in range(self.nparams.value):
             self.params.append(tIndex().deserialise(f))
         return self
@@ -1193,6 +1232,7 @@ class Enum(TypeDef):
         self.name.deserialise(f)
         self._global.deserialise(f)
         self.nconstructs.deserialise(f)
+        _check_count(f, self.nconstructs.value, 2)
         for _ in range(self.nconstructs.value):
             self.constructs.append(EnumConstruct().deserialise(f))
         return self
@@ -1500,28 +1540,47 @@ class Opcode(Serialisable):
     def deserialise(self, f: BinaryIO | BytesIO) -> "Opcode":
         # dbg_print(f"Deserialising opcode at {tell(f)}... ", end="")
         self.code.deserialise(f)
-        # dbg_print(f"{self.code.value}... ", end="")
-        try:
-            _def = opcodes[list(opcodes.keys())[self.code.value]]
-        except IndexError:
+        if not 0 <= self.code.value < len(opcodes):
             raise InvalidOpCode(f"Unknown opcode at {tell(f)} - {self.code.value}")
+        self.op = _OPCODE_NAMES[self.code.value]
+        _def = opcodes[self.op]
+        self.df.clear()
         for param, _type in _def.items():
             if _type in self.TYPE_MAP:
                 self.df[param] = self.TYPE_MAP[_type]().deserialise(f)
                 continue
             raise InvalidOpCode(f"Invalid opcode definition for {param, _type} at {tell(f)}")
-        self.op = list(opcodes.keys())[self.code.value]
+        self.validate()
         return self
 
+    def validate(self) -> str:
+        """Validate the wire schema and return the opcode name."""
+        if self.op is None or self.op not in opcodes:
+            raise InvalidOpCode(f"Unknown opcode: {self.op}")
+        schema = opcodes[self.op]
+        if self.df.keys() != schema.keys():
+            raise InvalidOpCode(
+                f"Invalid operands for {self.op}: expected {tuple(schema)}, got {tuple(self.df)}"
+            )
+        for name, kind in schema.items():
+            operand = self.df[name]
+            expected = self.TYPE_MAP[kind]
+            if not isinstance(operand, expected):
+                raise InvalidOpCode(f"{self.op}.{name} must be {expected.__name__}")
+            if isinstance(operand, (Regs, VarInts)):
+                element_type = Reg if isinstance(operand, Regs) else VarInt
+                if any(not isinstance(value, element_type) for value in operand.value):
+                    raise InvalidOpCode(f"Invalid list operand: {self.op}.{name}")
+                if isinstance(operand, Regs) and any(value.value < 0 for value in operand.value):
+                    raise InvalidOpCode(f"Negative register in {self.op}.{name}")
+            elif kind not in ("JumpOffset", "InlineInt", "InlineBool") and operand.value < 0:
+                raise InvalidOpCode(f"Negative reference in {self.op}.{name}")
+        return self.op
+
     def serialise(self) -> bytes:
-        if self.op:
-            self.code.value = list(opcodes.keys()).index(self.op)
-        return b"".join(
-            [
-                self.code.serialise(),
-                b"".join([definition.serialise() for name, definition in self.df.items()]),
-            ]
-        )
+        opcode_name = self.validate()
+        self.code.value = _OPCODE_IDS[opcode_name]
+        return self.code.serialise() + b"".join(self.df[name].serialise() for name in opcodes[opcode_name])
 
     def __repr__(self) -> str:
         return f"<Opcode: {self.op} {self.df}>"
@@ -1578,44 +1637,28 @@ class DebugInfo(Serialisable):
         self.value: List[fileRef] = []
 
     def deserialise(self, f: BinaryIO | BytesIO, nops: int) -> "DebugInfo":
-        tmp = []
-        currfile: int = -1
-        currline: int = 0
-        i = 0
-        while i < nops:
-            try:
-                c_byte = f.read(1)
-                if not c_byte:
-                    break
-                c = ctypes.c_uint8(ord(c_byte)).value
-                if c & 1 != 0:
-                    c >>= 1
-                    b2_byte = f.read(1)
-                    if not b2_byte:
-                        break
-                    currfile = (c << 8) | ctypes.c_uint8(ord(b2_byte)).value
-                elif c & 2 != 0:
-                    delta = c >> 6
-                    count = (c >> 2) & 15
-                    for _ in range(count):
-                        tmp.append(fileRef(currfile, currline))
-                        i += 1
-                    currline += delta
-                elif c & 4 != 0:
-                    currline += c >> 3
-                    tmp.append(fileRef(currfile, currline))
-                    i += 1
-                else:
-                    b2_byte, b3_byte = f.read(1), f.read(1)
-                    if not b2_byte or not b3_byte:
-                        break
-                    b2 = ctypes.c_uint8(ord(b2_byte)).value
-                    b3 = ctypes.c_uint8(ord(b3_byte)).value
-                    currline = (c >> 3) | (b2 << 5) | (b3 << 13)
-                    tmp.append(fileRef(currfile, currline))
-                    i += 1
-            except (IOError, IndexError):
-                break
+        tmp: List[fileRef] = []
+        currfile = -1
+        currline = 0
+        if nops < 0:
+            raise MalformedBytecode("Negative debug instruction count")
+        while len(tmp) < nops:
+            c = _read_exact(f, 1)[0]
+            if c & 1:
+                currfile = ((c >> 1) << 8) | _read_exact(f, 1)[0]
+            elif c & 2:
+                count = (c >> 2) & 15
+                if len(tmp) + count > nops:
+                    raise MalformedBytecode("Debug run exceeds instruction count")
+                tmp.extend(fileRef(currfile, currline) for _ in range(count))
+                currline += c >> 6
+            elif c & 4:
+                currline += c >> 3
+                tmp.append(fileRef(currfile, currline))
+            else:
+                rest = _read_exact(f, 2)
+                currline = (c >> 3) | (rest[0] << 5) | (rest[1] << 13)
+                tmp.append(fileRef(currfile, currline))
         self.value = tmp
         return self
 
@@ -1755,6 +1798,8 @@ class Function(Serialisable):
         self.findex.deserialise(f)
         self.nregs.deserialise(f)
         self.nops.deserialise(f)
+        _check_count(f, self.nregs.value)
+        _check_count(f, self.nops.value)
         for _ in range(self.nregs.value):
             self.regs.append(tIndex().deserialise(f))
         for _ in range(self.nops.value):
@@ -1765,6 +1810,7 @@ class Function(Serialisable):
             self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
             if self.version >= 3:
                 self.nassigns = VarInt().deserialise(f)
+                _check_count(f, self.nassigns.value, 2)
                 self.assigns = []
                 for _ in range(self.nassigns.value):
                     self.assigns.append((strRef().deserialise(f), VarInt().deserialise(f)))
@@ -1843,6 +1889,7 @@ class Constant(Serialisable):
     def deserialise(self, f: BinaryIO | BytesIO) -> "Constant":
         self._global.deserialise(f)
         self.nfields.deserialise(f)
+        _check_count(f, self.nfields.value)
         for _ in range(self.nfields.value):
             self.fields.append(VarInt().deserialise(f))
         return self
@@ -2211,7 +2258,8 @@ class Bytecode(Serialisable):
         _progress(0.00, "parsing header")
         self.track_section(f, "magic")
         self.magic.deserialise(f)
-        assert self.magic.value == b"HLB", "Incorrect magic found!"
+        if self.magic.value != b"HLB":
+            raise MalformedBytecode("Incorrect bytecode magic")
         self.track_section(f, "version")
         self.version.deserialise(f, length=1)
         dbg_print(f"with version {self.version.value}... ", end="")
@@ -2252,6 +2300,19 @@ class Bytecode(Serialisable):
         self.track_section(f, "entrypoint")
         self.entrypoint.deserialise(f)
         dbg_print(f"Entrypoint: f@{self.entrypoint.value}")
+        for count, minimum_size in (
+            (self.nints, 4),
+            (self.nfloats, 8),
+            (self.nstrings, 1),
+            (self.nbytes, 1),
+            (self.ntypes, 1),
+            (self.nglobals, 1),
+            (self.nnatives, 4),
+            (self.nfunctions, 4),
+            (self.nconstants, 2),
+        ):
+            if count is not None:
+                _check_count(f, count.value, minimum_size)
 
         _progress(0.02, "parsing ints and floats")
         self.track_section(f, "ints")
@@ -2330,6 +2391,7 @@ class Bytecode(Serialisable):
                 self.track_section(f, f"constant {i}")
                 self.constants.append(Constant().deserialise(f))
         dbg_print(f"Bytecode end at {tell(f)}.")
+        self._validate_structure()
         self.deserialised = True
         if init_globals:
             _progress(0.90, "initializing globals")
@@ -2472,6 +2534,7 @@ class Bytecode(Serialisable):
         if auto_set_meta:
             dbg_print("Setting meta...")
             self.set_meta()
+        self._validate_structure()
         res = b"".join(
             [
                 self.magic.serialise(),
@@ -2566,6 +2629,143 @@ class Bytecode(Serialisable):
                     return t.definition
         raise ValueError("No test class found!")
 
+    def _validate_structure(self) -> None:
+        """Validate references before analysis can dereference them."""
+
+        def index(value: int, size: int, label: str) -> None:
+            if not 0 <= value < size:
+                raise MalformedBytecode(f"Invalid {label}: {value} (size {size})")
+
+        def type_ref(ref: tIndex) -> None:
+            index(ref.value, len(self.types), "type reference")
+
+        def string_ref(ref: strRef) -> None:
+            index(ref.value, len(self.strings.value), "string reference")
+
+        functions: Dict[int, Function | Native] = {}
+        for function in chain(self.functions, self.natives):
+            fi = function.findex.value
+            if fi < 0 or fi in functions:
+                raise MalformedBytecode(f"Invalid or duplicate function index: {fi}")
+            functions[fi] = function
+            type_ref(function.type)
+            if not isinstance(self.types[function.type.value].definition, Fun):
+                raise MalformedBytecode(f"Function f@{fi} does not have a function signature")
+            if isinstance(function, Native):
+                string_ref(function.lib)
+                string_ref(function.name)
+        if functions and self.entrypoint.value not in functions:
+            raise MalformedBytecode(f"Invalid entrypoint: {self.entrypoint.value}")
+
+        for typ in self.types:
+            kind = typ.kind.value
+            index(kind, len(Type.TYPEDEFS), "type kind")
+            definition = typ.definition
+            if not isinstance(definition, Type.TYPEDEFS[kind]):
+                raise MalformedBytecode(f"Type kind {kind} does not match its definition")
+            if isinstance(definition, Fun):
+                type_ref(definition.ret)
+                for arg in definition.args:
+                    type_ref(arg)
+            elif isinstance(definition, (Ref, Null)):
+                type_ref(definition.type)
+            elif isinstance(definition, Packed):
+                type_ref(definition.inner)
+            elif isinstance(definition, (Obj, Virtual)):
+                for field in definition.fields:
+                    string_ref(field.name)
+                    type_ref(field.type)
+                if isinstance(definition, Obj):
+                    string_ref(definition.name)
+                    if not 0 <= definition._global.value <= len(self.global_types):
+                        raise MalformedBytecode("Invalid object global reference")
+                    if definition.super.value != -1:
+                        type_ref(definition.super)
+                        if not isinstance(self.types[definition.super.value].definition, Obj):
+                            raise MalformedBytecode("Object superclass is not an object")
+                    for proto in definition.protos:
+                        string_ref(proto.name)
+                        if proto.findex.value not in functions:
+                            raise MalformedBytecode("Invalid prototype function reference")
+                    for binding in definition.bindings:
+                        if binding.findex.value not in functions:
+                            raise MalformedBytecode("Invalid binding function reference")
+            elif isinstance(definition, Enum):
+                string_ref(definition.name)
+                if not 0 <= definition._global.value <= len(self.global_types):
+                    raise MalformedBytecode("Invalid enum global reference")
+                for construct in definition.constructs:
+                    string_ref(construct.name)
+                    for param in construct.params:
+                        type_ref(param)
+            elif isinstance(definition, Abstract):
+                string_ref(definition.name)
+
+        checked: Set[int] = set()
+        for ti, typ in enumerate(self.types):
+            ancestors: Set[int] = set()
+            while ti not in checked and isinstance(typ.definition, Obj):
+                if ti in ancestors:
+                    raise MalformedBytecode("Cyclic object inheritance")
+                ancestors.add(ti)
+                ti = typ.definition.super.value
+                if ti == -1:
+                    break
+                typ = self.types[ti]
+            checked.update(ancestors)
+
+        for ref in self.global_types:
+            type_ref(ref)
+        for constant in self.constants:
+            index(constant._global.value, len(self.global_types), "constant global reference")
+
+        pool_sizes = {
+            "RefInt": len(self.ints),
+            "RefFloat": len(self.floats),
+            "RefString": len(self.strings.value),
+            "RefType": len(self.types),
+            "RefGlobal": len(self.global_types),
+            "RefBytes": len(self.bytes.value)
+            if self.version.value >= 5 and self.bytes is not None
+            else len(self.strings.value),
+        }
+        for function in self.functions:
+            for ref in function.regs:
+                type_ref(ref)
+            signature = self.types[function.type.value].definition
+            if isinstance(signature, Fun) and len(signature.args) > len(function.regs):
+                raise MalformedBytecode("Function has fewer registers than arguments")
+            for pc, op in enumerate(function.ops):
+                opcode_name = op.validate()
+                for name, kind in opcodes[opcode_name].items():
+                    operand = op.df[name]
+                    if kind == "Reg" and op.op != "EndTrap":
+                        index(
+                            operand.value,
+                            len(function.regs),
+                            f"f@{function.findex.value} register at op {pc}",
+                        )
+                    elif kind == "Regs":
+                        for reg in operand.value:
+                            index(reg.value, len(function.regs), "register argument")
+                    elif kind in pool_sizes:
+                        index(operand.value, pool_sizes[kind], kind)
+                    elif kind == "RefFun" and operand.value not in functions:
+                        raise MalformedBytecode(f"Invalid function reference at op {pc}: {operand.value}")
+                    elif kind in ("JumpOffset", "JumpOffsets"):
+                        offsets = operand.value if kind == "JumpOffsets" else (operand,)
+                        # Switch.end is the boundary after the switch, not an executable target.
+                        limit = len(function.ops) + (op.op == "Switch" and name == "end")
+                        for offset in offsets:
+                            index(pc + 1 + offset.value, limit, f"branch target at op {pc}")
+            if function.has_debug:
+                if function.debuginfo is None or len(function.debuginfo.value) != len(function.ops):
+                    raise MalformedBytecode("Debug information does not match instruction count")
+                for ref in function.debuginfo.value:
+                    if self.debugfiles is None:
+                        raise MalformedBytecode("Missing debug file table")
+                    index(ref.value, len(self.debugfiles.value), "debug file reference")
+
     def is_ok(self) -> bool:
         """
         Runs a set of basic sanity checks to make sure the bytecode is correct-ish.
@@ -2627,6 +2827,11 @@ class Bytecode(Serialisable):
                 fail("debugfiles != ndebugfiles")
                 return False
 
+        try:
+            self._validate_structure()
+        except (MalformedBytecode, InvalidOpCode) as exc:
+            fail(str(exc))
+            return False
         return True
 
     def track_section(self, f: BinaryIO | BytesIO, section_name: str) -> None:
@@ -2656,8 +2861,10 @@ class Bytecode(Serialisable):
         """
         Adds an integer to the bytecode's integer block and returns a reference to it.
         """
+        if not -(1 << 31) <= value < (1 << 32):
+            raise ValueError("Integer pool value must fit an i32 or raw u32 word")
         val = SerialisableInt()
-        val.value = value
+        val.value = value & 0xFFFFFFFF
         self.ints.append(val)
         return intRef(len(self.ints) - 1)
 
