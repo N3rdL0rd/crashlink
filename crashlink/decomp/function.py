@@ -234,6 +234,7 @@ class IRFunction:
         no_lift: bool = False,
         capture_layers: bool = False,
     ) -> None:
+        code.require_executable("construct decompiler IR")
         self.func = func
         self.code = code
         # Declare all instance attributes with types upfront so mypy can track them.

@@ -50,20 +50,29 @@ def code_from_bin(
     or from the bytes in `data` to a new Bytecode instance. When `progress_cb` is
     given it receives a short status line per pipeline pass (used by the GUI loader).
 
-    The returned bytecode carries `.hlc_binary` - the parsed native image it was
-    reconstructed from - so callers can inspect original machine code (`nasm`).
+    The returned inspection-only image carries `.hlc_binary` for original machine
+    code browsing, `.recovery_capabilities`, and `.recovery_diagnostics`. It cannot
+    be serialised or translated back into executable code.
     """
 
     def report(msg: str) -> None:
         if progress_cb is not None:
-            try:
-                progress_cb(msg)
-            except Exception:
-                pass
+            progress_cb(msg)
 
     bin_view = HLCBinary(path=path, data=data)
     ctx = DehlcContext(bin_view, verbose=verbose)
     code = Bytecode.create_empty(no_extra_types=True)
+    code.inspection_only = True
+    code.hlc_binary = bin_view
+    code.recovery_capabilities = frozenset({"metadata", "native_assembly"})
+    if bin_view.arch in ("x86", "x86_64", "aarch64"):
+        code.recovery_capabilities |= {"approximate_lift"}
+    code.recovery_diagnostics = (
+        "Inspection-only native recovery: this pipeline has not recovered original HL registers, value flow or opcode semantics.",
+        "Constants and metadata may be inferred; approximate lifts are not executable or faithfully reserialisable.",
+    )
+    code.recovery_opcodes = {}
+    code.recovery_lifts = {}
 
     # ------------------------------------------------------------------
     # Pass 1: types
@@ -80,6 +89,8 @@ def code_from_bin(
     report("Recovering type order…")
     type_names, order_confident = recover_type_order(bin_view, init_analysis)
     ctx.log(f"  {len(type_names)} types (order {'confirmed' if order_confident else 'hybrid'})")
+    if not order_confident:
+        code.recovery_diagnostics += ("Type-table order is inferred, not confirmed.",)
     for i, name in enumerate(type_names):
         ctx.name_to_tindex[name] = tIndex(i)
         sym = bin_view.symbol(name)
@@ -180,10 +191,12 @@ def code_from_bin(
         code._build_virtual_tables()
     except Exception as e:
         print(f"Warning: could not build virtual tables on the reconstructed image ({e}).")
+        code.recovery_diagnostics += (f"Virtual-table recovery failed: {e}",)
     try:
         code.map_statics()
     except Exception as e:
         print(f"Warning: could not map statics on the reconstructed image ({e}).")
+        code.recovery_diagnostics += (f"Static type pairing failed: {e}",)
     code.invalidate_findex_cache()
     code.invalidate_proto_field_cache()
 
@@ -192,9 +205,5 @@ def code_from_bin(
     # reserialisation produces a misaligned file.
     if code.strings.value is ctx.strs and len(ctx.strs) != code.nstrings.value:
         code.nstrings = VarInt(len(ctx.strs))
-
-    # Keep the native image alongside the reconstruction so assembly views and
-    # address lookups can see the code that actually runs.
-    code.hlc_binary = bin_view
 
     return code

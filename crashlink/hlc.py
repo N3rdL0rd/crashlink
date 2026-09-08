@@ -2349,6 +2349,7 @@ def code_to_c(code: Bytecode, progress_cb: Optional[ProgressCallback] = None) ->
     generation phase, where fraction is in [0, 1]. The two heaviest phases (type and
     function generation) also report fine-grained per-item progress within their slice.
     """
+    code.require_executable("generate C code")
     res = []
 
     def line(*args: Any) -> None:
@@ -2478,6 +2479,7 @@ def code_to_c_files(
     and linked together. With parts <= 1, falls back to a single ``<basename>.c``
     containing the classic single-file output.
     """
+    code.require_executable("generate C code")
     if parts <= 1:
         return {f"{basename}.c": code_to_c(code, progress_cb=progress_cb)}
 

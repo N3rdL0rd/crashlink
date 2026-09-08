@@ -41,6 +41,7 @@ T = TypeVar("T", bound="VarInt")  # easier than reimplementing deserialise for e
 
 if TYPE_CHECKING:
     from .dehlc.binary import HLCBinary
+    from .dehlc.lift import LiftedOp
 
 from .errors import InvalidOpCode, MalformedBytecode, NoMagic
 from .globals import dbg_print, tell
@@ -1979,6 +1980,11 @@ class Bytecode(Serialisable):
         self._global_field_elem_types: Dict[Tuple[str, str], "Type"] = {}
         self._hxsl_shaders_cache: Optional[Any] = None
         self.annotations: AnnotationStore = AnnotationStore()
+        self.inspection_only = False
+        self.recovery_capabilities: frozenset[str] = frozenset()
+        self.recovery_diagnostics: Tuple[str, ...] = ()
+        self.recovery_opcodes: Dict[int, List[Opcode]] = {}
+        self.recovery_lifts: Dict[int, List[LiftedOp]] = {}
 
         self.virtuals_built = False
 
@@ -2525,10 +2531,19 @@ class Bytecode(Serialisable):
             raise TypeError("This should never happen!")
         return res
 
+    def require_executable(self, action: str) -> None:
+        """Reject consumers that require recovered bytecode semantics."""
+        if self.inspection_only:
+            raise ValueError(
+                f"Inspection-only native recovery cannot {action}: register dataflow and operands are not recovered. "
+                "Inspect the original machine code or approximate lift instead."
+            )
+
     def serialise(self, auto_set_meta: bool = True) -> bytes:
         """
         Serialise the bytecode to a `bytes` object.
         """
+        self.require_executable("serialize executable bytecode")
         start_time = datetime.now()
         dbg_print("---- Serialise ----")
         if auto_set_meta:

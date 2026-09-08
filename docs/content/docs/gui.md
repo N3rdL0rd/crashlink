@@ -65,3 +65,14 @@ the old cache entry.
 If saving an analysis database fails, choosing **Save** in the unsaved-changes
 dialog does not close or replace the document. Its annotations remain dirty so you
 can retry saving or explicitly choose **Discard**.
+
+## Native image inspection
+
+HL/C binaries open in inspection-only mode. The **Asm** view shows original
+machine code; **Lift** and the right-hand pane show heuristic opcode families,
+native addresses, and `?` for operands whose values or dataflow were not recovered.
+Raw lift events remain visible even when they have no HL opcode representation.
+
+These views do not populate executable function bodies or consume cached Haxe
+pseudocode. Faithful Haxe/IR/CFG generation and executable bytecode/C export are
+unavailable for native recovery; use the original assembly to inspect behavior.

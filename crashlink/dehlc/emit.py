@@ -1,14 +1,9 @@
 """
-Translation of lifted operation streams into real HL opcodes.
+Inspection-only materialisation of lifted events into HL-shaped instructions.
 
-Second stage of the lift pipeline (`lift` recovers events from machine code;
-this module materialises them as `core.Opcode` objects). V1 semantics:
-
-- fresh register per produced value (no reuse) - sequences align with truth,
-  dataflow does not yet;
-- call arity comes from the callee's recovered signature;
-- branch offsets are fixed up in a second pass using per-opcode address
-  provenance recorded during emission.
+Operand slots follow the wire schema, but placeholder register numbers are not
+recovered dataflow. Provenance and unknown operands are retained separately and
+rendered explicitly; these streams must never be attached as executable bodies.
 """
 
 from __future__ import annotations
@@ -30,6 +25,7 @@ from ..core import (
     gIndex,
     intRef,
 )
+from ..opcodes import opcodes
 from .binary import HLCBinary, _resolve_plt_targets
 from .lift import LiftedOp
 
@@ -111,11 +107,51 @@ _PRIM_NOISE = {"null_access", "invalid_cast"}
 _FIELD_SIZES = {"i32": 4, "u32": 4, "f32": 4, "i16": 2, "u16": 2, "i8": 1, "u8": 1, "bool": 1}
 
 
+class RecoveredOpcode(Opcode):
+    """Schema-valid inspection record, not evidence of executable HL dataflow."""
+
+    __slots__ = ("src_addr", "confidence", "unknown_operands", "source_op", "source_args")
+
+    def __init__(self, opcode: Opcode, source: LiftedOp):
+        super().__init__(opcode.op, opcode.df)
+        self.src_addr = source.src_addr
+        self.confidence = "heuristic"
+        self.source_op = source.op
+        self.source_args = dict(source.args)
+        # The native-to-HL pass does not recover register identities, field
+        # indices, branch semantics or dynamic-call signatures.
+        self.unknown_operands = {
+            name: "HL operand not recovered"
+            for name, value in self.df.items()
+            if isinstance(value, (Reg, Regs, fieldRef)) or name == "offset"
+        }
+        if source.op == "InstanceClosure":
+            self.unknown_operands["fun"] = "closure target not recovered"
+        if source.op == "Bool" or (source.op in ("Int", "Float") and "value" not in source.args):
+            self.unknown_operands["value" if source.op == "Bool" else "ptr"] = "value not recovered"
+
+
+def format_recovered_ops(ops: List[Opcode]) -> str:
+    """Render approximate instructions without displaying invented value flow."""
+    lines = ["Inspection-only approximate lift; ? denotes an unrecovered operand (not executable bytecode)."]
+    for i, op in enumerate(ops):
+        if not isinstance(op, RecoveredOpcode):
+            raise ValueError("Expected recovered instructions with provenance")
+        operands = []
+        for name, value in op.df.items():
+            rendered = "?" if name in op.unknown_operands else repr(value.value)
+            operands.append(f"{name}={rendered}")
+        source = f"{op.source_op} {op.source_args!r}"
+        lines.append(f"{i:>4}. {op.src_addr:#x} [{op.confidence}] {op.op} {', '.join(operands)} ; {source}")
+    return "\n".join(lines)
+
+
 class EmitContext:
     """Shared state for one image's emission pass."""
 
     def __init__(self, code: Bytecode, bin_view: HLCBinary):
         self.code = code
+        code.inspection_only = True
         self.bin_view = bin_view
         self.addr2findex: Dict[int, int] = {}
         ps = bin_view.symbol("hl_functions_ptrs")
@@ -234,22 +270,20 @@ def emit_function(ctx: EmitContext, ops: List[LiftedOp], max_regs: int = 512) ->
         if nargs == 0:
             out.append(Opcode("Call0", {"dst": Reg(dst), "fun": fun}))
         else:
-            names = ["arg0", "arg1", "arg2", "arg3"]
             df: dict = {"dst": Reg(dst), "fun": fun}
-            for k in range(min(nargs, 4)):
-                ar = new_reg()
-                df[names[k]] = Reg(ar)
-                last_value = ar
             if nargs > 4:
                 rg = Regs()
-                rg.value = [Reg(new_reg()) for _ in range(nargs - 4)]
+                rg.value = [Reg(new_reg()) for _ in range(nargs)]
                 df["args"] = rg
                 out.append(Opcode("CallN", df))
             else:
+                for k in range(nargs):
+                    df[f"arg{k}"] = Reg(new_reg())
                 out.append(Opcode(f"Call{nargs}", df))
         last_value = dst
 
     for lo in ops:
+        start = len(out)
         if lo.src_addr:
             addr_index.setdefault(lo.src_addr, len(out))
         nm, a = lo.op, lo.args
@@ -329,7 +363,13 @@ def emit_function(ctx: EmitContext, ops: List[LiftedOp], max_regs: int = 512) ->
             op_name = cc_to_opcode(a.get("cc", "ne"), a.get("imm", False))
             b = last_value or new_reg()
             fixups.append((len(out), a.get("target", 0)))
-            out.append(Opcode(op_name, {"a": Reg(b), "b": Reg(new_reg()), "offset": VarInt(0)}))
+            operands: Dict[str, VarInt] = {
+                name: Reg(b if i == 0 else new_reg())
+                for i, (name, kind) in enumerate(opcodes[op_name].items())
+                if kind == "Reg"
+            }
+            operands["offset"] = VarInt(0)
+            out.append(Opcode(op_name, operands))
         elif nm == "JAlways":
             fixups.append((len(out), a.get("target", 0)))
             out.append(Opcode("JAlways", {"offset": VarInt(0)}))
@@ -367,7 +407,9 @@ def emit_function(ctx: EmitContext, ops: List[LiftedOp], max_regs: int = 512) ->
                 Opcode(_ARITH_OPS[nm], {"dst": Reg(r), "a": Reg(last_value or 0), "b": Reg(new_reg())})
             )
             last_value = r
-        # Convert / LeaSym / StringRef / Call? / unmapped prims: skipped in v1
+        # Unmapped events remain available in the original lifted stream.
+        for i in range(start, len(out)):
+            out[i] = RecoveredOpcode(out[i], lo)
 
     # Branch fixup: offsets are relative to the instruction after the branch.
     # A branch target frequently lands on machine instructions that produced no
@@ -383,11 +425,14 @@ def emit_function(ctx: EmitContext, ops: List[LiftedOp], max_regs: int = 512) ->
         if k < len(addrs):
             out[idx].df["offset"].value = addr_index[addrs[k]] - (idx + 1)
 
+    for op in out:
+        op.validate()
+
     return out
 
 
 def emit_image(code: Bytecode, bin_view: HLCBinary, lifter=None, verbose: bool = False) -> int:
-    """Lift+emit bodies for every function-table entry that resolves to code."""
+    """Lift inspection records by findex without replacing executable bodies."""
     from .lift import FunctionLifter
 
     plt = _resolve_plt_targets(bin_view)
@@ -395,20 +440,28 @@ def emit_image(code: Bytecode, bin_view: HLCBinary, lifter=None, verbose: bool =
         lifter = FunctionLifter.for_binary(bin_view, plt)
     ctx = EmitContext(code, bin_view)
     count = 0
+    if not hasattr(code, "recovery_opcodes"):
+        code.recovery_opcodes = {}
+    if not hasattr(code, "recovery_lifts"):
+        code.recovery_lifts = {}
     for addr, fidx in sorted(ctx.addr2findex.items()):
-        if not (0 <= fidx < len(code.functions)):
+        if fidx not in ctx._function_by_findex:
             continue
-        if code.functions[fidx].ops:
+        if fidx in code.recovery_opcodes:
             continue  # already populated
         try:
             stream = lifter.lift(addr)
-        except Exception:
+        except Exception as exc:
+            code.recovery_diagnostics = (
+                *getattr(code, "recovery_diagnostics", ()),
+                f"Lift failed for f@{fidx} at {addr:#x}: {exc}",
+            )
             continue
         if not stream:
             continue
-        code.functions[fidx].ops = emit_function(ctx, stream)
-        code.functions[fidx].nops = VarInt(len(code.functions[fidx].ops))
+        code.recovery_lifts[fidx] = stream
+        code.recovery_opcodes[fidx] = emit_function(ctx, stream)
         count += 1
     if verbose:
-        print(f"  emitted bodies for {count} functions")
+        print(f"  emitted inspection-only approximations for {count} functions")
     return count

@@ -17,7 +17,7 @@ These apply to the base invocation, `crashlink <file> [flags]`:
 - `-t` / `--traceback`: print full Python tracebacks on error instead of a short message.
 - `-d` / `--debug`: enable extra debug output.
 - `-D` / `--no-debug`: force debug output off, overriding anything that turned it on implicitly.
-- `-C` / `--dehlc`: extract debug info from a compiled HL/C binary (needs PDB on PE, DWARF on ELF).
+- `-C` / `--dehlc`: recover inspection metadata from a compiled HL/C binary; debug information improves recovery but is not required by every recovery path. `nasm` shows original machine code. Native `lift`/`decomp` output is explicitly approximate, with native addresses and `?` for unrecovered operands. It is not Haxe decompilation or executable bytecode; bytecode/C export and faithful IR/CFG operations are rejected.
 - `--help-all`: print the top-level help plus every subcommand's own `-h` output in one go.
 
 ## One-shot subcommands

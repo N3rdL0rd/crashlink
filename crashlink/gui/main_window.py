@@ -45,7 +45,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from crashlink.core import AnalysisWorker, AnnotationStore, Bytecode, Function, Native, VarInt, destaticify
+from crashlink.core import AnalysisWorker, AnnotationStore, Bytecode, Function, Native, destaticify
 
 if TYPE_CHECKING:
     from crashlink.dehlc.emit import EmitContext
@@ -540,7 +540,7 @@ class MainWindow(QMainWindow):
         for i, (src, label, tip) in enumerate(
             (
                 ("asm", "Asm", "Disassembly pane shows original compiled machine code"),
-                ("ops", "Ops", "Disassembly pane shows HL opcodes recovered by the experimental lifter"),
+                ("ops", "Lift", "Inspection-only approximate operations; unknown operands are shown as ?"),
             )
         ):
             btn = QPushButton(label)
@@ -848,11 +848,12 @@ class MainWindow(QMainWindow):
         assert self._source_path is not None
         self._add_recent_file(self._source_path)
         n = len(code.functions)
-        label = "Loaded (de-HL/C)" if self._loaded_via_dehlc else "Loaded"
-        incomplete = sum(1 for f in code.functions if not f.ops)
-        suffix = f", {incomplete} without lifted bodies" if self._loaded_via_dehlc else ""
-        self._status_label.setText(f"{label}, {n} functions{suffix}")
-        self._log_panel.info(f"{label}, {n} functions{suffix}")
+        label = "Loaded (inspection-only native recovery)" if code.inspection_only else "Loaded"
+        self._status_label.setText(f"{label}, {n} functions")
+        self._log_panel.info(f"{label}, {n} functions")
+        if code.inspection_only:
+            for diagnostic in code.recovery_diagnostics:
+                self._log_panel.warn(diagnostic)
         self._log_panel.set_context(code=code)
         self._func_list.load(code)
 
@@ -1160,9 +1161,24 @@ class MainWindow(QMainWindow):
                 blocks.append((fi, block[0], block[1]))
         return blocks
 
+    def _recovery_text(self, findex: int) -> str:
+        """Approximate native operations, never invented executable dataflow."""
+        assert self._code is not None
+        from crashlink.dehlc.emit import format_recovered_ops
+
+        ops = self._code.recovery_opcodes.get(findex, [])
+        text = format_recovered_ops(ops)
+        if not ops:
+            text += "\nNo HL-shaped operations recovered; see original machine-code disassembly."
+        events = self._code.recovery_lifts.get(findex, [])
+        if events:
+            text += "\nNative lift events (including unmapped events):\n"
+            text += "\n".join(f"{event.src_addr:#x} {event!r}" for event in events)
+        return text
+
     def _load_disasm_pane(self, view: SyncView, all_fi: List[int]) -> None:
         """Fills a SyncView's disassembly pane: for de-HL/C images either the
-        original machine code or lifted HL opcodes (per the toolbar toggle),
+        original machine code or inspection-only approximate operations,
         HL opcodes for ordinary bytecode."""
         assert self._code is not None
         if self._code.hlc_binary is None:
@@ -1171,17 +1187,16 @@ class MainWindow(QMainWindow):
             return
         if self._disasm_source == "ops":
             self._ensure_lifted(all_fi)
-            findex_map = self._code.get_findex_map()
-            view.load_disasm(self._code, [(fi, findex_map[fi]) for fi in all_fi if fi in findex_map])
+            view.disasm_view.load_native(
+                [(fi, f"f@{fi} approximate lift", self._recovery_text(fi).splitlines()) for fi in all_fi]
+            )
         else:
             view.disasm_view.load_native(self._native_asm_blocks(all_fi))
 
     def _ensure_lifted(self, findices: List[int]) -> None:
         """
-        Runs the experimental machine-code lifter on functions still lacking
-        bodies and stores the synthesised opcode streams on them, so the
-        standard disassembly (and later decompile) paths can render them.
-        x86-64 only; other architectures log a one-time note.
+        Recover inspection records without changing Function.ops or register types.
+        Unsupported architectures remain browsable as original machine code.
         """
         assert self._code is not None
         bin_view = self._code.hlc_binary
@@ -1190,7 +1205,7 @@ class MainWindow(QMainWindow):
         todo = []
         for fi in findices:
             fn = findex_map.get(fi)
-            if isinstance(fn, Function) and not fn.ops:
+            if isinstance(fn, Function) and fi not in self._code.recovery_opcodes:
                 todo.append(fi)
         if not todo:
             return
@@ -1224,17 +1239,14 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 self._log_panel.warn(f"lifting failed for f@{fi}: {e}")
                 continue
-            fn = findex_map[fi]
-            assert isinstance(fn, Function)
-            fn.ops = ops
-            fn.nregs = VarInt(0)
+            self._code.recovery_lifts[fi] = stream
+            self._code.recovery_opcodes[fi] = ops
             lifted += 1
         if lifted:
-            self._log_panel.info(f"Lifted {lifted} function body/bodies to opcodes (experimental).")
+            self._log_panel.info(f"Recovered inspection-only approximations for {lifted} function(s).")
 
     def _set_disasm_source(self, source: str) -> None:
-        """Toolbar toggle: 'asm' (original machine code) vs 'ops' (lifted HL
-        opcodes). Re-renders every open tab's disassembly pane."""
+        """Toolbar toggle: original assembly vs inspection-only approximate operations."""
         if source == self._disasm_source:
             return
         self._disasm_source = source
@@ -1265,12 +1277,13 @@ class MainWindow(QMainWindow):
         # Seed from a loaded .cldb where available, so cached functions render
         # immediately instead of flashing "decompiling…" — a real decompile still
         # runs below to warm _ir_cache for rename/xref support.
-        for fi in all_fi:
-            cached = self._db_cache.get(fi)
-            if cached is not None:
-                text, opmap = cached
-                self._class_results[class_key][fi] = text
-                self._opline_cache[fi] = opmap
+        if not self._code.inspection_only:
+            for fi in all_fi:
+                cached = self._db_cache.get(fi)
+                if cached is not None:
+                    text, opmap = cached
+                    self._class_results[class_key][fi] = text
+                    self._opline_cache[fi] = opmap
 
         view = SyncView(self._opline_cache)
         view.setProperty("class_key", class_key)
@@ -1284,10 +1297,7 @@ class MainWindow(QMainWindow):
         view.disasm_view.xref_requested.connect(self._on_xref_hotkey)
         view.comment_requested.connect(self._on_comment_hotkey)
 
-        # De-HL/C images arrive with empty bodies; lift them before deciding what
-        # can be decompiled, so recovered functions go down the normal decompile
-        # path instead of rendering the "body not recovered" placeholder. Lifting
-        # is idempotent and skips anything that already has opcodes.
+        # Native bodies remain separate from bytecode and never enter the IR pipeline.
         if self._code.hlc_binary is not None:
             self._ensure_lifted(all_fi)
 
@@ -1295,6 +1305,13 @@ class MainWindow(QMainWindow):
         methods: List[Tuple[int, str]] = []
         to_decompile: List[int] = []
         for fi in all_fi:
+            if self._code.inspection_only:
+                self._ir_cache.pop(fi, None)
+                self._opline_cache.pop(fi, None)
+                text = self._recovery_text(fi)
+                self._class_results[class_key][fi] = text
+                methods.append((fi, text))
+                continue
             cached = self._db_cache.get(fi)
             if cached is not None:
                 # Seed from a loaded .cldb so cached functions render immediately
@@ -1312,14 +1329,7 @@ class MainWindow(QMainWindow):
                     (fi, f"// f@{fi}  native primitive (implemented in an hdll)\n// signature only")
                 )
             elif isinstance(fn, Function) and not fn.ops:
-                # Incomplete recovery: keep the function browsable instead of
-                # dropping it or spinning a doomed decompile job on zero opcodes.
-                hint = (
-                    "  // nothing liftable here - see the Disassembly view (Tab cycles views)"
-                    if self._code.hlc_binary is not None
-                    else "  // body not recovered"
-                )
-                methods.append((fi, f"f@{fi}() {{\n{hint}\n}}"))
+                methods.append((fi, f"f@{fi}() {{\n  // body not recovered\n}}"))
             else:
                 to_decompile.append(fi)
                 methods.append(
@@ -1351,6 +1361,11 @@ class MainWindow(QMainWindow):
 
     def _start_decompile(self, class_key: str, findex: int) -> None:
         assert self._code is not None
+        if self._code.inspection_only:
+            self._log_panel.warn(
+                "Inspection-only native recovery: use the approximate lift or original assembly view."
+            )
+            return
         self._active_decompiles += 1
         self._busy.start("Decompiling…")
         self._decomp_request += 1
@@ -1524,6 +1539,9 @@ class MainWindow(QMainWindow):
     def _update_cfg_view(self, findex: int) -> None:
         if self._code is None or not self._cfg_dock.isVisible():
             return
+        if self._code.inspection_only:
+            self._cfg_view.show_native()
+            return
         func = self._code.get_findex_map().get(findex)
         if isinstance(func, Native):
             self._cfg_view.show_native()
@@ -1604,6 +1622,9 @@ class MainWindow(QMainWindow):
         """After an annotation (rename/comment) changes, drop every cache that was
         derived from the old IR for this function and kick off a fresh decompile."""
         if self._code is None:
+            return
+        if self._code.inspection_only:
+            self._update_cfg_view(findex)
             return
         self._worker.invalidate(findex)
         self._ir_cache.pop(findex, None)

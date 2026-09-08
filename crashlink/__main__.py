@@ -1176,6 +1176,14 @@ class Commands(BaseCommands):
     def __init__(self, code: Bytecode):
         self.code = code
 
+    def _inspection_guard(self) -> bool:
+        if not self.code.inspection_only:
+            return False
+        print(
+            "Inspection-only native recovery: this operation requires faithful bytecode. Use nasm or lift instead."
+        )
+        return True
+
     def exit(self, args: List[str]) -> None:
         """Exit the program"""
         sys.exit()
@@ -1280,6 +1288,9 @@ class Commands(BaseCommands):
     @alias("f")
     def fn(self, args: List[str]) -> None:
         """Disassembles a function to pseudocode by findex. `fn <idx>`"""
+        if self.code.inspection_only:
+            self.lift(args)
+            return
         if len(args) == 0:
             print("Usage: fn <index>")
             return
@@ -1300,6 +1311,8 @@ class Commands(BaseCommands):
 
     def cfg(self, args: List[str]) -> None:
         """Renders a control flow graph for a given findex and attempts to open it in the default image viewer. `cfg <idx>`"""
+        if self._inspection_guard():
+            return
         if len(args) == 0:
             print("Usage: cfg <index>")
             return
@@ -1348,6 +1361,8 @@ class Commands(BaseCommands):
 
     def ir(self, args: List[str]) -> None:
         """Prints the IR of a function in object-notation. `ir <idx>`"""
+        if self._inspection_guard():
+            return
         if len(args) == 0:
             print("Usage: ir <index>")
         try:
@@ -1365,6 +1380,9 @@ class Commands(BaseCommands):
     @alias("decompile", "dec", "pseudo", "d")
     def decomp(self, args: List[str]) -> None:
         """Prints the pseudocode decompilation of a function. `decomp <idx>`"""
+        if self.code.inspection_only:
+            self.lift(args)
+            return
         if len(args) == 0:
             print("Usage: decomp <index>")
         try:
@@ -1374,11 +1392,6 @@ class Commands(BaseCommands):
             return
         for func in self.code.functions:
             if func.findex.value == index:
-                # De-HL/C images carry no opcodes until the machine code is
-                # lifted; do it on demand so `decomp <idx>` works without having
-                # to run `lift <idx>` first.
-                if not func.ops and getattr(self.code, "hlc_binary", None) is not None:
-                    self._lift_attach(index)
                 ir = decomp.IRFunction(self.code, func)
                 print("\n")
                 _emit_haxe(pseudo(ir))
@@ -1430,26 +1443,20 @@ class Commands(BaseCommands):
             return
         print(text)
 
-    def _lift_attach(
+    def _lift_view(
         self, index: builtins.int
     ) -> Optional[Tuple["Function", List[Any], List[Any], builtins.int]]:
         """
-        Lifts f@index's machine code and attaches the opcodes to the function.
+        Lift f@index for inspection without modifying its executable body.
 
-        Shared by `lift` (which then prints the stream) and `decomp` (which
-        lifts on demand so a de-HL/C image can be decompiled without having to
-        run `lift` first). Returns (function, lifted events, opcodes, address),
-        or None when there is nothing to lift.
+        Returns (function, lifted events, approximate instructions, address), or
+        None when there is nothing to lift.
         """
         bin_view = getattr(self.code, "hlc_binary", None)
         if bin_view is None:
             return None
 
         from .core import Function as _Function
-        from .core import Reg as _Reg
-        from .core import Regs as _Regs
-        from .core import VarInt as _VarInt
-        from .core import tIndex as _tIndex
         from .dehlc.emit import EmitContext, emit_function
         from .dehlc.lift import FunctionLifter
 
@@ -1482,27 +1489,16 @@ class Commands(BaseCommands):
         lifted = lifter.lift(addr)
         ops = emit_function(EmitContext(self.code, bin_view), lifted)
 
-        maxreg = 0
-        for o in ops:
-            for v in o.df.values():
-                if isinstance(v, _Reg):
-                    maxreg = max(maxreg, v.value)
-                elif isinstance(v, _Regs):
-                    maxreg = max(maxreg, max((r.value for r in v.value), default=0))
-        fn.ops = ops
-        fn.nops = _VarInt(len(ops))
-        fn.nregs = _VarInt(maxreg + 1)
-        fn.regs = [_tIndex(0)] * (maxreg + 1)  # placeholder types; renderers guard
+        self.code.recovery_lifts[index] = lifted
+        self.code.recovery_opcodes[index] = ops
         return fn, lifted, ops, addr
 
     @alias("lift")
     def lift(self, args: List[str]) -> None:
-        """Lifts a function's machine code back to HL opcodes (de-HL/C images only). `lift <idx> [count]`
+        """Shows an inspection-only approximate lift. `lift <idx> [count]`
 
-        Runs the experimental x86 lifter over the function's compiled body and
-        prints the materialised opcode stream. Without `count` the whole stream
-        is printed; pass e.g. `lift 42 30` to cap it. This is heuristic
-        reconstruction - expect approximate register allocation.
+        Unknown operands are displayed as ?, alongside native address provenance.
+        This does not recover HL dataflow or attach an executable function body.
         """
         bin_view = getattr(self.code, "hlc_binary", None)
         if bin_view is None:
@@ -1529,7 +1525,7 @@ class Commands(BaseCommands):
                 print("Invalid count; printing the whole stream.")
                 limit = None
 
-        res = self._lift_attach(index)
+        res = self._lift_view(index)
         if res is None:
             return
         fn, lifted, ops, addr = res
@@ -1538,17 +1534,18 @@ class Commands(BaseCommands):
             fname = self.code.full_func_name(fn)
         except Exception:
             fname = f"f@{index}"
-        print(
-            f"{fname}: {len(lifted)} lifted events -> {len(ops)} opcodes @ {addr:#x} (attached; try `decomp {index}`)"
-        )
+        print(f"{fname}: {len(lifted)} lifted events -> {len(ops)} approximate instructions @ {addr:#x}")
 
-        def fmt(v: Any) -> Any:
-            return getattr(v, "value", v)
+        from .dehlc.emit import format_recovered_ops
 
         shown = ops if limit is None else ops[:limit]
-        for i, op in enumerate(shown):
-            args_txt = ", ".join(f"{k}={fmt(v)}" for k, v in op.df.items())
-            print(f"  {i:>4}. {op.op}{(' ' + args_txt) if args_txt else ''}")
+        print(format_recovered_ops(shown))
+        represented = {(op.src_addr, op.source_op, repr(op.source_args)) for op in ops}
+        skipped = [
+            event for event in lifted if (event.src_addr, event.op, repr(event.args)) not in represented
+        ]
+        for event in skipped:
+            print(f"  {event.src_addr:#x} [unmapped] {event!r}")
         if limit is not None and len(ops) > limit:
             print(f"  ... ({len(ops) - limit} more)")
 
@@ -1559,6 +1556,8 @@ class Commands(BaseCommands):
         `<file>` matches a debug file by full path, suffix, or basename (e.g.
         `df Main.hx`). Classes are rendered with their fields and methods, in
         source order. Pair with `copy` to grab it all: `copy df Main.hx`."""
+        if self._inspection_guard():
+            return
         if not args:
             print("Usage: decompfile <file>")
             return
@@ -1666,6 +1665,8 @@ class Commands(BaseCommands):
     @alias("edit")
     def patch(self, args: List[str]) -> None:
         """Patches a function's raw opcodes. `patch <idx>`"""
+        if self._inspection_guard():
+            return
         if len(args) == 0:
             print("Usage: patch <index>")
             return
@@ -1736,6 +1737,8 @@ class Commands(BaseCommands):
 
     def save(self, args: List[str]) -> None:
         """Saves the modified bytecode to a given path. `save <path>`"""
+        if self._inspection_guard():
+            return
         if len(args) == 0:
             print("Usage: save <path>")
             return
@@ -1762,6 +1765,8 @@ class Commands(BaseCommands):
 
     def hlc(self, args: List[str]) -> None:
         """Transpiles the loaded bytecode to crashlink cHL/C code. `hlc <output path>`"""
+        if self._inspection_guard():
+            return
         if len(args) == 0:
             print("Usage: hlc <output path>")
             return
@@ -2723,6 +2728,10 @@ class Commands(BaseCommands):
 
     def info(self, args: List[str]) -> None:
         """Prints information about the bytecode."""
+        if self.code.inspection_only:
+            print("Recovery capabilities: " + ", ".join(sorted(self.code.recovery_capabilities)))
+            for diagnostic in self.code.recovery_diagnostics:
+                print(diagnostic)
         print(f"Bytecode version: {self.code.version}")
         print(f"Has debug info: {self.code.has_debug_info}")
         print(f"nints: {len(self.code.ints)}")
@@ -2735,6 +2744,8 @@ class Commands(BaseCommands):
     @alias("check")
     def verify(self, args: List[str]) -> None:
         """Runs a set of basic sanity checks to make sure the bytecode is correct-ish. `check`"""
+        if self._inspection_guard():
+            return
         if not self.code.is_ok():
             print("Bytecode verification failed!")
             return
@@ -2840,6 +2851,8 @@ class Commands(BaseCommands):
     @alias("c")
     def class_(self, args: List[str]) -> None:
         """Decompiles an entire class by its type index. `class <tIndex>`"""
+        if self._inspection_guard():
+            return
         if len(args) == 0:
             print("Usage: class <tIndex>")
             return
@@ -3113,14 +3126,14 @@ def main() -> None:
         try:
             from .dehlc import code_from_bin
 
+            print("crashlink De-HL/C is inspection-only native recovery, not executable bytecode.")
             print(
-                "crashlink De-HL/C is EXPERIMENTAL. Use at your own risk. Opcode lifting supports x86 and aarch64."
-            )
-            print(
-                "This will produce an in-memory bytecode image. If you want to work with any extracted information externally, use `save` to serialise it to the disk first."
+                "Use nasm for original machine code or lift for approximate operations with unknown operands. Bytecode/C export is disabled."
             )
             print("Opening file...")
             code = code_from_bin(path=args.file, verbose=args.debug)
+            for diagnostic in code.recovery_diagnostics:
+                print(diagnostic)
             print(
                 "Tip: use 'nasm <findex> [count]' in the REPL (or 'crashlink nasm <binary> <findex>') "
                 "to see a function's original compiled assembly."
@@ -3134,6 +3147,8 @@ def main() -> None:
         code = _load_code_from_cli_path(args.file, args.no_constants)
 
     if args.patch:
+        if Commands(code)._inspection_guard():
+            return
         print(f"Loading patch: {args.patch}")
         patch_dir = os.path.dirname(args.patch)
         patch_name = os.path.basename(args.patch)
