@@ -1189,6 +1189,13 @@ class MainWindow(QMainWindow):
         view.disasm_view.xref_requested.connect(self._on_xref_hotkey)
         view.comment_requested.connect(self._on_comment_hotkey)
 
+        # De-HL/C images arrive with empty bodies; lift them before deciding what
+        # can be decompiled, so recovered functions go down the normal decompile
+        # path instead of rendering the "body not recovered" placeholder. Lifting
+        # is idempotent and skips anything that already has opcodes.
+        if self._code.hlc_binary is not None:
+            self._ensure_lifted(all_fi)
+
         findex_map = self._code.get_findex_map()
         methods: List[Tuple[int, str]] = []
         to_decompile: List[int] = []
@@ -1213,7 +1220,7 @@ class MainWindow(QMainWindow):
                 # Incomplete recovery: keep the function browsable instead of
                 # dropping it or spinning a doomed decompile job on zero opcodes.
                 hint = (
-                    "  // original machine code in the Disassembly view (Tab cycles views)"
+                    "  // nothing liftable here - see the Disassembly view (Tab cycles views)"
                     if self._code.hlc_binary is not None
                     else "  // body not recovered"
                 )

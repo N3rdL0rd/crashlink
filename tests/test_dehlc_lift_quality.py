@@ -27,8 +27,9 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture(scope="module")
 def harness():
     sys.path.insert(0, CORPUS)
-    import lift_confusion
-    import oracle
+    # Both live in the gitignored local corpus tree, added to sys.path above.
+    import lift_confusion  # ty: ignore[unresolved-import]
+    import oracle  # ty: ignore[unresolved-import]
 
     return oracle, lift_confusion
 
@@ -53,10 +54,10 @@ def test_lift_accuracy_floor(harness):
     _, lift_confusion = harness
     hit, seen, _c, _t = _accuracy(lift_confusion)
     assert seen > 2000, f"oracle produced too few labels ({seen})"
-    assert hit / seen >= 0.76, f"lift accuracy regressed to {100 * hit / seen:.1f}%"
+    assert hit / seen >= 0.78, f"lift accuracy regressed to {100 * hit / seen:.1f}%"
 
 
-@pytest.mark.parametrize("tier,floor", [("elf-O2", 0.72), ("elf-O3", 0.69)])
+@pytest.mark.parametrize("tier,floor", [("elf-O2", 0.74), ("elf-O3", 0.71)])
 def test_optimised_accuracy_floor(harness, tier, floor):
     """
     -O2/-O3 are the production shapes: shipped games are built this way, and
@@ -99,6 +100,8 @@ def test_unoptimised_accuracy_floor(harness):
         ("SetArray", 0.60),  # indexed addressing => array/buffer, not a field
         ("Mul", 0.90),  # lea [r + r*k] is r*(k+1), not an add
         ("InstanceClosure", 0.90),  # hl_alloc_closure_ptr
+        ("SetI16", 0.85),  # 16-bit access, whatever the addressing form
+        ("Incr", 0.85),  # store of "that same location + 1"
     ],
 )
 def test_per_opcode_floor(harness, opcode, floor):

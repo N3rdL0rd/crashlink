@@ -1019,10 +1019,15 @@ class IRFunction:
                     obj_local = source_locals[0]
                     obj_type = self.code.types[self.func.regs[0].value]
                     method_args = [source_locals[arg.value] for arg in arg_regs]
-                else:
+                elif arg_regs:
                     obj_local = source_locals[arg_regs[0].value]
                     obj_type = obj_local.get_type()
                     method_args = [source_locals[arg.value] for arg in arg_regs[1:]]
+                else:
+                    # A receiver-less CallMethod is malformed; keep it opaque
+                    # rather than indexing off the end of an empty arg list.
+                    block.statements.append(IRUnliftedOpcode(self.code, op))
+                    continue
                 field_expr = self._resolve_method_field(obj_local, obj_type, op.df["field"].value)
                 if field_expr is not None:
                     call_expr = IRCall(self.code, IRCall.CallType.METHOD, field_expr, method_args)
@@ -1073,7 +1078,12 @@ class IRFunction:
                 obj_local = source_locals[op.df["obj"].value]
                 obj_type = obj_local.get_type()
                 if not isinstance(obj_type.definition, (Obj, Virtual)):
-                    raise DecompError(f"Field opcode used on non-object type: {obj_type.definition}")
+                    # Machine-code-lifted streams carry placeholder register
+                    # types, so the object's type is not known here. Degrade to
+                    # an opaque opcode - the same fallback GetThis takes below -
+                    # rather than aborting the whole function's decompile.
+                    block.statements.append(IRUnliftedOpcode(self.code, op))
+                    continue
                 field_core = op.df["field"].resolve_obj(self.code, obj_type.definition)
                 field_expr = IRField(
                     self.code,

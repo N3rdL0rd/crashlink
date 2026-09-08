@@ -274,7 +274,11 @@ def emit_function(ctx: EmitContext, ops: List[LiftedOp], max_regs: int = 512) ->
             # Dynamic dispatch: the callee is not statically known, so arity
             # cannot come from a signature. Emit the dispatch itself.
             r = new_reg()
-            out.append(Opcode("CallMethod", {"dst": Reg(r), "field": fieldRef(0), "args": Regs()}))
+            # args[0] is the receiver - CallMethod is not well-formed without
+            # one, and consumers index it directly.
+            recv = Regs()
+            recv.value = [Reg(last_obj or new_reg())]
+            out.append(Opcode("CallMethod", {"dst": Reg(r), "field": fieldRef(0), "args": recv}))
             last_value = r
         elif nm in ("Call", "CallVirtual"):
             tgt = a.get("target_addr")

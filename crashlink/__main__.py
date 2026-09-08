@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import builtins
 import importlib
 import inspect
 import os
@@ -1373,6 +1374,11 @@ class Commands(BaseCommands):
             return
         for func in self.code.functions:
             if func.findex.value == index:
+                # De-HL/C images carry no opcodes until the machine code is
+                # lifted; do it on demand so `decomp <idx>` works without having
+                # to run `lift <idx>` first.
+                if not func.ops and getattr(self.code, "hlc_binary", None) is not None:
+                    self._lift_attach(index)
                 ir = decomp.IRFunction(self.code, func)
                 print("\n")
                 _emit_haxe(pseudo(ir))
@@ -1424,6 +1430,71 @@ class Commands(BaseCommands):
             return
         print(text)
 
+    def _lift_attach(
+        self, index: builtins.int
+    ) -> Optional[Tuple["Function", List[Any], List[Any], builtins.int]]:
+        """
+        Lifts f@index's machine code and attaches the opcodes to the function.
+
+        Shared by `lift` (which then prints the stream) and `decomp` (which
+        lifts on demand so a de-HL/C image can be decompiled without having to
+        run `lift` first). Returns (function, lifted events, opcodes, address),
+        or None when there is nothing to lift.
+        """
+        bin_view = getattr(self.code, "hlc_binary", None)
+        if bin_view is None:
+            return None
+
+        from .core import Function as _Function
+        from .core import Reg as _Reg
+        from .core import Regs as _Regs
+        from .core import VarInt as _VarInt
+        from .core import tIndex as _tIndex
+        from .dehlc.emit import EmitContext, emit_function
+        from .dehlc.lift import FunctionLifter
+
+        # `code.functions` is in file order, so a function's position in it is
+        # not its findex - indexing by position attaches the lifted stream to a
+        # different function than the one `decomp <idx>` then looks up.
+        fn = next(
+            (f for f in self.code.functions if isinstance(f, _Function) and f.findex.value == index),
+            None,
+        )
+        if fn is None:
+            print(f"f@{index} is not a module function with a body here.")
+            return None
+        addr = None
+        ps = bin_view.symbol("hl_functions_ptrs")
+        if ps is not None and index < ps.size // bin_view.PTR:
+            addr = bin_view.read_ptr(ps.value + bin_view.PTR * index)
+        if not addr or not bin_view.symbol_at(addr):
+            print(f"No native code slot for f@{index} - nothing to lift.")
+            return None
+
+        plt_map = {}
+        try:
+            from .dehlc.binary import _resolve_plt_targets
+
+            plt_map = _resolve_plt_targets(bin_view)
+        except Exception:
+            pass
+        lifter = FunctionLifter.for_binary(bin_view, plt_map)
+        lifted = lifter.lift(addr)
+        ops = emit_function(EmitContext(self.code, bin_view), lifted)
+
+        maxreg = 0
+        for o in ops:
+            for v in o.df.values():
+                if isinstance(v, _Reg):
+                    maxreg = max(maxreg, v.value)
+                elif isinstance(v, _Regs):
+                    maxreg = max(maxreg, max((r.value for r in v.value), default=0))
+        fn.ops = ops
+        fn.nops = _VarInt(len(ops))
+        fn.nregs = _VarInt(maxreg + 1)
+        fn.regs = [_tIndex(0)] * (maxreg + 1)  # placeholder types; renderers guard
+        return fn, lifted, ops, addr
+
     @alias("lift")
     def lift(self, args: List[str]) -> None:
         """Lifts a function's machine code back to HL opcodes (de-HL/C images only). `lift <idx> [count]`
@@ -1458,51 +1529,10 @@ class Commands(BaseCommands):
                 print("Invalid count; printing the whole stream.")
                 limit = None
 
-        from .core import Function as _Function
-        from .dehlc.emit import EmitContext, emit_function
-        from .dehlc.lift import FunctionLifter
-
-        try:
-            fn = self.code.functions[index]
-            assert isinstance(fn, _Function)
-        except (IndexError, AssertionError):
-            print(f"f@{index} is not a module function with a body here.")
+        res = self._lift_attach(index)
+        if res is None:
             return
-        addr = None
-        ps = bin_view.symbol("hl_functions_ptrs")
-        if ps is not None and index < ps.size // bin_view.PTR:
-            addr = bin_view.read_ptr(ps.value + bin_view.PTR * index)
-        if not addr or not bin_view.symbol_at(addr):
-            print(f"No native code slot for f@{index} - nothing to lift.")
-            return
-
-        plt_map = {}
-        try:
-            from .dehlc.binary import _resolve_plt_targets
-
-            plt_map = _resolve_plt_targets(bin_view)
-        except Exception:
-            pass
-        lifter = FunctionLifter.for_binary(bin_view, plt_map)
-        lifted = lifter.lift(addr)
-        ctx = EmitContext(self.code, bin_view)
-        ops = emit_function(ctx, lifted)
-
-        # Attach the stream to the function so the normal decompiler (and every
-        # other opcode consumer) can work on it: `lift 18` then `decomp 18`.
-        from .core import Reg as _Reg, Regs as _Regs, tIndex as _tIndex, VarInt as _VarInt
-
-        maxreg = 0
-        for o in ops:
-            for v in o.df.values():
-                if isinstance(v, _Reg):
-                    maxreg = max(maxreg, v.value)
-                elif isinstance(v, _Regs):
-                    maxreg = max(maxreg, max((r.value for r in v.value), default=0))
-        fn.ops = ops
-        fn.nops = _VarInt(len(ops))
-        fn.nregs = _VarInt(maxreg + 1)
-        fn.regs = [_tIndex(0)] * (maxreg + 1)  # placeholder types; renderers guard
+        fn, lifted, ops, addr = res
 
         try:
             fname = self.code.full_func_name(fn)
