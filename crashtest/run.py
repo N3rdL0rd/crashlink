@@ -19,6 +19,7 @@ from markupsafe import escape
 
 from crashlink import decomp, globals
 from crashlink.core import (
+    USE_TQDM,
     Bytecode,
     Function,
     Reg,
@@ -29,6 +30,7 @@ from crashlink.core import (
     intRef,
     strRef,
     tIndex,
+    tqdm,
 )
 from crashlink.disasm import type_name
 from crashlink.pseudo import pseudo
@@ -647,11 +649,16 @@ def run() -> bool:
 
     print("Running tests...")
     results = []
-    for i, case in enumerate(cases):
-        print(f"Running {case}...")
+    iterable = enumerate(cases)
+    if USE_TQDM:
+        iterable = tqdm(iterable, total=len(cases), desc="Running tests")
+    
+    for i, case in iterable:
+        if not USE_TQDM:
+            print(f"Running {case}...")
         result = run_case_isolated(case, i)
         if result.elapsed_seconds > TIME_LIMIT_SECONDS or result.peak_memory_mb > MEMORY_LIMIT_MB:
-            print(f"  -> exceeded limits: {result.elapsed_seconds:.1f}s, {result.peak_memory_mb:.0f}MB")
+            print(f"  -> {case} exceeded limits: {result.elapsed_seconds:.1f}s, {result.peak_memory_mb:.0f}MB")
         results.append(result)
 
     print("Generating run...")
