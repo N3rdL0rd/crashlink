@@ -206,6 +206,8 @@ class IRPrimitiveJumpLifter(TraversingIROptimizer):
             bool_condition_expr = IRBoolExpr(loop.code, condition_type, left=cond_operand_expr)
         else:
             bool_condition_expr = IRBoolExpr(loop.code, condition_type, left=left_expr, right=right_expr)
+        if not primitive_jump.exit_on_true:
+            bool_condition_expr.invert()
 
         # Replace the last statement (IRPrimitiveJump) with the new IRBoolExpr
         bool_condition_expr.adopt(last_cond_stmt)

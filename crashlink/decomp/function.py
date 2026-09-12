@@ -1640,8 +1640,10 @@ class IRFunction:
             pj_left = _jump_operand("a")
             pj_right = _jump_operand("b")
             pj_cond = _jump_operand("cond") if "cond" in header_last_op.df else _jump_operand("reg")
+
+            pj_exit_on_true = any(target == exit_node and edge == "true" for target, edge in header.branches)
             cond_block.statements.append(
-                IRPrimitiveJump(self.code, header_last_op, pj_left, pj_right, pj_cond)
+                IRPrimitiveJump(self.code, header_last_op, pj_left, pj_right, pj_cond, pj_exit_on_true)
             )
 
             body_start = non_exit_successors[0]

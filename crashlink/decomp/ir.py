@@ -828,12 +828,14 @@ class IRPrimitiveJump(IRExpression):
         left: Optional[IRExpression] = None,
         right: Optional[IRExpression] = None,
         cond: Optional[IRExpression] = None,
+        exit_on_true: bool = True,
     ):
         super().__init__(code)
         self.op = op
         self.left = left
         self.right = right
         self.cond = cond
+        self.exit_on_true = exit_on_true # either edge can be the jump-out, not just the false edge
         assert op.op in conditionals
 
     def get_type(self) -> Type:

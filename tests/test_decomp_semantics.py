@@ -396,6 +396,13 @@ def test_numeric_boundaries_and_nan_survive_execution(compiled_numeric_program):
             "Sys.println(LoopControlCase.findLastPositive(a)); }",
             ["0", "-1", "6", "3", "1", "3", "0", "2", "0", "-1"],
         ),
+        (
+            "DoWhileBreakCase",
+            "Sys.println(DoWhileBreakCase.firstMultipleOfThree(10)); "
+            "Sys.println(DoWhileBreakCase.firstMultipleOfThree(2)); "
+            "Sys.println(DoWhileBreakCase.firstMultipleOfThree(1));",
+            ["3", "2", "1"],
+        ),
     ],
 )
 def test_array_mutation_and_loop_exits_survive_roundtrip(tmp_path, name, body, expected):
