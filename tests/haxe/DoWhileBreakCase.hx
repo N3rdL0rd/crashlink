@@ -13,4 +13,8 @@ class DoWhileBreakCase {
         } while (b < limit);
         return b;
     }
+
+    public static function main(): Void {
+        var b = firstMultipleOfThree(10);
+    }
 }
