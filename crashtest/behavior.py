@@ -19,6 +19,16 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
+def resolve_hl_runtime() -> str | None:
+    """Find the HashLink runtime to execute against.
+
+    `HL_RUNTIME` (an absolute path) always wins when set, e.g. for CI or a
+    non-standard install. Otherwise, `hl` on PATH is used directly - no env
+    var required for the common case of a normal local HashLink install.
+    """
+    return os.environ.get("HL_RUNTIME") or shutil.which("hl")
+
+
 @dataclass
 class Execution:
     stdout: str = ""
@@ -115,7 +125,7 @@ def compile_haxe(source: str, class_name: str, directory: Path) -> tuple[Path, s
 def compare_programs(
     original: Path, recompiled: Path, class_name: str, timeout: float = 5.0
 ) -> BehavioralComparison:
-    runtime = os.environ.get("HL_RUNTIME") or shutil.which("hl")
+    runtime = resolve_hl_runtime()
     if not runtime:
         error = "HashLink runtime unavailable; set HL_RUNTIME or install hl on PATH"
         return BehavioralComparison(False, Execution(), Execution(), error)

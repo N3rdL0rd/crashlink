@@ -35,7 +35,7 @@ from crashlink.core import (
 from crashlink.disasm import type_name
 from crashlink.pseudo import pseudo
 
-from .behavior import BehavioralComparison, Execution, compare_programs, compile_haxe
+from .behavior import BehavioralComparison, Execution, compare_programs, compile_haxe, resolve_hl_runtime
 
 from .models import (
     MEMORY_LIMIT_MB,
@@ -642,6 +642,15 @@ def run() -> bool:
         )
         return False
 
+    runtime = resolve_hl_runtime()
+    if runtime:
+        print(f"Using HashLink runtime: {runtime}")
+    else:
+        print(
+            "Warning: no HashLink runtime found (checked $HL_RUNTIME, then `hl` on PATH). "
+            "Every case's behavioral comparison will fail without one - install `hl` "
+            "and put it on PATH, or set HL_RUNTIME to its absolute path."
+        )
     print("Finding test cases...")
     files = os.listdir(os.path.join(os.path.dirname(__file__), "..", "tests", "haxe"))
     cases = sorted(f for f in files if f.endswith(".hx") and f != "LongString.hx")

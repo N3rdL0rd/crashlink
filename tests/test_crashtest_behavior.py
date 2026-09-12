@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from crashtest.behavior import compare_programs, compile_haxe, execute
+from crashtest.behavior import compare_programs, compile_haxe, execute, resolve_hl_runtime
 
 
 @pytest.fixture
 def toolchain():
     missing = [tool for tool in ("haxe",) if not shutil.which(tool)]
-    runtime = os.environ.get("HL_RUNTIME") or shutil.which("hl")
+    runtime = resolve_hl_runtime()
     if not runtime or not Path(runtime).is_file():
-        missing.append("HashLink (HL_RUNTIME)")
+        missing.append("HashLink (hl)")
     if missing:
         message = "Required behavioral toolchain missing: " + ", ".join(missing)
         if os.environ.get("CRASHLINK_REQUIRE_QUALITY") == "1":
