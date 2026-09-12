@@ -638,7 +638,7 @@ def run() -> bool:
     git = get_repo_info()
     if git.is_release:
         print(
-            "Cannot run tests from a release build (eg. installed fro PyPI). Please clone the repo and run from there."
+            "Cannot run tests from a release build (eg. installed from PyPI). Please clone the repo and run from there."
         )
         return False
 
