@@ -169,7 +169,9 @@ def test_inlining_keeps_snapshot_before_indirect_write(aggressive):
     assert _observe(function.block) == 3
 
 
-@pytest.mark.parametrize("optimizer", [IRDeadTempEliminator, IRDeadStoreEliminator, IRDeadAssignmentEliminator])
+@pytest.mark.parametrize(
+    "optimizer", [IRDeadTempEliminator, IRDeadStoreEliminator, IRDeadAssignmentEliminator]
+)
 def test_write_after_address_escape_is_observed_by_reference(optimizer):
     code = Bytecode.create_empty()
     cell, ref = [IRLocal(f"var{i}", tIndex(1), code) for i in range(2)]
@@ -196,9 +198,7 @@ def test_snapshot_not_substituted_after_mutation_inside_consumer(aggressive, loo
         IRAssign(code, result, snapshot),
     )
     consumer = (
-        IRWhileLoop(code, condition, body)
-        if loop
-        else IRConditional(code, condition, body, _block(code))
+        IRWhileLoop(code, condition, body) if loop else IRConditional(code, condition, body, _block(code))
     )
     function = _function(
         code,
@@ -283,9 +283,7 @@ def test_copy_propagation_stops_at_nested_source_write(loop):
     body = _block(code, IRAssign(code, user, _constant(code, 5)))
     condition = IRBoolExpr(code, IRBoolExpr.CompareType.LT, user, _constant(code, 3))
     consumer = (
-        IRWhileLoop(code, condition, body)
-        if loop
-        else IRConditional(code, condition, body, _block(code))
+        IRWhileLoop(code, condition, body) if loop else IRConditional(code, condition, body, _block(code))
     )
     function = _function(
         code,

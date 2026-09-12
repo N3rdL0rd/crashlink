@@ -4,12 +4,13 @@ import os
 import shutil
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
 from crashlink import Bytecode
 from crashlink.core import Enum, F64, Function, tIndex
-from crashlink.decomp.function import IRClass
+from crashlink.decomp.function import IRClass, IRFunction
 from crashlink.decomp.ir import (
     IRAssign,
     IRBlock,
@@ -65,19 +66,23 @@ def test_loop_setup_value_remains_available_to_enum_argument():
     code = Bytecode.from_path(str(Path(__file__).parent / "haxe" / "EnumMixedSwitch.hl"))
     float_type = tIndex(next(i for i, t in enumerate(code.types) if isinstance(t.definition, F64)))
     enum_type = tIndex(
-        next(i for i, t in enumerate(code.types) if isinstance(t.definition, Enum)
-             and t.definition.name.resolve(code) == "Shape")
+        next(
+            i
+            for i, t in enumerate(code.types)
+            if isinstance(t.definition, Enum) and t.definition.name.resolve(code) == "Shape"
+        )
     )
     radius = IRLocal("var0", float_type, code)
     setup, body, root = IRBlock(code), IRBlock(code), IRBlock(code)
     setup.statements = [
         IRAssign(code, radius, IRConst(code, IRConst.ConstType.INT, value=2)),
-        IRBoolExpr(code, IRBoolExpr.CompareType.GTE, radius,
-                   IRConst(code, IRConst.ConstType.INT, value=10)),
+        IRBoolExpr(code, IRBoolExpr.CompareType.GTE, radius, IRConst(code, IRConst.ConstType.INT, value=10)),
     ]
     body.statements = [IRReturn(code, IREnumConstruct(code, "Circle", [radius], enum_type))]
     root.statements = [IRPrimitiveLoop(code, setup, body)]
-    function = SimpleNamespace(code=code, func=Function(), ops=[], block=root, locals=[radius])
+    function = cast(
+        IRFunction, SimpleNamespace(code=code, func=Function(), ops=[], block=root, locals=[radius])
+    )
     IRLoopConditionOptimizer(function).optimize()
 
     # Execute the first iteration, which returns immediately. Losing the loop

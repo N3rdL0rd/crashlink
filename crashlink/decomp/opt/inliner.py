@@ -1528,10 +1528,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                                 if self._stmt_contains_local(s, temp_local):
                                     later_uses = True
                                     break
-                            if (
-                                not later_uses
-                                and self._local_read_in_continuation(continuation, temp_local)
-                            ):
+                            if not later_uses and self._local_read_in_continuation(continuation, temp_local):
                                 later_uses = True
                             if not later_uses:
                                 substituted = self._substitute_in_statement(
@@ -1992,8 +1989,6 @@ class IRCopyPropOptimizer(_ReferenceAwareOptimizer):
             elif copy != current:
                 return None
         return copy
-
-
 
     def _last_significant_statement(self, block: IRBlock) -> Optional[IRStatement]:
         """Return the last non-IRReturn statement in a block, or None."""

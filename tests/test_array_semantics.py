@@ -1,11 +1,21 @@
 """Array recovery must preserve captured values, effects, and declaration types."""
 
 from types import SimpleNamespace
+from typing import cast
 
 from crashlink.core import Array, Bool, Bytecode, Dyn, F64, I32, Type, Void, tIndex
+from crashlink.decomp.function import IRFunction
 from crashlink.decomp.ir import (
-    IRArrayAccess, IRArrayLiteral, IRAssign, IRBlock, IRConditional, IRConst,
-    IRExpression, IRLocal, IRNativeArrayNew, IRReturn,
+    IRArrayAccess,
+    IRArrayLiteral,
+    IRAssign,
+    IRBlock,
+    IRConditional,
+    IRConst,
+    IRExpression,
+    IRLocal,
+    IRNativeArrayNew,
+    IRReturn,
 )
 from crashlink.decomp.opt.arrays import IRArrayObjWrapperOptimizer
 from crashlink.decomp.opt.arraytypes import _recover_native_local_types, _uniform_element_type
@@ -62,7 +72,9 @@ def _evaluate(node, values, events):
     if isinstance(node, IRLocal):
         return values[node.name]
     if isinstance(node, IRConditional):
-        return _evaluate(node.true_block if _evaluate(node.condition, values, events) else node.false_block, values, events)
+        return _evaluate(
+            node.true_block if _evaluate(node.condition, values, events) else node.false_block, values, events
+        )
     if isinstance(node, IRNativeArrayNew):
         return [None] * _evaluate(node.size, values, events)
     if isinstance(node, IRArrayLiteral):
@@ -76,7 +88,7 @@ def _evaluate(node, values, events):
 
 
 def _fold(code, block, array):
-    optimizer = IRArrayObjWrapperOptimizer(SimpleNamespace(code=code))
+    optimizer = IRArrayObjWrapperOptimizer(cast(IRFunction, SimpleNamespace(code=code)))
     match = optimizer._try_fold_array_literal(block.statements, len(block.statements) - 1, array)
     if match is not None:
         elements, consumed = match
@@ -93,8 +105,12 @@ def test_literal_preserves_value_stored_before_nested_register_reuse():
         IRAssign(code, array, IRNativeArrayNew(code, tIndex(3), code.types[2], _int(code, 2))),
         IRAssign(code, value, _int(code, 11)),
         IRAssign(code, IRArrayAccess(code, array, _int(code, 0)), value),
-        IRConditional(code, IRConst(code, IRConst.ConstType.BOOL, value=True),
-                      _block(code, IRAssign(code, value, _int(code, 22))), _block(code)),
+        IRConditional(
+            code,
+            IRConst(code, IRConst.ConstType.BOOL, value=True),
+            _block(code, IRAssign(code, value, _int(code, 22))),
+            _block(code),
+        ),
         IRAssign(code, IRArrayAccess(code, array, _int(code, 1)), value),
         IRReturn(code, array),
     )
@@ -134,5 +150,5 @@ def test_reused_native_register_declaration_covers_all_allocations():
         IRAssign(code, array, IRNativeArrayNew(code, tIndex(3), code.types[1], _int(code, 1))),
         IRAssign(code, array, IRNativeArrayNew(code, tIndex(3), code.types[5], _int(code, 1))),
     )
-    _recover_native_local_types(SimpleNamespace(block=block), code)
+    _recover_native_local_types(cast(IRFunction, SimpleNamespace(block=block)), code)
     assert _collect_locals(block)["array"] == "hl.NativeArray<Dynamic>"

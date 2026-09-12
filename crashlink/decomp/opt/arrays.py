@@ -238,12 +238,16 @@ class IRArrayObjWrapperOptimizer(TraversingIROptimizer):
     def _invalidates(self, stmt: IRStatement, locals: Set[IRLocal]) -> bool:
         if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target in locals:
             return True
-        if isinstance(stmt, (IRRef, IRRefNew)) and any(self._expr_reads(stmt.target, local) for local in locals):
+        if isinstance(stmt, (IRRef, IRRefNew)) and any(
+            self._expr_reads(stmt.target, local) for local in locals
+        ):
             return True
         return any(self._invalidates(child, locals) for child in stmt.get_children())
 
     def _takes_reference(self, stmt: IRStatement, locals: Set[IRLocal]) -> bool:
-        if isinstance(stmt, (IRRef, IRRefNew)) and any(self._expr_reads(stmt.target, local) for local in locals):
+        if isinstance(stmt, (IRRef, IRRefNew)) and any(
+            self._expr_reads(stmt.target, local) for local in locals
+        ):
             return True
         return any(self._takes_reference(child, locals) for child in stmt.get_children())
 

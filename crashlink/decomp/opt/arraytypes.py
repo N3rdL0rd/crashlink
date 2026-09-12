@@ -68,7 +68,11 @@ def _uniform_element_type(elements: List[IRExpression], code: Bytecode) -> Optio
         except Exception:
             return None
         name = _array_type_name(t, code)
-        if name in _ERASED_ARRAY_TYPES or t.kind.value in (Type.Kind.DYN.value, Type.Kind.VOID.value, Type.Kind.NULL.value):
+        if name in _ERASED_ARRAY_TYPES or t.kind.value in (
+            Type.Kind.DYN.value,
+            Type.Kind.VOID.value,
+            Type.Kind.NULL.value,
+        ):
             return None
         if et is None:
             et = t
@@ -334,7 +338,6 @@ def _collect_calls_expr(expr: IRExpression, calls: List[IRCall]) -> None:
             _collect_calls_expr(child, calls)
 
 
-
 def _recover_native_local_types(ir_func: "IRFunction", code: Bytecode) -> None:
     """A register declaration must cover every native-array value assigned to it.
 
@@ -364,6 +367,7 @@ def _recover_native_local_types(ir_func: "IRFunction", code: Bytecode) -> None:
         pending.extend(stmt.get_children())
     for key, local in targets.items():
         local.native_elem_type = evidence[key] or _get_type_in_code(code, "Dyn")
+
 
 def recover_array_element_types(ir_class: "IRClass") -> None:
     """Recover Array<T> element types for fields, params, and locals of an IRClass."""

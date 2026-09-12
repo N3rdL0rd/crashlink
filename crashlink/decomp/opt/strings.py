@@ -125,8 +125,14 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
         i = 2
         while i < len(statements):
             reference, conversion, allocation = statements[i - 2 : i + 1]
-            if not all(isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)
-                       for stmt in (reference, conversion, allocation)):
+            if not (
+                isinstance(reference, IRAssign)
+                and isinstance(reference.target, IRLocal)
+                and isinstance(conversion, IRAssign)
+                and isinstance(conversion.target, IRLocal)
+                and isinstance(allocation, IRAssign)
+                and isinstance(allocation.target, IRLocal)
+            ):
                 i += 1
                 continue
             ref_expr, native, alloc = reference.expr, conversion.expr, allocation.expr
@@ -152,8 +158,10 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
                 i += 1
                 continue
             excluded = {id(reference), id(conversion), id(allocation)}
-            if any(self._reads_outside(local, excluded)
-                   for local in (reference.target, conversion.target, ref_expr.target)):
+            if any(
+                self._reads_outside(local, excluded)
+                for local in (reference.target, conversion.target, ref_expr.target)
+            ):
                 i += 1
                 continue
             # Numeric input is evaluated before the native overwrites count.

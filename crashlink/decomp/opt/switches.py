@@ -123,7 +123,7 @@ class IRIntSwitchOptimizer(TraversingIROptimizer):
             return None
         if default is None:
             default = IRBlock(self.func.code)
-        return cast(IRSwitch, IRSwitch(self.func.code, local, cases, default).adopt(*chain))
+        return IRSwitch(self.func.code, local, cases, default).adopt(*chain)
 
 
 class IRStringSwitchOptimizer(TraversingIROptimizer):

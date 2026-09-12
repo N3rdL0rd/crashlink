@@ -89,10 +89,7 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
     """
 
     def _clone_bool_expr(self, expr: IRBoolExpr) -> IRBoolExpr:
-        return cast(
-            IRBoolExpr,
-            IRBoolExpr(expr.code, expr.op, expr.left, expr.right).adopt(expr),
-        )
+        return IRBoolExpr(expr.code, expr.op, expr.left, expr.right).adopt(expr)
 
     def _inline_into_boolexpr(
         self,
@@ -2653,8 +2650,10 @@ class IRTypedCatchOptimizer(IROptimizer):
                     return None
                 type_const = type_alias.expr
             if not (
-                ((isinstance(field, IRField) and field.target is ve and field.field_name == "value")
-                 or (payload_local is not None and field is payload_local))
+                (
+                    (isinstance(field, IRField) and field.target is ve and field.field_name == "value")
+                    or (payload_local is not None and field is payload_local)
+                )
                 and isinstance(type_const, IRConst)
                 and isinstance(type_const.value, Type)
             ):
@@ -2695,9 +2694,7 @@ class IRTypedCatchOptimizer(IROptimizer):
 
     # --- arm-pair and clause helpers ---------------------------------------
 
-    def _consume_type_alias(
-        self, stmts: List[IRStatement], i: int
-    ) -> Tuple[Optional[IRAssign], int]:
+    def _consume_type_alias(self, stmts: List[IRStatement], i: int) -> Tuple[Optional[IRAssign], int]:
         """Recognize the class reference load immediately preceding a dispatch test."""
         stmt = stmts[i]
         if (
@@ -2804,8 +2801,13 @@ class IRTypedCatchOptimizer(IROptimizer):
         binding = IRLocal(name, tIndex(self.func.code.types.index(typ)), self.func.code)
         memo = {
             id(value): value
-            for value in [self.func.code, *self.func.code.types, *self.func.code.functions,
-                          *self.func.code.natives, *self.func.all_locals]
+            for value in [
+                self.func.code,
+                *self.func.code.types,
+                *self.func.code.functions,
+                *self.func.code.natives,
+                *self.func.all_locals,
+            ]
         }
         memo[id(source)] = binding
         body = IRBlock(self.func.code)

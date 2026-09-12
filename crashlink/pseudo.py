@@ -432,13 +432,15 @@ def _resolve_array_access(
     if kind and kind != "UI8":
         return arr_str, idx_str, kind
     return arr_str, idx_str, None
-def _expression_for_type(expr: IRExpression, typ: Type, code: Bytecode, ir_function: Optional[IRFunction]) -> str:
+
+
+def _expression_for_type(
+    expr: IRExpression, typ: Type, code: Bytecode, ir_function: Optional[IRFunction]
+) -> str:
     value = _expression_to_haxe(expr, code, ir_function)
     if typ.kind.value == Type.Kind.BYTES.value and disasm.type_name(code, expr.get_type()) == "String":
         return f"(@:privateAccess ({value}).bytes)"
     return value
-
-
 
 
 def _expression_to_haxe(
@@ -751,7 +753,11 @@ def _expression_to_haxe(
     elif isinstance(expr, IRRefNew):
         # A reference takes the address of the VM local, not its current
         # render-time substitution (which may be a constant or computation).
-        inner = expr.target.name if isinstance(expr.target, IRLocal) else _expression_to_haxe(expr.target, code, ir_function)
+        inner = (
+            expr.target.name
+            if isinstance(expr.target, IRLocal)
+            else _expression_to_haxe(expr.target, code, ir_function)
+        )
         return f"new hl.Ref({inner})"
 
     elif isinstance(expr, IRRefGet):
@@ -970,7 +976,11 @@ def _expression_to_haxe(
                 flag = f"({flag}).get()"
             return f"cast {callee_str}({value}, {flag})"
         result = f"{callee_str}({args_str})"
-        if isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function) and _is_std_function(expr.target.value, code):
+        if (
+            isinstance(expr.target, IRConst)
+            and isinstance(expr.target.value, Function)
+            and _is_std_function(expr.target.value, code)
+        ):
             return f"(@:privateAccess {result})"
         return result
 
@@ -1447,8 +1457,10 @@ def _generate_statements(
             if type_str.startswith("hl.BytesAccess") and not value_str.startswith("cast "):
                 value_str = f"cast {value_str}"
             if type_str == "Dynamic" and (
-                isinstance(stmt.expr, IRConst) and isinstance(stmt.expr.value, Type)
-                or isinstance(stmt.expr, IRField) and isinstance(stmt.expr.get_type().definition, Fun)
+                isinstance(stmt.expr, IRConst)
+                and isinstance(stmt.expr.value, Type)
+                or isinstance(stmt.expr, IRField)
+                and isinstance(stmt.expr.get_type().definition, Fun)
             ):
                 output_lines.append(f"{indent}var {local_name} = {value_str};")
             else:
@@ -2036,7 +2048,9 @@ def _generate_statements(
                         and _is_read_in_while_condition(ir_function.block, stmt.target.name)
                     )
                     and not _source_redefined_before_use(
-                        ir_function.block, stmt, stmt.target.name,
+                        ir_function.block,
+                        stmt,
+                        stmt.target.name,
                         {loc.name for loc in _free_locals_in_expr(stmt.expr)},
                     )
                 )
@@ -2810,8 +2824,6 @@ def _render_interpolated(parts: List[Tuple[str, Any]]) -> str:
                 out.append("${" + simple + "}")
     out.append("'")
     return "".join(out)
-
-
 
 
 def _std_property_accessor_name(func: "Function", code: Bytecode, remaining_args: int) -> Optional[str]:

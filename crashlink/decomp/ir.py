@@ -8,7 +8,7 @@ import re
 import weakref
 from abc import ABC, abstractmethod
 from enum import Enum as _Enum
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, TypeVar
 
 from ..core import (
     Bytecode,
@@ -56,6 +56,9 @@ def _get_type_in_code(code: Bytecode, name: str) -> Type:
     return found
 
 
+_AdoptSelf = TypeVar("_AdoptSelf", bound="IRStatement")
+
+
 class IRStatement(ABC):
     def __init__(self, code: Bytecode):
         self.code = code
@@ -85,7 +88,7 @@ class IRStatement(ABC):
     def src_op_idx(self, value: Optional[int]) -> None:
         self.src_op_idxs = {value} if value is not None else set()
 
-    def adopt(self, *others: "IRStatement") -> "IRStatement":
+    def adopt(self: _AdoptSelf, *others: "IRStatement") -> _AdoptSelf:
         """Merge in the source-opcode indices of statement(s) this one replaces."""
         for o in others:
             self.src_op_idxs |= o.src_op_idxs
@@ -835,7 +838,7 @@ class IRPrimitiveJump(IRExpression):
         self.left = left
         self.right = right
         self.cond = cond
-        self.exit_on_true = exit_on_true # either edge can be the jump-out, not just the false edge
+        self.exit_on_true = exit_on_true  # either edge can be the jump-out, not just the false edge
         assert op.op in conditionals
 
     def get_type(self) -> Type:
