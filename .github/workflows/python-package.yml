@@ -68,13 +68,15 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CRASHLINK_REQUIRE_QUALITY: "1"
-      CRASHLINK_QUALITY_DIR: ${{ runner.temp }}/crashlink-quality
-      HL_SOURCE: ${{ runner.temp }}/hashlink
-      HL_LIBRARY_DIR: ${{ runner.temp }}/hashlink/build/bin
-      HL_RUNTIME: ${{ runner.temp }}/hashlink/build/bin/hl
-      LD_LIBRARY_PATH: ${{ runner.temp }}/hashlink/build/bin
     steps:
     - uses: actions/checkout@v4
+    - name: Compute runner-relative paths
+      run: |
+        echo "CRASHLINK_QUALITY_DIR=$RUNNER_TEMP/crashlink-quality" >> "$GITHUB_ENV"
+        echo "HL_SOURCE=$RUNNER_TEMP/hashlink" >> "$GITHUB_ENV"
+        echo "HL_LIBRARY_DIR=$RUNNER_TEMP/hashlink/build/bin" >> "$GITHUB_ENV"
+        echo "HL_RUNTIME=$RUNNER_TEMP/hashlink/build/bin/hl" >> "$GITHUB_ENV"
+        echo "LD_LIBRARY_PATH=$RUNNER_TEMP/hashlink/build/bin" >> "$GITHUB_ENV"
     - uses: astral-sh/setup-uv@v5
       with:
         python-version: "3.13"
