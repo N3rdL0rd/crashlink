@@ -403,6 +403,13 @@ def test_numeric_boundaries_and_nan_survive_execution(compiled_numeric_program):
             "Sys.println(DoWhileBreakCase.firstMultipleOfThree(1));",
             ["3", "2", "1"],
         ),
+        (
+            "ForLoopRegisterReuseCase",
+            "Sys.println(ForLoopRegisterReuseCase.sumRange(5)); "
+            "Sys.println(ForLoopRegisterReuseCase.sumRange(3)); "
+            "Sys.println(ForLoopRegisterReuseCase.sumRange(2));",
+            ["11", "4", "2"],
+        ),
     ],
 )
 def test_array_mutation_and_loop_exits_survive_roundtrip(tmp_path, name, body, expected):
@@ -417,6 +424,11 @@ def test_array_mutation_and_loop_exits_survive_roundtrip(tmp_path, name, body, e
         else:
             bytecode = Bytecode.from_path(str(tmp_path / "original" / "program.hl"))
             source = IRClass(bytecode, bytecode.get_test_obj(name)).pseudo()
+            if name == "ForLoopRegisterReuseCase":
+                # Regression guard for #26: a debug-named local elsewhere in
+                # the function that happens to reuse the loop index's raw
+                # register must not stop the for-loop from being recovered.
+                assert "for (i in 0" in source, source
         (directory / f"{name}.hx").write_text(source)
         # The fixture mains discard their results. A separate caller observes
         # mutations, empty input, early returns and normal loop termination.

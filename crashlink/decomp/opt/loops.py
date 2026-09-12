@@ -4,7 +4,7 @@ Loop-reroll and loop-lifting optimizers.
 
 from __future__ import annotations
 
-from typing import List, Optional, Set, Tuple
+from typing import List, Optional, Tuple
 
 
 from ..ir import (
@@ -290,21 +290,7 @@ class IRForEachLoopOptimizer(TraversingIROptimizer):
     """
 
     def _is_user_local(self, local: IRLocal) -> bool:
-        if not self.func.func.has_debug or not self.func.func.assigns:
-            return False
-        user_regs: Set[int] = set()
-        for _, op_idx in self.func.func.assigns:
-            val = op_idx.value - 1
-            if 0 <= val < len(self.func.ops):
-                op = self.func.ops[val]
-                if "dst" in op.df:
-                    user_regs.add(op.df["dst"].value)
-        if local.name.startswith("var"):
-            try:
-                return int(local.name[3:]) in user_regs
-            except ValueError:
-                pass
-        return True
+        return not local.name.startswith("var")
 
     def _expr_reads_local(self, expr: Optional[IRExpression], local: IRLocal) -> bool:
         if expr is None:
@@ -551,21 +537,7 @@ class IRIntRangeLoopOptimizer(TraversingIROptimizer):
     """
 
     def _is_user_local(self, local: IRLocal) -> bool:
-        if not self.func.func.has_debug or not self.func.func.assigns:
-            return False
-        user_regs: Set[int] = set()
-        for _, op_idx in self.func.func.assigns:
-            val = op_idx.value - 1
-            if 0 <= val < len(self.func.ops):
-                op = self.func.ops[val]
-                if "dst" in op.df:
-                    user_regs.add(op.df["dst"].value)
-        if local.name.startswith("var"):
-            try:
-                return int(local.name[3:]) in user_regs
-            except ValueError:
-                pass
-        return True
+        return not local.name.startswith("var")
 
     def _expr_reads_local(self, expr: Optional[IRExpression], local: IRLocal) -> bool:
         if expr is None:
