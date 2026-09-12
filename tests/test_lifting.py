@@ -225,7 +225,7 @@ def test_string_bytes_field_rendered():
     assert "this.bytes" in out
     assert "s.bytes" in out
     out = _decompile_at("tests/haxe/Clazz.hl", 17)
-    assert "return s.bytes" in out
+    assert "return (@:privateAccess s.bytes)" in out
 
 
 def test_string_fromuc2_not_folded_prematurely():
@@ -233,7 +233,7 @@ def test_string_fromuc2_not_folded_prematurely():
     # it must not be folded into a __alloc__ call with a stale length value.
     out = _decompile_at("tests/haxe/Clazz.hl", 18)
     assert "new String()" in out
-    assert "Native.ucs2length(b, 0)" in out
+    assert "Native.n31_ucs2length(b, 0)" in out
 
 
 def test_string_concat_shift_amount_constant():

@@ -27,6 +27,8 @@ from ..ir import (
     IRField,
     IRArrayAccess,
     IRArrayLiteral,
+    IRNativeArrayNew,
+    _get_type_in_code,
     IRCall,
     IRConst,
     IRCast,
@@ -61,17 +63,16 @@ def _uniform_element_type(elements: List[IRExpression], code: Bytecode) -> Optio
     type, else None (mixed literals are genuinely Array<Dynamic>)."""
     et: Optional[Type] = None
     for elem in elements:
-        e = _strip_cast(elem)
         try:
-            t = e.get_type()
+            t = elem.get_type()
         except Exception:
             return None
         name = _array_type_name(t, code)
-        if name in _ERASED_ARRAY_TYPES or name in ("Dyn", "Dynamic", "Void", "Null"):
+        if name in _ERASED_ARRAY_TYPES or t.kind.value in (Type.Kind.DYN.value, Type.Kind.VOID.value, Type.Kind.NULL.value):
             return None
         if et is None:
             et = t
-        elif _array_type_name(et, code) != name:
+        elif et != t:
             return None
     return et
 
@@ -333,6 +334,37 @@ def _collect_calls_expr(expr: IRExpression, calls: List[IRCall]) -> None:
             _collect_calls_expr(child, calls)
 
 
+
+def _recover_native_local_types(ir_func: "IRFunction", code: Bytecode) -> None:
+    """A register declaration must cover every native-array value assigned to it.
+
+    Allocation metadata belongs to the expression, not a reused register. A
+    backing-field read has erased element type; mixing it with a typed alloc
+    must not leave the allocation's narrower type on the shared declaration.
+    """
+    evidence: Dict[int, Optional[Type]] = {}
+    targets: Dict[int, IRLocal] = {}
+    pending: List[IRStatement] = [ir_func.block]
+    visited: Set[int] = set()
+    while pending:
+        stmt = pending.pop()
+        if id(stmt) in visited:
+            continue
+        visited.add(id(stmt))
+        if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+            local = stmt.target
+            if local.get_type().kind.value == Type.Kind.ARRAY.value:
+                key = id(local)
+                elem_type = stmt.expr.elem_type if isinstance(stmt.expr, IRNativeArrayNew) else None
+                if key not in evidence:
+                    evidence[key] = elem_type
+                elif evidence[key] != elem_type:
+                    evidence[key] = None
+                targets[key] = local
+        pending.extend(stmt.get_children())
+    for key, local in targets.items():
+        local.native_elem_type = evidence[key] or _get_type_in_code(code, "Dyn")
+
 def recover_array_element_types(ir_class: "IRClass") -> None:
     """Recover Array<T> element types for fields, params, and locals of an IRClass."""
     code = ir_class.code
@@ -387,6 +419,7 @@ def recover_array_element_types(ir_class: "IRClass") -> None:
         if not hasattr(ir_func, "block"):
             continue
         vis = set()
+        _recover_native_local_types(ir_func, code)
         _propagate_call_sites(ir_func.block, code, vis, name_to_irfunc, findex_to_irfunc, global_cache)
 
     # Seed the global cache from this class's own recovered fields.

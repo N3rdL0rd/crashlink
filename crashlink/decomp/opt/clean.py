@@ -73,9 +73,10 @@ from . import (
     _structurally_equal,
     _stmt_lists_structurally_equal,
 )
+from .inliner import _ReferenceAwareOptimizer
 
 
-class IRLoopConditionOptimizer(TraversingIROptimizer):
+class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
     """
     Optimizes IRPrimitiveLoop structures into IRWhileLoop.
     It expects the IRPrimitiveLoop's condition block to end with an IRBoolExpr
@@ -196,6 +197,8 @@ class IRLoopConditionOptimizer(TraversingIROptimizer):
                 isinstance(stmt, IRAssign)
                 and isinstance(stmt.expr, IRExpression)
                 and isinstance(stmt.target, IRLocal)
+                and not self._is_address_taken(stmt.target)
+                and not self._reads_address_taken(stmt.expr)
                 and not _has_observable_effects(stmt.expr)
             ):
                 # The loop wraps around: after this statement, execution continues to
@@ -534,7 +537,7 @@ def _is_closure_producing_field(expr: IRExpression) -> bool:
     return kind in (Type.Kind.FUN.value, Type.Kind.METHOD.value)
 
 
-class IRRedundantRecomputeEliminator(TraversingIROptimizer):
+class IRRedundantRecomputeEliminator(_ReferenceAwareOptimizer):
     """
     Rewrites `t1 = E; t2 = E;` (the same expression recomputed verbatim in the
     very next statement) into `t1 = E; t2 = t1;`.
@@ -562,6 +565,7 @@ class IRRedundantRecomputeEliminator(TraversingIROptimizer):
                 and isinstance(nxt.target, IRLocal)
                 and nxt.target != stmt.target
                 and not isinstance(stmt.expr, (IRLocal, IRConst))
+                and not _has_observable_effects(stmt.expr)
                 and not _is_closure_producing_field(stmt.expr)
                 and _structurally_equal(stmt.expr, nxt.expr)
             ):
@@ -579,6 +583,8 @@ class IRRedundantRecomputeEliminator(TraversingIROptimizer):
                 nxt is not None
                 and isinstance(stmt, IRAssign)
                 and isinstance(stmt.target, IRLocal)
+                and not self._is_address_taken(stmt.target)
+                and not _has_observable_effects(stmt.expr)
                 and not isinstance(stmt.expr, (IRLocal, IRConst))
                 and isinstance(nxt, (IRReturn, IRThrow))
                 and nxt.value is not None
@@ -847,7 +853,7 @@ class IRVoidAssignOptimizer(TraversingIROptimizer):
             block.statements = new_statements
 
 
-class IRDeadTempEliminator(IROptimizer):
+class IRDeadTempEliminator(_ReferenceAwareOptimizer):
     """Removes assignments to compiler-generated temp variables that are never read."""
 
     def optimize(self) -> None:
@@ -1034,6 +1040,7 @@ class IRDeadTempEliminator(IROptimizer):
             if (
                 isinstance(stmt, IRAssign)
                 and isinstance(stmt.target, IRLocal)
+                and not self._is_address_taken(stmt.target)
                 and stmt.target.name not in globally_used
                 and self._is_dead_removable(stmt.target, user_names, user_regs)
             ):
@@ -1102,7 +1109,7 @@ class IRDeadCodeEliminator(TraversingIROptimizer):
                     self.visit_block(child)
 
 
-class IRDeadStoreEliminator(TraversingIROptimizer):
+class IRDeadStoreEliminator(_ReferenceAwareOptimizer):
     """Removes local assignments that are overwritten before being read within a block."""
 
     def visit_block(self, block: IRBlock) -> None:
@@ -1255,6 +1262,7 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
             target = _written_local(stmt)
             if (
                 target is not None
+                and not self._is_address_taken(target)
                 and isinstance(stmt, IRAssign)
                 and not _has_observable_effects(stmt.expr)
                 and _first_use_in_list(block.statements[i + 1 :], target, set()) == "kill"
@@ -1307,7 +1315,7 @@ class IRDeadStoreEliminator(TraversingIROptimizer):
         return False
 
 
-class IRSequentialTempFolder(TraversingIROptimizer):
+class IRSequentialTempFolder(_ReferenceAwareOptimizer):
     """Folds a simple local assignment into the very next assignment to the same local.
 
     Patterns like `var1 = this.bytes; var1 = Native.f(var1, ...)` are simplified
@@ -1327,6 +1335,8 @@ class IRSequentialTempFolder(TraversingIROptimizer):
                 if not (
                     isinstance(stmt, IRAssign)
                     and isinstance(stmt.target, IRLocal)
+                    and not self._is_address_taken(stmt.target)
+                    and not self._reads_address_taken(stmt.expr)
                     and self._is_simple_expr(stmt.expr)
                     and not self._expr_uses_local(stmt.expr, stmt.target)
                     and isinstance(nxt, IRAssign)
@@ -1365,6 +1375,8 @@ class IRSequentialTempFolder(TraversingIROptimizer):
         )
 
     def _replace_local_in_expr(self, expr: IRExpression, local: IRLocal, replacement: IRExpression) -> bool:
+        if isinstance(expr, (IRRef, IRRefNew)):
+            return False
         if expr == local:
             return True
         made_change = False
@@ -1429,10 +1441,6 @@ class IRSequentialTempFolder(TraversingIROptimizer):
             if child is parent.value:
                 parent.value = value
                 return True
-        elif isinstance(parent, IRRef):
-            if child is parent.target:
-                parent.target = value
-                return True
         elif isinstance(parent, IRArrayLiteral):
             for j, element in enumerate(parent.elements):
                 if element is child:
@@ -1450,7 +1458,7 @@ class IRSequentialTempFolder(TraversingIROptimizer):
         return False
 
 
-class IRDeadAssignmentEliminator(TraversingIROptimizer):
+class IRDeadAssignmentEliminator(_ReferenceAwareOptimizer):
     """Removes assignments to locals that are never read before being redefined.
 
     Performs a structured backward liveness sweep keyed by local *name* (HL IR
@@ -1487,6 +1495,7 @@ class IRDeadAssignmentEliminator(TraversingIROptimizer):
                 mutate
                 and isinstance(stmt, IRAssign)
                 and isinstance(stmt.target, IRLocal)
+                and not self._is_address_taken(stmt.target)
                 and self._local_name(stmt.target) not in live
             ):
                 if self._is_user_local_name(self._local_name(stmt.target)):
@@ -2477,6 +2486,7 @@ class IRTypedCatchOptimizer(IROptimizer):
         if e is None or tc.extra_catches:
             return []
         stmts = tc.catch_block.statements
+        self._dispatch_aliases: Set[IRLocal] = set()
         arms: List[Tuple[Type, IRBlock]] = []
         unwrap_arms: List[Tuple[Type, IRBlock]] = []
         consumed = self._parse_check_chain(stmts, 0, e, arms, unwrap_arms)
@@ -2501,6 +2511,16 @@ class IRTypedCatchOptimizer(IROptimizer):
                 clause = self._make_clause(typ, bodies_by_name[self._type_name(typ)], e)
             clauses.append(clause)
         if any(clause is None for clause in clauses):
+            return []
+        if any(
+            self._references_local(body, alias)
+            for alias in self._dispatch_aliases
+            for _, body in (clause for clause in clauses if clause is not None)
+        ) or any(
+            self._references_local(stmt, alias)
+            for alias in self._dispatch_aliases
+            for stmt in stmts[consumed:]
+        ):
             return []
         assert clauses[0] is not None
         first_local, first_body = clauses[0]
@@ -2534,9 +2554,10 @@ class IRTypedCatchOptimizer(IROptimizer):
             stmt = stmts[i]
             if isinstance(stmt, IRThrow) and stmt.value is e:
                 return i + 1
+            type_alias, i = self._consume_type_alias(stmts, i)
             if i + 1 >= len(stmts):
                 return None
-            matched = self._match_check_pair(stmts[i], stmts[i + 1], e)
+            matched = self._match_check_pair(stmts[i], stmts[i + 1], e, type_alias)
             if matched is None:
                 return None
             typ, tname, body, cond = matched
@@ -2577,6 +2598,7 @@ class IRTypedCatchOptimizer(IROptimizer):
         # Skip catch-register plumbing the wrapped path emits before the
         # isOfType chain (e.g. `e = ve.value`, kept inside loops).
         start = 1
+        payload_local = None
         while start < len(stmts):
             plumbing = stmts[start]
             if (
@@ -2591,10 +2613,11 @@ class IRTypedCatchOptimizer(IROptimizer):
                     or (isinstance(plumbing.expr, IRConst) and plumbing.expr.value is None)
                 )
             ):
+                payload_local = e if self._is_value_field(plumbing.expr) else None
                 start += 1
                 continue
             break
-        return self._parse_isotype_chain(stmts, start, ve, sub_arms)
+        return self._parse_isotype_chain(stmts, start, ve, sub_arms, payload_local)
 
     def _parse_isotype_chain(
         self,
@@ -2602,6 +2625,7 @@ class IRTypedCatchOptimizer(IROptimizer):
         i: int,
         ve: IRLocal,
         sub_arms: List[Tuple[Type, IRBlock]],
+        payload_local: Optional[IRLocal] = None,
     ) -> Optional[int]:
         """Walk `isOfType(ve.value, Xj)` sub-arms. Returns the index just past
         the terminal `throw ve` (or len(stmts) for the guard variant), or None."""
@@ -2611,6 +2635,7 @@ class IRTypedCatchOptimizer(IROptimizer):
             stmt = stmts[i]
             if isinstance(stmt, IRThrow) and stmt.value is ve:
                 return i + 1
+            type_alias, i = self._consume_type_alias(stmts, i)
             if i + 1 >= len(stmts):
                 return None
             assign = stmts[i]
@@ -2623,10 +2648,13 @@ class IRTypedCatchOptimizer(IROptimizer):
             ):
                 return None
             field, type_const = call.args
+            if type_alias is not None:
+                if type_const is not type_alias.target:
+                    return None
+                type_const = type_alias.expr
             if not (
-                isinstance(field, IRField)
-                and field.target is ve
-                and field.field_name == "value"
+                ((isinstance(field, IRField) and field.target is ve and field.field_name == "value")
+                 or (payload_local is not None and field is payload_local))
                 and isinstance(type_const, IRConst)
                 and isinstance(type_const.value, Type)
             ):
@@ -2644,7 +2672,7 @@ class IRTypedCatchOptimizer(IROptimizer):
                 if len(else_stmts) == 0:
                     i += 2
                     continue
-                if self._parse_isotype_chain(else_stmts, 0, ve, sub_arms) != len(else_stmts):
+                if self._parse_isotype_chain(else_stmts, 0, ve, sub_arms, payload_local) != len(else_stmts):
                     return None
                 return i + 2
             if (
@@ -2667,8 +2695,26 @@ class IRTypedCatchOptimizer(IROptimizer):
 
     # --- arm-pair and clause helpers ---------------------------------------
 
+    def _consume_type_alias(
+        self, stmts: List[IRStatement], i: int
+    ) -> Tuple[Optional[IRAssign], int]:
+        """Recognize the class reference load immediately preceding a dispatch test."""
+        stmt = stmts[i]
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRLocal)
+            and isinstance(stmt.expr, IRConst)
+            and stmt.expr.const_type == IRConst.ConstType.GLOBAL_OBJ
+            and isinstance(stmt.expr.value, Type)
+            and isinstance(stmt.expr.value.definition, Obj)
+            and "$" in stmt.expr.value.definition.name.resolve(self.func.code)
+        ):
+            self._dispatch_aliases.add(stmt.target)
+            return stmt, i + 1
+        return None, i
+
     def _match_check_pair(
-        self, assign: IRStatement, cond: IRStatement, e: IRLocal
+        self, assign: IRStatement, cond: IRStatement, e: IRLocal, type_alias: Optional[IRAssign] = None
     ) -> Optional[Tuple[Type, str, IRBlock, IRConditional]]:
         """Match `t = X.check(e); if (t) ...`."""
         call = self._std_call(assign, "check")
@@ -2680,6 +2726,10 @@ class IRTypedCatchOptimizer(IROptimizer):
         ):
             return None
         type_const, arg1 = call.args
+        if type_alias is not None:
+            if type_const is not type_alias.target:
+                return None
+            type_const = type_alias.expr
         if not (isinstance(type_const, IRConst) and isinstance(type_const.value, Type)):
             return None
         if arg1 is not e:
@@ -2694,7 +2744,23 @@ class IRTypedCatchOptimizer(IROptimizer):
     ) -> Optional[Tuple[IRLocal, IRBlock]]:
         """Return (binding_local, body) for one restored clause, or None if the
         body uses the caught value in a shape we don't recognize."""
+        if isinstance(typ.definition, Obj) and typ.definition.is_static:
+            typ = typ.definition.dynamic.get_containing_type(self.func.code)
         stmts = body.statements
+        # Wrapped-value clauses can retain the explicit payload-register load
+        # followed by a typed cast. Bind the typed result, not the dynamic
+        # exception scratch register.
+        if len(stmts) >= 2:
+            payload, binding = stmts[:2]
+            if (
+                isinstance(payload, IRAssign)
+                and payload.target is e
+                and self._is_value_field(payload.expr)
+                and isinstance(binding, IRAssign)
+                and isinstance(binding.expr, IRCast)
+                and binding.expr.expr is e
+            ):
+                stmts = stmts[1:]
         first = stmts[0] if stmts else None
         if isinstance(first, IRAssign) and isinstance(first.target, IRLocal):
             expr = first.expr
@@ -2707,8 +2773,7 @@ class IRTypedCatchOptimizer(IROptimizer):
                 # `v = cast(e, T)` (native bodies of exception-subclass arms)
                 # binds the caught value; the clause binds `v`. Any later use
                 # of the dispatch registers in the body is scratch reuse.
-                body.statements = stmts[1:]
-                return first.target, body
+                return self._bind_clause(typ, first.target, stmts[1:])
         try:
             idx = self.func.code.types.index(typ)
         except ValueError:
@@ -2720,12 +2785,33 @@ class IRTypedCatchOptimizer(IROptimizer):
             if self._assigns_local(body, e) or self._references_plumbing(body):
                 return None
             if self._references_local(body, e):
-                e.type = tIndex(idx)
-                return e, body
+                return self._bind_clause(typ, e, body.statements)
             return IRLocal("e", tIndex(idx), self.func.code), body
         if self._references_dispatch(body, e):
             return None
         return IRLocal("e", tIndex(idx), self.func.code), body
+
+    def _bind_clause(
+        self, typ: Type, source: IRLocal, statements: List[IRStatement]
+    ) -> Tuple[IRLocal, IRBlock]:
+        """A catch binding is scoped storage, not a rename of a reused HL register."""
+        names = {local.name for local in self.func.all_locals}
+        base = source.name if not source.name.startswith("var") else "caught"
+        name, suffix = base, 1
+        while name in names:
+            name = f"{base}{suffix}"
+            suffix += 1
+        binding = IRLocal(name, tIndex(self.func.code.types.index(typ)), self.func.code)
+        memo = {
+            id(value): value
+            for value in [self.func.code, *self.func.code.types, *self.func.code.functions,
+                          *self.func.code.natives, *self.func.all_locals]
+        }
+        memo[id(source)] = binding
+        body = IRBlock(self.func.code)
+        body.statements = self.func._clone_value(statements, memo)
+        self.func.all_locals.append(binding)
+        return binding, body
 
     def _is_value_field(self, expr: IRStatement) -> bool:
         """True for `<something>.value` field reads (the ValueException payload)."""
@@ -2734,9 +2820,7 @@ class IRTypedCatchOptimizer(IROptimizer):
     def _references_dispatch(self, stmt: IRStatement, e: IRLocal) -> bool:
         """True if stmt still reads/writes the dispatch plumbing: the catch
         register `e`, any `_.value` unwrap field, or a ValueException local."""
-        if stmt is e:
-            return True
-        return self._references_plumbing(stmt)
+        return self._references_local(stmt, e) or self._references_plumbing(stmt)
 
     def _references_plumbing(self, stmt: IRStatement) -> bool:
         """Dispatch plumbing other than the catch register itself."""

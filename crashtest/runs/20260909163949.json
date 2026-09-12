@@ -1,0 +1,41 @@
+{
+    "git": {
+        "is_release": false,
+        "dirty": true,
+        "branch": "main",
+        "commit": "d071a864",
+        "github": "https://github.com/N3rdL0rd/crashlink/commit/d071a8640a10c4caf9f6bdd2ac38d0b9a345d096"
+    },
+    "context": {
+        "version": "v0.0.8"
+    },
+    "cases": [
+        {
+            "original": {
+                "name": "tests/haxe/ArrayBoundsConst.hl",
+                "content": "Failed to read original file."
+            },
+            "decompiled": {
+                "name": "tests/haxe/ArrayBoundsConst.hl (Decompiled)",
+                "content": "N/A"
+            },
+            "ir": {
+                "name": "tests/haxe/ArrayBoundsConst.hl (IR)",
+                "content": "N/A"
+            },
+            "test_id": 0,
+            "test_name": "Tests/Haxe/ Array Bounds Const.Hl",
+            "failed": true,
+            "error": "Failed to read original file: &#39;utf-8&#39; codec can&#39;t decode byte 0x81 in position 7: invalid start byte\nUnicodeDecodeError: &#39;utf-8&#39; codec can&#39;t decode byte 0x81 in position 7: invalid start byte",
+            "opcode_comparison": null,
+            "behavioral_comparison": null,
+            "layers": null,
+            "elapsed_seconds": 0.10293090104823932,
+            "peak_memory_mb": 20.7109375
+        }
+    ],
+    "id": "20260909163949",
+    "timestamp": "2026-09-09T16:39:49.697910",
+    "status": "All tests failed",
+    "status_color": "#991B1B"
+}

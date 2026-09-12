@@ -5,6 +5,7 @@ IR node types for the decompilation pipeline.
 from __future__ import annotations
 
 import re
+import weakref
 from abc import ABC, abstractmethod
 from enum import Enum as _Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -38,12 +39,17 @@ _type_by_name_cache: Dict[int, Dict[str, Type]] = {}
 
 
 def _get_type_in_code(code: Bytecode, name: str) -> Type:
-    by_name = _type_by_name_cache.get(id(code))
+    key = id(code)
+    by_name = _type_by_name_cache.get(key)
     if by_name is None:
         by_name = {}
         for type in code.types:
             by_name.setdefault(disasm.type_name(code, type), type)
-        _type_by_name_cache[id(code)] = by_name
+        _type_by_name_cache[key] = by_name
+        # `code` isn't hashable, so the cache is keyed by id(); without cleanup a
+        # freed Bytecode's id can be reused by an unrelated later instance, which
+        # would then silently hit this stale entry. Evict on collection instead.
+        weakref.finalize(code, _type_by_name_cache.pop, key, None)
     found = by_name.get(name)
     if found is None:
         raise DecompError(f"Type {name} not found in code")
@@ -1097,6 +1103,23 @@ class IRCast(IRExpression):
         return f"<IRCast: ({type_name}){self.expr}>"
 
 
+class IRStringConvert(IRExpression):
+    """Converts a value to its string representation at this evaluation point."""
+
+    def __init__(self, code: Bytecode, value: IRExpression):
+        super().__init__(code)
+        self.value = value
+
+    def get_type(self) -> Type:
+        return _get_type_in_code(self.code, "String")
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.value]
+
+    def __repr__(self) -> str:
+        return f"<IRStringConvert: string({self.value})>"
+
+
 class IRArrayLiteral(IRExpression):
     """Represents a Haxe array literal, e.g. [1, 2, 3]."""
 
@@ -1279,7 +1302,7 @@ class IREnumConstruct(IRExpression):
         return self.enum_type_idx.resolve(self.code)
 
     def get_children(self) -> List[IRStatement]:
-        return []
+        return list(self.args)
 
     def __repr__(self) -> str:
         args_str = ", ".join(str(a) for a in self.args)

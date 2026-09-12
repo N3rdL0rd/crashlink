@@ -39,12 +39,14 @@ from ..ir import (
     IRField,
     IRNew,
     IRCast,
+    IRStringConvert,
     IRArrayAccess,
     IRRef,
     IRRefNew,
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
+    IRUnliftedOpcode,
 )
 from . import (
     TraversingIROptimizer,
@@ -96,141 +98,70 @@ class IRGlobalStringOptimizer(TraversingIROptimizer):
 
 
 class IRStringIntConcatOptimizer(TraversingIROptimizer):
-    """
-    Collapses the HashLink string+int lowering pattern at the IR level.
+    """Recover numeric string conversions without dropping the count write.
 
-    HashLink compiles `str + int` as:
-        var_bytes = itos(int_local, ref(int_local))
-        var_str   = String.__alloc__(var_bytes, int_local)  [or inline itos]
-        result    = String.__add__(left, var_str)
-
-    Does a single forward pass tracking the most-recent assignment for each
-    local so that reused registers (same var7 for multiple conversions) are
-    resolved correctly.  Both top-level __alloc__ assignments and __alloc__
-    nested inside __add__ are collapsed to the plain integer local.
+    Only an adjacent std conversion / String allocation pair with private
+    count and reference storage can be folded. Other uses keep the real native
+    calls, including their out-parameter effects.
     """
 
-    def _check_conversion_call(self, expr: IRExpression) -> Optional[Tuple["IRLocal", "IRLocal"]]:
-        """
-        If `expr` is itos(val, ref) or ftos(val, ref), return (value_local, count_ref_local).
-        For itos, HashLink uses the same variable as both value and ref storage.
-        For ftos, a separate int variable stores the byte count.
-        """
-        if not (
-            isinstance(expr, IRCall)
-            and isinstance(expr.target, IRConst)
-            and isinstance(expr.target.value, Native)
-        ):
-            return None
-        func_name = expr.target.value.name.resolve(self.func.code)
-        if func_name not in ("itos", "ftos"):
-            return None
-        if len(expr.args) < 2:
-            return None
-        if not isinstance(expr.args[0], IRLocal):
-            return None
-        # arg1 is the ref where byte count is stored back (IRLocal, IRRef, or IRRefNew wrapping one)
-        count_ref: Optional[IRLocal] = None
-        arg1 = expr.args[1]
-        if isinstance(arg1, IRLocal):
-            count_ref = arg1
-        elif isinstance(arg1, (IRRef, IRRefNew)) and isinstance(arg1.target, IRLocal):
-            count_ref = arg1.target
-        if count_ref is None:
-            return None
-        return expr.args[0], count_ref
+    def _reads_outside(self, local: IRLocal, excluded: Set[int]) -> bool:
+        seen: Set[int] = set()
 
-    def _try_collapse_alloc(
-        self, expr: IRExpression, current_assigns: Dict[str, "IRAssign"]
-    ) -> Optional[IRLocal]:
-        """
-        If `expr` is __alloc__(itos/ftos_bytes, count_ref) with matching count_ref, return
-        the value local (int for itos, float for ftos). `current_assigns` maps local names
-        to their most-recent assignments seen so far.
-        """
-        if not isinstance(expr, IRCall):
-            return None
-        if not (isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function)):
-            return None
-        if self.func.code.partial_func_name(expr.target.value) != "__alloc__":
-            return None
-        if len(expr.args) != 2:
-            return None
+        def reads(node: IRStatement) -> bool:
+            if id(node) in excluded or id(node) in seen:
+                return False
+            seen.add(id(node))
+            if node is local or isinstance(node, IRUnliftedOpcode):
+                return True
+            if isinstance(node, IRAssign) and isinstance(node.target, IRLocal):
+                return reads(node.expr)
+            return any(reads(child) for child in node.get_children())
 
-        bytes_arg, int_arg = expr.args[0], expr.args[1]
-        if not isinstance(int_arg, IRLocal):
-            return None
-
-        value_local: Optional[IRLocal] = None
-        count_ref_local: Optional[IRLocal] = None
-        consumed_stmt: Optional[IRAssign] = None
-        if isinstance(bytes_arg, IRCall):
-            result = self._check_conversion_call(bytes_arg)
-            if result:
-                value_local, count_ref_local = result
-        elif isinstance(bytes_arg, IRLocal) and bytes_arg.name in current_assigns:
-            defn = current_assigns[bytes_arg.name]
-            if isinstance(defn.expr, IRCall):
-                result = self._check_conversion_call(defn.expr)
-                if result:
-                    value_local, count_ref_local = result
-                    consumed_stmt = defn
-
-        if value_local is None or count_ref_local is None:
-            return None
-
-        # Direct match: count_ref is the same local as int_arg
-        if count_ref_local.name == int_arg.name:
-            if consumed_stmt is not None:
-                self._consumed.add(id(consumed_stmt))
-                self._target_stmt.adopt(consumed_stmt)
-            return value_local
-
-        # Indirect match: count_ref = &int_arg (before IRConditionInliner runs, the Ref
-        # is a separate local var6 = &var13; we need to look through it)
-        if count_ref_local.name in current_assigns:
-            ref_defn = current_assigns[count_ref_local.name]
-            if isinstance(ref_defn.expr, (IRRef, IRRefNew)) and isinstance(ref_defn.expr.target, IRLocal):
-                if ref_defn.expr.target.name == int_arg.name:
-                    if consumed_stmt is not None:
-                        self._consumed.add(id(consumed_stmt))
-                        self._target_stmt.adopt(consumed_stmt)
-                    return value_local
-
-        return None
-
-    def _rewrite_expr(self, expr: IRExpression, current_assigns: Dict[str, "IRAssign"]) -> IRExpression:
-        """Recursively collapse __alloc__ within an expression."""
-        collapsed = self._try_collapse_alloc(expr, current_assigns)
-        if collapsed is not None:
-            dbg_print(
-                f"IRStringIntConcatOptimizer: collapsing __alloc__(...,{collapsed.name}) → {collapsed.name}"
-            )
-            return collapsed
-        if isinstance(expr, IRCall):
-            expr.args = [self._rewrite_expr(a, current_assigns) for a in expr.args]
-        return expr
+        return reads(self.func.block)
 
     def visit_block(self, block: IRBlock) -> None:
-        current_assigns: Dict[str, IRAssign] = {}
-        self._consumed: Set[int] = getattr(self, "_consumed", set())
-        for stmt in block.statements:
-            if isinstance(stmt, IRAssign):
-                if isinstance(stmt.target, IRLocal):
-                    current_assigns[stmt.target.name] = stmt
-                if isinstance(stmt.expr, IRExpression):
-                    self._target_stmt = stmt
-                    stmt.expr = self._rewrite_expr(stmt.expr, current_assigns)
-
-        # A bytes-temp assignment fully consumed by a collapse above is now
-        # dead — its only use (the __alloc__ call) no longer reads it — but
-        # the register it occupies is frequently reused later in the same
-        # block for an unrelated value, so leaving the statement in place
-        # would have a later, completely unrelated assignment's debug name
-        # misleadingly attached to this stale `itos`/`ftos` call.
-        if self._consumed:
-            block.statements = [s for s in block.statements if id(s) not in self._consumed]
-            self._consumed = set()
+        statements = block.statements
+        i = 2
+        while i < len(statements):
+            reference, conversion, allocation = statements[i - 2 : i + 1]
+            if not all(isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)
+                       for stmt in (reference, conversion, allocation)):
+                i += 1
+                continue
+            ref_expr, native, alloc = reference.expr, conversion.expr, allocation.expr
+            if not (
+                isinstance(ref_expr, (IRRef, IRRefNew))
+                and isinstance(ref_expr.target, IRLocal)
+                and isinstance(native, IRCall)
+                and isinstance(native.target, IRConst)
+                and isinstance(native.target.value, Native)
+                and native.target.value.lib.resolve(self.func.code) == "std"
+                and native.target.value.name.resolve(self.func.code) in ("itos", "ftos")
+                and len(native.args) == 2
+                and isinstance(native.args[0], IRLocal)
+                and native.args[1] is reference.target
+                and isinstance(alloc, IRCall)
+                and isinstance(alloc.target, IRConst)
+                and isinstance(alloc.target.value, Function)
+                and self.func.code.full_func_name(alloc.target.value) == "$String.__alloc__"
+                and len(alloc.args) == 2
+                and alloc.args[0] is conversion.target
+                and alloc.args[1] is ref_expr.target
+            ):
+                i += 1
+                continue
+            excluded = {id(reference), id(conversion), id(allocation)}
+            if any(self._reads_outside(local, excluded)
+                   for local in (reference.target, conversion.target, ref_expr.target)):
+                i += 1
+                continue
+            # Numeric input is evaluated before the native overwrites count.
+            # Adjacency ensures the recovered conversion sees that same value.
+            allocation.expr = IRStringConvert(self.func.code, native.args[0]).adopt(native, alloc)
+            allocation.adopt(reference, conversion)
+            del statements[i - 2 : i]
+            i = max(2, i - 1)
 
 
 class IRStringAllocOptimizer(TraversingIROptimizer):

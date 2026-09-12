@@ -35,6 +35,7 @@ from .core import (
     tIndex,
     Enum,
     destaticify,
+    is_static_name,
 )
 from .opcodes import opcodes
 
@@ -201,6 +202,10 @@ def type_to_haxe(type: str) -> str:
     """
     Maps internal HashLink type names to Haxe type names.
     """
+    # Static storage objects are class values, not instances. Dynamic keeps
+    # their static fields accessible when the compiler materializes an alias.
+    if is_static_name(type):
+        return "Dynamic"
     mapping = {
         "I32": "Int",
         "F64": "Float",
@@ -232,7 +237,7 @@ def type_to_haxe(type: str) -> str:
     if type in ("haxe.ds.ObjectMap", "haxe.ds.EnumValueMap"):
         return f"{type}<Dynamic,Dynamic>"
     if type == "Array":
-        return "Array<Dynamic>"
+        return "hl.NativeArray<Dynamic>"
     if type in ("Function", "Native"):
         return "Dynamic"
     if type == "Null":
