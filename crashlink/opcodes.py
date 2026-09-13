@@ -110,7 +110,7 @@ opcodes = {
     "CallClosure": {"dst": "Reg", "fun": "Reg", "args": "Regs"},  # 32
     "StaticClosure": {"dst": "Reg", "fun": "RefFun"},  # 33
     "InstanceClosure": {"dst": "Reg", "fun": "RefFun", "obj": "Reg"},  # 34
-    "VirtualClosure": {"dst": "Reg", "obj": "Reg", "field": "Reg"},  # 35
+    "VirtualClosure": {"dst": "Reg", "obj": "Reg", "field": "RefField"},  # 35
     "GetGlobal": {"dst": "Reg", "global": "RefGlobal"},  # 36
     "SetGlobal": {"global": "RefGlobal", "src": "Reg"},  # 37
     "Field": {"dst": "Reg", "obj": "Reg", "field": "RefField"},  # 38
