@@ -16,7 +16,7 @@ from mcp.server.fastmcp import FastMCP
 from . import decomp as _decomp
 from . import disasm as _disasm
 from .core import Bytecode, Native, Obj, Enum, Fun
-from .core import XRef, TargetKind, SourceKind
+from .core import XRef, TargetKind, SourceKind, RefKind
 from .hlc import code_to_c
 from .opcodes import opcode_docs, opcodes
 from .pseudo import pseudo
@@ -503,6 +503,176 @@ def get_xrefs(findex: int) -> str:
                 lines.append(f"    {r.source_kind.value}@{r.source_index}{loc}")
         if len(group) > 20:
             lines.append(f"    ... and {len(group) - 20} more")
+    return _trim("\n".join(lines))
+
+
+@mcp.tool()
+def find_type_by_name(query: str, exact: bool = False) -> str:
+    """
+    Find type(s) (Obj/class, Enum, Abstract) by name. Substring, case-insensitive
+    match by default; pass exact=True for a case-sensitive exact match. Use this
+    to resolve a class name (e.g. seen in a string table dump or documentation)
+    to the tIndex needed by get_type/get_obj/decompile_class/get_type_xrefs.
+
+    Args:
+        query: Name or substring to search for
+        exact: Require an exact, case-sensitive name match instead of substring
+    """
+    code = _require_code()
+    results = []
+    needle = query if exact else query.lower()
+    for i, typ in enumerate(code.types):
+        name_ref = getattr(typ.definition, "name", None)
+        if name_ref is None:
+            continue
+        try:
+            name = name_ref.resolve(code)
+        except Exception:
+            continue
+        if name is None:
+            continue
+        if exact:
+            if name != needle:
+                continue
+        elif needle not in name.lower():
+            continue
+        results.append(f"t@{i}: {type(typ.definition).__name__} {name}")
+    if not results:
+        return f"No types matching '{query}'."
+    return _trim(f"Found {len(results)} match(es):\n" + "\n".join(results))
+
+
+@mcp.tool()
+def get_type_xrefs(tindex: int) -> str:
+    """
+    Find all cross-references to a type: allocations (New), casts/type checks,
+    subclass inheritance, field/global declarations of this type, and function
+    signatures (args/return) using it.
+
+    Args:
+        tindex: The type index to find references to
+    """
+    code = _require_code()
+    if not (0 <= tindex < len(code.types)):
+        raise RuntimeError(f"Type t@{tindex} not found.")
+    xi = code.xref_index()
+    refs = xi.refs_to(TargetKind.TYPE, tindex)
+    if not refs:
+        return f"No xrefs found for t@{tindex}."
+
+    func_map = code.get_findex_map()
+    lines = [f"Xrefs to t@{tindex} [{len(refs)} total]:"]
+    by_kind: dict[str, list[XRef]] = {}
+    for r in refs:
+        by_kind.setdefault(r.ref_kind.value, []).append(r)
+
+    for rk in sorted(by_kind):
+        group = by_kind[rk]
+        lines.append(f"  [{rk}] ({len(group)})")
+        for r in group[:20]:
+            loc = f" op#{r.opcode_index}" if r.opcode_index is not None else ""
+            if r.source_kind == SourceKind.FUNCTION:
+                try:
+                    src = func_map[r.source_index]
+                    lines.append(f"    {_disasm.func_header(code, src)}{loc}")
+                except Exception:
+                    lines.append(f"    f@{r.source_index}{loc}")
+            else:
+                lines.append(f"    {r.source_kind.value}@{r.source_index}{loc}")
+        if len(group) > 20:
+            lines.append(f"    ... and {len(group) - 20} more")
+    return _trim("\n".join(lines))
+
+
+@mcp.tool()
+def get_field_xrefs(tindex: int, field_slot: int) -> str:
+    """
+    Find all reads and writes of a specific field slot on a class (Obj).
+    Use get_obj first to see a class's fields in declaration order (field_slot
+    is that 0-based position).
+
+    Args:
+        tindex: The type index of the class (Obj)
+        field_slot: 0-based index of the field within the class's field list
+    """
+    code = _require_code()
+    if not (0 <= tindex < len(code.types)):
+        raise RuntimeError(f"Type t@{tindex} not found.")
+    obj_def = code.types[tindex].definition
+    if not isinstance(obj_def, Obj):
+        raise RuntimeError(f"Type t@{tindex} is not a class (Obj).")
+    try:
+        field_name = obj_def.fields[field_slot].name.resolve(code)
+    except Exception:
+        field_name = f"slot{field_slot}"
+
+    xi = code.xref_index()
+    refs = xi.all_field_accesses(tindex, field_slot)
+    if not refs:
+        return f"No field accesses found for t@{tindex}.{field_name}."
+
+    func_map = code.get_findex_map()
+    reads = [r for r in refs if r.ref_kind == RefKind.FIELD_READ]
+    writes = [r for r in refs if r.ref_kind == RefKind.FIELD_WRITE]
+    lines = [f"Field t@{tindex}.{field_name}: {len(reads)} read(s), {len(writes)} write(s)"]
+
+    def _emit(group: list[XRef]) -> None:
+        for r in group[:30]:
+            try:
+                lines.append(f"    {_disasm.func_header(code, func_map[r.source_index])} op#{r.opcode_index}")
+            except Exception:
+                lines.append(f"    f@{r.source_index} op#{r.opcode_index}")
+        if len(group) > 30:
+            lines.append(f"    ... and {len(group) - 30} more")
+
+    if reads:
+        lines.append("  [reads]")
+        _emit(reads)
+    if writes:
+        lines.append("  [writes]")
+        _emit(writes)
+    return _trim("\n".join(lines))
+
+
+@mcp.tool()
+def get_string_xrefs(index: int) -> str:
+    """
+    Find all opcodes that reference a string constant: direct loads (String
+    opcode) and dynamic field reads/writes keyed by this string (DynGet/DynSet).
+    Use this to find which function builds a URL/key that embeds a given
+    string literal, or which code path reads/writes a dynamically-named field.
+
+    Args:
+        index: String table index
+    """
+    code = _require_code()
+    try:
+        s = code.strings.value[index]
+    except IndexError:
+        raise RuntimeError(f"String s@{index} not found.")
+
+    xi = code.xref_index()
+    refs = xi.string_uses(index)
+    if not refs:
+        return f"No xrefs found for s@{index} ({s!r})."
+
+    func_map = code.get_findex_map()
+    lines = [f"Xrefs to s@{index} ({s!r}) [{len(refs)} total]:"]
+    for r in refs[:50]:
+        rk = (
+            "dyn_read"
+            if r.ref_kind == RefKind.DYN_FIELD_READ
+            else "dyn_write"
+            if r.ref_kind == RefKind.DYN_FIELD_WRITE
+            else "use"
+        )
+        try:
+            label = _disasm.func_header(code, func_map[r.source_index])
+        except Exception:
+            label = f"f@{r.source_index}"
+        lines.append(f"  [{rk}] {label} op#{r.opcode_index}")
+    if len(refs) > 50:
+        lines.append(f"  ... and {len(refs) - 50} more")
     return _trim("\n".join(lines))
 
 

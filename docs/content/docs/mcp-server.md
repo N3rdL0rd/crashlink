@@ -45,6 +45,10 @@ The server reports this up front in its own instructions, and it's worth keeping
 - **`get_global(gindex)`**: Get information about a global variable by its gIndex.
 - **`list_globals(offset=0, limit=200)`**: List global variables with their types.
 - **`get_xrefs(findex)`**: Find all cross-references to a function: callers (direct calls, virtual calls, and closures), plus structural references (proto/binding declarations in type definitions).
+- **`find_type_by_name(query, exact=False)`**: Find type(s) (Obj/class, Enum, Abstract) by name — substring match by default, or exact with `exact=True`. Resolves a class name to the tIndex needed by `get_type`/`get_obj`/`decompile_class`/`get_type_xrefs`.
+- **`get_type_xrefs(tindex)`**: Find all cross-references to a type: allocations (`New`), casts/type checks, subclass inheritance, field/global declarations of this type, and function signatures using it.
+- **`get_field_xrefs(tindex, field_slot)`**: Find all reads and writes of a specific field slot on a class (Obj). `field_slot` is the field's 0-based position as shown by `get_obj`.
+- **`get_string_xrefs(index)`**: Find all opcodes referencing a string constant — direct loads (`String`) and dynamic field reads/writes keyed by it (`DynGet`/`DynSet`). Useful for finding which function builds a URL/key embedding a given literal.
 - **`get_opcode_doc(opcode)`**: Get documentation for a specific HashLink opcode, or search for opcodes by name.
 - **`get_entry()`**: Return the entrypoint function of the bytecode.
 - **`find_function_by_name(name)`**: Find functions whose full name matches or contains the given string.
