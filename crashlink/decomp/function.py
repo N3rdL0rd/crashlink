@@ -2541,13 +2541,16 @@ class IRClass:
                 res.append((name, field.type.resolve(self.code)))
         return res
 
-    def pseudo(self) -> str:
+    def pseudo(self, max_classes: Optional[int] = None) -> str:
         """
         Generates Haxe pseudocode for the entire class.
+
+        `max_classes` caps how many transitively-referenced classes are pulled
+        in alongside this one; see `pseudo.class_pseudo`. `None` is unbounded.
         """
         from .. import pseudo
 
-        return pseudo.class_pseudo(self)
+        return pseudo.class_pseudo(self, max_classes=max_classes)
 
     def print(self) -> None:
         """

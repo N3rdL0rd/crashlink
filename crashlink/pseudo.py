@@ -3807,12 +3807,20 @@ def _enum_pseudo(enum_def: "Enum", code: Bytecode, name: Optional[str] = None) -
     return "\n".join(lines)
 
 
-def class_pseudo(ir_class: "IRClass") -> str:
+def class_pseudo(ir_class: "IRClass", max_classes: Optional[int] = None) -> str:
     """
     Generates Haxe pseudocode for an entire IRClass, including any user-defined
     super classes or other referenced classes needed for recompilation.
+
+    `max_classes` caps how many classes (the target class plus transitively
+    referenced ones) are emitted before recursion stops; `None` (the default)
+    is unbounded, which is required for compile-roundtrip use (the output must
+    be self-contained to recompile). A class that is referenced from - or
+    references - a large fraction of a big codebase can otherwise pull in
+    thousands of classes transitively; callers that only want to look at one
+    class (e.g. an interactive/agent-facing tool) should pass a small bound.
     """
-    return "\n\n".join(_class_pseudo_recursive(ir_class, set()))
+    return "\n\n".join(_class_pseudo_recursive(ir_class, set(), max_classes=max_classes))
 
 
 def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
@@ -3953,7 +3961,9 @@ def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
     return "\n".join(output_lines), referenced_classes, super_name
 
 
-def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]:
+def _class_pseudo_recursive(
+    ir_class: "IRClass", emitted: Set[str], max_classes: Optional[int] = None
+) -> List[str]:
     """
     Recursive helper for class_pseudo. Returns a list of class source strings:
     the class itself plus its super and referenced user classes (for recompile-
@@ -3979,6 +3989,12 @@ def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]
         to_emit.add(super_name)
 
     for other_name in sorted(to_emit):
+        if max_classes is not None and len(emitted) >= max_classes:
+            result.append(
+                f"// ... {len(to_emit - emitted)} more referenced class(es) omitted "
+                f"(max_classes={max_classes} reached)"
+            )
+            break
         if other_name in emitted:
             continue
         try:
@@ -3995,7 +4011,7 @@ def _class_pseudo_recursive(ir_class: "IRClass", emitted: Set[str]) -> List[str]
             continue
         try:
             other_ir = IRClass(code, other_obj)
-            result.extend(_class_pseudo_recursive(other_ir, emitted))
+            result.extend(_class_pseudo_recursive(other_ir, emitted, max_classes=max_classes))
         except Exception:
             # Fall back to a stub if the class cannot be decompiled.
             result.append(f"class {other_name} {{}}")

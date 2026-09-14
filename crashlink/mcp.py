@@ -193,6 +193,13 @@ def decompile_class(tindex: int) -> str:
     methods may decompile imperfectly. The class decompiler calls decompile_function
     for each method.
 
+    Only the target class itself is emitted — unlike the CLI/Python `IRClass.pseudo()`,
+    this does NOT pull in transitively-referenced classes (super classes, argument/field
+    types, etc). In a large codebase a widely-used class can transitively reference
+    thousands of others, which is unbounded, slow, and mostly wasted since output here
+    is capped anyway — use find_type_by_name / get_type_xrefs / get_obj to explore
+    referenced types individually instead.
+
     Args:
         tindex: The type index (tIndex) of the class
     """
@@ -205,7 +212,7 @@ def decompile_class(tindex: int) -> str:
         raise RuntimeError(f"Type t@{tindex} is not an Obj/class.")
     try:
         ir_class = _decomp.IRClass(code, typ.definition)
-        result = ir_class.pseudo()
+        result = ir_class.pseudo(max_classes=1)
         return _trim(result)
     except Exception as e:
         raise RuntimeError(
