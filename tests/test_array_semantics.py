@@ -199,3 +199,52 @@ class EmptyArrayRoundtrip {
     behavior = compare_programs(original, recompiled, name)
     assert behavior.passed, behavior.to_json()
     assert behavior.recompiled.stdout == "kept\n0\nfalse\n"
+
+
+def test_empty_dynamic_array_roundtrip_preserves_allocation_pair(tmp_path):
+    from crashlink.decomp.function import IRClass
+    from crashtest.behavior import compare_programs, compile_haxe
+
+    if not shutil.which("haxe") or not (os.environ.get("HL_RUNTIME") or shutil.which("hl")):
+        pytest.skip("roundtrip regression requires Haxe and HashLink")
+    source = """
+class EmptyDynamicArrayRoundtrip {
+    static function make():Array<Dynamic> { return []; }
+    static function main() {
+        var a = make();
+        var b = make();
+        a.push("kept");
+        Sys.println(a.join(","));
+        Sys.println(b.length);
+        Sys.println(a == b);
+    }
+}
+"""
+    name = "EmptyDynamicArrayRoundtrip"
+    original, error = compile_haxe(source, name, tmp_path / "original")
+    assert error is None, error
+    before = Bytecode.from_path(str(original))
+    recovered = IRClass(before, before.get_test_obj(name)).pseudo()
+    recompiled, error = compile_haxe(recovered, name, tmp_path / "recompiled")
+    assert error is None, error
+    after = Bytecode.from_path(str(recompiled))
+
+    def allocation_pair(code):
+        make = next(f for f in code.functions if code.full_func_name(f) == f"${name}.make")
+        return (
+            sum(
+                op.op == "Call2" and code.full_func_name(op.df["fun"].resolve(code)) == "std.alloc_array"
+                for op in make.ops
+            ),
+            sum(
+                op.op == "Call2"
+                and code.full_func_name(op.df["fun"].resolve(code)) == "hl.types.$ArrayDyn.alloc"
+                for op in make.ops
+            ),
+        )
+
+    assert allocation_pair(before) == (1, 1)
+    assert allocation_pair(after) == allocation_pair(before)
+    behavior = compare_programs(original, recompiled, name)
+    assert behavior.passed, behavior.to_json()
+    assert behavior.recompiled.stdout == "kept\n0\nfalse\n"

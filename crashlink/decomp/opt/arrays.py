@@ -627,7 +627,9 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
 
                 empty_dyn_match = self._try_empty_array_dyn(block.statements, i)
                 if empty_dyn_match:
-                    use_stmt, consumed = empty_dyn_match
+                    use_stmt, consumed, preceding_to_pop = empty_dyn_match
+                    for _ in range(preceding_to_pop):
+                        new_statements.pop()
                     new_statements.append(use_stmt)
                     i += consumed
                     made_change = True
@@ -1131,7 +1133,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             return False
         return name.endswith("ArrayDyn.alloc")
 
-    def _try_empty_array_dyn(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int]]:
+    def _try_empty_array_dyn(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int, int]]:
         # Pattern:
         #   temp = ArrayObj.anon(alloc_array(null, 0))   (or already-simplified temp = [])
         #   [flag = true]                                 (optional HashLink 1.15+ boilerplate)
@@ -1152,17 +1154,40 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         s0_expr_is_empty_literal = isinstance(s0.expr, IRArrayLiteral) and len(s0.expr.elements) == 0
         if not (s0_expr_is_empty_literal or self._is_empty_arrayobj_anon(s0.expr, local_defs)):
             return None
+        preceding_to_pop = 0
+        if isinstance(s0.expr, IRCall) and isinstance(s0.expr.args[0], IRLocal):
+            backing = s0.expr.args[0]
+            if start == 0:
+                return None
+            allocation = stmts[start - 1]
+            if not (
+                isinstance(allocation, IRAssign)
+                and allocation.target is backing
+                and self._is_empty_alloc_array(allocation.expr, local_defs)
+            ) or any(self._local_in_stmt(stmt, backing) for stmt in stmts[start + 1 :]):
+                return None
+            preceding_to_pop = 1
 
         # Look for the ArrayDyn.alloc call. HashLink 1.15+ inserts a boolean flag
         # temp assignment between the temp and the alloc call, so scan forward.
         alloc_idx = -1
-        _flag_local: Optional[IRLocal] = None
+        ref_defs: Dict[IRLocal, IRExpression] = {}
+        boilerplate_locals: Set[IRLocal] = set()
         for j in range(start + 1, min(len(stmts), start + 4)):
             s = stmts[j]
             if isinstance(s, IRAssign) and isinstance(s.expr, IRConst) and isinstance(s.expr.value, bool):
                 # Optional flag assignment, keep looking.
                 if isinstance(s.target, IRLocal):
-                    _flag_local = s.target
+                    ref_defs[s.target] = s.expr
+                    boilerplate_locals.add(s.target)
+                continue
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRLocal)
+                and isinstance(s.expr, IRRefNew)
+            ):
+                ref_defs[s.target] = s.expr
+                boilerplate_locals.add(s.target)
                 continue
             if isinstance(s, IRAssign) and isinstance(s.expr, IRCall) and self._is_arraydyn_alloc(s.expr):
                 alloc_idx = j
@@ -1179,6 +1204,8 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         if len(call.args) != 2:
             return None
         first_arg, second_arg = call.args
+        if isinstance(second_arg, IRLocal) and second_arg in ref_defs:
+            second_arg = ref_defs[second_arg]
         if not isinstance(first_arg, IRLocal) or first_arg.name != temp.name:
             return None
 
@@ -1195,29 +1222,24 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         elif isinstance(second_arg, IRRefNew) and isinstance(second_arg.target, IRLocal):
             # HashLink 1.15+ lowers the boolean flag to a stack-allocated Ref.
             ref_local = second_arg.target
-            for prior in stmts[:alloc_idx]:
-                if (
-                    isinstance(prior, IRAssign)
-                    and isinstance(prior.target, IRLocal)
-                    and prior.target.name == ref_local.name
-                    and isinstance(prior.expr, IRConst)
-                    and isinstance(prior.expr.value, bool)
-                    and prior.expr.value
-                ):
-                    true_ok = True
+            for prior in reversed(stmts[:alloc_idx]):
+                if isinstance(prior, IRAssign) and prior.target is ref_local:
+                    true_ok = isinstance(prior.expr, IRConst) and prior.expr.value is True
                     break
         if not true_ok:
             return None
 
         for later in stmts[alloc_idx + 1 :]:
-            if self._local_in_stmt(later, temp):
+            if self._local_in_stmt(later, temp) or any(
+                self._local_in_stmt(later, local) for local in boilerplate_locals
+            ):
                 return None
 
         literal = IRArrayLiteral(self.func.code, [])
         new_assign = IRAssign(self.func.code, s1.target, literal)
         consume_count = alloc_idx - start + 1
-        new_assign.adopt(*stmts[start : alloc_idx + 1])
-        return new_assign, consume_count
+        new_assign.adopt(*stmts[start - preceding_to_pop : alloc_idx + 1])
+        return new_assign, consume_count, preceding_to_pop
 
     def _index_shift(self, idx: IRStatement, local: IRLocal) -> Optional[int]:
         """Return the shift amount if `idx` is `local << const`."""
