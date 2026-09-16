@@ -210,6 +210,31 @@ def test_throwing_read_is_not_moved_into_unexecuted_branch(optimizer):
         assert _observe(function.block) == ["TypeError"]
 
 
+@pytest.mark.parametrize("next_target", ["var0", "var1"])
+def test_condition_inliner_preserves_self_referential_assignment_value(next_target):
+    code = Bytecode.create_empty()
+    source = IRLocal("var0", tIndex(1), code)
+    target = IRLocal(next_target, tIndex(1), code)
+    result = IRLocal("result", tIndex(1), code)
+    two = IRConst(code, IRConst.ConstType.INT, value=2)
+    four = IRConst(code, IRConst.ConstType.INT, value=4)
+    function = _function(
+        code,
+        [
+            IRAssign(code, source, IRArithmetic(code, source, two, IRArithmetic.ArithmeticType.ADD)),
+            IRAssign(code, target, IRArithmetic(code, source, four, IRArithmetic.ArithmeticType.ADD)),
+            IRAssign(code, result, source),
+        ],
+    )
+    before = {"var0": 3}
+    _evaluate(function.block, before, [])
+    IRConditionInliner(function).optimize()
+    after = {"var0": 3}
+    _evaluate(function.block, after, [])
+    assert after["result"] == before["result"]
+    assert after[next_target] == before[next_target]
+
+
 def test_sequential_folding_does_not_delay_throwing_read_past_call():
     code = Bytecode.create_empty()
     temp = IRLocal("var0", tIndex(1), code)

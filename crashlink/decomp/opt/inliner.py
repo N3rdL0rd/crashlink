@@ -308,8 +308,10 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
             return False
         return True
 
-    def _is_safe_to_duplicate(self, expr: IRExpression) -> bool:
-        return not _has_observable_effects(expr)
+    def _is_safe_to_duplicate(self, expr: IRExpression, assigned_local: IRLocal) -> bool:
+        # A retained assignment has already changed its destination. Re-evaluating
+        # a self-referential RHS now would read the new value, not the old one.
+        return not self._expr_contains_local(expr, assigned_local) and not _has_observable_effects(expr)
 
     def _stmt_contains_local_read(self, stmt: IRStatement, local: IRLocal) -> bool:
         """Like _stmt_contains_local but ignoring assignment targets (redefinitions)."""
@@ -450,7 +452,7 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
                             i += 1
                             continue
                         if conditional_stmt.condition == assigned_local:
-                            if used_outside and not self._is_safe_to_duplicate(expr_to_inline):
+                            if used_outside and not self._is_safe_to_duplicate(expr_to_inline, assigned_local):
                                 new_statements.append(current_stmt)
                                 i += 1
                                 continue
@@ -466,7 +468,7 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
                             i += 2
                             inlined_something = True
                         elif isinstance(conditional_stmt.condition, IRBoolExpr):
-                            if used_outside and not self._is_safe_to_duplicate(expr_to_inline):
+                            if used_outside and not self._is_safe_to_duplicate(expr_to_inline, assigned_local):
                                 new_statements.append(current_stmt)
                                 i += 1
                                 continue
@@ -503,7 +505,7 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
                             i += 1
                             continue
                         if while_loop_stmt.condition == assigned_local:
-                            if (used_outside and not self._is_safe_to_duplicate(expr_to_inline)) or (
+                            if (used_outside and not self._is_safe_to_duplicate(expr_to_inline, assigned_local)) or (
                                 self._has_loop_condition_cost(expr_to_inline)
                             ):
                                 new_statements.append(current_stmt)
@@ -521,7 +523,7 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
                             i += 2
                             inlined_something = True
                         elif isinstance(while_loop_stmt.condition, IRBoolExpr):
-                            if (used_outside and not self._is_safe_to_duplicate(expr_to_inline)) or (
+                            if (used_outside and not self._is_safe_to_duplicate(expr_to_inline, assigned_local)) or (
                                 self._has_loop_condition_cost(expr_to_inline)
                             ):
                                 new_statements.append(current_stmt)
@@ -562,8 +564,13 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
                         # (keeping current_stmt around just to feed a read that's
                         # actually unrelated would also leave its now-inlined value
                         # double-applied wherever next_stmt's substitution put it).
+                        # The consumer itself can kill the old value too. Any
+                        # following reads then use its result, not current_stmt.
                         used_outside = False
-                        if isinstance(assigned_local, IRLocal):
+                        if not (
+                            isinstance(assign_next_stmt.target, IRLocal)
+                            and assign_next_stmt.target.name == assigned_local.name
+                        ):
                             for s in block.statements[i + 2 :]:
                                 if self._stmt_contains_local_read(s, assigned_local):
                                     used_outside = True
@@ -574,7 +581,7 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
                                     and s.target.name == assigned_local.name
                                 ):
                                     break
-                        if used_outside and not self._is_safe_to_duplicate(expr_to_inline):
+                        if used_outside and not self._is_safe_to_duplicate(expr_to_inline, assigned_local):
                             new_statements.append(current_stmt)
                             i += 1
                             continue
