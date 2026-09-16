@@ -245,7 +245,10 @@ class IRFunction:
         self.opcodes: str = ""
         self.cfg_data: Dict[str, Any] = {"nodes": [], "edges": []}
         self.layer_snapshots: List[Tuple[str, str, bool]] = []
-        self._lift_cache: Dict[Tuple[Optional[CFNode], Optional[CFNode], int], IRBlock] = {}
+        self._lift_cache: Dict[
+            Tuple[Optional[CFNode], Optional[CFNode], int, Tuple[int, ...], frozenset[int]],
+            Tuple[IRBlock, List[IRLocal], Set[int]],
+        ] = {}
         self._enum_global_map: Dict[int, Tuple[str, tIndex]] = {}
         self.capture_layers: bool = capture_layers
         self._render_subs: Optional[Any] = None
@@ -1709,7 +1712,7 @@ class IRFunction:
         return cast(IRBlock, self._clone_value(block, memo))
 
     def _clone_value(self, value: Any, memo: Dict[int, Any]) -> Any:
-        if value is None or isinstance(value, (int, float, str, bool, bytes, _Enum)):
+        if value is None or isinstance(value, (int, float, str, bool, bytes, _Enum, IRLocal)):
             return value
         vid = id(value)
         if vid in memo:
@@ -1740,6 +1743,73 @@ class IRFunction:
         for k, v in vars(value).items():
             setattr(new_obj, k, self._clone_value(v, memo))
         return new_obj
+
+    def _register_live_at(self, node: Optional[CFNode], reg: int) -> bool:
+        """Whether any path reads the incoming register value before overwriting it."""
+        pending = [node] if node is not None else []
+        seen: Set[CFNode] = set()
+        while pending:
+            current = pending.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            for op in current.ops:
+                for key, operand in op.df.items():
+                    if key == "dst" and op.op not in ("Setref", "Incr", "Decr"):
+                        continue
+                    if isinstance(operand, Reg) and operand.value == reg:
+                        return True
+                    if isinstance(operand, Regs) and any(r.value == reg for r in operand.value):
+                        return True
+                if op.op != "Setref" and "dst" in op.df and op.df["dst"].value == reg:
+                    break
+            else:
+                pending.extend(target for target, _ in current.branches)
+        return False
+
+    def _branch_falls_through(self, block: IRBlock) -> bool:
+        if not block.statements:
+            return True
+        last = block.statements[-1]
+        if isinstance(last, (IRReturn, IRThrow, IRBreak, IRContinue)):
+            return False
+        if isinstance(last, IRBlock):
+            return self._branch_falls_through(last)
+        if isinstance(last, IRConditional):
+            return self._branch_falls_through(last.true_block) or self._branch_falls_through(last.false_block)
+        return True
+
+    def _join_branch_locals(
+        self,
+        entry: List[IRLocal],
+        branches: List[Tuple[IRBlock, List[IRLocal]]],
+        convergence: Optional[CFNode],
+    ) -> None:
+        """Materialize register merges on live branch edges, not on sibling reads."""
+        live = [(block, locals_) for block, locals_ in branches if self._branch_falls_through(block)]
+        self.locals = entry.copy()
+        if not live:
+            return
+        for reg in range(len(entry)):
+            incoming = [locals_[reg] for _, locals_ in live]
+            first = incoming[0]
+            if all(local == first for local in incoming[1:]):
+                self.locals[reg] = first
+                continue
+            if not self._register_live_at(convergence, reg):
+                continue
+            # A fresh name avoids overwriting a still-live source local in another
+            # register. Copies belong at the outgoing edges, after all branch reads.
+            used_names = {local.name for local in self.all_locals}
+            base = f"var{reg}"
+            name = base
+            suffix = 1
+            while name in used_names:
+                name = f"{base}{suffix}"
+                suffix += 1
+            merged = self._split_local(reg, name)
+            for (branch, _), local in zip(live, incoming):
+                branch.statements.append(IRAssign(self.code, merged, local))
 
     def _lift_block(
         self,
@@ -1776,25 +1846,17 @@ class IRFunction:
         if node in cfg.loops and (loop_ctx is None or node != loop_ctx.header):
             return self._lift_loop(node, visited, stop_at, loop_ctx)
 
-        # Memoize on (node, stop_at, loop_ctx): without this, CFGs where many branches
-        # funnel into a small set of shared continuation points cause the same
-        # (node, stop_at) region to be re-lifted independently from every branch that
-        # reaches it, which is exponential in the nesting depth of the function. Since
-        # loops are handled separately above, everything reachable here is acyclic, so
-        # the *logical content* for an identical (node, stop_at, loop_ctx) request never
-        # depends on which ancestor path got there. We still hand back a fresh clone
-        # rather than the cached object itself: returning the same instance would make
-        # the IR a real DAG, and nothing downstream (repr(), pprint(), the optimizer
-        # passes' generic statement walk) expects a node to be reachable from multiple
-        # parents, so they would re-render/re-process the shared subtree once per
-        # reference path - the same exponential blowup we're trying to avoid, just
-        # moved into every later consumer instead of the lifter.
-        # _LoopContext is a non-frozen @dataclass, so it's unhashable; key on identity instead.
-        cache_key = (node, stop_at, id(loop_ctx))
+        # The same CFG region can be reached with different register lifetimes.
+        # Cache both its incoming identity state and its outgoing state; restoring
+        # only the IR would leak the preceding sibling's names into its successor.
+        cache_key = (node, stop_at, id(loop_ctx), tuple(id(local) for local in self.locals), frozenset(self._new_defined_regs))
         cached = self._lift_cache.get(cache_key)
         if cached is not None:
             visited.add(node)
-            return self._clone_ir(cached)
+            cached_block, outgoing_locals, outgoing_new_regs = cached
+            self.locals = outgoing_locals.copy()
+            self._new_defined_regs = outgoing_new_regs.copy()
+            return self._clone_ir(cached_block)
 
         visited.add(node)
 
@@ -1871,10 +1933,6 @@ class IRFunction:
                     return branch_block
                 return None
 
-            # then = fall-through, else = jump target
-            then_block_ir = make_loop_branch(fall_through)
-            else_block_ir = make_loop_branch(jump_target)
-
             stop_nodes = {loop_ctx.header} if loop_ctx else set()
             allowed_nodes = loop_ctx.nodes if loop_ctx else None
             convergence_node = self._find_convergence_node(
@@ -1950,20 +2008,28 @@ class IRFunction:
                 if loops_back:
                     convergence_node = loop_ctx.header
 
-            if then_block_ir is None:
-                then_block_ir = self._lift_block(
-                    fall_through,
-                    visited.copy(),
-                    stop_at=convergence_node,
-                    loop_ctx=loop_ctx,
-                )
-            if else_block_ir is None:
-                else_block_ir = self._lift_block(
-                    jump_target,
-                    visited.copy(),
-                    stop_at=convergence_node,
-                    loop_ctx=loop_ctx,
-                )
+            entry_locals = self.locals.copy()
+            entry_new_regs = self._new_defined_regs.copy()
+
+            def lift_branch(target: Optional[CFNode]) -> IRBlock:
+                self.locals = entry_locals.copy()
+                self._new_defined_regs = entry_new_regs.copy()
+                branch = make_loop_branch(target)
+                if branch is None:
+                    branch = self._lift_block(
+                        target, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
+                    )
+                return branch
+
+            then_block_ir = lift_branch(fall_through)
+            then_locals = self.locals.copy()
+            then_new_regs = self._new_defined_regs.copy()
+            else_block_ir = lift_branch(jump_target)
+            else_locals = self.locals.copy()
+            self._new_defined_regs.update(then_new_regs)
+            self._join_branch_locals(
+                entry_locals, [(then_block_ir, then_locals), (else_block_ir, else_locals)], convergence_node
+            )
 
             conditional_stmt = IRConditional(self.code, cond_expr, then_block_ir, else_block_ir)
             block.statements.append(conditional_stmt)
@@ -2088,7 +2154,7 @@ class IRFunction:
                     next_block_ir = self._lift_block(successor_node, visited, stop_at, loop_ctx=loop_ctx)
                     block.statements.extend(next_block_ir.statements)
 
-        self._lift_cache[cache_key] = block
+        self._lift_cache[cache_key] = (block, self.locals.copy(), self._new_defined_regs.copy())
         return block
 
     def print(self) -> None:
