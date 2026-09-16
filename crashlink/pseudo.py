@@ -1324,6 +1324,58 @@ def _contains_loop_continue(stmt: IRStatement) -> bool:
     if isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop, IRForEachLoop, IRIntRangeLoop)):
         return False
     return any(_contains_loop_continue(child) for child in stmt.get_children())
+def _unused_static_aliases(root: IRStatement, code: Bytecode) -> Set[str]:
+    """Find class-global bindings whose only reads render as qualified fields.
+
+    GetGlobal only reads initialized HL storage; it does not run a lazy class
+    initializer. Keep every class referenced by these bindings visible through
+    a retained field access so Haxe DCE still preserves its static initializer.
+    Any other read or assignment keeps the whole local (including reused names).
+    """
+    assigned: Dict[str, Set[str]] = {}
+    qualified: Dict[str, Set[str]] = {}
+    live: Set[str] = set()
+
+    def static_name(expr: IRExpression) -> Optional[str]:
+        typ = expr.get_type()
+        if isinstance(typ.definition, Obj):
+            name = disasm.type_name(code, typ)
+            if is_static_name(name):
+                return name
+        return None
+
+    def visit(stmt: Optional[IRStatement]) -> None:
+        if stmt is None:
+            return
+        if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+            value = stmt.expr
+            if (
+                isinstance(value, IRConst)
+                and value.const_type == IRConst.ConstType.GLOBAL_OBJ
+                and isinstance(value.original_index, gIndex)
+                and (name := static_name(value)) is not None
+            ):
+                assigned.setdefault(stmt.target.name, set()).add(name)
+            else:
+                live.add(stmt.target.name)
+            visit(value)
+            return
+        if isinstance(stmt, IRField) and isinstance(stmt.target, IRLocal):
+            name = static_name(stmt.target)
+            if name is not None:
+                qualified.setdefault(stmt.target.name, set()).add(name)
+                return
+        if isinstance(stmt, IRLocal):
+            live.add(stmt.name)
+        for child in stmt.get_children():
+            visit(child)
+
+    visit(root)
+    return {
+        local
+        for local, classes in assigned.items()
+        if local not in live and classes <= qualified.get(local, set())
+    }
 
 
 def _generate_statements(
@@ -1338,6 +1390,7 @@ def _generate_statements(
     render_subs: Optional[Dict[IRLocal, Tuple[str, Set[IRLocal]]]] = None,
     op_to_line: Optional[Dict[int, int]] = None,
     base_offset: int = 0,
+    unused_static_aliases: Optional[Set[str]] = None,
 ) -> List[str]:
     output_lines: List[str] = []
     indent = _indent_str(indent_level)
@@ -1347,6 +1400,8 @@ def _generate_statements(
         render_subs = {}
     if op_to_line is None:
         op_to_line = {}
+    if unused_static_aliases is None:
+        unused_static_aliases = _unused_static_aliases(ir_function.block, code)
 
     # Recurse while sharing the op→line map; base_offset + current length is the
     # absolute line where the child's lines will land (they're extended in next).
@@ -1366,12 +1421,19 @@ def _generate_statements(
             render_subs=subs,
             op_to_line=op_to_line,
             base_offset=base_offset + len(output_lines),
+            unused_static_aliases=unused_static_aliases,
         )
 
     prev_render_subs = getattr(ir_function, "_render_subs", None)
     ir_function._render_subs = render_subs
 
     for stmt in statements:
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRLocal)
+            and stmt.target.name in unused_static_aliases
+        ):
+            continue
         stmt_start_line = len(output_lines)
         # Substitutions are valid for the statement's own expressions unless a
         # local they depend on is overwritten before that expression is evaluated.
@@ -2164,6 +2226,9 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     # pre-declared at the top of the function to avoid Haxe block-scoping errors
     # (the variable would otherwise be undefined at the point of first *use*).
     local_types = _collect_locals(ir_func.block)
+    unused_static_aliases = _unused_static_aliases(ir_func.block, code)
+    for name in unused_static_aliases:
+        local_types.pop(name, None)
     receiver_types = _virtual_receiver_static_types(ir_func, code)
     for name, haxe_type in receiver_types.items():
         if name in local_types:
@@ -2236,6 +2301,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         inline_declarations=inline_declarations,
         op_to_line=op_to_line,
         base_offset=len(output_lines),
+        unused_static_aliases=unused_static_aliases,
     )
     # Suppress trailing bare `return;` for Void functions and constructors — it's implicit.
     is_void_return = return_type_str in ("Void", "void") or is_constructor
