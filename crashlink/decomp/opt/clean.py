@@ -2450,19 +2450,20 @@ class IRTypedCatchOptimizer(IROptimizer):
         block.statements = new_stmts
 
     def _process_stmt(self, stmt: IRStatement) -> List[IRStatement]:
-        """Process one statement; returns the statement plus any continuation
-        a restore spliced after it (which itself may hold try/catches, so it is
-        processed recursively)."""
+        """Restore children first, then splice any continuation after this statement.
+
+        A non-fallthrough try can absorb later try/catches into its continuation.
+        Their dispatch registers may reuse this catch's type aliases; restoring
+        them first prevents those independent definitions from looking like
+        escaped aliases when restoring the enclosing catch.
+        """
         if isinstance(stmt, IRTryCatch):
-            trail = self._restore(stmt)
             self._process_block(stmt.try_block)
             self._process_block(stmt.catch_block)
             for _, extra_block in stmt.extra_catches:
                 self._process_block(extra_block)
-            out: List[IRStatement] = [stmt]
-            for trail_stmt in trail:
-                out.extend(self._process_stmt(trail_stmt))
-            return out
+            trail = self._restore(stmt)
+            return [stmt, *trail]
         if isinstance(stmt, IRConditional):
             self._process_block(stmt.true_block)
             if stmt.false_block is not None:
