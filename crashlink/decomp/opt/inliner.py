@@ -1478,6 +1478,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 user_local_reuse = (
                     self._is_user_local(temp_local)
                     and not isinstance(_reuse_expr, IRLocal)
+                    and not self._has_nontrivial_computation(_reuse_expr)
                     and not inside_loop_body
                     and i + 2 == len(statements)
                 )

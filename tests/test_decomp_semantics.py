@@ -520,3 +520,6 @@ def test_switch_roundtrip_preserves_arithmetic_count(tmp_path):
 
     assert arithmetic(before) == {"Add": 2, "Sub": 1, "Mul": 3}
     assert arithmetic(after) == arithmetic(before)
+    for code in (before, after):
+        method = next(f for f in code.functions if code.full_func_name(f) == f"${name}.pick")
+        assert not any(op.op == "Mov" for op in method.ops)
