@@ -1872,15 +1872,11 @@ def _generate_statements(
                     del render_subs[key]
 
         elif isinstance(stmt, IRTryCatch):
-            catch_name = "e"
+            # Keep the IR identifier: declarations and references are already
+            # keyed by this name, and a display-only rename can shadow a
+            # different typed local used by the catch body.
+            catch_name = stmt.catch_local.name if stmt.catch_local and stmt.catch_local.name else "e"
             catch_type = "Dynamic"
-            if stmt.catch_local and stmt.catch_local.name and not stmt.catch_local.name.startswith("var"):
-                catch_name = stmt.catch_local.name
-            elif stmt.catch_local:
-                # The auto-generated `varN` name is only a display fallback for the
-                # `catch (...)` header — rename the local itself so references to
-                # it inside the catch body render as the same identifier.
-                stmt.catch_local.name = catch_name
             if stmt.catch_local:
                 t = disasm.type_name(code, stmt.catch_local.get_type())
                 if t and t != "Dyn":
@@ -1914,10 +1910,7 @@ def _generate_statements(
             )
             all_subs = [try_subs, catch_subs]
             for extra_local, extra_block in stmt.extra_catches:
-                extra_name = extra_local.name
-                if not extra_name or extra_name.startswith("var"):
-                    extra_name = "e"
-                    extra_local.name = extra_name
+                extra_name = extra_local.name or "e"
                 extra_haxe = disasm.type_to_haxe(disasm.type_name(code, extra_local.get_type()))
                 output_lines.append(f"{indent}}} catch ({extra_name}:{extra_haxe}) {{")
                 extra_subs = render_subs.copy()
