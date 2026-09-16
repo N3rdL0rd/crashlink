@@ -717,15 +717,16 @@ def _expression_to_haxe(
         return f"{target_str}.{expr.field_name}"
 
     elif isinstance(expr, IRBoundClosure):
-        # Closure over an anonymous fun bound to a captured local: render as
-        # an arrow forwarding to the (helper-emitted) anon function.
+        # InstanceClosure captures the current environment value, not the
+        # mutable local holding it. Bind it now so later local assignments do
+        # not retarget the closure, while mutations of that environment remain
+        # visible to every closure sharing it.
         fun_str = _expression_to_haxe(expr.fun_const, code, ir_function)
         obj_str = _expression_to_haxe(expr.obj, code, ir_function)
         fun_type = expr.fun.type.resolve(code).definition
         extra_args = fun_type.args[1:] if isinstance(fun_type, Fun) else []
-        params = [f"a{i}" for i in range(len(extra_args))]
-        call_args = ", ".join([obj_str] + params)
-        return f"({', '.join(params)}) -> {fun_str}({call_args})"
+        bind_args = ", ".join([obj_str] + ["_"] * len(extra_args))
+        return f"({fun_str}).bind({bind_args})"
 
     elif isinstance(expr, IRArrayAccess):
         arr_str, idx_str, method_kind = _resolve_array_access(expr, code, ir_function)
