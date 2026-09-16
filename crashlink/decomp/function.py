@@ -1336,24 +1336,11 @@ class IRFunction:
                 obj_local = source_locals[op.df["obj"].value]
                 fun = op.df["fun"].resolve(self.code)
                 method_name = self.code.partial_func_name(fun)
-                obj_def = obj_local.get_type().definition
-                if method_name in (None, "<none>") and not isinstance(obj_def, (Obj, Virtual)):
-                    # Not a real `obj.method` binding: the compiler also uses
-                    # InstanceClosure to wrap a `Dynamic` value as the captured
-                    # `this` of a small synthesized adapter function (e.g. the
-                    # type-converting closure built for `cast f` on a
-                    # function value), which has no name and no real receiver
-                    # object. There's no Haxe syntax for "this anonymous
-                    # function bound with this capture", but the adapter
-                    # always exists to make `obj` itself callable with a
-                    # different signature, so a type cast renders the same
-                    # observable result without inventing a bogus field name.
-                    cast_expr = IRCast(self.code, self.func.regs[op.df["dst"].value], obj_local)
-                    block.statements.append(IRAssign(self.code, dst_local, cast_expr))
-                elif method_name in (None, "<none>") and isinstance(fun, Function):
-                    # Genuine closure over a captured local: `fun` is a real
-                    # synthesized function with no resolvable method name and
-                    # `obj` is its captured environment, not a `this` receiver.
+                if method_name in (None, "<none>") and isinstance(fun, Function):
+                    # Anonymous InstanceClosure binds a function to a captured
+                    # value, including enum environments and callable adapters.
+                    # The capture's type does not identify the function's body:
+                    # casting it to the result type would discard that body.
                     bound_expr = IRBoundClosure(self.code, fun, obj_local)
                     block.statements.append(IRAssign(self.code, dst_local, bound_expr))
                 else:
