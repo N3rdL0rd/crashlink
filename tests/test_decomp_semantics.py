@@ -33,7 +33,7 @@ from crashlink.decomp.opt.clean import (
     IRSequentialTempFolder,
 )
 from crashlink.decomp.opt.inliner import IRConditionInliner, IRTempAssignmentInliner
-from crashlink.pseudo import _expression_to_haxe
+from crashlink.pseudo import _expression_to_haxe, _generate_statements
 
 
 def _function(code, statements, locals=()):
@@ -232,6 +232,26 @@ def compiled_numeric_program(tmp_path_factory):
     a, b = [IRLocal(name, tIndex(1), code) for name in ("a", "b")]
     x, y = [IRLocal(name, tIndex(2), code) for name in ("x", "y")]
     functions, checks, expected = [], [], []
+    # A conversion's Float binding must remain the operand. Substituting its
+    # integer source while retaining the declaration both repeats conversions
+    # and lets integer multiplication overflow before the result is widened.
+    converted = [IRLocal(name, tIndex(2), code) for name in ("var8", "var9")]
+    bindings = [IRAssign(code, dst, IRCast(code, tIndex(2), src)) for dst, src in zip(converted, (a, b))]
+    body = bindings + [
+        IRReturn(code, IRArithmetic(code, converted[0], converted[1], IRArithmetic.ArithmeticType.MUL))
+    ]
+    context = _function(code, body, [a, b, *converted])
+    rendered = _generate_statements(
+        body,
+        code,
+        context,
+        1,
+        {"a", "b"},
+        inline_declarations={stmt: (stmt.target.name, "Float") for stmt in bindings},
+    )
+    functions.append("static function widenedProduct(a:Int, b:Int):Float {\n" + "\n".join(rendered) + "\n}")
+    checks.append("Sys.println(widenedProduct(2147483647, 2));")
+    expected.append("4294967294")
     for op in ("SDIV", "UDIV", "SMOD", "UMOD"):
         expr = IRArithmetic(code, a, b, IRArithmetic.ArithmeticType[op])
         functions.append(

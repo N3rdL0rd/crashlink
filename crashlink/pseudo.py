@@ -454,8 +454,7 @@ def _expression_to_haxe(
         if ir_function is not None:
             subs = getattr(ir_function, "_render_subs", None)
             if subs and expr in subs:
-                # Already parenthesized at registration when the substituted
-                # expression is compound; bare atoms are stored without parens.
+                # Render substitutions contain only bare local/constant atoms.
                 return str(subs[expr][0])
         return expr.name
 
@@ -1102,16 +1101,13 @@ def _is_single_use_render_expr(expr: IRExpression) -> bool:
     """Expressions safe to substitute when the local is read exactly once.
 
     With only one read to satisfy, substituting a constant can't trigger the
-    multi-use constant-folding problem _is_simple_render_expr avoids, so this
-    additionally allows IRConst (and casts of locals/constants) — covering
-    compiler temps like a single-use ToSFloat/ToDyn result or boxed literal
-    that would otherwise be declared and then never referenced by name.
+    multi-use constant-folding problem _is_simple_render_expr avoids.
+    Casts must retain their binding: rendering keeps the original assignment,
+    so substituting its RHS would repeat the conversion or lose the target
+    type supplied by its declaration. Only IR optimizers may move a conversion
+    together with eliminating its original assignment.
     """
-    if isinstance(expr, (IRLocal, IRConst)):
-        return True
-    if isinstance(expr, IRCast):
-        return _is_single_use_render_expr(expr.expr)
-    return False
+    return isinstance(expr, (IRLocal, IRConst))
 
 
 def _free_locals_in_expr(expr: IRExpression) -> Set[IRLocal]:
@@ -1139,62 +1135,6 @@ def _free_locals_in_expr(expr: IRExpression) -> Set[IRLocal]:
             walk(e.index)
 
     walk(expr)
-    return found
-
-
-def _has_nontrivial_computation_for_render(expr: IRExpression) -> bool:
-    """True if `expr` does real work (arithmetic or a cast) rather than just
-    naming a value. Mirrors the decomp-side `_has_nontrivial_computation` used
-    to gate IR-level inlining; needed again here because pseudo.py's own
-    single-use substitution (`_is_single_use_render_expr`) runs independently
-    of those IR passes, at print time."""
-    if isinstance(expr, (IRArithmetic, IRCast)):
-        return True
-    return False
-
-
-def _is_read_in_while_condition(root: IRStatement, name: str) -> bool:
-    """True if a local named `name` is read inside any IRWhileLoop's own
-    condition expression anywhere in `root`. A while condition re-evaluates
-    every iteration, so substituting a non-trivial expression there re-runs
-    that work each pass instead of the original's single computation before
-    the loop — unlike a substitution at an ordinary single-execution site."""
-    found = False
-
-    def walk_expr(e: Optional[IRExpression]) -> bool:
-        if e is None:
-            return False
-        if isinstance(e, IRLocal):
-            return e.name == name
-        if isinstance(e, (IRArithmetic, IRBoolExpr)):
-            return walk_expr(e.left) or walk_expr(e.right)
-        if isinstance(e, IRCall):
-            if e.target is not None and walk_expr(e.target):
-                return True
-            return any(walk_expr(arg) for arg in e.args)
-        if isinstance(e, IRField):
-            return walk_expr(e.target)
-        if isinstance(e, IRCast):
-            return walk_expr(e.expr)
-        if isinstance(e, IRArrayAccess):
-            return walk_expr(e.array) or walk_expr(e.index)
-        return False
-
-    def walk_stmt(s: Optional[IRStatement]) -> None:
-        nonlocal found
-        if found or s is None:
-            return
-        if isinstance(s, IRWhileLoop) and walk_expr(s.condition):
-            found = True
-            return
-        for child in s.get_children():
-            if isinstance(child, IRBlock):
-                for child_stmt in child.statements:
-                    walk_stmt(child_stmt)
-            else:
-                walk_stmt(child)
-
-    walk_stmt(root)
     return found
 
 
@@ -2043,10 +1983,6 @@ def _generate_statements(
                 registerable = (
                     reads == 1
                     and writes == 1
-                    and not (
-                        _has_nontrivial_computation_for_render(stmt.expr)
-                        and _is_read_in_while_condition(ir_function.block, stmt.target.name)
-                    )
                     and not _source_redefined_before_use(
                         ir_function.block,
                         stmt,
@@ -2058,15 +1994,6 @@ def _generate_statements(
                 free_locals = _free_locals_in_expr(stmt.expr)
                 if stmt.target not in free_locals:
                     rendered_expr = _expression_to_haxe(stmt.expr, code, ir_function)
-                    # Parenthesize compound expressions once here (parent op is
-                    # unknown, so wrap conservatively); leave atoms — locals,
-                    # constants, field/array accesses — bare so a substituted
-                    # single local doesn't render as `(var9)`.
-                    inner = stmt.expr
-                    while isinstance(inner, IRCast):
-                        inner = inner.expr
-                    if isinstance(inner, (IRArithmetic, IRBoolExpr, IRNeg, IRNot)):
-                        rendered_expr = f"({rendered_expr})"
                     render_subs[stmt.target] = (rendered_expr, free_locals)
 
         if stmt.comment:
