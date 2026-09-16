@@ -18,13 +18,16 @@ from crashlink.decomp.ir import (
     IRAssign,
     IRBlock,
     IRBoolExpr,
+    IRBreak,
     IRCall,
     IRCast,
     IRConditional,
     IRConst,
+    IRContinue,
     IRExpression,
     IRLocal,
     IRReturn,
+    IRWhileLoop,
 )
 from crashlink.decomp.opt.clean import (
     IRDeadAssignmentEliminator,
@@ -495,6 +498,60 @@ def test_array_mutation_and_loop_exits_survive_roundtrip(tmp_path, name, body, e
         )
         assert result.returncode == 0, result.stderr
         assert result.stdout.splitlines() == expected
+
+
+@pytest.mark.parametrize("tail_form", ["break", "continue_break"])
+def test_loop_recovery_preserves_condition_skipped_by_continue(tmp_path, tail_form):
+    haxe = shutil.which("haxe")
+    if not haxe:
+        pytest.skip("loop rendering regression requires Haxe")
+    code = Bytecode.create_empty()
+    i = IRLocal("i", tIndex(1), code)
+    check = IRLocal("check", tIndex(1), code)
+
+    def block(*statements):
+        result = IRBlock(code)
+        result.statements = list(statements)
+        return result
+
+    def number(value):
+        return IRConst(code, IRConst.ConstType.INT, value=value)
+
+    condition = IRBoolExpr(
+        code, IRBoolExpr.CompareType.ISTRUE, IRCall(code, IRCall.CallType.CLOSURE, check, [])
+    )
+    if tail_form == "break":
+        condition.invert()
+        tail = [IRConditional(code, condition, block(IRBreak(code)), block())]
+    else:
+        tail = [IRConditional(code, condition, block(IRContinue(code)), block()), IRBreak(code)]
+    body = block(
+        IRAssign(code, i, IRArithmetic(code, i, number(1), IRArithmetic.ArithmeticType.ADD)),
+        IRConditional(
+            code, IRBoolExpr(code, IRBoolExpr.CompareType.LT, i, number(3)),
+            block(IRContinue(code)), block(),
+        ),
+        *tail,
+    )
+    loop = IRWhileLoop(code, IRBoolExpr(code, IRBoolExpr.CompareType.TRUE), body)
+    function = _function(code, [loop], [i, check])
+    rendered = "\n".join(_generate_statements([loop], code, function, 2, {"i", "check"}))
+    (tmp_path / "Probe.hx").write_text(
+        "class Probe { static function main() { var i = 0; var checks = 0; "
+        "function check():Bool { checks++; return false; }\n"
+        + rendered
+        + '\nSys.println(i); Sys.println(checks); } }'
+    )
+    result = subprocess.run(
+        [haxe, "-cp", str(tmp_path), "-main", "Probe", "--interp"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    # The first two iterations continue without evaluating the side-effectful
+    # tail condition; changing their target to a do-while test would stop at 1.
+    assert result.stdout.splitlines() == ["3", "1"]
 
 
 def test_switch_roundtrip_preserves_arithmetic_count(tmp_path):

@@ -1317,6 +1317,15 @@ def _contains_call(stmt: IRStatement) -> bool:
     return found
 
 
+def _contains_loop_continue(stmt: IRStatement) -> bool:
+    """Find continues targeting the enclosing loop, not a nested loop."""
+    if isinstance(stmt, IRContinue):
+        return True
+    if isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop, IRForEachLoop, IRIntRangeLoop)):
+        return False
+    return any(_contains_loop_continue(child) for child in stmt.get_children())
+
+
 def _generate_statements(
     statements: List[IRStatement],
     code: Bytecode,
@@ -1648,6 +1657,8 @@ def _generate_statements(
                 and stmt.body.statements
             ):
                 last_stmt = stmt.body.statements[-1]
+                tail_condition = None
+                body_end = len(stmt.body.statements) - 1
                 if (
                     isinstance(last_stmt, IRConditional)
                     and isinstance(last_stmt.condition, IRBoolExpr)
@@ -1655,18 +1666,34 @@ def _generate_statements(
                     and isinstance(last_stmt.true_block.statements[0], IRBreak)
                     and (not last_stmt.false_block or not last_stmt.false_block.statements)
                 ):
+                    tail_condition = _inverted_bool_expr_to_haxe(last_stmt.condition, code, ir_function)
+                elif isinstance(last_stmt, IRBreak) and len(stmt.body.statements) >= 2:
+                    tail = stmt.body.statements[-2]
+                    if (
+                        isinstance(tail, IRConditional)
+                        and isinstance(tail.condition, IRBoolExpr)
+                        and len(tail.true_block.statements) == 1
+                        and isinstance(tail.true_block.statements[0], IRContinue)
+                        and (not tail.false_block or not tail.false_block.statements)
+                    ):
+                        tail_condition = _expression_to_haxe(tail.condition, code, ir_function)
+                        body_end -= 1
+                # An earlier continue currently skips the tail test. In a do-while
+                # it would evaluate that test, possibly changing values or effects.
+                if tail_condition is not None and not any(
+                    _contains_loop_continue(body_stmt) for body_stmt in stmt.body.statements[:body_end]
+                ):
                     output_lines.append(f"{indent}do {{")
                     body_subs = render_subs.copy()
                     output_lines.extend(
                         _gen(
-                            stmt.body.statements[:-1],
+                            stmt.body.statements[:body_end],
                             indent_level + 1,
                             declared_vars_in_scope.copy(),
                             body_subs,
                         )
                     )
-                    cond_str = _inverted_bool_expr_to_haxe(last_stmt.condition, code, ir_function)
-                    output_lines.append(f"{indent}}} while ({cond_str});")
+                    output_lines.append(f"{indent}}} while ({tail_condition});")
                     rendered_as_do_while = True
                     for key in list(render_subs.keys()):
                         if key not in body_subs:
