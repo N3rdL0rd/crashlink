@@ -495,3 +495,28 @@ def test_array_mutation_and_loop_exits_survive_roundtrip(tmp_path, name, body, e
         )
         assert result.returncode == 0, result.stderr
         assert result.stdout.splitlines() == expected
+
+
+def test_switch_roundtrip_preserves_arithmetic_count(tmp_path):
+    from collections import Counter
+
+    from crashtest.behavior import compile_haxe
+
+    if not shutil.which("haxe"):
+        pytest.skip("opcode regression requires Haxe")
+    name = "SwitchRegisterReuse"
+    source = (Path(__file__).parent / "haxe" / f"{name}.hx").read_text()
+    original, error = compile_haxe(source, name, tmp_path / "original")
+    assert error is None, error
+    before = Bytecode.from_path(str(original))
+    recovered = IRClass(before, before.get_test_obj(name)).pseudo()
+    recompiled, error = compile_haxe(recovered, name, tmp_path / "recompiled")
+    assert error is None, error
+    after = Bytecode.from_path(str(recompiled))
+
+    def arithmetic(code):
+        method = next(f for f in code.functions if code.full_func_name(f) == f"${name}.pick")
+        return Counter(op.op for op in method.ops if op.op in ("Add", "Sub", "Mul"))
+
+    assert arithmetic(before) == {"Add": 2, "Sub": 1, "Mul": 3}
+    assert arithmetic(after) == arithmetic(before)

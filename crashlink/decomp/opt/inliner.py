@@ -1513,6 +1513,13 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                         next_stmt = statements[i + 1]
                         if (
                             self._stmt_contains_local(next_stmt, temp_local)
+                            and not (
+                                self._has_nontrivial_computation(expr_to_inline)
+                                and (
+                                    inside_loop_body
+                                    or self._count_local_reads(next_stmt, temp_local) > 1
+                                )
+                            )
                             and not self._is_local_redefined(temp_local, [next_stmt])
                             and not self._stmt_reassigns_any(
                                 next_stmt, self._collect_free_locals(expr_to_inline)
