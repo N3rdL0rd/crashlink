@@ -2085,14 +2085,10 @@ class IRFunction:
             exc_local = self.locals[last_op.df["exc"].value]
             block.statements.append(IRThrow(self.code, exc_local))
 
-        elif last_op and last_op.op == "EndTrap":
-            if node.branches:
-                successor_node, _ = node.branches[0]
-                next_block_ir = self._lift_block(successor_node, visited, stop_at, loop_ctx=loop_ctx)
-                block.statements.extend(next_block_ir.statements)
-
-        elif last_op and (last_op.op == "JAlways" or not is_last_op_control_flow):
-            # Handles both explicit unconditional jumps and implicit fall-through
+        elif last_op and (last_op.op in ("JAlways", "EndTrap") or not is_last_op_control_flow):
+            # EndTrap's successor may be a loop header/exit after jump threading,
+            # so it needs the same continue/break handling as an unconditional jump.
+            # Recursing directly would discard a visited header and lose the continue.
             if node.branches:
                 successor_node, _ = node.branches[0]
                 if loop_ctx and successor_node == loop_ctx.header:
