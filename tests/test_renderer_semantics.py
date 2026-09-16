@@ -2,6 +2,7 @@
 
 import os
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -36,6 +37,10 @@ class NativeBoundary {
         Sys.println(RawNative.string_compare(bytes, @:privateAccess "123".bytes, count));
     }
 }""",
+        ),
+        (
+            "HeapsSkinSplit",
+            (Path(__file__).parent / "haxe" / "HeapsSkinSplit.hx").read_text(),
         ),
     ],
 )

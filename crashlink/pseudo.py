@@ -3616,28 +3616,31 @@ def _collect_referenced_user_classes(root: IRStatement, code: Bytecode, exclude:
 
 def _collect_anonymous_functions(root: IRStatement, code: Bytecode) -> Dict[int, "Function"]:
     """
-    Collect user-defined anonymous functions (closures) referenced in the IR.
+    Collect anonymous functions (closures and compiler adapters) referenced in the IR.
     These are emitted as private static helper methods so the decompiled output
     compiles cleanly.
     """
     funcs: Dict[int, "Function"] = {}
     seen: Set[int] = set()
 
-    def is_user_func(func: "Function") -> bool:
-        try:
-            path = func.resolve_file(code)
-        except Exception:
-            return False
-        return "/std/" not in path.replace("\\", "/")
-
     def visit(stmt: IRStatement) -> None:
         if id(stmt) in seen:
             return
         seen.add(id(stmt))
+        if (
+            isinstance(stmt, IRCall)
+            and isinstance(stmt.target, IRConst)
+            and isinstance(stmt.target.value, Function)
+            and _is_arrayobj_alloc_call(stmt.target.value, stmt, code)
+        ):
+            # This call renders as ArrayObj.alloc, not an anonymous reference.
+            for arg in stmt.args:
+                visit(arg)
+            return
         if isinstance(stmt, IRConst) and isinstance(stmt.value, Function):
             func = stmt.value
             name = code.partial_func_name(func)
-            if (not name or name == "<none>") and is_user_func(func):
+            if not name or name == "<none>":
                 funcs[func.findex.value] = func
         for child in stmt.get_children():
             visit(child)
