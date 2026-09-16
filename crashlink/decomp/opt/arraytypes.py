@@ -97,23 +97,19 @@ def _walk_block(
     block: IRBlock,
     code: Bytecode,
     visited: Set[int],
-    field_elem_types: Dict[str, Type],
-    local_elem_types: Dict[int, Type],
     global_cache: Dict[Tuple[str, str], Type],
 ) -> None:
     if id(block) in visited:
         return
     visited.add(id(block))
     for stmt in block.statements:
-        _walk_statement(stmt, code, visited, field_elem_types, local_elem_types, global_cache)
+        _walk_statement(stmt, code, visited, global_cache)
 
 
 def _record_array_source(
     expr: IRExpression,
     elem_type: Optional[Type],
     code: Bytecode,
-    field_elem_types: Dict[str, Type],
-    local_elem_types: Dict[int, Type],
     global_cache: Dict[Tuple[str, str], Type],
 ) -> None:
     """Record elem_type for the array that `expr` denotes (an IRLocal or IRField)."""
@@ -121,18 +117,15 @@ def _record_array_source(
         return
     if isinstance(expr, IRLocal):
         if _is_erased_array(expr, code):
-            local_elem_types[id(expr)] = elem_type
             if expr.array_elem_type is None:
                 expr.array_elem_type = elem_type
-    elif isinstance(expr, IRField) and isinstance(expr.target, IRLocal):
+    elif isinstance(expr, IRField):
         try:
             arr_type = expr.get_type()
         except Exception:
             return
         if _array_type_name(arr_type, code) in _ERASED_ARRAY_TYPES:
-            field_elem_types[expr.field_name] = elem_type
-            # Also store in the global cache keyed by (class_name, field_name)
-            # so a referenced class rendered later can pick up the type.
+            # A referenced class rendered later can pick up this field type.
             cls = _class_name_of(expr.target, code)
             if cls is not None:
                 global_cache[(cls, expr.field_name)] = elem_type
@@ -142,8 +135,6 @@ def _walk_statement(
     stmt: IRStatement,
     code: Bytecode,
     visited: Set[int],
-    field_elem_types: Dict[str, Type],
-    local_elem_types: Dict[int, Type],
     global_cache: Dict[Tuple[str, str], Type],
 ) -> None:
     if isinstance(stmt, IRAssign):
@@ -154,9 +145,7 @@ def _walk_statement(
                 elem_type = access.get_type()
             except Exception:
                 elem_type = None
-            _record_array_source(
-                access.array, elem_type, code, field_elem_types, local_elem_types, global_cache
-            )
+            _record_array_source(access.array, elem_type, code, global_cache)
         # Element write: `arr[i] = v` — v's type is the element type.
         if isinstance(stmt.target, IRArrayAccess):
             access = stmt.target
@@ -165,9 +154,7 @@ def _walk_statement(
                 value_type = val.get_type()
             except Exception:
                 value_type = None
-            _record_array_source(
-                access.array, value_type, code, field_elem_types, local_elem_types, global_cache
-            )
+            _record_array_source(access.array, value_type, code, global_cache)
         # Array literal assigned to a local or field: recover elem type from
         # the allocation site's own type (e.g. `[]`'s alloc_array(Joint, 0))
         # or, failing that, from the literal's elements.
@@ -179,8 +166,6 @@ def _walk_statement(
                         stmt.target,
                         lit.recovered_elem_type,
                         code,
-                        field_elem_types,
-                        local_elem_types,
                         global_cache,
                     )
                 elif lit.elements:
@@ -189,60 +174,52 @@ def _walk_statement(
                     # genuinely Array<Dynamic>, not Array<first_element_type>.
                     et = _uniform_element_type(lit.elements, code)
                     if et is not None:
-                        _record_array_source(
-                            stmt.target, et, code, field_elem_types, local_elem_types, global_cache
-                        )
+                        _record_array_source(stmt.target, et, code, global_cache)
     for child in stmt.get_children():
         if isinstance(child, IRBlock):
-            _walk_block(child, code, visited, field_elem_types, local_elem_types, global_cache)
+            _walk_block(child, code, visited, global_cache)
 
 
-def _propagate_field_to_params(
+def _array_element_type(
+    expr: IRExpression, code: Bytecode, global_cache: Dict[Tuple[str, str], Type]
+) -> Optional[Type]:
+    expr = _strip_cast(expr)
+    if isinstance(expr, IRLocal):
+        return expr.array_elem_type
+    if isinstance(expr, IRField):
+        cls = _class_name_of(expr.target, code)
+        if cls is not None:
+            return global_cache.get((cls, expr.field_name))
+    return None
+
+
+def _propagate_array_assignments(
     block: IRBlock,
     code: Bytecode,
     visited: Set[int],
-    field_elem_types: Dict[str, Type],
+    global_cache: Dict[Tuple[str, str], Type],
 ) -> None:
+    """Array copies constrain both ends, including reads and writes of fields.
+
+    Keep field identities class-qualified: a method can access arrays on
+    several unrelated classes, and static owners retain their `$` prefix.
+    """
     if id(block) in visited:
         return
     visited.add(id(block))
     for stmt in block.statements:
-        if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRField):
-            if stmt.target.field_name in field_elem_types:
-                elem_type = field_elem_types[stmt.target.field_name]
-                src = stmt.expr
-                if isinstance(src, IRLocal) and _is_erased_array(src, code):
-                    if src.array_elem_type is None:
-                        src.array_elem_type = elem_type
-        for child in stmt.get_children():
-            if isinstance(child, IRBlock):
-                _propagate_field_to_params(child, code, visited, field_elem_types)
-
-
-def _propagate_local_copies(
-    block: IRBlock,
-    code: Bytecode,
-    visited: Set[int],
-    local_elem_types: Dict[int, Type],
-) -> None:
-    if id(block) in visited:
-        return
-    visited.add(id(block))
-    for stmt in block.statements:
-        if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and isinstance(stmt.expr, IRLocal):
-            tgt, src = stmt.target, stmt.expr
+        if isinstance(stmt, IRAssign):
+            tgt, src = _strip_cast(stmt.target), _strip_cast(stmt.expr)
             if _is_erased_array(tgt, code) and _is_erased_array(src, code):
-                et = local_elem_types.get(id(src)) or src.array_elem_type
-                if et is not None and tgt.array_elem_type is None:
-                    tgt.array_elem_type = et
-                    local_elem_types[id(tgt)] = et
-                et2 = local_elem_types.get(id(tgt)) or tgt.array_elem_type
-                if et2 is not None and src.array_elem_type is None:
-                    src.array_elem_type = et2
-                    local_elem_types[id(src)] = et2
+                src_elem = _array_element_type(src, code, global_cache)
+                tgt_elem = _array_element_type(tgt, code, global_cache)
+                if src_elem is not None and tgt_elem is None:
+                    _record_array_source(tgt, src_elem, code, global_cache)
+                elif tgt_elem is not None and src_elem is None:
+                    _record_array_source(src, tgt_elem, code, global_cache)
         for child in stmt.get_children():
             if isinstance(child, IRBlock):
-                _propagate_local_copies(child, code, visited, local_elem_types)
+                _propagate_array_assignments(child, code, visited, global_cache)
 
 
 def _is_instance_method(ir_func: "IRFunction") -> bool:
@@ -307,15 +284,16 @@ def _propagate_calls_in_stmt(
                 param_local = callee.locals[i]
                 if param_local.array_elem_type is None and _is_erased_array(param_local, code):
                     param_local.array_elem_type = arg_elem
-            # Reverse: callee param has elem type → propagate to arg's field.
+            # Reverse: the parameter also constrains local and field arguments.
             if i < len(callee.locals):
                 param_local = callee.locals[i]
-                if param_local.array_elem_type is not None and isinstance(arg, IRField):
-                    cls = _class_name_of(arg.target, code)
-                    if cls is not None:
-                        key = (cls, arg.field_name)
-                        if key not in global_cache:
-                            global_cache[key] = param_local.array_elem_type
+                if param_local.array_elem_type is not None and _is_erased_array(arg, code):
+                    if isinstance(arg, IRLocal) and arg.array_elem_type is None:
+                        arg.array_elem_type = param_local.array_elem_type
+                    elif isinstance(arg, IRField):
+                        cls = _class_name_of(arg.target, code)
+                        if cls is not None:
+                            global_cache.setdefault((cls, arg.field_name), param_local.array_elem_type)
     for child in stmt.get_children():
         if isinstance(child, IRBlock):
             _propagate_call_sites(child, code, visited, name_to_irfunc, findex_to_irfunc, global_cache)
@@ -372,44 +350,15 @@ def _recover_native_local_types(ir_func: "IRFunction", code: Bytecode) -> None:
 def recover_array_element_types(ir_class: "IRClass") -> None:
     """Recover Array<T> element types for fields, params, and locals of an IRClass."""
     code = ir_class.code
-    field_elem_types: Dict[str, Type] = {}
-    local_elem_types: Dict[int, Type] = {}
 
     global_cache: Dict[Tuple[str, str], Type] = code._global_field_elem_types
-
-    # Seed from the global cache: fields recovered by other classes.
-    primary_obj = ir_class.dynamic if ir_class.dynamic else ir_class.static
-    class_name = primary_obj.name.resolve(code) if primary_obj else None
-    if class_name is not None:
-        for (cn, fname), etype in global_cache.items():
-            if cn == class_name:
-                field_elem_types[fname] = etype
 
     methods = ir_class.static_methods + ir_class.methods
     for ir_func in methods:
         if not hasattr(ir_func, "block"):
             continue
         visited: Set[int] = set()
-        _walk_block(ir_func.block, code, visited, field_elem_types, local_elem_types, global_cache)
-
-    if field_elem_types:
-        for ir_func in methods:
-            if not hasattr(ir_func, "block"):
-                continue
-            vis: Set[int] = set()
-            _propagate_field_to_params(ir_func.block, code, vis, field_elem_types)
-        for ir_func in methods:
-            if not hasattr(ir_func, "block"):
-                continue
-            vis = set()
-            _propagate_local_copies(ir_func.block, code, vis, local_elem_types)
-
-    if local_elem_types and not field_elem_types:
-        for ir_func in methods:
-            if not hasattr(ir_func, "block"):
-                continue
-            vis = set()
-            _propagate_local_copies(ir_func.block, code, vis, local_elem_types)
+        _walk_block(ir_func.block, code, visited, global_cache)
 
     name_to_irfunc: Dict[str, "IRFunction"] = {}
     findex_to_irfunc: Dict[int, "IRFunction"] = {}
@@ -420,15 +369,30 @@ def recover_array_element_types(ir_class: "IRClass") -> None:
         findex_to_irfunc[ir_func.func.findex.value] = ir_func
 
     for ir_func in methods:
-        if not hasattr(ir_func, "block"):
-            continue
-        vis = set()
-        _recover_native_local_types(ir_func, code)
-        _propagate_call_sites(ir_func.block, code, vis, name_to_irfunc, findex_to_irfunc, global_cache)
+        if hasattr(ir_func, "block"):
+            _recover_native_local_types(ir_func, code)
 
-    # Seed the global cache from this class's own recovered fields.
-    if class_name is not None:
-        for fname, etype in field_elem_types.items():
-            global_cache[(class_name, fname)] = etype
+    # Field copies and calls form chains across methods. Iterate to a fixed
+    # point so declaration types do not depend on the method traversal order.
+    previous_count = -1
+    while True:
+        recovered_count = len(global_cache) + sum(
+            local.array_elem_type is not None for ir_func in methods for local in ir_func.locals
+        )
+        if recovered_count == previous_count:
+            break
+        previous_count = recovered_count
+        for ir_func in methods:
+            if not hasattr(ir_func, "block"):
+                continue
+            _propagate_array_assignments(ir_func.block, code, set(), global_cache)
+            _propagate_call_sites(ir_func.block, code, set(), name_to_irfunc, findex_to_irfunc, global_cache)
 
-    ir_class.field_elem_types = field_elem_types
+    # Only publish fields belonging to this class; foreign fields stay in the
+    # class-qualified cache for their own declarations to consume later.
+    owners = {
+        obj.name.resolve(code) for obj in (ir_class.dynamic, ir_class.static) if obj is not None
+    }
+    ir_class.field_elem_types = {
+        fname: etype for (owner, fname), etype in global_cache.items() if owner in owners
+    }
