@@ -28,7 +28,17 @@ from crashtest.behavior import compare_programs, compile_haxe, execute
 
 
 @pytest.mark.parametrize(
-    "name", ["EnumDestruct", "RecursiveEnumChain", "EnumMixedSwitch", "TypedCatch", "TryLoopContinue"]
+    "name",
+    [
+        "EnumDestruct",
+        "RecursiveEnumChain",
+        "EnumMixedSwitch",
+        "TypedCatch",
+        "TryLoopContinue",
+        "CatchClosureCaptureExc",
+        "CatchNameReuse",
+        "UnrolledLoopCatch",
+    ],
 )
 def test_enum_and_catch_execution_survives_roundtrip(tmp_path, name):
     if not shutil.which("haxe") or not (os.environ.get("HL_RUNTIME") or shutil.which("hl")):

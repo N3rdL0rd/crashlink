@@ -1712,11 +1712,13 @@ class IRFunction:
         return cast(IRBlock, self._clone_value(block, memo))
 
     def _clone_value(self, value: Any, memo: Dict[int, Any]) -> Any:
-        if value is None or isinstance(value, (int, float, str, bool, bytes, _Enum, IRLocal)):
+        if value is None or isinstance(value, (int, float, str, bool, bytes, _Enum)):
             return value
         vid = id(value)
         if vid in memo:
             return memo[vid]
+        if isinstance(value, IRLocal):
+            return value
         if isinstance(value, list):
             new_list: List[Any] = []
             memo[vid] = new_list
