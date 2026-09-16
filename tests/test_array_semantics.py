@@ -248,3 +248,48 @@ class EmptyDynamicArrayRoundtrip {
     behavior = compare_programs(original, recompiled, name)
     assert behavior.passed, behavior.to_json()
     assert behavior.recompiled.stdout == "kept\n0\nfalse\n"
+
+
+def test_unsigned_array_reads_preserve_bounds_checks(tmp_path):
+    from collections import Counter
+
+    from crashlink.decomp.function import IRClass
+    from crashtest.behavior import compare_programs, compile_haxe
+
+    if not shutil.which("haxe") or not (os.environ.get("HL_RUNTIME") or shutil.which("hl")):
+        pytest.skip("roundtrip regression requires Haxe and HashLink")
+    name = "ArrayReadBounds"
+    source = """
+class ArrayReadBounds {
+    static function swap(a:Array<Int>, i:Int, j:Int):Void {
+        var tmp = a[i];
+        a[i] = a[j];
+        a[j] = tmp;
+    }
+    static function read(a:Array<Int>, i:Int):Int { return a[i]; }
+    static function main() {
+        var a = [1, 2, 3];
+        swap(a, 0, 2);
+        Sys.println(a.join(","));
+        Sys.println(read(a, -1));
+        Sys.println(read(a, 3));
+        Sys.println(read(a, 1));
+    }
+}
+"""
+    original, error = compile_haxe(source, name, tmp_path / "original")
+    assert error is None, error
+    before = Bytecode.from_path(str(original))
+    recovered = IRClass(before, before.get_test_obj(name)).pseudo()
+    recompiled, error = compile_haxe(recovered, name, tmp_path / "recompiled")
+    assert error is None, error
+    after = Bytecode.from_path(str(recompiled))
+    for method in ("swap", "read"):
+        def operations(code):
+            function = next(f for f in code.functions if code.full_func_name(f) == f"${name}.{method}")
+            return Counter(op.op for op in function.ops if op.op in ("JULt", "GetMem", "SetMem"))
+
+        assert operations(after) == operations(before)
+    behavior = compare_programs(original, recompiled, name)
+    assert behavior.passed, behavior.to_json()
+    assert behavior.recompiled.stdout == "3,2,1\n0\n0\n2\n"

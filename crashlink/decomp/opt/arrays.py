@@ -1676,7 +1676,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         cond = stmt.condition
         if not isinstance(cond, IRBoolExpr):
             return None
-        if cond.op == IRBoolExpr.CompareType.GTE:
+        if cond.op in (IRBoolExpr.CompareType.GTE, IRBoolExpr.CompareType.UGTE):
             idx_expr = cond.left
             length_expr = cond.right
         elif cond.op == IRBoolExpr.CompareType.LTE:
@@ -1711,15 +1711,45 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         else_assign = else_block.statements[-1]
         if not isinstance(then_assign, IRAssign) or not isinstance(else_assign, IRAssign):
             return None
+        if not isinstance(then_assign.expr, IRConst) or _int_const_value(then_assign.expr) != 0:
+            return None
         if then_assign.target != else_assign.target or not isinstance(then_assign.target, IRLocal):
             return None
         value_var = then_assign.target
         if not isinstance(else_assign.expr, IRArrayAccess):
             return None
         access = else_assign.expr
-        if not isinstance(access.array, IRField):
-            return None
-        if access.array.field_name != "bytes" or not _structurally_equal(access.array.target, arr_var):
+        if isinstance(access.array, IRField):
+            if len(else_block.statements) != 1:
+                return None
+            if access.array.field_name != "bytes" or not _structurally_equal(access.array.target, arr_var):
+                return None
+        elif isinstance(access.array, IRLocal):
+            if len(else_block.statements) != 2:
+                return None
+            # HL splits the backing load into its own statement inside the else
+            # branch: `t = arr.bytes; x = t[idx << 2]`. The conditional
+            # replacement discards the whole else block, so the split load needs
+            # no separate consumption — only a liveness check: the temp must be
+            # unread after the guard, or collapsing would drop a live value.
+            bytes_local = access.array
+            bytes_load = else_block.statements[-2] if len(else_block.statements) >= 2 else None
+            if not (
+                isinstance(bytes_load, IRAssign)
+                and bytes_load.target is bytes_local
+                and isinstance(bytes_load.expr, IRField)
+                and bytes_load.expr.field_name == "bytes"
+                and _structurally_equal(bytes_load.expr.target, arr_var)
+            ):
+                return None
+            for s in stmts[start + 1 :]:
+                if isinstance(s, IRAssign) and s.target is bytes_local:
+                    if self._local_in_stmt(s.expr, bytes_local):
+                        return None
+                    break
+                if self._local_in_stmt(s, bytes_local):
+                    return None
+        else:
             return None
         if not isinstance(access.index, IRArithmetic) or access.index.op.value != "<<":
             return None
@@ -1755,8 +1785,12 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         new_assign = IRAssign(self.func.code, value_var, new_access)
         # If the length was loaded into a temp immediately before the guard, drop
         # that temp as well; otherwise later passes can leave a dead assignment.
+        # When HL split the `.bytes` backing load out of the access (matched via
+        # the else-branch temp above), the replacement discards the whole else
+        # block, so no additional statement consumption is required.
+        first_consumed = length_assign_idx
         preceding_to_pop = start - length_assign_idx
-        new_assign.adopt(*stmts[length_assign_idx : start + 1])
+        new_assign.adopt(*stmts[first_consumed : start + 1])
         return new_assign, 1, preceding_to_pop
 
     def _recover_constant_index(
