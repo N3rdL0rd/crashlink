@@ -771,7 +771,7 @@ def _expression_to_haxe(
         construct_name = expr.construct_name
         enum_def = expr.enum_type_idx.resolve(code).definition
         if isinstance(enum_def, Enum) and enum_def.name.value == 0:
-            construct_name = f"__ClosureCtx_{enum_def._global.value}.{construct_name}"
+            construct_name = f"{disasm._enum_name(code, enum_def)}.{construct_name}"
         if expr.args:
             args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.args)
             return f"{construct_name}({args_str})"
@@ -3688,36 +3688,13 @@ def _collect_referenced_enums(root: IRStatement, code: Bytecode) -> Dict[str, "E
             visit(child)
 
     visit(root)
-    # Assign display names, disambiguating raw-name collisions between
-    # distinct enum definitions (see docstring).
-    by_name: Dict[str, int] = {}
-    result: Dict[str, "Enum"] = {}
-    for definition in enums.values():
-        # Name index 0 marks a synthesized anonymous enum (e.g. closure
-        # capture context); give it a unique name instead of its raw
-        # (colliding) resolved name - mirrors disasm.type_name's handling.
-        if definition.name.value == 0:
-            base_name = f"__ClosureCtx_{definition._global.value}"
-        else:
-            base_name = destaticify(definition.name.resolve(code))
-        name = base_name
-        if name in by_name and result[name] is not definition:
-            suffix = 2
-            while f"{base_name}_{suffix}" in by_name:
-                suffix += 1
-            name = f"{base_name}_{suffix}"
-        by_name[name] = id(definition)
-        result[name] = definition
-    return result
+    return {destaticify(disasm._enum_name(code, definition)): definition for definition in enums.values()}
 
 
 def _enum_pseudo(enum_def: "Enum", code: Bytecode, name: Optional[str] = None) -> str:
     """Generate a Haxe enum declaration from a HashLink Enum definition."""
     if name is None:
-        if enum_def.name.value == 0:
-            name = f"__ClosureCtx_{enum_def._global.value}"
-        else:
-            name = destaticify(enum_def.name.resolve(code))
+        name = destaticify(disasm._enum_name(code, enum_def))
     lines = [f"enum {name} {{"]
     for construct in enum_def.constructs:
         cname = construct.name.resolve(code)

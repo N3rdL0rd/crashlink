@@ -40,6 +40,17 @@ from .core import (
 from .opcodes import opcodes
 
 
+def _enum_name(code: Bytecode, definition: Enum) -> str:
+    if definition.name.value != 0:
+        return definition.name.resolve(code)
+    # Anonymous capture contexts have no global (the stored value is zero),
+    # so only their type-table identity distinguishes different environments.
+    for index, typ in enumerate(code.types):
+        if typ.definition is definition:
+            return f"__ClosureCtx_{index}"
+    raise ValueError("Anonymous enum definition is not in the bytecode type table")
+
+
 def type_name(code: Bytecode, typ: Type) -> str:
     """
     Generates a human-readable name for a type.
@@ -55,12 +66,7 @@ def type_name(code: Bytecode, typ: Type) -> str:
             fields.append(field.name.resolve(code))
         return f"Virtual[{', '.join(fields)}]"
     elif typedef == Enum and isinstance(defn, Enum):
-        # Name index 0 marks a compiler-synthesized anonymous enum (e.g. a
-        # closure capture context) - its raw name collides with whatever
-        # string happens to sit at pool index 0 (often "String").
-        if defn.name.value == 0:
-            return f"__ClosureCtx_{defn._global.value}"
-        return defn.name.resolve(code)
+        return _enum_name(code, defn)
     return typedef.__name__
 
 
