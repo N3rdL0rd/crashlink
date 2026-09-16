@@ -273,7 +273,7 @@ class IRArrayObjWrapperOptimizer(TraversingIROptimizer):
                 size = int(getattr(size_expr.value, "value", size_expr.value))
                 alloc_idx = j
                 break
-        if alloc_idx is None or size is None or size <= 0:
+        if alloc_idx is None or size is None or size < 0:
             return None
 
         values: Dict[int, IRExpression] = {}
@@ -440,16 +440,20 @@ class IRArrayObjWrapperOptimizer(TraversingIROptimizer):
                 and isinstance(stmt.expr, IRCall)
                 and self._is_array_wrapper_call(stmt.expr)
             ):
-                if self._is_empty_array_alloc(stmt.expr.args[0], local_defs):
-                    literal = IRArrayLiteral(self.func.code, [])
-                    literal.recovered_elem_type = self._empty_array_elem_type(stmt.expr.args[0], local_defs)
-                    stmt.expr = literal
-                elif isinstance(stmt.expr.args[0], IRLocal):
-                    folded = self._try_fold_array_literal(stmts, i, stmt.expr.args[0])
+                arg = stmt.expr.args[0]
+                if isinstance(arg, IRLocal):
+                    folded = self._try_fold_array_literal(stmts, i, arg)
                     if folded is not None:
                         values, consumed = folded
+                        literal = IRArrayLiteral(self.func.code, values)
+                        if not values:
+                            literal.recovered_elem_type = self._empty_array_elem_type(arg, local_defs)
                         drop.update(consumed)
-                        stmt.expr = IRArrayLiteral(self.func.code, values)
+                        stmt.expr = literal
+                elif self._is_empty_array_alloc(arg, local_defs):
+                    literal = IRArrayLiteral(self.func.code, [])
+                    literal.recovered_elem_type = self._empty_array_elem_type(arg, local_defs)
+                    stmt.expr = literal
                 # Any other non-empty wrapper (e.g. after a blit into an
                 # already-populated array) must stay so pseudo can render
                 # `alloc(anew)`.

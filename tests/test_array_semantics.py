@@ -3,6 +3,11 @@
 from types import SimpleNamespace
 from typing import cast
 
+import os
+import shutil
+
+import pytest
+
 from crashlink.core import Array, Bool, Bytecode, Dyn, F64, I32, Type, Void, tIndex
 from crashlink.decomp.function import IRFunction
 from crashlink.decomp.ir import (
@@ -152,3 +157,45 @@ def test_reused_native_register_declaration_covers_all_allocations():
     )
     _recover_native_local_types(cast(IRFunction, SimpleNamespace(block=block)), code)
     assert _collect_locals(block)["array"] == "hl.NativeArray<Dynamic>"
+
+
+def test_empty_array_roundtrip_preserves_allocation_count(tmp_path):
+    from crashlink.decomp.function import IRClass
+    from crashtest.behavior import compare_programs, compile_haxe
+
+    if not shutil.which("haxe") or not (os.environ.get("HL_RUNTIME") or shutil.which("hl")):
+        pytest.skip("roundtrip regression requires Haxe and HashLink")
+    source = """
+class EmptyArrayRoundtrip {
+    static function make():Array<String> { return []; }
+    static function main() {
+        var a = make();
+        var b = make();
+        a.push("kept");
+        Sys.println(a.join(","));
+        Sys.println(b.length);
+        Sys.println(a == b);
+    }
+}
+"""
+    name = "EmptyArrayRoundtrip"
+    original, error = compile_haxe(source, name, tmp_path / "original")
+    assert error is None, error
+    before = Bytecode.from_path(str(original))
+    recovered = IRClass(before, before.get_test_obj(name)).pseudo()
+    recompiled, error = compile_haxe(recovered, name, tmp_path / "recompiled")
+    assert error is None, error
+    after = Bytecode.from_path(str(recompiled))
+
+    def allocations(code):
+        make = next(f for f in code.functions if code.full_func_name(f) == f"${name}.make")
+        return sum(
+            op.op == "Call2" and code.full_func_name(op.df["fun"].resolve(code)) == "std.alloc_array"
+            for op in make.ops
+        )
+
+    assert allocations(before) == 1
+    assert allocations(after) == allocations(before)
+    behavior = compare_programs(original, recompiled, name)
+    assert behavior.passed, behavior.to_json()
+    assert behavior.recompiled.stdout == "kept\n0\nfalse\n"
