@@ -2235,6 +2235,7 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
             dst: Any = op.df.get("dst")
             if dst is not None:
                 bytes_builds.pop(dst.value, None)
+                pending_new.pop(dst.value, None)
             if (op.op or "").startswith("J") or op.op in ("Switch", "Label", "Trap"):
                 # branchy control flow (e.g. switch-computed initializers): can't safely
                 # track a single value across merge points with a flat linear scan
@@ -2243,6 +2244,7 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                 empty_array_regs.clear()
                 array_builds.clear()
                 bytes_builds.clear()
+                pending_new.clear()
                 continue
             if op.op in ("Int", "Float"):
                 try:
@@ -2354,6 +2356,29 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                     if op.op == "CallN"
                     else [op.df[f"arg{i}"].value for i in range(int(op.op[-1]))]
                 )
+                # new Array<T>() uses an anonymous ArrayObj constructor rather
+                # than a named `new` proto. Match the same stdlib wrapper shape
+                # as IRArrayObjWrapperOptimizer, with a fresh receiver and Void
+                # result to distinguish it from the native-array alloc factory.
+                if (
+                    isinstance(fun, Function)
+                    and fname_parts is None
+                    and len(call_arg_regs) == 1
+                    and pending_new.get(call_arg_regs[0]) == "hl.types.ArrayObj"
+                    and isinstance(fun.resolve_fun(code).ret.resolve(code).definition, Void)
+                ):
+                    try:
+                        wrapper_path = fun.resolve_file(code).replace("\\", "/")
+                    except Exception:
+                        wrapper_path = ""
+                    if "hl/types/ArrayObj.hx" in wrapper_path:
+                        obj_reg = call_arg_regs[0]
+                        pending_new.pop(obj_reg)
+                        reg_value[obj_reg] = "[]"
+                        reg_refs.pop(obj_reg, None)
+                        reg_value.pop(dst.value, None)
+                        reg_refs.pop(dst.value, None)
+                        continue
                 if (
                     isinstance(fun, Native)
                     and fun.name.resolve(code) == "alloc_bytes"
