@@ -1745,7 +1745,15 @@ class IRFunction:
         return new_obj
 
     def _register_live_at(self, node: Optional[CFNode], reg: int) -> bool:
-        """Whether any path reads the incoming register value before overwriting it."""
+        """Whether any path reads the incoming register value before overwriting it.
+
+        Void-typed registers carry no value, so an incoming Void can never be
+        a meaningful merge operand; treating it as live would join branch
+        aliases for it and keep grow-guard patterns from folding.
+        """
+        reg_type = self.func.regs[reg].resolve(self.code)
+        if isinstance(reg_type.definition, Void):
+            return False
         pending = [node] if node is not None else []
         seen: Set[CFNode] = set()
         while pending:
