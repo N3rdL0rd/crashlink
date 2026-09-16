@@ -2462,6 +2462,26 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                 else:
                     reg_value.pop(dst.value, None)
                     reg_refs.pop(dst.value, None)
+            elif op.op == "CallClosure":
+                fun_reg = op.df["fun"].value
+                arg_regs = [arg.value for arg in op.df["args"].value]
+                # Complex initializers are compiled into anonymous functions and
+                # invoked through StaticClosure/CallClosure. Keep the invocation,
+                # not just the closure value, so the normal helper emitter can
+                # recover the body without evaluating it during decompilation.
+                if all(
+                    reg in reg_value and reg_value[reg] != STATIC_INIT_UNRECOVERABLE
+                    for reg in [fun_reg, *arg_regs]
+                ):
+                    value = f"({reg_value[fun_reg]})({', '.join(reg_value[arg] for arg in arg_regs)})"
+                    refs = set(reg_refs.get(fun_reg, set()))
+                    for arg in arg_regs:
+                        refs.update(reg_refs.get(arg, set()))
+                    reg_value[dst.value] = value
+                    reg_refs[dst.value] = refs
+                else:
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
             elif op.op == "StaticClosure":
                 try:
                     fun = op.df["fun"].resolve(code)
