@@ -2161,8 +2161,14 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
         empty_array_regs: Set[int] = set()
         # in-progress array-literal builds: alloc reg -> (declared length, {index: (value, refs)})
         array_builds: Dict[int, Tuple[int, Dict[int, Tuple[str, Set[str]]]]] = {}
+        # Packed numeric literals use alloc_bytes + byte-offset stores + ArrayBase.alloc*.
+        # Keep store kinds as well as offsets so reinterpreted buffers are not mistaken
+        # for source literals of a different element type.
+        bytes_builds: Dict[int, Tuple[int, Dict[int, Tuple[str, str, Set[str]]]]] = {}
         for op in entry.ops:
             dst: Any = op.df.get("dst")
+            if dst is not None:
+                bytes_builds.pop(dst.value, None)
             if (op.op or "").startswith("J") or op.op in ("Switch", "Label", "Trap"):
                 # branchy control flow (e.g. switch-computed initializers): can't safely
                 # track a single value across merge points with a flat linear scan
@@ -2170,6 +2176,7 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                 reg_refs.clear()
                 empty_array_regs.clear()
                 array_builds.clear()
+                bytes_builds.clear()
                 continue
             if op.op in ("Int", "Float"):
                 try:
@@ -2191,6 +2198,21 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                     reg_refs.pop(dst.value, None)
                 except Exception:
                     reg_value.pop(dst.value, None)
+            elif op.op in ("Shl", "Incr", "Decr"):
+                # The compiler advances a literal's cursor and shifts it to a byte
+                # offset. Only evaluate integer constants, never source expressions.
+                try:
+                    if op.op == "Shl":
+                        value = int(reg_value[op.df["a"].value]) << (
+                            int(reg_value[op.df["b"].value]) & 31
+                        )
+                        value = (value + 0x80000000) % 0x100000000 - 0x80000000
+                    else:
+                        value = int(reg_value[dst.value]) + (1 if op.op == "Incr" else -1)
+                    reg_value[dst.value] = str(value)
+                except (KeyError, ValueError):
+                    reg_value.pop(dst.value, None)
+                reg_refs.pop(dst.value, None)
             elif op.op in arith_syms:
                 a, b = op.df["a"].value, op.df["b"].value
                 if a in reg_value and b in reg_value:
@@ -2266,6 +2288,43 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                     if op.op == "CallN"
                     else [op.df[f"arg{i}"].value for i in range(int(op.op[-1]))]
                 )
+                if (
+                    isinstance(fun, Native)
+                    and fun.name.resolve(code) == "alloc_bytes"
+                    and len(call_arg_regs) == 1
+                    and reg_value.get(call_arg_regs[0], "").isdigit()
+                ):
+                    bytes_builds[dst.value] = (int(reg_value[call_arg_regs[0]]), {})
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+                    continue
+                if (
+                    fname_parts is not None
+                    and fname_parts[0] == "hl.types.ArrayBase"
+                    and fname_parts[1] in IRArrayPatternOptimizer._ALLOC_SHIFTS
+                    and len(call_arg_regs) == 2
+                    and call_arg_regs[0] in bytes_builds
+                ):
+                    size, stores = bytes_builds.pop(call_arg_regs[0])
+                    kind = fname_parts[1][len("alloc"):]
+                    width = 1 << IRArrayPatternOptimizer._ALLOC_SHIFTS[fname_parts[1]]
+                    length_text = reg_value.get(call_arg_regs[1], "")
+                    length = int(length_text) if length_text.isdigit() else -1
+                    if (
+                        length >= 0
+                        and size == length * width
+                        and len(stores) == length
+                        and all(i * width in stores and stores[i * width][0] == kind for i in range(length))
+                    ):
+                        reg_value[dst.value] = "[" + ", ".join(stores[i * width][1] for i in range(length)) + "]"
+                        refs: Set[str] = set()
+                        for i in range(length):
+                            refs |= stores[i * width][2]
+                        reg_refs[dst.value] = refs
+                    else:
+                        reg_value[dst.value] = STATIC_INIT_UNRECOVERABLE
+                        reg_refs.pop(dst.value, None)
+                    continue
                 # `[]` literal lowers to native alloc_array(type, 0) then a synthetic
                 # wrapper call turning the raw array into an Array<T>; the wrapper has
                 # no resolvable name, so match on the alloc_array(.., 0) shape instead
@@ -2353,6 +2412,29 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                 except Exception:
                     reg_value.pop(dst.value, None)
                     reg_refs.pop(dst.value, None)
+            elif op.op in ("SetMem", "SetI16", "SetI8"):
+                bytes_reg = op.df["bytes"].value
+                if bytes_reg in bytes_builds:
+                    src_reg = op.df["src"].value
+                    offset_text = reg_value.get(op.df["index"].value, "")
+                    kind = (
+                        _bytes_mem_kind(code, entry.regs[src_reg])
+                        if op.op == "SetMem"
+                        else "UI16" if op.op == "SetI16" else None
+                    )
+                    width = {"I32": 4, "F32": 4, "F64": 8, "UI16": 2}.get(kind)
+                    size, stores = bytes_builds[bytes_reg]
+                    if (
+                        width is not None
+                        and offset_text.isdigit()
+                        and int(offset_text) % width == 0
+                        and int(offset_text) + width <= size
+                        and src_reg in reg_value
+                        and reg_value[src_reg] != STATIC_INIT_UNRECOVERABLE
+                    ):
+                        stores[int(offset_text)] = (kind, reg_value[src_reg], reg_refs.get(src_reg, set()))
+                    else:
+                        bytes_builds.pop(bytes_reg)
             elif op.op == "SetArray":
                 array_reg = op.df["array"].value
                 if array_reg in array_builds:
