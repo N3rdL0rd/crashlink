@@ -25,7 +25,9 @@ from crashlink.decomp.ir import (
     IRConst,
     IRContinue,
     IRExpression,
+    IRField,
     IRLocal,
+    IRPrimitiveLoop,
     IRReturn,
     IRWhileLoop,
 )
@@ -33,6 +35,7 @@ from crashlink.decomp.opt.clean import (
     IRDeadAssignmentEliminator,
     IRDeadStoreEliminator,
     IRDeadTempEliminator,
+    IRLoopConditionOptimizer,
     IRSequentialTempFolder,
 )
 from crashlink.decomp.opt.inliner import IRConditionInliner, IRTempAssignmentInliner
@@ -552,6 +555,112 @@ def test_loop_recovery_preserves_condition_skipped_by_continue(tmp_path, tail_fo
     # The first two iterations continue without evaluating the side-effectful
     # tail condition; changing their target to a do-while test would stop at 1.
     assert result.stdout.splitlines() == ["3", "1"]
+
+
+@pytest.mark.parametrize(
+    "scenario,expected",
+    [
+        ("continue", ["3", "4"]),
+        ("empty", ["0", "1"]),
+        ("live_exit", ["0", "1"]),
+        ("live_body", ["3", "1"]),
+        ("null_before_call", ["caught", "0"]),
+        ("read_order", ["RL"]),
+        ("null_read", ["caught", "0"]),
+        ("null_final_test", ["caught", "1"]),
+        ("overwrite_operand", ["1", "1"]),
+        ("overwrite_chain", ["1", "2"]),
+    ],
+)
+def test_loop_condition_setup_preserves_evaluation(tmp_path, scenario, expected):
+    haxe = shutil.which("haxe")
+    if not haxe:
+        pytest.skip("loop condition regression requires Haxe")
+    code = Bytecode.create_empty()
+    i, scratch, other, box, check = [
+        IRLocal(name, tIndex(1), code) for name in ("i", "scratch", "other", "box", "check")
+    ]
+
+    def number(value):
+        return IRConst(code, IRConst.ConstType.INT, value=value)
+
+    def block(*statements):
+        result = IRBlock(code)
+        result.statements = list(statements)
+        return result
+
+    def field(name):
+        return IRField(code, box, name, tIndex(1))
+
+    setup = [IRAssign(code, scratch, field("limit"))]
+    condition = IRBoolExpr(code, IRBoolExpr.CompareType.GTE, i, scratch)
+    body = [
+        IRAssign(code, i, IRArithmetic(code, i, number(1), IRArithmetic.ArithmeticType.ADD)),
+    ]
+    suffix = 'Sys.println(i); Sys.println(box.reads);'
+    bound = 3
+    if scenario == "continue":
+        # The scratch is killed before the continue; the test still runs on
+        # the backedge and once more on the final failed iteration.
+        body += [IRAssign(code, scratch, number(-1)), IRContinue(code)]
+    elif scenario == "empty":
+        bound = 0
+    elif scenario == "live_exit":
+        bound = 0
+        suffix = 'Sys.println(scratch); Sys.println(box.reads);'
+    elif scenario == "live_body":
+        body = [IRAssign(code, i, scratch), IRBreak(code)]
+    elif scenario == "null_before_call":
+        setup.append(IRAssign(code, other, IRCall(code, IRCall.CallType.CLOSURE, check, [])))
+        suffix = 'Sys.println(calls);'
+    elif scenario == "null_read":
+        suffix = 'Sys.println(i);'
+    elif scenario == "null_final_test":
+        body.append(IRAssign(code, box, IRConst(code, IRConst.ConstType.NULL, value=None)))
+        suffix = 'Sys.println(i);'
+    elif scenario == "read_order":
+        setup = [IRAssign(code, scratch, field("right")), IRAssign(code, other, field("left"))]
+        # Folding in operand order would reverse the throwing reads.
+        condition = IRBoolExpr(code, IRBoolExpr.CompareType.GTE, other, scratch)
+        suffix = 'Sys.println(box.order);'
+    elif scenario == "overwrite_operand":
+        setup = [IRAssign(code, scratch, i), IRAssign(code, i, field("limit"))]
+        body = [IRAssign(code, other, scratch), IRBreak(code)]
+        suffix = 'Sys.println(i); Sys.println(box.reads);'
+        bound = 1
+    elif scenario == "overwrite_chain":
+        setup.append(IRAssign(code, scratch, IRArithmetic(code, scratch, number(1), IRArithmetic.ArithmeticType.ADD)))
+        bound = 0
+
+    loop = IRPrimitiveLoop(code, block(*setup, condition), block(*body))
+    statements = [loop]
+    if scenario == "live_exit":
+        # This is an actual IR consumer, not an invisible renderer-only read.
+        statements.append(IRAssign(code, other, scratch))
+        suffix = 'Sys.println(other); Sys.println(box.reads);'
+    function = _function(code, statements, [i, scratch, other, box, check])
+    IRLoopConditionOptimizer(function).optimize()
+    rendered = "\n".join(_generate_statements(function.block.statements, code, function, 2, {"i", "scratch", "other", "box", "check"}))
+    if scenario in ("null_before_call", "null_read", "null_final_test"):
+        prefix = '' if scenario == "null_final_test" else 'box = null; '
+        rendered = prefix + 'try {\n' + rendered + '\n} catch (e:Dynamic) { Sys.println("caught"); }'
+    (tmp_path / "Probe.hx").write_text(
+        "class Box { public var reads = 0; public var order = ''; var bound:Int; "
+        "public function new(n:Int) { bound = n; } "
+        "public var limit(get,never):Int; function get_limit():Int { reads++; return bound; } "
+        "public var left(get,never):Int; function get_left():Int { order += 'L'; return 1; } "
+        "public var right(get,never):Int; function get_right():Int { order += 'R'; return 0; } } "
+        "class Probe { static function main() { var i = 0; var scratch = -10; var other = -20; "
+        f"var box = new Box({bound}); var calls = 0; "
+        "function check():Int { calls++; return 0; }\n"
+        + rendered + "\n" + suffix + " } }"
+    )
+    result = subprocess.run(
+        [haxe, "-cp", str(tmp_path), "-main", "Probe", "--interp"],
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == expected
 
 
 def test_switch_roundtrip_preserves_arithmetic_count(tmp_path):

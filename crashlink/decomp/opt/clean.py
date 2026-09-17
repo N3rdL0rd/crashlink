@@ -83,36 +83,174 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
     (which would typically have been lifted from a jump by IRPrimitiveJumpLifter).
     This IRBoolExpr determines the loop *exit* condition.
 
-    The optimizer inverts this exit condition to get the 'while' *continuation* condition.
-    Any statements from the original condition block preceding the final IRBoolExpr
-    are prepended to the new IRWhileLoop's body.
+    Setup assignments may move into the condition only as a single-evaluation,
+    ordered expression chain. Unsupported chains retain their original statements
+    in a while(true)/break loop; potentially throwing reads are never discarded.
     """
 
     def _clone_bool_expr(self, expr: IRBoolExpr) -> IRBoolExpr:
         return IRBoolExpr(expr.code, expr.op, expr.left, expr.right).adopt(expr)
 
-    def _inline_into_boolexpr(
-        self,
-        bool_expr: IRBoolExpr,
-        target: IRLocal | IRField | IRArrayAccess,
-        expr_to_inline: IRExpression,
-    ) -> Optional[IRBoolExpr]:
-        modified = False
-        new_left = bool_expr.left
-        new_right = bool_expr.right
+    def optimize(self) -> None:
+        self._loop_live_out: Dict[int, Set[str]] = {}
+        self._catch_reads: Set[str] = set()
+        pending = [self.func.block]
+        visited: Set[int] = set()
+        while pending:
+            stmt = pending.pop()
+            if id(stmt) in visited:
+                continue
+            visited.add(id(stmt))
+            if isinstance(stmt, IRTryCatch):
+                # A later throw can expose an earlier setup store to a handler.
+                self._catch_reads.update(self._read_names(stmt))
+            pending.extend(stmt.get_children())
+        self._live_before(self.func.block, set())
+        super().optimize()
 
-        if bool_expr.left == target:
-            new_left = expr_to_inline
-            modified = True
-        if bool_expr.right == target:
-            new_right = expr_to_inline
-            modified = True
+    def _read_names(self, stmt: IRStatement) -> Set[str]:
+        if isinstance(stmt, IRLocal):
+            return {stmt.name}
+        if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+            return self._read_names(stmt.expr)
+        names: Set[str] = set()
+        for child in stmt.get_children():
+            names.update(self._read_names(child))
+        return names
 
-        if modified:
-            bool_expr.left = new_left
-            bool_expr.right = new_right
-            return bool_expr
+    def _live_before(self, stmt: IRStatement, live_out: Set[str]) -> Set[str]:
+        if isinstance(stmt, IRBlock):
+            live = set(live_out)
+            for child in reversed(stmt.statements):
+                live = self._live_before(child, live)
+            return live
+        if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+            return (live_out - {stmt.target.name}) | self._read_names(stmt.expr)
+        if isinstance(stmt, IRConditional):
+            return (
+                self._read_names(stmt.condition)
+                | self._live_before(stmt.true_block, live_out)
+                | (self._live_before(stmt.false_block, live_out) if stmt.false_block else live_out)
+            )
+        if isinstance(stmt, (IRPrimitiveLoop, IRWhileLoop)):
+            self._loop_live_out.setdefault(id(stmt), set()).update(live_out)
+            live = set(live_out)
+            while True:
+                body_in = self._live_before(stmt.body, live)
+                before = self._live_before(stmt.condition, body_in | live_out) | live
+                if before == live:
+                    return live
+                live = before
+        # Unknown control flow does not kill a live value. Still visit nested
+        # blocks so their loops receive conservative continuation information.
+        live = live_out | self._read_names(stmt)
+        for child in stmt.get_children():
+            if isinstance(child, IRBlock):
+                self._live_before(child, live)
+        return live
+
+    def _condition_children(self, expr: IRExpression) -> Optional[List[str]]:
+        if isinstance(expr, (IRLocal, IRConst)):
+            return [] if not _has_observable_effects(expr) else None
+        if isinstance(expr, IRField):
+            return ["target"]
+        if isinstance(expr, IRBoolExpr):
+            if expr.op in (IRBoolExpr.CompareType.AND, IRBoolExpr.CompareType.OR):
+                return None
+            return [attr for attr in ("left", "right") if getattr(expr, attr) is not None]
+        if isinstance(expr, IRArithmetic):
+            # Check the operation itself without classifying its field operands
+            # as discardable. Division, dynamic arithmetic, etc. stay unsupported.
+            shell = copy.copy(expr)
+            shell._cached_type = expr.get_type()
+            shell.left = IRConst(expr.code, IRConst.ConstType.INT, value=0)
+            shell.right = shell.left
+            if not _has_observable_effects(shell):
+                return ["left", "right"]
+        if isinstance(expr, (IRNeg, IRNot)):
+            return ["expr"]
         return None
+
+    def _fold_condition_setup(
+        self, loop: IRPrimitiveLoop, setup: List[IRStatement], condition: IRBoolExpr
+    ) -> Optional[IRBoolExpr]:
+        reads: List[int] = []
+
+        def ordered_reads(expr: IRExpression, result: List[int]) -> bool:
+            attrs = self._condition_children(expr)
+            if attrs is None or self._reads_address_taken(expr):
+                return False
+            for attr in attrs:
+                if not ordered_reads(getattr(expr, attr), result):
+                    return False
+            if isinstance(expr, IRField):
+                result.append(id(expr))
+            return True
+
+        assignments: List[IRAssign] = []
+        for stmt in setup:
+            if not (
+                isinstance(stmt, IRAssign)
+                and isinstance(stmt.target, IRLocal)
+                and not self._is_address_taken(stmt.target)
+                and ordered_reads(stmt.expr, reads)
+            ):
+                return None
+            assignments.append(stmt)
+        if not ordered_reads(condition, reads):
+            return None
+
+        # Copy only changed expression paths, preserving field identities for
+        # the evaluation-order proof below (rather than copying the Bytecode).
+        field_origins: Dict[int, int] = {}
+
+        def substitute(expr: IRExpression, target: IRLocal, value: IRExpression) -> Tuple[IRExpression, int]:
+            if expr == target:
+                return value, 1
+            changed = 0
+            result = expr
+            for attr in self._condition_children(expr) or []:
+                child, count = substitute(getattr(expr, attr), target, value)
+                if count:
+                    if result is expr:
+                        result = copy.copy(expr)
+                        if isinstance(expr, IRField):
+                            field_origins[id(result)] = field_origins.get(id(expr), id(expr))
+                    setattr(result, attr, child)
+                    changed += count
+            return result, changed
+
+        working: IRExpression = condition
+        for i in range(len(assignments) - 1, -1, -1):
+            stmt = assignments[i]
+            target = cast(IRLocal, stmt.target)
+            later = assignments[i + 1 :]
+            # A killed register's old value may be folded, but its operands
+            # must still denote the values captured at this assignment.
+            if any(self._statement_reads_target(stmt.expr, other.target) for other in later):
+                return None
+            killed = any(other.target == target for other in later)
+            if target.name in self._catch_reads:
+                return None
+            if not killed and (
+                target.name in self._loop_live_out.get(id(loop), set())
+                or self._reads_target_before_redefine(list(loop.body.statements) + setup[: i + 1], target)
+            ):
+                return None
+            working, count = substitute(working, target, stmt.expr)
+            if count != 1:
+                return None
+
+        folded_reads: List[int] = []
+        if not ordered_reads(working, folded_reads):
+            return None
+        if reads != [field_origins.get(origin, origin) for origin in folded_reads]:
+            return None
+        result = cast(IRBoolExpr, working)
+        result = self._clone_bool_expr(result)
+        for stmt in assignments:
+            result.adopt(stmt)
+        return result
 
     def _reads_target_before_redefine(
         self, statements: List[IRStatement], target: IRLocal | IRField | IRArrayAccess
@@ -126,6 +264,12 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
         for stmt in statements:
             if self._statement_reads_target(stmt, target):
                 return True
+            pending = [stmt]
+            while pending:
+                child = pending.pop()
+                if isinstance(child, (IRBreak, IRContinue, IRReturn, IRThrow)):
+                    return True
+                pending.extend(child.get_children())
             if isinstance(stmt, IRAssign) and stmt.target == target:
                 return False
         return False
@@ -135,7 +279,7 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
     ) -> bool:
         if statement == target:
             return True
-        if isinstance(statement, IRAssign):
+        if isinstance(statement, IRAssign) and isinstance(statement.target, IRLocal):
             return self._statement_reads_target(statement.expr, target)
         if isinstance(statement, (IRBoolExpr, IRArithmetic)):
             return (statement.left is not None and self._statement_reads_target(statement.left, target)) or (
@@ -187,46 +331,12 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
 
         setup_statements_for_body = loop.condition.statements[:-1]
         working_exit_condition = self._clone_bool_expr(last_cond_stmt)
-        remaining_setup: List[IRStatement] = []
-
-        for i, stmt in enumerate(setup_statements_for_body):
-            if (
-                isinstance(stmt, IRAssign)
-                and isinstance(stmt.expr, IRExpression)
-                and isinstance(stmt.target, IRLocal)
-                and not self._is_address_taken(stmt.target)
-                and not self._reads_address_taken(stmt.expr)
-                and not _has_observable_effects(stmt.expr)
-            ):
-                # The loop wraps around: after this statement, execution continues to
-                # the end of the condition block, then to the body, then back to the
-                # top of the condition block for the next iteration. Include that
-                # wrap-around (ending at `stmt` itself, which is a natural
-                # redefinition boundary) so a read at the very top of the next
-                # iteration - like a do-while's condition setup feeding straight
-                # back into its own body - isn't missed.
-                later_statements = (
-                    list(setup_statements_for_body[i + 1 :])
-                    + list(loop.body.statements)
-                    + list(setup_statements_for_body[: i + 1])
-                )
-                reads_later = self._reads_target_before_redefine(later_statements, stmt.target)
-                reads_in_condition = self._statement_reads_target(working_exit_condition, stmt.target)
-                if reads_later or not reads_in_condition:
-                    remaining_setup.append(stmt)
-                    continue
-
-                inlined = self._inline_into_boolexpr(working_exit_condition, stmt.target, stmt.expr)
-                if inlined:
-                    working_exit_condition.adopt(stmt)  # stmt itself is dropped below
-                    continue
-            remaining_setup.append(stmt)
-
-        if remaining_setup:
-            dbg_print(
-                "IRLoopCondOpt: Condition setup must execute each iteration; converting to while(true)+break form."
-            )
-            return self._convert_to_while_true_break(loop, remaining_setup, working_exit_condition)
+        if setup_statements_for_body:
+            folded = self._fold_condition_setup(loop, setup_statements_for_body, working_exit_condition)
+            if folded is None:
+                dbg_print("IRLoopCondOpt: Preserving condition setup in while(true)+break form.")
+                return self._convert_to_while_true_break(loop, setup_statements_for_body, working_exit_condition)
+            working_exit_condition = folded
 
         loop_continuation_expr = self._clone_bool_expr(working_exit_condition)
         loop_continuation_expr.invert()
