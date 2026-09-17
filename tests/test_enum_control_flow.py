@@ -72,6 +72,24 @@ def test_unmatched_typed_catch_does_not_swallow_exception(tmp_path):
             source = IRClass(code, code.get_test_obj(name), capture_layers=True).pseudo()
 
 
+def test_typed_catch_rethrows_original_payload(tmp_path):
+    runtime = os.environ.get("HL_RUNTIME") or shutil.which("hl")
+    if not shutil.which("haxe") or not runtime:
+        pytest.skip("runtime regressions require Haxe and HashLink")
+    name = "TypedCatchRethrow"
+    source = (Path(__file__).parent / "haxe" / f"{name}.hx").read_text()
+    for version in ("original", "recompiled"):
+        target, error = compile_haxe(source, name, tmp_path / version)
+        assert error is None, error
+        result = execute([runtime, str(target)], str(target.parent))
+        assert result.error is None, result.error
+        assert result.returncode == 1
+        assert result.stdout.splitlines()[0] == "Uncaught exception: deep"
+        if version == "original":
+            code = Bytecode.from_path(str(target))
+            source = IRClass(code, code.get_test_obj(name)).pseudo()
+
+
 def test_loop_setup_value_remains_available_to_enum_argument():
     code = Bytecode.from_path(str(Path(__file__).parent / "haxe" / "EnumMixedSwitch.hl"))
     float_type = tIndex(next(i for i, t in enumerate(code.types) if isinstance(t.definition, F64)))
