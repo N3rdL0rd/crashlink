@@ -32,6 +32,8 @@ from ..ir import (
     IRCall,
     IRConst,
     IRCast,
+    IRRef,
+    IRRefNew,
 )
 
 # Type names that represent element-type-erased object arrays.
@@ -347,6 +349,149 @@ def _recover_native_local_types(ir_func: "IRFunction", code: Bytecode) -> None:
         local.native_elem_type = evidence[key] or _get_type_in_code(code, "Dyn")
 
 
+def _is_arrayobj_alloc(expr: IRExpression, code: Bytecode) -> bool:
+    """Recognize the exact factory that installs and sizes its backing array.
+
+    A source filename or erased return type alone also matches constructors
+    and unrelated ArrayObj helpers; neither is evidence of element forwarding.
+    """
+    if not isinstance(expr, IRCall) or expr.call_type != IRCall.CallType.FUNC or len(expr.args) != 1:
+        return False
+    if not isinstance(expr.target, IRConst) or not isinstance(expr.target.value, Function):
+        return False
+    func = expr.target.value
+    try:
+        if not func.resolve_file(code).replace("\\", "/").endswith("hl/types/ArrayObj.hx"):
+            return False
+        sig = func.resolve_fun(code)
+        ret = sig.ret.resolve(code)
+        if (
+            len(sig.args) != 1
+            or sig.args[0].resolve(code).kind.value != Type.Kind.ARRAY.value
+            or _array_type_name(ret, code) != "hl.types.ArrayObj"
+        ):
+            return False
+        ops = func.ops
+        if [op.op for op in ops] != ["New", "SetField", "ArraySize", "SetField", "Ret"]:
+            return False
+        obj = ops[0].df["dst"].value
+        size = ops[2].df["dst"].value
+        fields = ret.definition.resolve_fields(code)
+        backing = fields[ops[1].df["field"].value]
+        length = fields[ops[3].df["field"].value]
+        return (
+            obj != 0
+            and size not in (0, obj)
+            and func.regs[obj].resolve(code) == ret
+            and ops[1].df["obj"].value == obj
+            and ops[1].df["src"].value == 0
+            and backing.name.resolve(code) == "array"
+            and backing.type.resolve(code).kind.value == Type.Kind.ARRAY.value
+            and ops[2].df["array"].value == 0
+            and ops[3].df["obj"].value == obj
+            and ops[3].df["src"].value == size
+            and length.name.resolve(code) == "length"
+            and length.type.resolve(code).kind.value == Type.Kind.I32.value
+            and ops[4].df["ret"].value == obj
+        )
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+        return False
+
+
+def _recover_wrapper_element_types(
+    block: IRBlock, code: Bytecode, global_cache: Dict[Tuple[str, str], Type]
+) -> None:
+    """Forward allocation-site evidence, not a reused backing local's type.
+
+    Definitions are snapshots of the value at each assignment. Control-flow
+    boundaries discard them rather than guessing a reaching branch/iteration.
+    A public array declaration is narrowed only when every assignment agrees.
+    """
+    evidence: Dict[IRLocal, Optional[Type]] = {}
+    fields: Dict[Tuple[str, str], Optional[Type]] = {}
+    visited: Set[int] = set()
+    candidates: Set[IRLocal] = set()
+    field_candidates: Set[Tuple[str, str]] = set()
+    referenced: Set[IRLocal] = set()
+    pending: List[IRStatement] = [block]
+    seen: Set[int] = set()
+    while pending:
+        node = pending.pop()
+        if id(node) in seen:
+            continue
+        seen.add(id(node))
+        if isinstance(node, (IRRef, IRRefNew)) and isinstance(node.target, IRLocal):
+            referenced.add(node.target)
+        pending.extend(node.get_children())
+
+    def walk(current: IRBlock) -> None:
+        if id(current) in visited:
+            return
+        visited.add(id(current))
+        definitions: Dict[IRLocal, Type] = {}
+        for stmt in current.statements:
+            if isinstance(stmt, IRAssign):
+                source = stmt.expr
+                elem_type = None
+                wrapper = _is_arrayobj_alloc(source, code)
+                allocation = isinstance(source, IRArrayLiteral) or wrapper
+                if isinstance(source, IRCall) and wrapper:
+                    arg = source.args[0]
+                    if isinstance(arg, IRNativeArrayNew):
+                        elem_type = arg.elem_type
+                    elif isinstance(arg, IRLocal):
+                        elem_type = definitions.get(arg)
+                elif isinstance(source, IRArrayLiteral):
+                    elem_type = source.recovered_elem_type or _uniform_element_type(source.elements, code)
+                if isinstance(stmt.target, IRLocal):
+                    local = stmt.target
+                    if _is_erased_array(local, code):
+                        if allocation:
+                            candidates.add(local)
+                        if local not in evidence:
+                            evidence[local] = elem_type
+                        elif evidence[local] != elem_type:
+                            evidence[local] = None
+                    # Kill aliases of the VM register as well as this IR name.
+                    native_type = None
+                    if isinstance(source, IRNativeArrayNew):
+                        native_type = source.elem_type
+                    elif isinstance(source, IRLocal):
+                        native_type = definitions.get(source)
+                    for previous in list(definitions):
+                        if previous == local or previous.same_register(local):
+                            del definitions[previous]
+                    if native_type is not None and not any(
+                        ref == local or ref.same_register(local) for ref in referenced
+                    ):
+                        definitions[local] = native_type
+                elif isinstance(stmt.target, IRField) and _is_erased_array(stmt.target, code):
+                    owner = _class_name_of(stmt.target.target, code)
+                    if owner is not None:
+                        key = (owner, stmt.target.field_name)
+                        if allocation:
+                            field_candidates.add(key)
+                        if key not in fields:
+                            fields[key] = elem_type
+                        elif fields[key] != elem_type:
+                            fields[key] = None
+            children = [child for child in stmt.get_children() if isinstance(child, IRBlock)]
+            if children:
+                definitions.clear()
+                for child in children:
+                    walk(child)
+
+    walk(block)
+    for local in candidates:
+        # Unknown or conflicting reaching values are a Dynamic constraint,
+        # not missing evidence that a later propagation pass may narrow.
+        local.array_elem_type = evidence[local] or _get_type_in_code(code, "Dyn")
+    for key in field_candidates:
+        elem_type = fields[key] or _get_type_in_code(code, "Dyn")
+        previous = global_cache.get(key)
+        global_cache[key] = elem_type if previous in (None, elem_type) else _get_type_in_code(code, "Dyn")
+
+
 def recover_array_element_types(ir_class: "IRClass") -> None:
     """Recover Array<T> element types for fields, params, and locals of an IRClass."""
     code = ir_class.code
@@ -359,6 +504,7 @@ def recover_array_element_types(ir_class: "IRClass") -> None:
             continue
         visited: Set[int] = set()
         _walk_block(ir_func.block, code, visited, global_cache)
+        _recover_wrapper_element_types(ir_func.block, code, global_cache)
 
     name_to_irfunc: Dict[str, "IRFunction"] = {}
     findex_to_irfunc: Dict[int, "IRFunction"] = {}

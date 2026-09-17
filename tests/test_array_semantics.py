@@ -15,15 +15,22 @@ from crashlink.decomp.ir import (
     IRArrayLiteral,
     IRAssign,
     IRBlock,
+    IRCall,
     IRConditional,
     IRConst,
     IRExpression,
     IRLocal,
     IRNativeArrayNew,
+    IRRefNew,
     IRReturn,
 )
 from crashlink.decomp.opt.arrays import IRArrayObjWrapperOptimizer
-from crashlink.decomp.opt.arraytypes import _recover_native_local_types, _uniform_element_type
+from crashlink.decomp.opt.arraytypes import (
+    _is_arrayobj_alloc,
+    _recover_native_local_types,
+    _recover_wrapper_element_types,
+    _uniform_element_type,
+)
 from crashlink.pseudo import _collect_locals
 
 
@@ -157,6 +164,114 @@ def test_reused_native_register_declaration_covers_all_allocations():
     )
     _recover_native_local_types(cast(IRFunction, SimpleNamespace(block=block)), code)
     assert _collect_locals(block)["array"] == "hl.NativeArray<Dynamic>"
+
+
+def _array_provenance_fixture():
+    from crashlink import disasm
+
+    code = Bytecode.from_path("tests/haxe/PolyFactory.hl")
+    types = {disasm.type_name(code, typ): tIndex(i) for i, typ in enumerate(code.types)}
+    backing = IRLocal("backing", types["Array"], code, reg_idx=1)
+    calls = [
+        IRCall(code, IRCall.CallType.FUNC, IRConst(code, IRConst.ConstType.FUN, f.findex), [backing])
+        for f in code.functions
+        if len(f.resolve_fun(code).args) == 1
+    ]
+    wrapper = next(call for call in calls if _is_arrayobj_alloc(call, code))
+    return code, types, backing, wrapper
+
+
+def test_nested_literal_declaration_preserves_container_not_scalar_element():
+    code, types, _, _ = _array_provenance_fixture()
+    inner = IRArrayLiteral(code, [_int(code, 11)], types["hl.types.ArrayBytes_Int"].resolve(code))
+    outer = IRLocal("nested", types["hl.types.ArrayObj"], code)
+    block = _block(code, IRAssign(code, outer, IRArrayLiteral(code, [inner, inner], outer.get_type())))
+    _recover_wrapper_element_types(block, code, {})
+    assert _collect_locals(block)["nested"] == "Array<Array<Int>>"
+
+
+def test_mixed_nested_literals_do_not_narrow_the_outer_array():
+    code, types, _, _ = _array_provenance_fixture()
+    integers = IRArrayLiteral(code, [_int(code, 11)], types["hl.types.ArrayBytes_Int"].resolve(code))
+    floats = IRArrayLiteral(code, [], types["hl.types.ArrayBytes_Float"].resolve(code))
+    outer = IRLocal("mixed", types["hl.types.ArrayObj"], code)
+    block = _block(code, IRAssign(code, outer, IRArrayLiteral(code, [integers, floats], outer.get_type())))
+    _recover_wrapper_element_types(block, code, {})
+    assert _collect_locals(block)["mixed"] == "Array<Dynamic>"
+
+
+def test_wrapper_uses_reaching_allocation_without_narrowing_reused_backing():
+    code, types, backing, wrapper = _array_provenance_fixture()
+    shapes = IRLocal("shapes", types["hl.types.ArrayObj"], code)
+    block = _block(
+        code,
+        IRAssign(code, backing, IRNativeArrayNew(code, backing.type, types["Shape"].resolve(code), _int(code, 0))),
+        IRAssign(code, shapes, wrapper),
+        IRAssign(code, backing, IRNativeArrayNew(code, backing.type, types["Dyn"].resolve(code), _int(code, 0))),
+    )
+    _recover_wrapper_element_types(block, code, {})
+    _recover_native_local_types(cast(IRFunction, SimpleNamespace(block=block)), code)
+    declarations = _collect_locals(block)
+    assert declarations["shapes"] == "Array<Shape>"
+    assert declarations["backing"] == "hl.NativeArray<Dynamic>"
+
+
+def test_wrapper_rejects_stale_backing_definition_across_control_flow():
+    code, types, backing, wrapper = _array_provenance_fixture()
+    shapes = IRLocal("shapes", types["hl.types.ArrayObj"], code)
+    block = _block(
+        code,
+        IRAssign(code, backing, IRNativeArrayNew(code, backing.type, types["Shape"].resolve(code), _int(code, 0))),
+        IRConditional(
+            code,
+            IRConst(code, IRConst.ConstType.BOOL, value=True),
+            _block(code, IRAssign(code, backing, IRNativeArrayNew(code, backing.type, types["Dyn"].resolve(code), _int(code, 0)))),
+            _block(code),
+        ),
+        IRAssign(code, shapes, wrapper),
+    )
+    _recover_wrapper_element_types(block, code, {})
+    assert _collect_locals(block)["shapes"] == "Array<Dynamic>"
+
+
+def test_wrapper_does_not_narrow_public_array_with_mixed_allocation_lifetimes():
+    code, types, backing, wrapper = _array_provenance_fixture()
+    shapes = IRLocal("shapes", types["hl.types.ArrayObj"], code)
+    block = _block(
+        code,
+        IRAssign(code, backing, IRNativeArrayNew(code, backing.type, types["Shape"].resolve(code), _int(code, 0))),
+        IRAssign(code, shapes, wrapper),
+        IRAssign(code, backing, IRNativeArrayNew(code, backing.type, types["Dyn"].resolve(code), _int(code, 0))),
+        IRAssign(code, shapes, wrapper),
+    )
+    _recover_wrapper_element_types(block, code, {})
+    assert _collect_locals(block)["shapes"] == "Array<Dynamic>"
+
+
+def test_wrapper_signature_without_backing_installation_does_not_forward_type():
+    code, types, backing, wrapper = _array_provenance_fixture()
+    shapes = IRLocal("shapes", types["hl.types.ArrayObj"], code)
+    wrapper.target.value.ops[1].df["src"].value = 1
+    block = _block(
+        code,
+        IRAssign(code, backing, IRNativeArrayNew(code, backing.type, types["Shape"].resolve(code), _int(code, 0))),
+        IRAssign(code, shapes, wrapper),
+    )
+    _recover_wrapper_element_types(block, code, {})
+    assert _collect_locals(block)["shapes"] == "Array<Dynamic>"
+
+
+def test_wrapper_does_not_forward_address_taken_backing_type():
+    code, types, backing, wrapper = _array_provenance_fixture()
+    shapes = IRLocal("shapes", types["hl.types.ArrayObj"], code)
+    block = _block(
+        code,
+        IRAssign(code, backing, IRNativeArrayNew(code, backing.type, types["Shape"].resolve(code), _int(code, 0))),
+        IRRefNew(code, backing),
+        IRAssign(code, shapes, wrapper),
+    )
+    _recover_wrapper_element_types(block, code, {})
+    assert _collect_locals(block)["shapes"] == "Array<Dynamic>"
 
 
 def test_empty_array_roundtrip_preserves_allocation_count(tmp_path):

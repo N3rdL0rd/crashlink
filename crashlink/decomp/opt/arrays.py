@@ -445,13 +445,14 @@ class IRArrayObjWrapperOptimizer(TraversingIROptimizer):
                     folded = self._try_fold_array_literal(stmts, i, arg)
                     if folded is not None:
                         values, consumed = folded
-                        literal = IRArrayLiteral(self.func.code, values)
-                        if not values:
-                            literal.recovered_elem_type = self._empty_array_elem_type(arg, local_defs)
+                        literal = IRArrayLiteral(self.func.code, values, stmt.target.get_type())
+                        elem_type = self._empty_array_elem_type(arg, local_defs)
+                        if not values or (elem_type is not None and elem_type.kind.value != Type.Kind.DYN.value):
+                            literal.recovered_elem_type = elem_type
                         drop.update(consumed)
                         stmt.expr = literal
                 elif self._is_empty_array_alloc(arg, local_defs):
-                    literal = IRArrayLiteral(self.func.code, [])
+                    literal = IRArrayLiteral(self.func.code, [], stmt.target.get_type())
                     literal.recovered_elem_type = self._empty_array_elem_type(arg, local_defs)
                     stmt.expr = literal
                 # Any other non-empty wrapper (e.g. after a blit into an
@@ -1078,7 +1079,15 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         if anon_call is None:
             return None
 
-        literal = IRArrayLiteral(self.func.code, values)
+        assert isinstance(anon_call.target, IRConst) and isinstance(anon_call.target.value, Function)
+        literal = IRArrayLiteral(
+            self.func.code, values, anon_call.target.value.resolve_fun(self.func.code).ret.resolve(self.func.code)
+        )
+        assert isinstance(stmt.expr, IRCall)
+        type_arg = stmt.expr.args[0]
+        if isinstance(type_arg, IRConst) and isinstance(type_arg.value, Type):
+            if type_arg.value.kind.value != Type.Kind.DYN.value:
+                literal.recovered_elem_type = type_arg.value
         self._replace_child(use_stmt, anon_call, literal)
         use_stmt.adopt(*stmts[start:i])  # alloc + element/store statements are dropped
         return use_stmt, i - start + 1
@@ -1235,7 +1244,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             ):
                 return None
 
-        literal = IRArrayLiteral(self.func.code, [])
+        literal = IRArrayLiteral(self.func.code, [], s1.target.get_type())
         new_assign = IRAssign(self.func.code, s1.target, literal)
         consume_count = alloc_idx - start + 1
         new_assign.adopt(*stmts[start - preceding_to_pop : alloc_idx + 1])
@@ -1417,7 +1426,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             return None
         if not self._is_int_const(call.args[1], 0):
             return None
-        literal = IRArrayLiteral(self.func.code, [])
+        literal = IRArrayLiteral(self.func.code, [], wrap_stmt.target.get_type())
         elem_type_name = self._ALLOC_ELEM_TYPE_NAMES.get(alloc_name)
         if elem_type_name is not None:
             literal.recovered_elem_type = _get_type_in_code(self.func.code, elem_type_name)
@@ -1566,12 +1575,13 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         if len(call.args) != 2 or (isinstance(call.args[0], IRLocal) and call.args[0].name != bytes_var.name):
             return None
 
-        _arr_type = _get_type_in_code(self.func.code, "Dyn")
-        for t in self.func.code.types:
-            if disasm.type_name(self.func.code, t) == "Array":
-                _arr_type = t
-                break
-        literal = IRArrayLiteral(self.func.code, values)
+        assert isinstance(call.target, IRConst) and isinstance(call.target.value, Function)
+        literal = IRArrayLiteral(
+            self.func.code, values, call.target.value.resolve_fun(self.func.code).ret.resolve(self.func.code)
+        )
+        elem_type_name = self._ALLOC_ELEM_TYPE_NAMES.get(alloc_name)
+        if elem_type_name is not None:
+            literal.recovered_elem_type = _get_type_in_code(self.func.code, elem_type_name)
 
         # If the only uses of the recovered literal are constant-index reads, the
         # Haxe compiler will often constant-fold the whole array away.  Keep the

@@ -1132,19 +1132,21 @@ class IRArrayLiteral(IRExpression):
         self,
         code: Bytecode,
         elements: List[IRExpression],
-        elem_type: Optional[tIndex] = None,
+        container_type: Optional[Type] = None,
     ):
         super().__init__(code)
         self.elements = elements
-        self.elem_type_idx = elem_type
+        # The literal's type is the container, never its element type. Preserve
+        # the allocation wrapper's return type even after it is folded away.
+        self.container_type = container_type
         # The recovered element type (a resolved Type) for this array literal,
         # set by IRArrayElementTypeRecovery from the alloc_array type argument
         # or from the element expressions. Used to type the target local/param.
         self.recovered_elem_type: Optional[Type] = None
 
     def get_type(self) -> Type:
-        if self.elem_type_idx:
-            return self.elem_type_idx.resolve(self.code)
+        if self.container_type is not None:
+            return self.container_type
         return _get_type_in_code(self.code, "Dyn")
 
     def get_children(self) -> List[IRStatement]:
