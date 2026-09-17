@@ -110,3 +110,36 @@ def test_shipped_corpus_roundtrip(toolchain, tmp_path, name):
     result = run_case(str(tmp_path / f"{name}.hx"), 0)
     assert not result.failed, result.error or result.behavioral_comparison
     assert result.behavioral_comparison and result.behavioral_comparison.passed
+
+
+def test_shipped_exemption_still_requires_recompilation(toolchain, monkeypatch):
+    from crashlink import decomp
+    from crashtest.run import run_case
+
+    fixture = Path(__file__).parent / "haxe" / "Closure.hx"
+    result = run_case(str(fixture), 0)
+    assert not result.failed
+    assert result.behavioral_comparison.exemption_reason
+    assert not result.behavioral_comparison.passed
+    assert result.opcode_comparison.methods
+
+    monkeypatch.setattr(decomp.IRClass, "pseudo", lambda self: "not valid Haxe")
+    result = run_case(str(fixture), 0)
+    assert result.failed
+    assert result.opcode_comparison.recompile_error
+    assert result.behavioral_comparison.exemption_reason is None
+
+
+def test_same_named_external_fixture_is_not_exempt(toolchain, tmp_path, monkeypatch):
+    from crashlink import decomp
+    from crashtest.run import run_case
+
+    source = "class Random { static function main() { Sys.println(17); } }"
+    path, error = compile_haxe(source, "Random", tmp_path)
+    assert error is None, error
+    path.rename(tmp_path / "Random.hl")
+    monkeypatch.setattr(decomp.IRClass, "pseudo", lambda self: source.replace("17", "18"))
+    result = run_case(str(tmp_path / "Random.hx"), 0)
+    assert result.failed
+    assert not result.behavioral_comparison.passed
+    assert result.behavioral_comparison.exemption_reason is None

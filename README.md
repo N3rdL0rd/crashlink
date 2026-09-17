@@ -173,6 +173,8 @@ You can use the following pre-defined commands with `just`:
 
 `crashtest` recompiles decompiled Haxe and runs both bytecode images on the real HashLink runtime. Passing requires repeatable, matching observable output and successful termination; opcode-name similarity is diagnostic only. Install `haxe` and put `hl` on PATH (or set `HL_RUNTIME` to its absolute path), then run `crashtest auto` from the repository root. Missing tools, mismatches and timeouts fail rather than being reported as successful verification. The checked-in `tests/quality/` corpus supplies behavioral and native recovery CI coverage without gitignored helper scripts; see `docs/content/docs/crashtest.md` for build commands and coverage limits.
 
+The shipped `BigSwitch2`, `Random`, and `Closure` fixtures have explicit behavioral exemptions for nondeterministic output. They still compile and undergo opcode comparison; reports label them EXEMPT rather than verified passes.
+
 ## Architecture
 
 ![Architecture](docs/static/flow.svg)

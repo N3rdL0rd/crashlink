@@ -621,7 +621,13 @@
 
     {% set total = cases|length %}
     {% set failed_list = cases|selectattr("failed")|list %}
-    {% set passed = total - failed_list|length %}
+    {% set exempt_list = [] %}
+    {% for c in cases %}
+        {% if not c.failed and c.behavioral_comparison and c.behavioral_comparison.exemption_reason %}
+            {% set _ = exempt_list.append(c) %}
+        {% endif %}
+    {% endfor %}
+    {% set passed = total - failed_list|length - exempt_list|length %}
     {% set sim_scores = [] %}
     {% for c in cases %}
         {% if c.opcode_comparison and c.opcode_comparison.overall_similarity >= 0 %}
@@ -633,7 +639,7 @@
         <div class="summary-stat">
             <div class="label">Decompile</div>
             <div class="value" style="color: {% if failed_list|length == 0 %}var(--green){% elif failed_list|length == total %}var(--red){% else %}var(--yellow){% endif %}">
-                {{ passed }}/{{ total }} passed
+                {{ passed }}/{{ total }} passed; {{ exempt_list|length }} exempt
             </div>
         </div>
         {% if sim_scores %}
@@ -671,14 +677,18 @@
          data-sim="{{ sim_pct }}"
          data-failed="{{ '1' if case.failed else '0' }}"
          data-index="{{ loop.index0 }}">
-        <div class="test-header {% if case.failed %}fail{% elif not case.behavioral_comparison %}warn{% else %}pass{% endif %}">
+        <div class="test-header {% if case.failed %}fail{% elif not case.behavioral_comparison or case.behavioral_comparison.exemption_reason %}warn{% else %}pass{% endif %}">
             <h2>
                 <a href="#{{ case.test_id }}"><i class="fa fa-link"></i></a>
                 {{ case.test_name }}
             </h2>
             <div class="header-right">
                 {% if case.behavioral_comparison %}
+                {% if case.behavioral_comparison.exemption_reason %}
+                <span class="badge badge-yellow" title="{{ case.behavioral_comparison.exemption_reason|e }}">HashLink behavior exempt</span>
+                {% else %}
                 <span class="badge {{ 'badge-green' if case.behavioral_comparison.passed else 'badge-red' }}">HashLink behavior {{ 'passed' if case.behavioral_comparison.passed else 'failed' }}</span>
+                {% endif %}
                 {% else %}
                 <span class="badge badge-gray">Behavior not evaluated (legacy result)</span>
                 {% endif %}
@@ -712,7 +722,9 @@
 {{ oc.recompile_error }}</div>
         {% endif %}
 
-        {% if case.behavioral_comparison and not case.behavioral_comparison.passed %}
+        {% if case.behavioral_comparison and case.behavioral_comparison.exemption_reason %}
+        <p>Behavioral exemption: {{ case.behavioral_comparison.exemption_reason|e }}</p>
+        {% elif case.behavioral_comparison and not case.behavioral_comparison.passed %}
         <div class="error-box">{{ case.behavioral_comparison.error|e }}
 Original stdout: {{ case.behavioral_comparison.original.stdout|e }}
 Recompiled stdout: {{ case.behavioral_comparison.recompiled.stdout|e }}

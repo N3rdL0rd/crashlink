@@ -11,6 +11,8 @@ Each case is decompiled and recompiled with `haxe`. Both `.hl` files run twice i
 
 Opcode-name similarity remains a diagnostic: changing constants or operands can leave that score at 100%. It no longer controls pass/fail. Reports retain original/recompiled execution observations alongside source, IR and disassembly. Only the current module's Haxe `trace` line prefixes are normalized; other output differences are preserved.
 
+The shipped `BigSwitch2`, `Random`, and `Closure` fixtures are explicitly exempt from behavioral execution because they print random values or process-dependent function identities. Reports show **EXEMPT**, not PASS, with a reason. Decompilation, recompilation, and opcode comparison still run, and their failures still fail the case. Exemptions apply only to the resolved files under `tests/haxe`, not arbitrary same-named programs. Other nondeterministic executions continue to fail closed.
+
 ## Running it
 
 Install `haxe` and the HashLink runtime (`hl` on PATH, or an absolute executable path in `HL_RUNTIME`). This does not require the deprecated `pyhl` bridge. From the repo root:
