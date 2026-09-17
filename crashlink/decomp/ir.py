@@ -795,6 +795,22 @@ class IRTryCatch(IRStatement):
         return f"<IRTryCatch: try\n\t{self.try_block}\ncatch ({self.catch_local})\n\t{self.catch_block}>"
 
 
+class IREnumPattern(IRStatement):
+    """A proven constructor pattern; slots are bindings, nested patterns or wildcards."""
+
+    def __init__(self, code: Bytecode, enum_type: tIndex, constructor_index: int):
+        super().__init__(code)
+        self.enum_type = enum_type
+        self.constructor_index = constructor_index
+        self.slots: Dict[int, IRLocal | IREnumPattern] = {}
+
+    def get_children(self) -> List[IRStatement]:
+        return list(self.slots.values())
+
+    def __repr__(self) -> str:
+        return f"<IREnumPattern: {self.constructor_index} {self.slots}>"
+
+
 class IRSwitch(IRStatement):
     """Switch statement"""
 
@@ -809,9 +825,11 @@ class IRSwitch(IRStatement):
         self.value = value
         self.cases = cases
         self.default = default
+        # Proven constructor patterns, separate from ordinary constant case keys.
+        self.enum_patterns: Dict[IRConst, IREnumPattern] = {}
 
     def get_children(self) -> List[IRStatement]:
-        return [self.value, self.default] + [block for block in self.cases.values()]
+        return [self.value, self.default, *self.cases.values(), *self.enum_patterns.values()]
 
     def __repr__(self) -> str:
         cases = ""
@@ -1336,11 +1354,16 @@ class IREnumIndex(IRExpression):
 class IREnumField(IRExpression):
     """Represents accessing a field of an enum construct, e.g., extracting `r` from `Rgb(r, g, b)`"""
 
-    def __init__(self, code: Bytecode, value: IRExpression, field_name: str, field_type: tIndex):
+    def __init__(
+        self, code: Bytecode, value: IRExpression, field_name: str, field_type: tIndex,
+        constructor_index: Optional[int] = None,
+    ):
         super().__init__(code)
         self.value = value
         self.field_name = field_name
         self.field_type_idx = field_type
+        # Only EnumField carries this operand. SetEnumField must not invent it.
+        self.constructor_index = constructor_index
 
     def get_type(self) -> Type:
         return self.field_type_idx.resolve(self.code)

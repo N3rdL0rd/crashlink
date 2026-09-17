@@ -75,6 +75,7 @@ from .decomp import (
     IRPrimitiveJump,
     IRSwitch,
 )
+from .decomp.ir import IREnumPattern
 
 
 def _indent_str(level: int) -> str:
@@ -223,6 +224,8 @@ def _is_expression_switch(
     switch_stmt: IRSwitch,
 ) -> Optional[Tuple[IRLocal, Dict[IRConst, IRExpression], Optional[IRExpression]]]:
     """Detect `switch (v) { case X: target = eX; ... default: target = eD; }`."""
+    if switch_stmt.enum_patterns:
+        return None
     target: Optional[IRLocal] = None
     cases: Dict[IRConst, IRExpression] = {}
     for val, block in switch_stmt.cases.items():
@@ -1914,8 +1917,12 @@ def _generate_statements(
                 switch_value_expr = stmt.value
             case_subs: List[Dict[IRLocal, Tuple[str, Set[IRLocal]]]] = []
             for case_value, case_block in stmt.cases.items():
-                param_names = _enum_case_params(case_block, switch_value_expr)
-                case_str = _case_value_to_haxe(case_value, enum_type, code, ir_function, param_names)
+                pattern = stmt.enum_patterns.get(case_value)
+                param_names = None if pattern else _enum_case_params(case_block, switch_value_expr)
+                case_str = (
+                    _enum_pattern_to_haxe(pattern, code) if pattern else
+                    _case_value_to_haxe(case_value, enum_type, code, ir_function, param_names)
+                )
                 output_lines.append(f"{indent}    case {case_str}:")
                 case_statements = case_block.statements[len(param_names) if param_names else 0 :]
                 branch_subs = render_subs.copy()
@@ -2230,9 +2237,6 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         if name in local_types:
             local_types[name] = haxe_type
     catch_locals = _collect_catch_local_names(ir_func.block)
-    # Variables used only as the value of an enum-detected switch (the enum index temp)
-    # don't need to be declared at all — the switch renders `switch(c)` not `switch(var4)`.
-    enum_switch_index_vars = _collect_enum_switch_index_names(ir_func.block)
     foreach_elem_names = _collect_foreach_elem_names(ir_func.block)
     inline_declarations: Dict[IRStatement, Tuple[str, str]] = {}  # stmt → (name, type_str)
     for local_name in local_types:
@@ -2242,9 +2246,6 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         # But if the same name is also explicitly assigned elsewhere (register
         # reuse for an unrelated local), it still needs a real declaration.
         if local_name in catch_locals and not _has_explicit_assignment(local_name, ir_func.block):
-            continue
-        # Enum switch index temps are rendered as the enum expression, not declared.
-        if local_name in enum_switch_index_vars:
             continue
         # For-each loop variables are declared by the `for (x in y)` syntax - unless
         # the same name is also assigned somewhere else in the function (register
@@ -2868,23 +2869,6 @@ def _is_std_function(func: "Function", code: Bytecode) -> bool:
     return "/std/" in path.replace("\\", "/")
 
 
-def _collect_enum_switch_index_names(block: IRBlock) -> Set[str]:
-    """Collect names of integer locals that serve only as enum index temporaries
-    for switch statements where we can detect the real enum value from case blocks.
-    These don't need to be declared since pseudo renders `switch(c)` not `switch(var4)`.
-    """
-    names: Set[str] = set()
-    for stmt in block.statements:
-        if isinstance(stmt, IRSwitch):
-            if isinstance(stmt.value, IRLocal) and not isinstance(stmt.value, IREnumIndex):
-                detected = _detect_enum_value_from_cases(stmt)
-                # Only a genuine index temp (distinct from the real enum value
-                # used in the case bodies) is safe to skip. If the switch already
-                # operates directly on the enum-typed local, that local is a real
-                # variable that still needs its own declaration.
-                if detected is not None and detected is not stmt.value:
-                    names.add(stmt.value.name)
-    return names
 
 
 def _detect_enum_value_from_cases(stmt: "IRSwitch") -> Optional["IRExpression"]:
@@ -2902,6 +2886,22 @@ def _detect_enum_value_from_cases(stmt: "IRSwitch") -> Optional["IRExpression"]:
                 elif candidate is not base:
                     return None
     return candidate
+
+
+def _enum_pattern_to_haxe(pattern: IREnumPattern, code: Bytecode) -> str:
+    enum = cast(Enum, pattern.enum_type.resolve(code).definition)
+    construct = enum.constructs[pattern.constructor_index]
+    name = construct.name.resolve(code)
+    if enum.name.value == 0:
+        name = f"{disasm._enum_name(code, enum)}.{name}"
+    params = []
+    for index in range(len(construct.params)):
+        slot = pattern.slots.get(index)
+        params.append(
+            _enum_pattern_to_haxe(slot, code) if isinstance(slot, IREnumPattern)
+            else slot.name if isinstance(slot, IRLocal) else "_"
+        )
+    return f"{name}({', '.join(params)})" if params else name
 
 
 def _enum_case_params(case_block: IRBlock, switch_value: IRExpression) -> Optional[List[str]]:
@@ -3265,17 +3265,28 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
     seen: Set[int] = set()
     pattern_locals: Set[str] = set()
 
+    def collect_pattern(pattern: IREnumPattern) -> None:
+        for slot in pattern.slots.values():
+            if isinstance(slot, IRLocal):
+                pattern_locals.add(slot.name)
+            else:
+                collect_pattern(slot)
+
     def visit(stmt: IRStatement) -> None:
         if id(stmt) in seen:
             return
         seen.add(id(stmt))
         if isinstance(stmt, IRSwitch):
+            for pattern in stmt.enum_patterns.values():
+                collect_pattern(pattern)
             if isinstance(stmt.value, IREnumIndex):
                 switch_value = stmt.value.value
             else:
                 detected = _detect_enum_value_from_cases(stmt)
                 switch_value = detected if detected is not None else stmt.value
-            for case_block in stmt.cases.values():
+            for case_value, case_block in stmt.cases.items():
+                if case_value in stmt.enum_patterns:
+                    continue
                 params = _enum_case_params(case_block, switch_value)
                 if params:
                     pattern_locals.update(params)

@@ -315,7 +315,6 @@ class IRFunction:
                 IRStringConcatFolder(self),
                 IRIntSwitchOptimizer(self),
                 IRStringSwitchOptimizer(self),
-                IREnumSwitchOptimizer(self),
                 IRTerminalValueInliner(self),
                 IRDeadTempEliminator(self),
                 IRDeadCodeEliminator(self),
@@ -337,6 +336,8 @@ class IRFunction:
                 # Restore typed/multi catch clauses; runs last because it matches
                 # the copy-propagated shape of HL's catch dispatch lowering.
                 IRTypedCatchOptimizer(self),
+                # Enum patterns bind locals and must follow assignment cleanup.
+                IREnumSwitchOptimizer(self),
             ]
             # Splice in plugin optimizers gated to this bytecode (see
             # crashlink.plugins). Which classes apply is a property of the image,
@@ -1426,7 +1427,7 @@ class IRFunction:
                 enum_def = enum_type.resolve(self.code).definition
                 cid = op.df["construct"].value
                 fid = op.df["field"].value
-                if cid < len(enum_def.constructs) and fid < len(enum_def.constructs[cid].params):
+                if 0 <= cid < len(enum_def.constructs) and 0 <= fid < len(enum_def.constructs[cid].params):
                     field_name = f"param{fid}"
                     construct = enum_def.constructs[cid]
                     field_type = construct.params[fid]
@@ -1434,7 +1435,7 @@ class IRFunction:
                         IRAssign(
                             self.code,
                             dst_local,
-                            IREnumField(self.code, src_local, field_name, field_type),
+                            IREnumField(self.code, src_local, field_name, field_type, cid),
                         )
                     )
                 else:

@@ -33,6 +33,7 @@ from crashtest.behavior import compare_programs, compile_haxe, execute
         "EnumDestruct",
         "RecursiveEnumChain",
         "EnumMixedSwitch",
+        "EnumMixedCtorEq",
         "TypedCatch",
         "TryLoopContinue",
         "CatchClosureCaptureExc",
@@ -150,3 +151,68 @@ def test_loop_setup_value_remains_available_to_enum_argument():
             raise AssertionError(type(node))
 
     assert evaluate(root) == ("Circle", (2,))
+
+
+@pytest.mark.parametrize(
+    "name, source, expected",
+    [
+        (
+            "NestedEnumBoundary",
+            """
+enum Chain { Node(value:Int, next:Chain); End; }
+class NestedEnumBoundary {
+    static function read(k:Chain):Int {
+        var result = 40;
+        switch (k) {
+            case Node(a, Node(b, _)): result = a + b;
+            default: result = -1;
+        }
+        return result + 2;
+    }
+    static function main() {
+        for (k in [Node(2, Node(3, End)), End, Node(1, End), null, Node(1, null)]) {
+            try { Sys.println(read(k)); }
+            catch (e:Dynamic) { Sys.println("caught"); }
+        }
+    }
+}
+""",
+            ["7", "1", "1", "caught", "caught"],
+        ),
+        (
+            "EnumCaptureMutation",
+            """
+class EnumCaptureMutation {
+    static function main() {
+        var values = [1];
+        var offset = 10;
+        var mutate = function() { values[0] += 4; return values[0]; };
+        var read = function(flag:Bool) {
+            var before = values[0];
+            if (flag) mutate();
+            return before + values[0] + offset;
+        };
+        Sys.println(read(false));
+        Sys.println(read(true));
+        Sys.println(read(false));
+    }
+}
+""",
+            ["12", "16", "20"],
+        ),
+    ],
+)
+def test_enum_patterns_preserve_failure_edges_and_capture_timing(tmp_path, name, source, expected):
+    runtime = os.environ.get("HL_RUNTIME") or shutil.which("hl")
+    if not shutil.which("haxe") or not runtime:
+        pytest.skip("runtime regressions require Haxe and HashLink")
+    for version in ("original", "recompiled"):
+        target, error = compile_haxe(source, name, tmp_path / version)
+        assert error is None, error
+        result = execute([runtime, str(target)], str(target.parent))
+        assert result.error is None, result.error
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.splitlines() == expected
+        if version == "original":
+            code = Bytecode.from_path(str(target))
+            source = IRClass(code, code.get_test_obj(name)).pseudo()
