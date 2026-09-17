@@ -1,6 +1,6 @@
 class BitwiseEqualPrec {
     static function orOfAnd(a: Int, b: Int, c: Int): Int {
-        return a | (b & c); // right-nested: compute b&c first, then a|that
+        return a | (b & c);
     }
 
     static function xorOfAnd(a: Int, b: Int, c: Int): Int {

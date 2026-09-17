@@ -1,6 +1,5 @@
 class PrecedenceTernaryMix {
     static function addTernary(a: Int, cond: Bool, b: Int, c: Int): Int {
-        // a + (cond ? b : c)
         return a + (cond ? b : c);
     }
 
@@ -9,7 +8,6 @@ class PrecedenceTernaryMix {
     }
 
     static function negTernary(cond: Bool, b: Int, c: Int): Int {
-        // -(cond ? b : c), NOT (cond ? -b : c) etc
         return -(cond ? b : c);
     }
 

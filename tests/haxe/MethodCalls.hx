@@ -21,7 +21,6 @@ class MethodChild extends MethodBase {
 class MethodCalls {
     public static function main() {
         var obj:MethodBase = new MethodChild();
-        // virtual dispatch -> CallMethod
         var r = obj.compute(10);
         trace(r);
     }

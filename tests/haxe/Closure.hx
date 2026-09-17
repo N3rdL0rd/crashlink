@@ -3,7 +3,6 @@ class Closure {
         var fun = () -> "hello";
         trace(fun());
         trace(fun);
-        // This will get inlined
         (() -> { trace(" there"); })();
     }
 }

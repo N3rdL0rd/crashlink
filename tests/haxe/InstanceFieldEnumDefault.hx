@@ -18,6 +18,6 @@ class InstanceFieldEnumDefault {
 		trace(h.nested);
 		h.items.push(4);
 		var h2 = new Holder();
-		trace(h2.items); // must NOT show 4 - fresh array each instance
+		trace(h2.items);
 	}
 }

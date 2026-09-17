@@ -1,7 +1,7 @@
 class CompoundAssignChain {
     static function subCompound(a: Int, b: Int, c: Int): Int {
         var x = a;
-        x -= b - c; // x = a - (b - c) = a - b + c
+        x -= b - c;
         return x;
     }
 
@@ -18,7 +18,6 @@ class CompoundAssignChain {
     }
 
     static function bitwiseMix(a: Int, b: Int, c: Int): Int {
-        // & binds tighter than |, which binds tighter... wait | is lowest, ^ mid, & tightest
         return a & b | c;
     }
 

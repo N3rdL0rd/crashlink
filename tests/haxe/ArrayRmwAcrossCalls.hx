@@ -13,7 +13,6 @@ class ArrayRmwAcrossCalls {
         sideEffect(arr[i]);
         Sys.println(arr.join(","));
 
-        // plain local RMW spanning calls, no closures
         var a = 5;
         var b = a * 2;
         sideEffect(b);

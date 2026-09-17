@@ -19,8 +19,8 @@ class AbstractChainCast {
 
     static function main() {
         var a = new A(5);
-        var b:B = a; // implicit cast A -> B
-        var c:C = b; // implicit cast B -> C
+        var b:B = a;
+        var c:C = b;
         Sys.println(c.get());
         Sys.println(takesC(b));
     }

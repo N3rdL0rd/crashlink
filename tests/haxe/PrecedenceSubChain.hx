@@ -1,21 +1,17 @@
 class PrecedenceSubChain {
     static function subAdd(a: Int, b: Int, c: Int): Int {
-        // a - (b + c), NOT a - b + c
         return a - (b + c);
     }
 
     static function subSub(a: Int, b: Int, c: Int): Int {
-        // a - (b - c) = a - b + c, NOT a - b - c
         return a - (b - c);
     }
 
     static function divMul(a: Int, b: Int, c: Int): Int {
-        // a / (b * c), NOT a / b * c
         return Std.int(a * 1000000 / (b * c));
     }
 
     static function modChain(a: Int, b: Int, c: Int): Int {
-        // a - (b % c), NOT a - b % c (both same precedence L-to-R actually, but test anyway)
         return a - (b % c);
     }
 

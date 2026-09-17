@@ -6,19 +6,19 @@ class ShortCircuitSideEffect {
     static function main() {
         log = "";
         if (sideF() && sideT()) {}
-        Sys.println(log); // F only
+        Sys.println(log);
 
         log = "";
         if (sideT() || sideF()) {}
-        Sys.println(log); // T only
+        Sys.println(log);
 
         log = "";
         if (sideT() && sideF()) {}
-        Sys.println(log); // TF
+        Sys.println(log);
 
         log = "";
         if (sideF() || sideT()) {}
-        Sys.println(log); // FT
+        Sys.println(log);
 
         log = "";
         var r = sideF() && sideT() || sideT();

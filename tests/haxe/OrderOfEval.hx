@@ -16,14 +16,12 @@ class OrderOfEval {
 		trace(r);
 		trace(log.join(","));
 
-		// side effects in array index expressions
 		log = [];
 		var arr = [10, 20, 30];
 		arr[side("idx", 1)] = side("val", 99);
 		trace(arr.join(","));
 		trace(log.join(","));
 
-		// side effect order in binary op
 		log = [];
 		var x = side("left", 5) + side("right", 7) * side("mul", 2);
 		trace(x);
