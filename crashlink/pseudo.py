@@ -2265,15 +2265,14 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
                 continue
         # If the variable only lives inside a single compound statement, declare
         # it inline there rather than pre-declaring at function level.
-        inner_stmt = _find_inner_defining_assignment(local_name, ir_func.block)
+        assigned_before_use = _is_definitely_assigned_before_use(local_name, ir_func.block)
+        inner_stmt = _find_inner_defining_assignment(local_name, ir_func.block) if assigned_before_use else None
         if inner_stmt is not None:
             inline_declarations[inner_stmt] = (local_name, type_str)
             continue
-        # No unconditional first assignment found — pre-declare at function level.
-        # If the variable is definitely assigned (in every branch of the first
-        # compound statement that mentions it) before any read, omit the default
-        # initializer: the synthetic `= 0` would emit a spurious extra opcode.
-        if _is_definitely_assigned_before_use(local_name, ir_func.block):
+        # Declaration placement is independent of initialization: omit synthetic
+        # defaults only when every reachable read has a preceding assignment.
+        if assigned_before_use:
             output_lines.append(f"    var {local_name}: {type_str};")
             continue
         default_init = {
@@ -2431,75 +2430,111 @@ def _switch_defines_local(switch_stmt: IRSwitch, local_name: str) -> Optional[IR
 
 
 def _is_definitely_assigned_before_use(local_name: str, block: IRBlock) -> bool:
-    """Return True if, at the point `local_name` first appears in `block`, it is
-    definitely assigned in every branch before being read.
+    """Prove that removing a hoisted default cannot expose an unassigned read.
 
-    Used to decide whether a pre-declared variable can omit its synthetic
-    default initializer. Conservative: only recognises the case where the first
-    top-level statement mentioning the local is an IRConditional (with both
-    branches present) or IRSwitch (with a default), and each branch assigns the
-    local before any read of it.
+    Exit states record definite assignment separately for normal fallthrough,
+    break, and continue. Missing exits are unreachable (return/throw), not
+    unassigned paths. Assignment is monotone, so checking a loop's first
+    iteration with its entry state also covers subsequent iterations; we never
+    use a back-edge write to justify a first-iteration read.
     """
-    for stmt in block.statements:
-        if (
-            not _contains_local_name(local_name, stmt)
-            and _find_assignment_recursive(local_name, stmt) is None
-        ):
-            continue
-        # First statement that touches the local.
-        if isinstance(stmt, IRConditional):
-            branches = [stmt.true_block, stmt.false_block]
-            if any(b is None for b in branches):
-                return False
-            # The condition itself must not read the local before assignment.
-            if _contains_local_name(local_name, stmt.condition):
-                return False
-            return all(_assigns_before_read(local_name, b) for b in branches)
-        if isinstance(stmt, IRSwitch):
-            if _contains_local_name(local_name, stmt.value):
-                return False
-            branches = list(stmt.cases.values())
-            if stmt.default is None:
-                return False
-            branches.append(stmt.default)
-            return all(_assigns_before_read(local_name, b) for b in branches)
-        return False
-    return False
 
+    def merge(exits: Dict[str, bool], other: Dict[str, bool]) -> None:
+        for kind, assigned in other.items():
+            exits[kind] = exits.get(kind, True) and assigned
 
-def _assigns_before_read(local_name: str, block: Optional[IRBlock]) -> bool:
-    """Return True if `block` assigns `local_name` before any read of it.
-
-    Recurses into nested conditionals/switches only when the construct itself
-    definitely assigns before use; otherwise conservatively returns False.
-    """
-    if block is None:
-        return False
-    for stmt in block.statements:
-        if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target.name == local_name:
-            # A read in the RHS still counts as use-before-full-assignment.
-            return not _contains_local_name(local_name, stmt.expr)
-        if _contains_local_name(local_name, stmt) or _find_assignment_recursive(local_name, stmt) is not None:
-            if isinstance(stmt, (IRConditional, IRSwitch)):
-                return _branch_definitely_assigns(local_name, stmt)
+    def reads_safely(stmt: Optional[IRStatement], assigned: bool) -> bool:
+        if stmt is None:
+            return True
+        # Raw opcodes/jumps can hide register reads from get_children().
+        if isinstance(stmt, (IRUnliftedOpcode, IRPrimitiveJump, IRNativeStub)):
             return False
-    return False
+        if isinstance(stmt, IRLocal):
+            return assigned or stmt.name != local_name
+        return all(reads_safely(child, assigned) for child in stmt.get_children())
 
+    def walk(stmt: Optional[IRStatement], assigned: bool) -> Optional[Dict[str, bool]]:
+        if stmt is None:
+            return {"normal": assigned}
+        if isinstance(stmt, IRBlock):
+            exits = {"normal": assigned}
+            for child in stmt.statements:
+                if "normal" not in exits:
+                    break
+                child_exits = walk(child, exits.pop("normal"))
+                if child_exits is None:
+                    return None
+                merge(exits, child_exits)
+            return exits
+        if isinstance(stmt, IRAssign):
+            if not reads_safely(stmt.expr, assigned):
+                return None
+            if isinstance(stmt.target, IRLocal):
+                return {"normal": assigned or stmt.target.name == local_name}
+            # Storing through a field/array reads its receiver and index.
+            return {"normal": assigned} if reads_safely(stmt.target, assigned) else None
+        if isinstance(stmt, (IRReturn, IRThrow)):
+            return {} if reads_safely(stmt, assigned) else None
+        if isinstance(stmt, IRBreak):
+            return {"break": assigned}
+        if isinstance(stmt, IRContinue):
+            return {"continue": assigned}
+        if isinstance(stmt, (IRConditional, IRSwitch)):
+            condition = stmt.condition if isinstance(stmt, IRConditional) else stmt.value
+            if not reads_safely(condition, assigned):
+                return None
+            branches = (
+                [stmt.true_block, stmt.false_block]
+                if isinstance(stmt, IRConditional)
+                else [*stmt.cases.values(), stmt.default]
+            )
+            exits: Dict[str, bool] = {}
+            for branch in branches:
+                branch_exits = walk(branch, assigned)
+                if branch_exits is None:
+                    return None
+                merge(exits, branch_exits)
+            return exits
+        if isinstance(stmt, (IRWhileLoop, IRForEachLoop, IRIntRangeLoop)):
+            if isinstance(stmt, IRWhileLoop):
+                inputs = [stmt.condition]
+                body_assigned = assigned
+            else:
+                inputs = [stmt.array] if isinstance(stmt, IRForEachLoop) else [stmt.start, stmt.end]
+                body_assigned = assigned or stmt.elem.name == local_name
+            if not all(reads_safely(expr, assigned) for expr in inputs):
+                return None
+            body_exits = walk(stmt.body, body_assigned)
+            if body_exits is None:
+                return None
+            # Haxe's definite-assignment analysis does not reliably propagate
+            # assignments out of literal-true loops with break/return exits.
+            # Even when every reachable break assigns the local, retain its
+            # entry state after the loop so the emitted declaration compiles.
+            # The body proof still permits defaults to disappear for loop-local
+            # scratch values whose reads follow a write within the iteration.
+            return {"normal": assigned}
+        if isinstance(stmt, IRTryCatch):
+            exits = walk(stmt.try_block, assigned)
+            if exits is None:
+                return None
+            for binding, body in [(stmt.catch_local, stmt.catch_block), *stmt.extra_catches]:
+                # An exception can precede any write in the try, including a
+                # throwing assignment RHS. Do not borrow its normal exit state.
+                shadowed = binding is not None and binding.name == local_name
+                catch_exits = walk(body, assigned or shadowed)
+                if catch_exits is None:
+                    return None
+                if shadowed:
+                    catch_exits = {kind: assigned for kind in catch_exits}
+                merge(exits, catch_exits)
+            return exits
+        if isinstance(stmt, IRPrimitiveLoop):
+            return None  # Unstructured exits cannot support a dominance proof.
+        return {"normal": assigned} if reads_safely(stmt, assigned) else None
 
-def _branch_definitely_assigns(local_name: str, stmt: IRStatement) -> bool:
-    """Whether a nested conditional/switch definitely assigns the local first."""
-    if isinstance(stmt, IRConditional):
-        if stmt.false_block is None or _contains_local_name(local_name, stmt.condition):
-            return False
-        return _assigns_before_read(local_name, stmt.true_block) and _assigns_before_read(
-            local_name, stmt.false_block
-        )
-    if isinstance(stmt, IRSwitch):
-        if stmt.default is None or _contains_local_name(local_name, stmt.value):
-            return False
-        branches = list(stmt.cases.values()) + [stmt.default]
-        return all(_assigns_before_read(local_name, b) for b in branches)
-    return False
+    exits = walk(block, False)
+    return exits is not None and "break" not in exits and "continue" not in exits
 
 
 def _find_defining_assignment(local_name: str, block: IRBlock) -> Optional[Union[IRAssign, IRSwitch]]:
@@ -2673,8 +2708,11 @@ def _contains_local_name(local_name: str, stmt: IRStatement) -> bool:
     if isinstance(stmt, IRReturn):
         return stmt.value is not None and _contains_local_name(local_name, stmt.value)
     if isinstance(stmt, IRAssign):
-        # Only consider the expression side; the target is a write.
-        return _contains_local_name(local_name, stmt.expr)
+        # A local target is a write, but a field/array target evaluates its
+        # receiver/index before storing and therefore reads those locals.
+        return _contains_local_name(local_name, stmt.expr) or (
+            not isinstance(stmt.target, IRLocal) and _contains_local_name(local_name, stmt.target)
+        )
     if isinstance(stmt, IRBlock):
         return any(_contains_local_name(local_name, child) for child in stmt.statements)
     if isinstance(stmt, IRConditional):

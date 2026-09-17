@@ -8,6 +8,22 @@ import pytest
 
 from crashtest.behavior import compile_haxe
 from crashtest.run import run_case
+from crashlink.core import Bytecode, tIndex
+from crashlink.decomp.ir import (
+    IRArrayAccess,
+    IRAssign,
+    IRBlock,
+    IRBoolExpr,
+    IRBreak,
+    IRConditional,
+    IRConst,
+    IRContinue,
+    IRLocal,
+    IRReturn,
+    IRTryCatch,
+    IRWhileLoop,
+)
+from crashlink.pseudo import _is_definitely_assigned_before_use
 
 
 @pytest.mark.parametrize(
@@ -87,6 +103,71 @@ class NestedCallable {
             "HeapsSkinSplit",
             (Path(__file__).parent / "haxe" / "HeapsSkinSplit.hx").read_text(),
         ),
+        (
+            "TerminalAssignment",
+            """class TerminalAssignment {
+    static function choose(mode:Int):Int {
+        var values:Array<Int>;
+        if (mode < 0) return -1;
+        if (mode == 0) values = [2, 3]; else values = [5];
+        var sum = 0;
+        var i = 0;
+        while (i < values.length) {
+            var part:Int;
+            if (i == 0) part = values[i]; else part = values[i] * 2;
+            sum += part;
+            i++;
+        }
+        var last:Int;
+        while (true) {
+            if (mode == 3) return sum;
+            last = sum + 7;
+            break;
+        }
+        return last;
+    }
+    static function main():Void {
+        for (mode in [-1, 0, 1, 3]) Sys.println(choose(mode));
+    }
+}""",
+        ),
+        (
+            "AssignmentExitPaths",
+            """class AssignmentExitPaths {
+    static var events = "";
+    static function value(fail:Bool):Int {
+        events += "v";
+        if (fail) throw "failed";
+        return 7;
+    }
+    static function choose(n:Int, fail:Bool):Int {
+        var carried = 4;
+        var i = 0;
+        while (i < n) {
+            i++;
+            if (i == 1) continue;
+            if (i == 3) break;
+            carried = carried + i;
+        }
+        var result = 11;
+        try {
+            result = value(fail);
+            events += "t";
+        } catch (e:Dynamic) {
+            events += "c";
+            carried += result;
+        }
+        return carried + result;
+    }
+    static function main():Void {
+        for (n in [0, 1, 2, 4]) {
+            Sys.println(choose(n, false));
+            Sys.println(choose(n, true));
+        }
+        Sys.println(events);
+    }
+}""",
+        ),
     ],
 )
 def test_renderer_roundtrip_preserves_observations(tmp_path, name, source):
@@ -132,3 +213,57 @@ def test_static_alias_roundtrip_preserves_initialization_and_escapes(tmp_path):
         if line.startswith("GetGlobal.") and f"global[${name}]" in line
     ]
     assert len(loads) <= 2, method.recomp_disasm
+
+
+@pytest.mark.parametrize(
+    "scenario,safe",
+    [
+        ("terminal_branch", True),
+        ("zero_trip", False),
+        ("loop_local", True),
+        ("loop_carried_read", False),
+        ("continue_skips_read", True),
+        ("break_before_write", False),
+        ("break_after_write", False),
+        ("catch_entry", False),
+        ("catch_write", True),
+        ("store_receiver", False),
+    ],
+)
+def test_default_omission_requires_assignment_on_reachable_read_paths(scenario, safe):
+    code = Bytecode.create_empty()
+    value = IRLocal("value", tIndex(1), code)
+    flag = IRLocal("flag", tIndex(3), code)
+    one = IRConst(code, IRConst.ConstType.INT, value=1)
+    write = IRAssign(code, value, one)
+    read = IRReturn(code, value)
+
+    def block(*statements):
+        result = IRBlock(code)
+        result.statements = list(statements)
+        return result
+
+    if scenario == "terminal_branch":
+        root = block(IRConditional(code, flag, block(IRReturn(code, one)), block(write)), read)
+    elif scenario == "zero_trip":
+        root = block(IRWhileLoop(code, flag, block(write)), read)
+    elif scenario == "loop_local":
+        root = block(IRWhileLoop(code, flag, block(write, read)))
+    elif scenario == "loop_carried_read":
+        root = block(IRWhileLoop(code, flag, block(value, write)))
+    elif scenario == "continue_skips_read":
+        root = block(IRWhileLoop(code, flag, block(
+            IRConditional(code, flag, block(IRContinue(code)), block(write)), read
+        )))
+    elif scenario in ("break_before_write", "break_after_write"):
+        body = block(IRConditional(code, flag, block(IRBreak(code)), block()), write, IRBreak(code))
+        if scenario == "break_after_write":
+            body = block(write, IRBreak(code))
+        root = block(IRWhileLoop(code, IRBoolExpr(code, IRBoolExpr.CompareType.TRUE), body), read)
+    elif scenario in ("catch_entry", "catch_write"):
+        catch_body = block(read) if scenario == "catch_entry" else block(write)
+        root = block(IRTryCatch(code, block(write), catch_body), read)
+    else:
+        root = block(IRAssign(code, IRArrayAccess(code, value, one, tIndex(1)), one), write)
+
+    assert _is_definitely_assigned_before_use("value", root) is safe
