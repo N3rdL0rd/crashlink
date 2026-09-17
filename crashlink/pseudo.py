@@ -11,8 +11,6 @@ from typing import Optional, List, Set, Dict, Tuple, Union, cast, Any, Iterator
 
 from .core import (
     Bytecode,
-    Abstract,
-    Null,
     Obj,
     Ref,
     Type,
@@ -418,7 +416,7 @@ def _resolve_array_access(
     # hl.BytesAccess<T>; render `bytes[idx << n]` as `bytes[idx]`.
     if (
         isinstance(expr.array, IRLocal)
-        and disasm.type_to_haxe(disasm.type_name(code, expr.array.get_type())).startswith("hl.BytesAccess")
+        and disasm._haxe_annotation(code, expr.array.get_type()).startswith("hl.BytesAccess")
         and isinstance(expr.index, IRArithmetic)
         and expr.index.op.value == "<<"
         and isinstance(expr.index.right, IRConst)
@@ -967,7 +965,7 @@ def _expression_to_haxe(
         if call_name.endswith("ArrayDyn.alloc") and len(expr.args) == 2:
             value = _expression_to_haxe(expr.args[0], code, ir_function)
             source_type = expr.args[0].get_type()
-            if disasm.type_to_haxe(disasm.type_name(code, source_type)).startswith("Array<"):
+            if disasm._haxe_annotation(code, source_type).startswith("Array<"):
                 # Public erased arrays are ArrayDyn wrappers. The native
                 # allocation helper accepts their ArrayBase storage instead.
                 value = f"(@:privateAccess (cast {value} : hl.types.ArrayDyn).array)"
@@ -1012,7 +1010,7 @@ def _expression_to_haxe(
             return f"new {disasm.type_to_haxe(type_name)}({args_str})"
 
     elif isinstance(expr, IRNativeArrayNew):
-        elem_haxe_type = disasm.type_to_haxe(disasm.type_name(code, expr.elem_type))
+        elem_haxe_type = disasm._haxe_annotation(code, expr.elem_type)
         size_str = _expression_to_haxe(expr.size, code, ir_function)
         return f"new hl.NativeArray<{elem_haxe_type}>({size_str})"
 
@@ -2000,7 +1998,7 @@ def _generate_statements(
             all_subs = [try_subs, catch_subs]
             for extra_local, extra_block in stmt.extra_catches:
                 extra_name = extra_local.name or "e"
-                extra_haxe = disasm.type_to_haxe(disasm.type_name(code, extra_local.get_type()))
+                extra_haxe = disasm._haxe_annotation(code, extra_local.get_type())
                 output_lines.append(f"{indent}}} catch ({extra_name}:{extra_haxe}) {{")
                 extra_subs = render_subs.copy()
                 all_subs.append(extra_subs)
@@ -2161,11 +2159,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         start_arg = 1 if is_instance or is_constructor else 0
         for i, arg_type_idx in enumerate(core_fun_type_def.args[start_arg:]):
             arg_core_type = arg_type_idx.resolve(code)
-            if isinstance(arg_core_type.definition, Ref):
-                inner_type = arg_core_type.definition.type.resolve(code)
-                arg_haxe_type_name = f"hl.Ref<{disasm.type_to_haxe(disasm.type_name(code, inner_type))}>"
-            else:
-                arg_haxe_type_name = disasm.type_to_haxe(disasm.type_name(code, arg_core_type))
+            arg_haxe_type_name = disasm._haxe_annotation(code, arg_core_type)
 
             param_name = f"arg{i}"
             local_idx = start_arg + i
@@ -2190,7 +2184,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
                 ):
                     elem_type = ir_func.locals[local_idx].array_elem_type
                     assert elem_type is not None  # narrowed by the guard above
-                    elem_haxe = disasm.type_to_haxe(disasm.type_name(code, elem_type))
+                    elem_haxe = disasm._haxe_annotation(code, elem_type)
                     arg_haxe_type_name = f"Array<{elem_haxe}>"
             elif func_core.has_debug and func_core.assigns:
                 # Fallback to raw debug assigns if locals aren't available.
@@ -2198,11 +2192,13 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
                 if i < len(arg_assigns):
                     param_name = arg_assigns[i][0].resolve(code)
 
+            if id(core_fun_type_def) in disasm._trace_signature_types(code)[1] and local_idx == 1:
+                param_name = "?" + param_name
             param_type_decl = f": {arg_haxe_type_name}" if arg_haxe_type_name else ""
             params_str_list.append(f"{param_name}{param_type_decl}")
 
         ret_core_type = core_fun_type_def.ret.resolve(code)
-        return_type_str = disasm.type_to_haxe(disasm.type_name(code, ret_core_type))
+        return_type_str = disasm._haxe_annotation(code, ret_core_type)
 
     # Constructors do not declare a return type in Haxe.
     if is_constructor:
@@ -2216,7 +2212,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     )
     output_lines.append(func_header)
 
-    initial_declared_vars = {p.split(":")[0].strip() for p in params_str_list}
+    initial_declared_vars = {p.split(":")[0].strip().lstrip("?") for p in params_str_list}
     # For instance methods and constructors, register 0 is `this` — skip it.
     if (is_instance or is_constructor) and ir_func.locals:
         initial_declared_vars.add(ir_func.locals[0].name)
@@ -3291,21 +3287,16 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
             if stmt.name in pattern_locals:
                 return
             if stmt.native_elem_type is not None:
-                elem_haxe_type = disasm.type_to_haxe(disasm.type_name(stmt.code, stmt.native_elem_type))
+                elem_haxe_type = disasm._haxe_annotation(stmt.code, stmt.native_elem_type)
                 type_name = f"hl.NativeArray<{elem_haxe_type}>"
             elif stmt.native_map_class is not None:
                 type_name = stmt.native_map_class
             elif stmt.array_elem_type is not None:
-                elem_haxe_type = disasm.type_to_haxe(disasm.type_name(stmt.code, stmt.array_elem_type))
+                elem_haxe_type = disasm._haxe_annotation(stmt.code, stmt.array_elem_type)
                 type_name = f"Array<{elem_haxe_type}>"
             else:
                 local_type = stmt.get_type()
-                if isinstance(local_type.definition, Ref):
-                    inner_type = local_type.definition.type.resolve(stmt.code)
-                    inner_type_name = disasm.type_to_haxe(disasm.type_name(stmt.code, inner_type))
-                    type_name = f"hl.Ref<{inner_type_name}>"
-                else:
-                    type_name = disasm.type_to_haxe(disasm.type_name(stmt.code, local_type))
+                type_name = disasm._haxe_annotation(stmt.code, local_type)
                 if stmt.is_unsigned and type_name == "Int":
                     type_name = "UInt"
             if stmt.name in locals and locals[stmt.name] != type_name:
@@ -3530,15 +3521,27 @@ def _call_renders_as_std_stub(func: "Function", call: "IRCall", code: Bytecode) 
 def _function_extern(externs: Dict[int, Tuple[str, int]], code: Bytecode) -> str:
     """
     Generate an extern class that declares std library functions called by the IR.
-    Signatures are loose (Dynamic) so the decompiled output recompiles cleanly.
+    Unsupported std signatures stay erased; callable slots retain their types.
     """
     if not externs:
         return ""
 
     lines = ["extern class StdFuncs {"]
     for findex, (name, arity) in sorted(externs.items()):
-        params = ", ".join(f"arg{i}: Dynamic" for i in range(arity))
-        lines.append(f"    static function {name}({params}): Dynamic;")
+        func = next((func for func in code.functions if func.findex.value == findex), None)
+        signature = func.type.resolve(code).definition if func is not None else None
+        arg_types = ["Dynamic"] * arity
+        ret = "Dynamic"
+        if isinstance(signature, Fun) and len(signature.args) == arity:
+            for i, index in enumerate(signature.args):
+                typ = index.resolve(code)
+                if isinstance(typ.definition, Fun):
+                    arg_types[i] = disasm._haxe_annotation(code, typ)
+            ret_type = signature.ret.resolve(code)
+            if isinstance(ret_type.definition, Fun):
+                ret = disasm._haxe_annotation(code, ret_type)
+        params = ", ".join(f"arg{i}: {typ}" for i, typ in enumerate(arg_types))
+        lines.append(f"    static function {name}({params}): {ret};")
     lines.append("}")
     return "\n".join(lines)
 
@@ -3546,26 +3549,6 @@ def _function_extern(externs: Dict[int, Tuple[str, int]], code: Bytecode) -> str
 def _native_binding_name(native: Native, code: Bytecode) -> str:
     name = re.sub(r"[^A-Za-z0-9_]", "_", native.name.resolve(code))
     return f"n{native.findex.value}_{name}"
-
-
-def _native_type_haxe(typ: Type, code: Bytecode) -> str:
-    """Spell the native ABI type, rather than erasing every parameter to Dynamic."""
-    definition = typ.definition
-    if isinstance(definition, Ref):
-        return f"hl.Ref<{_native_type_haxe(definition.type.resolve(code), code)}>"
-    if isinstance(definition, Null):
-        return f"Null<{_native_type_haxe(definition.type.resolve(code), code)}>"
-    if isinstance(definition, Abstract):
-        name = definition.name.resolve(code).replace('"', '\\"')
-        return f'hl.Abstract<"{name}">'
-    if isinstance(definition, Fun):
-        args = ", ".join(_native_type_haxe(arg.resolve(code), code) for arg in definition.args)
-        return f"({args}) -> {_native_type_haxe(definition.ret.resolve(code), code)}"
-    if typ.kind.value == Type.Kind.I64.value:
-        return "hl.I64"
-    if typ.kind.value == Type.Kind.U8.value:
-        return "hl.UI8"
-    return disasm.type_to_haxe(disasm.type_name(code, typ))
 
 
 def _native_extern(natives: List[Native], code: Bytecode) -> str:
@@ -3584,9 +3567,10 @@ def _native_extern(natives: List[Native], code: Bytecode) -> str:
         if not isinstance(fun, Fun):
             raise ValueError(f"Native {library}.{name} has no function signature")
         params = ", ".join(
-            f"arg{i}: {_native_type_haxe(arg.resolve(code), code)}" for i, arg in enumerate(fun.args)
+            f"arg{i}: {disasm._haxe_annotation(code, arg.resolve(code), native=True)}"
+            for i, arg in enumerate(fun.args)
         )
-        ret = _native_type_haxe(fun.ret.resolve(code), code)
+        ret = disasm._haxe_annotation(code, fun.ret.resolve(code), native=True)
         lines.append(f'    @:hlNative("{library}", "{name}")')
         lines.append(f"    public static function {_native_binding_name(native, code)}({params}): {ret};")
     lines.append("}")
@@ -3633,6 +3617,36 @@ def _is_std_class_obj(code: Bytecode, obj: Obj) -> bool:
     return has_members
 
 
+def _annotation_dependencies(typ: Type, code: Bytecode, seen: Set[int]) -> Iterator[Type]:
+    """Named types needed by signatures, including nested callable/enum payloads."""
+    if id(typ) in seen:
+        return
+    seen.add(id(typ))
+    definition = typ.definition
+    if isinstance(definition, Fun):
+        for index in [*definition.args, definition.ret]:
+            yield from _annotation_dependencies(index.resolve(code), code, seen)
+    elif isinstance(definition, Ref):
+        yield from _annotation_dependencies(definition.type.resolve(code), code, seen)
+    elif isinstance(definition, Enum):
+        yield typ
+        for constructor in definition.constructs:
+            for index in constructor.params:
+                yield from _annotation_dependencies(index.resolve(code), code, seen)
+    elif isinstance(definition, Obj):
+        name = definition.name.resolve(code)
+        if disasm.type_to_haxe(name) == destaticify(name):
+            yield typ
+
+
+def _local_annotation_types(local: IRLocal) -> Iterator[Type]:
+    yield local.get_type()
+    if local.array_elem_type is not None:
+        yield local.array_elem_type
+    if local.native_elem_type is not None:
+        yield local.native_elem_type
+
+
 def _collect_referenced_user_classes(root: IRStatement, code: Bytecode, exclude: Set[str]) -> Set[str]:
     """
     Recursively collect names of user-defined (non-std) classes referenced in the
@@ -3640,6 +3654,7 @@ def _collect_referenced_user_classes(root: IRStatement, code: Bytecode, exclude:
     """
     names: Set[str] = set()
     seen: Set[int] = set()
+    seen_types: Set[int] = set()
 
     def is_user_type(typ: Type) -> bool:
         if not isinstance(typ.definition, Obj):
@@ -3653,6 +3668,17 @@ def _collect_referenced_user_classes(root: IRStatement, code: Bytecode, exclude:
         if id(stmt) in seen:
             return
         seen.add(id(stmt))
+        annotation_types: List[Type] = []
+        if isinstance(stmt, IRLocal):
+            annotation_types.extend(_local_annotation_types(stmt))
+        elif isinstance(stmt, IRConst) and isinstance(stmt.value, (Function, Native)):
+            annotation_types.append(stmt.value.type.resolve(code))
+        for annotation in annotation_types:
+            for typ in _annotation_dependencies(annotation, code, seen_types):
+                if is_user_type(typ):
+                    name = destaticify(disasm.type_name(code, typ))
+                    if name not in exclude:
+                        names.add(name)
         if (
             isinstance(stmt, IRConst)
             and isinstance(stmt.value, Type)
@@ -3752,6 +3778,7 @@ def _collect_referenced_enums(root: IRStatement, code: Bytecode) -> Dict[str, "E
     """
     enums: Dict[int, "Enum"] = {}
     seen: Set[int] = set()
+    seen_types: Set[int] = set()
 
     def add(definition: "Enum") -> None:
         enums[id(definition)] = definition
@@ -3760,6 +3787,15 @@ def _collect_referenced_enums(root: IRStatement, code: Bytecode) -> Dict[str, "E
         if id(stmt) in seen:
             return
         seen.add(id(stmt))
+        annotation_types: List[Type] = []
+        if isinstance(stmt, IRLocal):
+            annotation_types.extend(_local_annotation_types(stmt))
+        elif isinstance(stmt, IRConst) and isinstance(stmt.value, (Function, Native)):
+            annotation_types.append(stmt.value.type.resolve(code))
+        for annotation in annotation_types:
+            for typ in _annotation_dependencies(annotation, code, seen_types):
+                if isinstance(typ.definition, Enum):
+                    add(typ.definition)
         if (
             isinstance(stmt, IRConst)
             and isinstance(stmt.value, Type)
@@ -3791,7 +3827,7 @@ def _enum_pseudo(enum_def: "Enum", code: Bytecode, name: Optional[str] = None) -
         params = []
         for i, pidx in enumerate(construct.params):
             ptype = pidx.resolve(code)
-            ptype_name = disasm.type_to_haxe(disasm.type_name(code, ptype))
+            ptype_name = disasm._haxe_annotation(code, ptype)
             params.append(f"arg{i}: {ptype_name}")
         if params:
             lines.append(f"    {cname}({', '.join(params)});")
@@ -3817,7 +3853,9 @@ def class_pseudo(ir_class: "IRClass", max_classes: Optional[int] = None) -> str:
     return "\n\n".join(_class_pseudo_recursive(ir_class, set(), max_classes=max_classes))
 
 
-def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
+def _class_body(
+    ir_class: "IRClass", emitted_enums: Optional[Set[int]] = None
+) -> Tuple[str, Set[str], Optional[str]]:
     """Render one class's own body — header, static + instance fields, methods and
     anonymous-closure helpers — with no cross-file recursion.
 
@@ -3853,12 +3891,51 @@ def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
             header += f" extends {super_name}"
     header += " {"
 
+    anon_funcs: Dict[int, "Function"] = {}
+    for ir_func in ir_class.static_methods + ir_class.methods:
+        anon_funcs.update(_collect_anonymous_functions(ir_func.block, code))
+    # Static-init recovery renders anonymous closures as bare `__anon_<findex>`
+    # identifiers (see _collect_static_field_inits); pull those in too.
+    for init in getattr(ir_class, "static_field_inits", {}).values():
+        for m in re.finditer(r"__anon_(\d+)", init):
+            findex = int(m.group(1))
+            if findex not in anon_funcs:
+                func = next((f for f in code.functions if f.findex.value == findex), None)
+                if func is not None:
+                    anon_funcs[findex] = func
+    helper_irs: Dict[int, IRFunction] = {}
+    pending = list(anon_funcs.values())
+    while pending:
+        func = pending.pop()
+        findex = func.findex.value
+        if findex in helper_irs:
+            continue
+        helper_ir = IRFunction(code, func)
+        helper_irs[findex] = helper_ir
+        pending.extend(_collect_anonymous_functions(helper_ir.block, code).values())
+    all_methods = ir_class.static_methods + ir_class.methods + list(helper_irs.values())
+
     # Collect natives, std functions, referenced classes and referenced enums.
     natives: List[Native] = []
     func_externs: Dict[int, Tuple[str, int]] = {}
     referenced_classes: Set[str] = set()
     referenced_enums: Dict[str, Enum] = {}
-    for ir_func in ir_class.static_methods + ir_class.methods:
+    annotation_types = [typ for _, typ in ir_class.static_fields + ir_class.fields]
+    annotation_types.extend(getattr(ir_class, "field_elem_types", {}).values())
+    annotation_types.extend(
+        method.func.type.resolve(code) for method in all_methods
+    )
+    seen_types: Set[int] = set()
+    for annotation in annotation_types:
+        for typ in _annotation_dependencies(annotation, code, seen_types):
+            definition = typ.definition
+            if isinstance(definition, Obj) and not _is_std_class_obj(code, definition):
+                name = destaticify(definition.name.resolve(code))
+                if name != class_name:
+                    referenced_classes.add(name)
+            elif isinstance(definition, Enum):
+                referenced_enums[destaticify(disasm._enum_name(code, definition))] = definition
+    for ir_func in all_methods:
         natives.extend(_collect_natives(ir_func.block))
         func_externs.update(_collect_function_externs(ir_func.block, code))
         referenced_classes.update(_collect_referenced_user_classes(ir_func.block, code, {class_name}))
@@ -3874,6 +3951,11 @@ def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
         output_lines.append(func_extern)
         output_lines.append("")
     for enum_name in sorted(referenced_enums):
+        definition = referenced_enums[enum_name]
+        if emitted_enums is not None:
+            if id(definition) in emitted_enums:
+                continue
+            emitted_enums.add(id(definition))
         output_lines.append(_enum_pseudo(referenced_enums[enum_name], code, name=enum_name))
         output_lines.append("")
 
@@ -3881,11 +3963,11 @@ def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
 
     if ir_class.static_fields:
         for field_name, field_type in ir_class.static_fields:
-            field_type_haxe = disasm.type_to_haxe(disasm.type_name(code, field_type))
+            field_type_haxe = disasm._haxe_annotation(code, field_type)
             if field_type_haxe == "Array<Dynamic>":
                 elem_types = getattr(ir_class, "field_elem_types", {})
                 if field_name in elem_types:
-                    elem_haxe = disasm.type_to_haxe(disasm.type_name(code, elem_types[field_name]))
+                    elem_haxe = disasm._haxe_annotation(code, elem_types[field_name])
                     field_type_haxe = f"Array<{elem_haxe}>"
             init = getattr(ir_class, "static_field_inits", {}).get(field_name)
             if init == STATIC_INIT_UNRECOVERABLE:
@@ -3901,11 +3983,11 @@ def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
 
     if ir_class.fields:
         for field_name, field_type in ir_class.fields:
-            field_type_haxe = disasm.type_to_haxe(disasm.type_name(code, field_type))
+            field_type_haxe = disasm._haxe_annotation(code, field_type)
             if field_type_haxe == "Array<Dynamic>":
                 elem_types = getattr(ir_class, "field_elem_types", {})
                 if field_name in elem_types:
-                    elem_haxe = disasm.type_to_haxe(disasm.type_name(code, elem_types[field_name]))
+                    elem_haxe = disasm._haxe_annotation(code, elem_types[field_name])
                     field_type_haxe = f"Array<{elem_haxe}>"
             output_lines.append(f"{indent_str}public var {field_name}: {field_type_haxe};")
         output_lines.append("")
@@ -3925,21 +4007,7 @@ def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
         output_lines.append("")
 
     # Emit any anonymous closures referenced by this class as private helpers.
-    anon_funcs: Dict[int, "Function"] = {}
-    for ir_func in ir_class.static_methods + ir_class.methods:
-        anon_funcs.update(_collect_anonymous_functions(ir_func.block, code))
-    # Static-init recovery renders anonymous closures as bare `__anon_<findex>`
-    # identifiers (see _collect_static_field_inits); pull those in too.
-    for init in getattr(ir_class, "static_field_inits", {}).values():
-        for m in re.finditer(r"__anon_(\d+)", init):
-            findex = int(m.group(1))
-            if findex not in anon_funcs:
-                func = next((f for f in code.functions if f.findex.value == findex), None)
-                if func is not None:
-                    anon_funcs[findex] = func
-    for findex in sorted(anon_funcs):
-        func = anon_funcs[findex]
-        helper_ir = IRFunction(code, func)
+    for findex, helper_ir in sorted(helper_irs.items()):
         setattr(helper_ir, "_containing_class", ir_class)
         setattr(helper_ir, "_force_static", True)
         setattr(helper_ir, "_anon_name", f"__anon_{findex}")
@@ -3956,7 +4024,8 @@ def _class_body(ir_class: "IRClass") -> Tuple[str, Set[str], Optional[str]]:
 
 
 def _class_pseudo_recursive(
-    ir_class: "IRClass", emitted: Set[str], max_classes: Optional[int] = None
+    ir_class: "IRClass", emitted: Set[str], max_classes: Optional[int] = None,
+    emitted_enums: Optional[Set[int]] = None,
 ) -> List[str]:
     """
     Recursive helper for class_pseudo. Returns a list of class source strings:
@@ -3964,6 +4033,8 @@ def _class_pseudo_recursive(
     ability), each emitted once.
     """
     code: Bytecode = ir_class.code
+    if emitted_enums is None:
+        emitted_enums = set()
 
     primary_obj = ir_class.dynamic if ir_class.dynamic else ir_class.static
     if not primary_obj:
@@ -3974,7 +4045,7 @@ def _class_pseudo_recursive(
         return []
     emitted.add(class_name)
 
-    body, referenced_classes, super_name = _class_body(ir_class)
+    body, referenced_classes, super_name = _class_body(ir_class, emitted_enums)
     result = [body]
 
     # Recursively emit the super class and any other referenced user classes.
@@ -4005,7 +4076,9 @@ def _class_pseudo_recursive(
             continue
         try:
             other_ir = IRClass(code, other_obj)
-            result.extend(_class_pseudo_recursive(other_ir, emitted, max_classes=max_classes))
+            result.extend(
+                _class_pseudo_recursive(other_ir, emitted, max_classes=max_classes, emitted_enums=emitted_enums)
+            )
         except Exception:
             # Fall back to a stub if the class cannot be decompiled.
             result.append(f"class {other_name} {{}}")
@@ -4032,6 +4105,7 @@ def decompile_file(code: Bytecode, needle: str) -> Optional[str]:
     findex_map = code.get_findex_map()
     chunks: List[str] = []
     emitted: Set[str] = set()
+    emitted_enums: Set[int] = set()
 
     for key in keys:
         for entry in fmap[key]:
@@ -4052,7 +4126,7 @@ def decompile_file(code: Bytecode, needle: str) -> Optional[str]:
             if reg_entry is None:
                 continue
             try:
-                chunks.append(_class_body(IRClass(code, reg_entry[0]))[0])
+                chunks.append(_class_body(IRClass(code, reg_entry[0]), emitted_enums)[0])
             except Exception as e:
                 chunks.append(f"// class {entry.canonical_name}: decompilation failed: {e}")
 
@@ -4181,10 +4255,11 @@ def _stub_method(code: Bytecode, func: Function, is_instance: bool, dynamic: Opt
     if isinstance(fun_def, Fun):
         start = 1 if is_instance else 0
         for i, arg_idx in enumerate(fun_def.args[start:]):
-            t = disasm.type_to_haxe(disasm.type_name(code, arg_idx.resolve(code)))
-            params.append(f"arg{i}: {t}" if t else f"arg{i}")
+            t = disasm._haxe_annotation(code, arg_idx.resolve(code))
+            optional = "?" if id(fun_def) in disasm._trace_signature_types(code)[1] and start + i == 1 else ""
+            params.append(f"{optional}arg{i}: {t}" if t else f"{optional}arg{i}")
         ret_type = fun_def.ret.resolve(code)
-    ret_name = disasm.type_to_haxe(disasm.type_name(code, ret_type)) if ret_type is not None else "Void"
+    ret_name = disasm._haxe_annotation(code, ret_type) if ret_type is not None else "Void"
 
     static_kw = "" if is_instance else "static "
     override_kw = (
@@ -4237,11 +4312,11 @@ def _stub_class(code: Bytecode, primary: Obj) -> str:
     inst_fields = _obj_fields(code, dynamic)
     for field_name, field_type in static_fields:
         lines.append(
-            f"    public static var {field_name}: {disasm.type_to_haxe(disasm.type_name(code, field_type))};"
+            f"    public static var {field_name}: {disasm._haxe_annotation(code, field_type)};"
         )
     for field_name, field_type in inst_fields:
         lines.append(
-            f"    public var {field_name}: {disasm.type_to_haxe(disasm.type_name(code, field_type))};"
+            f"    public var {field_name}: {disasm._haxe_annotation(code, field_type)};"
         )
     if static_fields or inst_fields:
         lines.append("")

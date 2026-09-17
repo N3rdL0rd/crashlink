@@ -39,6 +39,51 @@ class NativeBoundary {
 }""",
         ),
         (
+            "NestedCallable",
+            """class SignatureOnly {
+    public var value:Int;
+}
+enum CallableBox { Wrap(f:(Int->Int)->(Int->Int)); }
+class NestedCallable {
+    public static var unused:SignatureOnly->SignatureOnly;
+    var base:Int;
+    public var fn:Int->Int;
+    public function new(base:Int) { this.base = base; fn = add; }
+    function add(value:Int):Int { return base + value; }
+    static function compose(f:Int->Int):(Int->Int)->(Int->Int) {
+        return function(g:Int->Int):Int->Int { return function(v:Int):Int { return f(g(v)); }; };
+    }
+    static function main():Void {
+        var owner = new NestedCallable(7);
+        var f = owner.fn;
+        var box = Wrap(compose(f));
+        switch box { case Wrap(make): Sys.println(make(f)(3)); }
+    }
+}""",
+        ),
+        (
+            "TraceSnapshot",
+            """class TraceSnapshot {
+    static function original(v:Dynamic, ?infos:haxe.PosInfos):Void {
+        if (infos == null) { Sys.println("missing:" + v); return; }
+        Sys.println(v + ":" + infos.fileName + ":" + infos.lineNumber + ":" + infos.className + ":" + infos.methodName);
+        Sys.println(infos.customParams == null ? "no extras" : infos.customParams.join(","));
+    }
+    static function replacement(v:Dynamic, ?infos:haxe.PosInfos):Void { Sys.println("replacement:" + v); }
+    static function main():Void {
+        haxe.Log.trace = original;
+        var saved = haxe.Log.trace;
+        haxe.Log.trace = replacement;
+        var pos:haxe.PosInfos = {fileName:"original/path.hx",lineNumber:123,className:"Original",methodName:"emit"};
+        saved("captured", pos);
+        saved("optional");
+        haxe.Log.trace("new", pos);
+        pos.customParams = ["extra", 9];
+        saved("extras", pos);
+    }
+}""",
+        ),
+        (
             "HeapsSkinSplit",
             (Path(__file__).parent / "haxe" / "HeapsSkinSplit.hx").read_text(),
         ),

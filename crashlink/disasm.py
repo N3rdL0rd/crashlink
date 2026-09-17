@@ -5,6 +5,7 @@ Human-readable disassembly of opcodes and utilities to work at a relatively low 
 from __future__ import annotations
 
 from ast import literal_eval
+import weakref
 from collections import OrderedDict
 from typing import Any, List, Optional, Dict, Tuple
 
@@ -251,6 +252,90 @@ def type_to_haxe(type: str) -> str:
     if type.startswith("Virtual["):
         return "Dynamic"
     return destaticify(mapping.get(type, type))
+
+
+_trace_type_cache: Dict[int, Tuple[Any, set[int], set[int]]] = {}
+
+
+def _trace_signature_types(code: Bytecode) -> Tuple[set[int], set[int]]:
+    """Recover PosInfos only through the actual haxe.Log.trace field contract."""
+    cached = _trace_type_cache.get(id(code))
+    if cached is not None and cached[0]() is code:
+        return cached[1], cached[2]
+    positions: set[int] = set()
+    callbacks: set[int] = set()
+    for typ in code.types:
+        obj = typ.definition
+        if not isinstance(obj, Obj) or obj.name.resolve(code) != "haxe.$Log":
+            continue
+        for field in obj.fields:
+            if field.name.resolve(code) != "trace":
+                continue
+            callback = field.type.resolve(code).definition
+            if not isinstance(callback, Fun) or len(callback.args) != 2:
+                continue
+            if type_name(code, callback.args[0].resolve(code)) != "Dyn":
+                continue
+            if not isinstance(callback.ret.resolve(code).definition, Void):
+                continue
+            position = callback.args[1].resolve(code).definition
+            if not isinstance(position, Virtual):
+                continue
+            fields = {f.name.resolve(code): type_name(code, f.type.resolve(code)) for f in position.fields}
+            if fields != {
+                "fileName": "String", "lineNumber": "I32", "className": "String",
+                "methodName": "String", "customParams": "hl.types.ArrayDyn",
+            }:
+                continue
+            positions.add(id(position))
+            callbacks.add(id(callback))
+    _trace_type_cache[id(code)] = (weakref.ref(code), positions, callbacks)
+    return positions, callbacks
+
+
+def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
+    """Render retained signatures, falling back to the existing erased type map.
+
+    Bound values must supply their destination type, not the receiver-inclusive
+    implementation signature. Other Virtual layouts remain erased: shape alone
+    does not establish a source-level interface or PosInfos provenance.
+    """
+    positions, callbacks = _trace_signature_types(code)
+    active: set[int] = set()
+
+    def render(current: Type) -> str:
+        definition = current.definition
+        key = id(definition)
+        if key in active:
+            return "Dynamic"
+        active.add(key)
+        try:
+            if isinstance(definition, Fun):
+                args = [render(arg.resolve(code)) for arg in definition.args]
+                if key in callbacks:
+                    args[1] = "?" + args[1]
+                ret = render(definition.ret.resolve(code))
+                params = f"({', '.join(args)})" if args else "Void"
+                return f"({params} -> {ret})"
+            if isinstance(definition, Ref):
+                return f"hl.Ref<{render(definition.type.resolve(code))}>"
+            if key in positions:
+                return "haxe.PosInfos"
+            if native:
+                if isinstance(definition, Null):
+                    return f"Null<{render(definition.type.resolve(code))}>"
+                if isinstance(definition, Abstract):
+                    name = definition.name.resolve(code).replace('"', '\\"')
+                    return f'hl.Abstract<"{name}">'
+                if current.kind.value == Type.Kind.I64.value:
+                    return "hl.I64"
+                if current.kind.value == Type.Kind.U8.value:
+                    return "hl.UI8"
+            return type_to_haxe(type_name(code, current))
+        finally:
+            active.remove(key)
+
+    return render(typ)
 
 
 def func_header(code: Bytecode, func: Function | Native) -> str:
