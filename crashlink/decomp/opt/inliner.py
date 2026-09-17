@@ -53,6 +53,8 @@ from ..ir import (
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
+    IRTryCatch,
+    IRUnliftedOpcode,
 )
 from . import (
     TraversingIROptimizer,
@@ -60,13 +62,96 @@ from . import (
 )
 
 
+class _ScopedLocalLifetime:
+    """Prove a value dead at a straight-line kill, retaining uncertain exits.
+
+    Storage identity includes register aliases introduced by debug naming. A
+    nested write is not a kill, and unknown bytecode may read any register.
+    Exception handlers and loop backedges require CFG reasoning and fail closed.
+    """
+
+    def __init__(self, root: IRBlock):
+        self.root = root
+
+    @staticmethod
+    def aliases(left: IRLocal, right: IRLocal) -> bool:
+        return left.name == right.name or left.same_register(right)
+
+    def reads(self, node: IRStatement, local: IRLocal, excluded: Optional[IRBlock] = None) -> bool:
+        seen: Set[int] = set()
+
+        def visit(current: IRStatement) -> bool:
+            if current is excluded or id(current) in seen:
+                return False
+            seen.add(id(current))
+            if isinstance(current, IRUnliftedOpcode):
+                return True
+            if isinstance(current, IRLocal):
+                return self.aliases(current, local)
+            if isinstance(current, IRAssign) and isinstance(current.target, IRLocal):
+                return visit(current.expr)
+            return any(visit(child) for child in current.get_children())
+
+        return visit(node)
+
+    def dead_after(self, block: IRBlock, index: int, local: IRLocal) -> bool:
+        def dead(statements: List[IRStatement]) -> bool:
+            for stmt in statements:
+                if self.reads(stmt, local):
+                    return False
+                if (
+                    isinstance(stmt, IRAssign)
+                    and isinstance(stmt.target, IRLocal)
+                    and self.aliases(stmt.target, local)
+                ):
+                    return True
+            return True
+
+        # Follow the enclosing continuation, not unrelated earlier/branch
+        # lifetimes. Shared ancestor blocks fail closed rather than multiplying
+        # paths through a converging CFG.
+        found = False
+        contains_cache: Dict[int, bool] = {}
+        visited: Set[int] = set()
+
+        def contains(node: IRStatement) -> bool:
+            if node is block:
+                return True
+            if id(node) not in contains_cache:
+                contains_cache[id(node)] = False
+                contains_cache[id(node)] = any(contains(child) for child in node.get_children())
+            return contains_cache[id(node)]
+
+        def visit(node: IRStatement, continuation: List[IRStatement], hazardous: bool) -> bool:
+            nonlocal found
+            if not contains(node):
+                return True
+            if id(node) in visited:
+                return False
+            visited.add(id(node))
+            if node is block:
+                found = True
+                return not hazardous and dead(block.statements[index + 1 :] + continuation)
+            hazardous = hazardous or isinstance(
+                node, (IRTryCatch, IRPrimitiveLoop, IRWhileLoop, IRForEachLoop, IRIntRangeLoop)
+            )
+            if isinstance(node, IRBlock):
+                return all(
+                    visit(stmt, node.statements[pos + 1 :] + continuation, hazardous)
+                    for pos, stmt in enumerate(node.statements)
+                )
+            return all(visit(child, continuation, hazardous) for child in node.get_children())
+
+        return visit(self.root, [], False) and found
+
+
 class _ReferenceAwareOptimizer(TraversingIROptimizer):
     """Keep address-exposed storage until an alias lifetime can be proven over.
 
     Ref takes the address of a register, not a snapshot of its value. Debug
     naming and register splitting can give that storage several IRLocal names.
-    No pass here proves escape/lifetime bounds, so protect every such alias
-    throughout the function, including writes after the address was taken.
+    References remaining after conversion recovery have no proven escape/lifetime
+    bound. Protect every such alias, including writes after address exposure.
     """
 
     def __init__(self, function: "IRFunction"):
@@ -1247,61 +1332,6 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 count += self._count_local_reads(child, local, _visited)
         return count
 
-    def _count_local_reads_pruned(
-        self,
-        node: IRStatement,
-        local: IRLocal,
-        path_ids: Set[int],
-        _visited: Optional[Set[int]] = None,
-    ) -> int:
-        """Like `_count_local_reads` but, at an IRConditional/IRSwitch that sits
-        on the ancestor path to the candidate's own block, only descends into the
-        on-path branch: a temp fresh-defined in that branch can't be read from a
-        sibling branch, since they're mutually exclusive control flow. Avoids
-        re-walking every other switch case/if-branch in the function for each
-        candidate (was the O(cases^2) hot path on large switch statements)."""
-        if _visited is None:
-            _visited = set()
-        if isinstance(node, IRBlock):
-            if id(node) in _visited:
-                return 0
-            _visited.add(id(node))
-            count = 0
-            for s in node.statements:
-                count += self._count_local_reads_pruned(s, local, path_ids, _visited)
-            return count
-
-        count = 0
-        if isinstance(node, IRAssign):
-            if isinstance(node.target, IRExpression) and not isinstance(node.target, IRLocal):
-                count += self._count_expr_local(node.target, local)
-            if isinstance(node.expr, IRExpression):
-                count += self._count_expr_local(node.expr, local)
-            return count
-        if isinstance(node, IRExpression):
-            return self._count_expr_local(node, local)
-        if isinstance(node, IRReturn):
-            if node.value is not None:
-                count += self._count_expr_local(node.value, local)
-        elif isinstance(node, IRConditional):
-            count += self._count_expr_local(node.condition, local)
-        elif isinstance(node, IRWhileLoop):
-            count += self._count_expr_local(node.condition, local)
-        elif isinstance(node, IRSwitch):
-            count += self._count_expr_local(node.value, local)
-        else:
-            for child in node.get_children():
-                if isinstance(child, IRExpression):
-                    count += self._count_expr_local(child, local)
-
-        children = [c for c in node.get_children() if isinstance(c, IRBlock)]
-        if isinstance(node, (IRConditional, IRSwitch)):
-            on_path = [c for c in children if id(c) in path_ids]
-            children = on_path if on_path else children
-        for child in children:
-            count += self._count_local_reads_pruned(child, local, path_ids, _visited)
-        return count
-
     def _has_nontrivial_computation(self, expr: IRExpression) -> bool:
         """True if duplicating `expr` would re-execute real work (arithmetic or a
         narrowing/widening cast) rather than just re-reading a field chain.
@@ -1504,7 +1534,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                             new_statements.append(current_stmt)
                             i += 1
                             continue
-                    if isinstance(expr_to_inline, IRExpression) and self._expr_contains_local(
+                    if isinstance(expr_to_inline, IRExpression) and _ScopedLocalLifetime(self.func.block).reads(
                         expr_to_inline, temp_local
                     ):
                         new_statements.append(current_stmt)
@@ -1526,25 +1556,11 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                                 next_stmt, self._collect_free_locals(expr_to_inline)
                             )
                         ):
-                            # Reads after a top-level reassignment belong to the new value.
-                            later_uses = False
-                            for s in statements[i + 2 :]:
-                                if (
-                                    isinstance(s, IRAssign)
-                                    and isinstance(s.target, IRLocal)
-                                    and (s.target == temp_local or s.target.same_register(temp_local))
-                                ):
-                                    # the kill's own RHS may still read the old value
-                                    if isinstance(s.expr, IRExpression) and self._expr_contains_local(
-                                        s.expr, temp_local
-                                    ):
-                                        later_uses = True
-                                    break
-                                if self._stmt_contains_local(s, temp_local):
-                                    later_uses = True
-                                    break
-                            if not later_uses and self._local_read_in_continuation(continuation, temp_local):
-                                later_uses = True
+                            # Other assignments to this register are separate
+                            # lifetimes only after an unconditional, non-reading kill.
+                            later_uses = not _ScopedLocalLifetime(self.func.block).dead_after(
+                                block, i + 1, temp_local
+                            )
                             if not later_uses:
                                 substituted = self._substitute_in_statement(
                                     next_stmt, temp_local, expr_to_inline
@@ -1586,15 +1602,12 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         self,
         block: IRBlock,
         inside_loop_body: bool = False,
-        _ancestor_path_ids: Optional[Set[int]] = None,
     ) -> None:
         """Inlines safe expressions everywhere they are used, until no more changes can be made.
 
         As in conservative mode, assignments inside a loop body are preserved so
         loop-carried values remain live after the loop.
         """
-        if _ancestor_path_ids is None:
-            _ancestor_path_ids = {id(self.func.block), id(block)}
         made_change_in_pass = True
         while made_change_in_pass:
             made_change_in_pass = False
@@ -1617,7 +1630,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                     expr_to_inline
                 ):
                     continue
-                if self._expr_contains_local(expr_to_inline, temp_local):
+                if _ScopedLocalLifetime(self.func.block).reads(expr_to_inline, temp_local):
                     continue
 
                 remaining_statements = block.statements[i + 1 :]
@@ -1745,14 +1758,10 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                     continue
 
                 dbg_print(f"Aggressively inlining safe expression from temporary '{temp_local.name}'.")
-                # This pass only sees `remaining_statements` in the current block —
-                # a read in an enclosing scope after this block merges back is
-                # invisible here. Dropping the assignment is only safe if the whole
-                # function has no more reads of it than the ones just substituted.
-                whole_function_reads = self._count_local_reads_pruned(
-                    self.func.block, temp_local, _ancestor_path_ids
-                )
-                if not inside_loop_body and not must_keep_assign and whole_function_reads <= total_uses:
+                # After substitution, prove this definition's value dead rather
+                # than counting reads from every later reuse of its VM register.
+                lifetime_dead = _ScopedLocalLifetime(self.func.block).dead_after(block, i, temp_local)
+                if not inside_loop_body and not must_keep_assign and lifetime_dead:
                     # stmt is dropped below; every site the expression got inlined
                     # into inherits its opcode (setdefault means whichever renders
                     # first in output wins, so adopting onto all of them is safe).
@@ -1771,7 +1780,6 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                     self._visit_block_aggressive(
                         child,
                         inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child),
-                        _ancestor_path_ids=_ancestor_path_ids | {id(child)},
                     )
 
 

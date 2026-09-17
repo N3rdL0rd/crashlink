@@ -51,6 +51,7 @@ from ..ir import (
 from . import (
     TraversingIROptimizer,
 )
+from .inliner import _ScopedLocalLifetime
 
 
 class IRGlobalStringOptimizer(TraversingIROptimizer):
@@ -105,22 +106,81 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
     calls, including their out-parameter effects.
     """
 
-    def _reads_outside(self, local: IRLocal, excluded: Set[int]) -> bool:
+    def optimize(self) -> None:
+        lifetime = _ScopedLocalLifetime(self.func.block)
+        candidates = []
+        references = []
+        pending = [self.func.block]
         seen: Set[int] = set()
-
-        def reads(node: IRStatement) -> bool:
-            if id(node) in excluded or id(node) in seen:
-                return False
+        occurrences: Dict[int, int] = {}
+        while pending:
+            node = pending.pop()
+            occurrences[id(node)] = occurrences.get(id(node), 0) + 1
+            if id(node) in seen:
+                continue
             seen.add(id(node))
-            if node is local or isinstance(node, IRUnliftedOpcode):
-                return True
-            if isinstance(node, IRAssign) and isinstance(node.target, IRLocal):
-                return reads(node.expr)
-            return any(reads(child) for child in node.get_children())
+            # An unlifted instruction can expose storage without an IRRef node.
+            if isinstance(node, IRUnliftedOpcode):
+                return
+            if isinstance(node, (IRRef, IRRefNew)) and isinstance(node.target, IRLocal):
+                references.append(node)
+            if isinstance(node, IRBlock):
+                candidates.extend(self._candidates(node))
+            pending.extend(node.get_children())
 
-        return reads(self.func.block)
+        private = []
+        for block, index, reference, conversion, allocation in candidates:
+            if any(
+                occurrences[id(node)] != 1
+                for node in (reference, conversion, allocation, reference.expr)
+            ):
+                continue
+            scratch = (reference.target, conversion.target, reference.expr.target)
+            # Distinct storage is essential: neither the native result nor the
+            # recovered string may overwrite its own input/out-parameter cell.
+            if any(
+                lifetime.aliases(left, right)
+                for pos, left in enumerate(scratch)
+                for right in (*scratch[pos + 1 :], allocation.target)
+            ):
+                continue
+            if all(lifetime.dead_after(block, index, local) for local in scratch):
+                private.append((block, index, reference, conversion, allocation))
 
-    def visit_block(self, block: IRBlock) -> None:
+        # A prior escaped address can observe later writes, even after the ref
+        # register itself is reused. Every address of scratch storage must belong
+        # to another proven private conversion; iterate to a fixed point because
+        # rejecting one conversion can invalidate another using the same cell.
+        while private:
+            owned = {id(reference.expr) for _, _, reference, _, _ in private}
+            kept = [
+                candidate
+                for candidate in private
+                if not any(
+                    id(ref) not in owned and lifetime.aliases(ref.target, local)
+                    for local in (
+                        candidate[2].target, candidate[3].target, candidate[2].expr.target
+                    )
+                    for ref in references
+                )
+            ]
+            if len(kept) == len(private):
+                break
+            private = kept
+
+        removals: Dict[int, Tuple[IRBlock, Set[int]]] = {}
+        for block, _, reference, conversion, allocation in private:
+            native, alloc = conversion.expr, allocation.expr
+            # The input is read once, before the removed native count write.
+            allocation.expr = IRStringConvert(self.func.code, native.args[0]).adopt(native, alloc)
+            allocation.adopt(reference, conversion)
+            if id(block) not in removals:
+                removals[id(block)] = (block, set())
+            removals[id(block)][1].update((id(reference), id(conversion)))
+        for block, removed in removals.values():
+            block.statements = [stmt for stmt in block.statements if id(stmt) not in removed]
+
+    def _candidates(self, block: IRBlock):
         statements = block.statements
         i = 2
         while i < len(statements):
@@ -157,19 +217,8 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
             ):
                 i += 1
                 continue
-            excluded = {id(reference), id(conversion), id(allocation)}
-            if any(
-                self._reads_outside(local, excluded)
-                for local in (reference.target, conversion.target, ref_expr.target)
-            ):
-                i += 1
-                continue
-            # Numeric input is evaluated before the native overwrites count.
-            # Adjacency ensures the recovered conversion sees that same value.
-            allocation.expr = IRStringConvert(self.func.code, native.args[0]).adopt(native, alloc)
-            allocation.adopt(reference, conversion)
-            del statements[i - 2 : i]
-            i = max(2, i - 1)
+            yield block, i, reference, conversion, allocation
+            i += 1
 
 
 class IRStringAllocOptimizer(TraversingIROptimizer):

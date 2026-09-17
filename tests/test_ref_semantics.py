@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from crashlink.core import Bytecode, Function, tIndex
+from crashlink.core import Bytecode, Function, Native, tIndex
 from crashlink.decomp.ir import (
     IRArithmetic,
     IRAssign,
@@ -20,6 +20,7 @@ from crashlink.decomp.ir import (
     IRRefSet,
     IRReturn,
     IRWhileLoop,
+    IRStringConvert,
 )
 from crashlink.decomp.opt.clean import (
     IRDeadAssignmentEliminator,
@@ -34,6 +35,7 @@ from crashlink.decomp.opt.inliner import (
     IRTerminalValueInliner,
     IRTempAssignmentInliner,
 )
+from crashlink.decomp.opt.strings import IRStringIntConcatOptimizer
 
 
 def _block(code, *statements):
@@ -54,7 +56,7 @@ def _add(code, left, right):
     return IRArithmetic(code, left, right, IRArithmetic.ArithmeticType.ADD)
 
 
-def _observe(block):
+def _observe(block, conversions=None):
     """Interpret register cells independently of optimizer traversal/liveness."""
     values = {}
     returned = []
@@ -86,6 +88,17 @@ def _observe(block):
             target = evaluate(node.ref)[1]
             values[target] = evaluate(node.value)
         elif isinstance(node, IRCall):
+            if isinstance(node.target, IRConst) and isinstance(node.target.value, Native):
+                number = evaluate(node.args[0])
+                cell = evaluate(node.args[1])[1]
+                text = str(number)
+                values[cell] = len(text)
+                if conversions is not None:
+                    conversions.append(("native", number))
+                return text
+            if isinstance(node.target, IRConst) and isinstance(node.target.value, Function):
+                text, count = [evaluate(arg) for arg in node.args]
+                return text[:count]
             # A native/closure can mutate a local through an escaped reference.
             target = evaluate(node.args[0])[1]
             values[target] = 7
@@ -107,6 +120,11 @@ def _observe(block):
                 evaluate(node.body)
             else:
                 raise AssertionError("optimizer changed loop termination")
+        elif isinstance(node, IRStringConvert):
+            number = evaluate(node.value)
+            if conversions is not None:
+                conversions.append(("recovered", number))
+            return str(number)
         elif isinstance(node, IRReturn):
             returned.append(evaluate(node.value))
         else:
@@ -297,3 +315,73 @@ def test_copy_propagation_stops_at_nested_source_write(loop):
     assert _observe(function.block) == 1
     IRCopyPropOptimizer(function).optimize()
     assert _observe(function.block) == 1
+
+
+@pytest.mark.parametrize("exposure", ["private", "count_alias", "ref_alias", "escaped"])
+def test_numeric_conversion_reuses_scratch_without_losing_observed_out_writes(monkeypatch, exposure):
+    code = Bytecode.create_empty()
+    count, ref, data, first, second, escaped, observed = [
+        IRLocal(f"var{i}", tIndex(1), code, reg_idx=i) for i in range(7)
+    ]
+    count_alias = IRLocal("renamed_count", tIndex(1), code, reg_idx=0)
+    ref_alias = IRLocal("renamed_ref", tIndex(1), code, reg_idx=1)
+    native = Native()
+    native.lib = SimpleNamespace(resolve=lambda code: "std")
+    native.name = SimpleNamespace(resolve=lambda code: "itos")
+    native_const = IRConst(code, IRConst.ConstType.NULL)
+    native_const.value = native
+    factory_const = IRConst(code, IRConst.ConstType.NULL)
+    factory_const.value = Function()
+    monkeypatch.setattr(Bytecode, "full_func_name", lambda self, func: "$String.__alloc__")
+
+    def conversion(result):
+        return [
+            IRAssign(code, ref, IRRefNew(code, count)),
+            IRAssign(code, data, IRCall(code, IRCall.CallType.NATIVE, native_const, [count, ref])),
+            IRAssign(code, result, IRCall(code, IRCall.CallType.FUNC, factory_const, [data, count])),
+        ]
+
+    statements = [IRAssign(code, count, _constant(code, 1200))]
+    if exposure == "escaped":
+        statements.append(IRAssign(code, escaped, IRRefNew(code, count)))
+    statements.extend(conversion(first))
+    if exposure == "count_alias":
+        statements.append(IRAssign(code, observed, count_alias))
+    elif exposure == "ref_alias":
+        statements.append(IRAssign(code, escaped, ref_alias))
+    statements.append(IRAssign(code, count, _constant(code, 75)))
+    statements.extend(conversion(second))
+    if exposure in ("escaped", "ref_alias"):
+        statements.append(IRAssign(code, observed, IRRefGet(code, escaped)))
+    statements.append(IRReturn(code, _add(code, first, second) if exposure == "private" else observed))
+    function = _function(code, *statements)
+    before = []
+    expected = _observe(function.block, before)
+    IRStringIntConcatOptimizer(function).optimize()
+    after = []
+    assert _observe(function.block, after) == expected
+    assert [value for _, value in after] == [value for _, value in before] == [1200, 75]
+    assert [kind for kind, _ in after] == (
+        ["recovered", "recovered"] if exposure == "private" else ["native", "native"]
+    )
+
+
+@pytest.mark.parametrize("aggressive", [False, True])
+def test_scratch_inline_keeps_read_in_redefinition_and_branch_continuation(aggressive):
+    code = Bytecode.create_empty()
+    scratch, result = [IRLocal(f"var{i}", tIndex(1), code, reg_idx=i) for i in range(2)]
+    alias = IRLocal("renamed", tIndex(1), code, reg_idx=0)
+    function = _function(
+        code,
+        IRConditional(
+            code,
+            _constant(code, 1),
+            _block(code, IRAssign(code, scratch, _constant(code, 12)), IRAssign(code, result, scratch)),
+            _block(code),
+        ),
+        IRAssign(code, scratch, _add(code, alias, _constant(code, 1))),
+        IRReturn(code, _add(code, scratch, result)),
+    )
+    assert _observe(function.block) == 25
+    IRTempAssignmentInliner(function, aggressive=aggressive, past_kills=True).optimize()
+    assert _observe(function.block) == 25
