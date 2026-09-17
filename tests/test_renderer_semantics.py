@@ -118,7 +118,7 @@ class NestedCallable {
             sum += part;
             i++;
         }
-        var last:Int;
+        var last:Int = 0;
         while (true) {
             if (mode == 3) return sum;
             last = sum + 7;
