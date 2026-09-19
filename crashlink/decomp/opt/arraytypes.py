@@ -108,6 +108,24 @@ def _walk_block(
         _walk_statement(stmt, code, visited, global_cache)
 
 
+def _is_uninformative(elem_type: Type, code: Bytecode) -> bool:
+    """Dynamic/void element "evidence" says nothing.
+
+    `Array<Dynamic>` is already what an unrecovered array renders as, and HL
+    reads erased elements as Dyn all the time (any `arr[i]` feeding a Dynamic
+    temp). Recording that would overwrite, or block, the concrete type the
+    same array yields at a site where the compiler did type the element —
+    leaving one declaration narrowed and another not.
+    """
+    if _array_type_name(elem_type, code) in _ERASED_ARRAY_TYPES:
+        return True
+    return elem_type.kind.value in (
+        Type.Kind.DYN.value,
+        Type.Kind.VOID.value,
+        Type.Kind.NULL.value,
+    )
+
+
 def _record_array_source(
     expr: IRExpression,
     elem_type: Optional[Type],
@@ -115,7 +133,7 @@ def _record_array_source(
     global_cache: Dict[Tuple[str, str], Type],
 ) -> None:
     """Record elem_type for the array that `expr` denotes (an IRLocal or IRField)."""
-    if elem_type is None:
+    if elem_type is None or _is_uninformative(elem_type, code):
         return
     if isinstance(expr, IRLocal):
         if _is_erased_array(expr, code):
@@ -409,6 +427,12 @@ def _recover_wrapper_element_types(
     """
     evidence: Dict[IRLocal, Optional[Type]] = {}
     fields: Dict[Tuple[str, str], Optional[Type]] = {}
+    # Two allocations that disagree about the element type force Dynamic; an
+    # allocation that simply carries no element type (`[]`, a backing-storage
+    # read) is silence, and must not outvote what a parameter, field or call
+    # site later proves about the same array.
+    conflicted: Set[IRLocal] = set()
+    conflicted_fields: Set[Tuple[str, str]] = set()
     visited: Set[int] = set()
     candidates: Set[IRLocal] = set()
     field_candidates: Set[Tuple[str, str]] = set()
@@ -448,10 +472,10 @@ def _recover_wrapper_element_types(
                     if _is_erased_array(local, code):
                         if allocation:
                             candidates.add(local)
-                        if local not in evidence:
+                        if elem_type is not None:
+                            if evidence.get(local) not in (None, elem_type):
+                                conflicted.add(local)
                             evidence[local] = elem_type
-                        elif evidence[local] != elem_type:
-                            evidence[local] = None
                     # Kill aliases of the VM register as well as this IR name.
                     native_type = None
                     if isinstance(source, IRNativeArrayNew):
@@ -471,10 +495,10 @@ def _recover_wrapper_element_types(
                         key = (owner, stmt.target.field_name)
                         if allocation:
                             field_candidates.add(key)
-                        if key not in fields:
+                        if elem_type is not None:
+                            if fields.get(key) not in (None, elem_type):
+                                conflicted_fields.add(key)
                             fields[key] = elem_type
-                        elif fields[key] != elem_type:
-                            fields[key] = None
             children = [child for child in stmt.get_children() if isinstance(child, IRBlock)]
             if children:
                 definitions.clear()
@@ -483,11 +507,17 @@ def _recover_wrapper_element_types(
 
     walk(block)
     for local in candidates:
-        # Unknown or conflicting reaching values are a Dynamic constraint,
-        # not missing evidence that a later propagation pass may narrow.
-        local.array_elem_type = evidence[local] or _get_type_in_code(code, "Dyn")
+        if local in conflicted:
+            local.array_elem_type = _get_type_in_code(code, "Dyn")
+        elif evidence.get(local) is not None:
+            local.array_elem_type = evidence[local]
     for key in field_candidates:
-        elem_type = fields[key] or _get_type_in_code(code, "Dyn")
+        if key in conflicted_fields:
+            global_cache[key] = _get_type_in_code(code, "Dyn")
+            continue
+        elem_type = fields.get(key)
+        if elem_type is None:
+            continue
         previous = global_cache.get(key)
         global_cache[key] = elem_type if previous in (None, elem_type) else _get_type_in_code(code, "Dyn")
 

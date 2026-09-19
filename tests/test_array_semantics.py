@@ -430,3 +430,29 @@ class ArrayReadBounds {
     behavior = compare_programs(original, recompiled, name)
     assert behavior.passed, behavior.to_json()
     assert behavior.recompiled.stdout == "3,2,1\n0\n0\n2\n"
+
+
+def test_guarded_element_reads_render_as_indexing():
+    from crashlink.decomp.function import IRClass
+
+    code = Bytecode.from_path("tests/haxe/ObjArrayFieldChain.hl")
+    out = IRClass(code, code.get_test_obj("ObjArrayFieldChain")).pseudo()
+    # HL open-codes `items[i]` as a length check against the backing storage,
+    # hoisting both through temps; `Array<T>` already has those semantics.
+    assert "items[i]" in out
+    assert ".array)" not in out
+    assert " : UInt) >=" not in out
+
+
+def test_store_capacity_reads_do_not_survive_as_statements():
+    from crashlink.decomp.function import IRClass
+
+    code = Bytecode.from_path("tests/haxe/ArrayIndexingCase.hl")
+    out = IRClass(code, code.get_test_obj("ArrayIndexingCase")).pseudo()
+    body = out[out.index("function swap") :]
+    body = body[: body.index("\n    }")]
+    # The capacity check that precedes every element store has no reader once
+    # the store is recovered, and the store itself keeps the null fault.
+    assert "a.length;" not in body
+    assert ".bytes)" not in body
+    assert "a[i] = var7;" in body and "a[j] = tmp;" in body

@@ -571,62 +571,229 @@ class IRArrayObjBoundsCheckCollapser(TraversingIROptimizer):
     """
 
     def visit_block(self, block: IRBlock) -> None:
-        new_statements = []
-        for stmt in block.statements:
-            collapsed = self._try_collapse(stmt)
-            if collapsed is not None:
+        changed = True
+        while changed:
+            changed = False
+            stmts = block.statements
+            for idx, stmt in enumerate(stmts):
+                match = self._try_collapse(stmts, idx)
+                if match is None:
+                    continue
+                assign, consumed = match
                 if DEBUG:
-                    dbg_print(f"IRArrayObjBoundsCheckCollapser: {stmt} -> {collapsed}")
-                new_statements.append(collapsed)
-                continue
-            new_statements.append(stmt)
-        block.statements = new_statements
+                    dbg_print(f"IRArrayObjBoundsCheckCollapser: {stmt} -> {assign}")
+                block.statements = [
+                    assign if k == idx else s for k, s in enumerate(stmts) if k == idx or k not in consumed
+                ]
+                changed = True
+                break
 
-    def _try_collapse(self, stmt: IRStatement) -> Optional[IRStatement]:
+    def _is_temp(self, local: IRLocal) -> bool:
+        return local.reg_idx is not None and local.reg_idx not in self.func._user_reg_indices
+
+    def _is_guard_default(self, expr: IRExpression) -> bool:
+        """The value HL substitutes for an out-of-range read.
+
+        Object arrays yield null; the primitive `ArrayBytes` specializations
+        yield the element type's zero. Haxe's own `Array<T>` accessor returns
+        exactly the same value, which is what makes dropping the guard safe.
+        """
+        if not isinstance(expr, IRConst):
+            return False
+        if expr.const_type == IRConst.ConstType.NULL:
+            return True
+        value = expr.value
+        value = getattr(value, "value", value)
+        return value in (0, 0.0, False)
+
+    def _resolve(self, expr: IRExpression, defs: Dict[str, IRExpression]) -> IRExpression:
+        """See through the temps HL hoists the guard's operands into."""
+        seen: Set[int] = set()
+        while isinstance(expr, IRLocal) and expr.name in defs and id(expr) not in seen:
+            seen.add(id(expr))
+            expr = defs[expr.name]
+        return expr
+
+    def _outer_defs(self, stmts: List[IRStatement], idx: int) -> Dict[str, IRExpression]:
+        """Temp definitions visible to the guard, nearest definition winning."""
+        defs: Dict[str, IRExpression] = {}
+        for stmt in stmts[:idx]:
+            if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+                if self._is_temp(stmt.target):
+                    defs[stmt.target.name] = stmt.expr
+                else:
+                    defs.pop(stmt.target.name, None)
+        return defs
+
+    def _array_base(self, expr: IRExpression, defs: Dict[str, IRExpression]) -> Optional[IRExpression]:
+        """The `Array<T>` an indexed access ultimately targets.
+
+        Object arrays index HL's internal `.array` storage (and the primitive
+        specializations their `.bytes`), reached either inline or through a
+        temp. Anything else is already the array itself and must stay as
+        written — resolving it further would name whatever expression the
+        array happened to come from.
+        """
+        if isinstance(expr, IRField) and expr.field_name in ("array", "bytes"):
+            return expr.target
+        if isinstance(expr, IRLocal):
+            resolved = self._resolve(expr, defs)
+            if isinstance(resolved, IRField) and resolved.field_name in ("array", "bytes"):
+                return resolved.target
+            return expr
+        return None
+
+    def _try_collapse(self, stmts: List[IRStatement], idx: int) -> Optional[Tuple[IRStatement, Set[int]]]:
+        stmt = stmts[idx]
         if not isinstance(stmt, IRConditional):
             return None
         cond = stmt.condition
-        if not (isinstance(cond, IRBoolExpr) and cond.op == IRBoolExpr.CompareType.GTE):
+        if not (
+            isinstance(cond, IRBoolExpr)
+            and cond.op in (IRBoolExpr.CompareType.GTE, IRBoolExpr.CompareType.UGTE)
+        ):
             return None
 
         true_stmts = stmt.true_block.statements if stmt.true_block else []
         false_stmts = stmt.false_block.statements if stmt.false_block else []
-        if len(true_stmts) != 1 or len(false_stmts) != 1:
+        if len(true_stmts) != 1 or not false_stmts:
             return None
-        true_stmt, false_stmt = true_stmts[0], false_stmts[0]
-        if not (isinstance(true_stmt, IRAssign) and isinstance(false_stmt, IRAssign)):
+        true_stmt, last_false = true_stmts[0], false_stmts[-1]
+        if not (isinstance(true_stmt, IRAssign) and isinstance(last_false, IRAssign)):
             return None
-        if not (isinstance(true_stmt.expr, IRConst) and true_stmt.expr.const_type == IRConst.ConstType.NULL):
+        if not self._is_guard_default(true_stmt.expr):
             return None
-        if not _structurally_equal(true_stmt.target, false_stmt.target):
+        if not _structurally_equal(true_stmt.target, last_false.target):
             return None
 
-        false_value = false_stmt.expr
-        # Preserve the element type the cast was introducing (e.g.
-        # `(Item) arr.array[i]`) so downstream Array<T> element-type recovery
-        # can read it from the collapsed access instead of losing it.
+        outer_defs = self._outer_defs(stmts, idx)
+        # The taken branch materializes the element through its own temps
+        # (backing storage, raw element, cast); every one of them must be a
+        # temp definition, or this is not compiler-emitted guard code.
+        branch_defs = dict(outer_defs)
+        for inner in false_stmts[:-1]:
+            if not (
+                isinstance(inner, IRAssign)
+                and isinstance(inner.target, IRLocal)
+                and self._is_temp(inner.target)
+            ):
+                return None
+            branch_defs[inner.target.name] = inner.expr
+
         cast_elem_type: Optional[tIndex] = None
-        if isinstance(false_value, IRCast):
-            cast_elem_type = false_value.target_type_idx
-            false_value = false_value.expr
-        if not isinstance(false_value, IRArrayAccess):
-            return None
-        arr_field = false_value.array
-        if not (isinstance(arr_field, IRField) and arr_field.field_name == "array"):
+        value = self._resolve(last_false.expr, branch_defs)
+        while isinstance(value, IRCast):
+            cast_elem_type = value.target_type_idx
+            value = self._resolve(value.expr, branch_defs)
+        if not isinstance(value, IRArrayAccess):
             return None
 
-        length_field = cond.right
-        if not (isinstance(length_field, IRField) and length_field.field_name == "length"):
+        if cond.left is None or cond.right is None:
             return None
-        if not _structurally_equal(length_field.target, arr_field.target):
+        base = self._array_base(value.array, branch_defs)
+        length = self._resolve(cond.right, outer_defs)
+        if base is None or not (isinstance(length, IRField) and length.field_name == "length"):
             return None
-        if not _structurally_equal(cond.left, false_value.index):
+        if not _structurally_equal(length.target, base):
+            return None
+        if not _structurally_equal(
+            self._resolve(cond.left, outer_defs), self._resolve(value.index, branch_defs)
+        ):
             return None
 
-        new_access = IRArrayAccess(self.func.code, arr_field.target, false_value.index, cast_elem_type)
+        new_access = IRArrayAccess(self.func.code, base, value.index, cast_elem_type)
         assign = IRAssign(self.func.code, true_stmt.target, new_access)
-        assign.adopt(stmt)
-        return assign
+        assign.adopt(stmt, *false_stmts)
+        # The hoisted length read exists only for the guard; drop it when the
+        # collapsed access is its last reader.
+        consumed: Set[int] = set()
+        if isinstance(cond.right, IRLocal) and self._is_temp(cond.right):
+            length_def = self._last_def(stmts, idx, cond.right)
+            if length_def is not None and not self._read_after(stmts, idx, cond.right):
+                consumed.add(length_def)
+                assign.adopt(stmts[length_def])
+        return assign, consumed
+
+    def _last_def(self, stmts: List[IRStatement], before: int, local: IRLocal) -> Optional[int]:
+        for k in range(before - 1, -1, -1):
+            s = stmts[k]
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target == local:
+                return k
+        return None
+
+    def _read_after(self, stmts: List[IRStatement], idx: int, local: IRLocal) -> bool:
+        used: Set[str] = set()
+        for stmt in stmts[idx + 1 :]:
+            if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target == local:
+                self._collect_used_in_expr(stmt.expr, used)
+                return local.name in used
+            self._collect_used_in_stmt(stmt, used)
+            if local.name in used:
+                return True
+        return False
+
+    def _collect_used_in_stmt(self, stmt: IRStatement, used: Set[str]) -> None:
+        if isinstance(stmt, IRLocal):
+            used.add(stmt.name)
+        for child in stmt.get_children():
+            self._collect_used_in_stmt(child, used)
+
+    def _collect_used_in_expr(self, expr: IRExpression, used: Set[str]) -> None:
+        self._collect_used_in_stmt(expr, used)
+
+
+class IRArrayGuardResidueEliminator(TraversingIROptimizer):
+    """
+    Drops the storage reads left behind by a collapsed array access guard.
+
+    Writing `a[i] = v` lowers to a capacity check that reads `a.length` and
+    `a.bytes` (or `.array`) before the store. Once the store itself is
+    recovered, those reads have no reader left, but dead-store elimination
+    keeps them as bare statements because a field read on a null receiver
+    faults. That fault is not lost by dropping them: the access that follows
+    dereferences the very same array, in the same order.
+    """
+
+    _STORAGE_FIELDS = ("length", "bytes", "array")
+
+    def visit_block(self, block: IRBlock) -> None:
+        statements = block.statements
+        kept = [stmt for idx, stmt in enumerate(statements) if not self._is_residue(statements, idx)]
+        if len(kept) != len(statements):
+            block.statements = kept
+
+    def _is_residue(self, stmts: List[IRStatement], idx: int) -> bool:
+        stmt = stmts[idx]
+        if not (isinstance(stmt, IRField) and stmt.field_name in self._STORAGE_FIELDS):
+            return False
+        base = stmt.target
+        if not isinstance(base, IRLocal):
+            return False
+        for later in stmts[idx + 1 :]:
+            if self._dereferences(later, base):
+                return True
+            if self._reassigns(later, base):
+                return False
+        return False
+
+    def _dereferences(self, stmt: IRStatement, base: IRLocal) -> bool:
+        """Whether `stmt` faults on the same null receiver this read would."""
+        if isinstance(stmt, IRArrayAccess) and _structurally_equal(stmt.array, base):
+            return True
+        if isinstance(stmt, IRField) and _structurally_equal(stmt.target, base):
+            return True
+        if isinstance(stmt, IRAssign):
+            return self._dereferences(stmt.target, base) or self._dereferences(stmt.expr, base)
+        if isinstance(stmt, IRBlock):
+            # A nested block only runs conditionally; it cannot stand in for
+            # the fault this statement would raise unconditionally.
+            return False
+        return any(self._dereferences(child, base) for child in stmt.get_children())
+
+    def _reassigns(self, stmt: IRStatement, base: IRLocal) -> bool:
+        if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
+            return stmt.target == base
+        return False
 
 
 def _is_closure_producing_field(expr: IRExpression) -> bool:

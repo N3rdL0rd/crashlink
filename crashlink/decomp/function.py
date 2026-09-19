@@ -84,6 +84,7 @@ from .opt.clean import (
     IRBoolMaterializationCollapser,
     IRArrayGrowGuardEliminator,
     IRArrayObjBoundsCheckCollapser,
+    IRArrayGuardResidueEliminator,
     IRRedundantRecomputeEliminator,
     IRBlockFlattener,
     IREmptyConditionalNormalizer,
@@ -333,6 +334,9 @@ class IRFunction:
                 # shape this targets doesn't fully materialize until after loop/switch
                 # restructuring and the later cleanup passes above have run.
                 IRArrayObjBoundsCheckCollapser(self),
+                # Only once every guarded access has been recovered can the
+                # capacity reads those guards left behind be seen as residue.
+                IRArrayGuardResidueEliminator(self),
                 # Restore typed/multi catch clauses; runs last because it matches
                 # the copy-propagated shape of HL's catch dispatch lowering.
                 IRTypedCatchOptimizer(self),
