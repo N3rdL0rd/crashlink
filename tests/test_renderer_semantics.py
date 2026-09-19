@@ -9,6 +9,7 @@ import pytest
 from crashtest.behavior import compile_haxe
 from crashtest.run import run_case
 from crashlink.core import Bytecode, tIndex
+from crashlink.decomp import IRClass
 from crashlink.decomp.ir import (
     IRArrayAccess,
     IRAssign,
@@ -270,3 +271,15 @@ def test_default_omission_requires_assignment_on_reachable_read_paths(scenario, 
         root = block(IRAssign(code, IRArrayAccess(code, value, one, tIndex(1)), one), write)
 
     assert _is_definitely_assigned_before_use("value", root) is safe
+
+
+def test_private_access_marks_only_hidden_std_members():
+    code = Bytecode.from_path("tests/haxe/CatchOrder.hl")
+    out = IRClass(code, code.get_test_obj("CatchOrder")).pseudo()
+    # try/catch lowers to the private `haxe.Exception.caught`, which only
+    # recompiles inside @:privateAccess.
+    assert "@:privateAccess haxe.Exception.caught(" in out
+    # Public std API is reachable as written; annotating it is noise.
+    assert "Sys.println(" in out
+    assert "@:privateAccess Sys.println" not in out
+

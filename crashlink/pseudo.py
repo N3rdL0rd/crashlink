@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 import re
 import weakref
-from typing import Optional, List, Set, Dict, Tuple, Union, cast, Any, Iterator
+from typing import Optional, List, Set, Dict, FrozenSet, Tuple, Union, cast, Any, Iterator
 
 from .core import (
     Bytecode,
@@ -884,7 +884,7 @@ def _expression_to_haxe(
                     callee_str = instance_method
                     args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in rest_args)
                     rendered_call = f"{callee_str}({args_str})"
-                    if _is_std_function(expr.target.value, code):
+                    if _call_needs_private_access(expr.target.value, code):
                         return f"(@:privateAccess {rendered_call})"
                     return rendered_call
 
@@ -980,7 +980,10 @@ def _expression_to_haxe(
         if (
             isinstance(expr.target, IRConst)
             and isinstance(expr.target.value, Function)
-            and _is_std_function(expr.target.value, code)
+            and _call_needs_private_access(expr.target.value, code)
+            # `__`-prefixed internals render as our own `StdFuncs` extern stub,
+            # which is public and needs no annotation.
+            and _std_call_name(expr.target.value, code) is not None
         ):
             return f"(@:privateAccess {result})"
         return result
@@ -2910,6 +2913,52 @@ def _is_std_function(func: "Function", code: Bytecode) -> bool:
     except Exception:
         return False
     return "/std/" in path.replace("\\", "/")
+
+
+# Haxe std members that source code cannot name directly. HL lowers a few
+# language constructs into calls to these internals (try/catch ->
+# `Exception.caught`, string building -> `String.__alloc__`, properties ->
+# `get_x`/`set_x`), and std classes call their own private helpers, so a
+# decompiled call site only recompiles wrapped in `@:privateAccess`.
+#
+# Everything else the std exposes is public by construction: the original
+# program compiled against it, so annotating those calls is pure noise.
+# Keyed by simple class name, because HL debug names are sometimes
+# unqualified (`Exception.caught`) and sometimes not (`haxe.Exception.caught`).
+_PRIVATE_STD_MEMBERS: Dict[str, FrozenSet[str]] = {
+    "Exception": frozenset({"caught", "thrown", "unwrap"}),
+    "CallStack": frozenset({"exceptionToString", "itemToString", "equalItems", "asArray"}),
+    "NativeStackTrace": frozenset({"exceptionStackRaw", "callStackRaw", "resolveSymbol"}),
+    "String": frozenset({"bytes", "findChar", "toUtf8", "fromUCS2", "fromUTF8", "call_toString"}),
+    "Sys": frozenset({"getPath", "makePath"}),
+    "ArrayBase": frozenset({"isArrayObj"}),
+    "ArrayBytes": frozenset({"bytes", "size"}),
+    "ArrayObj": frozenset({"array"}),
+    "ArrayDyn": frozenset({"array", "allowReinterpret"}),
+}
+
+
+def _is_private_std_member(class_name: str, member_name: str) -> bool:
+    """Return True if Haxe hides this std member from outside code."""
+    if member_name.startswith("__"):
+        return True
+    if len(member_name) > 4 and member_name[:4] in ("get_", "set_"):
+        # Property accessors are private unless explicitly published, and the
+        # std never publishes them.
+        return True
+    simple = class_name.rsplit(".", 1)[-1].lstrip("$")
+    return member_name in _PRIVATE_STD_MEMBERS.get(simple, frozenset())
+
+
+def _call_needs_private_access(func: "Function", code: Bytecode) -> bool:
+    """Return True if a direct call to `func` has to be rendered inside an
+    `@:privateAccess` expression to recompile."""
+    if not _is_std_function(func, code):
+        return False
+    parts = _func_name_parts(func, code)
+    if not parts:
+        return False
+    return _is_private_std_member(*parts)
 
 
 def _detect_enum_value_from_cases(stmt: "IRSwitch") -> Optional["IRExpression"]:
