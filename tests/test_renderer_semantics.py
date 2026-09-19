@@ -351,3 +351,30 @@ def test_trace_is_not_collapsed_across_a_rebound_log(tmp_path):
     assert 'saved("snapshot", pos);' in out
     # The unrebound call site is still ordinary lowering and does collapse.
     assert 'trace("live"); //' in out
+
+
+def test_single_expression_closures_render_inline(tmp_path):
+    if not shutil.which("haxe"):
+        pytest.skip("Haxe required to build the fixture")
+    out = _decompile_source(
+        tmp_path,
+        "InlineClosures",
+        """class InlineClosures {
+    static function main():Void {
+        var greet = () -> "hello";
+        var add = (a:Int, b:Int) -> a + b;
+        var counter = 0;
+        var bump = () -> { counter++; Sys.println(counter); };
+        Sys.println(greet());
+        Sys.println(add(1, 2));
+        bump();
+    }
+}""",
+    )
+    # A closure whose body is one expression belongs at its creation site.
+    assert '() -> "hello"' in out
+    assert ") -> " in out
+    # A multi-statement body cannot stand in expression position, so it stays
+    # a lifted helper rather than being mangled into one line.
+    assert "__anon_" in out
+    assert "function __anon_" in out

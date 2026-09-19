@@ -486,6 +486,9 @@ def _expression_to_haxe(
                     return f"{class_name}.{method_name}"
             if name:
                 return name
+            inline = _inline_anonymous(func, code, ir_function)
+            if inline is not None:
+                return inline
             return f"__anon_{func.findex.value}"
         elif isinstance(expr.value, str):
             # Basic string quoting, may need more sophisticated escaping for real Haxe
@@ -726,6 +729,9 @@ def _expression_to_haxe(
         obj_str = _expression_to_haxe(expr.obj, code, ir_function)
         fun_type = expr.fun.type.resolve(code).definition
         extra_args = fun_type.args[1:] if isinstance(fun_type, Fun) else []
+        inline = _inline_closure(expr, obj_str, len(extra_args), code, ir_function)
+        if inline is not None:
+            return inline
         bind_args = ", ".join([obj_str] + ["_"] * len(extra_args))
         return f"({fun_str}).bind({bind_args})"
 
@@ -2100,6 +2106,78 @@ def _generate_statements(
 
     ir_function._render_subs = prev_render_subs
     return output_lines
+
+
+def _inline_closure(
+    expr: "IRBoundClosure",
+    obj_str: str,
+    extra_arg_count: int,
+    code: Bytecode,
+    ir_function: Optional[IRFunction],
+) -> Optional[str]:
+    """Render a captured closure as the lambda it came from.
+
+    Only a body that is one expression qualifies: `() -> Sys.println(x)` reads
+    better than a lifted helper plus `.bind`, while a multi-statement body in
+    expression position would fight the line-based renderer. The capture must
+    also reach the lambda under its own name, so that the closure keeps
+    referring to the same environment instead of a copy.
+    """
+    if ir_function is None:
+        return None
+    helpers = getattr(ir_function, "_inline_closure_bodies", None)
+    if not helpers:
+        return None
+    entry = helpers.get(expr.fun.findex.value)
+    if entry is None:
+        return None
+    params, body = entry
+    # The environment reaches the lambda by closing over the very same local;
+    # any other binding expression would capture a copy.
+    if not params or params[0] != obj_str or len(params) - 1 != extra_arg_count:
+        return None
+    getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
+    return f"({', '.join(params[1:])}) -> {body}"
+
+
+def _inline_anonymous(func: "Function", code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
+    """Render a reference to a capture-free anonymous function as a lambda."""
+    if ir_function is None:
+        return None
+    helpers = getattr(ir_function, "_inline_closure_bodies", None)
+    if not helpers:
+        return None
+    entry = helpers.get(func.findex.value)
+    if entry is None:
+        return None
+    params, body = entry
+    getattr(ir_function, "_inlined_closures", set()).add(func.findex.value)
+    return f"({', '.join(params)}) -> {body}"
+
+
+def _closure_inline_body(helper_ir: IRFunction) -> Optional[Tuple[List[str], str]]:
+    """(parameter names, rendered body) for an anonymous function, if it is a
+    single expression that can stand in expression position."""
+    statements = list(helper_ir.block.statements)
+    if statements and isinstance(statements[-1], IRReturn) and statements[-1].value is None:
+        statements = statements[:-1]
+    if len(statements) != 1:
+        return None
+    signature = helper_ir.func.type.resolve(helper_ir.code).definition
+    if not isinstance(signature, Fun):
+        return None
+    names = [local.name for local in helper_ir.locals[: len(signature.args)]]
+    if len(names) != len(signature.args):
+        return None
+    rendered = _generate_statements([statements[0]], helper_ir.code, helper_ir, 0, set())
+    if len(rendered) != 1:
+        return None
+    body = rendered[0].strip().rstrip(";")
+    if not body or "\n" in body:
+        return None
+    if isinstance(statements[0], IRReturn) and body.startswith("return "):
+        body = body[len("return ") :]
+    return names, body
 
 
 def _generate_function_pseudo(ir_func: IRFunction) -> str:
@@ -4040,6 +4118,23 @@ def _class_body(
         pending.extend(_collect_anonymous_functions(helper_ir.block, code).values())
     all_methods = ir_class.static_methods + ir_class.methods + list(helper_irs.values())
 
+    # Closures whose body is a single expression are rendered at the point they
+    # are created; the rest stay lifted helpers. Which ones actually got
+    # inlined is only known after the methods render, so the helper emission
+    # below consults `inlined`.
+    inline_bodies: Dict[int, Tuple[List[str], str]] = {}
+    for findex, helper_ir in helper_irs.items():
+        setattr(helper_ir, "_containing_class", ir_class)
+        setattr(helper_ir, "_force_static", True)
+        setattr(helper_ir, "_anon_name", f"__anon_{findex}")
+        body = _closure_inline_body(helper_ir)
+        if body is not None:
+            inline_bodies[findex] = body
+    inlined: Set[int] = set()
+    for ir_func in ir_class.static_methods + ir_class.methods:
+        setattr(ir_func, "_inline_closure_bodies", inline_bodies)
+        setattr(ir_func, "_inlined_closures", inlined)
+
     # Collect natives, std functions, referenced classes and referenced enums.
     natives: List[Native] = []
     func_externs: Dict[int, Tuple[str, int]] = {}
@@ -4129,8 +4224,11 @@ def _class_body(
             output_lines.append(f"{indent_str}{line}")
         output_lines.append("")
 
-    # Emit any anonymous closures referenced by this class as private helpers.
+    # Emit any anonymous closures referenced by this class as private helpers,
+    # except the ones already rendered inline at their creation site.
     for findex, helper_ir in sorted(helper_irs.items()):
+        if findex in inlined:
+            continue
         setattr(helper_ir, "_containing_class", ir_class)
         setattr(helper_ir, "_force_static", True)
         setattr(helper_ir, "_anon_name", f"__anon_{findex}")
