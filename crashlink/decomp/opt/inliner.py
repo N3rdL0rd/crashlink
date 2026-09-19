@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 from ...core import (
     Opcode,
+    Type,
 )
 from ...globals import DEBUG, dbg_print
 from ..ir import (
@@ -44,6 +45,7 @@ from ..ir import (
     IRNew,
     IRNativeArrayNew,
     IRCast,
+    IRStringConvert,
     IRArrayLiteral,
     IRArrayAccess,
     IRRef,
@@ -1360,7 +1362,20 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             return self._has_nontrivial_computation(expr.expr)
         return True
 
+    def _is_boxing_cast(self, expr: IRCast) -> bool:
+        """A widening cast to Dynamic cannot fail, unlike a checked downcast."""
+        try:
+            return expr.get_type().kind.value == Type.Kind.DYN.value
+        except Exception:
+            return False
+
     def is_safe_to_inline_conservatively(self, expr: IRExpression) -> bool:
+        # A representation change is not work: HL boxes a value into a Dynamic
+        # temp (or stringifies it) right before the single statement that
+        # consumes it, and that temp is pure noise at the use site. A checked
+        # cast is a different matter and stays put.
+        if isinstance(expr, IRCast) and self._is_boxing_cast(expr):
+            return self.is_safe_to_inline_conservatively(expr.expr)
         # Unknown expressions, calls, allocations and potentially throwing
         # reads must not migrate into conditional or repeated evaluation sites.
         if _has_observable_effects(expr):
@@ -1373,6 +1388,8 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             return isinstance(expr.left, (IRConst, IRLocal)) and isinstance(expr.right, (IRConst, IRLocal))
         if isinstance(expr, (IRNeg, IRNot)):
             return self.is_safe_to_inline_conservatively(expr.expr)
+        if isinstance(expr, IRStringConvert):
+            return self.is_safe_to_inline_conservatively(expr.value)
         return False
 
     def _call_move_ok(self, stmt: IRStatement, temp: IRLocal) -> bool:

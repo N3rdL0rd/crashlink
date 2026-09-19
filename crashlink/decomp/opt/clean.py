@@ -1462,6 +1462,11 @@ class IRDeadCodeEliminator(TraversingIROptimizer):
         for stmt in block.statements:
             if terminated:
                 continue
+            if isinstance(stmt, IRConst):
+                # A constant evaluated for nothing: the element-type marker HL
+                # emits before an array allocation survives as one of these
+                # once the allocation it annotated has been recovered.
+                continue
             new_stmts.append(stmt)
             if isinstance(stmt, (IRReturn, IRBreak, IRContinue, IRThrow)):
                 terminated = True

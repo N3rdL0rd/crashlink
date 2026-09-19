@@ -1,6 +1,7 @@
 """Rendering must preserve values and real native-call ABI behavior."""
 
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -378,3 +379,18 @@ def test_single_expression_closures_render_inline(tmp_path):
     # a lifted helper rather than being mangled into one line.
     assert "__anon_" in out
     assert "function __anon_" in out
+
+
+def test_boxing_temporaries_and_dead_markers_are_dropped():
+    code = Bytecode.from_path("tests/haxe/AbstractOps.hl")
+    out = IRClass(code, code.get_test_obj("AbstractOps")).pseudo()
+    # Boxing a value into a Dynamic temp one statement before its only use is
+    # a representation change, not work worth naming.
+    assert "Sys.println(total);" in out
+    assert ": Dynamic = total" not in out
+
+    code = Bytecode.from_path("tests/haxe/ArrayDynamicLiteral.hl")
+    out = IRClass(code, code.get_test_obj("ArrayDynamicLiteral")).pseudo()
+    # The element-type marker an array allocation consumed leaves a constant
+    # evaluated for nothing behind.
+    assert not re.search(r"(?m)^\s*null;\s*$", out)

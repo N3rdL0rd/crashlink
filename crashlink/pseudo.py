@@ -571,11 +571,18 @@ def _expression_to_haxe(
             arithmetic.UMOD,
         ):
             # HL stores UInt in I32 registers. Explicit operand types prevent
-            # signedness from being lost (or leaking in from another use).
+            # signedness from being lost (or leaking in from another use) —
+            # except where the operand is already written as an Int-typed
+            # local or literal, where the annotation says nothing.
             operand_type = "UInt" if expr.op == arithmetic.UMOD else "Int"
-            left = f"({left} : {operand_type})"
-            right = f"({right} : {operand_type})"
-            result = f"{left} {symbol} {right}"
+
+            def annotate(operand: IRExpression, rendered: str) -> str:
+                if operand_type == "Int" and _is_int_kind(operand.get_type()):
+                    if isinstance(operand, (IRConst, IRLocal)):
+                        return rendered
+                return f"({rendered} : {operand_type})"
+
+            result = f"{annotate(expr.left, left)} {symbol} {annotate(expr.right, right)}"
             if expr.op == arithmetic.SDIV:
                 # Haxe recognizes Std.int(integer / integer) as integer division.
                 return f"Std.int({result})"
