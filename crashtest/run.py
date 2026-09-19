@@ -52,7 +52,6 @@ from .models import (
 
 _HAXE_FIXTURES = Path(__file__).resolve().parent.parent / "tests" / "haxe"
 _BEHAVIOR_EXEMPTIONS = {
-    "BigSwitch2": "Randomly selects a switch branch with Std.random.",
     "Random": "Prints Std.random and Math.random results.",
     "Closure": "Prints a process-dependent function identity.",
 }

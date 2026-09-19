@@ -20,7 +20,7 @@ Join the [Hashlink Modding Community Discord](https://discord.gg/Es8ZpVkPey) for
 - An HL/C reimplementation to transpile HashLink bytecode straight to C and build it against libhl
 - A full-featured CLI (`crashlink`) with both one-shot subcommands and a batteries-included interactive REPL (60+ commands!)
 - Xref indexing and source-location mapping
-- (Experimental) De-HL/C: inspect recovered types, function/native signatures, globals, strings and the entrypoint from HL/C binaries (x86-64 & aarch64 ELF, Windows x64 PE), alongside original machine code. Approximate opcode views retain native addresses and mark unrecovered operands explicitly. Recovery is inspection-only: inferred metadata and opcode families are not faithful executable bytecode, and bytecode/C export is rejected. Debug information improves recovery; compiler optimization and layout affect confidence.
+- Tools to inspect recovered types, function/native signatures, globals, and strings from HL/C binaries alongside original machine code
 - A scriptable interface for easy integration into other tools
 
 ## Installation
@@ -169,12 +169,6 @@ You can use the following pre-defined commands with `just`:
 - `just profile`: Run the test suite with cProfile and then open the results in a browser.
 - `just serve-docs`: Serve the documentation locally.
 
-### `crashtest` CLI
-
-`crashtest` recompiles decompiled Haxe and runs both bytecode images on the real HashLink runtime. Passing requires repeatable, matching observable output and successful termination; opcode-name similarity is diagnostic only. Install `haxe` and put `hl` on PATH (or set `HL_RUNTIME` to its absolute path), then run `crashtest auto` from the repository root. Missing tools, mismatches and timeouts fail rather than being reported as successful verification. The checked-in `tests/quality/` corpus supplies behavioral and native recovery CI coverage without gitignored helper scripts; see `docs/content/docs/crashtest.md` for build commands and coverage limits.
-
-The shipped `BigSwitch2`, `Random`, and `Closure` fixtures have explicit behavioral exemptions for nondeterministic output. They still compile and undergo opcode comparison; reports label them EXEMPT rather than verified passes.
-
 ## Architecture
 
 ![Architecture](docs/static/flow.svg)
@@ -220,9 +214,8 @@ The shipped `BigSwitch2`, `Random`, and `Closure` fixtures have explicit behavio
 crashlink is written in pure typed Python with a minimum version of 3.10 (for the `|` operator and `match` statement). It should run on any modern platform, and has been tested heavily on Windows, Linux, and has been tested, but less heavily, on MacOS. As well as this, it is portable to many Python interpreters:
 
 - CPython 3.10+ is the main target
-- PyPy also just works
+- RustPython and PyPy also just work
 - IronPython and Jython are not supported due to their earlier Python version targets.
-- RustPython would work, but it doesn't support `match` statements.
 - Pyodide works and you can see a live demo [here](https://n3rdl0rd.github.io/crashlink/demo)
 
 ## Credits
