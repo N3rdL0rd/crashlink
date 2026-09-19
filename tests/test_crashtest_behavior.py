@@ -8,7 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from crashtest.behavior import compare_programs, compile_haxe, execute, resolve_hl_runtime
+from crashtest.behavior import (
+    compare_programs,
+    compile_haxe,
+    execute,
+    normalize_positions,
+    resolve_hl_runtime,
+)
 
 
 @pytest.fixture
@@ -148,3 +154,44 @@ def test_same_named_external_fixture_is_not_exempt(toolchain, tmp_path, monkeypa
     assert result.behavioral_comparison is not None
     assert not result.behavioral_comparison.passed
     assert result.behavioral_comparison.exemption_reason is None
+
+
+def test_position_normalization_keeps_everything_but_layout():
+    raw = (
+        "tests/haxe/Probe.hx:12: value\n"
+        "Uncaught exception: boom\n"
+        "Called from $Probe.main(Probe.hx:6)\n"
+        "Called from .init(?:1)\n"
+    )
+    assert normalize_positions(raw, "Probe") == (
+        "value\nUncaught exception: boom\nCalled from $Probe.main(Probe.hx:?)\nCalled from .init(?:1)\n"
+    )
+    # A payload that merely looks like a position is data, not layout.
+    assert normalize_positions("Other.hx:6: kept\n", "Probe") == "Other.hx:6: kept\n"
+
+
+@pytest.mark.parametrize(
+    "left,right,expected",
+    [
+        ('throw "x";', '\nthrow "x";', True),
+        ('throw "x";', 'throw "y";', False),
+        ('Sys.println("a"); throw "x";', 'Sys.println("b"); throw "x";', False),
+    ],
+)
+def test_failing_programs_are_compared_not_skipped(toolchain, tmp_path, left, right, expected):
+    # A fixture whose whole point is an uncaught exception still has to be
+    # checked; the extra newline shifts line numbers so the verdict also
+    # proves stack positions are normalized rather than compared.
+    paths = []
+    for index, body in enumerate((left, right)):
+        path, error = compile_haxe(
+            "class Probe { static function main() { " + body + " } }",
+            "Probe",
+            tmp_path / str(index),
+        )
+        assert error is None, error
+        paths.append(path)
+    result = compare_programs(paths[0], paths[1], "Probe", timeout=5.0)
+    assert result.passed is expected
+    assert result.original.returncode == 1
+    assert result.recompiled.returncode == 1

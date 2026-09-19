@@ -54,6 +54,7 @@ _HAXE_FIXTURES = Path(__file__).resolve().parent.parent / "tests" / "haxe"
 _BEHAVIOR_EXEMPTIONS = {
     "Random": "Prints Std.random and Math.random results.",
     "Closure": "Prints a process-dependent function identity.",
+    "Nested": "Loops forever by construction; no terminating observation exists.",
 }
 
 # Hard backstop, well above MEMORY_LIMIT_MB: the polling loop below kills the

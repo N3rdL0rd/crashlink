@@ -124,6 +124,20 @@ def compile_haxe(source: str, class_name: str, directory: Path) -> tuple[Path, s
     return target, error
 
 
+def normalize_positions(text: str, class_name: str) -> str:
+    """Strip source positions that only encode the module's own layout.
+
+    The fixture is compiled from `tests/haxe/<Class>.hx` and the decompiled
+    program from `<Class>.hx` in a sandbox, and the decompiled source has its
+    own line numbering, so neither trace prefixes (`<Class>.hx:12: `) nor stack
+    frames (`Called from $C.main(<Class>.hx:12)`) are comparable. Everything
+    else — values, messages, frame order, function names — is.
+    """
+    module = re.escape(class_name)
+    text = re.sub(rf"(?m)^[^\s:]*{module}\.hx:\d+: ", "", text)
+    return re.sub(rf"[^\s()]*{module}\.hx:\d+", f"{class_name}.hx:?", text)
+
+
 def compare_programs(
     original: Path, recompiled: Path, class_name: str, timeout: float = 5.0
 ) -> BehavioralComparison:
@@ -140,17 +154,19 @@ def compare_programs(
             target = Path(tmp) / "program.hl"
             shutil.copyfile(program, target)
             result = execute([runtime, str(target)], tmp, timeout)
-        # Haxe trace includes compiler-generated source locations. Remove only
-        # the current module's leading trace prefix, never values or stack
-        # traces. The fixture is compiled from `tests/haxe/<Class>.hx` while the
-        # decompiled program is compiled from `<Class>.hx` in a sandbox, so the
-        # directory part of that prefix is not comparable either.
-        result.stdout = re.sub(rf"(?m)^[^\s:]*{re.escape(class_name)}\.hx:\d+: ", "", result.stdout)
+        result.stdout = normalize_positions(result.stdout, class_name)
+        result.stderr = normalize_positions(result.stderr, class_name)
         observations.append(result)
-        if result.error or result.returncode != 0:
-            error = result.error or f"HashLink exited unsuccessfully ({result.returncode})"
+        # A program that reports a failure is still an observation: fixtures
+        # that end in an uncaught exception are precisely where decompiled
+        # exception handling has to be checked. Only an unusable execution —
+        # timeout, output flood, spawn failure — makes comparison impossible.
+        if result.error:
             return BehavioralComparison(
-                False, observations[0], observations[1] if len(observations) > 1 else Execution(), error
+                False,
+                observations[0],
+                observations[1] if len(observations) > 1 else Execution(),
+                result.error,
             )
     before, after, before_again, after_again = observations
     if before != before_again or after != after_again:
