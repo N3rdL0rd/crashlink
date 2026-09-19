@@ -303,6 +303,10 @@ class IRFunction:
                 # only after temp inlining has folded the register chain into a
                 # single `this.field.array[idx]` shape for it to match
                 IRArrayObjBoundsCheckCollapser(self),
+                # A loop condition that reads an array element only stops being
+                # a branch once that guard is gone, so give the condition
+                # recovery a second look at the while(true)+break form.
+                IRLoopConditionOptimizer(self, retry=True),
                 IRVoidAssignOptimizer(self),
                 IRDeadCodeEliminator(self),
                 IRSelfAssignOptimizer(self),

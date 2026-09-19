@@ -701,3 +701,36 @@ def test_switch_roundtrip_preserves_arithmetic_count(tmp_path):
     for code in (before, after):
         method = next(f for f in code.functions if code.full_func_name(f) == f"${name}.pick")
         assert not any(op.op == "Mov" for op in method.ops)
+
+
+def test_loop_condition_recovers_after_array_guard_collapse(tmp_path):
+    from crashtest.behavior import compare_programs, compile_haxe, resolve_hl_runtime
+
+    if not shutil.which("haxe") or not resolve_hl_runtime():
+        pytest.skip("loop condition regression requires Haxe and HashLink")
+    name = "LoopElementCondition"
+    source = """class LoopElementCondition {
+    static function bump(a:Array<Int>) { a[0] = a[0] + 1; }
+    static function main() {
+        var box = [0];
+        var seen = 0;
+        while (box[0] < 3) {
+            seen += box[0];
+            bump(box);
+        }
+        Sys.println(seen);
+    }
+}"""
+    original, error = compile_haxe(source, name, tmp_path / "original")
+    assert error is None, error
+    code = Bytecode.from_path(str(original))
+    recovered = IRClass(code, code.get_test_obj(name)).pseudo()
+    # The element read is a branch until the bounds guard collapses, which is
+    # what used to leave the loop as `while (true) { ... else break; }`.
+    assert "while (box[0] < 3)" in recovered
+    assert "while (true)" not in recovered
+    recompiled, error = compile_haxe(recovered, name, tmp_path / "recompiled")
+    assert error is None, error
+    result = compare_programs(original, recompiled, name)
+    assert result.passed, result.to_json()
+    assert result.original.stdout == "3\n"

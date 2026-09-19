@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union, cast
 
 if TYPE_CHECKING:
     from ..function import IRFunction
@@ -152,8 +152,10 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
     def _condition_children(self, expr: IRExpression) -> Optional[List[str]]:
         if isinstance(expr, (IRLocal, IRConst)):
             return [] if not _has_observable_effects(expr) else None
-        if isinstance(expr, IRField):
-            return ["target"]
+        if isinstance(expr, (IRField, IRArrayAccess)):
+            # Ordered, possibly-faulting reads: the proof below checks that
+            # folding keeps them in the same sequence.
+            return ["target"] if isinstance(expr, IRField) else ["array", "index"]
         if isinstance(expr, IRBoolExpr):
             if expr.op in (IRBoolExpr.CompareType.AND, IRBoolExpr.CompareType.OR):
                 return None
@@ -172,7 +174,10 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
         return None
 
     def _fold_condition_setup(
-        self, loop: IRPrimitiveLoop, setup: List[IRStatement], condition: IRBoolExpr
+        self,
+        loop: Union[IRPrimitiveLoop, IRWhileLoop],
+        setup: List[IRStatement],
+        condition: IRBoolExpr,
     ) -> Optional[IRBoolExpr]:
         reads: List[int] = []
 
@@ -183,7 +188,7 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
             for attr in attrs:
                 if not ordered_reads(getattr(expr, attr), result):
                     return False
-            if isinstance(expr, IRField):
+            if isinstance(expr, (IRField, IRArrayAccess)):
                 result.append(id(expr))
             return True
 
@@ -214,7 +219,7 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
                 if count:
                     if result is expr:
                         result = copy.copy(expr)
-                        if isinstance(expr, IRField):
+                        if isinstance(expr, (IRField, IRArrayAccess)):
                             field_origins[id(result)] = field_origins.get(id(expr), id(expr))
                     setattr(result, attr, child)
                     changed += count
@@ -306,15 +311,103 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
         new_while_loop.adopt(loop, exit_condition_expr)
         return new_while_loop
 
+    def __init__(self, function: "IRFunction", retry: bool = False):
+        super().__init__(function)
+        # A retry pass revisits the while(true)+break form this optimizer
+        # emits when it first runs: by then array guards have collapsed, so a
+        # condition that read an element is no longer a branch.
+        self.retry = retry
+
     def visit_block(self, block: IRBlock) -> None:
         new_statements: List[IRStatement] = []
         for stmt in block.statements:
             if isinstance(stmt, IRPrimitiveLoop):
                 converted_loop = self._try_convert_to_while(stmt)
                 new_statements.append(converted_loop if converted_loop else stmt)
+            elif self.retry and isinstance(stmt, IRWhileLoop):
+                recovered = self._try_recover_condition(stmt)
+                new_statements.append(recovered if recovered else stmt)
             else:
                 new_statements.append(stmt)
         block.statements = new_statements
+
+    def _try_recover_condition(self, loop: IRWhileLoop) -> Optional[IRWhileLoop]:
+        """Rebuild `while (cond)` from the while(true) + leading break form."""
+        condition = loop.condition
+        if not (isinstance(condition, IRBoolExpr) and condition.op == IRBoolExpr.CompareType.TRUE):
+            return None
+        statements = loop.body.statements
+        branch_idx = next(
+            (index for index, stmt in enumerate(statements) if isinstance(stmt, IRConditional)), None
+        )
+        if branch_idx is None:
+            return None
+        setup = statements[:branch_idx]
+        branch = cast(IRConditional, statements[branch_idx])
+        rest = statements[branch_idx + 1 :]
+
+        def breaks(block: Optional[IRBlock]) -> bool:
+            return (
+                block is not None and len(block.statements) == 1 and isinstance(block.statements[0], IRBreak)
+            )
+
+        def empty(block: Optional[IRBlock]) -> bool:
+            return block is None or not block.statements
+
+        if not isinstance(branch.condition, IRBoolExpr):
+            return None
+        if breaks(branch.true_block) and empty(branch.false_block):
+            exit_condition = self._clone_bool_expr(branch.condition)
+            body_statements = list(rest)
+        elif breaks(branch.false_block) and branch.true_block is not None:
+            exit_condition = self._clone_bool_expr(branch.condition)
+            exit_condition.invert()
+            body_statements = list(branch.true_block.statements) + list(rest)
+        else:
+            return None
+
+        if setup:
+            # Setup the condition never reads stays in the loop, at the head of
+            # the body: it still runs once per iteration, just after the test
+            # it cannot influence.
+            required, deferred = self._split_condition_setup(setup, exit_condition)
+            if any(not isinstance(stmt, IRAssign) or _has_observable_effects(stmt.expr) for stmt in deferred):
+                return None
+            if required:
+                folded = self._fold_condition_setup(loop, required, exit_condition)
+                if folded is None:
+                    return None
+                exit_condition = folded
+            body_statements = list(deferred) + body_statements
+
+        continuation = self._clone_bool_expr(exit_condition)
+        continuation.invert()
+        body = IRBlock(loop.code)
+        body.statements = body_statements
+        recovered = IRWhileLoop(loop.code, continuation, body)
+        recovered.comment = loop.comment
+        recovered.adopt(loop, branch)
+        if DEBUG:
+            dbg_print(f"IRLoopCondOpt: recovered while condition {continuation}")
+        return recovered
+
+    def _split_condition_setup(
+        self, setup: List[IRStatement], condition: IRBoolExpr
+    ) -> Tuple[List[IRStatement], List[IRStatement]]:
+        """Partition setup into what the condition depends on and the rest."""
+        needed_names = self._read_names(condition)
+        required_ids: Set[int] = set()
+        for stmt in reversed(setup):
+            if (
+                isinstance(stmt, IRAssign)
+                and isinstance(stmt.target, IRLocal)
+                and stmt.target.name in needed_names
+            ):
+                required_ids.add(id(stmt))
+                needed_names |= self._read_names(stmt.expr)
+        required = [stmt for stmt in setup if id(stmt) in required_ids]
+        deferred = [stmt for stmt in setup if id(stmt) not in required_ids]
+        return required, deferred
 
     def _try_convert_to_while(self, loop: IRPrimitiveLoop) -> Optional[IRWhileLoop]:
         if not loop.condition.statements:
