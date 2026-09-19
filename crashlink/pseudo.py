@@ -2837,17 +2837,28 @@ def _render_string_concat(expr: IRCall, code: Bytecode, ir_function: Optional[IR
         return None
 
     # Classify each operand as a string literal or a value to interpolate.
+    # `+` and interpolation both stringify their operands, so the explicit
+    # conversion HL inserted is noise — as long as one operand still makes
+    # the expression a string concatenation rather than arithmetic.
+    anchored = any(isinstance(operand, IRConst) and isinstance(operand.value, str) for operand in operands)
     parts: List[Tuple[str, Any]] = []  # (kind, payload); kind in {"lit", "val"}
     interp_count = 0
     for operand in operands:
         if isinstance(operand, IRConst) and isinstance(operand.value, str):
             parts.append(("lit", operand.value))
-        else:
-            simple = _expression_to_haxe(operand, code, ir_function)
-            if isinstance(operand, (IRArithmetic, IRBoolExpr)):
-                simple = f"({simple})"
-            parts.append(("val", (operand, simple)))
-            interp_count += 1
+            continue
+        if anchored and isinstance(operand, IRStringConvert):
+            operand = operand.value
+        if anchored and isinstance(operand, IRConst) and not isinstance(operand.value, str):
+            # A constant that is already being stringified reads better as
+            # part of the surrounding text than as an interpolation.
+            parts.append(("lit", _expression_to_haxe(operand, code, ir_function)))
+            continue
+        simple = _expression_to_haxe(operand, code, ir_function)
+        if isinstance(operand, (IRArithmetic, IRBoolExpr)):
+            simple = f"({simple})"
+        parts.append(("val", (operand, simple)))
+        interp_count += 1
 
     # Use interpolation only for dense chains (multiple interpolated values),
     # and only when there is at least one literal to host the interpolation.
@@ -2868,7 +2879,7 @@ def _render_string_concat(expr: IRCall, code: Bytecode, ir_function: Optional[IR
 def _render_interpolated(parts: List[Tuple[str, Any]]) -> str:
     """Build a single-quoted Haxe interpolation string from classified parts."""
     out = ["'"]
-    for kind, payload in parts:
+    for index, (kind, payload) in enumerate(parts):
         if kind == "lit":
             text = payload
             # Escape for single-quoted interpolation context.
@@ -2876,7 +2887,16 @@ def _render_interpolated(parts: List[Tuple[str, Any]]) -> str:
             out.append(text)
         else:
             operand, simple = payload
-            if isinstance(operand, IRLocal) and _INTERP_SAFE_IDENT.match(simple):
+            # `$name` swallows any identifier characters that follow it, so a
+            # literal continuing with one forces the braced form.
+            following = parts[index + 1] if index + 1 < len(parts) else None
+            merges = (
+                following is not None
+                and following[0] == "lit"
+                and bool(following[1])
+                and (following[1][0].isalnum() or following[1][0] == "_")
+            )
+            if isinstance(operand, IRLocal) and _INTERP_SAFE_IDENT.match(simple) and not merges:
                 out.append(f"${simple}")
             else:
                 out.append("${" + simple + "}")

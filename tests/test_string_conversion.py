@@ -67,3 +67,33 @@ def test_numeric_conversion_snapshot_and_length_survive_roundtrip(tmp_path):
     result = compare_programs(original, recovered, name)
     assert result.passed, result.to_json()
     assert result.original.stdout.splitlines() == ["1200", "1200:4", "1200:7", "1200:4"]
+
+
+def test_interpolated_concatenation_is_rebuilt():
+    code = Bytecode.from_path("tests/haxe/StringInterp.hl")
+    out = IRClass(code, code.get_test_obj("StringInterp")).pseudo()
+    # HL appends one value at a time through a recycled temp; the source was a
+    # single interpolated literal and the values must keep their own order.
+    assert "'the number is $a, a + 1 = $b !'" in out
+    assert "__add__" not in out
+    assert "Std.string" not in out
+
+
+def test_concatenation_folds_into_call_arguments(tmp_path):
+    if not shutil.which("haxe"):
+        pytest.skip("building the fixture requires Haxe")
+    name = "ConcatIntoCall"
+    source = """class ConcatIntoCall {
+    static function main() {
+        var a = 1;
+        var b = "x";
+        Sys.println("a=" + a + " b=" + b);
+        Sys.println("only " + a);
+    }
+}"""
+    artifact, error = compile_haxe(source, name, tmp_path)
+    assert error is None, error
+    code = Bytecode.from_path(str(artifact))
+    out = IRClass(code, code.get_test_obj(name)).pseudo()
+    # A consumer that is neither an assignment nor a trace still ends a chain.
+    assert "Sys.println('a=$a b=$b');" in out

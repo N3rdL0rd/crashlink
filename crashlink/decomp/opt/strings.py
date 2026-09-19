@@ -52,6 +52,7 @@ from ..ir import (
 )
 from . import (
     TraversingIROptimizer,
+    _has_observable_effects,
 )
 from .inliner import _ScopedLocalLifetime
 
@@ -1061,8 +1062,12 @@ class IRStringConcatFolder(TraversingIROptimizer):
             while i < n:
                 fold = self._try_fold_concat_temp(block.statements, i)
                 if fold is not None:
-                    use_stmt, consumed = fold
-                    new_statements.append(use_stmt)
+                    folded, consumed, absorbed = fold
+                    if absorbed:
+                        # The chain's first value can be computed before the
+                        # chain itself starts; that definition is now inlined.
+                        new_statements = [s for s in new_statements if id(s) not in absorbed]
+                    new_statements.extend(folded)
                     i += consumed
                     made_change = True
                     continue
@@ -1072,12 +1077,15 @@ class IRStringConcatFolder(TraversingIROptimizer):
 
     def _try_fold_concat_temp(
         self, statements: List[IRStatement], start: int
-    ) -> Optional[Tuple[IRStatement, int]]:
+    ) -> Optional[Tuple[List[IRStatement], int, Set[int]]]:
         # Look for: temp = init_string_expr;
         #           temp = String.__add__(temp, rhs1);
         #           temp = String.__add__(temp, rhs2);
         #           ...
         #           use(temp)   (trace(temp) or target = temp)
+        # HL evaluates each interpolated value into its own temp right before
+        # appending it, so the links are separated by those definitions; they
+        # are folded into the parts rather than treated as chain breaks.
         if start >= len(statements):
             return None
 
@@ -1092,21 +1100,41 @@ class IRStringConcatFolder(TraversingIROptimizer):
         temp = first.target
         init_expr = first.expr
 
-        # Collect a chain of adjacent `temp = String.__add__(temp, rhs)` assignments.
+        # Collect the chain of `temp = String.__add__(temp, rhs)` assignments,
+        # stepping over the pure temp definitions that feed them. Each appended
+        # value is resolved against the definitions live *at that point*: HL
+        # recycles one register for every interpolated value, so reading it
+        # later would yield whichever value was appended last.
         i = start + 1
-        parts: List[IRExpression] = [init_expr]
+        live: Dict[str, Tuple[int, IRExpression]] = {}
+        used_defs: Set[int] = set()
+        # The first appended value is computed before the chain opens, so the
+        # run of pure temp definitions leading up to it counts as chain input.
+        prelude = start - 1
+        while prelude >= 0 and self._is_movable(statements[prelude]):
+            definition = cast(IRAssign, statements[prelude])
+            live.setdefault(cast(IRLocal, definition.target).name, (prelude, definition.expr))
+            prelude -= 1
+        parts: List[IRExpression] = [self._resolve_part(init_expr, live, used_defs)]
         while i < len(statements):
             stmt = statements[i]
-            if not isinstance(stmt, IRAssign) or stmt.target != temp:
+            if isinstance(stmt, IRAssign) and stmt.target == temp:
+                add_call = stmt.expr
+                if not self._is_string_add_with_temp(add_call, temp):
+                    break
+                assert isinstance(add_call, IRCall)
+                rhs = add_call.args[1]
+                if self._expr_contains_local(rhs, temp):
+                    break
+                parts.append(self._resolve_part(rhs, live, used_defs))
+                i += 1
+                continue
+            if self._statement_reads_local(stmt, temp) or self._statement_assigns_local(stmt, temp):
                 break
-            add_call = stmt.expr
-            if not self._is_string_add_with_temp(add_call, temp):
+            if not self._is_movable(stmt):
                 break
-            assert isinstance(add_call, IRCall)
-            rhs = add_call.args[1]
-            if self._expr_contains_local(rhs, temp):
-                break
-            parts.append(rhs)
+            assert isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)
+            live[stmt.target.name] = (i, stmt.expr)
             i += 1
 
         if len(parts) == 1:
@@ -1115,10 +1143,13 @@ class IRStringConcatFolder(TraversingIROptimizer):
         # Now find the single use of `temp` after the chain.  We allow unrelated
         # statements in between as long as they don't touch `temp`.
         use_idx: Optional[int] = None
-        folded_expr_for_use: Optional[IRCall] = None
+        tail_part: Optional[IRExpression] = None
         for j in range(i, len(statements)):
             stmt = statements[j]
-            if self._statement_assigns_local(stmt, temp):
+            # A statement that overwrites the temp without reading its old
+            # value ends the chain's lifetime — and HL starts the *next*
+            # interpolation by doing exactly that.
+            if self._statement_assigns_local(stmt, temp) and not self._value_reads_local(stmt, temp):
                 break
             if self._statement_reads_local(stmt, temp):
                 if use_idx is not None:
@@ -1127,45 +1158,226 @@ class IRStringConcatFolder(TraversingIROptimizer):
                     use_idx = j
                 elif isinstance(stmt, IRTrace) and self._is_string_add_with_temp(stmt.msg, temp):
                     use_idx = j
-                    folded_expr_for_use = self._fold_concat(parts + [cast(IRCall, stmt.msg).args[1]])
+                    tail_part = self._resolve_part(cast(IRCall, stmt.msg).args[1], live, used_defs)
                 elif isinstance(stmt, IRAssign) and stmt.expr == temp:
                     use_idx = j
                 elif isinstance(stmt, IRAssign) and self._is_string_add_with_temp(stmt.expr, temp):
                     use_idx = j
-                    folded_expr_for_use = self._fold_concat(parts + [cast(IRCall, stmt.expr).args[1]])
+                    tail_part = self._resolve_part(cast(IRCall, stmt.expr).args[1], live, used_defs)
+                elif isinstance(stmt, (IRCall, IRReturn, IRAssign, IRTrace)):
+                    # Any single consumer works — `Sys.println(s)` and
+                    # `return s` end just as many chains as `trace(s)`.
+                    use_idx = j
                 else:
                     return None
+            elif use_idx is None and self._is_movable(stmt):
+                assert isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)
+                live[stmt.target.name] = (j, stmt.expr)
 
         if use_idx is None:
             return None
 
         use_stmt = statements[use_idx]
-        if folded_expr_for_use is None:
-            folded_expr_for_use = self._fold_concat(parts)
-
-        new_use: IRStatement
-        if isinstance(use_stmt, IRTrace):
-            new_use = IRTrace(
-                code=self.func.code,
-                msg=folded_expr_for_use,
-                pos_info=use_stmt.pos_info,
-            )
-        elif isinstance(use_stmt, IRAssign):
-            new_use = IRAssign(
-                code=self.func.code,
-                target=use_stmt.target,
-                expr=folded_expr_for_use,
-            )
-        else:
+        folded_expr_for_use = self._fold_concat(parts + ([tail_part] if tail_part is not None else []))
+        # Moving the reads to the use site is only faithful while nothing in
+        # the window reassigns what they read.
+        if self._window_rebinds_reads(folded_expr_for_use, statements, start, use_idx, used_defs):
             return None
 
-        new_use.adopt(*statements[start : use_idx + 1])
-        return new_use, use_idx - start + 1
+        new_use: IRStatement
+        if tail_part is not None:
+            if isinstance(use_stmt, IRTrace):
+                new_use = IRTrace(
+                    code=self.func.code,
+                    msg=folded_expr_for_use,
+                    pos_info=use_stmt.pos_info,
+                    extra_args=use_stmt.extra_args,
+                )
+            else:
+                assert isinstance(use_stmt, IRAssign)
+                new_use = IRAssign(
+                    code=self.func.code,
+                    target=use_stmt.target,
+                    expr=folded_expr_for_use,
+                )
+        else:
+            substituted = self._substitute_use(use_stmt, temp, folded_expr_for_use)
+            if substituted is None:
+                return None
+            new_use = substituted
+
+        # Definitions the fold absorbed disappear; the rest keep their order,
+        # and only those with a reader left are worth emitting.
+        surviving = [
+            index
+            for index, _ in sorted(live.values())
+            if index not in used_defs
+            and start <= index < use_idx
+            and self._read_after(statements, use_idx, cast(IRAssign, statements[index]).target)
+        ]
+        absorbed = {id(statements[index]) for index in used_defs if index < start}
+        new_use.adopt(*statements[start : use_idx + 1], *(statements[index] for index in used_defs))
+        return (
+            [statements[index] for index in surviving] + [new_use],
+            use_idx - start + 1,
+            absorbed,
+        )
+
+    def _resolve_part(
+        self,
+        expr: IRExpression,
+        live: Dict[str, Tuple[int, IRExpression]],
+        used_defs: Set[int],
+    ) -> IRExpression:
+        """Substitute the temps an appended value reads with their live values."""
+        if isinstance(expr, IRLocal):
+            entry = live.get(expr.name)
+            if entry is None:
+                return expr
+            index, value = entry
+            used_defs.add(index)
+            return self._resolve_part(value, live, used_defs)
+        if isinstance(expr, IRCall):
+            return IRCall(
+                code=self.func.code,
+                call_type=expr.call_type,
+                target=expr.target,
+                args=[self._resolve_part(arg, live, used_defs) for arg in expr.args],
+            )
+        if isinstance(expr, IRStringConvert):
+            return IRStringConvert(self.func.code, self._resolve_part(expr.value, live, used_defs))
+        if isinstance(expr, IRCast):
+            return IRCast(
+                self.func.code, expr.target_type_idx, self._resolve_part(expr.expr, live, used_defs)
+            )
+        return expr
+
+    def _substitute_use(self, stmt: IRStatement, temp: IRLocal, value: IRExpression) -> Optional[IRStatement]:
+        """Rebuild the consuming statement with the folded string in place."""
+
+        def replace(expr: IRExpression) -> IRExpression:
+            if isinstance(expr, IRLocal):
+                return value if expr == temp else expr
+            if isinstance(expr, IRCall):
+                return IRCall(
+                    code=self.func.code,
+                    call_type=expr.call_type,
+                    target=expr.target,
+                    args=[replace(arg) for arg in expr.args],
+                )
+            if isinstance(expr, IRStringConvert):
+                return IRStringConvert(self.func.code, replace(expr.value))
+            if isinstance(expr, IRCast):
+                return IRCast(self.func.code, expr.target_type_idx, replace(expr.expr))
+            return expr
+
+        if isinstance(stmt, IRTrace):
+            if stmt.msg != temp:
+                return None
+            return IRTrace(self.func.code, value, stmt.pos_info, stmt.extra_args)
+        if isinstance(stmt, IRAssign):
+            if self._expr_contains_local(stmt.target, temp):
+                return None
+            return IRAssign(self.func.code, stmt.target, replace(stmt.expr))
+        if isinstance(stmt, IRReturn):
+            if stmt.value is None:
+                return None
+            return IRReturn(self.func.code, replace(stmt.value))
+
+        if isinstance(stmt, IRCall):
+            rebuilt = replace(stmt)
+            return rebuilt if isinstance(rebuilt, IRCall) else None
+        return None
+
+    def _value_reads_local(self, stmt: IRStatement, local: IRLocal) -> bool:
+        """Whether `stmt` consumes `local`'s current value.
+
+        Distinct from `_statement_reads_local`, which also reports the local
+        appearing as an assignment *target*.
+        """
+        if isinstance(stmt, IRAssign):
+            if stmt.expr is not None and self._expr_contains_local(stmt.expr, local):
+                return True
+            target = stmt.target
+            if isinstance(target, IRLocal):
+                return False
+            return self._expr_contains_local(target, local)
+        return self._statement_reads_local(stmt, local)
+
+    def _window_rebinds_reads(
+        self,
+        expr: IRExpression,
+        statements: List[IRStatement],
+        start: int,
+        use_idx: int,
+        used_defs: Set[int],
+    ) -> bool:
+        locals_read: Set[str] = set()
+        self._collect_locals(expr, locals_read)
+        for index in range(start, use_idx):
+            if index in used_defs:
+                continue
+            stmt = statements[index]
+            if not isinstance(stmt, IRAssign) or not isinstance(stmt.target, IRLocal):
+                continue
+            if stmt.target.name in locals_read:
+                return True
+        return False
+
+    def _collect_locals(self, expr: IRStatement, out: Set[str]) -> None:
+        if isinstance(expr, IRLocal):
+            out.add(expr.name)
+        for child in expr.get_children():
+            self._collect_locals(child, out)
+
+    def _read_after(self, statements: List[IRStatement], idx: int, local: IRExpression) -> bool:
+        """Whether anything past `idx` still consumes `local` before it is reset."""
+        if not isinstance(local, IRLocal):
+            return True
+        for stmt in statements[idx + 1 :]:
+            if self._value_reads_local(stmt, local):
+                return True
+            if self._statement_assigns_local(stmt, local):
+                return False
+        return False
+
+    def _is_movable(self, stmt: IRStatement) -> bool:
+        """Whether folding may evaluate the chain's parts past `stmt`.
+
+        Only a side-effect-free definition of a compiler temp qualifies:
+        anything observable would be reordered against the values the chain
+        collects.
+        """
+        if not (isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)):
+            return False
+        if stmt.target.reg_idx is None or stmt.target.reg_idx in self.func._user_reg_indices:
+            return False
+        return not self._has_effects(stmt.expr)
+
+    def _has_effects(self, expr: IRExpression) -> bool:
+        if isinstance(expr, IRStringConvert):
+            # Std.string of a primitive is a pure formatting step; on an object
+            # it would run toString().
+            kind = expr.value.get_type().kind.value
+            primitive = kind in (
+                Type.Kind.U8.value,
+                Type.Kind.U16.value,
+                Type.Kind.I32.value,
+                Type.Kind.I64.value,
+                Type.Kind.F32.value,
+                Type.Kind.F64.value,
+                Type.Kind.BOOL.value,
+            )
+            return not primitive or self._has_effects(expr.value)
+        return _has_observable_effects(expr)
 
     def _is_string_expr(self, expr: IRExpression) -> bool:
         if isinstance(expr, IRConst) and isinstance(expr.value, str):
             return True
         if isinstance(expr, IRLocal):
+            return True
+        if isinstance(expr, IRStringConvert):
+            # `"" + x` opens as a bare conversion of the first value.
             return True
         if isinstance(expr, IRCall):
             return self._is_string_add(expr)
