@@ -443,16 +443,17 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
                 if slot is None or slot in pattern.slots:
                     break
                 if isinstance(node, IRAssign):
-                    if node.target == enum_value:
+                    node_target = cast(IRLocal, node.target)
+                    if node_target == enum_value:
                         break
                     if not self._private_block(case_block) or self._mentions_outside(
-                        node.target.name, {id(case_block)}
+                        node_target.name, {id(case_block)}
                     ):
                         binding = self._fresh_binding(field)
                         pattern.slots[slot] = binding
-                        body.statements.append(IRAssign(self.func.code, node.target, binding).adopt(node))
+                        body.statements.append(IRAssign(self.func.code, node_target, binding).adopt(node))
                     else:
-                        pattern.slots[slot] = node.target
+                        pattern.slots[slot] = node_target
                 consumed += 1
             body.statements.extend(case_block.statements[consumed:])
             body.adopt(case_block, *case_block.statements[:consumed])
@@ -687,6 +688,7 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
                 id(node)
                 for node in removed
                 if isinstance(node, IRAssign)
+                and isinstance(node.target, IRLocal)
                 and node.target.name == name
                 and isinstance(node.expr, IREnumIndex)
             }
@@ -700,8 +702,9 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
         final_ids = {id(node) for node in current.statements}
         for node, field, pattern, slot in fields:
             if isinstance(node, IRAssign) and id(node) not in final_ids:
-                if node.target.name not in intermediates and self._mentions_outside(
-                    node.target.name, excluded | {id(current)}
+                node_target = cast(IRLocal, node.target)
+                if node_target.name not in intermediates and self._mentions_outside(
+                    node_target.name, excluded | {id(current)}
                 ):
                     return None
         bindings: List[IRStatement] = []
@@ -709,16 +712,17 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
             if isinstance(pattern.slots.get(slot), IREnumPattern):
                 continue
             if isinstance(node, IRAssign):
+                node_target = cast(IRLocal, node.target)
                 if self._private_block(current) and not self._mentions_outside(
-                    node.target.name, excluded | {id(current)}
+                    node_target.name, excluded | {id(current)}
                 ):
                     # The destination exists solely inside this successful case.
                     # Binding it directly cannot shadow an outer live value.
-                    pattern.slots[slot] = node.target
+                    pattern.slots[slot] = node_target
                 else:
                     binding = self._fresh_binding(field)
                     pattern.slots[slot] = binding
-                    bindings.append(IRAssign(self.func.code, node.target, binding).adopt(node))
+                    bindings.append(IRAssign(self.func.code, node_target, binding).adopt(node))
         body = IRBlock(self.func.code)
         body.statements = bindings + body_statements
         key = IRConst(
@@ -760,9 +764,10 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
             if slot is None:
                 break
             if isinstance(node, IRAssign):
-                if node.target.name == value.name or node.target.name in destinations:
+                node_target = cast(IRLocal, node.target)
+                if node_target.name == value.name or node_target.name in destinations:
                     break
-                destinations.add(node.target.name)
+                destinations.add(node_target.name)
             fields.append((node, field, slot))
             if isinstance(node, IRReturn):
                 break

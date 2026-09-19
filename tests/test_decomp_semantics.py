@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import List, cast
 
 import pytest
 
@@ -29,6 +30,7 @@ from crashlink.decomp.ir import (
     IRLocal,
     IRPrimitiveLoop,
     IRReturn,
+    IRStatement,
     IRWhileLoop,
 )
 from crashlink.decomp.opt.clean import (
@@ -268,8 +270,9 @@ def compiled_numeric_program(tmp_path_factory):
     # and lets integer multiplication overflow before the result is widened.
     converted = [IRLocal(name, tIndex(2), code) for name in ("var8", "var9")]
     bindings = [IRAssign(code, dst, IRCast(code, tIndex(2), src)) for dst, src in zip(converted, (a, b))]
-    body = bindings + [
-        IRReturn(code, IRArithmetic(code, converted[0], converted[1], IRArithmetic.ArithmeticType.MUL))
+    body: List[IRStatement] = [
+        *bindings,
+        IRReturn(code, IRArithmetic(code, converted[0], converted[1], IRArithmetic.ArithmeticType.MUL)),
     ]
     context = _function(code, body, [a, b, *converted])
     rendered = _generate_statements(
@@ -278,7 +281,7 @@ def compiled_numeric_program(tmp_path_factory):
         context,
         1,
         {"a", "b"},
-        inline_declarations={stmt: (stmt.target.name, "Float") for stmt in bindings},
+        inline_declarations={stmt: (cast(IRLocal, stmt.target).name, "Float") for stmt in bindings},
     )
     functions.append("static function widenedProduct(a:Int, b:Int):Float {\n" + "\n".join(rendered) + "\n}")
     checks.append("Sys.println(widenedProduct(2147483647, 2));")
@@ -596,7 +599,7 @@ def test_loop_condition_setup_preserves_evaluation(tmp_path, scenario, expected)
 
     setup = [IRAssign(code, scratch, field("limit"))]
     condition = IRBoolExpr(code, IRBoolExpr.CompareType.GTE, i, scratch)
-    body = [
+    body: List[IRStatement] = [
         IRAssign(code, i, IRArithmetic(code, i, number(1), IRArithmetic.ArithmeticType.ADD)),
     ]
     suffix = "Sys.println(i); Sys.println(box.reads);"

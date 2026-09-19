@@ -2555,7 +2555,8 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                     width = {"I32": 4, "F32": 4, "F64": 8, "UI16": 2}.get(kind)
                     size, stores = bytes_builds[bytes_reg]
                     if (
-                        width is not None
+                        kind is not None
+                        and width is not None
                         and offset_text.isdigit()
                         and int(offset_text) % width == 0
                         and int(offset_text) + width <= size

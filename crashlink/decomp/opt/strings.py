@@ -110,7 +110,7 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
         lifetime = _ScopedLocalLifetime(self.func.block)
         candidates = []
         references = []
-        pending = [self.func.block]
+        pending: List[IRStatement] = [self.func.block]
         seen: Set[int] = set()
         occurrences: Dict[int, int] = {}
         while pending:
@@ -156,7 +156,7 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
                 candidate
                 for candidate in private
                 if not any(
-                    id(ref) not in owned and lifetime.aliases(ref.target, local)
+                    id(ref) not in owned and lifetime.aliases(cast(IRLocal, ref.target), local)
                     for local in (candidate[2].target, candidate[3].target, candidate[2].expr.target)
                     for ref in references
                 )

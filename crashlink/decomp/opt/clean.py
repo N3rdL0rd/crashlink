@@ -94,7 +94,7 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
     def optimize(self) -> None:
         self._loop_live_out: Dict[int, Set[str]] = {}
         self._catch_reads: Set[str] = set()
-        pending = [self.func.block]
+        pending: List[IRStatement] = [self.func.block]
         visited: Set[int] = set()
         while pending:
             stmt = pending.pop()
@@ -275,7 +275,7 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
         return False
 
     def _statement_reads_target(
-        self, statement: IRStatement, target: IRLocal | IRField | IRArrayAccess
+        self, statement: IRStatement, target: IRLocal | IRField | IRArrayAccess | IREnumField | IRConst
     ) -> bool:
         if statement == target:
             return True

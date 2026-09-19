@@ -326,8 +326,10 @@ def test_numeric_conversion_reuses_scratch_without_losing_observed_out_writes(mo
     count_alias = IRLocal("renamed_count", tIndex(1), code, reg_idx=0)
     ref_alias = IRLocal("renamed_ref", tIndex(1), code, reg_idx=1)
     native = Native()
-    native.lib = SimpleNamespace(resolve=lambda code: "std")
-    native.name = SimpleNamespace(resolve=lambda code: "itos")
+    code.strings.value.append("std")
+    native.lib.value = len(code.strings.value) - 1
+    code.strings.value.append("itos")
+    native.name.value = len(code.strings.value) - 1
     native_const = IRConst(code, IRConst.ConstType.NULL)
     native_const.value = native
     factory_const = IRConst(code, IRConst.ConstType.NULL)

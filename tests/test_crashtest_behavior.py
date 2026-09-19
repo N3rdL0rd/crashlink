@@ -119,14 +119,18 @@ def test_shipped_exemption_still_requires_recompilation(toolchain, monkeypatch):
     fixture = Path(__file__).parent / "haxe" / "Closure.hx"
     result = run_case(str(fixture), 0)
     assert not result.failed
+    assert result.behavioral_comparison is not None
     assert result.behavioral_comparison.exemption_reason
     assert not result.behavioral_comparison.passed
+    assert result.opcode_comparison is not None
     assert result.opcode_comparison.methods
 
     monkeypatch.setattr(decomp.IRClass, "pseudo", lambda self: "not valid Haxe")
     result = run_case(str(fixture), 0)
     assert result.failed
+    assert result.opcode_comparison is not None
     assert result.opcode_comparison.recompile_error
+    assert result.behavioral_comparison is not None
     assert result.behavioral_comparison.exemption_reason is None
 
 
@@ -141,5 +145,6 @@ def test_same_named_external_fixture_is_not_exempt(toolchain, tmp_path, monkeypa
     monkeypatch.setattr(decomp.IRClass, "pseudo", lambda self: source.replace("17", "18"))
     result = run_case(str(tmp_path / "Random.hx"), 0)
     assert result.failed
+    assert result.behavioral_comparison is not None
     assert not result.behavioral_comparison.passed
     assert result.behavioral_comparison.exemption_reason is None
