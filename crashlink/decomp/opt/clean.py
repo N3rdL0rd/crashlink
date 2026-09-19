@@ -335,7 +335,9 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
             folded = self._fold_condition_setup(loop, setup_statements_for_body, working_exit_condition)
             if folded is None:
                 dbg_print("IRLoopCondOpt: Preserving condition setup in while(true)+break form.")
-                return self._convert_to_while_true_break(loop, setup_statements_for_body, working_exit_condition)
+                return self._convert_to_while_true_break(
+                    loop, setup_statements_for_body, working_exit_condition
+                )
             working_exit_condition = folded
 
         loop_continuation_expr = self._clone_bool_expr(working_exit_condition)

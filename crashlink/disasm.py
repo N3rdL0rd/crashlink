@@ -283,8 +283,11 @@ def _trace_signature_types(code: Bytecode) -> Tuple[set[int], set[int]]:
                 continue
             fields = {f.name.resolve(code): type_name(code, f.type.resolve(code)) for f in position.fields}
             if fields != {
-                "fileName": "String", "lineNumber": "I32", "className": "String",
-                "methodName": "String", "customParams": "hl.types.ArrayDyn",
+                "fileName": "String",
+                "lineNumber": "I32",
+                "className": "String",
+                "methodName": "String",
+                "customParams": "hl.types.ArrayDyn",
             }:
                 continue
             positions.add(id(position))

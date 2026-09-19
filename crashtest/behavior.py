@@ -124,7 +124,9 @@ def compile_haxe(source: str, class_name: str, directory: Path) -> tuple[Path, s
     return target, error
 
 
-def compare_programs(original: Path, recompiled: Path, class_name: str, timeout: float = 5.0) -> BehavioralComparison:
+def compare_programs(
+    original: Path, recompiled: Path, class_name: str, timeout: float = 5.0
+) -> BehavioralComparison:
     runtime = resolve_hl_runtime()
     if not runtime:
         error = "HashLink runtime unavailable; set HL_RUNTIME or install hl on PATH"

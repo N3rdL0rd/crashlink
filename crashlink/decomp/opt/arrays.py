@@ -447,7 +447,9 @@ class IRArrayObjWrapperOptimizer(TraversingIROptimizer):
                         values, consumed = folded
                         literal = IRArrayLiteral(self.func.code, values, stmt.target.get_type())
                         elem_type = self._empty_array_elem_type(arg, local_defs)
-                        if not values or (elem_type is not None and elem_type.kind.value != Type.Kind.DYN.value):
+                        if not values or (
+                            elem_type is not None and elem_type.kind.value != Type.Kind.DYN.value
+                        ):
                             literal.recovered_elem_type = elem_type
                         drop.update(consumed)
                         stmt.expr = literal
@@ -1081,7 +1083,9 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
 
         assert isinstance(anon_call.target, IRConst) and isinstance(anon_call.target.value, Function)
         literal = IRArrayLiteral(
-            self.func.code, values, anon_call.target.value.resolve_fun(self.func.code).ret.resolve(self.func.code)
+            self.func.code,
+            values,
+            anon_call.target.value.resolve_fun(self.func.code).ret.resolve(self.func.code),
         )
         assert isinstance(stmt.expr, IRCall)
         type_arg = stmt.expr.args[0]
@@ -1142,7 +1146,9 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             return False
         return name.endswith("ArrayDyn.alloc")
 
-    def _try_empty_array_dyn(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRStatement, int, int]]:
+    def _try_empty_array_dyn(
+        self, stmts: List[IRStatement], start: int
+    ) -> Optional[Tuple[IRStatement, int, int]]:
         # Pattern:
         #   temp = ArrayObj.anon(alloc_array(null, 0))   (or already-simplified temp = [])
         #   [flag = true]                                 (optional HashLink 1.15+ boilerplate)
@@ -1190,11 +1196,7 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                     ref_defs[s.target] = s.expr
                     boilerplate_locals.add(s.target)
                 continue
-            if (
-                isinstance(s, IRAssign)
-                and isinstance(s.target, IRLocal)
-                and isinstance(s.expr, IRRefNew)
-            ):
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and isinstance(s.expr, IRRefNew):
                 ref_defs[s.target] = s.expr
                 boilerplate_locals.add(s.target)
                 continue

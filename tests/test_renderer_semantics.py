@@ -209,7 +209,8 @@ def test_static_alias_roundtrip_preserves_initialization_and_escapes(tmp_path):
     # Qualified read/write sites each need a receiver load. A third load is an
     # unconsumed class alias, not part of either static-field operation.
     loads = [
-        line for line in method.recomp_disasm.splitlines()
+        line
+        for line in method.recomp_disasm.splitlines()
         if line.startswith("GetGlobal.") and f"global[${name}]" in line
     ]
     assert len(loads) <= 2, method.recomp_disasm
@@ -252,9 +253,11 @@ def test_default_omission_requires_assignment_on_reachable_read_paths(scenario, 
     elif scenario == "loop_carried_read":
         root = block(IRWhileLoop(code, flag, block(value, write)))
     elif scenario == "continue_skips_read":
-        root = block(IRWhileLoop(code, flag, block(
-            IRConditional(code, flag, block(IRContinue(code)), block(write)), read
-        )))
+        root = block(
+            IRWhileLoop(
+                code, flag, block(IRConditional(code, flag, block(IRContinue(code)), block(write)), read)
+            )
+        )
     elif scenario in ("break_before_write", "break_after_write"):
         body = block(IRConditional(code, flag, block(IRBreak(code)), block()), write, IRBreak(code))
         if scenario == "break_after_write":

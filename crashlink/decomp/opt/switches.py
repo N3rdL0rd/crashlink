@@ -445,7 +445,9 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
                 if isinstance(node, IRAssign):
                     if node.target == enum_value:
                         break
-                    if not self._private_block(case_block) or self._mentions_outside(node.target.name, {id(case_block)}):
+                    if not self._private_block(case_block) or self._mentions_outside(
+                        node.target.name, {id(case_block)}
+                    ):
                         binding = self._fresh_binding(field)
                         pattern.slots[slot] = binding
                         body.statements.append(IRAssign(self.func.code, node.target, binding).adopt(node))
@@ -463,7 +465,10 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
         return new_switch, 2
 
     def _index_escapes(
-        self, name: str, definitions: Set[int], excluded: Set[int],
+        self,
+        name: str,
+        definitions: Set[int],
+        excluded: Set[int],
         dispatches: Optional[Set[int]] = None,
     ) -> bool:
         """Follow tag definitions through joins; a write on one arm kills only that arm."""
@@ -577,7 +582,8 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
             return None
         condition = conditional.condition
         if not isinstance(condition, IRBoolExpr) or condition.op not in (
-            IRBoolExpr.CompareType.EQ, IRBoolExpr.CompareType.NEQ,
+            IRBoolExpr.CompareType.EQ,
+            IRBoolExpr.CompareType.NEQ,
         ):
             return None
         left, right = condition.left, condition.right
@@ -657,8 +663,14 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
                 default.statements, failure.statements
             ):
                 return None
-            source = next((entry for entry in reversed(fields) if isinstance(entry[0], IRAssign)
-                           and entry[0].target == nested_value), None)
+            source = next(
+                (
+                    entry
+                    for entry in reversed(fields)
+                    if isinstance(entry[0], IRAssign) and entry[0].target == nested_value
+                ),
+                None,
+            )
             if source is None:
                 return None
             child = IREnumPattern(self.func.code, nested_value.type, nested_index)
@@ -671,8 +683,13 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
         excluded = {id(node) for node in removed}
         # Index locals can be reused, but their old tag value must not escape.
         for name in indices:
-            definitions = {id(node) for node in removed if isinstance(node, IRAssign)
-                           and node.target.name == name and isinstance(node.expr, IREnumIndex)}
+            definitions = {
+                id(node)
+                for node in removed
+                if isinstance(node, IRAssign)
+                and node.target.name == name
+                and isinstance(node.expr, IREnumIndex)
+            }
             if self._index_escapes(name, definitions, excluded):
                 return None
         for name in intermediates:
@@ -692,7 +709,9 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
             if isinstance(pattern.slots.get(slot), IREnumPattern):
                 continue
             if isinstance(node, IRAssign):
-                if self._private_block(current) and not self._mentions_outside(node.target.name, excluded | {id(current)}):
+                if self._private_block(current) and not self._mentions_outside(
+                    node.target.name, excluded | {id(current)}
+                ):
                     # The destination exists solely inside this successful case.
                     # Binding it directly cannot shadow an outer live value.
                     pattern.slots[slot] = node.target
@@ -702,13 +721,18 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
                     bindings.append(IRAssign(self.func.code, node.target, binding).adopt(node))
         body = IRBlock(self.func.code)
         body.statements = bindings + body_statements
-        key = IRConst(self.func.code, IRConst.ConstType.GLOBAL_STRING,
-                      value=cast(Enum, value.get_type().definition).constructs[index].name.resolve(self.func.code))
+        key = IRConst(
+            self.func.code,
+            IRConst.ConstType.GLOBAL_STRING,
+            value=cast(Enum, value.get_type().definition).constructs[index].name.resolve(self.func.code),
+        )
         switch = IRSwitch(self.func.code, value, {key: body}, default).adopt(*removed)
         switch.enum_patterns[key] = root
         return switch, 2
 
-    def _try_singleton_region(self, statements: List[IRStatement], start: int) -> Optional[Tuple[IRSwitch, int]]:
+    def _try_singleton_region(
+        self, statements: List[IRStatement], start: int
+    ) -> Optional[Tuple[IRSwitch, int]]:
         fields: List[Tuple[IRStatement, IREnumField, int]] = []
         value: Optional[IRLocal] = None
         pattern: Optional[IREnumPattern] = None
@@ -753,11 +777,15 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
             assert isinstance(binding, IRLocal)
             body.statements.append(
                 IRAssign(self.func.code, node.target, binding).adopt(node)
-                if isinstance(node, IRAssign) else IRReturn(self.func.code, binding).adopt(node)
+                if isinstance(node, IRAssign)
+                else IRReturn(self.func.code, binding).adopt(node)
             )
         enum = cast(Enum, value.get_type().definition)
-        key = IRConst(self.func.code, IRConst.ConstType.GLOBAL_STRING,
-                      value=enum.constructs[0].name.resolve(self.func.code))
+        key = IRConst(
+            self.func.code,
+            IRConst.ConstType.GLOBAL_STRING,
+            value=enum.constructs[0].name.resolve(self.func.code),
+        )
         switch = IRSwitch(self.func.code, value, {key: body}, IRBlock(self.func.code))
         switch.enum_patterns[key] = pattern
         switch.adopt(*(node for node, _, _ in fields))

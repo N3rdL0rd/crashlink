@@ -531,8 +531,10 @@ def test_loop_recovery_preserves_condition_skipped_by_continue(tmp_path, tail_fo
     body = block(
         IRAssign(code, i, IRArithmetic(code, i, number(1), IRArithmetic.ArithmeticType.ADD)),
         IRConditional(
-            code, IRBoolExpr(code, IRBoolExpr.CompareType.LT, i, number(3)),
-            block(IRContinue(code)), block(),
+            code,
+            IRBoolExpr(code, IRBoolExpr.CompareType.LT, i, number(3)),
+            block(IRContinue(code)),
+            block(),
         ),
         *tail,
     )
@@ -543,7 +545,7 @@ def test_loop_recovery_preserves_condition_skipped_by_continue(tmp_path, tail_fo
         "class Probe { static function main() { var i = 0; var checks = 0; "
         "function check():Bool { checks++; return false; }\n"
         + rendered
-        + '\nSys.println(i); Sys.println(checks); } }'
+        + "\nSys.println(i); Sys.println(checks); } }"
     )
     result = subprocess.run(
         [haxe, "-cp", str(tmp_path), "-main", "Probe", "--interp"],
@@ -597,7 +599,7 @@ def test_loop_condition_setup_preserves_evaluation(tmp_path, scenario, expected)
     body = [
         IRAssign(code, i, IRArithmetic(code, i, number(1), IRArithmetic.ArithmeticType.ADD)),
     ]
-    suffix = 'Sys.println(i); Sys.println(box.reads);'
+    suffix = "Sys.println(i); Sys.println(box.reads);"
     bound = 3
     if scenario == "continue":
         # The scratch is killed before the continue; the test still runs on
@@ -607,29 +609,31 @@ def test_loop_condition_setup_preserves_evaluation(tmp_path, scenario, expected)
         bound = 0
     elif scenario == "live_exit":
         bound = 0
-        suffix = 'Sys.println(scratch); Sys.println(box.reads);'
+        suffix = "Sys.println(scratch); Sys.println(box.reads);"
     elif scenario == "live_body":
         body = [IRAssign(code, i, scratch), IRBreak(code)]
     elif scenario == "null_before_call":
         setup.append(IRAssign(code, other, IRCall(code, IRCall.CallType.CLOSURE, check, [])))
-        suffix = 'Sys.println(calls);'
+        suffix = "Sys.println(calls);"
     elif scenario == "null_read":
-        suffix = 'Sys.println(i);'
+        suffix = "Sys.println(i);"
     elif scenario == "null_final_test":
         body.append(IRAssign(code, box, IRConst(code, IRConst.ConstType.NULL, value=None)))
-        suffix = 'Sys.println(i);'
+        suffix = "Sys.println(i);"
     elif scenario == "read_order":
         setup = [IRAssign(code, scratch, field("right")), IRAssign(code, other, field("left"))]
         # Folding in operand order would reverse the throwing reads.
         condition = IRBoolExpr(code, IRBoolExpr.CompareType.GTE, other, scratch)
-        suffix = 'Sys.println(box.order);'
+        suffix = "Sys.println(box.order);"
     elif scenario == "overwrite_operand":
         setup = [IRAssign(code, scratch, i), IRAssign(code, i, field("limit"))]
         body = [IRAssign(code, other, scratch), IRBreak(code)]
-        suffix = 'Sys.println(i); Sys.println(box.reads);'
+        suffix = "Sys.println(i); Sys.println(box.reads);"
         bound = 1
     elif scenario == "overwrite_chain":
-        setup.append(IRAssign(code, scratch, IRArithmetic(code, scratch, number(1), IRArithmetic.ArithmeticType.ADD)))
+        setup.append(
+            IRAssign(code, scratch, IRArithmetic(code, scratch, number(1), IRArithmetic.ArithmeticType.ADD))
+        )
         bound = 0
 
     loop = IRPrimitiveLoop(code, block(*setup, condition), block(*body))
@@ -637,13 +641,17 @@ def test_loop_condition_setup_preserves_evaluation(tmp_path, scenario, expected)
     if scenario == "live_exit":
         # This is an actual IR consumer, not an invisible renderer-only read.
         statements.append(IRAssign(code, other, scratch))
-        suffix = 'Sys.println(other); Sys.println(box.reads);'
+        suffix = "Sys.println(other); Sys.println(box.reads);"
     function = _function(code, statements, [i, scratch, other, box, check])
     IRLoopConditionOptimizer(function).optimize()
-    rendered = "\n".join(_generate_statements(function.block.statements, code, function, 2, {"i", "scratch", "other", "box", "check"}))
+    rendered = "\n".join(
+        _generate_statements(
+            function.block.statements, code, function, 2, {"i", "scratch", "other", "box", "check"}
+        )
+    )
     if scenario in ("null_before_call", "null_read", "null_final_test"):
-        prefix = '' if scenario == "null_final_test" else 'box = null; '
-        rendered = prefix + 'try {\n' + rendered + '\n} catch (e:Dynamic) { Sys.println("caught"); }'
+        prefix = "" if scenario == "null_final_test" else "box = null; "
+        rendered = prefix + "try {\n" + rendered + '\n} catch (e:Dynamic) { Sys.println("caught"); }'
     (tmp_path / "Probe.hx").write_text(
         "class Box { public var reads = 0; public var order = ''; var bound:Int; "
         "public function new(n:Int) { bound = n; } "
@@ -652,12 +660,13 @@ def test_loop_condition_setup_preserves_evaluation(tmp_path, scenario, expected)
         "public var right(get,never):Int; function get_right():Int { order += 'R'; return 0; } } "
         "class Probe { static function main() { var i = 0; var scratch = -10; var other = -20; "
         f"var box = new Box({bound}); var calls = 0; "
-        "function check():Int { calls++; return 0; }\n"
-        + rendered + "\n" + suffix + " } }"
+        "function check():Int { calls++; return 0; }\n" + rendered + "\n" + suffix + " } }"
     )
     result = subprocess.run(
         [haxe, "-cp", str(tmp_path), "-main", "Probe", "--interp"],
-        capture_output=True, text=True, timeout=10,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == expected

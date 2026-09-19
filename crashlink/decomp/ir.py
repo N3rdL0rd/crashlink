@@ -1355,7 +1355,11 @@ class IREnumField(IRExpression):
     """Represents accessing a field of an enum construct, e.g., extracting `r` from `Rgb(r, g, b)`"""
 
     def __init__(
-        self, code: Bytecode, value: IRExpression, field_name: str, field_type: tIndex,
+        self,
+        code: Bytecode,
+        value: IRExpression,
+        field_name: str,
+        field_type: tIndex,
         constructor_index: Optional[int] = None,
     ):
         super().__init__(code)

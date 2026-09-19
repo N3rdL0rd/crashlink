@@ -1860,7 +1860,13 @@ class IRFunction:
         # The same CFG region can be reached with different register lifetimes.
         # Cache both its incoming identity state and its outgoing state; restoring
         # only the IR would leak the preceding sibling's names into its successor.
-        cache_key = (node, stop_at, id(loop_ctx), tuple(id(local) for local in self.locals), frozenset(self._new_defined_regs))
+        cache_key = (
+            node,
+            stop_at,
+            id(loop_ctx),
+            tuple(id(local) for local in self.locals),
+            frozenset(self._new_defined_regs),
+        )
         cached = self._lift_cache.get(cache_key)
         if cached is not None:
             visited.add(node)
@@ -2282,9 +2288,7 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                 # offset. Only evaluate integer constants, never source expressions.
                 try:
                     if op.op == "Shl":
-                        value = int(reg_value[op.df["a"].value]) << (
-                            int(reg_value[op.df["b"].value]) & 31
-                        )
+                        value = int(reg_value[op.df["a"].value]) << (int(reg_value[op.df["b"].value]) & 31)
                         value = (value + 0x80000000) % 0x100000000 - 0x80000000
                     else:
                         value = int(reg_value[dst.value]) + (1 if op.op == "Incr" else -1)
@@ -2408,7 +2412,7 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                     and call_arg_regs[0] in bytes_builds
                 ):
                     size, stores = bytes_builds.pop(call_arg_regs[0])
-                    kind = fname_parts[1][len("alloc"):]
+                    kind = fname_parts[1][len("alloc") :]
                     width = 1 << IRArrayPatternOptimizer._ALLOC_SHIFTS[fname_parts[1]]
                     length_text = reg_value.get(call_arg_regs[1], "")
                     length = int(length_text) if length_text.isdigit() else -1
@@ -2418,7 +2422,9 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                         and len(stores) == length
                         and all(i * width in stores and stores[i * width][0] == kind for i in range(length))
                     ):
-                        reg_value[dst.value] = "[" + ", ".join(stores[i * width][1] for i in range(length)) + "]"
+                        reg_value[dst.value] = (
+                            "[" + ", ".join(stores[i * width][1] for i in range(length)) + "]"
+                        )
                         refs: Set[str] = set()
                         for i in range(length):
                             refs |= stores[i * width][2]
@@ -2542,7 +2548,9 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                     kind = (
                         _bytes_mem_kind(code, entry.regs[src_reg])
                         if op.op == "SetMem"
-                        else "UI16" if op.op == "SetI16" else None
+                        else "UI16"
+                        if op.op == "SetI16"
+                        else None
                     )
                     width = {"I32": 4, "F32": 4, "F64": 8, "UI16": 2}.get(kind)
                     size, stores = bytes_builds[bytes_reg]

@@ -205,9 +205,13 @@ def test_wrapper_uses_reaching_allocation_without_narrowing_reused_backing():
     shapes = IRLocal("shapes", types["hl.types.ArrayObj"], code)
     block = _block(
         code,
-        IRAssign(code, backing, IRNativeArrayNew(code, backing.type, types["Shape"].resolve(code), _int(code, 0))),
+        IRAssign(
+            code, backing, IRNativeArrayNew(code, backing.type, types["Shape"].resolve(code), _int(code, 0))
+        ),
         IRAssign(code, shapes, wrapper),
-        IRAssign(code, backing, IRNativeArrayNew(code, backing.type, types["Dyn"].resolve(code), _int(code, 0))),
+        IRAssign(
+            code, backing, IRNativeArrayNew(code, backing.type, types["Dyn"].resolve(code), _int(code, 0))
+        ),
     )
     _recover_wrapper_element_types(block, code, {})
     _recover_native_local_types(cast(IRFunction, SimpleNamespace(block=block)), code)
@@ -221,11 +225,20 @@ def test_wrapper_rejects_stale_backing_definition_across_control_flow():
     shapes = IRLocal("shapes", types["hl.types.ArrayObj"], code)
     block = _block(
         code,
-        IRAssign(code, backing, IRNativeArrayNew(code, backing.type, types["Shape"].resolve(code), _int(code, 0))),
+        IRAssign(
+            code, backing, IRNativeArrayNew(code, backing.type, types["Shape"].resolve(code), _int(code, 0))
+        ),
         IRConditional(
             code,
             IRConst(code, IRConst.ConstType.BOOL, value=True),
-            _block(code, IRAssign(code, backing, IRNativeArrayNew(code, backing.type, types["Dyn"].resolve(code), _int(code, 0)))),
+            _block(
+                code,
+                IRAssign(
+                    code,
+                    backing,
+                    IRNativeArrayNew(code, backing.type, types["Dyn"].resolve(code), _int(code, 0)),
+                ),
+            ),
             _block(code),
         ),
         IRAssign(code, shapes, wrapper),
@@ -239,9 +252,13 @@ def test_wrapper_does_not_narrow_public_array_with_mixed_allocation_lifetimes():
     shapes = IRLocal("shapes", types["hl.types.ArrayObj"], code)
     block = _block(
         code,
-        IRAssign(code, backing, IRNativeArrayNew(code, backing.type, types["Shape"].resolve(code), _int(code, 0))),
+        IRAssign(
+            code, backing, IRNativeArrayNew(code, backing.type, types["Shape"].resolve(code), _int(code, 0))
+        ),
         IRAssign(code, shapes, wrapper),
-        IRAssign(code, backing, IRNativeArrayNew(code, backing.type, types["Dyn"].resolve(code), _int(code, 0))),
+        IRAssign(
+            code, backing, IRNativeArrayNew(code, backing.type, types["Dyn"].resolve(code), _int(code, 0))
+        ),
         IRAssign(code, shapes, wrapper),
     )
     _recover_wrapper_element_types(block, code, {})
@@ -254,7 +271,9 @@ def test_wrapper_signature_without_backing_installation_does_not_forward_type():
     wrapper.target.value.ops[1].df["src"].value = 1
     block = _block(
         code,
-        IRAssign(code, backing, IRNativeArrayNew(code, backing.type, types["Shape"].resolve(code), _int(code, 0))),
+        IRAssign(
+            code, backing, IRNativeArrayNew(code, backing.type, types["Shape"].resolve(code), _int(code, 0))
+        ),
         IRAssign(code, shapes, wrapper),
     )
     _recover_wrapper_element_types(block, code, {})
@@ -266,7 +285,9 @@ def test_wrapper_does_not_forward_address_taken_backing_type():
     shapes = IRLocal("shapes", types["hl.types.ArrayObj"], code)
     block = _block(
         code,
-        IRAssign(code, backing, IRNativeArrayNew(code, backing.type, types["Shape"].resolve(code), _int(code, 0))),
+        IRAssign(
+            code, backing, IRNativeArrayNew(code, backing.type, types["Shape"].resolve(code), _int(code, 0))
+        ),
         IRRefNew(code, backing),
         IRAssign(code, shapes, wrapper),
     )
@@ -400,6 +421,7 @@ class ArrayReadBounds {
     assert error is None, error
     after = Bytecode.from_path(str(recompiled))
     for method in ("swap", "read"):
+
         def operations(code):
             function = next(f for f in code.functions if code.full_func_name(f) == f"${name}.{method}")
             return Counter(op.op for op in function.ops if op.op in ("JULt", "GetMem", "SetMem"))

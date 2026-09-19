@@ -537,7 +537,9 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
                             i += 1
                             continue
                         if conditional_stmt.condition == assigned_local:
-                            if used_outside and not self._is_safe_to_duplicate(expr_to_inline, assigned_local):
+                            if used_outside and not self._is_safe_to_duplicate(
+                                expr_to_inline, assigned_local
+                            ):
                                 new_statements.append(current_stmt)
                                 i += 1
                                 continue
@@ -553,7 +555,9 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
                             i += 2
                             inlined_something = True
                         elif isinstance(conditional_stmt.condition, IRBoolExpr):
-                            if used_outside and not self._is_safe_to_duplicate(expr_to_inline, assigned_local):
+                            if used_outside and not self._is_safe_to_duplicate(
+                                expr_to_inline, assigned_local
+                            ):
                                 new_statements.append(current_stmt)
                                 i += 1
                                 continue
@@ -590,9 +594,10 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
                             i += 1
                             continue
                         if while_loop_stmt.condition == assigned_local:
-                            if (used_outside and not self._is_safe_to_duplicate(expr_to_inline, assigned_local)) or (
-                                self._has_loop_condition_cost(expr_to_inline)
-                            ):
+                            if (
+                                used_outside
+                                and not self._is_safe_to_duplicate(expr_to_inline, assigned_local)
+                            ) or (self._has_loop_condition_cost(expr_to_inline)):
                                 new_statements.append(current_stmt)
                                 i += 1
                                 continue
@@ -608,9 +613,10 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
                             i += 2
                             inlined_something = True
                         elif isinstance(while_loop_stmt.condition, IRBoolExpr):
-                            if (used_outside and not self._is_safe_to_duplicate(expr_to_inline, assigned_local)) or (
-                                self._has_loop_condition_cost(expr_to_inline)
-                            ):
+                            if (
+                                used_outside
+                                and not self._is_safe_to_duplicate(expr_to_inline, assigned_local)
+                            ) or (self._has_loop_condition_cost(expr_to_inline)):
                                 new_statements.append(current_stmt)
                                 i += 1
                                 continue
@@ -1534,9 +1540,9 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                             new_statements.append(current_stmt)
                             i += 1
                             continue
-                    if isinstance(expr_to_inline, IRExpression) and _ScopedLocalLifetime(self.func.block).reads(
-                        expr_to_inline, temp_local
-                    ):
+                    if isinstance(expr_to_inline, IRExpression) and _ScopedLocalLifetime(
+                        self.func.block
+                    ).reads(expr_to_inline, temp_local):
                         new_statements.append(current_stmt)
                         i += 1
                         continue
@@ -1546,10 +1552,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                             self._stmt_contains_local(next_stmt, temp_local)
                             and not (
                                 self._has_nontrivial_computation(expr_to_inline)
-                                and (
-                                    inside_loop_body
-                                    or self._count_local_reads(next_stmt, temp_local) > 1
-                                )
+                                and (inside_loop_body or self._count_local_reads(next_stmt, temp_local) > 1)
                             )
                             and not self._is_local_redefined(temp_local, [next_stmt])
                             and not self._stmt_reassigns_any(

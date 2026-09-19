@@ -131,8 +131,7 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
         private = []
         for block, index, reference, conversion, allocation in candidates:
             if any(
-                occurrences[id(node)] != 1
-                for node in (reference, conversion, allocation, reference.expr)
+                occurrences[id(node)] != 1 for node in (reference, conversion, allocation, reference.expr)
             ):
                 continue
             scratch = (reference.target, conversion.target, reference.expr.target)
@@ -158,9 +157,7 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
                 for candidate in private
                 if not any(
                     id(ref) not in owned and lifetime.aliases(ref.target, local)
-                    for local in (
-                        candidate[2].target, candidate[3].target, candidate[2].expr.target
-                    )
+                    for local in (candidate[2].target, candidate[3].target, candidate[2].expr.target)
                     for ref in references
                 )
             ]

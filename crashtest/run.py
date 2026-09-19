@@ -129,7 +129,9 @@ def run_case_isolated(case: str, id: int) -> TestCase:
         if elapsed > TIME_LIMIT_SECONDS:
             kill_reason = f"Decompilation exceeded the {TIME_LIMIT_SECONDS:.0f}s time limit."
         elif peak_mb > MEMORY_LIMIT_MB:
-            kill_reason = f"Decompilation exceeded the {MEMORY_LIMIT_MB:.0f}MB memory limit (peak {peak_mb:.0f}MB)."
+            kill_reason = (
+                f"Decompilation exceeded the {MEMORY_LIMIT_MB:.0f}MB memory limit (peak {peak_mb:.0f}MB)."
+            )
         if kill_reason:
             proc.terminate()
             proc.join(2)
@@ -162,7 +164,9 @@ def run_case_isolated(case: str, id: int) -> TestCase:
 
     if "status" not in received:
         exit_note = f" (exit code {proc.exitcode})" if proc.exitcode else ""
-        return _failure(f"Worker process exited without a result{exit_note} - likely OOM-killed by the kernel.")
+        return _failure(
+            f"Worker process exited without a result{exit_note} - likely OOM-killed by the kernel."
+        )
 
     if received["status"] != "ok":
         return _failure(f"Worker crashed: {received['payload']}")
@@ -254,7 +258,9 @@ def get_repo_info() -> GitInfo:
         os.chdir(script_dir)
 
         try:
-            branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode("utf-8")
+            branch = (
+                subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip().decode("utf-8")
+            )
             commit = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
             dirty = subprocess.check_output(["git", "status", "--porcelain"]).strip().decode("utf-8") != ""
             return GitInfo(
@@ -376,7 +382,11 @@ def recompile_pseudo(
             error = f"Failed to load recompiled bytecode: {exc}"
             return None, error, BehavioralComparison(False, Execution(), Execution(), error)
         original_path = original_path.resolve()
-        reason = _BEHAVIOR_EXEMPTIONS.get(class_name) if original_path == _HAXE_FIXTURES / f"{class_name}.hl" else None
+        reason = (
+            _BEHAVIOR_EXEMPTIONS.get(class_name)
+            if original_path == _HAXE_FIXTURES / f"{class_name}.hl"
+            else None
+        )
         if reason:
             return code, None, BehavioralComparison(False, Execution(), Execution(), exemption_reason=reason)
         return code, None, compare_programs(original_path, target, class_name)
@@ -440,7 +450,9 @@ def run_case(case: str, id: int) -> TestCase:
                 layers[func_name] = {
                     "opcodes": static_method.opcodes,
                     "cfg": cfg_data,
-                    "steps": [{"name": n, "ir": ir, "ran": ran} for n, ir, ran in static_method.layer_snapshots],
+                    "steps": [
+                        {"name": n, "ir": ir, "ran": ran} for n, ir, ran in static_method.layer_snapshots
+                    ],
                     "pseudo": pseudo(static_method),
                 }
 
@@ -545,7 +557,9 @@ def run_single_case(args: Any) -> bool:
     print(f"Time: {result.elapsed_seconds:.2f}s  Peak memory: {result.peak_memory_mb:.0f}MB")
     behavior = result.behavioral_comparison
     behavior_status = (
-        "EXEMPT" if behavior and behavior.exemption_reason else ("PASS" if behavior and behavior.passed else "FAIL")
+        "EXEMPT"
+        if behavior and behavior.exemption_reason
+        else ("PASS" if behavior and behavior.passed else "FAIL")
     )
     print(f"Behavior (HashLink): {behavior_status}")
     if behavior and behavior.exemption_reason:
@@ -684,7 +698,9 @@ def run() -> bool:
             print(f"Running {case}...")
         result = run_case_isolated(case, i)
         if result.elapsed_seconds > TIME_LIMIT_SECONDS or result.peak_memory_mb > MEMORY_LIMIT_MB:
-            print(f"  -> {case} exceeded limits: {result.elapsed_seconds:.1f}s, {result.peak_memory_mb:.0f}MB")
+            print(
+                f"  -> {case} exceeded limits: {result.elapsed_seconds:.1f}s, {result.peak_memory_mb:.0f}MB"
+            )
         results.append(result)
 
     print("Generating run...")

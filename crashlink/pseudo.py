@@ -1325,6 +1325,8 @@ def _contains_loop_continue(stmt: IRStatement) -> bool:
     if isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop, IRForEachLoop, IRIntRangeLoop)):
         return False
     return any(_contains_loop_continue(child) for child in stmt.get_children())
+
+
 def _unused_static_aliases(root: IRStatement, code: Bytecode) -> Set[str]:
     """Find class-global bindings whose only reads render as qualified fields.
 
@@ -1920,8 +1922,9 @@ def _generate_statements(
                 pattern = stmt.enum_patterns.get(case_value)
                 param_names = None if pattern else _enum_case_params(case_block, switch_value_expr)
                 case_str = (
-                    _enum_pattern_to_haxe(pattern, code) if pattern else
-                    _case_value_to_haxe(case_value, enum_type, code, ir_function, param_names)
+                    _enum_pattern_to_haxe(pattern, code)
+                    if pattern
+                    else _case_value_to_haxe(case_value, enum_type, code, ir_function, param_names)
                 )
                 output_lines.append(f"{indent}    case {case_str}:")
                 case_statements = case_block.statements[len(param_names) if param_names else 0 :]
@@ -2266,7 +2269,9 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         # If the variable only lives inside a single compound statement, declare
         # it inline there rather than pre-declaring at function level.
         assigned_before_use = _is_definitely_assigned_before_use(local_name, ir_func.block)
-        inner_stmt = _find_inner_defining_assignment(local_name, ir_func.block) if assigned_before_use else None
+        inner_stmt = (
+            _find_inner_defining_assignment(local_name, ir_func.block) if assigned_before_use else None
+        )
         if inner_stmt is not None:
             inline_declarations[inner_stmt] = (local_name, type_str)
             continue
@@ -2907,8 +2912,6 @@ def _is_std_function(func: "Function", code: Bytecode) -> bool:
     return "/std/" in path.replace("\\", "/")
 
 
-
-
 def _detect_enum_value_from_cases(stmt: "IRSwitch") -> Optional["IRExpression"]:
     """For a switch on an integer (enum index) look inside case blocks to find
     the actual enum expression being indexed.  Returns it if all enum-field
@@ -2936,8 +2939,11 @@ def _enum_pattern_to_haxe(pattern: IREnumPattern, code: Bytecode) -> str:
     for index in range(len(construct.params)):
         slot = pattern.slots.get(index)
         params.append(
-            _enum_pattern_to_haxe(slot, code) if isinstance(slot, IREnumPattern)
-            else slot.name if isinstance(slot, IRLocal) else "_"
+            _enum_pattern_to_haxe(slot, code)
+            if isinstance(slot, IREnumPattern)
+            else slot.name
+            if isinstance(slot, IRLocal)
+            else "_"
         )
     return f"{name}({', '.join(params)})" if params else name
 
@@ -3971,9 +3977,7 @@ def _class_body(
     referenced_enums: Dict[str, Enum] = {}
     annotation_types = [typ for _, typ in ir_class.static_fields + ir_class.fields]
     annotation_types.extend(getattr(ir_class, "field_elem_types", {}).values())
-    annotation_types.extend(
-        method.func.type.resolve(code) for method in all_methods
-    )
+    annotation_types.extend(method.func.type.resolve(code) for method in all_methods)
     seen_types: Set[int] = set()
     for annotation in annotation_types:
         for typ in _annotation_dependencies(annotation, code, seen_types):
@@ -4073,7 +4077,9 @@ def _class_body(
 
 
 def _class_pseudo_recursive(
-    ir_class: "IRClass", emitted: Set[str], max_classes: Optional[int] = None,
+    ir_class: "IRClass",
+    emitted: Set[str],
+    max_classes: Optional[int] = None,
     emitted_enums: Optional[Set[int]] = None,
 ) -> List[str]:
     """
@@ -4126,7 +4132,9 @@ def _class_pseudo_recursive(
         try:
             other_ir = IRClass(code, other_obj)
             result.extend(
-                _class_pseudo_recursive(other_ir, emitted, max_classes=max_classes, emitted_enums=emitted_enums)
+                _class_pseudo_recursive(
+                    other_ir, emitted, max_classes=max_classes, emitted_enums=emitted_enums
+                )
             )
         except Exception:
             # Fall back to a stub if the class cannot be decompiled.
@@ -4360,13 +4368,9 @@ def _stub_class(code: Bytecode, primary: Obj) -> str:
     static_fields = _obj_fields(code, static)
     inst_fields = _obj_fields(code, dynamic)
     for field_name, field_type in static_fields:
-        lines.append(
-            f"    public static var {field_name}: {disasm._haxe_annotation(code, field_type)};"
-        )
+        lines.append(f"    public static var {field_name}: {disasm._haxe_annotation(code, field_type)};")
     for field_name, field_type in inst_fields:
-        lines.append(
-            f"    public var {field_name}: {disasm._haxe_annotation(code, field_type)};"
-        )
+        lines.append(f"    public var {field_name}: {disasm._haxe_annotation(code, field_type)};")
     if static_fields or inst_fields:
         lines.append("")
 

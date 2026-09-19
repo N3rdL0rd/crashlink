@@ -536,9 +536,7 @@ def recover_array_element_types(ir_class: "IRClass") -> None:
 
     # Only publish fields belonging to this class; foreign fields stay in the
     # class-qualified cache for their own declarations to consume later.
-    owners = {
-        obj.name.resolve(code) for obj in (ir_class.dynamic, ir_class.static) if obj is not None
-    }
+    owners = {obj.name.resolve(code) for obj in (ir_class.dynamic, ir_class.static) if obj is not None}
     ir_class.field_elem_types = {
         fname: etype for (owner, fname), etype in global_cache.items() if owner in owners
     }
