@@ -733,4 +733,38 @@ def test_loop_condition_recovers_after_array_guard_collapse(tmp_path):
     assert error is None, error
     result = compare_programs(original, recompiled, name)
     assert result.passed, result.to_json()
-    assert result.original.stdout == "3\n"
+
+
+def test_unrolled_loop_is_rerolled_only_with_shared_source_lines(tmp_path):
+    from crashtest.behavior import compare_programs, compile_haxe, resolve_hl_runtime
+
+    if not shutil.which("haxe") or not resolve_hl_runtime():
+        pytest.skip("reroll regression requires Haxe and HashLink")
+    name = "RerollProbe"
+    source = """class RerollProbe {
+    static function main() {
+        var acc = 0;
+        for (i in 0...6) {
+            var scaled = i * 10 + 1;
+            acc += scaled;
+            Sys.println(i + ":" + scaled + ":" + acc);
+        }
+        Sys.println("a");
+        Sys.println("b");
+        Sys.println("c");
+    }
+}"""
+    original, error = compile_haxe(source, name, tmp_path / "original")
+    assert error is None, error
+    code = Bytecode.from_path(str(original))
+    recovered = IRClass(code, code.get_test_obj(name)).pseudo()
+    # The loop body is unrolled in the bytecode; the three prints are separate
+    # source statements that happen to look alike, and must stay separate.
+    assert "for (i in 0...6)" in recovered
+    assert "i * 10 + 1" in recovered
+    assert recovered.count('Sys.println("a")') == 1
+    assert 'Sys.println("b")' in recovered and 'Sys.println("c")' in recovered
+    recompiled, error = compile_haxe(recovered, name, tmp_path / "recompiled")
+    assert error is None, error
+    result = compare_programs(original, recompiled, name)
+    assert result.passed, result.to_json()

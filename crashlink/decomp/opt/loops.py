@@ -4,9 +4,11 @@ Loop-reroll and loop-lifting optimizers.
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+import copy
+from typing import Dict, List, Optional, Tuple, cast
 
 
+from ...core import tIndex
 from ..ir import (
     IRStatement,
     IRExpression,
@@ -33,6 +35,8 @@ from ..ir import (
     IRRef,
     IREnumIndex,
     IREnumField,
+    IRStringConvert,
+    _get_type_in_code,
 )
 from . import (
     TraversingIROptimizer,
@@ -270,6 +274,261 @@ class IRLoopRerollOptimizer(TraversingIROptimizer):
         if isinstance(expr, IRRef):
             return self._expr_reads_local(expr.target, local)
         return False
+
+
+class IRUnrolledLoopRerollOptimizer(TraversingIROptimizer):
+    """
+    Rebuild a `for (i in a...b)` loop the Haxe compiler unrolled.
+
+    A constant-bounds loop can be emitted as N copies of its body, each copy
+    differing only in the values derived from the iteration index. This pass
+    finds a run of structurally identical copies whose differing integer
+    constants advance by a fixed step, and rewrites the run as a loop whose
+    body recomputes those constants from the induction variable.
+
+    Only exact arithmetic progressions over at least three copies qualify: two
+    copies fit any step, and a non-uniform difference means the copies are not
+    iterations of one loop.
+    """
+
+    #: Enough to cover a realistic unrolled body without scanning quadratically.
+    _MAX_PERIOD = 64
+    _MIN_COPIES = 3
+    #: An unrolled loop and a handful of similar source statements compile to
+    #: the same bytecode, so only collapse a run big enough that a loop is the
+    #: better reading of it.
+    _MIN_STATEMENTS = 8
+
+    #: Nodes whose children this pass can enumerate and rebuild.
+    _CHILD_ATTRS: dict = {
+        IRAssign: ("target", "expr"),
+        IRConditional: ("condition", "true_block", "false_block"),
+        IRReturn: ("value",),
+        IRTrace: ("msg",),
+        IRCall: ("target", "args"),
+        IRArithmetic: ("left", "right"),
+        IRBoolExpr: ("left", "right"),
+        IRCast: ("expr",),
+        IRField: ("target",),
+        IRArrayAccess: ("array", "index"),
+        IRArrayLiteral: ("elements",),
+        IRNew: ("constructor_args",),
+        IRRef: ("target",),
+        IRStringConvert: ("value",),
+        IRConst: (),
+        IRLocal: (),
+    }
+
+    def visit_block(self, block: IRBlock) -> None:
+        changed = True
+        while changed:
+            changed = False
+            statements = block.statements
+            for start in range(len(statements)):
+                rerolled = self._try_reroll(statements, start)
+                if rerolled is None:
+                    continue
+                loop, consumed = rerolled
+                block.statements = statements[:start] + [loop] + statements[start + consumed :]
+                changed = True
+                break
+
+    def _try_reroll(self, statements: List[IRStatement], start: int) -> Optional[Tuple[IRIntRangeLoop, int]]:
+        available = len(statements) - start
+        if available < self._MIN_COPIES:
+            return None
+        shapes: List[Optional[str]] = []
+        for stmt in statements[start:]:
+            shape = self._shape(stmt)
+            if shape is None:
+                break
+            shapes.append(shape)
+        if len(shapes) < self._MIN_COPIES:
+            return None
+
+        for period in range(1, min(self._MAX_PERIOD, len(shapes) // self._MIN_COPIES) + 1):
+            copies = 1
+            while (copies + 1) * period <= len(shapes) and shapes[
+                (copies - 1) * period : copies * period
+            ] == shapes[copies * period : (copies + 1) * period]:
+                copies += 1
+            if copies < self._MIN_COPIES:
+                continue
+            if period * copies < self._MIN_STATEMENTS:
+                continue
+            if not self._copies_share_source_lines(statements, start, period, copies):
+                continue
+            loop = self._build_loop(statements, start, period, copies)
+            if loop is not None:
+                return loop, period * copies
+        return None
+
+    def _build_loop(
+        self, statements: List[IRStatement], start: int, period: int, copies: int
+    ) -> Optional[IRIntRangeLoop]:
+        groups = [statements[start + k * period : start + (k + 1) * period] for k in range(copies)]
+        constant_lists = [self._constants(group) for group in groups]
+        first = constant_lists[0]
+        if any(len(other) != len(first) for other in constant_lists[1:]):
+            return None
+
+        steps: List[int] = []
+        for position, node in enumerate(first):
+            values = [_int_const_value(consts[position]) for consts in constant_lists]
+            if any(value is None for value in values):
+                return None
+            base = cast(int, values[0])
+            step = cast(int, values[1]) - base
+            if any(cast(int, values[k]) - base != step * k for k in range(copies)):
+                return None
+            steps.append(step)
+        if not any(steps):
+            # Nothing advances: these are repeated statements, not iterations.
+            return None
+
+        int_type = _get_type_in_code(self.func.code, "I32")
+        elem = IRLocal("i", tIndex(self.func.code.types.index(int_type)), self.func.code)
+        replacements = {
+            id(node): self._induction_expr(elem, cast(int, _int_const_value(node)), step)
+            for node, step in zip(first, steps)
+            if step
+        }
+        body = IRBlock(self.func.code)
+        body.statements = [self._rebuild(stmt, replacements) for stmt in groups[0]]
+        loop = IRIntRangeLoop(
+            self.func.code,
+            elem,
+            IRConst(self.func.code, IRConst.ConstType.INT, value=0),
+            IRConst(self.func.code, IRConst.ConstType.INT, value=copies),
+            body,
+        )
+        loop.adopt(*[stmt for group in groups for stmt in group])
+        return loop
+
+    def _copies_share_source_lines(
+        self, statements: List[IRStatement], start: int, period: int, copies: int
+    ) -> bool:
+        """Every iteration of one loop comes from the same source lines.
+
+        Repeated but distinct source statements carry distinct line numbers,
+        which is the only evidence that separates them from an unrolled body.
+        """
+        lines = self._source_lines()
+        if lines is None:
+            return False
+        signatures = []
+        for k in range(copies):
+            group = statements[start + k * period : start + (k + 1) * period]
+            signature: List[int] = []
+            for stmt in group:
+                signature.extend(sorted(lines.get(idx, -1) for idx in stmt.src_op_idxs))
+            signatures.append(signature)
+        return all(signature == signatures[0] for signature in signatures[1:])
+
+    def _source_lines(self) -> Optional[Dict[int, int]]:
+        func = self.func.func
+        debug = getattr(func, "debuginfo", None)
+        if not getattr(func, "has_debug", False) or debug is None:
+            return None
+        return {index: ref.line for index, ref in enumerate(debug.value)}
+
+    def _induction_expr(self, elem: IRLocal, base: int, step: int) -> IRExpression:
+        term: IRExpression = elem
+        if step != 1:
+            term = IRArithmetic(
+                self.func.code,
+                elem,
+                IRConst(self.func.code, IRConst.ConstType.INT, value=step),
+                IRArithmetic.ArithmeticType.MUL,
+            )
+        if base:
+            term = IRArithmetic(
+                self.func.code,
+                term,
+                IRConst(self.func.code, IRConst.ConstType.INT, value=base),
+                IRArithmetic.ArithmeticType.ADD,
+            )
+        return term
+
+    def _shape(self, node: Optional[IRStatement]) -> Optional[str]:
+        """A structural key that ignores integer constant values."""
+        if node is None:
+            return "-"
+        if isinstance(node, IRBlock):
+            parts = [self._shape(child) for child in node.statements]
+            if any(part is None for part in parts):
+                return None
+            return "block(" + ",".join(cast(List[str], parts)) + ")"
+        attrs = self._CHILD_ATTRS.get(type(node))
+        if attrs is None:
+            return None
+        if isinstance(node, IRConst):
+            if _int_const_value(node) is not None:
+                return "int#"
+            return f"const({node.const_type},{node.value!r})"
+        if isinstance(node, IRLocal):
+            return f"local({node.name})"
+        parts = []
+        for attr in attrs:
+            value = getattr(node, attr, None)
+            if isinstance(value, list):
+                for item in value:
+                    parts.append(self._shape(item))
+            else:
+                parts.append(self._shape(value))
+        if any(part is None for part in parts):
+            return None
+        extra = ""
+        if isinstance(node, IRField):
+            extra = node.field_name
+        elif isinstance(node, (IRArithmetic, IRBoolExpr)):
+            extra = str(node.op)
+        return f"{type(node).__name__}[{extra}](" + ",".join(cast(List[str], parts)) + ")"
+
+    def _constants(self, nodes: List[IRStatement]) -> List[IRConst]:
+        found: List[IRConst] = []
+
+        def walk(node: Optional[IRStatement]) -> None:
+            if node is None:
+                return
+            if isinstance(node, IRConst):
+                if _int_const_value(node) is not None:
+                    found.append(node)
+                return
+            if isinstance(node, IRBlock):
+                for child in node.statements:
+                    walk(child)
+                return
+            for attr in self._CHILD_ATTRS.get(type(node), ()):
+                value = getattr(node, attr, None)
+                if isinstance(value, list):
+                    for item in value:
+                        walk(item)
+                else:
+                    walk(value)
+
+        for node in nodes:
+            walk(node)
+        return found
+
+    def _rebuild(self, node: IRStatement, replacements: dict) -> IRStatement:
+        if isinstance(node, IRConst) and id(node) in replacements:
+            return replacements[id(node)]
+        if isinstance(node, IRBlock):
+            rebuilt_block = IRBlock(self.func.code)
+            rebuilt_block.statements = [self._rebuild(child, replacements) for child in node.statements]
+            return rebuilt_block
+        attrs = self._CHILD_ATTRS.get(type(node), ())
+        if not attrs:
+            return node
+        rebuilt = copy.copy(node)
+        for attr in attrs:
+            value = getattr(node, attr, None)
+            if isinstance(value, list):
+                setattr(rebuilt, attr, [self._rebuild(item, replacements) for item in value])
+            elif value is not None:
+                setattr(rebuilt, attr, self._rebuild(value, replacements))
+        return rebuilt
 
 
 class IRForEachLoopOptimizer(TraversingIROptimizer):

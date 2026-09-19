@@ -134,6 +134,7 @@ from .opt.arrays import (
 )
 from .opt.loops import (
     IRLoopRerollOptimizer,
+    IRUnrolledLoopRerollOptimizer,
     IRForEachLoopOptimizer,
     IRIntRangeLoopOptimizer,
 )
@@ -204,6 +205,7 @@ __all__ = [
     "IRLocal",
     "IRLoopConditionOptimizer",
     "IRLoopRerollOptimizer",
+    "IRUnrolledLoopRerollOptimizer",
     "IRNativeArrayNew",
     "IRNativeArrayAllocOptimizer",
     "IRNativeMapNew",

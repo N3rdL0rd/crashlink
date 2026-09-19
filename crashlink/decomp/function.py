@@ -119,6 +119,7 @@ from .opt.arrays import (
 )
 from .opt.loops import (
     IRLoopRerollOptimizer,
+    IRUnrolledLoopRerollOptimizer,
     IRForEachLoopOptimizer,
     IRIntRangeLoopOptimizer,
 )
@@ -325,6 +326,9 @@ class IRFunction:
                 IRDeadCodeEliminator(self),
                 IRBlockFlattener(self),
                 IRLoopRerollOptimizer(self),
+                # Constant-bounds loops the compiler unrolled only look like
+                # repeated statements once their bodies are fully recovered.
+                IRUnrolledLoopRerollOptimizer(self),
                 IRForEachLoopOptimizer(self),
                 IRIntRangeLoopOptimizer(self),
                 IRBoolMaterializationCollapser(self),
