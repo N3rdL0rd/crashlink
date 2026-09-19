@@ -1600,9 +1600,10 @@ def _generate_statements(
                 output_lines.append(f"{indent}{target_str} = {value_str};")
 
         elif isinstance(stmt, IRTrace):
-            msg_str = _expression_to_haxe(stmt.msg, code, ir_function)
+            args = [_expression_to_haxe(stmt.msg, code, ir_function)]
+            args.extend(_expression_to_haxe(arg, code, ir_function) for arg in stmt.extra_args)
             pos_info_str = ", ".join(f"{k}: {v!r}" for k, v in stmt.pos_info.items())
-            output_lines.append(f"{indent}trace({msg_str}); // {{ {pos_info_str} }}")
+            output_lines.append(f"{indent}trace({', '.join(args)}); // {{ {pos_info_str} }}")
 
         elif isinstance(stmt, IRUnliftedOpcode):
             try:

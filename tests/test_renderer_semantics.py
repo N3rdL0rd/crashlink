@@ -283,3 +283,71 @@ def test_private_access_marks_only_hidden_std_members():
     assert "Sys.println(" in out
     assert "@:privateAccess Sys.println" not in out
 
+
+def _decompile_source(tmp_path, name: str, source: str) -> str:
+    """Compile one Haxe module and return the decompiled class pseudocode."""
+    artifact, error = compile_haxe(source, name, tmp_path)
+    assert error is None, error
+    code = Bytecode.from_path(str(artifact))
+    return IRClass(code, code.get_test_obj(name)).pseudo()
+
+
+def test_trace_collapses_compiler_lowering():
+    code = Bytecode.from_path("tests/haxe/ArrayMethodCallTypeCase.hl")
+    out = IRClass(code, code.get_test_obj("ArrayMethodCallTypeCase")).pseudo()
+    # The dynamic-function load, the PosInfos object and the closure call are
+    # all scaffolding for one source-level `trace(a)`.
+    assert "trace(a); //" in out
+    assert "haxe.Log.trace" not in out
+    assert "PosInfos" not in out
+
+
+def test_trace_recovers_extra_arguments(tmp_path):
+    if not shutil.which("haxe"):
+        pytest.skip("Haxe required to build the fixture")
+    out = _decompile_source(
+        tmp_path,
+        "TraceExtras",
+        """class TraceExtras {
+    static function main():Void {
+        var a = 1;
+        var b = "x";
+        trace(a);
+        trace(a, b);
+        trace("lit", a, b);
+    }
+}""",
+    )
+    # Extra arguments travel in the position object's customParams array; they
+    # are real arguments and must come back as arguments.
+    assert "trace(a); //" in out
+    assert "trace(a, b); //" in out
+    assert 'trace("lit", a, b); //' in out
+    assert "customParams" not in out
+
+
+def test_trace_is_not_collapsed_across_a_rebound_log(tmp_path):
+    if not shutil.which("haxe"):
+        pytest.skip("Haxe required to build the fixture")
+    out = _decompile_source(
+        tmp_path,
+        "TraceRebind",
+        """class TraceRebind {
+    static function replacement(v:Dynamic, ?infos:haxe.PosInfos):Void { Sys.println("replacement:" + v); }
+    static function main():Void {
+        var saved = haxe.Log.trace;
+        haxe.Log.trace = replacement;
+        var pos:haxe.PosInfos = {fileName:"kept.hx", lineNumber:1, className:"TraceRebind", methodName:"main"};
+        saved("snapshot", pos);
+        trace("live");
+    }
+}""",
+    )
+    # `trace(...)` reads haxe.Log.trace at the call site, so a call through a
+    # snapshot taken before the rebind is a different function: collapsing it
+    # would print through `replacement` instead.
+    assert "= haxe.Log.trace;" in out
+    assert "haxe.Log.trace = TraceRebind.replacement;" in out
+    assert 'saved("snapshot", pos);' in out
+    # The unrebound call site is still ordinary lowering and does collapse.
+    assert 'trace("live"); //' in out

@@ -15,6 +15,7 @@ from ...core import (
     Native,
     Obj,
     Type,
+    Virtual,
     gIndex,
 )
 from ...errors import DecompError
@@ -41,6 +42,7 @@ from ..ir import (
     IRCast,
     IRStringConvert,
     IRArrayAccess,
+    IRArrayLiteral,
     IRRef,
     IRRefNew,
     IREnumConstruct,
@@ -421,205 +423,457 @@ class IRStringAllocOptimizer(TraversingIROptimizer):
 
 class IRTraceOptimizer(TraversingIROptimizer):
     """
-    Finds the common `haxe.Log.trace` pattern with an anonymous object for
-    position and collapses it into a single IRTrace statement.
+    Collapses HashLink's `haxe.Log.trace` lowering back into a `trace(...)` call.
+
+    Haxe compiles `trace(msg, extra...)` into:
+
+        logClass = haxe.Log;             # class reference
+        fn       = logClass.trace;       # trace is a dynamic function: field load
+        msgTmp   = cast msg;             # only when the argument needs boxing
+        pos      = new DynObj|PosInfos;  # the implicit ?pos argument
+        pos.fileName = ...; pos.lineNumber = ...;
+        pos.className = ...; pos.methodName = ...;
+        posArg   = cast pos;             # DynObj shape only
+        pos.customParams = [extra...];   # only with extra trace arguments
+        fn(msgTmp, posArg);
+
+    Matching is anchored on the call, because the callee reaches it either
+    inlined (`haxe.Log.trace(...)`) or through the temp alias above, and the
+    position object reaches it directly or through a cast temp. Only the
+    statements actually recognized are consumed; anything else inside the
+    window is left alone rather than silently dropped.
     """
 
     TARGET_OPCODES = {"New"}
+
+    #: Fields of `haxe.PosInfos` that identify a trace position object.
+    _REQUIRED_POS_FIELDS = ("fileName", "lineNumber")
 
     def visit_block(self, block: IRBlock) -> None:
         made_change = True
         while made_change:
             made_change = False
-            new_statements: List[IRStatement] = []
-            i = 0
-            while i < len(block.statements):
-                stmt = block.statements[i]
-                if DEBUG:
-                    dbg_print(f"[TraceOpt] Analyzing statement {i}: {stmt}")
-
+            statements = block.statements
+            for idx, stmt in enumerate(statements):
                 if (
                     isinstance(stmt, IRConditional)
                     and stmt.true_block is not None
                     and stmt.false_block is not None
                 ):
-                    branched = self._try_branched_trace(stmt, block.statements, i)
-                    if branched is not None:
-                        (
-                            true_tail,
-                            false_tail,
-                            msg_true,
-                            msg_false,
-                            pos_true,
-                            pos_false,
-                            consumed_after,
-                        ) = branched
-                        old_true_stmts = stmt.true_block.statements
-                        old_false_stmts = stmt.false_block.statements
-                        true_trace = IRTrace(self.func.code, msg_true, pos_true)
-                        false_trace = IRTrace(self.func.code, msg_false, pos_false)
-                        true_trace.adopt(*old_true_stmts[len(true_tail) :])
-                        false_trace.adopt(*old_false_stmts[len(false_tail) :])
-                        stmt.true_block.statements = true_tail + [true_trace]
-                        stmt.false_block.statements = false_tail + [false_trace]
-                        # The shared position-field assigns + hoisted call after the
-                        # conditional are dropped outright; fold their opcodes onto
-                        # the conditional itself since neither branch alone owns them.
-                        stmt.adopt(*block.statements[i + 1 : i + 1 + consumed_after])
-                        new_statements.append(stmt)
-                        i += 1 + consumed_after
+                    if self._collapse_branched(block, idx):
                         made_change = True
-                        continue
-
-                temp_local = None
-                start_idx = i
-                extra_adopt: List[IRStatement] = []
-
-                if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
-                    if isinstance(stmt.expr, IRNew) and stmt.expr.get_type().definition.__class__ == DynObj:
-                        temp_local = stmt.target
-                        start_idx = i + 1
-                    else:
-                        new_statements.append(stmt)
-                        i += 1
-                        continue
-                elif isinstance(stmt, IRAssign) and isinstance(stmt.target, IRField):
-                    candidate = stmt.target.target
-                    if isinstance(candidate, IRLocal):
-                        temp_local = candidate
-                        start_idx = i
-                    else:
-                        new_statements.append(stmt)
-                        i += 1
-                        continue
-                else:
-                    new_statements.append(stmt)
-                    i += 1
+                        break
                     continue
-
-                if temp_local is None:
-                    new_statements.append(stmt)
-                    i += 1
+                if not isinstance(stmt, IRCall):
                     continue
+                match = self._match_trace_call(statements, idx)
+                if match is None:
+                    continue
+                trace_stmt, consumed = match
+                trace_stmt.adopt(*(statements[k] for k in sorted(consumed)))
+                block.statements = [
+                    trace_stmt if k == idx else s
+                    for k, s in enumerate(statements)
+                    if k == idx or k not in consumed
+                ]
+                made_change = True
+                break
 
-                pos_info: Dict[str, Any] = {}
-                j = start_idx
+    # -- matching ---------------------------------------------------------
 
-                while j < len(block.statements):
-                    next_stmt = block.statements[j]
-                    if isinstance(next_stmt, IRAssign) and isinstance(next_stmt.target, IRField):
-                        field_target = next_stmt.target
-                        if field_target.target == temp_local:
-                            field_name = field_target.field_name
-                            if isinstance(next_stmt.expr, IRConst):
-                                pos_info[field_name] = next_stmt.expr.value
-                                if DEBUG:
-                                    dbg_print(
-                                        f"[TraceOpt]  -> Collected const field: {field_name} = {next_stmt.expr.value!r}"
-                                    )
-                                j += 1
-                                continue
-                            elif isinstance(next_stmt.expr, IRLocal):
-                                pos_info[field_name] = next_stmt.expr
-                                if DEBUG:
-                                    dbg_print(
-                                        f"[TraceOpt]  -> Collected local field: {field_name} = {next_stmt.expr}"
-                                    )
-                                j += 1
-                                continue
-                    elif isinstance(next_stmt, IRAssign) and isinstance(next_stmt.target, IRLocal):
-                        j += 1
-                        continue
-                    break
+    def _match_trace_call(self, stmts: List[IRStatement], idx: int) -> Optional[Tuple[IRTrace, Set[int]]]:
+        """Build the IRTrace for the call at `idx`, plus the indices it consumes."""
+        call = stmts[idx]
+        if not isinstance(call, IRCall) or len(call.args) != 2:
+            return None
+        callee_defs = self._trace_callee_defs(stmts, idx, call.target)
+        if callee_defs is None:
+            return None
+        resolved_pos = self._resolve_pos_object(stmts, idx, call.args[1])
+        if resolved_pos is None:
+            return None
+        alloc_idx, pos_targets, alias_defs = resolved_pos
+        fields, field_defs = self._collect_pos_fields(stmts, alloc_idx + 1, idx, pos_targets)
+        if any(name not in fields for name in self._REQUIRED_POS_FIELDS):
+            return None
 
-                if j < len(block.statements):
-                    call_stmt = block.statements[j]
-                    if DEBUG:
-                        dbg_print(f"[TraceOpt] Checking statement {j} as potential trace call: {call_stmt}")
+        consumed = {idx, alloc_idx} | callee_defs | alias_defs | field_defs
+        extra_args: List[IRExpression] = []
+        custom = fields.pop("customParams", None)
+        if custom is not None:
+            resolved = self._resolve_custom_params(stmts, alloc_idx, idx, custom)
+            if resolved is None:
+                # Dropping the extra arguments would change what gets printed.
+                return None
+            extra_args, custom_defs = resolved
+            consumed |= custom_defs
+            # The argument array is built from throwaway temporaries (element
+            # type marker, reinterpret flag and its reference cell) that now
+            # have no reader left.
+            self._sweep_dead_scaffold(stmts, alloc_idx, idx, consumed)
 
-                    is_valid_trace_call = False
-                    if isinstance(call_stmt, IRCall) and len(call_stmt.args) == 2:
-                        last_arg = call_stmt.args[1]
+        pos_info = {name: self._literal_value(stmts, alloc_idx, idx, value) for name, value in fields.items()}
+        msg, msg_def = self._resolve_msg(stmts, idx, call.args[0], consumed)
+        if msg_def is not None:
+            consumed.add(msg_def)
 
-                        is_our_var = (isinstance(last_arg, IRLocal) and last_arg == temp_local) or (
-                            isinstance(last_arg, IRCast) and last_arg.expr == temp_local
-                        )
+        # `trace(...)` re-reads `haxe.Log.trace` at the call site, and that
+        # field is a reassignable dynamic function: collapsing across a rebind
+        # would call the wrong function.
+        if any(
+            isinstance(stmts[k], IRAssign)
+            and isinstance(cast(IRAssign, stmts[k]).target, IRField)
+            and cast(IRField, cast(IRAssign, stmts[k]).target).field_name == "trace"
+            for k in range(min(consumed), idx)
+        ):
+            if DEBUG:
+                dbg_print(f"[TraceOpt] Refused trace at {idx}: haxe.Log.trace is rebound in the window")
+            return None
+        # The position object must be dead after the call; a surviving reader
+        # would lose the object the collapse deletes.
+        if any(
+            self._is_live(stmts, idx, target, consumed)
+            for target in pos_targets
+            if isinstance(target, IRLocal)
+        ):
+            if DEBUG:
+                dbg_print(f"[TraceOpt] Refused trace at {idx}: position object outlives the call")
+            return None
 
-                        is_trace_func = False
-                        if isinstance(call_stmt.target, IRField) and call_stmt.target.field_name == "trace":
-                            if DEBUG:
-                                dbg_print("[TraceOpt]  -> Call target is a field named 'trace'.")
-                            target_obj = call_stmt.target.target
-                            if (
-                                isinstance(target_obj, IRConst)
-                                and isinstance(target_obj.value, Type)
-                                and isinstance(target_obj.value.definition, Obj)
-                            ):
-                                obj_name = target_obj.value.definition.name.resolve(self.func.code)
-                                if "haxe.$Log" in obj_name:
-                                    is_trace_func = True
+        if DEBUG:
+            dbg_print(f"[TraceOpt] Collapsed trace at {idx}: msg={msg}, extras={extra_args}, pos={pos_info}")
+        return IRTrace(self.func.code, msg, pos_info, extra_args), consumed
 
-                        if DEBUG:
-                            dbg_print(f"[TraceOpt]  -> Is function 'haxe.Log.trace'? {is_trace_func}")
+    def _is_log_class(self, expr: Optional[IRExpression]) -> bool:
+        return (
+            isinstance(expr, IRConst)
+            and isinstance(expr.value, Type)
+            and isinstance(expr.value.definition, Obj)
+            and "haxe.$Log" in expr.value.definition.name.resolve(self.func.code)
+        )
 
-                        if is_our_var and is_trace_func:
-                            is_valid_trace_call = True
+    def _find_def(self, stmts: List[IRStatement], before: int, local: IRExpression) -> Optional[int]:
+        """Index of the nearest assignment to `local` before `before`."""
+        for k in range(before - 1, -1, -1):
+            s = stmts[k]
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target == local:
+                return k
+        return None
 
-                    elif DEBUG:
-                        dbg_print("[TraceOpt]  -> FAILED: Statement is not an IRCall with 2 arguments.")
+    def _is_temp(self, local: IRLocal) -> bool:
+        """True for a register the compiler introduced, not a source variable.
 
-                    if is_valid_trace_call:
-                        assert isinstance(call_stmt, IRCall)
-                        msg_expr = call_stmt.args[0]
-                        if (
-                            isinstance(msg_expr, IRLocal)
-                            and msg_expr.reg_idx is not None
-                            and msg_expr.reg_idx not in self.func._user_reg_indices
-                            and new_statements
-                            and isinstance(new_statements[-1], IRAssign)
-                            and new_statements[-1].target == msg_expr
-                        ):
-                            # inline if this is obviously compiler-generated (one use, right before the call, has no user assign)
-                            _popped = new_statements.pop()
-                            extra_adopt.append(_popped)
-                            msg_expr = _popped.expr if isinstance(_popped, IRAssign) else msg_expr
-                        resolved_pos: Dict[str, Any] = {}
-                        for k, v in pos_info.items():
-                            if isinstance(v, IRLocal):
-                                for s_idx in range(start_idx, j):
-                                    s = block.statements[s_idx]
-                                    if (
-                                        isinstance(s, IRAssign)
-                                        and s.target == v
-                                        and isinstance(s.expr, IRConst)
-                                    ):
-                                        try:
-                                            resolved_pos[k] = int(
-                                                s.expr.value.value
-                                                if hasattr(s.expr.value, "value")
-                                                else s.expr.value
-                                            )
-                                        except (ValueError, TypeError):
-                                            resolved_pos[k] = v
-                                        break
-                                else:
-                                    resolved_pos[k] = v
-                            else:
-                                resolved_pos[k] = v
-                        trace_stmt = IRTrace(self.func.code, msg_expr, resolved_pos)
-                        trace_stmt.adopt(*block.statements[i : j + 1], *extra_adopt)
-                        new_statements.append(trace_stmt)
+        Source variables can hold a *snapshot* of the reassignable
+        `haxe.Log.trace` field, or a position object the program keeps using,
+        so their assignments are never part of a trace lowering to consume.
+        """
+        return local.reg_idx is not None and local.reg_idx not in self.func._user_reg_indices
 
-                        i = j + 1
-                        made_change = True
-                        continue
-                    elif DEBUG:
-                        dbg_print("[TraceOpt] FAILED: Pattern did not match for trace call.")
+    def _trace_callee_defs(
+        self, stmts: List[IRStatement], before: int, target: Optional[IRExpression]
+    ) -> Optional[Set[int]]:
+        """Indices of the statements that materialize `haxe.Log.trace`, or None
+        if `target` is not that function."""
+        if isinstance(target, IRField) and target.field_name == "trace":
+            base = target.target
+            if self._is_log_class(base):
+                return set()
+            if isinstance(base, IRLocal) and self._is_temp(base):
+                base_idx = self._find_def(stmts, before, base)
+                if base_idx is not None:
+                    base_def = stmts[base_idx]
+                    if isinstance(base_def, IRAssign) and self._is_log_class(base_def.expr):
+                        return {base_idx}
+            return None
+        if isinstance(target, IRLocal) and self._is_temp(target):
+            fn_idx = self._find_def(stmts, before, target)
+            if fn_idx is None:
+                return None
+            fn_def = stmts[fn_idx]
+            if not isinstance(fn_def, IRAssign):
+                return None
+            inner = self._trace_callee_defs(stmts, fn_idx, fn_def.expr)
+            if inner is None:
+                return None
+            return inner | {fn_idx}
+        return None
 
-                new_statements.append(stmt)
-                i += 1
+    def _is_pos_alloc(self, expr: IRExpression) -> bool:
+        """True for the allocation of trace's implicit position argument, which
+        HL emits either as an untyped DynObj or as the PosInfos virtual."""
+        if not isinstance(expr, IRNew):
+            return False
+        definition = expr.get_type().definition
+        if isinstance(definition, DynObj):
+            return True
+        if isinstance(definition, Virtual):
+            names = {field.name.resolve(self.func.code) for field in definition.fields}
+            return all(name in names for name in self._REQUIRED_POS_FIELDS)
+        return False
 
-            block.statements = new_statements
+    def _resolve_pos_object(
+        self, stmts: List[IRStatement], before: int, expr: IRExpression
+    ) -> Optional[Tuple[int, List[IRExpression], Set[int]]]:
+        """Follow the position argument back to its allocation.
+
+        Returns the allocation index, every local the object is reachable
+        through (field assignments can target any of them), and the indices of
+        the alias assignments walked through.
+        """
+        alias_defs: Set[int] = set()
+        targets: List[IRExpression] = []
+        while True:
+            if isinstance(expr, IRCast):
+                expr = expr.expr
+                continue
+            if not isinstance(expr, IRLocal) or not self._is_temp(expr):
+                return None
+            targets.append(expr)
+            def_idx = self._find_def(stmts, before, expr)
+            if def_idx is None:
+                return None
+            assign = stmts[def_idx]
+            if not isinstance(assign, IRAssign):
+                return None
+            if self._is_pos_alloc(assign.expr):
+                return def_idx, targets, alias_defs
+            if isinstance(assign.expr, (IRCast, IRLocal)):
+                alias_defs.add(def_idx)
+                before = def_idx
+                expr = assign.expr
+                continue
+            return None
+
+    def _collect_pos_fields(
+        self, stmts: List[IRStatement], start: int, end: int, targets: List[IRExpression]
+    ) -> Tuple[Dict[str, IRExpression], Set[int]]:
+        fields: Dict[str, IRExpression] = {}
+        defs: Set[int] = set()
+        for k in range(start, end):
+            s = stmts[k]
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRField)
+                and any(s.target.target == target for target in targets)
+            ):
+                fields[s.target.field_name] = s.expr
+                defs.add(k)
+        return fields, defs
+
+    def _literal_value(self, stmts: List[IRStatement], start: int, end: int, expr: IRExpression) -> Any:
+        """Position metadata is rendered as a comment, so reduce it to plain
+        values where possible and keep the expression otherwise."""
+        if isinstance(expr, IRConst):
+            return expr.value
+        if isinstance(expr, IRLocal):
+            def_idx = self._find_def(stmts, end, expr)
+            if def_idx is not None and def_idx >= start:
+                assign = stmts[def_idx]
+                if isinstance(assign, IRAssign) and isinstance(assign.expr, IRConst):
+                    value = assign.expr.value
+                    return value.value if hasattr(value, "value") else value
+        return expr
+
+    def _is_array_dyn_alloc(self, expr: IRExpression) -> bool:
+        if not isinstance(expr, IRCall) or not expr.args:
+            return False
+        target = expr.target
+        if not (isinstance(target, IRConst) and isinstance(target.value, Function)):
+            return False
+        name = self.func.code.full_func_name(target.value) or ""
+        return name.endswith("ArrayDyn.alloc")
+
+    def _resolve_custom_params(
+        self, stmts: List[IRStatement], start: int, end: int, expr: IRExpression
+    ) -> Optional[Tuple[List[IRExpression], Set[int]]]:
+        """Recover `trace(msg, a, b)`'s extra arguments from the customParams
+        array HL builds for them."""
+        consumed: Set[int] = set()
+        before = end
+        while True:
+            if isinstance(expr, IRCast):
+                expr = expr.expr
+                continue
+            if isinstance(expr, IRArrayLiteral):
+                return list(expr.elements), consumed
+            if isinstance(expr, IRLocal):
+                def_idx = self._find_def(stmts, before, expr)
+                if def_idx is None or def_idx <= start:
+                    return None
+                assign = stmts[def_idx]
+                if not isinstance(assign, IRAssign):
+                    return None
+                consumed.add(def_idx)
+                before = def_idx
+                expr = assign.expr
+                continue
+            if self._is_array_dyn_alloc(expr):
+                expr = cast(IRCall, expr).args[0]
+                continue
+            return None
+
+    #: Expression shapes HL emits while materializing trace's argument array.
+    _SCAFFOLD_EXPRS = (IRConst, IRCast, IRLocal, IRRefNew, IRArrayLiteral)
+
+    def _sweep_dead_scaffold(
+        self, stmts: List[IRStatement], start: int, end: int, consumed: Set[int]
+    ) -> None:
+        """Consume window temporaries that no surviving statement reads."""
+        # A temp can only be seen dead once its own consumers are consumed, so
+        # repeat until the window stops shrinking.
+        changed = True
+        while changed:
+            changed = False
+            for k in range(start + 1, end):
+                if k in consumed:
+                    continue
+                assign = stmts[k]
+                if not (isinstance(assign, IRAssign) and isinstance(assign.target, IRLocal)):
+                    continue
+                local = assign.target
+                if not self._is_temp(local):
+                    continue
+                if not isinstance(assign.expr, self._SCAFFOLD_EXPRS):
+                    continue
+                if self._is_live(stmts, k, local, consumed):
+                    continue
+                consumed.add(k)
+                changed = True
+
+    def _is_live(self, stmts: List[IRStatement], def_idx: int, local: IRLocal, consumed: Set[int]) -> bool:
+        """Whether the value assigned at `def_idx` still has a reader.
+
+        Statements this collapse consumes are about to disappear, and nothing
+        past a redefinition of the local can observe the old value.
+        """
+        for k in range(def_idx + 1, len(stmts)):
+            if k in consumed:
+                continue
+            touch = self._scan_local(stmts[k], local)
+            if touch is not None:
+                return touch
+        return False
+
+    def _scan_local(self, stmt: IRStatement, local: IRLocal) -> Optional[bool]:
+        """First interaction `stmt` has with `local`, in execution order.
+
+        True: read before any redefinition. False: redefined without being
+        read. None: untouched. Compiler temps are recycled aggressively, so
+        distinguishing a later *kill* from a later *use* is what lets a trace
+        inside a loop be collapsed without disturbing the outer one.
+        """
+        if isinstance(stmt, IRAssign):
+            if self._reads_local(stmt.expr, local):
+                return True
+            if isinstance(stmt.target, IRLocal):
+                return False if stmt.target == local else None
+            # Storing through the local (field or element write) reads it.
+            return True if self._reads_local(stmt.target, local) else None
+        if isinstance(stmt, IRBlock):
+            for child in stmt.statements:
+                touch = self._scan_local(child, local)
+                if touch is not None:
+                    return touch
+            return None
+        if isinstance(stmt, IRConditional):
+            if stmt.condition is not None and self._reads_local(stmt.condition, local):
+                return True
+            branches = [b for b in (stmt.true_block, stmt.false_block) if b is not None]
+            touches = [self._scan_local(b, local) for b in branches]
+            if any(touch for touch in touches):
+                return True
+            # Only a redefinition on every path can be relied on.
+            if len(touches) == 2 and all(touch is False for touch in touches):
+                return False
+            return None
+        if isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop)):
+            condition = getattr(stmt, "condition", None)
+            if condition is not None and self._reads_local(condition, local):
+                return True
+            # A zero-trip loop redefines nothing, so the body can only add reads.
+            body = getattr(stmt, "body", None)
+            return True if body is not None and self._scan_local(body, local) else None
+        nested = [child for child in stmt.get_children() if isinstance(child, IRBlock)]
+        if nested:
+            # Switches, try/catch and anything else carrying blocks: the parts
+            # evaluated before them are reads, and a redefinition inside one
+            # arm is not guaranteed to happen, so it never counts as a kill.
+            if any(
+                self._reads_local(child, local)
+                for child in stmt.get_children()
+                if not isinstance(child, IRBlock)
+            ):
+                return True
+            return True if any(self._scan_local(block, local) for block in nested) else None
+        return True if self._reads_local(stmt, local) else None
+
+    def _reads_local(self, stmt: IRStatement, local: IRLocal) -> bool:
+        """Whether `stmt` (or anything nested in it) reads `local`."""
+        if isinstance(stmt, IRAssign):
+            if self._reads_local(stmt.expr, local):
+                return True
+            # Writing the local is not a read; reading through it (a field or
+            # element store) is.
+            return not isinstance(stmt.target, IRLocal) and self._reads_local(stmt.target, local)
+        if isinstance(stmt, IRLocal):
+            return stmt == local
+        return any(self._reads_local(child, local) for child in stmt.get_children())
+
+    def _resolve_msg(
+        self, stmts: List[IRStatement], idx: int, msg: IRExpression, consumed: Set[int]
+    ) -> Tuple[IRExpression, Optional[int]]:
+        """Inline the compiler temp holding the traced value, when its only role
+        is to carry that value into the call."""
+        if not isinstance(msg, IRLocal):
+            return msg, None
+        if not self._is_temp(msg):
+            return msg, None
+        def_idx = self._find_def(stmts, idx, msg)
+        if def_idx is None:
+            return msg, None
+        # Everything between the definition and the call must belong to the
+        # trace scaffolding, otherwise moving the value across it is unsound.
+        if any(k not in consumed for k in range(def_idx + 1, idx)):
+            return msg, None
+        assign = stmts[def_idx]
+        if not isinstance(assign, IRAssign):
+            return msg, None
+        return assign.expr, def_idx
+
+    # -- branch-merged calls ----------------------------------------------
+
+    def _collapse_branched(self, block: IRBlock, idx: int) -> bool:
+        """Collapse a trace whose call was hoisted out of an if/else."""
+        stmt = block.statements[idx]
+        if not isinstance(stmt, IRConditional):
+            return False
+        branched = self._try_branched_trace(stmt, block.statements, idx)
+        if branched is None:
+            return False
+        (
+            true_tail,
+            false_tail,
+            msg_true,
+            msg_false,
+            pos_true,
+            pos_false,
+            consumed_after,
+        ) = branched
+        assert stmt.true_block is not None and stmt.false_block is not None
+        old_true_stmts = stmt.true_block.statements
+        old_false_stmts = stmt.false_block.statements
+        true_trace = IRTrace(self.func.code, msg_true, pos_true)
+        false_trace = IRTrace(self.func.code, msg_false, pos_false)
+        true_trace.adopt(*old_true_stmts[len(true_tail) :])
+        false_trace.adopt(*old_false_stmts[len(false_tail) :])
+        stmt.true_block.statements = true_tail + [true_trace]
+        stmt.false_block.statements = false_tail + [false_trace]
+        # The shared position-field assigns + hoisted call after the
+        # conditional are dropped outright; fold their opcodes onto the
+        # conditional itself since neither branch alone owns them.
+        stmt.adopt(*block.statements[idx + 1 : idx + 1 + consumed_after])
+        block.statements = block.statements[: idx + 1] + block.statements[idx + 1 + consumed_after :]
+        return True
 
     def _match_trace_prep(
         self, stmts: List[IRStatement]
@@ -634,12 +888,7 @@ class IRTraceOptimizer(TraversingIROptimizer):
         new_idx = None
         temp_local = None
         for k, s in enumerate(stmts):
-            if (
-                isinstance(s, IRAssign)
-                and isinstance(s.target, IRLocal)
-                and isinstance(s.expr, IRNew)
-                and s.expr.get_type().definition.__class__ == DynObj
-            ):
+            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and self._is_pos_alloc(s.expr):
                 new_idx = k
                 temp_local = s.target
                 break
@@ -657,23 +906,35 @@ class IRTraceOptimizer(TraversingIROptimizer):
             return None
 
         pos_info: Dict[str, Any] = {}
+        aliases: List[IRExpression] = [temp_local]
         j = new_idx + 1
         while j < len(stmts):
             s = stmts[j]
             if (
                 isinstance(s, IRAssign)
                 and isinstance(s.target, IRField)
-                and s.target.target == temp_local
+                and any(s.target.target == alias for alias in aliases)
                 and isinstance(s.expr, IRConst)
             ):
                 pos_info[s.target.field_name] = s.expr.value
+                j += 1
+                continue
+            # The branch may end by casting the built object into the local the
+            # hoisted call reads from.
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRLocal)
+                and isinstance(s.expr, IRCast)
+                and any(s.expr.expr == alias for alias in aliases)
+            ):
+                aliases.append(s.target)
                 j += 1
                 continue
             break
         if j != len(stmts):
             return None
 
-        return stmts[:new_idx], fun_local, temp_local, pos_info
+        return stmts[:new_idx], fun_local, cast(IRLocal, aliases[-1]), pos_info
 
     def _resolve_local_value(self, stmts: List[IRStatement], local: IRExpression) -> Optional[IRExpression]:
         """Find the most recent assignment to `local` within `stmts`, searching from the end."""
@@ -744,21 +1005,10 @@ class IRTraceOptimizer(TraversingIROptimizer):
         if not is_our_var:
             return None
 
-        is_trace_func = False
         target = call_stmt.target
-        if isinstance(target, IRField) and target.field_name == "trace":
-            target_obj = target.target
-            if (
-                isinstance(target_obj, IRConst)
-                and isinstance(target_obj.value, Type)
-                and isinstance(target_obj.value.definition, Obj)
-            ):
-                obj_name = target_obj.value.definition.name.resolve(self.func.code)
-                if "haxe.$Log" in obj_name:
-                    is_trace_func = True
-        elif isinstance(target, IRLocal) and target == fun_local_t:
-            is_trace_func = True
-        if not is_trace_func:
+        if isinstance(target, IRLocal) and target == fun_local_t:
+            pass
+        elif self._trace_callee_defs(statements, j, target) is None:
             return None
 
         msg_arg = call_stmt.args[0]

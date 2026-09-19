@@ -141,8 +141,11 @@ def compare_programs(
             shutil.copyfile(program, target)
             result = execute([runtime, str(target)], tmp, timeout)
         # Haxe trace includes compiler-generated source locations. Remove only
-        # the current module's leading trace prefix, never values or stack traces.
-        result.stdout = re.sub(rf"(?m)^{re.escape(class_name)}\.hx:\d+: ", "", result.stdout)
+        # the current module's leading trace prefix, never values or stack
+        # traces. The fixture is compiled from `tests/haxe/<Class>.hx` while the
+        # decompiled program is compiled from `<Class>.hx` in a sandbox, so the
+        # directory part of that prefix is not comparable either.
+        result.stdout = re.sub(rf"(?m)^[^\s:]*{re.escape(class_name)}\.hx:\d+: ", "", result.stdout)
         observations.append(result)
         if result.error or result.returncode != 0:
             error = result.error or f"HashLink exited unsuccessfully ({result.returncode})"

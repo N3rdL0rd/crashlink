@@ -743,19 +743,33 @@ class IRThrow(IRStatement):
 
 
 class IRTrace(IRStatement):
-    """Represents a simplified trace call."""
+    """Represents a simplified trace call.
 
-    def __init__(self, code: Bytecode, msg: IRExpression, pos_info: Dict[str, Any]):
+    `extra_args` holds the additional `trace(msg, a, b)` arguments that HL
+    lowers into the position object's `customParams` array. They are real
+    argument expressions, not position metadata, so they stay visible to
+    traversals (`get_children`) that decide which locals are live.
+    """
+
+    def __init__(
+        self,
+        code: Bytecode,
+        msg: IRExpression,
+        pos_info: Dict[str, Any],
+        extra_args: Optional[List[IRExpression]] = None,
+    ):
         super().__init__(code)
         self.msg = msg
         self.pos_info = pos_info  # e.g., {"fileName": "Test.hx", "lineNumber": 12}
+        self.extra_args: List[IRExpression] = extra_args or []
 
     def get_children(self) -> List[IRStatement]:
-        return [self.msg]
+        return [self.msg, *self.extra_args]
 
     def __repr__(self) -> str:
         pos_str = ", ".join(f"{k}: {v}" for k, v in self.pos_info.items())
-        return f"<IRTrace: msg={self.msg}, pos={{ {pos_str} }}>"
+        args_str = "".join(f", {arg}" for arg in self.extra_args)
+        return f"<IRTrace: msg={self.msg}{args_str}, pos={{ {pos_str} }}>"
 
 
 class IRTryCatch(IRStatement):
