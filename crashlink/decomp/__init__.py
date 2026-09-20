@@ -78,6 +78,8 @@ from .ir import (
     IREnumIndex,
     IREnumField,
     IRUnliftedOpcode,
+    IRTernary,
+    IRNullCoalesce,
     IRNativeStub,
 )
 from .opt import (
@@ -236,7 +238,8 @@ __all__ = [
     "IRStringIntConcatOptimizer",
     "IRStringSwitchOptimizer",
     "IRSwitch",
-    "IRTempAssignmentInliner",
+    "IRTernary",
+    "IRNullCoalesce",
     "IRTrace",
     "IRTraceOptimizer",
     "IRTryCatch",

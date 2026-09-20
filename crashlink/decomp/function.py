@@ -102,6 +102,7 @@ from .opt.clean import (
     IRAnonObjectLiteralOptimizer,
     IRShiftConstantOptimizer,
     IRGuardOrMerger,
+    IRTernaryRecovery,
 )
 from .opt.strings import (
     IRGlobalStringOptimizer,
@@ -338,7 +339,7 @@ class IRFunction:
                 IRDeadAssignmentEliminator(self),
                 IRGuardOrMerger(self),
                 IRRedundantRecomputeEliminator(self),
-                IREmptyConditionalNormalizer(self),
+                IRTernaryRecovery(self),
                 IRTerminalValueInliner(self),
                 # Late second pass: in larger functions the `this.field.array[idx]`
                 # shape this targets doesn't fully materialize until after loop/switch

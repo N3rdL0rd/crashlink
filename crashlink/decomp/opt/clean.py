@@ -63,6 +63,8 @@ from ..ir import (
     IREnumConstruct,
     IREnumIndex,
     IREnumField,
+    IRTernary,
+    IRNullCoalesce,
 )
 
 from . import (
@@ -602,6 +604,201 @@ class IRBoolMaterializationCollapser(TraversingIROptimizer):
                     continue
             new_statements.append(stmt)
         block.statements = new_statements
+
+
+class IRTernaryRecovery(TraversingIROptimizer):
+    """Recovers the ternary operator from HL's statement-level conditional write.
+
+    HashLink has no ternary opcode; `cond ? a : b` lowers to a full
+    `if (cond) { x = a; } else { x = b; }` (or `if (cond) return a; else
+    return b;`). When both branches are a single assignment to the *same*
+    target, this rewrites the conditional into `x = (cond ? a : b)`; when both
+    branches are a bare return, into `return (cond ? a : b)`. The result is an
+    IRTernary expression — pseudo.py only renders it, no pattern matching
+    there.
+
+    Only runs when the two branch expressions are side-effect-free and the
+    shared target is a plain local: the ternary evaluates both arms' reads
+    unconditionally at the same point, so a throwing/calling arm would change
+    behavior if moved out of its branch.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        new_statements: List[IRStatement] = []
+        i = 0
+        statements = block.statements
+        while i < len(statements):
+            stmt = statements[i]
+            # `x ?? default`: `if (x != null) { <yield x>; }` (empty else)
+            # immediately followed by `<yield default>` at the same level.
+            if i + 1 < len(statements):
+                coal = self._try_null_coalesce(stmt, statements[i + 1])
+                if coal is not None:
+                    dbg_print(f"IRTernaryRecovery (??): {stmt} + {statements[i+1]} -> {coal}")
+                    new_statements.append(coal)
+                    i += 2
+                    continue
+                # `cond ? a : b` with a fallthrough else: `if (cond) { return/
+                # assign a; }` (empty else) then `return/assign b;`.
+                fall = self._try_fallthrough_ternary(stmt, statements[i + 1])
+                if fall is not None:
+                    dbg_print(f"IRTernaryRecovery (fallthrough): {stmt} + {statements[i+1]} -> {fall}")
+                    new_statements.append(fall)
+                    i += 2
+                    continue
+            recovered = self._try_recover(stmt)
+            if recovered is not None:
+                dbg_print(f"IRTernaryRecovery: {stmt} -> {recovered}")
+                new_statements.append(recovered)
+            else:
+                new_statements.append(stmt)
+            i += 1
+        block.statements = new_statements
+
+    def _try_fallthrough_ternary(self, cond_stmt: IRStatement, fallthrough: IRStatement) -> Optional[IRStatement]:
+        """Recover `cond ? a : b` from `if (cond) { return/assign a; }` (empty
+        else) immediately followed by `return/assign b`. This is the form HL
+        emits when the false arm falls through rather than living in an
+        explicit `else` block. Both arms must be pure (a throwing/calling arm
+        moved out of its branch would change behavior)."""
+        if not isinstance(cond_stmt, IRConditional):
+            return None
+        if cond_stmt.false_block and cond_stmt.false_block.statements:
+            return None
+        true_stmts = cond_stmt.true_block.statements if cond_stmt.true_block else []
+        if len(true_stmts) != 1:
+            return None
+        in_branch = true_stmts[0]
+        if isinstance(in_branch, IRReturn) and isinstance(fallthrough, IRReturn):
+            if in_branch.value is None or fallthrough.value is None:
+                return None
+            if not (self._safe_arm(in_branch.value) and self._safe_arm(fallthrough.value)):
+                return None
+            ternary = IRTernary(
+                self.func.code, cond_stmt.condition, in_branch.value, fallthrough.value, self._type_index(in_branch.value)
+            )
+            out = IRReturn(self.func.code, ternary)
+            out.adopt(cond_stmt, fallthrough)
+            return out
+        if isinstance(in_branch, IRAssign) and isinstance(fallthrough, IRAssign):
+            if not (
+                isinstance(in_branch.target, IRLocal)
+                and _ir_structurally_equal(in_branch.target, fallthrough.target)
+            ):
+                return None
+            if not (self._safe_arm(in_branch.expr) and self._safe_arm(fallthrough.expr)):
+                return None
+            ternary = IRTernary(self.func.code, cond_stmt.condition, in_branch.expr, fallthrough.expr, in_branch.target.type)
+            out = IRAssign(self.func.code, in_branch.target, ternary)
+            out.adopt(cond_stmt, fallthrough)
+            out._no_user_inline = True
+            return out
+        return None
+
+    def _try_null_coalesce(self, cond_stmt: IRStatement, fallthrough: IRStatement) -> Optional[IRStatement]:
+        """Recover `value ?? default` from `if (value != null) { return/assign
+        value; }` (empty else) followed by `return/assign default`."""
+        if not isinstance(cond_stmt, IRConditional):
+            return None
+        cond = cond_stmt.condition
+        if not (isinstance(cond, IRBoolExpr) and cond.op == IRBoolExpr.CompareType.NOT_NULL):
+            return None
+        true_stmts = cond_stmt.true_block.statements if cond_stmt.true_block else []
+        if len(true_stmts) != 1:
+            return None
+        if cond_stmt.false_block and cond_stmt.false_block.statements:
+            return None
+        value = cond.left
+        if value is None:
+            return None
+        in_branch = true_stmts[0]
+        # Match `return value;` / `x = value;` in the branch against the
+        # fallthrough `return default;` / `x = default;`.
+        if isinstance(in_branch, IRReturn) and isinstance(fallthrough, IRReturn):
+            if in_branch.value is None or fallthrough.value is None:
+                return None
+            if not _ir_structurally_equal(self._unwrap_value(in_branch.value), self._unwrap_value(value)):
+                return None
+            if not self._safe_arm(value) or not self._safe_arm(fallthrough.value):
+                return None
+            coal = IRNullCoalesce(self.func.code, in_branch.value, fallthrough.value, self._type_index(in_branch.value))
+            out = IRReturn(self.func.code, coal)
+            out.adopt(cond_stmt, fallthrough)
+            return out
+        if isinstance(in_branch, IRAssign) and isinstance(fallthrough, IRAssign):
+            if not _ir_structurally_equal(in_branch.target, fallthrough.target):
+                return None
+            if not _ir_structurally_equal(self._unwrap_value(in_branch.expr), self._unwrap_value(value)):
+                return None
+            if not self._safe_arm(value) or not self._safe_arm(fallthrough.expr):
+                return None
+            coal = IRNullCoalesce(self.func.code, value, fallthrough.expr, fallthrough.target.type)
+            out = IRAssign(self.func.code, fallthrough.target, coal)
+            out.adopt(cond_stmt, fallthrough)
+            out._no_user_inline = True
+            return out
+        return None
+
+    def _unwrap_value(self, expr: IRExpression) -> IRExpression:
+        """Strip representation casts so `(T)v` matches the tested `v`."""
+        while isinstance(expr, IRCast):
+            expr = expr.expr
+        return expr
+
+    def _try_recover(self, stmt: IRStatement) -> Optional[IRStatement]:
+        if not isinstance(stmt, IRConditional):
+            return None
+        true_stmts = stmt.true_block.statements if stmt.true_block else []
+        false_stmts = stmt.false_block.statements if stmt.false_block else []
+        if len(true_stmts) != 1 or len(false_stmts) != 1:
+            return None
+        t, f = true_stmts[0], false_stmts[0]
+
+        # if (cond) return a; else return b;  ->  return (cond ? a : b)
+        if isinstance(t, IRReturn) and isinstance(f, IRReturn) and t.value is not None and f.value is not None:
+            if self._safe_arm(t.value) and self._safe_arm(f.value):
+                ternary = IRTernary(
+                    self.func.code, stmt.condition, t.value, f.value, self._type_index(t.value)
+                )
+                out = IRReturn(self.func.code, ternary)
+                out.adopt(stmt)
+                return out
+            return None
+
+        # if (cond) { x = a; } else { x = b; }  ->  x = (cond ? a : b)
+        if not (isinstance(t, IRAssign) and isinstance(f, IRAssign)):
+            return None
+        if not (isinstance(t.target, IRLocal) and _ir_structurally_equal(t.target, f.target)):
+            return None
+        if not (self._safe_arm(t.expr) and self._safe_arm(f.expr)):
+            return None
+        # The shared target's declared type is the ternary's result type.
+        ternary = IRTernary(self.func.code, stmt.condition, t.expr, f.expr, t.target.type)
+        out = IRAssign(self.func.code, t.target, ternary)
+        out.adopt(stmt)
+        # Same synthetic-merge caution as IRBoolMaterializationCollapser: don't
+        # let constants fold into the ternary's condition.
+        out._no_user_inline = True
+        return out
+
+    def _type_index(self, expr: IRExpression) -> "tIndex":
+        """Resolve an expression's type back to its tIndex (identity search over
+        the code's type table). Return arms are expressions, not locals, so we
+        can't read `.type` off them directly."""
+        from ...core import tIndex
+
+        resolved = expr.get_type()
+        for idx, t in enumerate(self.func.code.types):
+            if t is resolved:
+                return tIndex(idx)
+        # Unresolvable (shouldn't happen for value-returning arms); Bool is the
+        # safest ternary default.
+        return tIndex(next(i for i, t in enumerate(self.func.code.types) if t.kind.value == Type.Kind.BOOL.value))
+
+    def _safe_arm(self, expr: IRExpression) -> bool:
+        """Whether a branch arm can be hoisted into an unconditional ternary
+        operand — pure, with no calls/allocation/throwing reads."""
+        return not _has_observable_effects(expr)
 
 
 class IRArrayGrowGuardEliminator(TraversingIROptimizer):
@@ -2524,6 +2721,11 @@ class IRGuardOrMerger(TraversingIROptimizer):
                     new_statements.append(merged_and)
                     i += 1
                     continue
+                merged_and_empty = self._try_merge_and_empty_else(stmt)
+                if merged_and_empty is not None:
+                    new_statements.append(merged_and_empty)
+                    i += 1
+                    continue
                 merged2 = self._try_merge_sibling(stmt, stmts[i + 1 :])
                 if merged2 is not None:
                     new_cond, consumed_siblings = merged2
@@ -2691,6 +2893,34 @@ class IRGuardOrMerger(TraversingIROptimizer):
             merged.adopt(stmt, inner)
             return merged
         return None
+
+    def _try_merge_and_empty_else(self, stmt: IRConditional) -> Optional[IRConditional]:
+        """if (A) { if (B') { } else { X } } (empty else on both) -> if (A && B) { X }
+
+        Haxe's `A && B` can lower with the second comparison inverted and the
+        real body in its *false* arm (the empty true arm is the fall-through):
+        the inner `if (code <= MAX) {} else { return ...; }` is `code > MAX`'s
+        complement guarding X. Inverting B' back and AND-ing it onto A recovers
+        the flat `A && B` the source wrote. Both outers must have empty else —
+        if !A does something, X isn't simply gated by `A && B`."""
+        if stmt.false_block.statements:
+            return None
+        outer_true = stmt.true_block.statements
+        if len(outer_true) != 1:
+            return None
+        inner = outer_true[0]
+        if not isinstance(inner, IRConditional):
+            return None
+        # Real body lives in the inner FALSE arm; inner true arm must be empty.
+        if inner.true_block.statements or not inner.false_block.statements:
+            return None
+        if not isinstance(inner.condition, IRBoolExpr):
+            return None
+        inner_cond = self._invert(inner.condition)
+        and_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.AND, stmt.condition, inner_cond)
+        merged = IRConditional(self.func.code, and_cond, inner.false_block, stmt.false_block)
+        merged.adopt(stmt, inner)
+        return merged
 
     def _try_merge_sibling(
         self, stmt: IRConditional, following: List[IRStatement]

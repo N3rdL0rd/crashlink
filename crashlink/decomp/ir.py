@@ -1121,6 +1121,65 @@ class IRBytesNew(IRExpression):
         return f"<IRBytesNew: new hl.Bytes({self.size})>"
 
 
+class IRTernary(IRExpression):
+    """A ternary conditional expression, `cond ? then : otherwise`.
+
+    Recovered from HL's `if (cond) { x = then; } else { x = otherwise; }`
+    statement-level lowering. This is an *expression*: it produces a value and
+    can appear anywhere an expression is expected, which is what lets a
+    conditional write become `x = cond ? a : b` or `return cond ? a : b`.
+    """
+
+    def __init__(
+        self,
+        code: Bytecode,
+        condition: IRExpression,
+        then_expr: IRExpression,
+        else_expr: IRExpression,
+        result_type: tIndex,
+    ):
+        super().__init__(code)
+        self.condition = condition
+        self.then_expr = then_expr
+        self.else_expr = else_expr
+        self.result_type = result_type
+
+    def get_type(self) -> Type:
+        return self.result_type.resolve(self.code)
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.condition, self.then_expr, self.else_expr]
+
+    def __repr__(self) -> str:
+        return f"<IRTernary: {self.condition} ? {self.then_expr} : {self.else_expr}>"
+
+
+class IRNullCoalesce(IRExpression):
+    """The null-default operator, `value ?? default`.
+
+    Recovered from HL's lowering `if (value != null) ... value ... else
+    ... default ...`: equivalent to `(value == null) ? default : value`, but
+    rendered in Haxe's native `??` form. Distinct from a plain IRTernary
+    because the value appears on both sides of the condition — collapsing it
+    to `??` is what makes the common `x ?? fallback` idiom readable.
+    """
+
+    def __init__(self, code: Bytecode, value: IRExpression, default: IRExpression, result_type: tIndex):
+        super().__init__(code)
+        self.value = value
+        self.default = default
+        self.result_type = result_type
+
+    def get_type(self) -> Type:
+        return self.result_type.resolve(self.code)
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.value, self.default]
+
+    def __repr__(self) -> str:
+        return f"<IRNullCoalesce: {self.value} ?? {self.default}>"
+
+
 class IRCast(IRExpression):
     """Represents a type cast, e.g., `(MyType)value`"""
 

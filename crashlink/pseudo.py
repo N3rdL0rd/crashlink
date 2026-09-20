@@ -74,6 +74,8 @@ from .decomp import (
     IRThrow,
     IRPrimitiveJump,
     IRSwitch,
+    IRTernary,
+    IRNullCoalesce,
 )
 from .decomp.ir import IREnumPattern
 
@@ -689,6 +691,20 @@ def _expression_to_haxe(
             raise NotImplementedError(f"Unhandled unary IRBoolExpr op: {expr.op} on {expr.left}")
         else:
             raise NotImplementedError(f"Unhandled IRBoolExpr: {expr}")
+
+    elif isinstance(expr, IRTernary):
+        # `cond ? a : b`. Parenthesize the condition when it's a compound
+        # boolean so it reads correctly against the `?`.
+        cond = _expression_to_haxe(expr.condition, code, ir_function)
+        then = _expression_to_haxe(expr.then_expr, code, ir_function)
+        otherwise = _expression_to_haxe(expr.else_expr, code, ir_function)
+        return f"({cond} ? {then} : {otherwise})"
+
+    elif isinstance(expr, IRNullCoalesce):
+        # `value ?? default`.
+        value = _expression_to_haxe(expr.value, code, ir_function)
+        default = _expression_to_haxe(expr.default, code, ir_function)
+        return f"({value} ?? {default})"
 
     elif isinstance(expr, IRField):
         # Render the field base without render-time substitutions: substituting
