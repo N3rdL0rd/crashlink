@@ -64,6 +64,26 @@ from . import (
 )
 
 
+def _is_pure_numeric_cast_tree(expr: IRExpression) -> bool:
+    """Whether `expr` is a lossless Int -> Float conversion tree whose complete
+    removal is unobservable. `_has_observable_effects` treats every cast as
+    potentially throwing because a checked *downcast* (and, in HL, any
+    float-to-int truncation) is; a widening ToSFloat/ToSF64 over pure operands
+    is not, so it is safe both to move and to drop."""
+    if isinstance(expr, IRCast):
+        try:
+            target_kind = expr.get_type().kind.value
+            source_kind = expr.expr.get_type().kind.value
+        except Exception:
+            return False
+        int_kinds = (Type.Kind.U8.value, Type.Kind.U16.value, Type.Kind.I32.value, Type.Kind.I64.value)
+        float_kinds = (Type.Kind.F32.value, Type.Kind.F64.value)
+        if target_kind not in float_kinds or source_kind not in int_kinds:
+            return False
+        return _is_pure_numeric_cast_tree(expr.expr)
+    return not _has_observable_effects(expr)
+
+
 class _ScopedLocalLifetime:
     """Prove a value dead at a straight-line kill, retaining uncertain exits.
 
@@ -1370,26 +1390,55 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             return False
 
     def is_safe_to_inline_conservatively(self, expr: IRExpression) -> bool:
+        # Conservative mode only ever *moves* an expression into its sole,
+        # immediately-following use — never duplicates or discards it — so
+        # evaluation count and order are preserved. That makes read-like
+        # expressions (field/array/enum reads, plain arithmetic, numeric
+        # representation casts) foldable even though they can in principle
+        # throw: they still execute exactly once, at the same point.
         # A representation change is not work: HL boxes a value into a Dynamic
         # temp (or stringifies it) right before the single statement that
         # consumes it, and that temp is pure noise at the use site. A checked
         # cast is a different matter and stays put.
         if isinstance(expr, IRCast) and self._is_boxing_cast(expr):
             return self.is_safe_to_inline_conservatively(expr.expr)
-        # Unknown expressions, calls, allocations and potentially throwing
-        # reads must not migrate into conditional or repeated evaluation sites.
-        if _has_observable_effects(expr):
-            return False
         if isinstance(expr, (IRConst, IRLocal)):
             return True
+        # Numeric casts (Int -> Float and friends) are pure representation
+        # conversions; a checked downcast (to a specific object type) is not
+        # covered here and stays as an explicit statement. `_is_pure_numeric_cast_tree`
+        # also guarantees the whole tree is droppable, which matters for the
+        # dead-temp eliminator.
+        if isinstance(expr, IRCast) and _is_pure_numeric_cast_tree(expr):
+            return True
+        # Pure reads: field and array element access. These are the temps HL
+        # emits constantly (an `obj.field` or `arr[i]` read feeding one
+        # consumer), and they survive today only because
+        # `_has_observable_effects` treats every potentially-throwing read as
+        # immovable — which matters for duplication/speculation, not for a
+        # single-use move. Enum index/field reads are excluded: IREnumSwitch-
+        # Optimizer pattern-matches their raw assignment/condition shape when
+        # recovering destructuring switches, so they must stay put.
+        if isinstance(expr, (IRField, IRArrayAccess)):
+            # The container/index operands are read at the use site either way;
+            # they just can't contain calls/allocs of their own.
+            operands: List[IRExpression] = [expr.target] if isinstance(expr, IRField) else [expr.array, expr.index]
+            return all(not _has_observable_effects(op) for op in operands)
         # Allow flat arithmetic (both operands are leaves) to enable compound assignment detection.
         # Nested arithmetic is excluded to prevent exponential chaining.
         if isinstance(expr, IRArithmetic):
-            return isinstance(expr.left, (IRConst, IRLocal)) and isinstance(expr.right, (IRConst, IRLocal))
+            if not _has_observable_effects(expr):
+                return isinstance(expr.left, (IRConst, IRLocal)) and isinstance(expr.right, (IRConst, IRLocal))
+            return False
         if isinstance(expr, (IRNeg, IRNot)):
             return self.is_safe_to_inline_conservatively(expr.expr)
         if isinstance(expr, IRStringConvert):
             return self.is_safe_to_inline_conservatively(expr.value)
+        # Unknown expressions, calls, allocations and anything else that may
+        # have observable effects must not migrate into conditional or repeated
+        # evaluation sites.
+        if _has_observable_effects(expr):
+            return False
         return False
 
     def _call_move_ok(self, stmt: IRStatement, temp: IRLocal) -> bool:
@@ -1482,6 +1531,155 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         """
         return any(self._stmt_contains_local(s, local) for s in self._flatten_stmts(continuation))
 
+    def _is_pure_copy_kill(self, stmt: IRStatement, temp: IRLocal) -> bool:
+        """Whether `stmt` is a bare `temp = temp` — a copy that only reads
+        `temp` and nothing else. When `stmt` is the next statement after
+        `temp = expr`, folding turns it into `temp = expr`, evaluating `expr`
+        exactly once at the same point. This is the self-referential kill that
+        otherwise blocks inlining (the next statement both reads and redefines
+        the temp)."""
+        return (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRLocal)
+            and (stmt.target == temp or stmt.target.same_register(temp))
+            and isinstance(stmt.expr, IRLocal)
+            and (stmt.expr == temp or stmt.expr.same_register(temp))
+        )
+
+    def _forward_inline_single_use(
+        self,
+        block: IRBlock,
+        i: int,
+        new_statements: List[IRStatement],
+        continuation: Optional[List[IRStatement]],
+    ) -> bool:
+        """Move a single-use, pure temp assignment forward to its sole later use
+        in the same block, dropping the assignment. Returns True when folded.
+
+        Unlike the adjacent-statement path, this handles a temp whose use is
+        separated from its definition by other straight-line statements (e.g.
+        the paired conversions HL emits for `a / b` on Ints: `t1 = (Float)a;
+        t2 = (Float)b; res = t1 / t2;`). It is still a move — the expression
+        evaluates exactly once, at the use site — so `expr` must be pure
+        (reordering it across an intervening side effect would be observable),
+        and nothing between may reassign the temp or any local it reads."""
+        statements = block.statements
+        current_stmt = statements[i]
+        assert isinstance(current_stmt, IRAssign) and isinstance(current_stmt.target, IRLocal)
+        temp = current_stmt.target
+        expr = current_stmt.expr
+        assert isinstance(expr, IRExpression)
+
+        # The expression must be pure: we move it across intervening statements,
+        # so it cannot itself have observable effects (calls, allocation,
+        # throwing reads). Numeric casts/consts/locals/arithmetic qualify.
+        if _has_observable_effects(expr) and not _is_pure_numeric_cast_tree(expr):
+            return False
+        if self._is_throw_capable_read(expr):
+            return False
+        # No self-reference.
+        if _ScopedLocalLifetime(self.func.block).reads(expr, temp):
+            return False
+
+        free_vars = self._collect_free_locals(expr)
+        free_vars.discard(temp.name)
+
+        # Scan forward for the sole use, requiring every intervening statement
+        # to be a straight-line, side-effect-free one that touches neither the
+        # temp nor the locals the expression reads.
+        # Scan forward for the sole use. We only need the window up to and
+        # including that use to be clean straight-line code (the expression
+        # never evaluates past it); what follows is irrelevant to this move.
+        use_idx: Optional[int] = None
+        temp_keys = {temp.name, f"reg:{temp.reg_idx}"}
+        for j in range(i + 1, len(statements)):
+            s = statements[j]
+            # Stop (fail) at anything that isn't a plain side-effect-free
+            # assignment or pure expression statement: control flow, calls,
+            # returns, etc. all reorder or guard evaluation.
+            if not (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, (IRLocal, IRField, IRArrayAccess))
+            ) and not (isinstance(s, IRExpression) and not _has_observable_effects(s)):
+                return False
+            # A write to the temp itself ends its lifetime: a read is the use
+            # we're looking for; a blind overwrite means the value was never
+            # consumed.
+            if self._stmt_reassigns_any(s, temp_keys):
+                if self._stmt_contains_local(s, temp):
+                    if use_idx is not None:
+                        return False  # second use — not single-use
+                    use_idx = j
+                    break  # found the use; past statements never execute before it
+                else:
+                    return False  # killed without being read
+                continue
+            # Intervening writes to a free variable of the inlined expression
+            # would change what it reads at the use site.
+            if free_vars and self._stmt_reassigns_any(s, free_vars):
+                return False
+            if self._stmt_contains_local(s, temp):
+                if use_idx is not None:
+                    return False  # second use — not single-use
+                use_idx = j
+                break  # found the use; past statements never execute before it
+        if use_idx is None:
+            return False
+        use_stmt = statements[use_idx]
+        # Exactly one read at the use site.
+        if self._count_local_reads(use_stmt, temp) != 1:
+            return False
+        # The use may write the temp itself only when the read is its own RHS —
+        # `temp = f(temp)` becomes `temp = f(expr)`, still evaluating `expr`
+        # exactly once before the store. Any other redefinition means the read
+        # is not the temp's value use.
+        if self._is_local_redefined(temp, [use_stmt]) and not (
+            isinstance(use_stmt, IRAssign)
+            and isinstance(use_stmt.target, IRLocal)
+            and (use_stmt.target == temp or use_stmt.target.same_register(temp))
+            and isinstance(use_stmt.expr, IRExpression)
+            and self._expr_contains_local(use_stmt.expr, temp)
+        ):
+            return False
+        # A pure expression can move into a conditional's condition (evaluated
+        # unconditionally), but not into a branch/loop body or switch case.
+        if self._use_is_speculative(use_stmt) and not (
+            isinstance(use_stmt, IRConditional) and self._expr_contains_local(use_stmt.condition, temp)
+        ):
+            return False
+        # No reuse of the register after the use.
+        if not _ScopedLocalLifetime(self.func.block).dead_after(block, use_idx, temp):
+            return False
+
+        substituted = self._substitute_in_statement(use_stmt, temp, expr)
+        if not substituted:
+            return False
+        use_stmt.adopt(current_stmt)
+        dbg_print(f"Forward-inlining single-use temp '{temp.name}' to its use site.")
+        # Drop the definition; keep every statement between it and the use.
+        del statements[i]
+        return True
+
+
+    def _is_throw_capable_read(self, expr: IRExpression) -> bool:
+        """Whether `expr` is (or contains) a read that may throw — a field or
+        array access. Such a read must never migrate into a context that runs
+        on fewer executions than the statement it came from (e.g. only one
+        branch of a conditional), since the throw is observable behavior."""
+        if isinstance(expr, (IRField, IRArrayAccess)):
+            return True
+        if isinstance(expr, (IRCast, IRNeg, IRNot, IRTypeOf, IRTypeKind)):
+            return self._is_throw_capable_read(expr.expr)
+        if isinstance(expr, IRStringConvert):
+            return self._is_throw_capable_read(expr.value)
+        return False
+
+    def _use_is_speculative(self, stmt: IRStatement) -> bool:
+        """Whether substituting into `stmt` could evaluate the expression on
+        paths where it previously did not run: the branches of a conditional,
+        a loop body/condition, or a switch case."""
+        return isinstance(stmt, (IRConditional, IRWhileLoop, IRPrimitiveLoop, IRForEachLoop, IRIntRangeLoop, IRSwitch))
+
     def _visit_block_conservative(
         self,
         block: IRBlock,
@@ -1563,15 +1761,27 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                         new_statements.append(current_stmt)
                         i += 1
                         continue
-                    if i + 1 < len(statements):
+                    if i + 1 < len(statements) and not (
+                        # A read that can throw must not migrate into a context
+                        # that executes on fewer paths than it did before (one
+                        # branch of a conditional, a loop body, a switch case).
+                        self._is_throw_capable_read(expr_to_inline)
+                        and self._use_is_speculative(statements[i + 1])
+                    ):
                         next_stmt = statements[i + 1]
+                        # A bare `temp = temp` next statement is the
+                        # self-referential kill the compiler emits when a value
+                        # is recomputed in place. Folding `temp = expr` into it
+                        # yields `temp = expr` — `expr` still evaluates exactly
+                        # once, at the same point.
+                        pure_copy_kill = self._is_pure_copy_kill(next_stmt, temp_local)
                         if (
                             self._stmt_contains_local(next_stmt, temp_local)
                             and not (
                                 self._has_nontrivial_computation(expr_to_inline)
                                 and (inside_loop_body or self._count_local_reads(next_stmt, temp_local) > 1)
                             )
-                            and not self._is_local_redefined(temp_local, [next_stmt])
+                            and (pure_copy_kill or not self._is_local_redefined(temp_local, [next_stmt]))
                             and not self._stmt_reassigns_any(
                                 next_stmt, self._collect_free_locals(expr_to_inline)
                             )
@@ -1582,25 +1792,50 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                                 block, i + 1, temp_local
                             )
                             if not later_uses:
-                                substituted = self._substitute_in_statement(
-                                    next_stmt, temp_local, expr_to_inline
-                                )
-                                if substituted:
-                                    dbg_print(
-                                        f"Conservatively inlining assignment for temporary '{temp_local.name}'."
-                                    )
-                                    if inside_loop_body:
-                                        new_statements.append(current_stmt)
-                                    else:
-                                        next_stmt.adopt(current_stmt)  # current_stmt is dropped
-                                        # If this inline merged a user variable into a conditional,
-                                        # the resulting statement is a synthetic merge — don't let it
-                                        # become a target for further user-var inlining.
-                                        if self._is_user_local(temp_local):
-                                            next_stmt._no_user_inline = True
+                                if pure_copy_kill:
+                                    # Replace the whole `temp = temp` with `temp = expr`.
+                                    next_stmt.expr = expr_to_inline
+                                    next_stmt.adopt(current_stmt)
                                     new_statements.append(next_stmt)
                                     i += 2
                                     inlined = True
+                                else:
+                                    substituted = self._substitute_in_statement(
+                                        next_stmt, temp_local, expr_to_inline
+                                    )
+                                    if substituted:
+                                        dbg_print(
+                                            f"Conservatively inlining assignment for temporary '{temp_local.name}'."
+                                        )
+                                        if inside_loop_body:
+                                            new_statements.append(current_stmt)
+                                        else:
+                                            next_stmt.adopt(current_stmt)  # current_stmt is dropped
+                                            # If this inline merged a user variable into a conditional,
+                                            # the resulting statement is a synthetic merge — don't let it
+                                            # become a target for further user-var inlining.
+                                            if self._is_user_local(temp_local):
+                                                next_stmt._no_user_inline = True
+                                        new_statements.append(next_stmt)
+                                        i += 2
+                                        inlined = True
+
+            # Not consumed by the immediately-following statement: try to move a
+            # single-use, pure expression forward to its *sole* later use in this
+            # block. This is still a move, not a duplication — the expression
+            # evaluates exactly once, just at the use site. Only straight-line,
+            # side-effect-free statements may intervene (so evaluation order is
+            # preserved), and a potentially-throwing read may not move into a
+            # speculatively-executed context.
+            if (
+                not inlined
+                and not inside_loop_body
+                and isinstance(current_stmt, IRAssign)
+                and isinstance(current_stmt.target, IRLocal)
+                and not self._is_user_local(current_stmt.target)
+                and isinstance(current_stmt.expr, IRExpression)
+            ):
+                inlined = self._forward_inline_single_use(block, i, new_statements, continuation)
 
             if not inlined:
                 new_statements.append(current_stmt)
@@ -1617,6 +1852,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                         inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child),
                         continuation=child_continuation,
                     )
+
 
     def _visit_block_aggressive(
         self,

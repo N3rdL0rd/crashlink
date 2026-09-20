@@ -73,7 +73,7 @@ from . import (
     _structurally_equal,
     _stmt_lists_structurally_equal,
 )
-from .inliner import _ReferenceAwareOptimizer
+from .inliner import _ReferenceAwareOptimizer, _is_pure_numeric_cast_tree
 
 
 class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
@@ -1416,7 +1416,10 @@ class IRDeadTempEliminator(_ReferenceAwareOptimizer):
                 dbg_print(f"Removing dead temp assignment '{stmt.target.name}'.")
                 # Preserve the entire evaluation, including nested calls and
                 # exceptions from reads/casts, even when its result is dead.
-                if _has_observable_effects(stmt.expr):
+                # A numeric-representation cast (Int -> Float, ...) is pure —
+                # `_has_observable_effects` only flags it because a checked
+                # downcast can throw — so a dead one is dropped outright.
+                if _has_observable_effects(stmt.expr) and not _is_pure_numeric_cast_tree(stmt.expr):
                     stmt.expr.adopt(stmt)  # opcode was tagged on the assign, not its expr
                     new_stmts.append(stmt.expr)
                 continue
