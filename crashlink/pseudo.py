@@ -360,6 +360,26 @@ def _expr_to_haxe_with_precedence(
             return f"({rendered})"
     return rendered
 
+def _paren_comparison_operand(
+    expr: Optional[IRExpression], code: Bytecode, ir_function: Optional[IRFunction]
+) -> str:
+    """Render a comparison operand, parenthesizing it when it's itself a
+    comparison — `<`/`==` are left-associative in Haxe, so `a < b == c < d`
+    parses as `((a<b)==c)<d`, not `(a<b)==(c<d)`."""
+    rendered = _expression_to_haxe(expr, code, ir_function)
+    if isinstance(expr, IRBoolExpr) and expr.op in (
+        IRBoolExpr.CompareType.LT,
+        IRBoolExpr.CompareType.LTE,
+        IRBoolExpr.CompareType.GT,
+        IRBoolExpr.CompareType.GTE,
+        IRBoolExpr.CompareType.EQ,
+        IRBoolExpr.CompareType.NEQ,
+        IRBoolExpr.CompareType.ULT,
+        IRBoolExpr.CompareType.UGTE,
+    ):
+        return f"({rendered})"
+    return rendered
+
 
 def _is_untyped_array_access_class(typ: "Type", code: Bytecode) -> bool:
     """True if `typ` is hl.types.ArrayBase/ArrayAccess — the type-erased base
@@ -684,8 +704,10 @@ def _expression_to_haxe(
             if typekind_render is not None:
                 left, right = typekind_render
             else:
-                left = _expression_to_haxe(left_expr, code, ir_function)
-                right = _expression_to_haxe(right_expr, code, ir_function)
+                # Comparison operands of an equality/relational op need parens:
+                # `a < b == c < d` would otherwise parse as `((a<b)==c)<d`.
+                left = _paren_comparison_operand(left_expr, code, ir_function)
+                right = _paren_comparison_operand(right_expr, code, ir_function)
             return f"{left} {op_map[actual_op]} {right}"
         elif expr.left:
             raise NotImplementedError(f"Unhandled unary IRBoolExpr op: {expr.op} on {expr.left}")

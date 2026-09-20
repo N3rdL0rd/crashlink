@@ -546,6 +546,13 @@ class IRBoolMaterializationCollapser(TraversingIROptimizer):
             return stmt.target, bool(stmt.expr.value)
         return None
 
+    def _is_scoped_user_local(self, local: IRLocal) -> bool:
+        """Whether a `varN` local is genuinely user-named: its register carries
+        a debug assign at the local's own defining op. Anonymous temps that
+        reuse a user-named register outside that variable's scope are not."""
+        scoped = getattr(self.func, "is_scoped_user_temp", None)
+        return bool(scoped(local)) if scoped is not None else True
+
     def visit_block(self, block: IRBlock) -> None:
         new_statements: List[IRStatement] = []
         for idx, stmt in enumerate(block.statements):
@@ -568,6 +575,12 @@ class IRBoolMaterializationCollapser(TraversingIROptimizer):
                     and not (
                         isinstance(true_assign[0], IRLocal)
                         and re.match(r"^var\d+$", true_assign[0].name)
+                        # A genuinely anonymous compiler temp (no debug name at
+                        # its own defining op) is not a user variable — a
+                        # boolean if/else writing it is just `t = cond`. Only a
+                        # varN that a debug assign actually names (a scoped user
+                        # temp) keeps the branch structure for round-trip.
+                        and self._is_scoped_user_local(true_assign[0])
                         # Exception: collapse `if (cond) { t = C1; } else { t = C2; }
                         # return t;` into `return cond;` even for varN temps, so
                         # `return x != null` doesn't decompile as a 4-line if/else.
@@ -646,6 +659,17 @@ class IRTernaryRecovery(TraversingIROptimizer):
                     new_statements.append(fall)
                     i += 2
                     continue
+            # `if (c) { v = A; } else { return B; } return v;` -> `return c ? A : B`
+            # (and the mirror with the assign in the else). The temp is
+            # compiler-generated (single assignment, immediately returned), so
+            # folding it away is exact. Only pure arms.
+            if i + 1 < len(statements):
+                tail = self._try_conditional_return_temp(stmt, statements[i + 1])
+                if tail is not None:
+                    dbg_print(f"IRTernaryRecovery (return-temp): {stmt} + {statements[i+1]} -> {tail}")
+                    new_statements.append(tail)
+                    i += 2
+                    continue
             recovered = self._try_recover(stmt)
             if recovered is not None:
                 dbg_print(f"IRTernaryRecovery: {stmt} -> {recovered}")
@@ -674,10 +698,8 @@ class IRTernaryRecovery(TraversingIROptimizer):
                 return None
             if not (self._safe_arm(in_branch.value) and self._safe_arm(fallthrough.value)):
                 return None
-            ternary = IRTernary(
-                self.func.code, cond_stmt.condition, in_branch.value, fallthrough.value, self._type_index(in_branch.value)
-            )
-            out = IRReturn(self.func.code, ternary)
+            expr = self._make_ternary(cond_stmt.condition, in_branch.value, fallthrough.value, self._type_index(in_branch.value))
+            out = IRReturn(self.func.code, expr)
             out.adopt(cond_stmt, fallthrough)
             return out
         if isinstance(in_branch, IRAssign) and isinstance(fallthrough, IRAssign):
@@ -688,12 +710,55 @@ class IRTernaryRecovery(TraversingIROptimizer):
                 return None
             if not (self._safe_arm(in_branch.expr) and self._safe_arm(fallthrough.expr)):
                 return None
-            ternary = IRTernary(self.func.code, cond_stmt.condition, in_branch.expr, fallthrough.expr, in_branch.target.type)
-            out = IRAssign(self.func.code, in_branch.target, ternary)
-            out.adopt(cond_stmt, fallthrough)
-            out._no_user_inline = True
+            expr = self._make_ternary(cond_stmt.condition, in_branch.expr, fallthrough.expr, in_branch.target.type)
+            out = IRAssign(self.func.code, in_branch.target, expr)
             return out
         return None
+
+    def _try_conditional_return_temp(self, stmt: IRStatement, following: IRStatement) -> Optional[IRStatement]:
+        """Recover `if (c) { v = A; } else { return B; } return v;` into
+        `return c ? A : B` (and the mirror with the assign in the else).
+
+        The temp `v` is compiler-generated — assigned exactly once in the
+        branch and read only by the trailing return — so folding it away is
+        exact. Both produced arms must be pure.
+        """
+        if not isinstance(stmt, IRConditional) or not isinstance(following, IRReturn):
+            return None
+        if following.value is None:
+            return None
+        true_stmts = stmt.true_block.statements if stmt.true_block else []
+        false_stmts = stmt.false_block.statements if stmt.false_block else []
+        if len(true_stmts) != 1 or len(false_stmts) != 1:
+            return None
+        t, f = true_stmts[0], false_stmts[0]
+        # Identify the assigning branch and the returning branch.
+        assign_side: Optional[IRAssign] = None
+        return_side: Optional[IRReturn] = None
+        assign_is_true = False
+        if isinstance(t, IRAssign) and isinstance(f, IRReturn):
+            assign_side, return_side, assign_is_true = t, f, True
+        elif isinstance(f, IRAssign) and isinstance(t, IRReturn):
+            assign_side, return_side, assign_is_true = f, t, False
+        else:
+            return None
+        if return_side.value is None:
+            return None
+        # The assign target must be a compiler temp (`varN`) read only by the
+        # trailing return — an explicit user variable stays an assignment.
+        target = assign_side.target
+        if not (isinstance(target, IRLocal) and target.name.startswith("var") and target.name[3:].isdigit()):
+            return None
+        if not _ir_structurally_equal(following.value, target):
+            return None
+        if not (self._safe_arm(assign_side.expr) and self._safe_arm(return_side.value)):
+            return None
+        then_expr = assign_side.expr if assign_is_true else return_side.value
+        else_expr = return_side.value if assign_is_true else assign_side.expr
+        expr = self._make_ternary(stmt.condition, then_expr, else_expr, self._type_index(then_expr))
+        out = IRReturn(self.func.code, expr)
+        out.adopt(stmt, following)
+        return out
 
     def _try_null_coalesce(self, cond_stmt: IRStatement, fallthrough: IRStatement) -> Optional[IRStatement]:
         """Recover `value ?? default` from `if (value != null) { return/assign
@@ -745,6 +810,40 @@ class IRTernaryRecovery(TraversingIROptimizer):
             expr = expr.expr
         return expr
 
+    def _bool_const(self, expr: IRExpression) -> Optional[bool]:
+        """The boolean literal an arm is, if it is one."""
+        if isinstance(expr, IRConst) and expr.const_type == IRConst.ConstType.BOOL:
+            return bool(expr.value)
+        return None
+
+    def _make_ternary(
+        self, cond: IRExpression, then_expr: IRExpression, else_expr: IRExpression, result_type: "tIndex"
+    ) -> IRExpression:
+        """Build a ternary, collapsing the redundant boolean forms:
+        `cond ? true : false` is just `cond`, and `cond ? false : true` is
+        `!cond` (inverting a comparison in place where possible)."""
+        t_bool = self._bool_const(then_expr)
+        f_bool = self._bool_const(else_expr)
+        if t_bool is not None and f_bool is not None and t_bool != f_bool:
+            if t_bool:  # cond ? true : false  ==  cond
+                return cond
+            # cond ? false : true  ==  !cond — invert a comparison in place.
+            if isinstance(cond, IRBoolExpr) and cond.op in (
+                IRBoolExpr.CompareType.LT,
+                IRBoolExpr.CompareType.LTE,
+                IRBoolExpr.CompareType.GT,
+                IRBoolExpr.CompareType.GTE,
+                IRBoolExpr.CompareType.EQ,
+                IRBoolExpr.CompareType.NEQ,
+                IRBoolExpr.CompareType.NULL,
+                IRBoolExpr.CompareType.NOT_NULL,
+            ):
+                inverted = copy.copy(cond)
+                inverted.invert()
+                return inverted
+            return IRNot(self.func.code, cond)
+        return IRTernary(self.func.code, cond, then_expr, else_expr, result_type)
+
     def _try_recover(self, stmt: IRStatement) -> Optional[IRStatement]:
         if not isinstance(stmt, IRConditional):
             return None
@@ -757,10 +856,8 @@ class IRTernaryRecovery(TraversingIROptimizer):
         # if (cond) return a; else return b;  ->  return (cond ? a : b)
         if isinstance(t, IRReturn) and isinstance(f, IRReturn) and t.value is not None and f.value is not None:
             if self._safe_arm(t.value) and self._safe_arm(f.value):
-                ternary = IRTernary(
-                    self.func.code, stmt.condition, t.value, f.value, self._type_index(t.value)
-                )
-                out = IRReturn(self.func.code, ternary)
+                expr = self._make_ternary(stmt.condition, t.value, f.value, self._type_index(t.value))
+                out = IRReturn(self.func.code, expr)
                 out.adopt(stmt)
                 return out
             return None
@@ -773,10 +870,9 @@ class IRTernaryRecovery(TraversingIROptimizer):
         if not (self._safe_arm(t.expr) and self._safe_arm(f.expr)):
             return None
         # The shared target's declared type is the ternary's result type.
-        ternary = IRTernary(self.func.code, stmt.condition, t.expr, f.expr, t.target.type)
-        out = IRAssign(self.func.code, t.target, ternary)
+        expr = self._make_ternary(stmt.condition, t.expr, f.expr, t.target.type)
+        out = IRAssign(self.func.code, t.target, expr)
         out.adopt(stmt)
-        # Same synthetic-merge caution as IRBoolMaterializationCollapser: don't
         # let constants fold into the ternary's condition.
         out._no_user_inline = True
         return out
