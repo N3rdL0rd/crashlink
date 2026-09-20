@@ -1131,8 +1131,24 @@ class IRStringConcatFolder(TraversingIROptimizer):
                 continue
             if self._statement_reads_local(stmt, temp) or self._statement_assigns_local(stmt, temp):
                 break
-            if not self._is_movable(stmt):
-                break
+            # A temp definition feeding the chain is normally required to be
+            # side-effect free, since the fold reorders it relative to the
+            # values the chain collects. A *read* (field/array access) that can
+            # throw is different: its temp is resolved (inlined) into the very
+            # next chain link, which evaluates it at exactly the same point —
+            # so it may be absorbed rather than treated as a chain break. A def
+            # with any other observable effect (a call, allocation) must stay.
+            movable = self._is_movable(stmt)
+            if not movable:
+                if not (
+                    isinstance(stmt, IRAssign)
+                    and isinstance(stmt.target, IRLocal)
+                    and stmt.target.name.startswith("var")
+                    and stmt.target.name[3:].isdigit()
+                    and self._is_absorbable_read_def(stmt)
+                    and self._read_reaches_next_add(statements, i, temp, stmt.target)
+                ):
+                    break
             assert isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)
             live[stmt.target.name] = (i, stmt.expr)
             i += 1
@@ -1341,6 +1357,85 @@ class IRStringConcatFolder(TraversingIROptimizer):
                 return False
         return False
 
+    def _is_absorbable_read_def(self, stmt: IRAssign) -> bool:
+        """Whether `stmt` defines a temp with an expression whose only
+        observable behavior is a potentially-throwing read (field/array access)
+        over pure operands. Such a value may be inlined into the immediately
+        following chain link, which evaluates it at the same point."""
+        expr = stmt.expr
+        # Unwrap pure wrappers (casts/string-converts of primitives).
+        while isinstance(expr, (IRCast, IRStringConvert)):
+            expr = expr.expr if isinstance(expr, IRCast) else expr.value
+        if isinstance(expr, IRField):
+            # A static field read (`SomeType.field`) targets a TYPE constant,
+            # which `_has_effects` conservatively flags as a global-object
+            # reference. The type object is always live; only the field read
+            # itself (which the absorb moves to the same evaluation point) can
+            # throw, so the target is effectively pure here.
+            if isinstance(expr.target, IRConst) and expr.target.const_type == IRConst.ConstType.GLOBAL_OBJ:
+                return True
+            return not self._has_effects(expr.target)
+        if isinstance(expr, IRArrayAccess):
+            return not self._has_effects(expr.array) and not self._has_effects(expr.index)
+        return False
+
+    def _read_reaches_next_add(
+        self, statements: List[IRStatement], i: int, temp: IRLocal, read_temp: IRLocal
+    ) -> bool:
+        """Whether the value of `read_temp` reaches the next `temp =
+        String.__add__(temp, ...)` link through only pure wrapper defs (casts,
+        primitive string-converts) in between — so inlining the read into that
+        link evaluates it at exactly the same point as before."""
+        # Trace the add's RHS back through the wrapper defs to see whether it
+        # ultimately reads `read_temp`, and confirm every statement between the
+        # read's def and the add is such a pure wrapper.
+        wrappers: Dict[str, IRExpression] = {}
+        j = i + 1
+        while j < len(statements):
+            nxt = statements[j]
+            if isinstance(nxt, IRAssign) and nxt.target == temp:
+                if not self._is_string_add_with_temp(nxt.expr, temp):
+                    return False
+                assert isinstance(nxt.expr, IRCall)
+                return self._unwrap_reads(nxt.expr.args[1], wrappers, read_temp)
+            # An intermediate statement must be a pure wrapper of a temp (its
+            # value is resolved through `live` when the add's RHS is folded).
+            if not (isinstance(nxt, IRAssign) and isinstance(nxt.target, IRLocal)):
+                return False
+            if not self._is_pure_wrapper(nxt.expr):
+                return False
+            wrappers[nxt.target.name] = nxt.expr
+            j += 1
+        return False
+
+    def _unwrap_reads(self, expr: IRExpression, wrappers: Dict[str, IRExpression], target: IRLocal) -> bool:
+        """Whether `expr` reads `target`, resolving wrapper temps via `wrappers`."""
+        if self._expr_contains_local(expr, target):
+            return True
+        # Resolve a wrapper temp to its definition and recurse.
+        if isinstance(expr, IRLocal) and expr.name in wrappers:
+            return self._unwrap_reads(wrappers[expr.name], wrappers, target)
+        for child in expr.get_children():
+            if isinstance(child, IRExpression) and self._unwrap_reads(child, wrappers, target):
+                return True
+        # IRStringConvert/IRCast don't expose their operand via get_children in
+        # a uniform way here; unwrap them explicitly.
+        inner = None
+        if isinstance(expr, IRStringConvert):
+            inner = expr.value
+        elif isinstance(expr, IRCast):
+            inner = expr.expr
+        if inner is not None and self._unwrap_reads(inner, wrappers, target):
+            return True
+        return False
+
+    def _is_pure_wrapper(self, expr: IRExpression) -> bool:
+        """Whether `expr` only re-wraps a single temp/local read without doing
+        work of its own — a cast or a primitive string-convert."""
+        while isinstance(expr, (IRCast, IRStringConvert)):
+            expr = expr.expr if isinstance(expr, IRCast) else expr.value
+        return isinstance(expr, (IRLocal, IRConst))
+
     def _is_movable(self, stmt: IRStatement) -> bool:
         """Whether folding may evaluate the chain's parts past `stmt`.
 
@@ -1350,7 +1445,13 @@ class IRStringConcatFolder(TraversingIROptimizer):
         """
         if not (isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)):
             return False
-        if stmt.target.reg_idx is None or stmt.target.reg_idx in self.func._user_reg_indices:
+        # The target must be a compiler temp: an anonymous `varN` name. SSA
+        # splitting already gives each distinct temp value its own name, so a
+        # register index that is *also* reused by a user variable elsewhere in
+        # the function must not disqualify this particular split — only a temp
+        # whose name is itself a user variable (or a `nameN` disambiguation of
+        # one) is off-limits.
+        if not (stmt.target.name.startswith("var") and stmt.target.name[3:].isdigit()):
             return False
         return not self._has_effects(stmt.expr)
 
