@@ -1432,13 +1432,17 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         if isinstance(expr, (IRField, IRArrayAccess)):
             # The container/index operands are read at the use site either way;
             # they just can't contain calls/allocs of their own.
-            operands: List[IRExpression] = [expr.target] if isinstance(expr, IRField) else [expr.array, expr.index]
+            operands: List[IRExpression] = (
+                [expr.target] if isinstance(expr, IRField) else [expr.array, expr.index]
+            )
             return all(not _has_observable_effects(op) for op in operands)
         # Allow flat arithmetic (both operands are leaves) to enable compound assignment detection.
         # Nested arithmetic is excluded to prevent exponential chaining.
         if isinstance(expr, IRArithmetic):
             if not _has_observable_effects(expr):
-                return isinstance(expr.left, (IRConst, IRLocal)) and isinstance(expr.right, (IRConst, IRLocal))
+                return isinstance(expr.left, (IRConst, IRLocal)) and isinstance(
+                    expr.right, (IRConst, IRLocal)
+                )
             return False
         if isinstance(expr, (IRNeg, IRNot)):
             return self.is_safe_to_inline_conservatively(expr.expr)
@@ -1608,8 +1612,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             # assignment or pure expression statement: control flow, calls,
             # returns, etc. all reorder or guard evaluation.
             if not (
-                isinstance(s, IRAssign)
-                and isinstance(s.target, (IRLocal, IRField, IRArrayAccess))
+                isinstance(s, IRAssign) and isinstance(s.target, (IRLocal, IRField, IRArrayAccess))
             ) and not (isinstance(s, IRExpression) and not _has_observable_effects(s)):
                 return False
             # A write to the temp itself ends its lifetime: a read is the use
@@ -1670,7 +1673,6 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         del statements[i]
         return True
 
-
     def _is_throw_capable_read(self, expr: IRExpression) -> bool:
         """Whether `expr` is (or contains) a read that may throw — a field or
         array access. Such a read must never migrate into a context that runs
@@ -1688,7 +1690,9 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         """Whether substituting into `stmt` could evaluate the expression on
         paths where it previously did not run: the branches of a conditional,
         a loop body/condition, or a switch case."""
-        return isinstance(stmt, (IRConditional, IRWhileLoop, IRPrimitiveLoop, IRForEachLoop, IRIntRangeLoop, IRSwitch))
+        return isinstance(
+            stmt, (IRConditional, IRWhileLoop, IRPrimitiveLoop, IRForEachLoop, IRIntRangeLoop, IRSwitch)
+        )
 
     def _visit_block_conservative(
         self,
@@ -1804,6 +1808,8 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                             if not later_uses:
                                 if pure_copy_kill:
                                     # Replace the whole `temp = temp` with `temp = expr`.
+                                    # pure_copy_kill guarantees next_stmt is an IRAssign.
+                                    assert isinstance(next_stmt, IRAssign)
                                     next_stmt.expr = expr_to_inline
                                     next_stmt.adopt(current_stmt)
                                     new_statements.append(next_stmt)
@@ -1862,7 +1868,6 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                         inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child),
                         continuation=child_continuation,
                     )
-
 
     def _visit_block_aggressive(
         self,

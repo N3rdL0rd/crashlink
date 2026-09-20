@@ -301,24 +301,14 @@ class IRFunction:
                 IRArrayObjWrapperOptimizer(self),
                 IRNativeMapAllocOptimizer(self),
                 IRBytesAllocOptimizer(self),
-                # past_kills only after the pattern optimizers: they match raw lowering shapes
                 IRTempAssignmentInliner(self, aggressive=True, past_kills=True),
                 IRTempAssignmentInliner(self, aggressive=False),
-                # only after temp inlining has folded the register chain into a
-                # single `this.field.array[idx]` shape for it to match
                 IRArrayObjBoundsCheckCollapser(self),
-                # A loop condition that reads an array element only stops being
-                # a branch once that guard is gone, so give the condition
-                # recovery a second look at the while(true)+break form.
                 IRLoopConditionOptimizer(self, retry=True),
                 IRVoidAssignOptimizer(self),
                 IRDeadCodeEliminator(self),
                 IRSelfAssignOptimizer(self),
                 IRTraceOptimizer(self),
-                # trace()'s DynObj scaffolding collapses above, bringing a dead
-                # user-local-register reassignment adjacent to its sole use for the
-                # first time; re-run so IRTempAssignmentInliner's user-local-reuse
-                # fold (see _visit_block_conservative) can now see and fold it.
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRAnonObjectLiteralOptimizer(self),
                 IRStringConcatFolder(self),
@@ -329,8 +319,6 @@ class IRFunction:
                 IRDeadCodeEliminator(self),
                 IRBlockFlattener(self),
                 IRLoopRerollOptimizer(self),
-                # Constant-bounds loops the compiler unrolled only look like
-                # repeated statements once their bodies are fully recovered.
                 IRUnrolledLoopRerollOptimizer(self),
                 IRForEachLoopOptimizer(self),
                 IRIntRangeLoopOptimizer(self),
@@ -340,18 +328,11 @@ class IRFunction:
                 IRGuardOrMerger(self),
                 IRRedundantRecomputeEliminator(self),
                 IRTernaryRecovery(self),
+                IREmptyConditionalNormalizer(self),
                 IRTerminalValueInliner(self),
-                # Late second pass: in larger functions the `this.field.array[idx]`
-                # shape this targets doesn't fully materialize until after loop/switch
-                # restructuring and the later cleanup passes above have run.
                 IRArrayObjBoundsCheckCollapser(self),
-                # Only once every guarded access has been recovered can the
-                # capacity reads those guards left behind be seen as residue.
                 IRArrayGuardResidueEliminator(self),
-                # Restore typed/multi catch clauses; runs last because it matches
-                # the copy-propagated shape of HL's catch dispatch lowering.
                 IRTypedCatchOptimizer(self),
-                # Enum patterns bind locals and must follow assignment cleanup.
                 IREnumSwitchOptimizer(self),
             ]
             # Splice in plugin optimizers gated to this bytecode (see

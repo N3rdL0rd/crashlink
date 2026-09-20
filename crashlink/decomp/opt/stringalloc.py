@@ -100,7 +100,11 @@ class IRStringAllocInliner(TraversingIROptimizer):
     def _expr_contains(self, expr: IRExpression, local: IRLocal) -> bool:
         if expr == local:
             return True
-        return any(self._expr_contains(child, local) for child in expr.get_children() if isinstance(child, IRExpression))
+        return any(
+            self._expr_contains(child, local)
+            for child in expr.get_children()
+            if isinstance(child, IRExpression)
+        )
 
     def _read_after(self, statements: list, idx: int, local: IRLocal) -> bool:
         for stmt in statements[idx + 1 :]:

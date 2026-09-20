@@ -647,7 +647,7 @@ class IRTernaryRecovery(TraversingIROptimizer):
             if i + 1 < len(statements):
                 coal = self._try_null_coalesce(stmt, statements[i + 1])
                 if coal is not None:
-                    dbg_print(f"IRTernaryRecovery (??): {stmt} + {statements[i+1]} -> {coal}")
+                    dbg_print(f"IRTernaryRecovery (??): {stmt} + {statements[i + 1]} -> {coal}")
                     new_statements.append(coal)
                     i += 2
                     continue
@@ -655,7 +655,7 @@ class IRTernaryRecovery(TraversingIROptimizer):
                 # assign a; }` (empty else) then `return/assign b;`.
                 fall = self._try_fallthrough_ternary(stmt, statements[i + 1])
                 if fall is not None:
-                    dbg_print(f"IRTernaryRecovery (fallthrough): {stmt} + {statements[i+1]} -> {fall}")
+                    dbg_print(f"IRTernaryRecovery (fallthrough): {stmt} + {statements[i + 1]} -> {fall}")
                     new_statements.append(fall)
                     i += 2
                     continue
@@ -666,7 +666,7 @@ class IRTernaryRecovery(TraversingIROptimizer):
             if i + 1 < len(statements):
                 tail = self._try_conditional_return_temp(stmt, statements[i + 1])
                 if tail is not None:
-                    dbg_print(f"IRTernaryRecovery (return-temp): {stmt} + {statements[i+1]} -> {tail}")
+                    dbg_print(f"IRTernaryRecovery (return-temp): {stmt} + {statements[i + 1]} -> {tail}")
                     new_statements.append(tail)
                     i += 2
                     continue
@@ -679,7 +679,9 @@ class IRTernaryRecovery(TraversingIROptimizer):
             i += 1
         block.statements = new_statements
 
-    def _try_fallthrough_ternary(self, cond_stmt: IRStatement, fallthrough: IRStatement) -> Optional[IRStatement]:
+    def _try_fallthrough_ternary(
+        self, cond_stmt: IRStatement, fallthrough: IRStatement
+    ) -> Optional[IRStatement]:
         """Recover `cond ? a : b` from `if (cond) { return/assign a; }` (empty
         else) immediately followed by `return/assign b`. This is the form HL
         emits when the false arm falls through rather than living in an
@@ -698,7 +700,9 @@ class IRTernaryRecovery(TraversingIROptimizer):
                 return None
             if not (self._safe_arm(in_branch.value) and self._safe_arm(fallthrough.value)):
                 return None
-            expr = self._make_ternary(cond_stmt.condition, in_branch.value, fallthrough.value, self._type_index(in_branch.value))
+            expr = self._make_ternary(
+                cond_stmt.condition, in_branch.value, fallthrough.value, self._type_index(in_branch.value)
+            )
             out = IRReturn(self.func.code, expr)
             out.adopt(cond_stmt, fallthrough)
             return out
@@ -710,12 +714,16 @@ class IRTernaryRecovery(TraversingIROptimizer):
                 return None
             if not (self._safe_arm(in_branch.expr) and self._safe_arm(fallthrough.expr)):
                 return None
-            expr = self._make_ternary(cond_stmt.condition, in_branch.expr, fallthrough.expr, in_branch.target.type)
+            expr = self._make_ternary(
+                cond_stmt.condition, in_branch.expr, fallthrough.expr, in_branch.target.type
+            )
             out = IRAssign(self.func.code, in_branch.target, expr)
             return out
         return None
 
-    def _try_conditional_return_temp(self, stmt: IRStatement, following: IRStatement) -> Optional[IRStatement]:
+    def _try_conditional_return_temp(
+        self, stmt: IRStatement, following: IRStatement
+    ) -> Optional[IRStatement]:
         """Recover `if (c) { v = A; } else { return B; } return v;` into
         `return c ? A : B` (and the mirror with the assign in the else).
 
@@ -786,12 +794,16 @@ class IRTernaryRecovery(TraversingIROptimizer):
                 return None
             if not self._safe_arm(value) or not self._safe_arm(fallthrough.value):
                 return None
-            coal = IRNullCoalesce(self.func.code, in_branch.value, fallthrough.value, self._type_index(in_branch.value))
+            coal = IRNullCoalesce(
+                self.func.code, in_branch.value, fallthrough.value, self._type_index(in_branch.value)
+            )
             out = IRReturn(self.func.code, coal)
             out.adopt(cond_stmt, fallthrough)
             return out
         if isinstance(in_branch, IRAssign) and isinstance(fallthrough, IRAssign):
             if not _ir_structurally_equal(in_branch.target, fallthrough.target):
+                return None
+            if not isinstance(fallthrough.target, IRLocal):
                 return None
             if not _ir_structurally_equal(self._unwrap_value(in_branch.expr), self._unwrap_value(value)):
                 return None
@@ -854,7 +866,12 @@ class IRTernaryRecovery(TraversingIROptimizer):
         t, f = true_stmts[0], false_stmts[0]
 
         # if (cond) return a; else return b;  ->  return (cond ? a : b)
-        if isinstance(t, IRReturn) and isinstance(f, IRReturn) and t.value is not None and f.value is not None:
+        if (
+            isinstance(t, IRReturn)
+            and isinstance(f, IRReturn)
+            and t.value is not None
+            and f.value is not None
+        ):
             if self._safe_arm(t.value) and self._safe_arm(f.value):
                 expr = self._make_ternary(stmt.condition, t.value, f.value, self._type_index(t.value))
                 out = IRReturn(self.func.code, expr)
@@ -889,7 +906,9 @@ class IRTernaryRecovery(TraversingIROptimizer):
                 return tIndex(idx)
         # Unresolvable (shouldn't happen for value-returning arms); Bool is the
         # safest ternary default.
-        return tIndex(next(i for i, t in enumerate(self.func.code.types) if t.kind.value == Type.Kind.BOOL.value))
+        return tIndex(
+            next(i for i, t in enumerate(self.func.code.types) if t.kind.value == Type.Kind.BOOL.value)
+        )
 
     def _safe_arm(self, expr: IRExpression) -> bool:
         """Whether a branch arm can be hoisted into an unconditional ternary

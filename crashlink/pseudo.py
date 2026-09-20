@@ -360,6 +360,7 @@ def _expr_to_haxe_with_precedence(
             return f"({rendered})"
     return rendered
 
+
 def _paren_comparison_operand(
     expr: Optional[IRExpression], code: Bytecode, ir_function: Optional[IRFunction]
 ) -> str:
