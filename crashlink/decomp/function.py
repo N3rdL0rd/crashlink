@@ -110,6 +110,7 @@ from .opt.strings import (
     IRTraceOptimizer,
     IRStringConcatFolder,
 )
+from .opt.stringalloc import IRStringAllocInliner
 from .opt.arrays import (
     IRNativeArrayAllocOptimizer,
     IRArrayObjWrapperOptimizer,
@@ -290,6 +291,7 @@ class IRFunction:
                 IRTempAssignmentInliner(self, aggressive=False),
                 IRTempAssignmentInliner(self, aggressive=True),
                 IRStringAllocOptimizer(self),
+                IRStringAllocInliner(self),
                 IRSequentialTempFolder(self),
                 IRDeadTempEliminator(self),
                 IRDeadCodeEliminator(self),
