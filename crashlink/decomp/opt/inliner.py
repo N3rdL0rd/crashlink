@@ -352,10 +352,20 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
         if local.name.startswith("var"):
             try:
                 idx = int(local.name[3:])
-                if idx in self._user_reg_indices:
-                    return True
             except ValueError:
-                pass
+                return False
+            if idx not in self._user_reg_indices:
+                return False
+            # A register marked user-named somewhere in the function only makes
+            # this temp a real variable if the temp's own defining op carries
+            # that debug name — otherwise the register was reused for an
+            # unrelated compiler temp after the named variable's scope ended
+            # (the scope leak). Fall back to the bare register match when scope
+            # info is unavailable (a bare-bones IRFunction outside the pipeline).
+            scoped = getattr(self.func, "is_scoped_user_temp", None)
+            if scoped is None:
+                return True
+            return scoped(local)
         return False
 
     def _expr_contains_local(self, expr: Optional[IRExpression], local: IRLocal) -> bool:
@@ -2379,6 +2389,16 @@ class IRCopyPropOptimizer(_ReferenceAwareOptimizer):
         if local.name in user_names:
             return True
         if local.name.startswith("var"):
+            # Only a temp whose own defining op carries a debug name is a real
+            # variable; a register user-named elsewhere in the function (inside
+            # a scope that has since closed) does not make this temp real. Fall
+            # back to the register-index check when scope info is unavailable
+            # (e.g. a bare-bones IRFunction built outside the normal pipeline).
+            scoped = getattr(self.func, "is_scoped_user_temp", None)
+            if scoped is not None:
+                if scoped(local):
+                    return True
+                return False
             try:
                 idx = int(local.name[3:])
             except ValueError:

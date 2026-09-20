@@ -452,6 +452,24 @@ class IRFunction:
             if reg not in self._reg_first_assign or val < self._reg_first_assign[reg]:
                 self._reg_first_assign[reg] = val
 
+    def is_scoped_user_temp(self, local: "IRLocal") -> bool:
+        """Whether an anonymous `varN` temp actually is a user-named variable.
+
+        The function-wide `_user_reg_indices` set marks a register as user-named
+        if *any* debug assign anywhere in the function names it — including
+        assigns confined to an inner block. A compiler temp that reuses such a
+        register after (or before) that block inherits the protection purely
+        because `int(name[3:])` matches, even though the temp's own defining op
+        has no debug name. That is the scope leak: the temp is not a real
+        variable. A `varN` temp is only genuinely user-named when its register
+        carries a debug name *at the temp's own defining op*.
+        """
+        if not (local.name.startswith("var") and local.name[3:].isdigit()):
+            return False
+        if local.defining_op_idx is None:
+            return False
+        return local.reg_idx in self._op_assigns.get(local.defining_op_idx, {})
+
     def _get_local(self, reg_idx: int) -> IRLocal:
         """Get the current IRLocal for a register, respecting SSA-esque name transitions."""
         return self.locals[reg_idx]
