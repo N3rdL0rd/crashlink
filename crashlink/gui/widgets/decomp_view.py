@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import (
@@ -87,14 +87,25 @@ class DecompHighlighter(QSyntaxHighlighter):
         self.rehighlight()
 
     def highlightBlock(self, text: str) -> None:
+        # A "string" match's span is recorded and protected: any later rule's
+        # match starting inside it is skipped, so a `//`-heavy string body
+        # (raw base64 is a common real source) can't get repainted as a
+        # comment, and a stray digit/keyword substring inside a string can't
+        # get repainted as a number/keyword either.
+        string_spans: List[Tuple[int, int]] = []
         for rule in _RULES:
             for m in rule.rx.finditer(text):
+                if rule.rx.groups and m.lastindex:
+                    start, end = m.start(1), m.end(1)
+                else:
+                    start, end = m.start(), m.end()
+                if rule.fmt_attr != "string" and any(s <= start < e for s, e in string_spans):
+                    continue
                 fmt = self._fmts.get(rule.fmt_attr)
                 if fmt:
-                    if rule.rx.groups and m.lastindex:
-                        self.setFormat(m.start(1), m.end(1) - m.start(1), fmt)
-                    else:
-                        self.setFormat(m.start(), m.end() - m.start(), fmt)
+                    self.setFormat(start, end - start, fmt)
+                if rule.fmt_attr == "string":
+                    string_spans.append((start, end))
 
 
 class DecompView(QPlainTextEdit):

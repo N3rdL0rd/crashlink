@@ -91,6 +91,11 @@ class DisasmHighlighter(DecompHighlighter):
         self.rehighlight()
 
     def highlightBlock(self, text: str) -> None:
+        # Same protection as DecompHighlighter: a "string" match's span is
+        # recorded, and any later rule's match starting inside it is
+        # skipped - a raw string preview (`"..." (str #N)`) can contain any
+        # byte a real comment/number/keyword rule would otherwise latch onto.
+        string_spans: List[Tuple[int, int]] = []
         for rule in _DISASM_RULES:
             for m in rule.rx.finditer(text):
                 fmt = self._fmts.get(rule.fmt_attr)
@@ -99,7 +104,11 @@ class DisasmHighlighter(DecompHighlighter):
                 start, end = m.span(rule.group)
                 if start < 0:
                     continue
+                if rule.fmt_attr != "string" and any(s <= start < e for s, e in string_spans):
+                    continue
                 self.setFormat(start, end - start, fmt)
+                if rule.fmt_attr == "string":
+                    string_spans.append((start, end))
 
 
 _FILE_PREFIX_RX = re.compile(r"^\[([^:\]]+):(\d+)\] ")
