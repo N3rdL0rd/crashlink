@@ -12,7 +12,6 @@ from __future__ import annotations
 import ctypes
 import hashlib
 import struct
-from abc import ABC, abstractmethod
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
@@ -117,7 +116,7 @@ def is_static_name(s: str) -> bool:
     return s.rpartition(".")[-1].startswith("$")
 
 
-class Serialisable(ABC):
+class Serialisable:
     """
     Base class for all serialisable objects.
     """
@@ -127,13 +126,11 @@ class Serialisable(ABC):
     def __init__(self) -> None:
         self.value: Any = None
 
-    @abstractmethod
     def deserialise(self, f: BinaryIO | BytesIO, *args: Any, **kwargs: Any) -> "Serialisable":
-        pass
+        raise NotImplementedError(f"{type(self).__name__} must override deserialise()")
 
-    @abstractmethod
     def serialise(self) -> bytes:
-        pass
+        raise NotImplementedError(f"{type(self).__name__} must override serialise()")
 
     def __str__(self) -> str:
         try:
@@ -305,19 +302,18 @@ class VarInt(Serialisable):
         )
 
 
-class ResolvableVarInt(VarInt, ABC):
+class ResolvableVarInt(VarInt):
     """
     Base class for resolvable VarInts. Call `resolve` to get a direct reference to the object it points to.
     """
 
     __slots__ = ()
 
-    @abstractmethod
     def resolve(self, code: "Bytecode") -> Any:
         """
         Resolve this reference to a specific reference in the bytecode.
         """
-        pass
+        raise NotImplementedError(f"{type(self).__name__} must override resolve()")
 
 
 class fIndex(ResolvableVarInt):
@@ -637,7 +633,7 @@ class BytesBlock(Serialisable):
         return size_serialised + raw_data + positions_serialised
 
 
-class TypeDef(Serialisable, ABC):
+class TypeDef(Serialisable):
     """
     Abstract class for all type definition fields.
     """
@@ -2401,7 +2397,7 @@ class Bytecode(Serialisable):
                 self.track_section(f, f"constant {i}")
                 self.constants.append(Constant().deserialise(f))
         dbg_print(f"Bytecode end at {tell(f)}.")
-        self._validate_structure()
+        self._validate_structure(opcodes_already_validated=True)
         self.deserialised = True
         if init_globals:
             _progress(0.90, "initializing globals")
@@ -2648,7 +2644,7 @@ class Bytecode(Serialisable):
                     return t.definition
         raise ValueError("No test class found!")
 
-    def _validate_structure(self) -> None:
+    def _validate_structure(self, *, opcodes_already_validated: bool = False) -> None:
         """Validate references before analysis can dereference them."""
 
         def index(value: int, size: int, label: str) -> None:
@@ -2755,7 +2751,8 @@ class Bytecode(Serialisable):
             if isinstance(signature, Fun) and len(signature.args) > len(function.regs):
                 raise MalformedBytecode("Function has fewer registers than arguments")
             for pc, op in enumerate(function.ops):
-                opcode_name = op.validate()
+                opcode_name = op.op if opcodes_already_validated else op.validate()
+                assert opcode_name is not None
                 for name, kind in opcodes[opcode_name].items():
                     operand = op.df[name]
                     if kind == "Reg" and op.op != "EndTrap":
