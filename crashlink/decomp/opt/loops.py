@@ -678,19 +678,49 @@ class IRForEachLoopOptimizer(TraversingIROptimizer):
         body = loop.body
         if len(body.statements) < 2:
             return None
-        first = body.statements[0]
-        if not isinstance(first, IRAssign) or not isinstance(first.target, IRLocal):
+
+        # Two lowerings show up in practice. Plain: `elem = arr[idx]; idx++;`.
+        # Snapshot: `snap = idx; idx++; elem = arr[snap];` - some compiler
+        # versions save the pre-increment index into a second compiler temp
+        # first, so the array access (which comes after the increment) can
+        # still read the old value. Peel off a leading snapshot+increment
+        # pair before falling through to the shared access-statement check.
+        access_index = idx
+        discarded: List[IRStatement] = []
+        snapshot = body.statements[0]
+        if (
+            len(body.statements) >= 3
+            and isinstance(snapshot, IRAssign)
+            and isinstance(snapshot.target, IRLocal)
+            and snapshot.target != idx
+            and snapshot.expr == idx
+            and not self._is_user_local(snapshot.target)
+            and self._is_index_increment(body.statements[1], idx)
+        ):
+            access_index = snapshot.target
+            discarded = [snapshot, body.statements[1]]
+            access_stmt = body.statements[2]
+            rest = body.statements[3:]
+        else:
+            access_stmt = body.statements[0]
+            if not self._is_index_increment(body.statements[1], idx):
+                return None
+            discarded = [body.statements[1]]
+            rest = body.statements[2:]
+
+        if not isinstance(access_stmt, IRAssign) or not isinstance(access_stmt.target, IRLocal):
             return None
-        if not isinstance(first.expr, IRArrayAccess):
+        if not isinstance(access_stmt.expr, IRArrayAccess):
             return None
-        if first.expr.array != arr or first.expr.index != idx:
+        if access_stmt.expr.array != arr or access_stmt.expr.index != access_index:
             return None
-        elem = first.target
-        if not self._is_index_increment(body.statements[1], idx):
-            return None
-        rest = body.statements[2:]
+        elem = access_stmt.target
+        discarded.append(access_stmt)
+
         for s in rest:
             if self._stmt_reads_local(s, idx):
+                return None
+            if access_index != idx and self._stmt_reads_local(s, access_index):
                 return None
             if self._stmt_assigns_local(s, elem):
                 return None
@@ -700,9 +730,10 @@ class IRForEachLoopOptimizer(TraversingIROptimizer):
         new_body = IRBlock(loop.code)
         new_body.statements = list(rest)
         foreach = IRForEachLoop(loop.code, elem, arr, new_body)
-        # `loop` (the while) and the two discarded body statements (array-index
-        # read + idx++) are dropped in favor of `foreach` and `rest` above.
-        foreach.adopt(loop, first, body.statements[1])
+        # `loop` (the while) and the discarded body statements (index
+        # snapshot if present, idx++, and the array-index read) are dropped
+        # in favor of `foreach` and `rest` above.
+        foreach.adopt(loop, *discarded)
         return foreach, idx
 
     def visit_block(self, block: IRBlock) -> None:
