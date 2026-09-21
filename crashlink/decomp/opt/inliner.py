@@ -7,7 +7,7 @@ from __future__ import annotations
 import copy
 
 import re
-from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Dict, Iterator, List, Optional, Set, Tuple, Union, cast
 
 if TYPE_CHECKING:
     from ..function import IRFunction
@@ -137,12 +137,47 @@ class _ScopedLocalLifetime:
         visited: Set[int] = set()
 
         def contains(node: IRStatement) -> bool:
+            """Whether `block` sits in `node`'s subtree.
+
+            Same lazy, short-circuiting, memoized search as the obvious
+            recursion (a node re-entered while still open reads as False, so
+            cycles terminate), but driven from an explicit stack: this is the
+            hottest predicate in the inliner, and a Python frame per IR node
+            made it dominate decompilation of large functions.
+            """
             if node is block:
                 return True
-            if id(node) not in contains_cache:
-                contains_cache[id(node)] = False
-                contains_cache[id(node)] = any(contains(child) for child in node.get_children())
-            return contains_cache[id(node)]
+            key = id(node)
+            memo = contains_cache.get(key)
+            if memo is not None:
+                return memo
+            contains_cache[key] = False
+            stack: List[Tuple[int, Iterator[IRStatement]]] = [(key, iter(node.get_children()))]
+            while stack:
+                hit = descended = False
+                for child in stack[-1][1]:
+                    if child is block:
+                        hit = True
+                        break
+                    child_key = id(child)
+                    child_memo = contains_cache.get(child_key)
+                    if child_memo:
+                        hit = True
+                        break
+                    if child_memo is None:
+                        contains_cache[child_key] = False
+                        stack.append((child_key, iter(child.get_children())))
+                        descended = True
+                        break
+                if descended:
+                    continue
+                if hit:
+                    for open_key, _ in stack:
+                        contains_cache[open_key] = True
+                    return True
+                # Children exhausted without a hit: this node stays False.
+                stack.pop()
+            return False
 
         def visit(node: IRStatement, continuation: List[IRStatement], hazardous: bool) -> bool:
             nonlocal found

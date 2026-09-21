@@ -4,9 +4,10 @@ IRFunction and IRClass — the top-level decompilation orchestrators.
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from enum import Enum as _Enum
-from typing import Any, Dict, List, Optional, Set, Tuple, cast
+from typing import Any, Deque, Dict, List, Optional, Set, Tuple, cast
 
 from ..core import (
     Bytecode,
@@ -225,6 +226,23 @@ def _build_enum_global_map(code: Bytecode) -> Dict[int, Tuple[str, tIndex]]:
     return result
 
 
+def _cached_enum_global_map(code: Bytecode) -> Dict[int, Tuple[str, tIndex]]:
+    """Cached `_build_enum_global_map`.
+
+    The map is a property of the whole image (it traces every static
+    initializer's opcodes), but it is needed by every lifted function. Building
+    it per `IRFunction` made constructing one function O(all opcodes in the
+    image), so decompiling N functions cost O(N * image) - minutes of pure
+    rescanning on a 37k-function image. `Bytecode.invalidate_findex_cache`
+    drops it when functions are mutated.
+    """
+    cached = code._enum_global_map
+    if cached is None:
+        cached = _build_enum_global_map(code)
+        code._enum_global_map = cached
+    return cached
+
+
 class IRFunction:
     """
     Intermediate representation of a function.
@@ -260,11 +278,11 @@ class IRFunction:
         if isinstance(func, Native):
             # Native entries have no HL bytecode; represent them as a stub block.
             self.block.statements.append(IRNativeStub(code, func))
-            self._enum_global_map = _build_enum_global_map(code)
+            self._enum_global_map = _cached_enum_global_map(code)
             return
         self.cfg = CFGraph(func)
         self.cfg.build()
-        self._enum_global_map = _build_enum_global_map(code)
+        self._enum_global_map = _cached_enum_global_map(code)
         self.ops = func.ops
         # Depth of Trap regions currently being lifted; a backedge jump to the
         # enclosing loop header inside a trap is an explicit `continue` in the
@@ -1521,11 +1539,13 @@ class IRFunction:
         stop_nodes: Optional[Set[CFNode]] = None,
     ) -> Dict[CFNode, int]:
         stop_nodes = stop_nodes or set()
-        queue: List[Tuple[CFNode, int]] = [(start, 0)]
+        # deque: this BFS runs several times per conditional while lifting, and a
+        # list frontier makes each pop O(len(queue)).
+        queue: Deque[Tuple[CFNode, int]] = deque([(start, 0)])
         distances: Dict[CFNode, int] = {}
 
         while queue:
-            current, dist = queue.pop(0)
+            current, dist = queue.popleft()
             if current in distances:
                 continue
             if allowed_nodes is not None and current not in allowed_nodes:
@@ -1563,6 +1583,26 @@ class IRFunction:
                 node.base_offset,
             ),
         )
+
+    def _reaches_bypassing(
+        self,
+        starts: Tuple[Optional[CFNode], ...],
+        goal: CFNode,
+        barrier: CFNode,
+        allowed_nodes: Optional[Set[CFNode]] = None,
+    ) -> bool:
+        """Whether `goal` is reachable from any of `starts` without passing `barrier`.
+
+        Used to reject a convergence candidate that the enclosing merge point can
+        sidestep: such a candidate does not post-dominate the arms, so lifting an
+        arm up to it would run past the enclosing boundary instead of stopping.
+        """
+        for start in starts:
+            if start is None:
+                continue
+            if goal in self._shortest_distances(start, allowed_nodes, {barrier}):
+                return True
+        return False
 
     def _is_terminal_branch_node(self, node: Optional[CFNode], loop_ctx: Optional[_LoopContext]) -> bool:
         """Return True if a branch target has no live successors within the current region."""
@@ -2022,6 +2062,26 @@ class IRFunction:
             # same nodes again - doubling work at every such conditional and blowing up
             # exponentially for long chains of terminal-vs-live branches.
             if convergence_node is None:
+                convergence_node = stop_at
+
+            # `_find_convergence_node` returns the node with the smallest combined
+            # distance from both arms, which for a short-circuit condition chain
+            # (`if (a || b || c)`, where every link jumps to the same tail) is one
+            # arm's own target rather than a real post-dominator. Lifting that arm
+            # bounded by such a pick walks straight past the merge point the
+            # *enclosing* call established and re-lifts the caller's continuation,
+            # so every nested link in the chain duplicates the tail: 2^k copies for
+            # a k-link chain. A candidate that the enclosing boundary can bypass is
+            # not a merge point at all, so merge at the boundary instead - the
+            # caller lifts it (once) after this conditional either way.
+            if (
+                stop_at is not None
+                and convergence_node is not None
+                and convergence_node != stop_at
+                and self._reaches_bypassing(
+                    (fall_through, jump_target), stop_at, convergence_node, allowed_nodes
+                )
+            ):
                 convergence_node = stop_at
 
             # When one branch leaves the loop and the other loops back, do not let the

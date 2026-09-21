@@ -1977,6 +1977,7 @@ class Bytecode(Serialisable):
         self._search_lock = threading.Lock()
         self._source_map_lock = threading.Lock()
         self._plugin_optimizer_classes: Optional[Tuple[List[Any], List[Any]]] = None
+        self._enum_global_map: Optional[Dict[int, Tuple[str, "tIndex"]]] = None
         self._global_field_elem_types: Dict[Tuple[str, str], "Type"] = {}
         self._hxsl_shaders_cache: Optional[Any] = None
         self.annotations: AnnotationStore = AnnotationStore()
@@ -1994,6 +1995,9 @@ class Bytecode(Serialisable):
         `self.functions` or `self.natives` outside of normal deserialisation.
         """
         self._findex_map = None
+        # The decompiler's global -> enum-constructor map is traced out of the
+        # static initializers' opcodes, so mutating functions invalidates it too.
+        self._enum_global_map = None
 
     def invalidate_proto_field_cache(self) -> None:
         """
