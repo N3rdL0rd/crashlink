@@ -465,6 +465,20 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
         # a self-referential RHS now would read the new value, not the old one.
         return not self._expr_contains_local(expr, assigned_local) and not _has_observable_effects(expr)
 
+    def _is_movable_read(self, expr: IRExpression) -> bool:
+        """A plain field/element read: throwing is its only effect.
+
+        Such a read may be relocated into the condition it immediately feeds,
+        where it still evaluates exactly once. Its own operands have to be
+        equally quiet, since they come along for the ride.
+        """
+        if not isinstance(expr, (IRField, IRArrayAccess)):
+            return False
+        operands: List[IRExpression] = (
+            [expr.target] if isinstance(expr, IRField) else [expr.array, expr.index]
+        )
+        return all(not _has_observable_effects(operand) for operand in operands)
+
     def _stmt_contains_local_read(self, stmt: IRStatement, local: IRLocal) -> bool:
         """Like _stmt_contains_local but ignoring assignment targets (redefinitions)."""
         if isinstance(stmt, IRAssign):
@@ -571,11 +585,16 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
                 )
                 expr_to_inline: IRExpression = current_stmt.expr
 
+                peek = block.statements[i + 1] if i + 1 < len(block.statements) else None
+                move_only = _has_observable_effects(expr_to_inline)
                 if (
                     not isinstance(assigned_local, IRLocal)
                     or self._is_address_taken(assigned_local)
                     or self._reads_address_taken(expr_to_inline)
-                    or _has_observable_effects(expr_to_inline)
+                    or (
+                        move_only
+                        and not (isinstance(peek, IRConditional) and self._is_movable_read(expr_to_inline))
+                    )
                 ):
                     new_statements.append(current_stmt)
                     i += 1
@@ -600,6 +619,12 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
                             assigned_local, IRLocal
                         ) and self._local_reassigned_in_conditional(assigned_local, conditional_stmt)
                         if reassigned_in_branch:
+                            new_statements.append(current_stmt)
+                            i += 1
+                            continue
+                        if move_only and used_outside:
+                            # Keeping the assignment alive for that later read
+                            # would evaluate the read twice.
                             new_statements.append(current_stmt)
                             i += 1
                             continue
@@ -1428,11 +1453,17 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         return True
 
     def _is_boxing_cast(self, expr: IRCast) -> bool:
-        """A widening cast to Dynamic cannot fail, unlike a checked downcast."""
+        """A widening cast cannot fail, unlike a checked downcast.
+
+        Both `Dynamic` and `Null<T>` are representation changes: HL boxes a
+        value to hand it to a nullable/dynamic slot, and that box is pure noise
+        at the single site that consumes it.
+        """
         try:
-            return expr.get_type().kind.value == Type.Kind.DYN.value
+            kind = expr.get_type().kind.value
         except Exception:
             return False
+        return kind in (Type.Kind.DYN.value, Type.Kind.NULL.value)
 
     def is_safe_to_inline_conservatively(self, expr: IRExpression) -> bool:
         # Conservative mode only ever *moves* an expression into its sole,
@@ -1491,10 +1522,38 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         return False
 
     def _call_move_ok(self, stmt: IRStatement, temp: IRLocal) -> bool:
-        """True if `stmt` is a local assignment reading `temp` exactly once in an
-        expression built only from consts, locals, and arithmetic — so moving a
-        call into it preserves evaluation order and count."""
-        if not (isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)):
+        """True if `stmt` reads `temp` exactly once from an expression built only
+        from consts, locals and arithmetic — so moving a call into it preserves
+        evaluation order and count.
+
+        The destination may be a local, or a field/element store addressed by
+        constants and locals (`obj.field = f()`, `arr[i] = f()`): such a
+        destination is computed from values the call cannot change, so the store
+        still happens once, after the call.
+        """
+        if not isinstance(stmt, IRAssign):
+            return False
+
+        def destination_ok(e: Optional[IRExpression]) -> bool:
+            # The destination is not moved - only the call is - so it just has
+            # to be independent of the call and unable to throw ahead of it. A
+            # GLOBAL_OBJ const (the class reference in `Pkg.Cls.field = ...`) is
+            # a constant address, and is fine here even though it reads as
+            # effectful to optimizers that want to discard or duplicate it.
+            if isinstance(e, IRConst):
+                return True
+            if isinstance(e, IRLocal):
+                return e != temp and not self._is_address_taken(e)
+            return False
+
+        target = stmt.target
+        if isinstance(target, IRField):
+            if not destination_ok(target.target):
+                return False
+        elif isinstance(target, IRArrayAccess):
+            if not (destination_ok(target.array) and destination_ok(target.index)):
+                return False
+        elif not isinstance(target, IRLocal):
             return False
 
         count = 0
@@ -1790,13 +1849,14 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 ):
                     expr_to_inline = current_stmt.expr
                     if not self.is_safe_to_inline_conservatively(expr_to_inline):
-                        # A call can still be moved (not duplicated) into an adjacent
-                        # single use whose other operands are just consts/locals —
-                        # locals can't be mutated by the call, so order is preserved.
-                        # Only when the assignment gets dropped (never inside a loop
-                        # body, where it is kept and the call would run twice).
+                        # A call or allocation can still be moved (not duplicated)
+                        # into an adjacent single use whose other operands are just
+                        # consts/locals — locals can't be mutated by the call, so
+                        # order is preserved. Only when the assignment gets dropped
+                        # (never inside a loop body, where it is kept and the call
+                        # would run twice).
                         if not (
-                            isinstance(expr_to_inline, IRCall)
+                            isinstance(expr_to_inline, (IRCall, IRNew))
                             and not inside_loop_body
                             and i + 1 < len(statements)
                             and self._call_move_ok(statements[i + 1], temp_local)

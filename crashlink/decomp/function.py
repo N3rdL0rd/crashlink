@@ -328,6 +328,7 @@ class IRFunction:
                 IRSelfAssignOptimizer(self),
                 IRTraceOptimizer(self),
                 IRTempAssignmentInliner(self, aggressive=False),
+                IRConditionInliner(self),
                 IRAnonObjectLiteralOptimizer(self),
                 IRStringConcatFolder(self),
                 IRIntSwitchOptimizer(self),

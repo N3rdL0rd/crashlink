@@ -228,12 +228,15 @@ def test_string_bytes_field_rendered():
     assert "return (@:privateAccess s.bytes)" in out
 
 
-def test_string_fromuc2_not_folded_prematurely():
-    # String.fromUCS2 computes the length *after* creating the empty string, so
-    # it must not be folded into a __alloc__ call with a stale length value.
+def test_string_fromuc2_length_never_stale():
+    # String.fromUCS2 computes the length *after* creating the empty string,
+    # reusing the register that held the literal 0 passed to ucs2length. The
+    # length that reaches the string must be that call's result; folding the
+    # sequence into __alloc__ is fine (and preferable) once the length operand
+    # is the call itself, but must never capture the stale 0.
     out = _decompile_at("tests/haxe/Clazz.hl", 18)
-    assert "new String()" in out
     assert "Native.n31_ucs2length(b, 0)" in out
+    assert "__alloc__(b, 0)" not in out
 
 
 def test_string_concat_shift_amount_constant():
@@ -282,6 +285,41 @@ def test_throw_lifted():
     out = _decompile_named("tests/haxe/ThrowCase.hl", "ThrowCase.decode")
     assert "throw " in out
     assert "UNLIFTED OPCODE: Throw" not in out
+
+
+SCRATCH_LOCAL_RE = re.compile(r"\bvar\d+\b")
+
+
+def test_lazy_field_init_folds_scratch_register():
+    # `if (f == null) f = new ...` routes the field through a scratch register
+    # twice: once to test it, once to hold the allocation before the store.
+    out = _decompile_named("tests/haxe/TempInline.hl", "TempInline.storeNew")
+    assert "if (h.levelData == null)" in out
+    assert "h.levelData = new haxe.ds.StringMap<Dynamic>()" in out
+    assert not SCRATCH_LOCAL_RE.search(out), out
+
+
+def test_nullable_field_default_folds_scratch_register():
+    # Same shape, but the stored value is a boxed constant: the `Null<Int>`
+    # cast around `1` is a representation change, not work to be preserved.
+    out = _decompile_named("tests/haxe/TempInline.hl", "TempInline.defaultField")
+    assert "if (h.currentTime == null)" in out
+    assert "h.currentTime = 1" in out
+    assert not SCRATCH_LOCAL_RE.search(out), out
+
+
+def test_call_result_folds_into_field_store():
+    # A call result consumed by the very next statement moves into it, even
+    # when that statement stores through a field rather than into a local.
+    out = _decompile_named("tests/haxe/TempInline.hl", "TempInline.callIntoField")
+    assert "TempInline.sink = h.compute()" in out
+    assert not SCRATCH_LOCAL_RE.search(out), out
+
+
+def test_call_result_folds_into_element_store():
+    out = _decompile_named("tests/haxe/TempInline.hl", "TempInline.callIntoElement")
+    assert "out[0] = h.compute()" in out
+    assert not SCRATCH_LOCAL_RE.search(out), out
 
 
 def test_stub_file_signatures_and_bodies():
