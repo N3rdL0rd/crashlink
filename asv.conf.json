@@ -1,0 +1,13 @@
+{
+    "version": 1,
+    "project": "crashlink",
+    "project_url": "https://github.com/N3rdL0rd/crashlink",
+    "repo": ".",
+    "branches": ["main"],
+    "environment_type": "existing",
+    "show_commit_url": "https://github.com/N3rdL0rd/crashlink/commit/",
+    "benchmark_dir": "benchmarks",
+    "results_dir": ".asv-results/results",
+    "html_dir": ".asv/html",
+    "default_benchmark_timeout": 120
+}

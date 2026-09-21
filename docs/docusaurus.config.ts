@@ -107,6 +107,7 @@ const config: Config = {
           position: "left",
         },
         { to: "/results", label: "crashtest", position: "left" },
+        { label: "Benchmarks", position: "left", ...staticPage("benchmarks/index.html") },
         { label: "Demo", position: "right", ...staticPage("demo/index.html") },
         {
           href: "https://github.com/N3rdL0rd/crashlink",
@@ -124,6 +125,7 @@ const config: Config = {
             { label: "Decompiler Notes", to: "/decompiler" },
             { label: "Contributing", to: "/contributing" },
             { label: "crashtest", to: "/results" },
+            { label: "Benchmarks", ...staticPage("benchmarks/index.html") },
           ],
         },
         {

@@ -7,6 +7,8 @@ on:
       - "crashlink/**"
       - "crashtest/**"
       - "hlrun/**"
+      - "benchmarks/**"
+      - "asv.conf.json"
       - "docs/**"
       - "!docs/content/reference/**"
       - "!docs/build/**"
@@ -27,6 +29,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout crashlink-asv results
+        # Accumulates asv result JSON across commits without spamming this
+        # repo's own history - see benchmarks/ and asv.conf.json.
+        uses: actions/checkout@v4
+        with:
+          repository: N3rdL0rd/crashlink-asv
+          path: .asv-results
+          token: ${{ secrets.ASV_RESULTS_TOKEN }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -45,6 +58,50 @@ jobs:
         # Reproducible from the committed crashtest/runs/*.json - no need to
         # commit the generated HTML itself.
         run: uv run python -m crashtest build
+
+      - name: Cache benchmark fixtures
+        id: cache-hl
+        uses: actions/cache@v4
+        with:
+          path: tests/haxe/*.hl
+          key: haxe-samples-${{ hashFiles('tests/haxe/*.hx') }}
+
+      - name: Set up Haxe
+        uses: krdlab/setup-haxe@v1
+        with:
+          haxe-version: 4.3.4
+
+      - name: Build benchmark fixtures
+        if: steps.cache-hl.outputs.cache-hit != 'true'
+        run: |
+          bash -c 'set -e; cd tests/haxe; for f in *.hx; do haxe -hl "${f%.*}.hl" -main "${f%.*}"; done'
+
+      - name: Register asv machine
+        run: uv run asv machine --yes --machine gh-actions
+
+      - name: Run benchmarks against HEAD
+        run: uv run asv run --machine gh-actions --set-commit-hash HEAD --show-stderr
+
+      - name: Commit updated benchmark results
+        working-directory: .asv-results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add results
+          if git diff --cached --quiet; then
+            echo "No new benchmark results"
+          else
+            git commit -m "chore: benchmark results for ${{ github.sha }}"
+            git push
+          fi
+
+      - name: Publish benchmark dashboard
+        run: uv run asv publish
+
+      - name: Stage benchmark dashboard into docs static tree
+        run: |
+          mkdir -p docs/static/benchmarks
+          cp -r .asv/html/. docs/static/benchmarks/
 
       - name: Install bun
         uses: oven-sh/setup-bun@v2

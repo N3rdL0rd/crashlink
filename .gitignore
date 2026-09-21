@@ -14,6 +14,7 @@ hl/
 !crashtest/runs/*
 !docs/package.json
 !docs/tsconfig.json
+!asv.conf.json
 build*.bat
 pypi_token.txt
 testenv
@@ -38,6 +39,11 @@ test-docs/
 # .github/workflows/docs.yml from committed source, not committed themselves
 /docs/content/reference/
 /docs/static/crashtest_out/
+/docs/static/benchmarks/
+# asv working/output dirs and the sibling checkout of the crashlink-asv
+# results repo the CI workflow clones into; see asv.conf.json
+/.asv/
+/.asv-results/
 # Docusaurus
 /docs/node_modules/
 /docs/.docusaurus/
