@@ -2821,24 +2821,29 @@ class IRGuardOrMerger(TraversingIROptimizer):
         while i < len(stmts):
             stmt = stmts[i]
             if isinstance(stmt, IRConditional):
-                merged = self._try_merge_else(stmt)
-                if merged is not None:
-                    new_statements.append(merged)
-                    i += 1
-                    continue
-                merged_true = self._try_merge_true(stmt)
-                if merged_true is not None:
-                    new_statements.append(merged_true)
-                    i += 1
-                    continue
-                merged_and = self._try_merge_and_else(stmt)
-                if merged_and is not None:
-                    new_statements.append(merged_and)
-                    i += 1
-                    continue
-                merged_and_empty = self._try_merge_and_empty_else(stmt)
-                if merged_and_empty is not None:
-                    new_statements.append(merged_and_empty)
+                # Re-attempt on a freshly merged conditional: a chain of N
+                # nested `if`s with empty/matching elses (like
+                # `if (a) { if (b) { if (c) { X } } }`) collapses fully in
+                # one pass instead of one level per optimizer invocation,
+                # since each merge's result can itself be the outer half of
+                # the next one.
+                merged_once = True
+                while merged_once:
+                    merged_once = False
+                    for attempt in (
+                        self._try_merge_else,
+                        self._try_merge_true,
+                        self._try_merge_and_else,
+                        self._try_merge_and_no_else,
+                        self._try_merge_and_empty_else,
+                    ):
+                        candidate = attempt(stmt)
+                        if candidate is not None:
+                            stmt = candidate
+                            merged_once = True
+                            break
+                if stmt is not stmts[i]:
+                    new_statements.append(stmt)
                     i += 1
                     continue
                 merged2 = self._try_merge_sibling(stmt, stmts[i + 1 :])
@@ -3008,6 +3013,27 @@ class IRGuardOrMerger(TraversingIROptimizer):
             merged.adopt(stmt, inner)
             return merged
         return None
+
+    def _try_merge_and_no_else(self, stmt: IRConditional) -> Optional[IRConditional]:
+        """if (A) { if (B) { X } } (no else anywhere) -> if (A && B) { X }
+
+        The plain shape Haxe's flat `A && B` lowers to when neither operand
+        needs inverting: unlike `_try_merge_and_else`, there's no else body on
+        either side to prove equal before merging - an empty else can't
+        diverge, so there's nothing to duplicate or drop by combining them.
+        """
+        if stmt.false_block.statements:
+            return None
+        outer_true = stmt.true_block.statements
+        if len(outer_true) != 1:
+            return None
+        inner = outer_true[0]
+        if not isinstance(inner, IRConditional) or inner.false_block.statements:
+            return None
+        and_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.AND, stmt.condition, inner.condition)
+        merged = IRConditional(self.func.code, and_cond, inner.true_block, inner.false_block)
+        merged.adopt(stmt, inner)
+        return merged
 
     def _try_merge_and_empty_else(self, stmt: IRConditional) -> Optional[IRConditional]:
         """if (A) { if (B') { } else { X } } (empty else on both) -> if (A && B) { X }

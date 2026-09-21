@@ -112,6 +112,23 @@ class _ScopedLocalLifetime:
                 return self.aliases(current, local)
             if isinstance(current, IRAssign) and isinstance(current.target, IRLocal):
                 return visit(current.expr)
+            if isinstance(current, IRBlock):
+                # A register can be reused for an unrelated later value once
+                # it's unconditionally redefined; a read after that point
+                # belongs to the new value, not this one. Stop scanning this
+                # straight-line statement list right there, same as
+                # `dead_after`'s own top-level kill check - only a *direct*
+                # reassignment counts, not one nested inside a branch.
+                for stmt in current.statements:
+                    if visit(stmt):
+                        return True
+                    if (
+                        isinstance(stmt, IRAssign)
+                        and isinstance(stmt.target, IRLocal)
+                        and self.aliases(stmt.target, local)
+                    ):
+                        return False
+                return False
             return any(visit(child) for child in current.get_children())
 
         return visit(node)
@@ -1577,6 +1594,102 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
 
         return walk(stmt.expr) and count == 1
 
+    def _count_expr_occurrences(self, expr: Optional[IRExpression], local: IRLocal) -> int:
+        """Total occurrences of `local` in `expr`'s tree. Never descends into
+        `IRRef`/`IRRefNew` (address-of): a match there is storage identity,
+        not a value read, and `_substitute_in_expr` refuses to rewrite it -
+        counting it here would let a single-occurrence check pass for a value
+        that substitution then silently leaves untouched.
+        """
+        if expr is None:
+            return 0
+        if isinstance(expr, (IRRef, IRRefNew)):
+            return 0
+        if expr == local:
+            return 1
+        n = 0
+        for child in expr.get_children():
+            if isinstance(child, IRExpression):
+                n += self._count_expr_occurrences(child, local)
+        return n
+
+    def _first_evaluated_occurrence(self, expr: Optional[IRExpression], local: IRLocal) -> bool:
+        """True if `local` sits at the position `expr`'s evaluation order
+        reaches first: nothing structurally evaluated before it (a call's
+        receiver before its args, a field/array access's target/array before
+        its index, arithmetic's left before right, ...) can have an
+        observable effect, and nothing reads storage the moved-in call could
+        itself mutate through an alias (an address-taken local can change
+        value across the call even though reading it is not itself an
+        "observable effect"). Moving a call/allocation currently assigned to
+        `local` in to replace this occurrence therefore preserves both when
+        and how many times it runs, and what every operand around it reads -
+        the same guarantees `_call_move_ok` establishes for arithmetic,
+        generalized to call/field receiver chains (`a().b.c()`) and
+        non-assignment read positions alike.
+        """
+        if expr is None:
+            return False
+        if expr == local:
+            return True
+        if isinstance(expr, (IRRef, IRRefNew)):
+            return False
+        for child in expr.get_children():
+            if not isinstance(child, IRExpression):
+                continue
+            if self._expr_contains_local(child, local):
+                return self._first_evaluated_occurrence(child, local)
+            if _has_observable_effects(child) or self._reads_address_taken(child):
+                return False
+        return False
+
+    def _movable_single_occurrence(self, expr: Optional[IRExpression], local: IRLocal) -> bool:
+        if expr is None or self._count_expr_occurrences(expr, local) != 1:
+            return False
+        return self._first_evaluated_occurrence(expr, local)
+
+    def _movable_read_position_ok(self, stmt: IRStatement, temp: IRLocal) -> bool:
+        """Broader sibling of `_call_move_ok` for read positions it doesn't
+        cover: a chained receiver/field access (`temp.method()`, `temp.field`)
+        feeding the very next assignment's RHS, or `temp` sitting in a
+        conditional/loop condition, switch value, or return/throw value.
+        Field/array-store destinations stay with `_call_move_ok`, which
+        already proves those safe independently of the call being moved.
+        """
+        if isinstance(stmt, IRAssign):
+            if not isinstance(stmt.target, IRLocal) or stmt.target == temp:
+                return False
+            return isinstance(stmt.expr, IRExpression) and self._movable_single_occurrence(stmt.expr, temp)
+        if isinstance(stmt, (IRConditional, IRWhileLoop)):
+            return self._movable_single_occurrence(stmt.condition, temp)
+        if isinstance(stmt, IRSwitch):
+            return self._movable_single_occurrence(stmt.value, temp)
+        if isinstance(stmt, (IRReturn, IRThrow)):
+            return self._movable_single_occurrence(stmt.value, temp)
+        if isinstance(stmt, IRExpression):
+            return self._movable_single_occurrence(stmt, temp)
+        return False
+
+    def _provably_loop_fresh(self, block: IRBlock, def_index: int, temp: IRLocal) -> bool:
+        """True if dropping `temp`'s definition at `block.statements[def_index]`
+        is safe even though `block` is (or is nested in) a loop body.
+
+        `_ScopedLocalLifetime.dead_after` fails closed for anything inside a
+        loop, since in general a register can carry a value across
+        iterations. This establishes a narrower, sufficient condition instead:
+        nothing earlier in `block` reads `temp` (so this define is always the
+        first thing that happens to it whenever the loop body runs - no
+        stale cross-iteration value can leak in), and its very next statement
+        is the last one in `block` (so nothing later in the same iteration
+        reads it either, beyond the substitution already being performed
+        there).
+        """
+        statements = block.statements
+        if def_index + 2 != len(statements):
+            return False
+        lifetime = _ScopedLocalLifetime(self.func.block)
+        return not any(lifetime.reads(stmt, temp) for stmt in statements[:def_index])
+
     def visit_block(self, block: IRBlock) -> None:
         if self.aggressive:
             self._visit_block_aggressive(block)
@@ -1849,17 +1962,26 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 ):
                     expr_to_inline = current_stmt.expr
                     if not self.is_safe_to_inline_conservatively(expr_to_inline):
-                        # A call or allocation can still be moved (not duplicated)
-                        # into an adjacent single use whose other operands are just
-                        # consts/locals — locals can't be mutated by the call, so
-                        # order is preserved. Only when the assignment gets dropped
-                        # (never inside a loop body, where it is kept and the call
+                        # Anything `is_safe_to_inline_conservatively` didn't already
+                        # clear (a call/allocation, or a read `_has_observable_effects`
+                        # flags defensively, e.g. a static field's GLOBAL_OBJ class
+                        # reference) can still be moved — not duplicated — into an
+                        # adjacent single use: `_call_move_ok`/`_movable_read_position_ok`
+                        # independently prove `temp` occurs there exactly once, at the
+                        # position that use's own evaluation order reaches first, so
+                        # relocating it changes neither when nor how many times it runs.
+                        # Only when the assignment gets dropped entirely (never inside a
+                        # loop body unless `_provably_loop_fresh` proves the value can't
+                        # leak across iterations, where it is otherwise kept and a call
                         # would run twice).
                         if not (
-                            isinstance(expr_to_inline, (IRCall, IRNew))
-                            and not inside_loop_body
+                            isinstance(expr_to_inline, IRExpression)
+                            and (not inside_loop_body or self._provably_loop_fresh(block, i, temp_local))
                             and i + 1 < len(statements)
-                            and self._call_move_ok(statements[i + 1], temp_local)
+                            and (
+                                self._call_move_ok(statements[i + 1], temp_local)
+                                or self._movable_read_position_ok(statements[i + 1], temp_local)
+                            )
                         ):
                             new_statements.append(current_stmt)
                             i += 1
@@ -1888,7 +2010,10 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                             self._stmt_contains_local(next_stmt, temp_local)
                             and not (
                                 self._has_nontrivial_computation(expr_to_inline)
-                                and (inside_loop_body or self._count_local_reads(next_stmt, temp_local) > 1)
+                                and (
+                                    (inside_loop_body and not self._provably_loop_fresh(block, i, temp_local))
+                                    or self._count_local_reads(next_stmt, temp_local) > 1
+                                )
                             )
                             and (pure_copy_kill or not self._is_local_redefined(temp_local, [next_stmt]))
                             and not self._stmt_reassigns_any(
@@ -1897,8 +2022,15 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                         ):
                             # Other assignments to this register are separate
                             # lifetimes only after an unconditional, non-reading kill.
-                            later_uses = not _ScopedLocalLifetime(self.func.block).dead_after(
-                                block, i + 1, temp_local
+                            # `_provably_loop_fresh` overrides `dead_after`'s blanket
+                            # loop conservatism when it has already independently
+                            # proven the value can't survive to a later iteration.
+                            later_uses = (
+                                False
+                                if inside_loop_body and self._provably_loop_fresh(block, i, temp_local)
+                                else not _ScopedLocalLifetime(self.func.block).dead_after(
+                                    block, i + 1, temp_local
+                                )
                             )
                             if not later_uses:
                                 if pure_copy_kill:
@@ -1918,7 +2050,9 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                                         dbg_print(
                                             f"Conservatively inlining assignment for temporary '{temp_local.name}'."
                                         )
-                                        if inside_loop_body:
+                                        if inside_loop_body and not self._provably_loop_fresh(
+                                            block, i, temp_local
+                                        ):
                                             new_statements.append(current_stmt)
                                         else:
                                             next_stmt.adopt(current_stmt)  # current_stmt is dropped
