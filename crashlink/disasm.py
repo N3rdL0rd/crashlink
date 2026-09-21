@@ -823,8 +823,33 @@ def _reg_str(code: Bytecode, regs: List[Reg] | List[tIndex], reg_idx: int) -> st
     return f"reg{reg_idx}<{t}>"
 
 
-def _escape_str(s: str) -> str:
-    return s.replace("\\", "\\\\").replace('"', '\\"')
+def _escape_str(s: str, extra: str = "") -> str:
+    """Escapes a string for embedding in a quoted literal or a `//` comment.
+
+    Always escapes backslash and raw control characters - an un-escaped
+    newline (common in base64 payloads that came pre-wrapped) would
+    otherwise let a `"..."` literal or a `// ...` preview comment leak onto
+    a following physical line, where a `/`-heavy remainder like base64 can
+    read as a real comment instead of string data. `extra` names further
+    literal characters (e.g. the surrounding quote) to backslash-escape.
+    """
+    out = []
+    for ch in s:
+        if ch == "\\":
+            out.append("\\\\")
+        elif ch == "\n":
+            out.append("\\n")
+        elif ch == "\r":
+            out.append("\\r")
+        elif ch == "\t":
+            out.append("\\t")
+        elif ch in extra:
+            out.append("\\" + ch)
+        elif ord(ch) < 0x20:
+            out.append(f"\\u{{{ord(ch):x}}}")
+        else:
+            out.append(ch)
+    return "".join(out)
 
 
 def _field_label_compact(
@@ -900,7 +925,8 @@ def fmt_op_compact(
             elif ptype == "RefBytes":
                 parts.append(f"bytes #{val.value} (len={len(val.resolve(code))})")
             elif ptype == "RefString":
-                parts.append(f'"{_escape_str(val.resolve(code))}" (str #{val.value})')
+                escaped = _escape_str(val.resolve(code), '"')
+                parts.append(f'"{escaped}" (str #{val.value})')
             elif ptype == "RefFun":
                 parts.append(f"f@{val.value}")
             elif ptype == "RefGlobal":

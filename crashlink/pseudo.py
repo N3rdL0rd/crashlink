@@ -514,8 +514,11 @@ def _expression_to_haxe(
                 return inline
             return f"__anon_{func.findex.value}"
         elif isinstance(expr.value, str):
-            # Basic string quoting, may need more sophisticated escaping for real Haxe
-            return '"' + expr.value.replace('"', '\\"') + '"'
+            # Control characters are escaped (not just `"`) so an embedded
+            # raw newline can't split the literal across physical lines -
+            # otherwise a `/`-heavy remainder (e.g. base64) on the next line
+            # reads as a real `//` comment instead of string data.
+            return '"' + disasm._escape_str(expr.value, '"') + '"'
         elif isinstance(expr.value, bool):
             return "true" if expr.value else "false"
         elif expr.value is None:  # For IRConst.ConstType.NULL
@@ -2994,7 +2997,7 @@ def _render_string_concat(expr: IRCall, code: Bytecode, ir_function: Optional[IR
     rendered = []
     for kind, payload in parts:
         if kind == "lit":
-            rendered.append('"' + payload.replace('"', '\\"') + '"')
+            rendered.append('"' + disasm._escape_str(payload, '"') + '"')
         else:
             rendered.append(payload[1])
     return " + ".join(rendered)
@@ -3006,8 +3009,11 @@ def _render_interpolated(parts: List[Tuple[str, Any]]) -> str:
     for index, (kind, payload) in enumerate(parts):
         if kind == "lit":
             text = payload
-            # Escape for single-quoted interpolation context.
-            text = text.replace("\\", "\\\\").replace("'", "\\'").replace("$", "$$")
+            # Escape for single-quoted interpolation context: control
+            # characters first (so a raw newline can't split the literal
+            # and expose a `/`-heavy remainder as a real `//` comment on
+            # the next line), then Haxe's `$$` doubling for literal `$`.
+            text = disasm._escape_str(text, "'").replace("$", "$$")
             out.append(text)
         else:
             operand, simple = payload
