@@ -79,8 +79,27 @@ jobs:
       - name: Register asv machine
         run: uv run asv machine --yes --machine gh-actions
 
-      - name: Run benchmarks against HEAD
-        run: uv run asv run --machine gh-actions --set-commit-hash HEAD --show-stderr
+      - name: Run benchmarks for each pushed commit
+        # environment_type "existing" only benchmarks the installed checkout, so
+        # walk the push by checking out each commit (uv installs crashlink
+        # editable). Skips commits that can't move a result, caps the count to
+        # bound CI time, and falls back to HEAD alone when the push base is
+        # unknown (new branch, force-push).
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          commits=""
+          if git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            commits=$(git rev-list --reverse "$BEFORE..$AFTER" -- crashlink benchmarks asv.conf.json | tail -n 5)
+          fi
+          for sha in ${commits:-$AFTER}; do
+            git checkout -q "$sha"
+            uv run --no-sync asv run --machine gh-actions --set-commit-hash "$sha" --show-stderr \
+              || echo "::warning::benchmarks failed at $sha"
+          done
+          git checkout -q "$AFTER"
 
       - name: Commit updated benchmark results
         working-directory: .asv-results
