@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import atexit
 import builtins
+import gc
 import importlib
 import inspect
 import os
@@ -117,7 +118,26 @@ def _make_progress_cb() -> "Optional[ProgressCallback]":
     return _plain_cb
 
 
+# Subcommands that load exactly one Bytecode, hold it until the process exits, and never load
+# another. Only `main()` enables freezing, and only when dispatching one of these as the whole
+# process, so importing and calling a `*_main` in-process (e.g. from tests) never freezes.
+_ONE_SHOT_SUBCOMMANDS = frozenset({"hlc", "info", "disasm", "search", "funcs", "decompile", "db"})
+_freeze_gc_after_load = False
+
+
 def _load_code_from_cli_path(path: str, no_constants: bool) -> Bytecode:
+    """Load a bytecode (or compile-then-load a Haxe source) file for the CLI."""
+    code = _read_code_from_cli_path(path, no_constants)
+    if _freeze_gc_after_load:
+        # Exempt everything alive now from cyclic GC. Later collections would otherwise keep
+        # re-scanning the millions of loaded objects (~30% of decompile time on large images).
+        # Frozen objects are still freed by refcounting; only reference cycles among them wait
+        # for process exit, which is when a one-shot command ends anyway.
+        gc.freeze()
+    return code
+
+
+def _read_code_from_cli_path(path: str, no_constants: bool) -> Bytecode:
     is_haxe = True
     with open(path, "rb") as f:
         if f.read(3) == b"HLB":
@@ -2979,6 +2999,7 @@ def main() -> None:
     """
     Main entrypoint.
     """
+    global _freeze_gc_after_load
     if len(sys.argv) > 1 and sys.argv[1] == "gui":
         from .gui import main as gui_main
 
@@ -2998,6 +3019,7 @@ def main() -> None:
         "db": db_main,
     }
     if len(sys.argv) > 1 and sys.argv[1] in _subcommands:
+        _freeze_gc_after_load = sys.argv[1] in _ONE_SHOT_SUBCOMMANDS
         _subcommands[sys.argv[1]](sys.argv[2:])
         return
 
