@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import re
 import weakref
-from abc import ABC, abstractmethod
 from enum import Enum as _Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, TypeVar
 
@@ -59,7 +58,11 @@ def _get_type_in_code(code: Bytecode, name: str) -> Type:
 _AdoptSelf = TypeVar("_AdoptSelf", bound="IRStatement")
 
 
-class IRStatement(ABC):
+class IRStatement:
+    # Deliberately not an ABC: optimizer passes run millions of isinstance()
+    # checks against IR node classes, and ABCMeta.__instancecheck__ makes each
+    # of those several times slower than a plain-class check.
+
     def __init__(self, code: Bytecode):
         self.code = code
         self.comment: str = ""
@@ -94,13 +97,11 @@ class IRStatement(ABC):
             self.src_op_idxs |= o.src_op_idxs
         return self
 
-    @abstractmethod
     def __repr__(self) -> str:
-        pass
+        return f"<{type(self).__name__}>"
 
-    @abstractmethod
     def get_children(self) -> List[IRStatement]:
-        pass
+        raise NotImplementedError(f"{type(self).__name__} must override get_children()")
 
     def __str__(self) -> str:
         return self.__repr__()
@@ -178,16 +179,15 @@ class IRBlock(IRStatement):
         return self.__repr__()
 
 
-class IRExpression(IRStatement, ABC):
+class IRExpression(IRStatement):
     """Abstract base class for expressions that produce a value"""
 
     def __init__(self, code: Bytecode):
         super().__init__(code)
 
-    @abstractmethod
     def get_type(self) -> Type:
         """Get the type of value this expression produces"""
-        pass
+        raise NotImplementedError(f"{type(self).__name__} must override get_type()")
 
     def get_children(self) -> List[IRStatement]:
         return []

@@ -139,6 +139,33 @@ class IROptimizer(ABC):
         pass
 
 
+# Ordered like an isinstance() chain: the first matching base wins. Resolved
+# once per concrete IR class by `_visit_method_name` instead of re-running the
+# chain for every visited node.
+_VISIT_DISPATCH: Tuple[Tuple[type, str], ...] = (
+    (IRBlock, "visit_block"),
+    (IRAssign, "visit_assign"),
+    (IRConditional, "visit_conditional"),
+    (IRPrimitiveLoop, "visit_primitive_loop"),
+    (IRSwitch, "visit_switch"),
+    (IRReturn, "visit_return"),
+    (IRTryCatch, "visit_try_catch"),
+    (IRBreak, "visit_break"),
+    (IRContinue, "visit_continue"),
+    (IRExpression, "visit_expression"),
+)
+_visit_method_cache: Dict[type, Optional[str]] = {}
+
+
+def _visit_method_name(cls: type) -> Optional[str]:
+    try:
+        return _visit_method_cache[cls]
+    except KeyError:
+        name = next((method for base, method in _VISIT_DISPATCH if issubclass(cls, base)), None)
+        _visit_method_cache[cls] = name
+        return name
+
+
 class TraversingIROptimizer(IROptimizer):
     """
     Base class for intermediate representation optimization routines that recursively travel through the decompilation.
@@ -168,32 +195,17 @@ class TraversingIROptimizer(IROptimizer):
         an already-processed subtree, which is exponential for deeply nested,
         heavily-converging control flow.
         """
-        if id(statement) in self._visited_ids:
+        visited = self._visited_ids
+        key = id(statement)
+        if key in visited:
             return
-        self._visited_ids.add(id(statement))
+        visited.add(key)
 
         self.before_visit_statement(statement)
 
-        if isinstance(statement, IRBlock):
-            self.visit_block(statement)
-        elif isinstance(statement, IRAssign):
-            self.visit_assign(statement)
-        elif isinstance(statement, IRConditional):
-            self.visit_conditional(statement)
-        elif isinstance(statement, IRPrimitiveLoop):
-            self.visit_primitive_loop(statement)
-        elif isinstance(statement, IRSwitch):
-            self.visit_switch(statement)
-        elif isinstance(statement, IRReturn):
-            self.visit_return(statement)
-        elif isinstance(statement, IRTryCatch):
-            self.visit_try_catch(statement)
-        elif isinstance(statement, IRBreak):
-            self.visit_break(statement)
-        elif isinstance(statement, IRContinue):
-            self.visit_continue(statement)
-        elif isinstance(statement, IRExpression):
-            self.visit_expression(statement)
+        method = _visit_method_name(type(statement))
+        if method is not None:
+            getattr(self, method)(statement)
 
         for child in statement.get_children():
             self.visit(child)
