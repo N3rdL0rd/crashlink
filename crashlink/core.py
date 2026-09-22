@@ -10,6 +10,7 @@ you.
 from __future__ import annotations
 
 import ctypes
+import gc
 import hashlib
 import struct
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -48,6 +49,7 @@ from .opcodes import opcodes, simple_calls
 
 _OPCODE_NAMES = tuple(opcodes)
 _OPCODE_IDS = {name: index for index, name in enumerate(_OPCODE_NAMES)}
+_SIMPLE_CALLS = frozenset(simple_calls)
 
 try:
     import platform
@@ -175,7 +177,7 @@ class RawData(Serialisable):
     A block of raw data.
     """
 
-    __slots__ = ("value", "length")
+    __slots__ = ("length",)
 
     def __init__(self, length: int):
         self.value: bytes = b""
@@ -194,7 +196,7 @@ class SerialisableInt(Serialisable):
     Integer of the specified byte length.
     """
 
-    __slots__ = ("value", "length", "byteorder", "signed")
+    __slots__ = ("length", "byteorder", "signed")
 
     def __init__(self) -> None:
         self.value: int = -1
@@ -225,7 +227,7 @@ class SerialisableF64(Serialisable):
     A standard 64-bit float.
     """
 
-    __slots__ = ("value",)
+    __slots__ = ()
 
     def __init__(self) -> None:
         self.value = 0.0
@@ -242,30 +244,36 @@ _struct_short = struct.Struct(">H")  # big-endian unsigned short
 _struct_medium = struct.Struct(">I")  # big-endian unsigned int (for 3 bytes)
 
 
+def _read_varint_tail(f: BinaryIO | BytesIO, first: bytes) -> int:
+    """Decode a VarInt whose first byte (`first`, possibly empty at EOF) was
+    already read and is not a 1-byte value. Callers inline the 1-byte case."""
+    if not first:
+        raise MalformedBytecode(f"Truncated data at {tell(f)}: expected 1 bytes, got 0")
+    b = first[0]
+    if b < 0x80:
+        return b
+    if b < 0xC0:
+        val = ((b & 0x1F) << 8) | _read_exact(f, 1)[0]
+    else:
+        val = ((b & 0x1F) << 24) | int.from_bytes(_read_exact(f, 3), "big")
+    sign = (b >> 5) & 1
+    return (val ^ -sign) + sign
+
+
 class VarInt(Serialisable):
     """
     Variable-length integer - can be 1, 2, or 4 bytes.
     """
 
-    __slots__ = ("value",)
+    __slots__ = ()
 
     def __init__(self, value: int = 0):
         self.value: int = value
 
     def deserialise(self: T, f: BinaryIO | BytesIO) -> T:
-        b = _read_exact(f, 1)[0]
-        if b < 0x80:
-            self.value = b
-            return self
-        if b < 0xC0:
-            second = _read_exact(f, 1)[0]
-            val = ((b & 0x1F) << 8) | second
-            self.value = (val ^ -((b >> 5) & 1)) + ((b >> 5) & 1)
-            return self
-        remaining_bytes = _read_exact(f, 3)
-        remaining = int.from_bytes(remaining_bytes, "big")
-        val = ((b & 0x1F) << 24) | remaining
-        self.value = (val ^ -((b >> 5) & 1)) + ((b >> 5) & 1)
+        data = f.read(1)
+        # Most VarInts on the wire are single-byte; decode those inline.
+        self.value = data[0] if data and data[0] < 0x80 else _read_varint_tail(f, data)
         return self
 
     def serialise(self) -> bytes:
@@ -444,7 +452,7 @@ class InlineBool(Serialisable):
     Inline boolean value.
     """
 
-    __slots__ = ("varint", "value")
+    __slots__ = ("varint",)
 
     def __init__(self) -> None:
         self.varint = VarInt()
@@ -465,7 +473,7 @@ class VarInts(Serialisable):
     List of VarInts.
     """
 
-    __slots__ = ("n", "value")
+    __slots__ = ("n",)
 
     def __init__(self) -> None:
         self.n = VarInt()
@@ -488,7 +496,7 @@ class Regs(Serialisable):
     List of references to registers.
     """
 
-    __slots__ = ("n", "value")
+    __slots__ = ("n",)
 
     def __init__(self) -> None:
         self.n = VarInt()
@@ -511,7 +519,7 @@ class StringsBlock(Serialisable):
     Block of strings in the bytecode. Contains a list of strings and their lengths.
     """
 
-    __slots__ = ("length", "value", "lengths")
+    __slots__ = ("length", "lengths")
 
     def __init__(self) -> None:
         self.length = SerialisableInt()
@@ -587,7 +595,7 @@ class BytesBlock(Serialisable):
     Block of bytes in the bytecode. Contains a list of byte strings and their lengths.
     """
 
-    __slots__ = ("size", "value", "nbytes")
+    __slots__ = ("size", "nbytes")
 
     def __init__(self) -> None:
         self.size = SerialisableInt()
@@ -1504,7 +1512,7 @@ class Opcode(Serialisable):
     Represents an opcode.
     """
 
-    __slots__ = ("code", "op", "df")
+    __slots__ = ("op", "df")
 
     TYPE_MAP: Dict[str, type] = {
         "Reg": Reg,
@@ -1526,28 +1534,34 @@ class Opcode(Serialisable):
     }
 
     def __init__(self, op: Optional[str] = None, df: Optional[Dict[Any, Any]] = None) -> None:
-        self.code = VarInt()
-        self.op: Optional[str] = None
-        if op:
-            self.op = op
-        self.df: Dict[Any, Any] = {}
-        if df:
-            self.df = df
+        self.op: Optional[str] = op if op else None
+        self.df: Dict[Any, Any] = df if df else {}
+
+    @property
+    def code(self) -> VarInt:
+        """Wire opcode id, derived from `op` (not stored: one fewer object per opcode)."""
+        if self.op is None or self.op not in _OPCODE_IDS:
+            raise InvalidOpCode(f"Unknown opcode: {self.op}")
+        return VarInt(_OPCODE_IDS[self.op])
 
     def deserialise(self, f: BinaryIO | BytesIO) -> "Opcode":
-        # dbg_print(f"Deserialising opcode at {tell(f)}... ", end="")
-        self.code.deserialise(f)
-        if not 0 <= self.code.value < len(opcodes):
-            raise InvalidOpCode(f"Unknown opcode at {tell(f)} - {self.code.value}")
-        self.op = _OPCODE_NAMES[self.code.value]
-        _def = opcodes[self.op]
-        self.df.clear()
-        for param, _type in _def.items():
-            if _type in self.TYPE_MAP:
-                self.df[param] = self.TYPE_MAP[_type]().deserialise(f)
-                continue
-            raise InvalidOpCode(f"Invalid opcode definition for {param, _type} at {tell(f)}")
-        self.validate()
+        data = f.read(1)
+        code = data[0] if data and data[0] < 0x80 else _read_varint_tail(f, data)
+        if not 0 <= code < len(_OPCODE_NAMES):
+            raise InvalidOpCode(f"Unknown opcode at {tell(f)} - {code}")
+        op = self.op = _OPCODE_NAMES[code]
+        df = self.df
+        df.clear()
+        # Operands are built straight from the schema, so the only part of
+        # `validate()` that can fail here is the sign check.
+        for param, operand_type, sign_check in _OPCODE_WIRE[code]:
+            operand = operand_type().deserialise(f)
+            if sign_check == _SIGN_SCALAR:
+                if operand.value < 0:
+                    raise InvalidOpCode(f"Negative reference in {op}.{param}")
+            elif sign_check == _SIGN_REGS and any(reg.value < 0 for reg in operand.value):
+                raise InvalidOpCode(f"Negative register in {op}.{param}")
+            df[param] = operand
         return self
 
     def validate(self) -> str:
@@ -1576,14 +1590,34 @@ class Opcode(Serialisable):
 
     def serialise(self) -> bytes:
         opcode_name = self.validate()
-        self.code.value = _OPCODE_IDS[opcode_name]
-        return self.code.serialise() + b"".join(self.df[name].serialise() for name in opcodes[opcode_name])
+        return VarInt(_OPCODE_IDS[opcode_name]).serialise() + b"".join(
+            self.df[name].serialise() for name in opcodes[opcode_name]
+        )
 
     def __repr__(self) -> str:
         return f"<Opcode: {self.op} {self.df}>"
 
     def __str__(self) -> str:
         return self.__repr__()
+
+
+# Opcode operand sign rules, mirroring `Opcode.validate`.
+_SIGN_NONE, _SIGN_SCALAR, _SIGN_REGS = 0, 1, 2
+
+
+def _operand_sign_check(kind: str) -> int:
+    if kind == "Regs":
+        return _SIGN_REGS
+    if kind in ("JumpOffset", "JumpOffsets", "InlineInt", "InlineBool"):
+        return _SIGN_NONE
+    return _SIGN_SCALAR
+
+
+# Wire schema per opcode id: ((param, operand class, sign rule), ...).
+_OPCODE_WIRE: Tuple[Tuple[Tuple[str, type, int], ...], ...] = tuple(
+    tuple((param, Opcode.TYPE_MAP[kind], _operand_sign_check(kind)) for param, kind in opcodes[name].items())
+    for name in _OPCODE_NAMES
+)
 
 
 class fileRef(ResolvableVarInt):
@@ -1594,7 +1628,7 @@ class fileRef(ResolvableVarInt):
     __slots__ = ("line",)
 
     def __init__(self, fid: int = 0, line: int = -1) -> None:
-        super().__init__(fid)
+        self.value = fid  # VarInt.__init__ inlined: one of these per opcode
         self.line = line
 
     def resolve(self, code: "Bytecode") -> str:
@@ -1626,9 +1660,12 @@ class fileRef(ResolvableVarInt):
 class DebugInfo(Serialisable):
     """
     Represents debug information for a function, encoded with a delta encoding scheme for compression.
+
+    Deserialised consecutive opcodes on the same file:line share one `fileRef` instance (most
+    opcodes do: this avoids one object per opcode). Replace a list entry rather than mutating it.
     """
 
-    __slots__ = ("value",)
+    __slots__ = ()
 
     def __init__(self) -> None:
         self.value: List[fileRef] = []
@@ -1637,25 +1674,37 @@ class DebugInfo(Serialisable):
         tmp: List[fileRef] = []
         currfile = -1
         currline = 0
+        # fileRef for (currfile, currline); dropped whenever either changes.
+        ref: Optional[fileRef] = None
         if nops < 0:
             raise MalformedBytecode("Negative debug instruction count")
         while len(tmp) < nops:
             c = _read_exact(f, 1)[0]
             if c & 1:
-                currfile = ((c >> 1) << 8) | _read_exact(f, 1)[0]
+                newfile = ((c >> 1) << 8) | _read_exact(f, 1)[0]
+                if newfile != currfile:
+                    currfile, ref = newfile, None
             elif c & 2:
                 count = (c >> 2) & 15
                 if len(tmp) + count > nops:
                     raise MalformedBytecode("Debug run exceeds instruction count")
-                tmp.extend(fileRef(currfile, currline) for _ in range(count))
-                currline += c >> 6
-            elif c & 4:
-                currline += c >> 3
-                tmp.append(fileRef(currfile, currline))
+                if count:
+                    if ref is None:
+                        ref = fileRef(currfile, currline)
+                    tmp.extend([ref] * count)
+                if c >> 6:
+                    currline, ref = currline + (c >> 6), None
             else:
-                rest = _read_exact(f, 2)
-                currline = (c >> 3) | (rest[0] << 5) | (rest[1] << 13)
-                tmp.append(fileRef(currfile, currline))
+                if c & 4:
+                    newline = currline + (c >> 3)
+                else:
+                    rest = _read_exact(f, 2)
+                    newline = (c >> 3) | (rest[0] << 5) | (rest[1] << 13)
+                if newline != currline:
+                    currline, ref = newline, None
+                if ref is None:
+                    ref = fileRef(currfile, currline)
+                tmp.append(ref)
         self.value = tmp
         return self
 
@@ -1797,12 +1846,9 @@ class Function(Serialisable):
         self.nops.deserialise(f)
         _check_count(f, self.nregs.value)
         _check_count(f, self.nops.value)
-        for _ in range(self.nregs.value):
-            self.regs.append(tIndex().deserialise(f))
-        for _ in range(self.nops.value):
-            self.ops.append(Opcode().deserialise(f))
-            if self.ops[-1].op in simple_calls and "fun" in self.ops[-1].df:
-                self.calls.append(self.ops[-1].df["fun"])
+        self.regs = [tIndex().deserialise(f) for _ in range(self.nregs.value)]
+        ops = self.ops = [Opcode().deserialise(f) for _ in range(self.nops.value)]
+        self.calls = [op.df["fun"] for op in ops if op.op in _SIMPLE_CALLS and "fun" in op.df]
         if self.has_debug:
             self.debuginfo = DebugInfo().deserialise(f, self.nops.value)
             if self.version >= 3:
@@ -2073,10 +2119,8 @@ class Bytecode(Serialisable):
             if obj_def.super and obj_def.super.value is not None:
                 try:
                     super_type = obj_def.super.resolve(self)
-                    # *** Add a check to prevent cycles in this helper too ***
-                    if id(super_type) == id(
-                        obj_def.get_containing_type(self)
-                    ):  # Prevent self-inheritance loops
+                    # Prevent self-inheritance loops.
+                    if super_type.definition is obj_def:
                         return {}
                     if isinstance(super_type.definition, Obj):
                         super_def = super_type.definition
@@ -2170,15 +2214,12 @@ class Bytecode(Serialisable):
         """
         Create a new Bytecode instance from a file path.
         """
-        f = open(path, "rb")
-        instance = cls().deserialise(f, search_magic=search_magic, progress_cb=progress_cb)
-        f.close()
-        try:
-            with open(path, "rb") as hf:
-                instance.sha256 = hashlib.sha256(hf.read()).hexdigest()
-            instance.source_path = path
-        except OSError:
-            pass
+        # One read serves both parsing (BytesIO reads are cheaper than a
+        # buffered file's) and hashing, instead of opening the file twice.
+        with open(path, "rb") as fh:
+            data = fh.read()
+        instance = cls.from_bytes(data, search_magic=search_magic, progress_cb=progress_cb)
+        instance.source_path = path
         return instance
 
     @classmethod
@@ -2251,7 +2292,25 @@ class Bytecode(Serialisable):
 
         progress_cb, if provided, is called as ``progress_cb(fraction, status)`` at each parse milestone, where fraction is in [0, 1].
         """
+        # Parsing allocates millions of small, long-lived objects. Each one
+        # counts toward the cyclic GC's thresholds, so with the collector on
+        # it re-scans the ever-growing heap over and over - most of load time
+        # on large images. Nothing here needs cycle collection mid-parse.
+        gc_was_enabled = gc.isenabled()
+        gc.disable()
+        try:
+            return self._deserialise(f, search_magic, init_globals, progress_cb)
+        finally:
+            if gc_was_enabled:
+                gc.enable()
 
+    def _deserialise(
+        self,
+        f: BinaryIO | BytesIO,
+        search_magic: bool,
+        init_globals: bool,
+        progress_cb: Optional[ProgressCallback],
+    ) -> "Bytecode":
         def _progress(frac: float, status: str) -> None:
             if progress_cb is not None:
                 progress_cb(frac, status)
@@ -2744,43 +2803,52 @@ class Bytecode(Serialisable):
             if self.version.value >= 5 and self.bytes is not None
             else len(self.strings.value),
         }
+        # Hot loop (one pass per operand of every opcode): compare inline and
+        # only build `index()`'s error label once a check has already failed.
         for function in self.functions:
             for ref in function.regs:
                 type_ref(ref)
+            nregs = len(function.regs)
+            nops = len(function.ops)
             signature = self.types[function.type.value].definition
-            if isinstance(signature, Fun) and len(signature.args) > len(function.regs):
+            if isinstance(signature, Fun) and len(signature.args) > nregs:
                 raise MalformedBytecode("Function has fewer registers than arguments")
             for pc, op in enumerate(function.ops):
                 opcode_name = op.op if opcodes_already_validated else op.validate()
                 assert opcode_name is not None
+                df = op.df
                 for name, kind in opcodes[opcode_name].items():
-                    operand = op.df[name]
-                    if kind == "Reg" and op.op != "EndTrap":
-                        index(
-                            operand.value,
-                            len(function.regs),
-                            f"f@{function.findex.value} register at op {pc}",
-                        )
+                    operand = df[name]
+                    if kind == "Reg":
+                        if opcode_name != "EndTrap" and not 0 <= operand.value < nregs:
+                            index(operand.value, nregs, f"f@{function.findex.value} register at op {pc}")
                     elif kind == "Regs":
                         for reg in operand.value:
-                            index(reg.value, len(function.regs), "register argument")
+                            if not 0 <= reg.value < nregs:
+                                index(reg.value, nregs, "register argument")
                     elif kind in pool_sizes:
-                        index(operand.value, pool_sizes[kind], kind)
-                    elif kind == "RefFun" and operand.value not in functions:
-                        raise MalformedBytecode(f"Invalid function reference at op {pc}: {operand.value}")
+                        if not 0 <= operand.value < pool_sizes[kind]:
+                            index(operand.value, pool_sizes[kind], kind)
+                    elif kind == "RefFun":
+                        if operand.value not in functions:
+                            raise MalformedBytecode(f"Invalid function reference at op {pc}: {operand.value}")
                     elif kind in ("JumpOffset", "JumpOffsets"):
                         offsets = operand.value if kind == "JumpOffsets" else (operand,)
                         # Switch.end is the boundary after the switch, not an executable target.
-                        limit = len(function.ops) + (op.op == "Switch" and name == "end")
+                        limit = nops + (opcode_name == "Switch" and name == "end")
                         for offset in offsets:
-                            index(pc + 1 + offset.value, limit, f"branch target at op {pc}")
+                            if not 0 <= pc + 1 + offset.value < limit:
+                                index(pc + 1 + offset.value, limit, f"branch target at op {pc}")
             if function.has_debug:
-                if function.debuginfo is None or len(function.debuginfo.value) != len(function.ops):
+                if function.debuginfo is None or len(function.debuginfo.value) != nops:
                     raise MalformedBytecode("Debug information does not match instruction count")
-                for ref in function.debuginfo.value:
+                if function.debuginfo.value:
                     if self.debugfiles is None:
                         raise MalformedBytecode("Missing debug file table")
-                    index(ref.value, len(self.debugfiles.value), "debug file reference")
+                    ndebugfiles = len(self.debugfiles.value)
+                    for ref in function.debuginfo.value:
+                        if not 0 <= ref.value < ndebugfiles:
+                            index(ref.value, ndebugfiles, "debug file reference")
 
     def is_ok(self) -> bool:
         """
