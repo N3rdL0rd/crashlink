@@ -218,6 +218,26 @@ class _ScopedLocalLifetime:
 
         return visit(self.root, [], False) and found
 
+    def dead_in(self, remaining: List[IRStatement], local: IRLocal) -> bool:
+        """Like `dead_after`, but for an already-known continuation.
+
+        `dead_after` rediscovers the continuation and hazard state by
+        searching from `self.root` for `block` on every call - the hottest
+        path in this optimizer on large, deeply nested functions. A caller
+        that is itself walking the tree top-down (and so already knows both)
+        should use this instead.
+        """
+        for stmt in remaining:
+            if self.reads(stmt, local):
+                return False
+            if (
+                isinstance(stmt, IRAssign)
+                and isinstance(stmt.target, IRLocal)
+                and self.aliases(stmt.target, local)
+            ):
+                return True
+        return True
+
 
 class _ReferenceAwareOptimizer(TraversingIROptimizer):
     """Keep address-exposed storage until an alias lifetime can be proven over.
@@ -1731,6 +1751,22 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             and getattr(parent, "body", None) is child
         )
 
+    def _is_hazard_block(self, parent: IRStatement, child: IRStatement) -> bool:
+        """True if `child` is a loop body or a try/catch arm.
+
+        Matches `_ScopedLocalLifetime.dead_after`'s hazard classification:
+        control may not reach the next statement in program order (a loop
+        repeats; a try body/handler can be entered or exited mid-statement).
+        """
+        if self._is_loop_body_block(parent, child):
+            return True
+        if isinstance(parent, IRTryCatch):
+            if child is parent.try_block or child is parent.catch_block:
+                return True
+            if any(child is catch_body for _, catch_body in parent.extra_catches):
+                return True
+        return False
+
     def _flatten_stmts(self, stmts: List[IRStatement]) -> List[IRStatement]:
         """Document-order flattening of a statement list and their nested blocks."""
         out: List[IRStatement] = []
@@ -1773,6 +1809,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         i: int,
         new_statements: List[IRStatement],
         continuation: Optional[List[IRStatement]],
+        hazardous: bool = False,
     ) -> bool:
         """Move a single-use, pure temp assignment forward to its sole later use
         in the same block, dropping the assignment. Returns True when folded.
@@ -1867,8 +1904,12 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             isinstance(use_stmt, IRConditional) and self._expr_contains_local(use_stmt.condition, temp)
         ):
             return False
-        # No reuse of the register after the use.
-        if not _ScopedLocalLifetime(self.func.block).dead_after(block, use_idx, temp):
+        # No reuse of the register after the use. Uses the already-known
+        # continuation instead of `dead_after`'s expensive root-to-block
+        # search (see `_visit_block_conservative`).
+        if hazardous or not _ScopedLocalLifetime(self.func.block).dead_in(
+            statements[use_idx + 1 :] + (continuation or []), temp
+        ):
             return False
 
         substituted = self._substitute_in_statement(use_stmt, temp, expr)
@@ -1906,6 +1947,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         block: IRBlock,
         inside_loop_body: bool = False,
         continuation: Optional[List[IRStatement]] = None,
+        hazardous: bool = False,
     ) -> None:
         """Only inlines an assignment if it is used in the very next statement.
 
@@ -2020,16 +2062,20 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                                 next_stmt, self._collect_free_locals(expr_to_inline)
                             )
                         ):
-                            # Other assignments to this register are separate
-                            # lifetimes only after an unconditional, non-reading kill.
-                            # `_provably_loop_fresh` overrides `dead_after`'s blanket
-                            # loop conservatism when it has already independently
-                            # proven the value can't survive to a later iteration.
+                            # `_provably_loop_fresh` overrides the hazard/continuation
+                            # check below when it has already independently proven the
+                            # value can't survive to a later iteration. The check itself
+                            # uses `continuation`/`hazardous`, which this traversal
+                            # already tracks, instead of `dead_after`'s expensive
+                            # root-to-block search for the same information.
                             later_uses = (
                                 False
                                 if inside_loop_body and self._provably_loop_fresh(block, i, temp_local)
-                                else not _ScopedLocalLifetime(self.func.block).dead_after(
-                                    block, i + 1, temp_local
+                                else (
+                                    hazardous
+                                    or not _ScopedLocalLifetime(self.func.block).dead_in(
+                                        block.statements[i + 2 :] + continuation, temp_local
+                                    )
                                 )
                             )
                             if not later_uses:
@@ -2080,7 +2126,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 and not self._is_user_local(current_stmt.target)
                 and isinstance(current_stmt.expr, IRExpression)
             ):
-                inlined = self._forward_inline_single_use(block, i, new_statements, continuation)
+                inlined = self._forward_inline_single_use(block, i, new_statements, continuation, hazardous)
 
             if not inlined:
                 new_statements.append(current_stmt)
@@ -2092,22 +2138,35 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             child_continuation = block.statements[idx + 1 :] + continuation
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
+                    # This recursion already fully processes `child` with the
+                    # correct continuation/hazard state. The framework's own
+                    # generic traversal (`TraversingIROptimizer.visit`) would
+                    # otherwise reach the same block again afterward and call
+                    # `visit_block` on it with none of that context - marking
+                    # it visited here makes that walk skip it, the same way it
+                    # already skips any other already-visited node.
+                    self._visited_ids.add(id(child))
                     self._visit_block_conservative(
                         child,
                         inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child),
                         continuation=child_continuation,
+                        hazardous=hazardous or self._is_hazard_block(stmt, child),
                     )
 
     def _visit_block_aggressive(
         self,
         block: IRBlock,
         inside_loop_body: bool = False,
+        continuation: Optional[List[IRStatement]] = None,
+        hazardous: bool = False,
     ) -> None:
         """Inlines safe expressions everywhere they are used, until no more changes can be made.
 
         As in conservative mode, assignments inside a loop body are preserved so
         loop-carried values remain live after the loop.
         """
+        if continuation is None:
+            continuation = []
         made_change_in_pass = True
         while made_change_in_pass:
             made_change_in_pass = False
@@ -2260,7 +2319,11 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 dbg_print(f"Aggressively inlining safe expression from temporary '{temp_local.name}'.")
                 # After substitution, prove this definition's value dead rather
                 # than counting reads from every later reuse of its VM register.
-                lifetime_dead = _ScopedLocalLifetime(self.func.block).dead_after(block, i, temp_local)
+                # Uses the already-known continuation instead of `dead_after`'s
+                # own expensive root-to-block search (see `_visit_block_conservative`).
+                lifetime_dead = not hazardous and _ScopedLocalLifetime(self.func.block).dead_in(
+                    block.statements[i + 1 :] + continuation, temp_local
+                )
                 if not inside_loop_body and not must_keep_assign and lifetime_dead:
                     # stmt is dropped below; every site the expression got inlined
                     # into inherits its opcode (setdefault means whichever renders
@@ -2274,12 +2337,20 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             if statements_to_remove:
                 block.statements = [s for s in block.statements if s not in statements_to_remove]
 
-        for stmt in block.statements:
+        for idx, stmt in enumerate(block.statements):
+            child_continuation = block.statements[idx + 1 :] + continuation
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
+                    # See _visit_block_conservative: this recursion already
+                    # fully processes `child`, so mark it visited to keep the
+                    # framework's generic traversal from redoing it without
+                    # this continuation/hazard context.
+                    self._visited_ids.add(id(child))
                     self._visit_block_aggressive(
                         child,
                         inside_loop_body=inside_loop_body or self._is_loop_body_block(stmt, child),
+                        continuation=child_continuation,
+                        hazardous=hazardous or self._is_hazard_block(stmt, child),
                     )
 
 
