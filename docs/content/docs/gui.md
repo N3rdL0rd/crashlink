@@ -33,7 +33,7 @@ The main window is a `QMainWindow` with a set of dockable panels arranged around
 - **CFG** (right dock, Space toggles it): the control-flow graph of the function in focus, rendered by Graphviz on a background thread. Large graphs open legible at the entry block; click a block to jump to its first opcode, and the block holding the opcode under the disassembly cursor is outlined. `0` fits the graph, `1` resets to 100%.
 - **Decompiler Internals** (Window menu): for the function in focus, every optimizer pass, which ones changed the IR, a diff of each pass, the IR snapshot after it, and the final IR tree.
 
-Opening a function or class from the Navigator adds a tab in the central area showing a **sync view**. Long-running work (loading, decompiling, exports) is shown in the status bar.
+Opening a function or class from the Navigator adds a tab in the central area showing a **sync view**. Long-running work (loading, decompiling, exports) is shown in the status bar. Middle-clicking a tab, a docked panel's title bar, or a panel's tab (when panels are tabbed together) closes it.
 
 ## The sync view
 

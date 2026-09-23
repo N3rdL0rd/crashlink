@@ -11,6 +11,7 @@ import re
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator, List, Optional, Set, Tuple, cast
 
 from PySide6.QtCore import (
+    QChildEvent,
     QEvent,
     QRect,
     QRunnable,
@@ -37,6 +38,7 @@ from PySide6.QtGui import (
     QTextCursor,
     QTextDocument,
     QUndoStack,
+    QMouseEvent,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -125,6 +127,7 @@ _IN_VIEW_KEYS = [
     ("X", "Show cross-references for the word under the cursor"),
     ("/", "Add/edit a comment on the opcode under the cursor"),
     ("Tab", "Cycle split / disassembly / decompiled view"),
+    ("Middle-click", "Close a tab, or a dock by its title bar or tab"),
     ("Up / Down", "REPL command history (when the REPL input is focused)"),
     ("Click (CFG)", "Jump to the clicked block"),
     ("0 / 1 (CFG)", "Fit the whole graph / zoom to 100%"),
@@ -335,6 +338,27 @@ class _TabBar(QTabBar):
     """
 
     _fill: QColor = QColor("#181825")
+    #: Index of a tab middle-clicked (released over the tab it was pressed on).
+    middle_clicked = Signal(int)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._middle_pressed = -1
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.MiddleButton:
+            self._middle_pressed = self.tabAt(event.position().toPoint())
+            return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.MiddleButton:
+            index = self.tabAt(event.position().toPoint())
+            if index >= 0 and index == self._middle_pressed:
+                self.middle_clicked.emit(index)
+            self._middle_pressed = -1
+            return
+        super().mouseReleaseEvent(event)
 
     def paintEvent(self, event: QPaintEvent) -> None:
         super().paintEvent(event)
@@ -346,6 +370,46 @@ class _TabBar(QTabBar):
             p = QPainter(self)
             p.fillRect(QRect(empty_x, 0, self.width() - empty_x, self.height()), self._fill)
             p.end()
+
+
+class _DockMiddleClose(QObject):
+    """Closes a dock when its title bar, or its tab in a group of tabbed docks, is
+    middle-clicked: the same as its close button."""
+
+    def __init__(self, window: QMainWindow) -> None:
+        super().__init__(window)
+        self._window = window
+
+    def watch(self, obj: QObject) -> None:
+        obj.installEventFilter(self)  # Qt keeps one entry per filter
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        if event.type() != QEvent.Type.MouseButtonRelease:
+            return False
+        mouse = cast(QMouseEvent, event)
+        if mouse.button() != Qt.MouseButton.MiddleButton:
+            return False
+        pos = mouse.position().toPoint()
+        dock: Optional[QDockWidget] = None
+        if isinstance(obj, QDockWidget):
+            # Unhandled clicks in the dock's contents bubble up here too.
+            content = obj.widget()
+            if pos.y() < (content.geometry().top() if content is not None else obj.height()):
+                dock = obj
+        elif isinstance(obj, QTabBar):
+            index = obj.tabAt(pos)
+            if index >= 0:
+                dock = self._tabbed_dock(obj.tabText(index))
+        if dock is None or not dock.features() & QDockWidget.DockWidgetFeature.DockWidgetClosable:
+            return False
+        dock.close()
+        return True
+
+    def _tabbed_dock(self, title: str) -> Optional[QDockWidget]:
+        for dock in self._window.findChildren(QDockWidget):
+            if dock.windowTitle() == title and self._window.tabifiedDockWidgets(dock):
+                return dock
+        return None
 
 
 class _BusyIndicator:
@@ -907,6 +971,7 @@ class MainWindow(QMainWindow):
         self._tab_bar = _TabBar()
         self._tabs = QTabWidget()
         self._tabs.setTabBar(self._tab_bar)
+        self._tab_bar.middle_clicked.connect(self._close_tab_at)
         self._tabs.setTabsClosable(False)
         self._tabs.setMovable(True)
         self._tabs.setDocumentMode(True)
@@ -2097,6 +2162,25 @@ class MainWindow(QMainWindow):
         btn.setToolTip("Close tab")
         btn.clicked.connect(lambda: QTimer.singleShot(0, lambda: self._close_tab_by_key(class_key)))
         self._tabs.tabBar().setTabButton(tab_idx, QTabBar.ButtonPosition.RightSide, btn)
+
+    def _close_tab_at(self, index: int) -> None:
+        widget = self._tabs.widget(index)
+        key = widget.property("class_key") if widget is not None else None
+        if key:
+            self._close_tab_by_key(key)
+
+    def childEvent(self, event: QChildEvent) -> None:
+        super().childEvent(event)
+        # Docks, and the tab bars Qt creates when docks are tabbed together, are
+        # children of the window; watch them for middle-click closes once they
+        # are fully constructed (polished).
+        if event.type() == QEvent.Type.ChildPolished:
+            child = event.child()
+            if isinstance(child, (QDockWidget, QTabBar)):
+                closer = self.__dict__.get("_dock_middle_close")
+                if closer is None:
+                    closer = self._dock_middle_close = _DockMiddleClose(self)
+                closer.watch(child)
 
     def _close_tab_by_key(self, class_key: str) -> None:
         idx = self._open_tabs.pop(class_key, None)
