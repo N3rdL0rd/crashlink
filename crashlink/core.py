@@ -2022,6 +2022,8 @@ class Bytecode(Serialisable):
         self._enum_global_map: Optional[Dict[int, Tuple[str, "tIndex"]]] = None
         self._global_field_elem_types: Dict[Tuple[str, str], "Type"] = {}
         self._hxsl_shaders_cache: Optional[Any] = None
+        # id(type definition) -> index in self.types; see type_index_of.
+        self._type_index_by_def: Optional[Dict[int, int]] = None
         self.annotations: AnnotationStore = AnnotationStore()
         self.inspection_only = False
         self.recovery_capabilities: frozenset[str] = frozenset()
@@ -2030,6 +2032,18 @@ class Bytecode(Serialisable):
         self.recovery_lifts: Dict[int, List[LiftedOp]] = {}
 
         self.virtuals_built = False
+
+    def type_index_of(self, definition: Any) -> Optional[int]:
+        """Index in `self.types` of the type whose definition is `definition` (identity),
+        or None. Cached; a stale cache (types mutated) is detected and rebuilt."""
+        cache = self._type_index_by_def
+        if cache is not None:
+            index = cache.get(id(definition))
+            if index is not None and index < len(self.types) and self.types[index].definition is definition:
+                return index
+        cache = self._type_index_by_def = {id(typ.definition): i for i, typ in enumerate(self.types)}
+        index = cache.get(id(definition))
+        return index if index is not None and self.types[index].definition is definition else None
 
     def invalidate_findex_cache(self) -> None:
         """

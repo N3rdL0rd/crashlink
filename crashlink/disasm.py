@@ -46,9 +46,10 @@ def _enum_name(code: Bytecode, definition: Enum) -> str:
         return definition.name.resolve(code)
     # Anonymous capture contexts have no global (the stored value is zero),
     # so only their type-table identity distinguishes different environments.
-    for index, typ in enumerate(code.types):
-        if typ.definition is definition:
-            return f"__ClosureCtx_{index}"
+    # (type_index_of is cached: this runs for every enum-typed expression rendered.)
+    index = code.type_index_of(definition)
+    if index is not None:
+        return f"__ClosureCtx_{index}"
     raise ValueError("Anonymous enum definition is not in the bytecode type table")
 
 
