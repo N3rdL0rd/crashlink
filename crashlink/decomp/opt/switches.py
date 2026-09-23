@@ -414,25 +414,36 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
         if self._index_escapes(idx_var.name, {id(stmt)}, set(), {id(next_stmt)}):
             return None
 
-        patterns: Dict[IRConst, IREnumPattern] = {}
-        new_cases: Dict[IRConst, IRBlock] = {}
         enum_def = enum_type.definition
-        for case_val, case_block in next_stmt.cases.items():
+
+        def constructor_case(case_val: IRConst) -> Optional[Tuple[IRConst, IREnumPattern]]:
             if not isinstance(case_val, IRConst) or case_val.const_type != IRConst.ConstType.INT:
                 return None
             idx = int(case_val.value.value if hasattr(case_val.value, "value") else case_val.value)
             if not 0 <= idx < len(enum_def.constructs):
                 return None
-            construct = enum_def.constructs[idx]
-            # Create a new IRConst for the constructor name. We repurpose the
-            # existing IRConst by changing its value to the constructor name
-            # string, but create a fresh one to avoid side effects.
-            new_case_val = IRConst(
+            # A fresh IRConst naming the constructor, rather than repurposing the index constant.
+            name = IRConst(
                 self.func.code,
                 IRConst.ConstType.GLOBAL_STRING,
-                value=construct.name.resolve(self.func.code),
+                value=enum_def.constructs[idx].name.resolve(self.func.code),
             )
-            pattern = IREnumPattern(self.func.code, enum_value.type, idx)
+            return name, IREnumPattern(self.func.code, enum_value.type, idx)
+
+        patterns: Dict[IRConst, IREnumPattern] = {}
+        new_cases: Dict[IRConst, IRBlock] = {}
+        new_aliases: Dict[IRConst, List[IRConst]] = {}
+        for case_val, case_block in next_stmt.cases.items():
+            primary = constructor_case(case_val)
+            if primary is None:
+                return None
+            new_case_val, pattern = primary
+            alias_cases: List[Tuple[IRConst, IREnumPattern]] = []
+            for alias in next_stmt.case_aliases.get(case_val, ()):
+                alias_case = constructor_case(alias)
+                if alias_case is None:
+                    return None
+                alias_cases.append(alias_case)
             body = IRBlock(self.func.code)
             consumed = 0
             for node in case_block.statements:
@@ -455,12 +466,19 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
                     else:
                         pattern.slots[slot] = node_target
                 consumed += 1
+            if alias_cases:
+                # Field bindings belong to one constructor; a body shared by several
+                # (`case A, B:`) can only be recovered when it binds none.
+                if consumed:
+                    return None
+                new_aliases[new_case_val] = [alias_val for alias_val, _ in alias_cases]
+                patterns.update(alias_cases)
             body.statements.extend(case_block.statements[consumed:])
             body.adopt(case_block, *case_block.statements[:consumed])
             new_cases[new_case_val] = body
             patterns[new_case_val] = pattern
 
-        new_switch = IRSwitch(self.func.code, enum_value, new_cases, next_stmt.default)
+        new_switch = IRSwitch(self.func.code, enum_value, new_cases, next_stmt.default, new_aliases)
         new_switch.adopt(stmt, next_stmt)
         new_switch.enum_patterns = patterns
         return new_switch, 2

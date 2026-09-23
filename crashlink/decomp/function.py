@@ -2143,9 +2143,22 @@ class IRFunction:
                 stop_nodes={loop_ctx.header} if loop_ctx else None,
             )
             val_reg = self.locals[last_op.df["reg"].value]
-            cases, default_block = {}, IRBlock(self.code)
+            cases: Dict[IRConst, IRBlock] = {}
+            aliases: Dict[IRConst, List[IRConst]] = {}
+            default_block = IRBlock(self.code)
+            # Values whose jump-table entries share a target are one `case a, b:` body.
+            case_keys: Dict[CFNode, IRConst] = {}
 
             for target_node, edge_type in node.branches:
+                if edge_type.startswith("switch: case:"):
+                    case_val = IRConst(
+                        self.code, IRConst.ConstType.INT, value=int(edge_type.split(":")[-1].strip())
+                    )
+                    key = case_keys.get(target_node)
+                    if key is not None:
+                        aliases.setdefault(key, []).append(case_val)
+                        continue
+                    case_keys[target_node] = case_val
                 case_block_ir = self._lift_block(
                     target_node,
                     visited.copy(),
@@ -2153,8 +2166,7 @@ class IRFunction:
                     loop_ctx=loop_ctx,
                 )
                 if edge_type.startswith("switch: case:"):
-                    case_val = int(edge_type.split(":")[-1].strip())
-                    cases[IRConst(self.code, IRConst.ConstType.INT, value=case_val)] = case_block_ir
+                    cases[case_keys[target_node]] = case_block_ir
                 elif edge_type == "switch: default":
                     default_block = case_block_ir
 

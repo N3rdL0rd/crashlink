@@ -127,6 +127,8 @@ But a sparse or negative-valued case set - not dense enough to justify a table -
 
 String switches lower even further from the source shape: HashLink first null-checks the scrutinee, then guards on `s.length` before ever comparing content, then chains `std.string_compare(s.bytes, "case", len) == 0` calls for each case, falling through to the next comparison on a nonzero result. `IRStringSwitchOptimizer` matches that null-check/length-guard/compare-chain shape and rebuilds an `IRSwitch` keyed by the literal case strings, stitching together cases that got split across sibling statements by the CFG lifter (a `string_compare` chain doesn't structurally nest the same way an int-switch's `if` chain does).
 
+Values that share one case body (`case "a", "b":`, or several jump-table entries pointing at the same target) are kept as a single case: `IRSwitch.cases` holds the body under its first value and `IRSwitch.case_aliases` lists the rest, which render as one `case a, b:`.
+
 ## Enum-Pattern Switches
 
 Sample: `tests/haxe/Enums.hx`

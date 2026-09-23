@@ -1957,7 +1957,10 @@ def _generate_statements(
                 else:
                     output_lines.append(f"{indent}{target.name} = switch ({enum_value_str}) {{")
                 for case_value, case_block in stmt.cases.items():
-                    case_str = _case_value_to_haxe(case_value, enum_type, code, ir_function)
+                    case_str = ", ".join(
+                        _case_value_to_haxe(value, enum_type, code, ir_function)
+                        for value in stmt.case_values(case_value)
+                    )
                     expr_str = _expression_to_haxe(case_exprs[case_value], code, ir_function)
                     output_lines.append(f"{indent}    case {case_str}: {expr_str};")
                 if default_expr is not None:
@@ -1980,10 +1983,11 @@ def _generate_statements(
             for case_value, case_block in stmt.cases.items():
                 pattern = stmt.enum_patterns.get(case_value)
                 param_names = None if pattern else _enum_case_params(case_block, switch_value_expr)
-                case_str = (
-                    _enum_pattern_to_haxe(pattern, code)
+                case_str = ", ".join(
+                    _enum_pattern_to_haxe(stmt.enum_patterns[value], code)
                     if pattern
-                    else _case_value_to_haxe(case_value, enum_type, code, ir_function, param_names)
+                    else _case_value_to_haxe(value, enum_type, code, ir_function, param_names)
+                    for value in stmt.case_values(case_value)
                 )
                 output_lines.append(f"{indent}    case {case_str}:")
                 case_statements = case_block.statements[len(param_names) if param_names else 0 :]

@@ -826,7 +826,12 @@ class IREnumPattern(IRStatement):
 
 
 class IRSwitch(IRStatement):
-    """Switch statement"""
+    """Switch statement.
+
+    `cases` holds one body per case, keyed by that case's first value. Further values that
+    share the body (`case a, b:`) live in `case_aliases` under the same key, so passes that
+    walk case bodies see each one exactly once.
+    """
 
     def __init__(
         self,
@@ -834,13 +839,19 @@ class IRSwitch(IRStatement):
         value: IRExpression,
         cases: Dict[IRConst, IRBlock],
         default: IRBlock,
+        case_aliases: Optional[Dict[IRConst, List[IRConst]]] = None,
     ):
         super().__init__(code)
         self.value = value
         self.cases = cases
         self.default = default
+        self.case_aliases: Dict[IRConst, List[IRConst]] = case_aliases if case_aliases is not None else {}
         # Proven constructor patterns, separate from ordinary constant case keys.
         self.enum_patterns: Dict[IRConst, IREnumPattern] = {}
+
+    def case_values(self, key: IRConst) -> List[IRConst]:
+        """Every value that selects the body stored under `key`, in source order."""
+        return [key, *self.case_aliases.get(key, ())]
 
     def get_children(self) -> List[IRStatement]:
         return [self.value, self.default, *self.cases.values(), *self.enum_patterns.values()]
@@ -848,7 +859,8 @@ class IRSwitch(IRStatement):
     def __repr__(self) -> str:
         cases = ""
         for case, block in self.cases.items():
-            cases += f"\n\t{case}: {block}"
+            values = ", ".join(str(value) for value in self.case_values(case))
+            cases += f"\n\t{values}: {block}"
         cases += f"\n\tdefault: {self.default}"
         return f"<IRSwitch: {self.value}{cases}>"
 
