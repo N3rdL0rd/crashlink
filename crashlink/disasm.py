@@ -175,7 +175,8 @@ def describe_type(code: Bytecode, index: int) -> str:
             lines.append("  (none)")
 
     elif isinstance(defn, Enum):
-        lines.append(f"global: g@{defn._global.value}")
+        # Stored as the global index plus one; 0 means none.
+        lines.append(f"global: g@{defn._global.value - 1}" if defn._global.value > 0 else "global: none")
         lines.append("")
         lines.append(f"Constructs ({defn.nconstructs.value}):")
         if defn.constructs:
