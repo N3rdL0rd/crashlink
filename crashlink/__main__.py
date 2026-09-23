@@ -1006,8 +1006,17 @@ def primary(
     return decorator
 
 
+def _colour_output() -> bool:
+    """Whether to colour stdout: only for a terminal, and never with NO_COLOR set
+    (https://no-color.org), so redirected or piped output stays plain text."""
+    return sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+
+
 def _emit_haxe(res: str) -> None:
-    """Print Haxe pseudocode, syntax-highlighted when pygments is available."""
+    """Print Haxe pseudocode, syntax-highlighted for a terminal when pygments is available."""
+    if not _colour_output():
+        print(res)
+        return
     try:
         from pygments import highlight
         from pygments.lexers import HaxeLexer  # ty: ignore[unresolved-import]
@@ -1400,8 +1409,8 @@ class Commands(BaseCommands):
             return
         for func in self.code.functions:
             if func.findex.value == index:
-                ir = decomp.IRFunction(self.code, func)
-                ir.print()
+                text = decomp.IRFunction(self.code, func).block.pprint()
+                print(text if _colour_output() else decomp._strip_ansi(text))
                 return
         print("Function not found.")
 
@@ -2905,19 +2914,7 @@ class Commands(BaseCommands):
             res = ir_class.pseudo(max_classes=None if with_deps else 1)
 
             print("\n")
-
-            try:
-                from pygments import highlight
-                from pygments.lexers import HaxeLexer  # ty: ignore[unresolved-import]
-                from pygments.formatters import Terminal256Formatter  # ty: ignore[unresolved-import]
-
-                lexer = HaxeLexer()
-                formatter = Terminal256Formatter(style="dracula")
-                highlighted_output = highlight(res, lexer, formatter)
-                print(highlighted_output)
-            except ImportError:
-                print("[warning] pygments not found.")
-                print(res)
+            _emit_haxe(res)
         except IndexError:
             print(f"Type t@{index} not found.")
         except Exception as e:

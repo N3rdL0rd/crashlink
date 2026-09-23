@@ -112,7 +112,10 @@ class _ThreadRoutedStream:
             self._original.flush()
 
     def isatty(self) -> bool:
-        return False
+        # A command's output goes to the log, which renders its colour codes.
+        if threading.get_ident() in self._sinks:
+            return True
+        return self._original.isatty()
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._original, name)
