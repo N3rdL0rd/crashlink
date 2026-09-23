@@ -222,3 +222,22 @@ def test_newer_database_request_wins_when_old_load_finishes_last(window, monkeyp
         assert window._code.annotations.get_rename(0, 0, None) == "new.cldb"
     finally:
         release.set()
+
+
+def test_export_menu_actions_reach_their_handlers(window, monkeypatch):
+    # The exporter is only referenced by its menu actions' bound methods; it must stay alive.
+    import gc
+
+    from crashlink.gui.features import exports
+
+    window._code = Bytecode.from_path("tests/haxe/Arithmetic.hl")
+    asked = []
+    monkeypatch.setattr(
+        exports.QFileDialog, "getSaveFileName", lambda *args, **kwargs: asked.append(args[1]) or ("", "")
+    )
+    gc.collect()
+    for action in window.menu("File/Export").actions():
+        if action.text() in ("Save Bytecode As…", "Transpile to C (HL/C)…"):
+            action.trigger()
+    assert asked == ["Save Bytecode As", "Transpile to C"]
+

@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QObject, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 
@@ -33,10 +33,12 @@ def _write_text(path: str, text: str) -> str:
     return path
 
 
-class _Exporter:
-    """Shared plumbing: dialogs, background run, completion message."""
+class _Exporter(QObject):
+    """Shared plumbing: dialogs, background run, completion message. Parented to the
+    window: the menu actions only hold its bound methods, which don't keep it alive."""
 
     def __init__(self, mw: "MainWindow") -> None:
+        super().__init__(mw)
         self.mw = mw
 
     def _code(self, needs_bytecode: bool = True) -> Optional[Bytecode]:
