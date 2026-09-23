@@ -2834,7 +2834,15 @@ class Bytecode(Serialisable):
                 for name, kind in opcodes[opcode_name].items():
                     operand = df[name]
                     if kind == "Reg":
-                        if opcode_name != "EndTrap" and not 0 <= operand.value < nregs:
+                        if opcode_name == "Asm":
+                            # Asm's reg is the VM register plus one; 0 means none.
+                            if not 0 <= operand.value <= nregs:
+                                index(
+                                    operand.value,
+                                    nregs + 1,
+                                    f"f@{function.findex.value} Asm register at op {pc}",
+                                )
+                        elif opcode_name != "EndTrap" and not 0 <= operand.value < nregs:
                             index(operand.value, nregs, f"f@{function.findex.value} register at op {pc}")
                     elif kind == "Regs":
                         for reg in operand.value:
