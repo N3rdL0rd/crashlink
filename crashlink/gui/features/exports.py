@@ -1,4 +1,4 @@
-"""File > Export: write the (possibly edited) bytecode back out, and run the CLI's
+"""File > Export: write the (possibly edited) bytecode back out (as bytecode or .hlasm), and run the CLI's
 generators (HL/C, stubs, API docs, MkDocs, shaders, self-contained classes).
 Each export runs in the background and logs the output path when done."""
 
@@ -96,6 +96,19 @@ class _Exporter(QObject):
             return path
 
         self._run("Serialising bytecode…", work, "Bytecode saved")
+
+    def save_hlasm(self) -> None:
+        code = self._code()
+        if code is None:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self.mw, "Save as .hlasm", f"{self._base()}.hlasm", "crashlink assembly (*.hlasm);;All files (*)"
+        )
+        if not path:
+            return
+        from ...asm import to_hlasm
+
+        self._run("Writing .hlasm…", lambda: _write_text(path, to_hlasm(code)), ".hlasm written")
 
     def transpile_c(self) -> None:
         code = self._code()
@@ -242,6 +255,7 @@ def install(mw: "MainWindow") -> None:
     exporter = _Exporter(mw)
     menu = mw.menu("File/Export")
     menu.addAction("Save Bytecode As…", exporter.save_bytecode)
+    menu.addAction("Save as .hlasm…", exporter.save_hlasm)
     menu.addAction("Transpile to C (HL/C)…", exporter.transpile_c)
     menu.addSeparator()
     menu.addAction("Class With Dependencies…", exporter.class_with_deps)

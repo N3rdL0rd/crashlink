@@ -1,5 +1,5 @@
 """QUndoCommands for every mutation the GUI (and its !<cmd> CLI bridge) can make to a
-Bytecode's AnnotationStore or string pool — the edit buffer is just a QUndoStack of these."""
+Bytecode's AnnotationStore, string pool or functions; the edit buffer is just a QUndoStack of these."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Callable, Optional
 
 from PySide6.QtGui import QUndoCommand
 
+from ..asm import FunctionEdit
 from ..core import Bytecode
 
 # Called after any command's redo/undo applies, with the findex that needs
@@ -105,3 +106,21 @@ class SetStringCommand(QUndoCommand):
     def undo(self) -> None:
         self._code.strings.value[self._index] = self._old_value
         self._on_applied(None)
+
+
+class ReplaceFunctionCommand(QUndoCommand):
+    """Swaps in a function assembled from edited .hlasm (see crashlink.asm.edit_function)."""
+
+    def __init__(self, code: Bytecode, edit: FunctionEdit, on_applied: ApplyCallback) -> None:
+        super().__init__(f"Edit f@{edit.new.findex.value}")
+        self._code = code
+        self._edit = edit
+        self._on_applied = on_applied
+
+    def redo(self) -> None:
+        self._edit.apply(self._code)
+        self._on_applied(self._edit.new.findex.value)
+
+    def undo(self) -> None:
+        self._edit.revert(self._code)
+        self._on_applied(self._edit.new.findex.value)

@@ -12,7 +12,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from crashlink.core import Bytecode
+from crashlink.core import Bytecode, Function
 from crashlink.database import DatabaseLoadResult
 from crashlink.gui import main_window as gui
 
@@ -237,7 +237,23 @@ def test_export_menu_actions_reach_their_handlers(window, monkeypatch):
     )
     gc.collect()
     for action in window.menu("File/Export").actions():
-        if action.text() in ("Save Bytecode As…", "Transpile to C (HL/C)…"):
+        if action.text() in ("Save Bytecode As…", "Save as .hlasm…"):
             action.trigger()
-    assert asked == ["Save Bytecode As", "Transpile to C"]
+    assert asked == ["Save Bytecode As", "Save as .hlasm"]
 
+
+def test_function_edit_is_undoable(window):
+    from crashlink.asm import edit_function, function_to_hlasm
+
+    code = Bytecode.from_path("tests/haxe/Clazz.hl")
+    window._code = code
+    original = code.serialise()
+    func = code.fn(370)
+    assert isinstance(func, Function)
+    text = function_to_hlasm(code, func).replace('String reg3, "Clazz"', 'String reg3, "Edited"')
+    window.apply_function_edit(edit_function(code, text, findex=370))
+    assert "Edited" in code.strings.value
+    window._undo_stack.undo()
+    assert code.serialise() == original
+    window._undo_stack.redo()
+    assert "Edited" in code.strings.value

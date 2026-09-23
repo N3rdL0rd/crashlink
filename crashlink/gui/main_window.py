@@ -77,6 +77,7 @@ from PySide6.QtWidgets import (
 from crashlink.core import AnalysisWorker, AnnotationStore, Bytecode, Function, Native, destaticify
 
 if TYPE_CHECKING:
+    from crashlink.asm import FunctionEdit
     from crashlink.dehlc.emit import EmitContext
     from crashlink.dehlc.lift import FunctionLifter
 from crashlink.database import (
@@ -90,7 +91,7 @@ from crashlink.globals import VERSION, set_dbg_callback
 from crashlink.pseudo import _method_registry, class_field_lines, pseudo_oplines
 
 from .themes import DEFAULT_THEME, THEMES, Theme, generate_qss
-from .undo import CommentCommand, RenameCommand, SetStringCommand
+from .undo import CommentCommand, RenameCommand, ReplaceFunctionCommand, SetStringCommand
 from .widgets.cfg_view import CfgView
 from .widgets.class_view import ClassView
 from .widgets.function_list import FunctionList, NavigatorData
@@ -2421,6 +2422,12 @@ class MainWindow(QMainWindow):
         old_value = self._code.strings.value[index]
         cmd = SetStringCommand(self._code, index, old_value, new_value, self._on_annotation_applied)
         self._undo_stack.push(cmd)
+
+    def apply_function_edit(self, edit: "FunctionEdit") -> None:
+        """Swap in an edited function (from crashlink.asm.edit_function), undoably."""
+        if self._code is None:
+            return
+        self._undo_stack.push(ReplaceFunctionCommand(self._code, edit, self._on_annotation_applied))
 
     def _on_annotation_applied(self, findex: Optional[int]) -> None:
         """Shared undo/redo callback for rename and comment commands."""

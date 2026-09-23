@@ -71,6 +71,9 @@ _DISASM_RULES: List[_Rule] = [
 class DisasmHighlighter(DecompHighlighter):
     """Tokenizes HashLink disassembly: opcode names, register/global/type refs, operands."""
 
+    #: Highlighting rules, applied in order (subclasses swap in their own).
+    RULES: List[_Rule] = _DISASM_RULES
+
     def _formats(self, fmt: Callable[..., QTextCharFormat], theme: Theme) -> Dict[str, QTextCharFormat]:
         return {
             "index": fmt(theme.subtext),
@@ -94,7 +97,7 @@ class DisasmHighlighter(DecompHighlighter):
         # skipped - a raw string preview (`"..." (str #N)`) can contain any
         # byte a real comment/number/keyword rule would otherwise latch onto.
         string_spans: List[Tuple[int, int]] = []
-        for rule in _DISASM_RULES:
+        for rule in self.RULES:
             for m in rule.rx.finditer(text):
                 fmt = self._fmts.get(rule.fmt_attr)
                 if fmt is None:
