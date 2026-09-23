@@ -3118,6 +3118,14 @@ class Bytecode(Serialisable):
         """
         return self.get_proto_map().get(idx)
 
+    def get_proto_owner(self, idx: int) -> Optional[Obj]:
+        """
+        Gets the class that declares the proto for a standalone function index.
+        """
+        self.get_proto_map()
+        assert self._proto_owner_map is not None
+        return self._proto_owner_map.get(idx)
+
     def proto_by_pindex(self, obj: "Obj", pindex: int) -> Optional[Proto]:
         """
         Resolves a method proto by its virtual-table index (``pindex``) across a
