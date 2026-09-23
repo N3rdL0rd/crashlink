@@ -1000,11 +1000,24 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
       is not redefined.
     """
 
-    def __init__(self, function: "IRFunction", aggressive: bool = False, past_kills: bool = False):
+    def __init__(
+        self,
+        function: "IRFunction",
+        aggressive: bool = False,
+        past_kills: bool = False,
+        move_into_reads: bool = False,
+    ):
         super().__init__(function)
         self.aggressive = aggressive
         # past_kills: a later redefinition bounds the substitution range instead of blocking inlining
         self.past_kills = past_kills
+        # move_into_reads: also move a call into a single read position of the next statement
+        # (`_movable_read_position_ok`: a return, condition, switch value, receiver chain, ...).
+        # Off for the instances that run before the pattern optimizers that undo HashLink's
+        # lowering, which expect such calls to still sit in their own `temp = call(...)`
+        # statements; e.g. `return []` for an `Array<Dynamic>` otherwise loses its
+        # `ArrayDyn.alloc` wrapper match.
+        self.move_into_reads = move_into_reads
 
         # --- NEW: Pre-calculate the set of all user-named variables ---
         self._user_variable_names: Set[str] = set()
@@ -2022,7 +2035,10 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                             and i + 1 < len(statements)
                             and (
                                 self._call_move_ok(statements[i + 1], temp_local)
-                                or self._movable_read_position_ok(statements[i + 1], temp_local)
+                                or (
+                                    self.move_into_reads
+                                    and self._movable_read_position_ok(statements[i + 1], temp_local)
+                                )
                             )
                         ):
                             new_statements.append(current_stmt)
