@@ -1867,7 +1867,7 @@ class Commands(BaseCommands):
 
             print(f"--- Overview for class {class_name} (t@{index}) ---")
 
-            if obj_def.super and obj_def.super.value is not None:
+            if obj_def.super is not None and obj_def.super.value >= 0:
                 try:
                     super_name = disasm.type_name(self.code, obj_def.super.resolve(self.code))
                     print(f"Inherits from: {super_name}")
