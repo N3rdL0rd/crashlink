@@ -7,8 +7,16 @@ authors = [
 description = "Just another HashLink decompiler/disassembler."
 readme = "README.md"
 requires-python = ">=3.10"
+keywords = ["hashlink", "haxe", "decompiler", "disassembler", "reverse-engineering", "bytecode"]
 classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Operating System :: OS Independent",
   "Topic :: Software Development :: Disassemblers",
   "Topic :: Software Development :: Libraries :: Python Modules",
@@ -16,6 +24,13 @@ classifiers = [
 ]
 license = "MIT"
 dependencies = []
+
+[project.urls]
+Homepage = "https://n3rdl0rd.github.io/crashlink/"
+Documentation = "https://n3rdl0rd.github.io/crashlink/getting-started"
+Repository = "https://github.com/N3rdL0rd/crashlink"
+Issues = "https://github.com/N3rdL0rd/crashlink/issues"
+Changelog = "https://github.com/N3rdL0rd/crashlink/releases"
 
 [project.optional-dependencies]
 ci = [
