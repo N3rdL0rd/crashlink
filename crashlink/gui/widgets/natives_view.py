@@ -61,6 +61,7 @@ class NativesView(QWidget):
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.verticalHeader().setVisible(False)
+        self._table.verticalHeader().setDefaultSectionSize(self.fontMetrics().height() + 8)
         self._table.setSortingEnabled(True)
         self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self._table.itemActivated.connect(self._on_activated)
@@ -95,8 +96,31 @@ class NativesView(QWidget):
             findex_item.setData(Qt.ItemDataRole.UserRole, findex)
 
         self._table.setSortingEnabled(True)
-        self._table.resizeColumnsToContents()
+        self._table.sortItems(0, Qt.SortOrder.AscendingOrder)
+        # Size every column from all rows' text (Qt samples only laid-out rows),
+        # capping Name so Signature keeps the remaining width.
+        metrics = self._table.fontMetrics()
+        padding = 32
+        for col in (0, 1, 2, 4):
+            texts = [_COLUMNS[col]] + [
+                item.text() for row in range(self._table.rowCount()) if (item := self._table.item(row, col))
+            ]
+            width = max(metrics.horizontalAdvance(t) for t in texts) + padding
+            if col == 2:
+                width = min(width, max(160, int(self.width() * 0.4)))
+            self._table.setColumnWidth(col, width)
         self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+
+    def select_native(self, findex: int) -> None:
+        """Select and scroll to the native with `findex`."""
+        for row in range(self._table.rowCount()):
+            item = self._table.item(row, 0)
+            if item is not None and item.data(Qt.ItemDataRole.UserRole) == findex:
+                if self._table.isRowHidden(row):
+                    self._search.clear()
+                self._table.selectRow(row)
+                self._table.scrollToItem(item, QAbstractItemView.ScrollHint.PositionAtCenter)
+                return
 
     def _apply_filter(self, query: str) -> None:
         query = query.lower()

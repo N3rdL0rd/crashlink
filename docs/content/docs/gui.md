@@ -21,29 +21,35 @@ Launch it with:
 crashlink gui [file]
 ```
 
-The optional `file` argument opens a `.hl`/`.dat` bytecode file immediately on startup; otherwise you get an empty window and can open one from the File menu. If `PySide6` isn't installed, `crashlink gui` prints the install hint above and exits rather than throwing an import error.
+The optional `file` argument opens a `.hl`/`.dat` bytecode file immediately on startup; otherwise you get a welcome page with your recent files, and can open one from the File menu, with Ctrl+O, or by dropping it onto the window. If `PySide6` isn't installed, `crashlink gui` prints the install hint above and exits rather than throwing an import error.
 
 ## Layout
 
 The main window is a `QMainWindow` with a set of dockable panels arranged around a central tabbed area of open functions/classes. Docks can be dragged, resized, or closed like any Qt dock widget. The panels are:
 
-- **Navigator** (left dock): the function list, with a package tree, a file tree, and flat search results, built on top of `disasm.py`'s naming. This is the primary way to find a function or class to open.
-- **Log** (bottom dock): timestamped, coloured output for GUI events (errors, load progress, decompile failures), plus an embedded Python REPL for poking at the loaded `Bytecode` object directly.
+- **Navigator** (left dock): the function list, with a package tree, a file tree, and flat search results (matching function and class names), built on top of `disasm.py`'s naming. Constructors are listed as `new`.
+- **Log** (bottom dock): timestamped, coloured output for GUI events (errors, load progress, decompile failures), plus an embedded Python REPL for poking at the loaded `Bytecode` object directly. `!<cmd>` runs a crashlink CLI command in the background and streams its output in; the interactive commands (`repl`, `patch`, `exit`, `cfg`) are refused. The decompiler's internal debug messages only appear when **View › Decompiler Debug Output** is on.
 - **Edit History**: an undo/redo view (`QUndoView`) over renames, comments, and string edits made in the session.
-- **CFG** (right dock): the control-flow-graph viewer for the function currently in focus, rendered via Graphviz.
+- **CFG** (right dock, Space toggles it): the control-flow graph of the function in focus, rendered by Graphviz on a background thread. Large graphs open legible at the entry block; click a block to jump to its first opcode, and the block holding the opcode under the disassembly cursor is outlined. `0` fits the graph, `1` resets to 100%.
 
-Opening a function or class from the Navigator adds a tab in the central area showing a **sync view**.
+Opening a function or class from the Navigator adds a tab in the central area showing a **sync view**. Long-running work (loading, decompiling, exports) is shown in the status bar.
 
 ## The sync view
 
-Each open function/class tab is a `SyncView` pairing a disassembly pane and a decompiled pseudocode pane. It has three display modes, cycled with Tab: **Split** (both panes side by side), **Disassembly** only, and **Decompiled** only.
+Each open function/class tab is a `SyncView` pairing a disassembly pane and a decompiled pseudocode pane. It has three display modes, cycled with Tab: **Split** (both panes side by side), **Disassembly** only, and **Decompiled** only. The class pane starts with the class's field declarations, then the constructor, then the other methods.
 
 The two panes are line-synchronized: crashlink tracks, per function, which opcode each disassembly line and each pseudocode line corresponds to, so moving the cursor in one pane can be traced back to the same logical position in the other rather than the two views scrolling independently. Both panes also do syntax highlighting matched to the active editor theme.
 
-Related panels that key off the function/class currently open in a sync view:
+In the disassembly, call targets show their name (`f@439 h2d.Scene.over`), constant-string globals show their value, and the source location column only prints when it changes. Hovering an opcode name shows what the opcode does and its operands; hovering `f@`, `g@`, `t@` or `regN` shows the function signature, global value, type layout or register type. In the pseudocode, hovering a called method shows its signature.
 
-- **Locals panel**: the current function's locals, with inline rename support.
-- **xref resolution**: placing the cursor on a function, type, field, enum construct, or string reference and triggering an xref lookup pops up a list of every site that references it, grouped by target, with jump-to-source on Enter.
+Keys in a sync view (IDA-style; **Help › Keyboard Shortcuts** lists everything):
+
+- **Double-click / Enter**: follow the function, type, global or local under the cursor.
+- **Esc / Alt+Left** and **Ctrl+Enter / Alt+Right**: back and forward through your jumps.
+- **G**: jump to a function by index (`f@123`) or name, with completion.
+- **X**: cross-references to the word under the cursor, listed by site with the code at each one.
+- **N**: rename a local; **/**: comment an opcode.
+- **Ctrl+F**: find in the pane, with a match count.
 
 ## Other browsers
 

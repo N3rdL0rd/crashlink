@@ -118,7 +118,7 @@ def test_stale_progress_index_and_decompile_signals_do_not_touch_new_document(wi
     window._on_index_finished(1)
     window._on_index_error(1, "Old index failure")
     window._on_decompile_error((1, 1), "same-class", 0, "Old failure")
-    window._on_decompile_finished((1, 1), "same-class", 0, object())
+    window._on_decompile_finished((1, 1), "same-class", 0, object(), ("", {}))
     assert window._status_label.text() == "Current document"
     assert window._class_results["same-class"][0] == "current pseudocode"
     assert window._active_decompiles == 1
@@ -143,7 +143,7 @@ def test_database_load_does_not_mutate_live_annotations_before_acceptance(window
         assert entered.wait(5)
         old_thread = window._db_load_thread
         # Editing while the database is loading supersedes its annotation snapshot.
-        window._apply_rename(0, 0, None, "user edit")
+        window.apply_rename(0, 0, None, "user edit")
         release.set()
         _pump_until(lambda: old_thread not in window._threads)
         assert code.annotations.get_rename(0, 0, None) == "user edit"

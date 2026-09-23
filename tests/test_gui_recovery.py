@@ -101,7 +101,7 @@ def test_native_decompile_and_cfg_do_not_claim_faithful_analysis(native_window, 
     def reject_job(*args, **kwargs):
         pytest.fail("Native recovery must not enter the bytecode decompiler")
 
-    monkeypatch.setattr(gui, "_DecompRunnable", reject_job)
+    monkeypatch.setattr(gui, "_DecompJob", reject_job)
     window._start_decompile("recovered", 0)
     assert window._active_decompiles == 0
     window.show()

@@ -50,6 +50,11 @@ def main() -> None:
     app.setApplicationName("crashlink")
     app.setOrganizationName("N3rdL0rd")
     app.setCursorFlashTime(0)  # static cursor, no blinking
+    # PySide releases the GIL around most Qt calls, and taking it back from a busy
+    # analysis thread waits up to the switch interval (5 ms by default). The UI
+    # makes thousands of such calls, so a short interval is what keeps it responsive
+    # during decompiles. It only matters while two threads want the GIL.
+    sys.setswitchinterval(0.0001)
 
     win = MainWindow()
     _install_excepthook(win)

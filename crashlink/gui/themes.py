@@ -66,16 +66,34 @@ QMainWindow, QDialog, QWidget {{
     font-size: 13px;
 }}
 
-/* ── Wait box (busy indicator) ──────────────────────────── */
-QDialog#waitBox {{
-    background-color: {t.surface1};
-    border: 2px solid {t.accent};
+/* ── Find bar (Ctrl+F) ──────────────────────────────────── */
+QFrame#findBar {{
+    background-color: {t.mantle};
+    border-top: 1px solid {t.surface0};
 }}
-QDialog#waitBox QLabel {{
-    background: transparent;
-    color: {t.accent};
+QLabel#findCount {{ color: {t.subtext}; }}
+QLabel#findCount[empty="true"] {{ color: {t.red}; }}
+
+/* ── Status-bar activity indicator ─────────────────────── */
+QLabel#busyLabel {{ color: {t.accent}; padding-right: 4px; }}
+
+/* ── Welcome page ───────────────────────────────────────── */
+QWidget#welcomePage {{ background-color: {t.base}; }}
+QLabel#welcomeTitle {{ color: {t.text}; font-size: 32px; font-weight: 700; }}
+QLabel#welcomeSection {{ color: {t.subtext}; font-weight: 600; }}
+QPushButton#welcomeOpen {{
+    background-color: {t.accent};
+    color: {t.base};
+    border: none;
+    border-radius: 6px;
+    padding: 8px 18px;
     font-weight: 600;
 }}
+QPushButton#welcomeOpen:hover {{ background-color: {t.mauve}; }}
+QListWidget#welcomeRecent {{ background-color: {t.mantle}; border: 1px solid {t.surface0}; border-radius: 6px; }}
+
+/* ── Dialog validation text ────────────────────────────── */
+QLabel#dialogError {{ color: {t.red}; }}
 
 /* ── Menu bar ───────────────────────────────────────────── */
 QMenuBar {{

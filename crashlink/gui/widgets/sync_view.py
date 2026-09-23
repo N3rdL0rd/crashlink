@@ -28,7 +28,8 @@ class SyncView(QWidget):
     """
 
     cycle_requested = Signal()
-    comment_requested = Signal(int, int)  # findex, op_idx — from either pane, via ';'
+    comment_requested = Signal(int, int)  # findex, op_idx, from either pane via '/'
+    follow_requested = Signal(int, str)  # findex, word, on double-click / Enter in either pane
 
     def __init__(self, opline_cache: Dict[int, Dict[int, int]], parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -52,6 +53,10 @@ class SyncView(QWidget):
         self.class_view.installEventFilter(self)
         self.class_view.cursorPositionChanged.connect(self._drive_from_pseudo)
         self.disasm_view.cursorPositionChanged.connect(self._drive_from_disasm)
+        self.class_view.follow_requested.connect(self.follow_requested)
+        self.disasm_view.follow_requested.connect(self.follow_requested)
+        self.class_view.comment_menu_requested.connect(lambda: self._request_comment(self.class_view))
+        self.disasm_view.comment_menu_requested.connect(lambda: self._request_comment(self.disasm_view))
 
         self._apply_mode()
 
@@ -61,12 +66,22 @@ class SyncView(QWidget):
         self.disasm_view.set_theme(theme)
         self.class_view.set_theme(theme)
 
-    def load_pseudo(self, display_name: str, methods: List[Tuple[int, str]]) -> None:
-        self.class_view.load_methods(display_name, methods)
+    def load_pseudo(
+        self, display_name: str, methods: List[Tuple[int, str]], fields: Optional[List[str]] = None
+    ) -> None:
+        self.class_view.load_methods(display_name, methods, fields)
         self._rev_cache.clear()
+
+    def update_method(self, findex: int, text: str) -> None:
+        """Replace one method's pseudocode (e.g. when its decompile finishes)."""
+        self.class_view.replace_method(findex, text)
+        self._rev_cache.pop(findex, None)
 
     def load_disasm(self, code: Bytecode, methods: List[Tuple[int, "Function | Native"]]) -> None:
         self.disasm_view.load(code, methods)
+        refs = self.disasm_view.ref_info
+        if refs is not None:
+            self.class_view.set_ref_info(refs)
 
     # ── Navigation (delegates to pseudo; sync engine mirrors disasm) ────────────
 

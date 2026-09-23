@@ -65,6 +65,7 @@ class TypesView(QWidget):
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.verticalHeader().setVisible(False)
+        self._table.verticalHeader().setDefaultSectionSize(self.fontMetrics().height() + 8)
         self._table.setSortingEnabled(True)
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
@@ -76,7 +77,9 @@ class TypesView(QWidget):
         font.setFamily("monospace")
         self._detail.setFont(font)
         splitter.addWidget(self._detail)
-        splitter.setSizes([300, 300])
+        splitter.setStretchFactor(0, 7)
+        splitter.setStretchFactor(1, 3)
+        splitter.setSizes([700, 300])
 
         layout.addWidget(splitter)
 
@@ -99,8 +102,28 @@ class TypesView(QWidget):
             self._table.setItem(index, 2, QTableWidgetItem(summary))
 
         self._table.setSortingEnabled(True)
-        self._table.resizeColumnsToContents()
+        self._table.sortItems(0, Qt.SortOrder.AscendingOrder)
+        # Size Index/Kind from every row's text, not just the rows currently laid out.
+        metrics = self._table.fontMetrics()
+        kinds = {type(t.definition).__name__ for t in code.types}
+        padding = 32
+        self._table.setColumnWidth(0, metrics.horizontalAdvance(str(len(code.types))) + padding)
+        self._table.setColumnWidth(
+            1, max((metrics.horizontalAdvance(k) for k in kinds), default=40) + padding
+        )
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+
+    def select_type(self, tindex: int) -> None:
+        """Select and scroll to `tindex`, clearing a filter that would hide it."""
+        for row in range(self._table.rowCount()):
+            item = self._table.item(row, 0)
+            if item is not None and item.data(Qt.ItemDataRole.DisplayRole) == str(tindex):
+                if self._table.isRowHidden(row):
+                    self._search.clear()
+                self._table.selectRow(row)
+                self._table.scrollToItem(item, QAbstractItemView.ScrollHint.PositionAtCenter)
+                self._table.setFocus()
+                return
 
     def _apply_filter(self, query: str) -> None:
         query = query.lower()

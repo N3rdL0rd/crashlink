@@ -22,6 +22,7 @@ from ...core import (
     Abstract,
     Bytecode,
     Enum,
+    Function,
     Obj,
     SourceKind,
     XRef,
@@ -38,6 +39,7 @@ class XrefSite:
     opcode_index: Optional[int]  # opcode within the source function, if known
     body_line: Optional[int]  # body-relative pseudocode line, for locals (resolved directly)
     ref_kind: str  # human label for the kind of reference
+    snippet: Optional[str] = None  # one-line code at the site; derived from the opcode when None
 
 
 @dataclass
@@ -60,7 +62,7 @@ def _func_label(code: Bytecode, findex: int) -> str:
         return f"f@{findex}"
 
 
-def _site_from_ref(code: Bytecode, ref: XRef) -> XrefSite:
+def site_from_ref(code: Bytecode, ref: XRef) -> XrefSite:
     if ref.source_kind == SourceKind.FUNCTION:
         label = _func_label(code, ref.source_index)
         findex: Optional[int] = ref.source_index
@@ -102,7 +104,7 @@ def resolve_targets(code: Bytecode, word: str) -> List[XrefGroup]:
                 XrefGroup(
                     label=f"function {_func_label(code, findex)}",
                     kind="function",
-                    sites=[_site_from_ref(code, r) for r in callers],
+                    sites=[site_from_ref(code, r) for r in callers],
                 )
             )
         return groups
@@ -123,7 +125,7 @@ def resolve_targets(code: Bytecode, word: str) -> List[XrefGroup]:
                 XrefGroup(
                     label=f"global g@{gindex} ({type_label})",
                     kind="global",
-                    sites=[_site_from_ref(code, r) for r in refs],
+                    sites=[site_from_ref(code, r) for r in refs],
                 )
             )
         return groups
@@ -140,7 +142,7 @@ def resolve_targets(code: Bytecode, word: str) -> List[XrefGroup]:
             XrefGroup(
                 label=f"function {_func_label(code, findex)}",
                 kind="function",
-                sites=[_site_from_ref(code, r) for r in callers],
+                sites=[site_from_ref(code, r) for r in callers],
             )
         )
 
@@ -158,7 +160,7 @@ def resolve_targets(code: Bytecode, word: str) -> List[XrefGroup]:
                     XrefGroup(
                         label=f"type {disasm.type_name(code, t)}",
                         kind="type",
-                        sites=[_site_from_ref(code, r) for r in refs],
+                        sites=[site_from_ref(code, r) for r in refs],
                     )
                 )
 
@@ -175,7 +177,7 @@ def resolve_targets(code: Bytecode, word: str) -> List[XrefGroup]:
                     XrefGroup(
                         label=f"field {disasm.type_name(code, t)}.{fname}",
                         kind="field",
-                        sites=[_site_from_ref(code, r) for r in refs],
+                        sites=[site_from_ref(code, r) for r in refs],
                     )
                 )
 
@@ -192,7 +194,7 @@ def resolve_targets(code: Bytecode, word: str) -> List[XrefGroup]:
                     XrefGroup(
                         label=f"enum {disasm.type_name(code, t)}.{cname}",
                         kind="enum",
-                        sites=[_site_from_ref(code, r) for r in refs],
+                        sites=[site_from_ref(code, r) for r in refs],
                     )
                 )
 
@@ -208,7 +210,7 @@ def resolve_targets(code: Bytecode, word: str) -> List[XrefGroup]:
                 XrefGroup(
                     label=f"string {s!r}",
                     kind="string",
-                    sites=[_site_from_ref(code, r) for r in refs],
+                    sites=[site_from_ref(code, r) for r in refs],
                 )
             )
 
@@ -233,6 +235,9 @@ def _ref_summary(group: XrefGroup) -> str:
     return f"{n}"
 
 
+# Sites past this many get no code snippet line.
+_SNIPPET_LIMIT = 400
+
 _KIND_COLOR = {
     "function": "pink",
     "type": "teal",
@@ -245,7 +250,10 @@ _KIND_COLOR = {
 
 
 class XrefPopup(QFrame):
-    """Frameless popup of xref sites. Esc dismisses, Enter jumps, arrows move."""
+    """Frameless popup of xref sites. Esc dismisses, Enter jumps, arrows move.
+
+    Each site shows `f@N Class.method  op K  kind` with the code at that site on a
+    second, dimmed line, so several references from one function stay distinguishable."""
 
     # (findex, opcode_index_or_-1, body_line_or_-1)
     navigate_requested = Signal(int, int, int)
@@ -253,6 +261,7 @@ class XrefPopup(QFrame):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent, Qt.WindowType.Popup)
         self._theme: Optional[Theme] = None
+        self._code: Optional[Bytecode] = None
         self.setFrameShape(QFrame.Shape.StyledPanel)
 
         layout = QVBoxLayout(self)
@@ -267,12 +276,19 @@ class XrefPopup(QFrame):
         layout.addWidget(self._title)
 
         self._list = QListWidget()
-        self._list.setUniformItemSizes(True)
+        self._list.setUniformItemSizes(False)
+        self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._list.setTextElideMode(Qt.TextElideMode.ElideRight)
         self._list.itemActivated.connect(self._on_item_activated)
+        self._list.itemClicked.connect(self._on_item_activated)
         self._list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         layout.addWidget(self._list)
 
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def set_code(self, code: Optional[Bytecode]) -> None:
+        """Document used to label sites and render their code snippets."""
+        self._code = code
 
     def set_theme(self, theme: Theme) -> None:
         self._theme = theme
@@ -280,19 +296,49 @@ class XrefPopup(QFrame):
             f"QFrame {{ background: {theme.mantle}; border: 1px solid {theme.overlay}; }}"
             f"QLabel#panelHeader {{ color: {theme.subtext}; padding: 4px 6px; }}"
             f"QListWidget {{ background: {theme.mantle}; border: none; padding: 2px; }}"
-            f"QListWidget::item:selected {{ background: {theme.accent}; color: {theme.base}; }}"
+            f"QListWidget::item {{ padding: 2px 4px; }}"
+            f"QListWidget::item:selected {{ background: {theme.surface1}; color: {theme.text}; }}"
         )
+
+    def _site_label(self, site: XrefSite) -> str:
+        if site.source_findex is None or self._code is None:
+            return site.source_label
+        fn = self._code.get_findex_map().get(site.source_findex)
+        name = None
+        if isinstance(fn, Function):
+            try:
+                name = self._code.full_func_name(fn)
+            except Exception:
+                name = None
+        return f"f@{site.source_findex}  {name}" if name else site.source_label
+
+    def _site_snippet(self, site: XrefSite) -> Optional[str]:
+        if site.snippet is not None:
+            return site.snippet
+        if site.source_findex is None or site.opcode_index is None or self._code is None:
+            return None
+        fn = self._code.get_findex_map().get(site.source_findex)
+        if not isinstance(fn, Function) or not 0 <= site.opcode_index < len(fn.ops):
+            return None
+        try:
+            row = disasm.fmt_op_compact(self._code, fn.regs, fn.ops[site.opcode_index], site.opcode_index)
+        except Exception:
+            return None
+        return row.split(". ", 1)[-1].strip()
 
     def show_results(self, word: str, groups: List[XrefGroup], at: QPoint) -> None:
         self._list.clear()
         t = self._theme
 
         total = sum(len(g.sites) for g in groups)
-        self._title.setText(f"Xrefs for '{word}' — {total} site(s)")
+        self._title.setText(f"Xrefs for '{word}': {total} site(s)")
 
         bold = QFont()
         bold.setBold(True)
+        metrics = self._list.fontMetrics()
+        widest = metrics.horizontalAdvance(self._title.text())
 
+        shown_sites = 0
         for group in groups:
             head = QListWidgetItem(f"{group.label}  ({_ref_summary(group)})")
             head.setFlags(Qt.ItemFlag.NoItemFlags)
@@ -300,23 +346,31 @@ class XrefPopup(QFrame):
             if t:
                 head.setForeground(QBrush(QColor(getattr(t, _KIND_COLOR.get(group.kind, "text"), t.text))))
             self._list.addItem(head)
+            widest = max(widest, metrics.horizontalAdvance(head.text()))
 
             for site in group.sites:
                 if site.body_line is not None:
-                    loc = f"line {site.body_line}"
+                    loc = f"line {site.body_line + 1}"
                 elif site.opcode_index is not None:
-                    loc = f"op@{site.opcode_index}"
+                    loc = f"op {site.opcode_index}"
                 else:
                     loc = ""
-                text = f"    {site.source_label}   {site.ref_kind}  {loc}".rstrip()
+                first = f"  {self._site_label(site)}    {loc}  {site.ref_kind}".rstrip()
+                # Snippets are rendered per site; past a few hundred they cost more than
+                # they help (a busy field can have thousands of sites).
+                snippet = self._site_snippet(site) if shown_sites < _SNIPPET_LIMIT else None
+                shown_sites += 1
+                text = f"{first}\n      {snippet}" if snippet else first
                 item = QListWidgetItem(text)
                 if t:
-                    item.setForeground(QBrush(QColor(t.subtext)))
+                    item.setForeground(QBrush(QColor(t.text)))
+                item.setToolTip(text)
                 findex = site.source_findex if site.source_findex is not None else -1
                 op = site.opcode_index if site.opcode_index is not None else -1
                 line = site.body_line if site.body_line is not None else -1
                 item.setData(Qt.ItemDataRole.UserRole, (findex, op, line))
                 self._list.addItem(item)
+                widest = max(widest, *(metrics.horizontalAdvance(part) for part in text.split("\n")))
 
         if total == 0:
             empty = QListWidgetItem(f"no xrefs for '{word}'")
@@ -325,8 +379,20 @@ class XrefPopup(QFrame):
                 empty.setForeground(QBrush(QColor(t.overlay)))
             self._list.addItem(empty)
 
-        self.adjustSize()
-        self.resize(max(self.width(), 360), min(self.sizeHint().height(), 480))
+        # As wide as the content, between 520 px and 70% of the window.
+        parent = self.parentWidget()
+        max_width = int(parent.window().width() * 0.7) if parent is not None else 900
+        width = max(520, min(widest + 48, max_width))
+        rows_height = sum(self._list.sizeHintForRow(row) for row in range(self._list.count()))
+        height = min(rows_height + self._title.sizeHint().height() + 12, 520)
+        self.resize(width, max(height, 120))
+        # Keep the popup on screen.
+        screen = self.screen().availableGeometry() if self.screen() is not None else None
+        if screen is not None:
+            at = QPoint(
+                max(screen.left(), min(at.x(), screen.right() - self.width())),
+                max(screen.top(), min(at.y(), screen.bottom() - self.height())),
+            )
         self.move(at)
         self.show()
         self._select_first()

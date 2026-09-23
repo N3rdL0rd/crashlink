@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from copy import copy, deepcopy
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
+import gc
 import os
 import re
-from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator, List, Optional, Set, Tuple, cast
 
 from PySide6.QtCore import (
+    QEvent,
     QRect,
     QRunnable,
     QSettings,
@@ -20,24 +24,47 @@ from PySide6.QtCore import (
     QObject,
     QSize,
 )
-from PySide6.QtGui import QCloseEvent, QColor, QPainter, QPaintEvent, QTextCursor, QTextDocument, QUndoStack
+from PySide6.QtGui import (
+    QAction,
+    QCloseEvent,
+    QColor,
+    QDragEnterEvent,
+    QDropEvent,
+    QKeyEvent,
+    QKeySequence,
+    QPainter,
+    QPaintEvent,
+    QTextCursor,
+    QTextDocument,
+    QUndoStack,
+)
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QButtonGroup,
+    QCompleter,
     QDialog,
+    QDialogButtonBox,
     QDockWidget,
     QFileDialog,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QInputDialog,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QStackedWidget,
     QStatusBar,
     QTabBar,
+    QTableWidget,
+    QTableWidgetItem,
     QTabWidget,
     QToolButton,
     QUndoView,
@@ -56,15 +83,15 @@ from crashlink.database import (
     load_database,
     save_database,
 )
-from crashlink.decomp.function import IRFunction
+from crashlink.decomp.function import IRFunction, _cached_enum_global_map
 from crashlink.globals import VERSION, set_dbg_callback
-from crashlink.pseudo import pseudo_oplines, _method_registry
+from crashlink.pseudo import _method_registry, class_field_lines, pseudo_oplines
 
 from .themes import DEFAULT_THEME, THEMES, Theme, generate_qss
 from .undo import CommentCommand, RenameCommand, SetStringCommand
 from .widgets.cfg_view import CfgView
 from .widgets.class_view import ClassView
-from .widgets.function_list import FunctionList
+from .widgets.function_list import FunctionList, NavigatorData
 from .widgets.log_panel import LogPanel
 from .widgets.natives_view import NativesView
 from .widgets.sync_view import DISASM, PSEUDO, SPLIT, SyncView
@@ -81,7 +108,29 @@ from .widgets.xref_panel import (
 # View mode cycling: Tab steps through split → disassembly → decompiled → …
 _VIEW_MODE_CYCLE = [SPLIT, DISASM, PSEUDO]
 _VIEW_MODE_NAMES = {SPLIT: "Split", DISASM: "Disassembly", PSEUDO: "Decompiled"}
-_VIEW_MODE_GLYPHS = {SPLIT: "◧", DISASM: "⚙", PSEUDO: "{ }"}
+_VIEW_MODE_GLYPHS = {SPLIT: "◧", DISASM: "≡", PSEUDO: "{ }"}
+
+# Top-level menus, in menu-bar order; `MainWindow.menu()` creates them on demand.
+_MENU_ORDER = ("File", "Edit", "View", "Jump", "Search", "Tools", "Window", "Help")
+
+# Navigation history depth (Esc / Ctrl+Enter).
+_HISTORY_LIMIT = 200
+
+# Keys handled inside the code views themselves, listed in the shortcuts dialog
+# alongside every menu action's shortcut.
+_IN_VIEW_KEYS = [
+    ("Double-click / Enter", "Follow the function, type or global under the cursor"),
+    ("Hover", "Show docs for opcodes and details for f@ / g@ / t@ references"),
+    ("N", "Rename the local under the cursor (pseudocode pane)"),
+    ("X", "Show cross-references for the word under the cursor"),
+    ("/", "Add/edit a comment on the opcode under the cursor"),
+    ("Tab", "Cycle split / disassembly / decompiled view"),
+    ("Up / Down", "REPL command history (when the REPL input is focused)"),
+    ("Click (CFG)", "Jump to the clicked block"),
+    ("0 / 1 (CFG)", "Fit the whole graph / zoom to 100%"),
+    ("Enter / X (tables)", "Cross-references for the selected string or global"),
+    ("F2 (Strings)", "Edit the selected string"),
+]
 
 
 def _looks_like_native_image(path: str) -> bool:
@@ -98,9 +147,26 @@ def _looks_like_native_image(path: str) -> bool:
 # ── Async helpers ─────────────────────────────────────────────────────────────
 
 
+@contextmanager
+def _bulk_build() -> Iterator[None]:
+    """Pause the cyclic GC while building a large, long-lived structure (the loaded
+    document, its indices), then freeze the result. Otherwise the GC walks those
+    millions of new objects once per generation as they age, each pass holding the
+    GIL for up to a second and freezing the UI; frozen, later passes skip them.
+    `_load_file` unfreezes before the next document loads."""
+    was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        yield
+    finally:
+        gc.freeze()
+        if was_enabled:
+            gc.enable()
+
+
 class _LoadSignals(QObject):
     progress = Signal(int, float, str)
-    finished = Signal(int, object)
+    finished = Signal(int, object, object)  # generation, Bytecode, NavigatorData
     error = Signal(int, str)
 
 
@@ -119,8 +185,12 @@ class _LoadThread(QThread):
                     raise InterruptedError("Document load cancelled")
                 self.signals.progress.emit(self.generation, frac, status)
 
-            code = Bytecode.from_path(self.path, progress_cb=_cb)
-            self.signals.finished.emit(self.generation, code)
+            with _bulk_build():
+                code = Bytecode.from_path(self.path, progress_cb=_cb)
+                # Navigator data is pure Python work over every function. Build it
+                # here so the UI thread only creates the tree items.
+                nav_data = FunctionList.prepare(code)
+            self.signals.finished.emit(self.generation, code, nav_data)
         except Exception as e:
             self.signals.error.emit(self.generation, str(e))
 
@@ -137,8 +207,10 @@ class _DehlcLoadThread(_LoadThread):
                     raise InterruptedError("Document load cancelled")
                 self.signals.progress.emit(self.generation, -1.0, f"de-HL/C: {status}")
 
-            code = code_from_bin(path=self.path, verbose=False, progress_cb=_cb)
-            self.signals.finished.emit(self.generation, code)
+            with _bulk_build():
+                code = code_from_bin(path=self.path, verbose=False, progress_cb=_cb)
+                nav_data = FunctionList.prepare(code)
+            self.signals.finished.emit(self.generation, code, nav_data)
         except ImportError:
             self.signals.error.emit(
                 self.generation,
@@ -175,28 +247,44 @@ class _DbLoadThread(QThread):
             self.signals.error.emit(self.token, str(e))
 
 
-class _DecompSignals(QObject):
-    finished = Signal(object, str, int, object)  # token, class_key, findex, IRFunction
+class _DecompJob(QObject):
+    """One decompile request. The IR comes from the shared AnalysisWorker; its
+    pseudocode is rendered on `render_pool` too, so the UI thread only inserts text.
+    No thread sits blocked waiting on the future."""
+
+    # token, class_key, findex, IRFunction, (pseudo text, {op index: body line})
+    finished = Signal(object, str, int, object, object)
     error = Signal(object, str, int, str)
 
-
-class _DecompRunnable(QRunnable):
-    def __init__(
-        self, worker: AnalysisWorker, code: Bytecode, class_key: str, findex: int, token: tuple
-    ) -> None:
+    def __init__(self, class_key: str, findex: int, token: tuple) -> None:
         super().__init__()
-        self._future = worker.decompile(code, findex)
-        self._class_key = class_key
-        self._findex = findex
-        self._token = token
-        self.signals = _DecompSignals()
+        self.class_key = class_key
+        self.findex = findex
+        self.token = token
 
-    def run(self) -> None:
+    def start(self, worker: AnalysisWorker, code: Bytecode, render_pool: ThreadPoolExecutor) -> None:
+        future = worker.decompile(code, self.findex)
+        # The callback may run on the decompile thread or, for a cached result,
+        # right here; either way the rendering itself goes to render_pool.
+        future.add_done_callback(lambda done: self._queue_render(render_pool, done))
+
+    def _queue_render(self, render_pool: ThreadPoolExecutor, future: "Future[Any]") -> None:
         try:
-            ir = self._future.result()
-            self.signals.finished.emit(self._token, self._class_key, self._findex, ir)
+            render_pool.submit(self._render, future)
+        except RuntimeError:
+            pass  # window closing: the render pool is shut down and nobody wants the result
+
+    def _render(self, future: "Future[Any]") -> None:
+        try:
+            ir = future.result()
+        except BaseException as e:  # includes CancelledError
+            self.error.emit(self.token, self.class_key, self.findex, str(e) or type(e).__name__)
+            return
+        try:
+            rendered: Tuple[str, Dict[int, int]] = pseudo_oplines(ir)
         except Exception as e:
-            self.signals.error.emit(self._token, self._class_key, self._findex, str(e))
+            rendered = (f"class ? {{\n    // f@{self.findex} error: {e}\n}}", {})
+        self.finished.emit(self.token, self.class_key, self.findex, ir, rendered)
 
 
 class _IndexBuildSignals(QObject):
@@ -211,6 +299,7 @@ class _IndexBuildThread(QThread):
         super().__init__()
         self.generation = generation
         self.signals = _IndexBuildSignals()
+        self._code = code
         self._future = worker.build_indices(code, self._progress)
 
     def _progress(self, _frac: float, _status: str) -> None:
@@ -219,7 +308,12 @@ class _IndexBuildThread(QThread):
 
     def run(self) -> None:
         try:
-            self._future.result()
+            with _bulk_build():
+                self._future.result()
+                if not self._code.inspection_only and not self.isInterruptionRequested():
+                    # The first decompile would otherwise pay this whole-image scan
+                    # (~1 s on large games) while the user waits for the tab.
+                    _cached_enum_global_map(self._code)
             self.signals.finished.emit(self.generation)
         except Exception as e:
             self.signals.error.emit(self.generation, str(e))
@@ -254,128 +348,333 @@ class _TabBar(QTabBar):
             p.end()
 
 
-class _WaitBox(QDialog):
-    """A small popup with a native titlebar reading "Please wait…" and the
-    current action as its body — styled distinctly (see QDialog#waitBox in
-    themes.py) so it doesn't blend into the rest of the app's background."""
-
-    def __init__(self, parent: Optional[QWidget]) -> None:
-        super().__init__(parent)
-        self.setObjectName("waitBox")
-        self.setWindowTitle("Please wait…")
-        self.setWindowFlags(
-            Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowTitleHint
-        )
-        self.setModal(False)  # informational only — never block input to the app
-        self.setFixedSize(280, 70)
-
-        layout = QVBoxLayout(self)
-        self._label = QLabel()
-        self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self._label)
-
-    def set_action(self, action: str) -> None:
-        self._label.setText(action)
-
-    def show(self) -> None:
-        super().show()
-        parent = self.parentWidget()
-        if parent is not None:
-            parent_center = parent.geometry().center()
-            self.move(parent_center - self.frameGeometry().center())
-
-
 class _BusyIndicator:
-    """Shows a `_WaitBox` only if an operation is still running after `delay_ms`
-    (default 2s) — quick operations never flash a dialog at all."""
+    """Status-bar activity indicator: a label plus a thin indeterminate bar, shown
+    only once an operation has run for `delay_ms` so quick ones never flash.
 
-    def __init__(self, parent: QWidget, delay_ms: int = 2000) -> None:
-        self._parent = parent
-        self._delay_ms = delay_ms
-        self._box: Optional[_WaitBox] = None
+    Jobs are keyed so independent work (document load, decompiles, background
+    tasks) can overlap; the most recently started job's label is shown."""
+
+    def __init__(self, parent: QWidget, label: QLabel, bar: QProgressBar, delay_ms: int = 300) -> None:
+        self._label = label
+        self._bar = bar
+        self._jobs: Dict[object, str] = {}
         self._timer = QTimer(parent)
         self._timer.setSingleShot(True)
+        self._timer.setInterval(delay_ms)
         self._timer.timeout.connect(self._reveal)
-        self._pending_action = ""
 
-    def start(self, action: str) -> None:
-        self._pending_action = action
-        if self._box is not None and self._box.isVisible():
-            self._box.set_action(action)
-        else:
-            self._timer.start(self._delay_ms)
+    def start(self, action: str, key: object = "main") -> None:
+        self._jobs.pop(key, None)
+        self._jobs[key] = action
+        if self._label.isVisible():
+            self._label.setText(action)
+        elif not self._timer.isActive():
+            self._timer.start()
 
-    def stop(self) -> None:
+    def stop(self, key: object = "main") -> None:
+        self._jobs.pop(key, None)
+        if self._jobs:
+            self._label.setText(next(reversed(self._jobs.values())))
+            return
         self._timer.stop()
-        if self._box is not None:
-            self._box.hide()
+        self._label.hide()
+        self._bar.hide()
+
+    def stop_all(self) -> None:
+        self._jobs.clear()
+        self.stop()
 
     def _reveal(self) -> None:
-        if self._box is None:
-            self._box = _WaitBox(self._parent)
-        self._box.set_action(self._pending_action)
-        self._box.show()
+        if not self._jobs:
+            return
+        self._label.setText(next(reversed(self._jobs.values())))
+        self._label.show()
+        self._bar.setRange(0, 0)
+        self._bar.show()
 
 
-class _FindDialog(QDialog):
-    """A small non-modal find bar for whichever disasm/pseudocode pane is
-    active — kept as one persistent instance and re-targeted on every Ctrl+F
-    rather than rebuilt, so it remembers the last search term."""
+class _FindBar(QFrame):
+    """Inline find bar docked under the code tabs (Ctrl+F). Searches the pane it
+    was opened on, reports `n of m`, wraps around, and closes on Esc."""
 
-    def __init__(self, parent: Optional[QWidget]) -> None:
+    closed = Signal()
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Find")
-        self.setModal(False)
+        self.setObjectName("findBar")
         self._target: Optional[QPlainTextEdit] = None
 
-        layout = QHBoxLayout(self)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(8, 4, 8, 4)
+        row.setSpacing(6)
+        row.addWidget(QLabel("Find"))
         self._input = QLineEdit()
-        self._input.returnPressed.connect(self._find_next)
-        layout.addWidget(self._input, 1)
-        next_btn = QPushButton("Next")
-        next_btn.clicked.connect(self._find_next)
-        layout.addWidget(next_btn)
-        prev_btn = QPushButton("Previous")
-        prev_btn.clicked.connect(self._find_prev)
-        layout.addWidget(prev_btn)
-        self.resize(380, 60)
+        self._input.setPlaceholderText("Search this pane…")
+        self._input.setClearButtonEnabled(True)
+        self._input.textChanged.connect(self._on_text_changed)
+        self._input.installEventFilter(self)
+        row.addWidget(self._input, 1)
+        self._count = QLabel("")
+        self._count.setObjectName("findCount")
+        self._count.setMinimumWidth(90)
+        row.addWidget(self._count)
+        self._case = QToolButton()
+        self._case.setText("Aa")
+        self._case.setCheckable(True)
+        self._case.setToolTip("Match case")
+        self._case.toggled.connect(lambda _: self._on_text_changed(self._input.text()))
+        row.addWidget(self._case)
+        prev_btn = QToolButton()
+        prev_btn.setText("↑")
+        prev_btn.setToolTip("Previous match (Shift+Enter)")
+        prev_btn.clicked.connect(self.find_prev)
+        row.addWidget(prev_btn)
+        next_btn = QToolButton()
+        next_btn.setText("↓")
+        next_btn.setToolTip("Next match (Enter)")
+        next_btn.clicked.connect(self.find_next)
+        row.addWidget(next_btn)
+        close_btn = QToolButton()
+        close_btn.setText("×")
+        close_btn.setToolTip("Close (Esc)")
+        close_btn.clicked.connect(self.close_bar)
+        row.addWidget(close_btn)
+        self.hide()
 
-    def set_target(self, target: QPlainTextEdit) -> None:
+    def open_on(self, target: QPlainTextEdit) -> None:
         self._target = target
+        selected = target.textCursor().selectedText()
+        if selected and "\u2029" not in selected:
+            self._input.setText(selected)
+        self.show()
         self._input.setFocus()
         self._input.selectAll()
+        self._update_count()
 
-    def _find_next(self) -> None:
-        self._find(QTextDocument.FindFlag(0))
+    def close_bar(self) -> None:
+        self.hide()
+        if self._target is not None:
+            self._target.setFocus()
+        self.closed.emit()
 
-    def _find_prev(self) -> None:
-        self._find(QTextDocument.FindFlag.FindBackward)
+    def find_next(self) -> None:
+        self._find(backward=False)
 
-    def _find(self, flags: "QTextDocument.FindFlag") -> None:
+    def find_prev(self) -> None:
+        self._find(backward=True)
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        if obj is self._input and event.type() == QEvent.Type.KeyPress:
+            key_event = cast(QKeyEvent, event)
+            if key_event.key() == Qt.Key.Key_Escape:
+                self.close_bar()
+                return True
+            if key_event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                self._find(backward=bool(key_event.modifiers() & Qt.KeyboardModifier.ShiftModifier))
+                return True
+        return super().eventFilter(obj, event)
+
+    def _flags(self, backward: bool = False) -> QTextDocument.FindFlag:
+        flags = QTextDocument.FindFlag(0)
+        if self._case.isChecked():
+            flags |= QTextDocument.FindFlag.FindCaseSensitively
+        if backward:
+            flags |= QTextDocument.FindFlag.FindBackward
+        return flags
+
+    def _on_text_changed(self, _text: str) -> None:
+        # Search-as-you-type from the start of the current selection.
+        if self._target is not None and self._input.text():
+            cursor = self._target.textCursor()
+            cursor.setPosition(cursor.selectionStart())
+            self._target.setTextCursor(cursor)
+            self._find(backward=False)
+        else:
+            self._update_count()
+
+    def _find(self, backward: bool) -> None:
         text = self._input.text()
         if self._target is None or not text:
             return
-        found = self._target.find(text, flags)
-        if found:
+        flags = self._flags(backward)
+        if not self._target.find(text, flags):
+            # No match from the current position: wrap around and retry once.
+            cursor = self._target.textCursor()
+            cursor.movePosition(
+                QTextCursor.MoveOperation.End if backward else QTextCursor.MoveOperation.Start
+            )
+            self._target.setTextCursor(cursor)
+            self._target.find(text, flags)
+        self._update_count()
+
+    def _update_count(self) -> None:
+        text = self._input.text()
+        if self._target is None or not text:
+            self._count.setText("")
             return
-        # No match from the current position — wrap around and retry once.
-        cursor = self._target.textCursor()
-        backward = bool(flags & QTextDocument.FindFlag.FindBackward)
-        cursor.movePosition(QTextCursor.MoveOperation.End if backward else QTextCursor.MoveOperation.Start)
-        self._target.setTextCursor(cursor)
-        self._target.find(text, flags)
+        doc = self._target.document()
+        flags = self._flags()
+        current = self._target.textCursor().selectionStart()
+        total = index = 0
+        cursor = doc.find(text, 0, flags)
+        while not cursor.isNull():
+            total += 1
+            if cursor.selectionStart() == current:
+                index = total
+            cursor = doc.find(text, cursor, flags)
+        self._count.setText("No matches" if total == 0 else f"{index or '?'} of {total}")
+        self._count.setProperty("empty", total == 0)
+        self._count.style().unpolish(self._count)
+        self._count.style().polish(self._count)
+
+
+class _WelcomePage(QWidget):
+    """Shown in place of the tab area when no tabs are open: how to open a file,
+    plus the recent-files list."""
+
+    open_requested = Signal()
+    recent_requested = Signal(str)
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("welcomePage")
+        outer = QVBoxLayout(self)
+        outer.addStretch(2)
+        column = QVBoxLayout()
+        column.setSpacing(10)
+        title = QLabel("crashlink")
+        title.setObjectName("welcomeTitle")
+        column.addWidget(title)
+        open_btn = QPushButton("Open file…  (Ctrl+O)")
+        open_btn.setObjectName("welcomeOpen")
+        open_btn.clicked.connect(self.open_requested)
+        column.addWidget(open_btn, 0, Qt.AlignmentFlag.AlignLeft)
+        self._recent_title = QLabel("Recent files")
+        self._recent_title.setObjectName("welcomeSection")
+        column.addSpacing(12)
+        column.addWidget(self._recent_title)
+        self._recent = QListWidget()
+        self._recent.setObjectName("welcomeRecent")
+        self._recent.setMaximumWidth(720)
+        self._recent.setMaximumHeight(260)
+        # Double-click (or Enter) opens: itemActivated fires on a single click under
+        # some desktop styles, which makes it too easy to open a file by accident.
+        self._recent.itemDoubleClicked.connect(self._open_item)
+        self._recent.installEventFilter(self)
+        column.addWidget(self._recent)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addLayout(column, 3)
+        row.addStretch(1)
+        outer.addLayout(row)
+        outer.addStretch(3)
+
+    def _open_item(self, item: QListWidgetItem) -> None:
+        self.recent_requested.emit(item.data(Qt.ItemDataRole.UserRole))
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        if obj is self._recent and event.type() == QEvent.Type.KeyPress:
+            if cast(QKeyEvent, event).key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                item = self._recent.currentItem()
+                if item is not None:
+                    self._open_item(item)
+                return True
+        return super().eventFilter(obj, event)
+
+    def set_recent(self, paths: List[str]) -> None:
+        self._recent.clear()
+        for path in paths:
+            item = QListWidgetItem(f"{os.path.basename(path)}    {os.path.dirname(path)}")
+            item.setData(Qt.ItemDataRole.UserRole, path)
+            item.setToolTip(path)
+            self._recent.addItem(item)
+        self._recent_title.setVisible(bool(paths))
+        self._recent.setVisible(bool(paths))
+
+
+class _JumpDialog(QDialog):
+    """IDA-style "Jump to" (G): accepts `f@N`, a bare findex, or a function name
+    (with completion over every function)."""
+
+    def __init__(self, parent: QWidget, names: List[str], resolve: Callable[[str], "int | str"]) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Jump to function")
+        self.setMinimumWidth(520)
+        self._resolve = resolve
+        self.findex: Optional[int] = None
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Function index (f@123 or 123) or name:"))
+        self.input = QLineEdit()
+        completer = QCompleter(names, self)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setMaxVisibleItems(15)
+        self.input.setCompleter(completer)
+        layout.addWidget(self.input)
+        self.error = QLabel("")
+        self.error.setObjectName("dialogError")
+        layout.addWidget(self.error)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def accept(self) -> None:
+        result = self._resolve(self.input.text().strip())
+        if isinstance(result, str):
+            self.error.setText(result)
+            return
+        self.findex = result
+        super().accept()
+
+
+class _BackgroundSignals(QObject):
+    done = Signal(object, object)  # token, result
+    failed = Signal(object, str)  # token, message
+
+
+class _BackgroundRunnable(QRunnable):
+    """Runs one `MainWindow.run_background` job on the shared thread pool."""
+
+    def __init__(self, token: object, fn: Callable[[], Any]) -> None:
+        super().__init__()
+        self._token = token
+        self._fn = fn
+        self.signals = _BackgroundSignals()
+
+    def run(self) -> None:
+        try:
+            result = self._fn()
+        except Exception as e:
+            self.signals.failed.emit(self._token, f"{type(e).__name__}: {e}")
+            return
+        self.signals.done.emit(self._token, result)
 
 
 class MainWindow(QMainWindow):
+    #: Bytecode once a load is accepted; None when a new load starts or the document closes.
+    code_loaded = Signal(object)
+    #: Theme after every theme change (and once at startup).
+    theme_changed = Signal(object)
+    #: findex whenever the focused function changes.
+    function_focused = Signal(int)
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("crashlink")
         self.resize(1400, 900)
 
         self._code: Optional[Bytecode] = None
-        self._worker = AnalysisWorker(max_workers=4)
-        self._decomp_pool = QThreadPool(self)
-        self._decomp_pool.setMaxThreadCount(4)
+        # Two threads: the post-load index build and a decompile. Analysis is pure
+        # Python, so more would add no throughput, only GIL contention for the UI.
+        self._worker = AnalysisWorker(max_workers=2)
+        # Pseudocode for finished decompiles is rendered here, one at a time, so the
+        # UI thread never runs the renderer. Jobs stay referenced until they report.
+        self._render_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="crashlink-render")
+        self._decomp_jobs: Dict[tuple, _DecompJob] = {}
         self._generation = 0
         self._closing = False
         self._threads: Set[QThread] = set()
@@ -407,6 +706,8 @@ class MainWindow(QMainWindow):
         self._class_results: Dict[str, Dict[int, Optional[str]]] = {}
         # class_key → canonical class display name
         self._class_names: Dict[str, str] = {}
+        # class_key → field declaration lines shown at the top of the class tab
+        self._class_fields: Dict[str, List[str]] = {}
         # findex → IRFunction
         self._ir_cache: Dict[int, object] = {}
         # findex → {opcode_index: body-relative pseudocode line}
@@ -430,18 +731,38 @@ class MainWindow(QMainWindow):
         # so closing/opening another file can prompt instead of discarding silently.
         self._dirty = False
         self._recent_files: List[str] = []
-        self._find_dialog: Optional[_FindDialog] = None
         self._undo_stack = QUndoStack(self)
         self._undo_stack.cleanChanged.connect(self._on_undo_clean_changed)
         self._undo_stack.indexChanged.connect(self._on_edit_index_changed)
+        # Navigation history for Esc (back) / Ctrl+Enter (forward): (findex, op_idx).
+        self._back_stack: List[Tuple[int, Optional[int]]] = []
+        self._forward_stack: List[Tuple[int, Optional[int]]] = []
+        # Function names for the Jump dialog: display name -> findex (built per document).
+        self._jump_names: Dict[str, int] = {}
+        # Generic tabs opened through `open_tab` (key -> widget).
+        self._generic_tabs: Dict[str, QWidget] = {}
+        self._menus: Dict[str, QMenu] = {}
+        # `run_background` bookkeeping: token -> (generation, on_done, on_error).
+        self._bg_request = 0
+        self._bg_jobs: Dict[int, Tuple[int, Callable[[Any], None], Optional[Callable[[str], None]]]] = {}
+        # Separate from the decompile pool so a long export never starves decompiles.
+        self._bg_pool = QThreadPool(self)
+        self._bg_pool.setMaxThreadCount(2)
+        # Token prefix ("g@", ...) -> handler for double-click follow; see add_follow_handler.
+        self._follow_handlers: Dict[str, Callable[[int], None]] = {}
 
         self._build_ui()
         self._build_menu()
+        self._busy = _BusyIndicator(self, self._busy_label, self._busy_bar)
         self._apply_theme(self._theme)
-        set_dbg_callback(self._log_panel.info)
         self._log_panel.set_context(mw=self, code=None)
-        self._busy = _BusyIndicator(self)
+
+        file_menu = self.menu("File")
+        file_menu.addSeparator()
+        file_menu.addAction(self._quit_action)
         self._restore_settings()
+        # Lets the features installed above pick up the starting theme.
+        self.theme_changed.emit(self._theme)
 
     # ── Settings (window geometry/layout/theme/view mode) ───────────────────────
 
@@ -453,7 +774,12 @@ class MainWindow(QMainWindow):
         state = settings.value("window/state")
         if state is not None:
             self.restoreState(state)
+        else:
+            # First run: keep the log compact so the code area gets the height.
+            self.resizeDocks([self._log_dock], [150], Qt.Orientation.Vertical)
 
+        debug_output = settings.value("window/debug_output", False)
+        self._debug_output_action.setChecked(debug_output in (True, "true", "1"))
         theme_name = settings.value("window/theme")
         if isinstance(theme_name, str) and theme_name in THEMES:
             self._apply_theme(THEMES[theme_name])
@@ -479,6 +805,7 @@ class MainWindow(QMainWindow):
         settings.setValue("window/state", self.saveState())
         settings.setValue("window/theme", self._theme.name)
         settings.setValue("window/view_mode", self._view_mode)
+        settings.setValue("window/debug_output", self._debug_output_action.isChecked())
         settings.setValue("recent_files", self._recent_files)
 
     def _update_window_title(self) -> None:
@@ -573,14 +900,28 @@ class MainWindow(QMainWindow):
         self.menuBar().setCornerWidget(corner, Qt.Corner.TopRightCorner)
         self._update_view_mode_label()
 
-        # ── Central: tab widget ───────────────────────────────
+        # ── Central: welcome page / tab widget, with the find bar below ──────
         self._tab_bar = _TabBar()
         self._tabs = QTabWidget()
         self._tabs.setTabBar(self._tab_bar)
         self._tabs.setTabsClosable(False)
         self._tabs.setMovable(True)
         self._tabs.setDocumentMode(True)
-        self.setCentralWidget(self._tabs)
+        self._welcome = _WelcomePage()
+        self._welcome.open_requested.connect(self._open_file)
+        self._welcome.recent_requested.connect(self._open_recent)
+        self._central_stack = QStackedWidget()
+        self._central_stack.addWidget(self._welcome)
+        self._central_stack.addWidget(self._tabs)
+        self._find_bar = _FindBar()
+        central = QWidget()
+        central_layout = QVBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+        central_layout.addWidget(self._central_stack, 1)
+        central_layout.addWidget(self._find_bar)
+        self.setCentralWidget(central)
+        self.setAcceptDrops(True)
 
         # ── Dock options: allow nested + tabbed docking ───────
         self.setDockOptions(
@@ -637,29 +978,44 @@ class MainWindow(QMainWindow):
         self._progress_bar.setFixedHeight(6)
         self._progress_bar.setRange(0, 100)
         self._progress_bar.setVisible(False)
+        self._busy_label = QLabel("")
+        self._busy_label.setObjectName("busyLabel")
+        self._busy_label.hide()
+        self._busy_bar = QProgressBar()
+        self._busy_bar.setObjectName("busyBar")
+        self._busy_bar.setFixedWidth(120)
+        self._busy_bar.setFixedHeight(6)
+        self._busy_bar.setTextVisible(False)
+        self._busy_bar.hide()
         self._status_bar.addWidget(self._status_label)
+        self._status_bar.addPermanentWidget(self._busy_label)
+        self._status_bar.addPermanentWidget(self._busy_bar)
         self._status_bar.addPermanentWidget(self._progress_bar)
 
         # ── Signals ───────────────────────────────────────────
-        self._func_list.function_selected.connect(self._on_function_selected)
+        self._func_list.function_selected.connect(self.navigate_to)
         self._tabs.currentChanged.connect(self._on_tab_changed)
+        self._tab_bar.tabMoved.connect(lambda *_: self._rebuild_tab_map())
+        self._cfg_view.op_activated.connect(self.navigate_to)
 
     def _build_menu(self) -> None:
-        mb = self.menuBar()
-        fm = mb.addMenu("File")
-        fm.addAction("Open…", self._open_file, "Ctrl+O")
+        fm = self.menu("File")
+        fm.addAction("Open…", QKeySequence("Ctrl+O"), self._open_file)
         self._recent_menu = fm.addMenu("Open Recent")
         self._rebuild_recent_menu()
         fm.addSeparator()
-        fm.addAction("Save Database", self._save_database, "Ctrl+S")
+        fm.addAction("Save Database", QKeySequence("Ctrl+S"), self._save_database)
         fm.addAction("Load Database…", self._open_database_file)
         fm.addSeparator()
-        fm.addAction("Export Disassembly…", self._export_disasm)
-        fm.addAction("Export Pseudocode…", self._export_pseudo)
-        fm.addSeparator()
-        fm.addAction("Quit", self.close, "Ctrl+Q")
+        export_menu = self.menu("File/Export")
+        export_menu.addAction("Disassembly of Current Tab…", self._export_disasm)
+        export_menu.addAction("Pseudocode of Current Tab…", self._export_pseudo)
+        export_menu.addSeparator()
+        self._quit_action = QAction("Quit", self)
+        self._quit_action.setShortcut(QKeySequence("Ctrl+Q"))
+        self._quit_action.triggered.connect(self.close)
 
-        em = mb.addMenu("Edit")
+        em = self.menu("Edit")
         undo_action = self._undo_stack.createUndoAction(self, "Undo")
         undo_action.setShortcut("Ctrl+Z")
         redo_action = self._undo_stack.createRedoAction(self, "Redo")
@@ -667,27 +1023,348 @@ class MainWindow(QMainWindow):
         em.addAction(undo_action)
         em.addAction(redo_action)
 
-        vm = mb.addMenu("View")
+        vm = self.menu("View")
         tm = vm.addMenu("Theme")
         for name in THEMES:
             tm.addAction(name, lambda n=name: self._apply_theme(THEMES[n]))
         vm.addSeparator()
-        vm.addAction("Cycle view\tTab", self._cycle_view_mode)
-        vm.addSeparator()
-        vm.addAction("Find…\tCtrl+F", self._open_find)
+        vm.addAction("Cycle View\tTab", self._cycle_view_mode)
+        self._debug_output_action = vm.addAction("Decompiler Debug Output")
+        self._debug_output_action.setCheckable(True)
+        self._debug_output_action.setToolTip("Stream the decompiler's internal debug messages into the Log")
+        self._debug_output_action.toggled.connect(self._set_debug_output)
 
-        wm = mb.addMenu("Window")
+        # Single-key, IDA-style navigation keys only fire while the code area has
+        # focus, so typing in line edits (REPL, filters, the find bar) is unaffected.
+        jm = self.menu("Jump")
+        self._back_action = self._central_action("Back", ["Esc", "Alt+Left"], self.navigate_back)
+        self._forward_action = self._central_action(
+            "Forward", ["Ctrl+Return", "Alt+Right"], self.navigate_forward
+        )
+        self._jump_action = self._central_action("Jump to Function…", ["G"], self._open_jump_dialog)
+        jm.addAction(self._back_action)
+        jm.addAction(self._forward_action)
+        jm.addSeparator()
+        jm.addAction(self._jump_action)
+        self._update_history_actions()
+
+        sm = self.menu("Search")
+        find_action = QAction("Find in Pane…", self)
+        find_action.setShortcut(QKeySequence("Ctrl+F"))
+        find_action.triggered.connect(self._open_find)
+        sm.addAction(find_action)
+        sm.addSeparator()
+
+        wm = self.menu("Window")
         wm.addAction(self._nav_dock.toggleViewAction())
         wm.addAction(self._log_dock.toggleViewAction())
-        wm.addAction(self._cfg_dock.toggleViewAction())
+        cfg_toggle = self._cfg_dock.toggleViewAction()
+        wm.addAction(cfg_toggle)
+        self._cfg_space_action = self._central_action("Toggle CFG", ["Space"], self._toggle_cfg_dock)
+        wm.addAction(self._cfg_space_action)
         wm.addAction(self._history_dock.toggleViewAction())
         wm.addSection("Views")
         wm.addAction("Natives", self._open_natives_tab)
         wm.addAction("Types", self._open_types_tab)
 
-        hm = mb.addMenu("Help")
+        hm = self.menu("Help")
         hm.addAction("Keyboard Shortcuts…", self._show_shortcuts)
         hm.addAction("About crashlink…", self._show_about)
+
+    def _central_action(self, text: str, keys: List[str], slot: Callable[[], None]) -> QAction:
+        """A QAction whose shortcut is live only while the central code area has focus."""
+        action = QAction(text, self)
+        action.setShortcuts([QKeySequence(k) for k in keys])
+        action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        action.triggered.connect(slot)
+        self._central_stack.addAction(action)
+        return action
+
+    def _toggle_cfg_dock(self) -> None:
+        self._cfg_dock.setVisible(not self._cfg_dock.isVisible())
+
+    def _set_debug_output(self, enabled: bool) -> None:
+        # Off by default: the decompiler emits over a thousand debug lines per class.
+        set_dbg_callback(self._log_panel.debug if enabled else None)
+
+    # ── Public API (used by crashlink.gui.features) ───────────────────────────
+
+    @property
+    def code(self) -> Optional[Bytecode]:
+        return self._code
+
+    @property
+    def theme(self) -> Theme:
+        return self._theme
+
+    @property
+    def log(self) -> LogPanel:
+        return self._log_panel
+
+    @property
+    def source_path(self) -> Optional[str]:
+        """Path of the open document, or None."""
+        return self._source_path
+
+    def menu(self, name: str) -> QMenu:
+        """Get or create a menu. `name` is a top-level menu title, or a
+        slash-separated path to a submenu (e.g. "File/Export")."""
+        existing = self._menus.get(name)
+        if existing is not None:
+            return existing
+        parent_name, _, leaf = name.rpartition("/")
+        if parent_name:
+            created = self.menu(parent_name).addMenu(leaf)
+        else:
+            created = QMenu(leaf, self)
+            mb = self.menuBar()
+            # Keep top-level menus in _MENU_ORDER; unknown names go before Help.
+            order = _MENU_ORDER.index(leaf) if leaf in _MENU_ORDER else _MENU_ORDER.index("Help")
+            before = next(
+                (
+                    self._menus[other].menuAction()
+                    for other in _MENU_ORDER[order + 1 :]
+                    if other in self._menus
+                ),
+                None,
+            )
+            if before is None:
+                mb.addMenu(created)
+            else:
+                mb.insertMenu(before, created)
+        self._menus[name] = created
+        return created
+
+    def add_dock(self, dock: QDockWidget, area: Qt.DockWidgetArea, visible: bool = False) -> None:
+        """Add a feature dock (its objectName must be set so layout state restores)."""
+        assert dock.objectName(), "feature docks need an objectName for saveState/restoreState"
+        self.addDockWidget(area, dock)
+        dock.setVisible(visible)
+        self.menu("Window").insertAction(self._history_dock.toggleViewAction(), dock.toggleViewAction())
+
+    def open_tab(self, key: str, title: str, factory: Callable[[], QWidget]) -> QWidget:
+        """Focus the tab registered under `key`, creating it with `factory` if needed."""
+        existing = self._generic_tabs.get(key)
+        if existing is not None and key in self._open_tabs:
+            self._tabs.setCurrentIndex(self._open_tabs[key])
+            return existing
+        widget = factory()
+        widget.setProperty("class_key", key)
+        self._generic_tabs[key] = widget
+        idx = self._tabs.addTab(widget, title)
+        self._open_tabs[key] = idx
+        self._add_close_btn(idx, key)
+        self._tabs.setCurrentIndex(idx)
+        return widget
+
+    def run_background(
+        self,
+        label: str,
+        fn: Callable[[], Any],
+        on_done: Callable[[Any], None],
+        on_error: Optional[Callable[[str], None]] = None,
+    ) -> None:
+        """Run `fn` on a worker thread with a status-bar indicator. `on_done` /
+        `on_error` run on the UI thread; results for a replaced document are dropped."""
+        self._bg_request += 1
+        token = self._bg_request
+        self._bg_jobs[token] = (self._generation, on_done, on_error)
+        job = _BackgroundRunnable(token, fn)
+        job.signals.done.connect(self._on_background_done)
+        job.signals.failed.connect(self._on_background_failed)
+        self._busy.start(label, key=("bg", token))
+        self._bg_pool.start(job)
+
+    @Slot(object, object)
+    def _on_background_done(self, token: int, result: object) -> None:
+        self._busy.stop(key=("bg", token))
+        job = self._bg_jobs.pop(token, None)
+        if job is None or not self._is_current(job[0]):
+            return
+        job[1](result)
+
+    @Slot(object, str)
+    def _on_background_failed(self, token: int, message: str) -> None:
+        self._busy.stop(key=("bg", token))
+        job = self._bg_jobs.pop(token, None)
+        if job is None or not self._is_current(job[0]):
+            return
+        if job[2] is not None:
+            job[2](message)
+        else:
+            self._log_panel.error(message)
+
+    def show_xrefs(self, title: str, groups: List[XrefGroup]) -> None:
+        """Show `groups` in the xref popup, under the text cursor of the active pane if any."""
+        view = self._find_target_view()
+        if view is not None and view.isVisible():
+            at = view.mapToGlobal(view.cursorRect().bottomLeft())
+        else:
+            at = self.mapToGlobal(self.rect().center())
+        self._xref_popup.show_results(title, groups, at)
+
+    def add_follow_handler(self, prefix: str, handler: Callable[[int], None]) -> None:
+        """Handle double-click/Enter on `<prefix><index>` tokens (e.g. "g@" -> globals window)."""
+        self._follow_handlers[prefix] = handler
+
+    # ── Navigation (history, jump, follow) ────────────────────────────────────
+
+    def navigate_to(self, findex: int, op_idx: Optional[int] = None) -> None:
+        """Open the class tab containing `findex`, scroll to it (and to `op_idx` if
+        given), focus the code, and record the jump for Back/Forward."""
+        if self._code is None or findex not in self._code.get_findex_map():
+            return
+        self._push_history()
+        self._forward_stack.clear()
+        self._show_location(findex, -1 if op_idx is None else op_idx, -1)
+        self._update_history_actions()
+
+    def navigate_back(self) -> None:
+        if not self._back_stack:
+            return
+        current = self._current_location()
+        if current is not None:
+            self._forward_stack.append(current)
+        findex, op_idx = self._back_stack.pop()
+        self._show_location(findex, -1 if op_idx is None else op_idx, -1)
+        self._update_history_actions()
+
+    def navigate_forward(self) -> None:
+        if not self._forward_stack:
+            return
+        self._push_history()
+        findex, op_idx = self._forward_stack.pop()
+        self._show_location(findex, -1 if op_idx is None else op_idx, -1)
+        self._update_history_actions()
+
+    def _current_location(self) -> Optional[Tuple[int, Optional[int]]]:
+        view = self._current_sync_view()
+        if view is None or self._cfg_findex is None:
+            return None
+        op = view.disasm_view.op_at_cursor() if view.disasm_view.hasFocus() else None
+        if op is not None and op[0] == self._cfg_findex:
+            return (op[0], op[1])
+        return (self._cfg_findex, None)
+
+    def _push_history(self) -> None:
+        current = self._current_location()
+        if current is None or (self._back_stack and self._back_stack[-1] == current):
+            return
+        self._back_stack.append(current)
+        del self._back_stack[:-_HISTORY_LIMIT]
+
+    def _update_history_actions(self) -> None:
+        self._back_action.setEnabled(bool(self._back_stack))
+        self._forward_action.setEnabled(bool(self._forward_stack))
+
+    def _open_jump_dialog(self) -> None:
+        if self._code is None:
+            self._status_bar.showMessage("Open a file first", 3000)
+            return
+        if not self._jump_names:
+            self._jump_names = {f"{name}  f@{fi}": fi for fi, name in self._func_list.entries()}
+        dialog = _JumpDialog(self, list(self._jump_names), self._resolve_jump)
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.findex is not None:
+            self.navigate_to(dialog.findex)
+
+    def _resolve_jump(self, text: str) -> "int | str":
+        """findex for a Jump dialog entry, or an error message."""
+        assert self._code is not None
+        if not text:
+            return "Enter a function index or name."
+        match = re.fullmatch(r"(?:.*\s)?f@(\d+)|(\d+)", text)
+        if match:
+            findex = int(match.group(1) or match.group(2))
+            if findex in self._code.get_findex_map():
+                return findex
+            return f"No function f@{findex}."
+        lowered = text.lower()
+        exact = [fi for name, fi in self._jump_names.items() if name.rsplit("  f@", 1)[0].lower() == lowered]
+        if exact:
+            return exact[0]
+        partial = [fi for name, fi in self._jump_names.items() if lowered in name.lower()]
+        if len(partial) == 1:
+            return partial[0]
+        return f"{len(partial)} functions match. Pick one from the list." if partial else "No such function."
+
+    def _on_follow_requested(self, findex: int, word: str) -> None:
+        """Double-click / Enter in a code pane: jump to what the word names."""
+        if self._code is None:
+            return
+        word = word.strip()
+        if not word:
+            return
+        ref = re.fullmatch(r"([a-z]+@)(\d+)", word)
+        if ref is not None:
+            prefix, index = ref.group(1), int(ref.group(2))
+            if prefix == "f@":
+                self.navigate_to(index)
+            elif prefix == "t@":
+                self._open_types_tab(select=index)
+            elif prefix in self._follow_handlers:
+                self._follow_handlers[prefix](index)
+            else:
+                self._status_bar.showMessage(f"Nothing to follow for {word}", 3000)
+            return
+
+        # A local in the current function: list its uses.
+        local_group = self._resolve_locals(findex, word)
+        if local_group is not None:
+            self.show_xrefs(word, [local_group])
+            return
+
+        # A function or method name: jump when unambiguous, preferring this class.
+        si = self._code.search_index()
+        candidates: Dict[int, Function | Native] = {}
+        for func in [*si.find_partial(word), *si.find(word)]:
+            candidates.setdefault(func.findex.value, func)
+        if len(candidates) > 1:
+            here, _, class_fis = self._class_key_for(findex)
+            same_class = [fi for fi in candidates if fi in class_fis]
+            if len(same_class) == 1:
+                self.navigate_to(same_class[0])
+                return
+        if len(candidates) == 1:
+            self.navigate_to(next(iter(candidates)))
+            return
+        if candidates:
+            groups = [
+                XrefGroup(
+                    label=f"function {_func_label(self._code, fi)}",
+                    kind="function",
+                    sites=[XrefSite(fi, _func_label(self._code, fi), None, None, "definition")],
+                )
+                for fi in candidates
+            ]
+            self.show_xrefs(f"{word}: {len(groups)} definitions", groups)
+            return
+
+        # A class/enum name: open its type.
+        for tindex, typ in enumerate(self._code.types):
+            name_ref = getattr(typ.definition, "name", None)
+            try:
+                if name_ref is not None and destaticify(name_ref.resolve(self._code)) == word:
+                    self._open_types_tab(select=tindex)
+                    return
+            except Exception:
+                continue
+        self._status_bar.showMessage(f"Nothing to follow for '{word}'", 3000)
+
+    # ── Drag and drop ─────────────────────────────────────────────────────────
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        urls = event.mimeData().urls() if event.mimeData().hasUrls() else []
+        if len(urls) == 1 and urls[0].isLocalFile():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        urls = event.mimeData().urls()
+        if not urls:
+            return
+        path = urls[0].toLocalFile()
+        if os.path.isfile(path) and self._confirm_discard_changes():
+            event.acceptProposedAction()
+            self._load_file(path)
 
     # ── File loading ──────────────────────────────────────────────────────────
 
@@ -719,6 +1396,7 @@ class MainWindow(QMainWindow):
 
     def _rebuild_recent_menu(self) -> None:
         self._recent_menu.clear()
+        self._welcome.set_recent(self._recent_files)
         if not self._recent_files:
             action = self._recent_menu.addAction("(none yet)")
             action.setEnabled(False)
@@ -760,10 +1438,16 @@ class MainWindow(QMainWindow):
             old_thread.requestInterruption()
         self._active_decompiles = 0
         self._decomp_tokens.clear()
-        self._busy.stop()
-        self._decomp_pool.clear()
+        self._busy.stop_all()
+        self._decomp_jobs.clear()
         self._tabs.clear()
         self._open_tabs.clear()
+        self._generic_tabs.clear()
+        self._back_stack.clear()
+        self._forward_stack.clear()
+        self._update_history_actions()
+        self._jump_names.clear()
+        self._find_bar.hide()
         self._class_findices.clear()
         self._class_results.clear()
         self._class_names.clear()
@@ -790,11 +1474,18 @@ class MainWindow(QMainWindow):
         self._source_path = path
         self._update_window_title()
         self._worker.invalidate()
+        self._xref_popup.set_code(None)
+        self.code_loaded.emit(None)
+        self._update_central_page()
+        # The previous document was frozen out of cyclic GC as it loaded (see
+        # _bulk_build); unfreeze so its reference cycles become collectable.
+        gc.unfreeze()
+        gc.collect()
 
         self._progress_bar.setVisible(True)
         self._progress_bar.setValue(0)
         self._status_label.setText(f"Loading {path}…")
-        self._busy.start("Reading bytecode..." if not self._loaded_via_dehlc else "Reading binary...")
+        self._busy.start("Reading bytecode…" if not self._loaded_via_dehlc else "Reading binary…", key="load")
 
         if self._loaded_via_dehlc:
             thread: QThread = _DehlcLoadThread(path, self._generation)
@@ -838,24 +1529,26 @@ class MainWindow(QMainWindow):
         self._progress_bar.setValue(int(frac * 100))
         self._status_label.setText(status)
 
-    @Slot(int, object)
-    def _on_load_finished(self, generation: int, code: Bytecode) -> None:
+    @Slot(int, object, object)
+    def _on_load_finished(self, generation: int, code: Bytecode, nav_data: object = None) -> None:
         if not self._is_current(generation):
             return
         self._code = code
         self._progress_bar.setVisible(False)
-        self._busy.stop()
+        self._busy.stop(key="load")
         assert self._source_path is not None
         self._add_recent_file(self._source_path)
         n = len(code.functions)
         label = "Loaded (inspection-only native recovery)" if code.inspection_only else "Loaded"
         self._status_label.setText(f"{label}, {n} functions")
-        self._log_panel.info(f"{label}, {n} functions")
+        self._log_panel.info(f"{label} {os.path.basename(self._source_path)}: {n} functions")
         if code.inspection_only:
             for diagnostic in code.recovery_diagnostics:
                 self._log_panel.warn(diagnostic)
         self._log_panel.set_context(code=code)
-        self._func_list.load(code)
+        self._func_list.load(code, cast(Optional[NavigatorData], nav_data))
+        self._xref_popup.set_code(code)
+        self.code_loaded.emit(code)
 
         assert self._source_path is not None
         cldb_path = self._source_path + ".cldb"
@@ -864,7 +1557,7 @@ class MainWindow(QMainWindow):
 
         # Pre-warm the xref/search/source-map indices in the background so the
         # first 'X' lookup doesn't stall the UI thread building them on demand.
-        self._busy.start("Building xref table…")
+        self._busy.start("Building xref table…", key="index")
         self._index_build_thread = _IndexBuildThread(self._worker, code, generation)
         self._index_build_thread.signals.finished.connect(self._on_index_finished)
         self._index_build_thread.signals.error.connect(self._on_index_error)
@@ -872,8 +1565,8 @@ class MainWindow(QMainWindow):
 
     @Slot(int)
     def _on_index_finished(self, generation: int) -> None:
-        if self._is_current(generation) and not self._active_decompiles:
-            self._busy.stop()
+        if self._is_current(generation):
+            self._busy.stop(key="index")
 
     @Slot(int, str)
     def _on_index_error(self, generation: int, msg: str) -> None:
@@ -886,8 +1579,15 @@ class MainWindow(QMainWindow):
         if not self._is_current(generation):
             return
         self._progress_bar.setVisible(False)
-        self._busy.stop()
+        self._busy.stop(key="load")
         self._status_label.setText(f"Error: {msg}")
+        path = self._source_path or "file"
+        self._log_panel.error(f"Couldn't open {path}: {msg}")
+        box = QMessageBox(
+            QMessageBox.Icon.Warning, "Couldn't open file", f"Couldn't open {path}", parent=self
+        )
+        box.setInformativeText(msg)
+        box.open()  # non-blocking: the load threads' queued signals keep flowing
 
     # ── Analysis database (.cldb) ───────────────────────────────────────────────
 
@@ -947,14 +1647,9 @@ class MainWindow(QMainWindow):
     def _open_find(self) -> None:
         target = self._find_target_view()
         if target is None:
-            self._log_panel.warn("No disasm/pseudocode view open to search.")
+            self._status_bar.showMessage("Open a class tab to search its code", 3000)
             return
-        if self._find_dialog is None:
-            self._find_dialog = _FindDialog(self)
-        self._find_dialog.set_target(target)
-        self._find_dialog.show()
-        self._find_dialog.raise_()
-        self._find_dialog.activateWindow()
+        self._find_bar.open_on(target)
 
     def _load_database_from(self, cldb_path: str) -> None:
         assert self._code is not None and self._source_path is not None
@@ -1076,32 +1771,26 @@ class MainWindow(QMainWindow):
         all_fi = sorted(
             fi for fi, (o, _, _) in reg.items() if destaticify(o.name.resolve(self._code)) == canonical
         )
-        return class_key, canonical, all_fi
+        # Constructor first (as in `decompile --class`), then declaration (findex) order.
+        ctors = [fi for fi in all_fi if reg[fi][1] == "__constructor__"]
+        return class_key, canonical, ctors + [fi for fi in all_fi if fi not in ctors]
 
     # ── Natives table ────────────────────────────────────────────────────────
 
-    _NATIVES_TAB_KEY = "__natives__"
-
     def _open_natives_tab(self) -> None:
-        if self._code is None:
-            self._log_panel.warn("Open a bytecode file first.")
-            return
-        key = self._NATIVES_TAB_KEY
-        if key in self._open_tabs:
-            self._tabs.setCurrentIndex(self._open_tabs[key])
+        code = self._code
+        if code is None:
+            self._status_bar.showMessage("Open a file first", 3000)
             return
 
-        view = NativesView()
-        view.setProperty("class_key", key)
-        view.set_theme(self._theme)
-        view.load(self._code)
-        view.xref_requested.connect(self._on_native_xref_requested)
+        def build() -> QWidget:
+            view = NativesView()
+            view.set_theme(self._theme)
+            view.load(code)
+            view.xref_requested.connect(self._on_native_xref_requested)
+            return view
 
-        idx = self._tabs.addTab(view, "Natives")
-        self._tabs.setTabToolTip(idx, f"{len(self._code.natives)} natives")
-        self._open_tabs[key] = idx
-        self._add_close_btn(idx, key)
-        self._tabs.setCurrentIndex(idx)
+        self.open_tab("__natives__", "Natives", build)
 
     def _on_native_xref_requested(self, findex: int) -> None:
         self._show_xrefs_for(f"f@{findex}")
@@ -1109,35 +1798,32 @@ class MainWindow(QMainWindow):
     def _show_xrefs_for(self, word: str) -> None:
         if self._code is None:
             return
-        groups = resolve_targets(self._code, word)
-        at = self.mapToGlobal(self.rect().center())
-        self._xref_popup.show_results(word, groups, at)
-        self._log_panel.result(f"Xrefs for '{word}': {len(groups)} target(s)")
+        code = self._code
+
+        def show(groups: List[XrefGroup]) -> None:
+            self.show_xrefs(word, groups)
+            self._log_panel.result(f"Xrefs for '{word}': {len(groups)} target(s)")
+
+        self.run_background(f"Finding references to {word}…", lambda: resolve_targets(code, word), show)
 
     # ── Types table ──────────────────────────────────────────────────────────
 
-    _TYPES_TAB_KEY = "__types__"
-
-    def _open_types_tab(self) -> None:
-        if self._code is None:
-            self._log_panel.warn("Open a bytecode file first.")
-            return
-        key = self._TYPES_TAB_KEY
-        if key in self._open_tabs:
-            self._tabs.setCurrentIndex(self._open_tabs[key])
+    def _open_types_tab(self, select: Optional[int] = None) -> None:
+        code = self._code
+        if code is None:
+            self._status_bar.showMessage("Open a file first", 3000)
             return
 
-        view = TypesView()
-        view.setProperty("class_key", key)
-        view.set_theme(self._theme)
-        view.load(self._code)
-        view.xref_requested.connect(self._show_xrefs_for)
+        def build() -> QWidget:
+            view = TypesView()
+            view.set_theme(self._theme)
+            view.load(code)
+            view.xref_requested.connect(self._show_xrefs_for)
+            return view
 
-        idx = self._tabs.addTab(view, "Types")
-        self._tabs.setTabToolTip(idx, f"{len(self._code.types)} types")
-        self._open_tabs[key] = idx
-        self._add_close_btn(idx, key)
-        self._tabs.setCurrentIndex(idx)
+        view = self.open_tab("__types__", "Types", build)
+        if select is not None and isinstance(view, TypesView):
+            view.select_type(select)
 
     # ── Native assembly (de-HL/C images) ─────────────────────────────────────
 
@@ -1273,6 +1959,7 @@ class MainWindow(QMainWindow):
         self._class_findices[class_key] = all_fi
         self._class_names[class_key] = display_name
         self._class_results[class_key] = {fi: None for fi in all_fi}
+        self._class_fields[class_key] = self._class_field_lines(all_fi)
 
         # Seed from a loaded .cldb where available, so cached functions render
         # immediately instead of flashing "decompiling…" — a real decompile still
@@ -1296,6 +1983,8 @@ class MainWindow(QMainWindow):
         view.disasm_view.function_focused.connect(self._on_function_focused)
         view.disasm_view.xref_requested.connect(self._on_xref_hotkey)
         view.comment_requested.connect(self._on_comment_hotkey)
+        view.follow_requested.connect(self._on_follow_requested)
+        view.disasm_view.op_focused.connect(self._on_op_focused)
 
         # Native bodies remain separate from bytecode and never enter the IR pipeline.
         if self._code.hlc_binary is not None:
@@ -1339,7 +2028,7 @@ class MainWindow(QMainWindow):
                     )
                 )
 
-        view.load_pseudo(display_name, methods)
+        view.load_pseudo(display_name, methods, fields=self._class_fields[class_key])
         self._load_disasm_pane(view, all_fi)
 
         tab_label = _tab_label(display_name)
@@ -1348,6 +2037,8 @@ class MainWindow(QMainWindow):
         self._open_tabs[class_key] = idx
         self._add_close_btn(idx, class_key)
         self._tabs.setCurrentIndex(idx)
+        if jump_to in all_fi:
+            view.scroll_to_findex(jump_to)
 
         # Kick off decompile for every method that actually has opcodes.
         for fi in to_decompile:
@@ -1367,19 +2058,33 @@ class MainWindow(QMainWindow):
             )
             return
         self._active_decompiles += 1
-        self._busy.start("Decompiling…")
+        self._busy.start("Decompiling…", key="decompile")
         self._decomp_request += 1
         token = (self._generation, self._decomp_request)
         self._decomp_tokens[(class_key, findex)] = token
-        runnable = _DecompRunnable(self._worker, self._code, class_key, findex, token)
-        runnable.signals.finished.connect(self._on_decompile_finished)
-        runnable.signals.error.connect(self._on_decompile_error)
-        self._decomp_pool.start(runnable)
+        job = _DecompJob(class_key, findex, token)
+        job.finished.connect(self._on_decompile_finished)
+        job.error.connect(self._on_decompile_error)
+        self._decomp_jobs[token] = job
+        job.start(self._worker, self._code, self._render_pool)
+
+    def _class_field_lines(self, all_fi: List[int]) -> List[str]:
+        """Field declarations for a class tab, from the class's Obj (no decompile needed)."""
+        assert self._code is not None
+        if self._code.inspection_only or not all_fi:
+            return []
+        info = _method_registry(self._code).get(all_fi[0])
+        if info is None:
+            return []
+        try:
+            return class_field_lines(self._code, info[0])
+        except Exception as e:
+            return [f"// fields unavailable: {e}"]
 
     def _decompile_batch_done(self) -> None:
         self._active_decompiles = max(0, self._active_decompiles - 1)
         if self._active_decompiles == 0:
-            self._busy.stop()
+            self._busy.stop(key="decompile")
 
     def _add_close_btn(self, tab_idx: int, class_key: str) -> None:
         btn = QToolButton()
@@ -1397,6 +2102,8 @@ class MainWindow(QMainWindow):
         self._class_findices.pop(class_key, None)
         self._class_results.pop(class_key, None)
         self._class_names.pop(class_key, None)
+        self._class_fields.pop(class_key, None)
+        self._generic_tabs.pop(class_key, None)
         self._tabs.removeTab(idx)
         self._rebuild_tab_map()
 
@@ -1408,9 +2115,16 @@ class MainWindow(QMainWindow):
                 key = w.property("class_key")
                 if key:
                     self._open_tabs[key] = i
+        self._update_central_page()
 
     def _on_tab_changed(self, _idx: int) -> None:
-        pass  # log panel needs no per-tab update
+        self._update_central_page()
+
+    def _update_central_page(self) -> None:
+        """Welcome page when no tabs are open, the tab widget otherwise."""
+        self._central_stack.setCurrentWidget(self._tabs if self._tabs.count() else self._welcome)
+        if not self._tabs.count():
+            self._find_bar.hide()
 
     # ── Function selection ────────────────────────────────────────────────────
 
@@ -1431,13 +2145,16 @@ class MainWindow(QMainWindow):
     # ── Decompilation callbacks ───────────────────────────────────────────────
 
     def _accept_decompile(self, token: tuple, class_key: str, findex: int) -> bool:
+        self._decomp_jobs.pop(token, None)
         if not self._is_current(token[0]):
             return False
         self._decompile_batch_done()
         return self._decomp_tokens.get((class_key, findex)) == token
 
-    @Slot(object, str, int, object)
-    def _on_decompile_finished(self, token: tuple, class_key: str, findex: int, ir: object) -> None:
+    @Slot(object, str, int, object, object)
+    def _on_decompile_finished(
+        self, token: tuple, class_key: str, findex: int, ir: object, rendered: Tuple[str, Dict[int, int]]
+    ) -> None:
         if not self._accept_decompile(token, class_key, findex):
             return
         if not isinstance(ir, IRFunction):
@@ -1448,14 +2165,10 @@ class MainWindow(QMainWindow):
         if class_key not in self._class_results:
             return
 
-        try:
-            text, opmap = pseudo_oplines(ir)
-            self._opline_cache[findex] = opmap
-        except Exception as e:
-            text = f"class ? {{\n    // f@{findex} error: {e}\n}}"
-
+        text, opmap = rendered
+        self._opline_cache[findex] = opmap
         self._class_results[class_key][findex] = text
-        self._refresh_class_view(class_key)
+        self._show_method_text(class_key, findex, text)
 
         if findex == self._cfg_findex:
             self._update_cfg_view(findex)
@@ -1464,7 +2177,7 @@ class MainWindow(QMainWindow):
         if self._pending_op_scroll is not None and self._pending_op_scroll[0] == findex:
             pf, pop = self._pending_op_scroll
             self._pending_op_scroll = None
-            self._navigate_to_xref(pf, pop, -1)
+            self._show_location(pf, pop, -1)
 
         # Update status when all done
         results = self._class_results.get(class_key, {})
@@ -1481,7 +2194,14 @@ class MainWindow(QMainWindow):
             return
         err_text = f"class ? {{\n    // f@{findex} error: {msg}\n}}"
         self._class_results[class_key][findex] = err_text
-        self._refresh_class_view(class_key)
+        self._show_method_text(class_key, findex, err_text)
+
+    def _show_method_text(self, class_key: str, findex: int, text: str) -> None:
+        """Put one method's new pseudocode into its open class tab, in place."""
+        idx = self._open_tabs.get(class_key)
+        view = self._tabs.widget(idx) if idx is not None else None
+        if isinstance(view, SyncView):
+            view.update_method(findex, text)
 
     def _refresh_class_view(self, class_key: str) -> None:
         idx = self._open_tabs.get(class_key)
@@ -1502,7 +2222,7 @@ class MainWindow(QMainWindow):
                 text = f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}"
             methods.append((fi, text))
 
-        view.load_pseudo(display_name, methods)
+        view.load_pseudo(display_name, methods, fields=self._class_fields.get(class_key))
 
     def _refresh_disasm_view(self, class_key: str) -> None:
         """Disasm rendering needs no decompile — re-render straight from opcodes (or
@@ -1523,9 +2243,17 @@ class MainWindow(QMainWindow):
     # ── Focus tracking ────────────────────────────────────────────────────────
 
     def _on_function_focused(self, findex: int) -> None:
+        if findex == self._cfg_findex:
+            return
         self._cfg_findex = findex
         self._update_cfg_view(findex)
         self._update_repl_focus(findex)
+        self.function_focused.emit(findex)
+
+    def _on_op_focused(self, findex: int, op_idx: int) -> None:
+        """Disasm cursor moved onto an opcode: outline its block in the CFG."""
+        if self._cfg_dock.isVisible():
+            self._cfg_view.highlight_op(findex, op_idx)
 
     def _update_repl_focus(self, findex: int) -> None:
         """Keep the REPL's `findex`/`func`/`irf` pointed at the focused function."""
@@ -1551,27 +2279,26 @@ class MainWindow(QMainWindow):
         if not isinstance(ir, IRFunction):
             self._cfg_view.show_pending()
             return
-
-        dot = ir.to_dot()
-        if dot is None:
-            self._cfg_view.show_native()
-            return
-        self._cfg_view.load_dot(dot)
+        # Graphviz layout can take seconds on big functions; CfgView runs it off-thread.
+        self._cfg_view.request(findex, ir)
 
     # ── Rename (N) ────────────────────────────────────────────────────────────
 
     def _on_rename_hotkey(self, findex: int, word: str) -> None:
         if self._code is None:
             return
+        if not word.strip():
+            self._status_bar.showMessage("Place the cursor on a local variable to rename it", 3000)
+            return
         ir = self._ir_cache.get(findex)
         if not isinstance(ir, IRFunction):
-            self._log_panel.error("Cannot rename, function not yet decompiled")
+            self._status_bar.showMessage("Still decompiling, try again in a moment", 3000)
             return
 
         # Find locals matching word under cursor
         locals_matching = [loc for loc in ir.all_locals if loc.name == word and loc.reg_idx is not None]
         if not locals_matching:
-            self._log_panel.warn(f"No local named '{word}' in f@{findex}")
+            self._status_bar.showMessage(f"'{word}' isn't a local variable of this function", 3000)
             return
 
         loc = locals_matching[0]
@@ -1580,12 +2307,10 @@ class MainWindow(QMainWindow):
         if not ok or not new_name or new_name == word:
             return
 
-        self._apply_rename(findex, loc.reg_idx, loc.defining_op_idx, new_name)
+        self.apply_rename(findex, loc.reg_idx, loc.defining_op_idx, new_name)
         self._log_panel.success(f"Renamed '{word}' → '{new_name}' in f@{findex}")
 
-    def _apply_rename(
-        self, findex: int, reg_idx: int, def_op: Optional[int], new_name: Optional[str]
-    ) -> None:
+    def apply_rename(self, findex: int, reg_idx: int, def_op: Optional[int], new_name: Optional[str]) -> None:
         """new_name=None clears the rename (used by the CLI bridge's `unrename`)."""
         if self._code is None:
             return
@@ -1595,7 +2320,7 @@ class MainWindow(QMainWindow):
         )
         self._undo_stack.push(cmd)
 
-    def _apply_comment(self, findex: int, op_idx: int, text: Optional[str]) -> None:
+    def apply_comment(self, findex: int, op_idx: int, text: Optional[str]) -> None:
         """text=None clears the comment (used by the CLI bridge's `rmcomment`)."""
         if self._code is None:
             return
@@ -1603,7 +2328,7 @@ class MainWindow(QMainWindow):
         cmd = CommentCommand(self._code, findex, op_idx, old_text, text, self._on_annotation_applied)
         self._undo_stack.push(cmd)
 
-    def _apply_setstring(self, index: int, new_value: str) -> None:
+    def apply_setstring(self, index: int, new_value: str) -> None:
         if self._code is None:
             return
         old_value = self._code.strings.value[index]
@@ -1653,7 +2378,7 @@ class MainWindow(QMainWindow):
             return
         text = text.strip()
         new_text = text or None
-        self._apply_comment(findex, op_idx, new_text)
+        self.apply_comment(findex, op_idx, new_text)
         if new_text:
             self._log_panel.success(f"Commented op {op_idx} in f@{findex}")
         else:
@@ -1668,18 +2393,17 @@ class MainWindow(QMainWindow):
         if not word:
             return
 
-        groups = resolve_targets(self._code, word)
         local_group = self._resolve_locals(findex, word)
-        if local_group is not None:
-            groups.insert(0, local_group)
+        code = self._code
 
-        view = self._find_target_view()  # whichever pane (disasm or pseudo) is active
-        if view is not None:
-            at = view.mapToGlobal(view.cursorRect().bottomLeft())
-        else:
-            at = self.mapToGlobal(self.rect().center())
-        self._xref_popup.show_results(word, groups, at)
-        self._log_panel.result(f"Xrefs for '{word}': {len(groups)} target(s)")
+        def show(groups: List[XrefGroup]) -> None:
+            if local_group is not None:
+                groups.insert(0, local_group)
+            self.show_xrefs(word, groups)
+            self._log_panel.result(f"Xrefs for '{word}': {len(groups)} target(s)")
+
+        # Name resolution scans every type/field/string: keep it off the UI thread.
+        self.run_background(f"Finding references to {word}…", lambda: resolve_targets(code, word), show)
 
     def _resolve_locals(self, findex: int, word: str) -> Optional[XrefGroup]:
         """Build a group of every occurrence of `word` (a local) in the focused
@@ -1713,6 +2437,7 @@ class MainWindow(QMainWindow):
                         opcode_index=None,
                         body_line=j,
                         ref_kind="use",
+                        snippet=line.strip(),
                     )
                 )
         if not sites:
@@ -1720,14 +2445,28 @@ class MainWindow(QMainWindow):
         return XrefGroup(label=f"local '{word}'", kind="local", sites=sites)
 
     def _navigate_to_xref(self, findex: int, op_idx: int, body_line: int) -> None:
+        """Xref popup activation: a navigation, so it's recorded for Back."""
         if self._code is None:
             return
+        self._push_history()
+        self._forward_stack.clear()
+        self._show_location(findex, op_idx, body_line)
+        self._update_history_actions()
 
-        # Open / focus the class tab containing findex.
-        self._on_function_selected(findex)
-        view = self._current_class_view()
-        if not isinstance(view, ClassView):
+    def _show_location(self, findex: int, op_idx: int, body_line: int) -> None:
+        """Open/focus `findex`'s class tab and scroll both panes to the op or line."""
+        if self._code is None:
             return
+        self._on_function_selected(findex)
+        sync = self._current_sync_view()
+        if sync is None:
+            return
+        view = sync.class_view
+        if op_idx >= 0:
+            sync.disasm_view.scroll_to_op(findex, op_idx)
+        # Focus whichever pane is showing so keys (Esc, X, N, …) act on it.
+        (sync.disasm_view if self._view_mode == DISASM else view).setFocus()
+        self._on_function_focused(findex)
 
         # Local site: body line is known directly.
         if body_line >= 0:
@@ -1794,10 +2533,10 @@ class MainWindow(QMainWindow):
         self._cfg_view.set_theme(theme)
         for i in range(self._tabs.count()):
             view = self._tabs.widget(i)
-            if isinstance(view, (SyncView, NativesView)):
-                view.set_theme(theme)
-
-    # ── Inspector ─────────────────────────────────────────────────────────────
+            set_theme = getattr(view, "set_theme", None)
+            if callable(set_theme):
+                set_theme(theme)
+        self.theme_changed.emit(theme)
 
     # ── Help ─────────────────────────────────────────────────────────────────
 
@@ -1814,27 +2553,49 @@ class MainWindow(QMainWindow):
         )
 
     def _show_shortcuts(self) -> None:
-        rows = [
-            ("Ctrl+O", "Open a bytecode file"),
-            ("Ctrl+S", "Save the analysis database (.cldb)"),
-            ("Ctrl+F", "Find in the active disasm/pseudocode pane"),
-            ("Ctrl+Q", "Quit"),
-            ("Tab", "Cycle split / disassembly / decompiled view"),
-            ("N", "Rename the local under the cursor (pseudocode pane)"),
-            ("X", "Show cross-references for the word under the cursor"),
-            ("/", "Add/edit a comment on the opcode under the cursor"),
-            ("Up / Down", "REPL command history (when the REPL input is focused)"),
-        ]
-        rows_html = "".join(
-            f"<tr><td><b>{key}</b></td><td>&nbsp;&nbsp;{desc}</td></tr>" for key, desc in rows
-        )
-        box = QMessageBox(self)
-        box.setWindowTitle("Keyboard Shortcuts")
-        box.setText(f"<table>{rows_html}</table>")
-        # QMessageBox ignores resize()/setFixedWidth() directly — widening its
-        # internal label is the standard way to give it a bit more breathing room.
-        # box.setStyleSheet("QLabel{min-width: 400px;}")
-        box.exec()
+        """Every menu action with a shortcut, plus the keys the code views handle."""
+        rows: List[Tuple[str, str]] = []
+
+        def collect(menu: QMenu, path: str) -> None:
+            for action in menu.actions():
+                sub = action.menu()
+                if isinstance(sub, QMenu):
+                    collect(sub, f"{path} › {action.text()}")
+                    continue
+                keys = [s.toString(QKeySequence.SequenceFormat.NativeText) for s in action.shortcuts()]
+                if keys and action.text():
+                    rows.append((" / ".join(keys), f"{action.text().replace('&', '')}   ({path})"))
+
+        for name in _MENU_ORDER:
+            if name in self._menus:
+                collect(self._menus[name], name)
+        rows.extend(_IN_VIEW_KEYS)
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Keyboard Shortcuts")
+        layout = QVBoxLayout(dialog)
+        table = QTableWidget(len(rows), 2)
+        table.setHorizontalHeaderLabels(["Keys", "Action"])
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setShowGrid(False)
+        for row, (keys, desc) in enumerate(rows):
+            key_item = QTableWidgetItem(keys)
+            font = key_item.font()
+            font.setBold(True)
+            key_item.setFont(font)
+            table.setItem(row, 0, key_item)
+            table.setItem(row, 1, QTableWidgetItem(desc))
+        table.resizeColumnsToContents()
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(table)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        width = table.horizontalHeader().length() + 60
+        dialog.resize(max(640, width), min(720, 80 + table.verticalHeader().length()))
+        dialog.exec()
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
@@ -1846,16 +2607,21 @@ class MainWindow(QMainWindow):
         set_dbg_callback(None)
         self._closing = True
         self._generation += 1
-        self._busy.stop()
-        self._decomp_pool.clear()
+        self._busy.stop_all()
+        self._decomp_jobs.clear()
+        self._bg_pool.clear()
+        self._bg_jobs.clear()
         self._worker.invalidate()
         for thread in self._threads:
             thread.requestInterruption()
         for thread in self._threads:
             thread.wait()
-        self._decomp_pool.waitForDone()
+        self._bg_pool.waitForDone()
         self._worker.shutdown(wait=True)
+        self._render_pool.shutdown(wait=True, cancel_futures=True)
         self._threads.clear()
+        # Hand the document back to the cyclic GC (frozen since it loaded).
+        gc.unfreeze()
         super().closeEvent(event)
 
 
