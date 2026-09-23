@@ -40,6 +40,8 @@ For anything that doesn't need a live session, there are subcommands that run on
 $ crashlink funcs game.hl              # list functions
 $ crashlink disasm game.hl 42          # disassemble f@42
 $ crashlink decompile game.hl 42       # decompile f@42 to pseudo-Haxe
+$ crashlink decompile game.hl 17 --class              # decompile the class at t@17
+$ crashlink decompile game.hl 17 --class --with-deps  # ...plus every user class it references
 $ crashlink info game.hl               # summary info (version, counts, etc.)
 $ crashlink search game.hl "password"  # search strings by substring
 $ crashlink db info game.cldb          # inspect a .cldb debug-info database
@@ -92,7 +94,7 @@ This isn't exhaustive (there are 60+ commands; run `help` in a live session for 
 | `source <...>` | | Debug-file/line lookup, in either direction |
 | `op <opcode>` | | Print documentation for an opcode |
 | `hlc <output path>` | | Transpile the loaded bytecode to C |
-| `class <tIndex>` | `cls`, `c` | Decompile an entire class by type index |
+| `class <tIndex> [--with-deps]` | `cls`, `c` | Decompile an entire class by type index; `--with-deps` also emits every user class it references |
 | `apidocs <path>` | | Generate API documentation for the bytecode's classes |
 | `mkdocs <path> [name]` | `mkdoc` | Generate a MkDocs + Material site for the bytecode's API |
 | `shader [name]` | `shaders` | Recover hxsl shaders embedded in the bytecode |

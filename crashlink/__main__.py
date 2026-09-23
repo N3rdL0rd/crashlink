@@ -773,7 +773,10 @@ def decompile_main(argv: List[str]) -> None:
                 "      Decompile the function with findex 42 to pseudo-Haxe.",
                 "",
                 "  crashlink decompile game.hl 17 --class",
-                "      Decompile the whole class at tIndex 17 (all of its methods).",
+                "      Decompile the class at tIndex 17 (all of its methods).",
+                "",
+                "  crashlink decompile game.hl 17 --class --with-deps",
+                "      Also emit every user class it references, so the output recompiles on its own.",
                 "",
                 "  crashlink funcs game.hl | grep -i MyClass",
                 "      Find the findex/tIndex to pass in, by name.",
@@ -787,6 +790,11 @@ def decompile_main(argv: List[str]) -> None:
         dest="is_class",
         action="store_true",
         help="Treat index as a tIndex and decompile the whole class",
+    )
+    parser.add_argument(
+        "--with-deps",
+        action="store_true",
+        help="With --class, also emit every referenced user class (super, field/argument types, ...)",
     )
     parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
     args = parser.parse_args(argv)
@@ -808,7 +816,7 @@ def decompile_main(argv: List[str]) -> None:
             print(f"Type t@{args.index} is not a class.", file=sys.stderr)
             sys.exit(1)
         ir_class = IRClass(code, typ.definition)
-        print(ir_class.pseudo())
+        print(ir_class.pseudo(max_classes=None if args.with_deps else 1))
     else:
         from .decomp import IRFunction
         from .pseudo import pseudo as _pseudo
@@ -2870,11 +2878,16 @@ class Commands(BaseCommands):
     @alias("cls")
     @alias("c")
     def class_(self, args: List[str]) -> None:
-        """Decompiles an entire class by its type index. `class <tIndex>`"""
+        """Decompiles an entire class by its type index. `class <tIndex> [--with-deps]`
+
+        `--with-deps` also emits every user class it references, so the output recompiles on its own.
+        """
         if self._inspection_guard():
             return
+        with_deps = "--with-deps" in args
+        args = [arg for arg in args if arg != "--with-deps"]
         if len(args) == 0:
-            print("Usage: class <tIndex>")
+            print("Usage: class <tIndex> [--with-deps]")
             return
         try:
             index = int(args[0])
@@ -2889,7 +2902,7 @@ class Commands(BaseCommands):
                 return
 
             ir_class = decomp.IRClass(self.code, typ.definition)
-            res = ir_class.pseudo()
+            res = ir_class.pseudo(max_classes=None if with_deps else 1)
 
             print("\n")
 
