@@ -67,7 +67,7 @@ it is not a complete verifier of runtime type compatibility. Mistakes in the
         t@0
         t@1
     .ops
-        String reg1, "Hello, World!\n"
+        String reg1, "Hello, Hashlink!\n"
         Call1 reg0, f@1, reg1
         Ret reg0
 
@@ -88,9 +88,7 @@ A few things to note about the shape:
   `reg1`, ... in declaration order), and `.ops` is the actual opcode list.
 - `.entrypoint` picks which function runs first.
 
-Assembling this and running it with crashlink's own toy interpreter (`crashlink
-file.hl -c run`, useful for small sanity checks without needing a real HL
-runtime) prints `Hello, World!`.
+Assembling this and running it with `hl hello.hl` prints `Hello, Hashlink!`.
 
 ## Branching
 
@@ -288,15 +286,9 @@ carries over to the following opcodes until the next `@`.
 `crashlink hlasm` output uses all of this, and is the best reference for how a
 real compiler's output looks in `.hlasm`.
 
-## A note on testing hand-written bytecode
+## Testing hand-written bytecode
 
-crashlink ships a small interpreter (`crashlink/interp`) that can run simple
-bytecode without a real HashLink install, useful for quick checks like the
-`hello.hlasm` example above. It's genuinely partial, though: it implements
-`Mov`, `Ret`, `Call*`, `GetGlobal`/`SetGlobal`, `String`, `NullCheck`/`JNull`,
-and a handful of others, but not `Int`, `Sub`, or comparison jumps like
-`JSLt`. Anything using arithmetic or numeric branching will assemble and run
-without error but silently skip those opcodes rather than execute them, which
-looks like success and isn't. For bytecode past the `Mov`/`Call`/`String`
-level, decompiling it back and checking the reconstructed control flow (as
-above) is the more reliable check available without a full `hl` runtime.
+Run the assembled file with the real HashLink runtime (`hl file.hl`). Without one,
+`crashlink file.hl` followed by `fn <findex>` and `decomp <findex>` in the REPL
+lets you check that the opcodes and the control flow they reconstruct are what
+you meant.

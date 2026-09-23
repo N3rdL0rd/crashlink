@@ -100,7 +100,6 @@ This isn't exhaustive (there are 60+ commands; run `help` in a live session for 
 | `apidocs <path>` | | Generate API documentation for the bytecode's classes |
 | `mkdocs <path> [name]` | `mkdoc` | Generate a MkDocs + Material site for the bytecode's API |
 | `shader [name]` | `shaders` | Recover hxsl shaders embedded in the bytecode |
-| `run` | | Run the bytecode in crashlink's integrated interpreter |
 | `pyrepl` | | Drop into a Python REPL with direct access to the `Bytecode` object |
 | `copy <command> [args...]` | `cp` | Run a command and copy its plain-text output to the clipboard |
 | `check` | | Run basic sanity checks on the loaded bytecode |
