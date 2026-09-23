@@ -7,12 +7,11 @@ from crashlink.hlc import hl_hash_utf8
 CSV_PATH = os.path.join(os.path.dirname(__file__), "hashes.csv")
 
 
-@pytest.mark.skip("Failing")
 @pytest.mark.skipif(not os.path.exists(CSV_PATH), reason=f"Test dataset not found: {CSV_PATH}")
 def test_hash():
     """
-    Validates the Python hl_hash implementation against the dataset generated
-    by the C HashLink library.
+    Validates hl_hash_utf8 against hashes from the HashLink runtime's hl_hash_gen
+    (hashes.csv, from generate_hashes.c).
     """
     with open(CSV_PATH, "r", newline="", encoding="utf-8") as f:
         reader = csv.reader(f)

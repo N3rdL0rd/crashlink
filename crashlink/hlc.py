@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, List, Literal, Optional, Dict, Set, Tuple
+import struct
+from typing import Any, Dict, Iterable, List, Literal, Optional, Set, Tuple
 
 from crashlink.errors import MalformedBytecode
 from crashlink.globals import DEBUG, VERSION
@@ -118,13 +119,18 @@ def _signed32(v: int) -> int:
 
 
 def hl_hash_utf8(name: str) -> int:
-    """Hash UTF-8 string until null terminator - matches C hl_hash_gen"""
+    """The field-name hash HashLink's runtime gives `name` (hl_hash_gen, which hashes
+    UTF-16 code units, so a character outside the BMP counts as its two surrogates).
+    Stops at a NUL, like the C string it hashes."""
     h = 0
-    for char in name:
-        char_val = ord(char)
-        if char_val == 0:
+    if name.isascii():
+        units: Iterable[int] = map(ord, name)
+    else:
+        units = (u for (u,) in struct.iter_unpack("<H", name.encode("utf-16-le", "surrogatepass")))
+    for unit in units:
+        if unit == 0:
             break
-        h = _signed32(223 * h + char_val)
+        h = _signed32(223 * h + unit)
     if h >= 0:
         return h % 0x1FFFFF7B
     return -((-h) % 0x1FFFFF7B)
