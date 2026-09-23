@@ -33,7 +33,7 @@ from .core import (
     USE_TQDM,
     ProgressCallback,
 )
-from .asm import AsmFile
+from .asm import AsmFile, to_hlasm
 from .core import (
     Bytecode,
     Function,
@@ -64,6 +64,7 @@ _SUBCOMMAND_HELP: Dict[str, str] = {
     "info": "Print summary information about a bytecode file",
     "disasm": "Disassemble a function from a bytecode file",
     "nasm": "Print the original compiled assembly of a function in an HL/C binary",
+    "hlasm": "Write a whole bytecode image as .hlasm source (assemble it back with -a)",
     "search": "Search strings in a bytecode file",
     "funcs": "List functions in a bytecode file",
     "decompile": "Decompile a function or class to pseudo-Haxe (INCOMPLETE, usually functional)",
@@ -121,7 +122,7 @@ def _make_progress_cb() -> "Optional[ProgressCallback]":
 # Subcommands that load exactly one Bytecode, hold it until the process exits, and never load
 # another. Only `main()` enables freezing, and only when dispatching one of these as the whole
 # process, so importing and calling a `*_main` in-process (e.g. from tests) never freezes.
-_ONE_SHOT_SUBCOMMANDS = frozenset({"hlc", "info", "disasm", "search", "funcs", "decompile", "db"})
+_ONE_SHOT_SUBCOMMANDS = frozenset({"hlc", "info", "disasm", "search", "funcs", "decompile", "db", "hlasm"})
 _freeze_gc_after_load = False
 
 
@@ -572,6 +573,35 @@ def nasm_main(argv: List[str]) -> None:
         print(f"No native code slot for f@{args.findex} (native primitives live in hdlls).", file=sys.stderr)
         sys.exit(1)
     print(text)
+
+
+def hlasm_main(argv: List[str]) -> None:
+    parser = argparse.ArgumentParser(
+        description="Write a whole bytecode image as .hlasm source. Assembling it with -a gives back the same bytes.",
+        prog="crashlink hlasm",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="\n".join(
+            [
+                "examples:",
+                "  crashlink hlasm game.hl -o game.hlasm",
+                "      Write game.hl as game.hlasm.",
+                "",
+                "  crashlink game.hlasm -a -o game.hl",
+                "      Assemble it back into bytecode.",
+            ]
+        ),
+    )
+    parser.add_argument("file", help="Input .hl / .dat file")
+    parser.add_argument("-o", "--output", help="Output .hlasm file (default: print to stdout)")
+    parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
+    args = parser.parse_args(argv)
+    text = to_hlasm(_load_code_from_cli_path(args.file, args.no_constants))
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(text)
+        print(f"{args.file} -> {args.output}")
+    else:
+        sys.stdout.write(text)
 
 
 def search_main(argv: List[str]) -> None:
@@ -3023,6 +3053,7 @@ def main() -> None:
         "info": info_main,
         "disasm": disasm_main,
         "nasm": nasm_main,
+        "hlasm": hlasm_main,
         "search": search_main,
         "funcs": funcs_main,
         "decompile": decompile_main,

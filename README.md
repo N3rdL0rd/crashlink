@@ -16,7 +16,7 @@ Join the [Hashlink Modding Community Discord](https://discord.gg/Es8ZpVkPey) for
 - Deserialisation, disassembly, and (currently incomplete, but usually functional) decompilation of HashLink bytecode
 - Reserialisation and first-class support for patching bytecode assembly
 - A GUI with a graphical disassembler/decompiler, embedded CFG viewer, source-location lookups, and in-place patching
-- A bytecode assembler for creating HashLink bytecode from scratch
+- A bytecode assembler that can write whole HashLink images from scratch, and a matching `.hlasm` writer that round-trips any image byte for byte
 - An HL/C reimplementation to transpile HashLink bytecode straight to C and build it against libhl
 - A full-featured CLI (`crashlink`) with both one-shot subcommands and a batteries-included interactive REPL (60+ commands!)
 - Xref indexing and source-location mapping
@@ -104,6 +104,7 @@ $ crashlink decompile game.hl 42       # decompile f@42 to pseudo-Haxe
 $ crashlink info game.hl               # summary info (version, counts, etc.)
 $ crashlink search game.hl "password"  # search strings by substring
 $ crashlink db info game.cldb          # inspect a .cldb debug-info database
+$ crashlink hlasm game.hl -o game.hlasm  # write the image as .hlasm (assemble it back with -a)
 $ crashlink hlc game.hl --build        # transpile to C and compile it
 $ crashlink mcp                        # run as an MCP server
 ```

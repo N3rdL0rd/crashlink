@@ -32,6 +32,7 @@ For anything that doesn't need a live session, there are subcommands that run on
 | `info` | Summary info: version, counts, etc. |
 | `search` | Search strings by substring |
 | `db` | Inspect a `.cldb` debug-info database (`db info`, `db check`, `db renames`, `db comments`) |
+| `hlasm` | Write a whole bytecode image as `.hlasm` source (see [Writing HashLink Bytecode by Hand](/hlasm)) |
 | `hlc` | Transpile bytecode to C, optionally build it (`--build`) |
 | `mcp` | Run crashlink as an MCP server |
 | `gui` | Launch the graphical bytecode inspector |
@@ -45,6 +46,7 @@ $ crashlink decompile game.hl 17 --class --with-deps  # ...plus every user class
 $ crashlink info game.hl               # summary info (version, counts, etc.)
 $ crashlink search game.hl "password"  # search strings by substring
 $ crashlink db info game.cldb          # inspect a .cldb debug-info database
+$ crashlink hlasm game.hl -o game.hlasm  # write the image as .hlasm (assemble it back with -a)
 $ crashlink hlc game.hl --build        # transpile to C and compile it
 $ crashlink mcp                        # run as an MCP server
 ```
