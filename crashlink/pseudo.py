@@ -4506,6 +4506,21 @@ def _obj_fields(code: Bytecode, obj: Optional[Obj]) -> List[Tuple[str, Type]]:
     return res
 
 
+def class_field_lines(code: Bytecode, obj: Obj) -> List[str]:
+    """Field declarations (unindented) for the class `obj` belongs to: static fields
+    first, then instance fields, typed from the Obj alone (no decompilation)."""
+    dynamic, static = _obj_pair(obj)
+    lines = [
+        f"public static var {name}: {disasm._haxe_annotation(code, typ)};"
+        for name, typ in _obj_fields(code, static)
+    ]
+    lines.extend(
+        f"public var {name}: {disasm._haxe_annotation(code, typ)};"
+        for name, typ in _obj_fields(code, dynamic)
+    )
+    return lines
+
+
 def _overrides_super(code: Bytecode, dynamic: Optional[Obj], method_name: str) -> bool:
     """True if `method_name` is declared by the direct super class (needs `override`)."""
     if dynamic is None or not dynamic.super or dynamic.super.value <= 0:
@@ -4589,13 +4604,9 @@ def _stub_class(code: Bytecode, primary: Obj) -> str:
     header += " {"
     lines.append(header)
 
-    static_fields = _obj_fields(code, static)
-    inst_fields = _obj_fields(code, dynamic)
-    for field_name, field_type in static_fields:
-        lines.append(f"    public static var {field_name}: {disasm._haxe_annotation(code, field_type)};")
-    for field_name, field_type in inst_fields:
-        lines.append(f"    public var {field_name}: {disasm._haxe_annotation(code, field_type)};")
-    if static_fields or inst_fields:
+    fields = class_field_lines(code, primary)
+    lines.extend(f"    {field}" for field in fields)
+    if fields:
         lines.append("")
 
     # Static methods (from the static half) then instance methods, deduped by findex.
