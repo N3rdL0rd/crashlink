@@ -27,16 +27,17 @@ Where crashlink stands, feature by feature. Checked items are done; unchecked it
 - [x] GUI prerequisites
   - [x] Workspace/project abstraction (wraps `Bytecode` with cached analysis state)
   - [x] Incremental/async analysis API (background decompile, progress callbacks)
-  - [ ] Patch buffer (in-memory edits, dirty tracking, re-serialisation)
+  - [x] Patch buffer (in-memory edits, dirty tracking, re-serialisation)
   - [x] Function search index (by name, file, type)
   - [x] Source location API (debug file + line → function/opcode, and reverse)
-- [ ] GUI (probably qt6 at this point)
+- [ ] GUI (Qt 6)
   - [x] Graphical disassembler
   - [x] Embedded CFG viewer through some Graphviz bindings
   - [x] Decompiler
   - [x] Basic local name patching
   - [ ] Other direct patching
+    - [x] String constants
   - [ ] Rename other symbols
-  - [ ] Persistent patching/export modified bytecode
-  - [ ] IR layer viewer
+  - [x] Persistent patching/export modified bytecode
+  - [x] IR layer viewer
 - [ ] Partial recompilation (against stubs of other functions)
