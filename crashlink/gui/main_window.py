@@ -757,6 +757,9 @@ class MainWindow(QMainWindow):
         self._apply_theme(self._theme)
         self._log_panel.set_context(mw=self, code=None)
 
+        from .features import install_all
+
+        install_all(self)
         file_menu = self.menu("File")
         file_menu.addSeparator()
         file_menu.addAction(self._quit_action)

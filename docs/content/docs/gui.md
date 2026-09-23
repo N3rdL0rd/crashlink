@@ -31,6 +31,7 @@ The main window is a `QMainWindow` with a set of dockable panels arranged around
 - **Log** (bottom dock): timestamped, coloured output for GUI events (errors, load progress, decompile failures), plus an embedded Python REPL for poking at the loaded `Bytecode` object directly. `!<cmd>` runs a crashlink CLI command in the background and streams its output in; the interactive commands (`repl`, `patch`, `exit`, `cfg`) are refused. The decompiler's internal debug messages only appear when **View › Decompiler Debug Output** is on.
 - **Edit History**: an undo/redo view (`QUndoView`) over renames, comments, and string edits made in the session.
 - **CFG** (right dock, Space toggles it): the control-flow graph of the function in focus, rendered by Graphviz on a background thread. Large graphs open legible at the entry block; click a block to jump to its first opcode, and the block holding the opcode under the disassembly cursor is outlined. `0` fits the graph, `1` resets to 100%.
+- **Decompiler Internals** (Window menu): for the function in focus, every optimizer pass, which ones changed the IR, a diff of each pass, the IR snapshot after it, and the final IR tree.
 
 Opening a function or class from the Navigator adds a tab in the central area showing a **sync view**. Long-running work (loading, decompiling, exports) is shown in the status bar.
 
@@ -55,8 +56,18 @@ Keys in a sync view (IDA-style; **Help › Keyboard Shortcuts** lists everything
 
 A few flat, table-style views are available alongside the Navigator for scanning the whole bytecode file at once:
 
+- **Strings** (Shift+F12): every string constant with its length and reference count. Enter or X lists the references, F2 edits the string (undoable).
+- **Globals**: every global with its type, constant initializer and reference count. Double-clicking a `g@N` in the code opens it here.
 - **Types view**: every type in the bytecode (`Obj`, `Enum`, `Virtual`, `Abstract`, `Ref`, `Null`, `Packed`, `Fun`), with a detail pane showing its layout, including fields, methods, enum constructs, and vtable slots.
 - **Natives view**: every native function in the bytecode, sortable by column.
+- **File Info** (Ctrl+I): path, size, SHA-256, version, table sizes, native libraries, a link to the entry point, and the bytecode sanity checks.
+- **Opcode Reference** (Help menu): every opcode with its operands and description.
+
+## Lookups and exports
+
+The Jump and Search menus cover the CLI's lookups: **Go to File Offset** (which section an offset falls in), **Go to Source Location** (`File.hx:120`, jumping to the opcodes compiled from that line), and **Cross-References** by kind and index (function, type, field, global, string, enum construct).
+
+**File › Export** writes the (possibly edited) bytecode back out, transpiles to HL/C, stubs one or all source files, generates API docs or a MkDocs site, recovers hxsl shaders, and saves a class together with every class it references. Exports run in the background and report the output path when done.
 
 ## Errors and stability
 
