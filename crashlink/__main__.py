@@ -3107,11 +3107,11 @@ def main() -> None:
         help="Don't resolve constants during deserialisation - helpful for problematic or otherwise weird bytecode files",
         action="store_true",
     )
-    parser.add_argument("-d", "--debug", help="Enable addtional debug output", action="store_true")
+    parser.add_argument("-d", "--debug", help="Enable additional debug output", action="store_true")
     parser.add_argument(
         "-D",
         "--no-debug",
-        help="Disable debug output that may have been implicitly activted somewhere else",
+        help="Disable debug output that may have been implicitly activated somewhere else",
         action="store_true",
     )
     parser.add_argument(
