@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import struct
 from typing import Any, Dict, Iterable, List, Literal, Optional, Set, Tuple
 
@@ -614,6 +615,40 @@ def is_gc_ptr(typ: Type) -> bool:
         Type.Kind.GUID.value,
     }
     return typ.kind.value not in NON_GC_POINTER_KINDS
+
+
+def bytes_name(data: bytes) -> str:
+    """C symbol for a bytes-pool entry, named as hl2c does:
+    "bytes$" ^ short_digest (Digest.to_hex (Digest.bytes b))."""
+    return "bytes$" + hashlib.md5(hashlib.md5(data).hexdigest().encode()).hexdigest()[:7]
+
+
+def c_bytes_literal(data: bytes) -> str:
+    """A C string literal holding exactly `data` (octal escapes, so nothing is ambiguous)."""
+    out = []
+    for b in data:
+        ch = chr(b)
+        out.append(ch if 0x20 <= b < 0x7F and ch not in '"\\?' else f"\\{b:03o}")
+    return '"' + "".join(out) + '"'
+
+
+def generate_bytes(code: Bytecode) -> List[str]:
+    """Emits the bytes pool (version 5+) as byte arrays, as hl2c does in hl/globals.c.
+    hl2c moves entries over 1000 bytes into an #included hl/bytes_<md5>.h; the output
+    here is a single file, so every entry is written inline."""
+    res: List[str] = []
+    if code.version.value < 5 or not code.bytes:
+        return res
+    emitted: Set[str] = set()
+    for data in code.bytes.value:
+        name = bytes_name(data)
+        if name in emitted:
+            continue
+        emitted.add(name)
+        values = [str(b) for b in data]
+        rows = [",".join(values[i : i + 0x80]) for i in range(0, len(values), 0x80)]
+        res.append(f"vbyte {name}[] = {{" + ",\n\t".join(rows) + "};")
+    return res
 
 
 def generate_globals(code: Bytecode) -> List[str]:
@@ -1422,8 +1457,14 @@ def generate_functions(
                     case "Bool":
                         rhs = "true" if str(df["value"]) == "True" else "false"
                     case "Bytes":
-                        # TODO not sure this is right - might be bytes pool past v5?
-                        rhs = f'(vbyte*)USTR("{c_escape_string(code.strings.value[df["ptr"].value])}")'
+                        # From version 5 on, the runtime loads the bytes pool entry (hl2c
+                        # emits it as an array, see generate_bytes). Before that it loads
+                        # the string pool entry's raw UTF-8 as a C string.
+                        if code.version.value >= 5 and code.bytes:
+                            rhs = bytes_name(code.bytes.value[df["ptr"].value])
+                        else:
+                            raw = code.strings.value[df["ptr"].value].encode("utf-8", "surrogateescape")
+                            rhs = "(vbyte*)" + c_bytes_literal(raw)
                     case "String":
                         rhs = f'(vbyte*)USTR("{c_escape_string(code.strings.value[df["ptr"].value])}")'
                     case "Null":
@@ -2394,6 +2435,7 @@ def code_to_c(code: Bytecode, progress_cb: Optional[ProgressCallback] = None) ->
     sec("Globals & Strings")
     _p(0.30, "generating globals")
     res += generate_globals(code)
+    res += generate_bytes(code)
 
     sec("Dummy label call")
     line("// no-op")
