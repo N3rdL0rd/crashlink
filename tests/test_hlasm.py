@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from crashlink.asm import AsmError, AsmFile, to_hlasm
+from crashlink.asm import AsmError, AsmFile, edit_function, function_to_hlasm, to_hlasm
 from crashlink.core import Bytecode, Function, Packed, Struct
 
 HAXE_DIR = Path(__file__).parent / "haxe"
@@ -28,6 +28,44 @@ def test_compiled_images_roundtrip_byte_for_byte(name):
     # Real images exercise objects, enums, virtuals, constants, debug info and assigns.
     code = Bytecode.from_path(str(HAXE_DIR / f"{name}.hl"))
     assert _roundtrip(code) == code.serialise()
+
+
+def test_every_function_survives_an_unchanged_edit():
+    code = Bytecode.from_path(str(HAXE_DIR / "Closure.hl"))
+    original = code.serialise()
+    for func in code.functions:
+        edit = edit_function(code, function_to_hlasm(code, func), findex=func.findex.value)
+        assert edit.new.serialise() == func.serialise(), f"f@{func.findex.value}"
+        assert not (edit.strings or edit.ints or edit.floats or edit.types)
+    assert code.serialise() == original
+
+
+def test_function_edit_adds_pool_entries_and_reverts():
+    code = Bytecode.from_path(str(HAXE_DIR / "Clazz.hl"))
+    original = code.serialise()
+    func = _fn(code, 370)
+    text = function_to_hlasm(code, func).replace('String reg3, "Clazz"', 'String reg3, "Renamed \\u{e9}"')
+    edit = edit_function(code, text, findex=370)
+    assert edit.strings == ["Renamed \u00e9"]
+    edit.apply(code)
+    reloaded = Bytecode.from_bytes(code.serialise())
+    assert "Renamed \u00e9" in reloaded.strings.value
+    assert code.fn(370) is edit.new
+    edit.revert(code)
+    assert code.serialise() == original
+
+
+def test_invalid_function_edit_names_the_line_and_changes_nothing():
+    code = Bytecode.from_path(str(HAXE_DIR / "Clazz.hl"))
+    original = code.serialise()
+    text = function_to_hlasm(code, _fn(code, 370))
+    ret_line = next(i for i, line in enumerate(text.split("\n"), 1) if line.strip().startswith("Ret "))
+    with pytest.raises(AsmError) as err:
+        edit_function(code, text.replace("Ret reg", "Ret reg9999"))
+    assert err.value.line == ret_line
+    with pytest.raises(AsmError):
+        edit_function(code, text, findex=371)
+    assert code.serialise() == original
 
 
 PROGRAM = r""".version 5

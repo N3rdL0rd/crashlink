@@ -4,7 +4,6 @@ Human-readable disassembly of opcodes and utilities to work at a relatively low 
 
 from __future__ import annotations
 
-from ast import literal_eval
 import weakref
 from collections import OrderedDict
 from typing import Any, List, Optional, Dict, Tuple
@@ -1004,64 +1003,6 @@ def func(code: Bytecode, func: Function | Native) -> str:
     return res
 
 
-def to_asm(ops: List[Opcode]) -> str:
-    """
-    Dumps a list of opcodes to a human-readable(-ish) assembly format.
-
-    Eg.:
-    ```txt
-    Int. 0. 0
-    Int. 2. 1
-    GetGlobal. 3. 3
-    Add. 4. 0. 2
-    Sub. 5. 0. 2
-    Mul. 6. 0. 2
-    ToSFloat. 8. 0
-    ToSFloat. 9. 2
-    SDiv. 8. 8. 9
-    SMod. 7. 0. 2
-    Shl. 10. 0. 2
-    JSLt. 0. 2. 2
-    Bool. 11. False
-    JAlways. 1
-    Bool. 11. True
-    JSLt. 0. 2. 2
-    Bool. 12. False
-    JAlways. 1
-    Bool. 12. True
-    Ret. 1
-    ```
-    """
-    res = ""
-    for op in ops:
-        res += f"{op.op}. {'. '.join([str(arg) for arg in op.df.values()])}\n"
-    return res
-
-
-def from_asm(asm: str) -> List[Opcode]:
-    """
-    Reads and parses a list of opcodes from a human-readable(-ish) assembly format. See `to_asm`.
-    """
-    ops = []
-    for line in asm.split("\n"):
-        parts = line.split(". ")
-        op = parts[0]
-        args = parts[1:]
-        if not op:
-            continue
-        new_opcode = Opcode()
-        new_opcode.op = op
-        new_opcode.df = {}
-        # find defn types for this op
-        opargs = opcodes[op]
-        for name, type in opargs.items():
-            new_value = Opcode.TYPE_MAP[type]()
-            new_value.value = literal_eval(args.pop(0))
-            new_opcode.df[name] = new_value
-        ops.append(new_opcode)
-    return ops
-
-
 def gen_docs_for_obj(code: Bytecode, obj: Obj, static_obj: Optional[Obj] = None) -> str:
     """
     Generates HTML documentation for an Obj (and its static counterpart if provided).
@@ -1519,8 +1460,6 @@ __all__ = [
     "pseudo_from_op",
     "fmt_op",
     "func",
-    "to_asm",
-    "from_asm",
     "gen_mkdocs",
     "file_class_map",
     "MethodEntry",

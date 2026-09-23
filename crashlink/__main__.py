@@ -14,6 +14,7 @@ import os
 import platform
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -33,7 +34,7 @@ from .core import (
     USE_TQDM,
     ProgressCallback,
 )
-from .asm import AsmFile, to_hlasm
+from .asm import AsmError, AsmFile, edit_function, function_to_hlasm, to_hlasm
 from .core import (
     Bytecode,
     Function,
@@ -1731,7 +1732,7 @@ class Commands(BaseCommands):
 
     @alias("edit")
     def patch(self, args: List[str]) -> None:
-        """Patches a function's raw opcodes. `patch <idx>`"""
+        """Edits a function as .hlasm in a text editor, then applies it. `patch <idx>`"""
         if self._inspection_guard():
             return
         if len(args) == 0:
@@ -1750,55 +1751,56 @@ class Commands(BaseCommands):
         if isinstance(func, Native):
             print("Cannot patch native.")
             return
-        content = f"""{disasm.func(self.code, func)}
-
-###### Modify the opcodes below this line. Any edits above this line will be ignored, and removing this line will cause patching to fail. #####
-{disasm.to_asm(func.ops)}"""
+        content = (
+            f"# Editing f@{index}. Save and close the editor to apply the changes.\n"
+            "# The notation is .hlasm (see 'Writing HashLink Bytecode by Hand' in the docs).\n\n"
+            + function_to_hlasm(self.code, func)
+        )
         with tempfile.NamedTemporaryFile(suffix=".hlasm", mode="w", encoding="utf-8", delete=False) as f:
             f.write(content)
             file = f.name
         try:
-            import tkinter as tk
-            from tkinter import scrolledtext
-
-            def save_and_exit() -> None:
-                with open(file, "w", encoding="utf-8") as f:
-                    f.write(text.get("1.0", tk.END))
-                root.destroy()
-
-            root = tk.Tk()
-            root.title(f"Editing function f@{index}")
-            text = scrolledtext.ScrolledText(root, width=200, height=50)
-            text.pack()
-            text.insert("1.0", content)
-
-            button = tk.Button(root, text="Save and Exit", command=save_and_exit)
-            button.pack()
-
-            root.mainloop()
-        except ImportError:
-            if os.name == "nt":
-                subprocess.run(["notepad", file])
-            elif os.name == "posix":
-                subprocess.run(["nano", file])
+            editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
+            if editor:
+                subprocess.run([*shlex.split(editor), file])
             else:
-                print("No suitable editor found")
-                os.unlink(file)
-                return
-        try:
-            with open(file, "r", encoding="utf-8") as f2:  # why mypy, why???
+                try:
+                    import tkinter as tk
+                    from tkinter import scrolledtext
+
+                    def save_and_exit() -> None:
+                        with open(file, "w", encoding="utf-8") as f:
+                            f.write(text.get("1.0", tk.END))
+                        root.destroy()
+
+                    root = tk.Tk()
+                    root.title(f"Editing function f@{index}")
+                    text = scrolledtext.ScrolledText(root, width=200, height=50)
+                    text.pack()
+                    text.insert("1.0", content)
+
+                    button = tk.Button(root, text="Save and Exit", command=save_and_exit)
+                    button.pack()
+
+                    root.mainloop()
+                except ImportError:
+                    if os.name == "nt":
+                        subprocess.run(["notepad", file])
+                    elif os.name == "posix":
+                        subprocess.run(["nano", file])
+                    else:
+                        print("No suitable editor found (set $EDITOR)")
+                        return
+            with open(file, "r", encoding="utf-8") as f2:
                 modified = f2.read()
-
-            lines = modified.split("\n")
-            sep_idx = next(i for i, line in enumerate(lines) if "######" in line)
-            new_asm = "\n".join(lines[sep_idx + 1 :])
-            new_ops = disasm.from_asm(new_asm)
-
-            func.ops = new_ops
+            if modified == content:
+                print("No changes.")
+                return
+            edit = edit_function(self.code, modified, findex=index)
+            edit.apply(self.code)
             print(f"Function f@{index} updated successfully")
-
-        except Exception as e:
-            print(f"Failed to patch function: {e}")
+        except AsmError as e:
+            print(f"Failed to patch function, nothing was changed: {e}")
         finally:
             os.unlink(file)
 

@@ -226,7 +226,7 @@ def _render_cfg_svg(dot: str) -> Optional[str]:
 
 
 def to_asm_resolved(func: Function, code: Bytecode) -> str:
-    """Like to_asm but resolves constant-pool indices to their actual values."""
+    """One opcode per line, with constant-pool indices resolved to their actual values."""
     lines = []
     for op in func.ops:
         parts = [op.op or "?"] + [_fmt_operand(v, code) for v in op.df.values()]

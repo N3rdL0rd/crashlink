@@ -1,12 +1,6 @@
-from glob import glob
-
-import pytest
-
 from crashlink import *
 
 from crashlink.opcodes import opcodes
-
-test_files = glob("tests/haxe/*.hl")
 
 
 def _make_test_code():
@@ -104,18 +98,3 @@ def test_pseudo_from_op_all_opcodes():
         op.df = {param: _make_operand(param_type) for param, param_type in df.items()}
         out = disasm.pseudo_from_op(op, 0, regs, code, func=func)
         assert not out.startswith("unknown operation"), f"{name} fell through to default pseudo handler"
-
-
-@pytest.mark.parametrize("path", test_files)
-def test_diasm_equivalency(path: str):
-    code = Bytecode.from_path(path)
-    assert code.is_ok()
-    for function in code.functions:
-        if len(function.ops) > 1:  # skip small functions since they don't tell us much
-            try:
-                assert disasm.to_asm(function.ops) == disasm.to_asm(
-                    disasm.from_asm(disasm.to_asm(function.ops))
-                ), f"Function f@{function.findex} in {path} failed"
-            except:
-                print(f"Function f@{function.findex} in {path} failed")
-                raise

@@ -71,7 +71,7 @@ This isn't exhaustive (there are 60+ commands; run `help` in a live session for 
 | `autostub <folder>` | | Stub every file in the debug database to a folder |
 | `findfunc <query>` | `ff` | Search functions by name substring, or list functions in a source file |
 | `fnn <name>` | | Print a function by exact name |
-| `patch <idx>` | `edit` | Patch a function's raw opcodes |
+| `patch <idx>` | `edit` | Edit a function as [.hlasm](/hlasm) in `$VISUAL`/`$EDITOR` (or a small editor window), then apply it; `save` writes the result |
 | `save <path>` | | Write the modified bytecode out to `path` |
 | `xref <kind> <index> [aux]` | | Cross-references: `func`, `type`, `field`, `global`, `string`, or `enum` |
 | `locals <findex>` | | List a function's IR locals with their rename keys |

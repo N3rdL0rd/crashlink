@@ -30,6 +30,13 @@ edit a game's bytecode as text and assemble it again. From Python, the same
 two steps are `crashlink.asm.to_hlasm(code)` and
 `crashlink.asm.AsmFile(text).assemble()`.
 
+To change one function of a loaded file, use `patch <findex>` in the REPL or
+Edit › Edit Function as .hlasm (Ctrl+E) in the GUI. Both show the function as a
+single `.f@N` block and apply your edit when you're done. From Python, that's
+`crashlink.asm.function_to_hlasm(code, func)` and
+`crashlink.asm.edit_function(code, text).apply(code)`. New strings and numbers
+in the edited text are added to the file's pools.
+
 Three runnable examples live in `examples/hlasm/` in the repo, and all three
 run on the real HashLink runtime.
 

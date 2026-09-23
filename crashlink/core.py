@@ -2055,6 +2055,20 @@ class Bytecode(Serialisable):
         # static initializers' opcodes, so mutating functions invalidates it too.
         self._enum_global_map = None
 
+    def invalidate_code_caches(self) -> None:
+        """
+        Drops everything derived from function bodies (xrefs, search and source indices,
+        static initializer analysis, ...). Call this after replacing or editing functions.
+        """
+        self.invalidate_findex_cache()
+        self._xref_index = None
+        self._search_index = None
+        self._source_map = None
+        self._static_field_inits_cache = None
+        self._static_field_init_refs_cache = None
+        self._hxsl_shaders_cache = None
+        self._global_field_elem_types = {}
+
     def invalidate_proto_field_cache(self) -> None:
         """
         Invalidates the lazily-built findex -> Proto/Field maps. Call this after mutating

@@ -55,7 +55,7 @@ from .core import (
     strRef,
     tIndex,
 )
-from .opcodes import opcodes
+from .opcodes import opcodes, simple_calls
 
 
 class AsmError(SyntaxError):
@@ -365,6 +365,7 @@ class AsmFile:
         self._float_index: Dict[int, int] = {}
         self._bytes_index: Dict[bytes, int] = {}
         self._debugfile_index: Dict[str, int] = {}
+        self.op_lines: List[int] = []
         self._parse()
 
     @classmethod
@@ -813,10 +814,14 @@ class AsmFile:
         x86_block: List[str] = []
         x86_line = 0
         current = fileRef(-1, 0)  # the decoder's starting state: no file, line 0
+        # Source line of each opcode, for errors found after assembly.
+        self.op_lines = op_lines = []
+        source_line = section.line
 
         def emit(op: Opcode) -> None:
             ops.append(op)
             positions.append(current)
+            op_lines.append(source_line)
 
         def flush_x86() -> None:
             if not x86_block:
@@ -839,6 +844,7 @@ class AsmFile:
                 labels[val.args[0]] = len(ops)
                 continue
             stripped = val.value.strip()
+            source_line = val.line
             if stripped == "X86" or stripped.startswith("X86 "):
                 if not x86_block:
                     x86_line = val.line
@@ -882,71 +888,95 @@ class AsmFile:
         return ops, positions
 
     def _add_functions(self, code: Bytecode) -> None:
-        debug = bool(code.has_debug_info)
         for section in self.raw_sections.values():
-            if not section.name.startswith("f@"):
-                continue
-            line = section.line
-            func = Function()
-            func.findex = fIndex(_parse_ref(section.name, "f", line))
-
-            regs_section = section.find("regs")
-            func.regs = (
-                [tIndex(_parse_ref(t, "t", ln)) for t, ln in self._flat(regs_section)] if regs_section else []
-            )
-
-            type_section = section.find("type")
-            returns_section = section.find("returns")
-            args_section = section.find("args")
-            if type_section is not None:
-                if returns_section is not None or args_section is not None:
-                    raise AsmError("Use either '.type' or '.returns'/'.args', not both", type_section.line)
-                func.type = tIndex(self._single_ref(type_section, "t"))
-            elif returns_section is not None:
-                ret = tIndex(self._single_ref(returns_section, "t"))
-                # `.args <n>` declares how many of the leading registers are parameters
-                # (default 0, i.e. a no-argument function like a typical entrypoint).
-                nargs = 0
-                if args_section is not None:
-                    tokens = list(self._flat(args_section))
-                    if len(tokens) != 1:
-                        raise AsmError("'.args' expects the number of arguments", args_section.line)
-                    nargs = _parse_int(tokens[0][0], tokens[0][1])
-                if nargs > len(func.regs):
-                    raise AsmError("More args than declared registers!", line)
-                func.type = self._intern_fun_type(code, func.regs[:nargs], ret)
-            else:
-                raise AsmError(f"'.{section.name}' needs a '.type' or a '.returns'", line)
-
-            ops_section = section.find("ops")
-            if ops_section is None:
-                raise AsmError(f"'.{section.name}' has no '.ops'", line)
-            func.ops, positions = self._assemble_ops(ops_section, debug)
-            func.has_debug = debug
-            func.version = code.version.value
-            if debug:
-                func.debuginfo = DebugInfo()
-                func.debuginfo.value = positions
-                assigns_section = section.find("assigns")
-                if assigns_section is not None:
-                    if code.version.value < 3:
-                        raise AsmError("'.assigns' needs bytecode version 3 or later", assigns_section.line)
-                    assigns = []
-                    for tokens, ln in self._entries(assigns_section):
-                        if len(tokens) != 2:
-                            raise AsmError("Expected an assign: <name> <opcode index>", ln)
-                        assigns.append((self._string(tokens[0], ln), VarInt(_parse_int(tokens[1], ln))))
-                    func.assigns = assigns
-                    func.nassigns = VarInt(len(assigns))
-            elif section.find("assigns") is not None:
-                raise AsmError("'.assigns' needs a '.debugfiles' section", line)
-
-            known = {"regs", "type", "returns", "args", "ops", "assigns"}
-            for val in section.body:
-                if isinstance(val, AsmSection) and val.name not in known:
-                    raise AsmError(f"Unknown subsection '.{val.name}' in '.{section.name}'", val.line)
-            code.functions.append(func)
+            if section.name.startswith("f@"):
+                code.functions.append(self._build_function(code, section))
         code.invalidate_findex_cache()
+
+    def _build_function(self, code: Bytecode, section: AsmSection) -> Function:
+        debug = bool(code.has_debug_info)
+        line = section.line
+        func = Function()
+        func.findex = fIndex(_parse_ref(section.name, "f", line))
+
+        regs_section = section.find("regs")
+        func.regs = (
+            [tIndex(_parse_ref(t, "t", ln)) for t, ln in self._flat(regs_section)] if regs_section else []
+        )
+
+        type_section = section.find("type")
+        returns_section = section.find("returns")
+        args_section = section.find("args")
+        if type_section is not None:
+            if returns_section is not None or args_section is not None:
+                raise AsmError("Use either '.type' or '.returns'/'.args', not both", type_section.line)
+            func.type = tIndex(self._single_ref(type_section, "t"))
+        elif returns_section is not None:
+            ret = tIndex(self._single_ref(returns_section, "t"))
+            # `.args <n>` declares how many of the leading registers are parameters
+            # (default 0, i.e. a no-argument function like a typical entrypoint).
+            nargs = 0
+            if args_section is not None:
+                tokens = list(self._flat(args_section))
+                if len(tokens) != 1:
+                    raise AsmError("'.args' expects the number of arguments", args_section.line)
+                nargs = _parse_int(tokens[0][0], tokens[0][1])
+            if nargs > len(func.regs):
+                raise AsmError("More args than declared registers!", line)
+            func.type = self._intern_fun_type(code, func.regs[:nargs], ret)
+        else:
+            raise AsmError(f"'.{section.name}' needs a '.type' or a '.returns'", line)
+
+        ops_section = section.find("ops")
+        if ops_section is None:
+            raise AsmError(f"'.{section.name}' has no '.ops'", line)
+        func.ops, positions = self._assemble_ops(ops_section, debug)
+        func.has_debug = debug
+        func.version = code.version.value
+        if debug:
+            func.debuginfo = DebugInfo()
+            func.debuginfo.value = positions
+            assigns_section = section.find("assigns")
+            if assigns_section is not None:
+                if code.version.value < 3:
+                    raise AsmError("'.assigns' needs bytecode version 3 or later", assigns_section.line)
+                assigns = []
+                for tokens, ln in self._entries(assigns_section):
+                    if len(tokens) != 2:
+                        raise AsmError("Expected an assign: <name> <opcode index>", ln)
+                    assigns.append((self._string(tokens[0], ln), VarInt(_parse_int(tokens[1], ln))))
+                func.assigns = assigns
+                func.nassigns = VarInt(len(assigns))
+        elif section.find("assigns") is not None:
+            raise AsmError("'.assigns' needs a '.debugfiles' section", line)
+
+        known = {"regs", "type", "returns", "args", "ops", "assigns"}
+        for val in section.body:
+            if isinstance(val, AsmSection) and val.name not in known:
+                raise AsmError(f"Unknown subsection '.{val.name}' in '.{section.name}'", val.line)
+        # Loading fills this in; analysis (called_by, xrefs) relies on it.
+        func.calls = [op.df["fun"] for op in func.ops if op.op in simple_calls]
+        return func
+
+    def _seed_pools(self, code: Bytecode) -> None:
+        """Start from an existing image's pools, so literals resolve to its entries and new
+        ones are appended after them."""
+        for s in code.strings.value:
+            self._string_index.setdefault(s, len(self.strings))
+            self.strings.append(s)
+        for n in code.ints:
+            self._int_index.setdefault(n.value & 0xFFFFFFFF, len(self.ints))
+            self.ints.append(n.value & 0xFFFFFFFF)
+        for f in code.floats:
+            self._float_index.setdefault(_float_bits(f.value), len(self.floats))
+            self.floats.append(f.value)
+        if code.version.value >= 5 and code.bytes is not None:
+            for b in code.bytes.value:
+                self._bytes_index.setdefault(b, len(self.bytes))
+                self.bytes.append(b)
+        if code.debugfiles is not None:
+            for i, name in enumerate(code.debugfiles.value):
+                self._debugfile_index.setdefault(name, i)
 
     def _get_single_val(self, name: str) -> str:
         values = [v for v in self.raw_sections[name].value if isinstance(v, AsmValueStr)]
@@ -1264,6 +1294,118 @@ def to_hlasm(code: Bytecode) -> str:
     return _HlasmWriter(code).write()
 
 
+def function_to_hlasm(code: Bytecode, func: Function) -> str:
+    """Writes one function as a `.f@N` block, in the same notation as `to_hlasm`."""
+    writer = _HlasmWriter(code)
+    writer._write_function(func)
+    return "\n".join(writer.out).lstrip("\n") + "\n"
+
+
+@dataclass
+class FunctionEdit:
+    """A validated replacement for one function, made by `edit_function`. `apply` swaps it
+    into the image (adding any new pool entries and types it needs); `revert` undoes that.
+    Apply and revert edits in stack order."""
+
+    old: Function
+    new: Function
+    strings: List[str]
+    ints: List[int]
+    floats: List[float]
+    bytes: List[bytes]
+    types: List[Type]
+
+    def apply(self, code: Bytecode) -> None:
+        code.strings.value.extend(self.strings)
+        for word in self.ints:
+            code.add_i32(word)
+        for val in self.floats:
+            sf = SerialisableF64()
+            sf.value = val
+            code.floats.append(sf)
+        if self.bytes:
+            assert code.bytes is not None
+            code.bytes.value.extend(self.bytes)
+        code.types.extend(self.types)
+        self._swap(code, self.old, self.new)
+
+    def revert(self, code: Bytecode) -> None:
+        self._swap(code, self.new, self.old)
+        for pool, added in (
+            (code.strings.value, self.strings),
+            (code.ints, self.ints),
+            (code.floats, self.floats),
+            (code.bytes.value if code.bytes is not None else [], self.bytes),
+            (code.types, self.types),
+        ):
+            if added:
+                del pool[len(pool) - len(added) :]
+
+    @staticmethod
+    def _swap(code: Bytecode, current: Function, replacement: Function) -> None:
+        position = next(i for i, f in enumerate(code.functions) if f is current)
+        code.functions[position] = replacement
+        code.invalidate_code_caches()
+        code.invalidate_proto_field_cache()
+
+
+def edit_function(code: Bytecode, text: str, findex: Optional[int] = None) -> FunctionEdit:
+    """
+    Assembles `text`, a single `.f@N` block (as written by `function_to_hlasm`), into a
+    replacement for function N of `code`. String and number literals reuse the image's pool
+    entries or add new ones. The result is validated against the whole image but not
+    applied: call `FunctionEdit.apply`. Pass `findex` to require that N is that function.
+    """
+    code.require_executable("edit functions")
+    asm = AsmFile(text)
+    others = [name for name in asm.raw_sections if not name.startswith("f@")]
+    functions = [sec for name, sec in asm.raw_sections.items() if name.startswith("f@")]
+    if others:
+        raise AsmError(
+            f"Only a function can be edited here, not '.{others[0]}'", asm.raw_sections[others[0]].line
+        )
+    if len(functions) != 1:
+        raise AsmError("Expected exactly one '.f@N' function")
+    section = functions[0]
+    target = _parse_ref(section.name, "f", section.line)
+    if findex is not None and target != findex:
+        raise AsmError(f"This edits f@{findex}; its index can't be changed to f@{target}", section.line)
+    old = next((f for f in code.functions if f.findex.value == target), None)
+    if old is None:
+        raise AsmError(f"f@{target} is not a function in this image", section.line)
+
+    asm._seed_pools(code)
+    ntypes = len(code.types)
+    try:
+        new = asm._build_function(code, section)
+    finally:
+        added_types = code.types[ntypes:]
+        del code.types[ntypes:]
+    edit = FunctionEdit(
+        old=old,
+        new=new,
+        strings=asm.strings[len(code.strings.value) :],
+        ints=asm.ints[len(code.ints) :],
+        floats=asm.floats[len(code.floats) :],
+        bytes=asm.bytes[len(code.bytes.value) if code.bytes is not None else 0 :],
+        types=added_types,
+    )
+    if edit.bytes and (code.version.value < 5 or code.bytes is None):
+        raise AsmError("A bytes pool needs bytecode version 5 or later")
+    for op in new.ops:
+        op.validate()
+    edit.apply(code)
+    try:
+        code._validate_structure(opcodes_already_validated=True)
+    except Exception as e:
+        m = re.search(rf"f@{target}\b.*? at op (\d+)", str(e))
+        line = asm.op_lines[int(m.group(1))] if m and int(m.group(1)) < len(asm.op_lines) else 0
+        raise AsmError(f"The edited function is invalid: {e}", line) from e
+    finally:
+        edit.revert(code)
+    return edit
+
+
 class X86AsmError(Exception):
     pass
 
@@ -1475,5 +1617,8 @@ __all__ = [
     "assemble_x86",
     "disassemble_x86",
     "to_hlasm",
+    "function_to_hlasm",
+    "edit_function",
+    "FunctionEdit",
     "X86AsmError",
 ]
