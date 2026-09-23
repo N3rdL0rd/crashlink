@@ -128,7 +128,6 @@ from .opt.loops import (
 )
 from .opt.switches import (
     IRIntSwitchOptimizer,
-    IRStringSwitchOptimizer,
     IREnumSwitchOptimizer,
 )
 
@@ -332,7 +331,6 @@ class IRFunction:
                 IRAnonObjectLiteralOptimizer(self),
                 IRStringConcatFolder(self),
                 IRIntSwitchOptimizer(self),
-                IRStringSwitchOptimizer(self),
                 IRTerminalValueInliner(self),
                 IRDeadTempEliminator(self),
                 IRDeadCodeEliminator(self),
@@ -921,6 +919,234 @@ class IRFunction:
         header: CFNode
         nodes: Set[CFNode]
         exit_node: Optional[CFNode]
+
+    @dataclass
+    class _StringSwitch:
+        """A string-switch lowering found in the CFG by `_match_string_switch`."""
+
+        value_reg: int
+        #: (case literal, body node) in chain order; a body may appear under several literals.
+        cases: List[Tuple[str, CFNode]]
+        #: Where the chain continues when no case matched: the default body, or the end.
+        default: CFNode
+        #: Chain nodes after the head, and every chain opcode (head's `JNull` included).
+        nodes: List[CFNode]
+        ops: List[Opcode]
+
+    def _string_field(self, obj_reg: int, op: Opcode) -> Optional[str]:
+        """Name of the `String` field read by `op` (a `Field` on `obj_reg`), else None."""
+        if op.op != "Field" or op.df["obj"].value != obj_reg:
+            return None
+        definition = self.func.regs[obj_reg].resolve(self.code).definition
+        if not isinstance(definition, Obj) or definition.name.resolve(self.code) != "String":
+            return None
+        fields = definition.resolve_fields(self.code)
+        index = op.df["field"].value
+        return fields[index].name.resolve(self.code) if 0 <= index < len(fields) else None
+
+    def _match_string_case(
+        self, node: CFNode, value_reg: int, is_head: bool
+    ) -> Optional[Tuple[str, CFNode, CFNode, List[CFNode], List[Opcode]]]:
+        """Match one case of the string-switch chain starting at `node` (see
+        `_match_string_switch`). Returns (literal, body, next, case nodes after `node`,
+        case opcodes)."""
+        assert self.cfg is not None
+        ops = node.ops
+        if not ops or ops[-1].op != "JNull" or ops[-1].df["reg"].value != value_reg:
+            return None
+        if not is_head and len(ops) != 1:
+            return None
+        edges = {edge: target for target, edge in node.branches}
+        miss, length_node = edges.get("true"), edges.get("false")
+        if miss is None or length_node is None:
+            return None
+        edges = {edge: target for target, edge in length_node.branches}
+        compare_node = edges.get("false")
+        if edges.get("true") is not miss or compare_node is None:
+            return None
+        edges = {edge: target for target, edge in compare_node.branches}
+        body = edges.get("true")
+        if edges.get("false") is not miss or body is None:
+            return None
+        preds = self.cfg.predecessors
+        if preds.get(length_node) != [node] or preds.get(compare_node) != [length_node]:
+            return None
+
+        # len = s.length; n = <int>; JNotEq len, n
+        length_ops = length_node.ops
+        if [op.op for op in length_ops] != ["Field", "Int", "JNotEq"]:
+            return None
+        if self._string_field(value_reg, length_ops[0]) != "length":
+            return None
+        length_reg = length_ops[0].df["dst"].value
+        jump = length_ops[2].df
+        if {jump["a"].value, jump["b"].value} != {length_reg, length_ops[1].df["dst"].value}:
+            return None
+
+        # b = s.bytes; lit = "<literal>"; r = string_compare(b, lit, len); z = 0; JEq r, z
+        compare_ops = compare_node.ops
+        if [op.op for op in compare_ops] != ["Field", "String", "Call3", "Int", "JEq"]:
+            return None
+        bytes_op, literal_op, call_op, zero_op, jump_op = compare_ops
+        if self._string_field(value_reg, bytes_op) != "bytes":
+            return None
+        call = call_op.df
+        native = call["fun"].resolve(self.code)
+        if not isinstance(native, Native) or native.name.resolve(self.code) != "string_compare":
+            return None
+        if (call["arg0"].value, call["arg1"].value, call["arg2"].value) != (
+            bytes_op.df["dst"].value,
+            literal_op.df["dst"].value,
+            length_reg,
+        ):
+            return None
+        if zero_op.df["ptr"].resolve(self.code).value != 0:
+            return None
+        jump = jump_op.df
+        if {jump["a"].value, jump["b"].value} != {call["dst"].value, zero_op.df["dst"].value}:
+            return None
+        # The scrutinee must survive the chain; its scratch registers are rechecked by the caller.
+        if any("dst" in op.df and op.df["dst"].value == value_reg for op in [*length_ops, *compare_ops]):
+            return None
+        literal = literal_op.df["ptr"].resolve(self.code)
+        chain_ops = [ops[-1], *length_ops, *compare_ops]
+        return literal, body, miss, [length_node, compare_node], chain_ops
+
+    def _match_string_switch(self, head: CFNode) -> Optional[_StringSwitch]:
+        """
+        Recognise HashLink's lowering of `switch (s) { case "lit": ... }`. Each case is three
+        CFG nodes whose failure edges all lead to the next case:
+
+            JNull s -> next                               (ends `head`; later cases hold only this)
+            len = s.length; n = <int>; JNotEq len, n -> next
+            b = s.bytes; lit = "<literal>"; r = string_compare(b, lit, len); z = 0; JEq r, z -> body
+                                                          (falls through to next)
+
+        The chain ends at the first `next` that is not another case on `s`: the default body, or
+        the end of the switch when there is none. Lifting the three failure edges as ordinary
+        conditionals copies the rest of the chain into each of them, 3^n IR for n cases when the
+        case bodies fall through to a shared end; matching the chain lifts it as one switch.
+        """
+        assert self.cfg is not None
+        last = head.ops[-1]
+        value_reg = last.df["reg"].value
+        cases: List[Tuple[str, CFNode]] = []
+        nodes: List[CFNode] = []
+        chain_ops: List[Opcode] = []
+        node = head
+        previous_case: Set[CFNode] = set()
+        while True:
+            # Only the previous case's chain may jump into a later case.
+            if node is not head and not set(self.cfg.predecessors.get(node, [])) <= previous_case:
+                break
+            matched = self._match_string_case(node, value_reg, node is head)
+            if matched is None:
+                break
+            literal, body, miss, case_nodes, case_ops = matched
+            if node is not head:
+                nodes.append(node)
+            nodes.extend(case_nodes)
+            chain_ops.extend(case_ops)
+            cases.append((literal, body))
+            previous_case = {node, *case_nodes}
+            node = miss
+        if not cases:
+            return None
+        # The scratch registers are compiler temporaries: lifting the chain as a switch drops
+        # their writes, which is only sound if nothing reads them afterwards.
+        scratch = {
+            op.df["dst"].value for op in chain_ops if "dst" in op.df and op.df["dst"].value != value_reg
+        }
+        for target in {body for _, body in cases} | {node}:
+            if any(self._register_live_at(target, reg) for reg in scratch):
+                return None
+        return self._StringSwitch(value_reg, cases, node, nodes, chain_ops)
+
+    def _lift_string_switch(
+        self,
+        block: IRBlock,
+        head: CFNode,
+        switch: _StringSwitch,
+        visited: Set[CFNode],
+        stop_at: Optional[CFNode],
+        loop_ctx: Optional[_LoopContext],
+    ) -> None:
+        """Lift a `_match_string_switch` chain as one `IRSwitch`, each body lifted once."""
+        assert self.cfg is not None
+        cfg = self.cfg
+        visited.update(switch.nodes)
+        targets = [body for _, body in switch.cases] + [switch.default]
+        allowed_nodes = loop_ctx.nodes if loop_ctx else None
+        convergence = cfg.immediate_post_dominators.get(head)
+        if convergence is None:
+            # Some cases return or throw, so nothing post-dominates the head. Merge where the
+            # cases that do fall through all meet, as a conditional does for its live arm; a
+            # case body itself never qualifies, or it would be hoisted out of the switch.
+            live = [target for target in targets if not self._is_terminal_branch_node(target, loop_ctx)]
+            bodies = {body for _, body in switch.cases}
+            common = (
+                set.intersection(*(cfg.post_dominators.get(target, set()) for target in live)) - bodies
+                if live
+                else set()
+            )
+            convergence = (
+                max(common, key=lambda n: len(cfg.post_dominators.get(n, ()))) if common else stop_at
+            )
+        # Same boundary rules as a conditional: never merge past the enclosing boundary, and
+        # keep a loop's cases from converging outside it when one of them loops back.
+        if (
+            stop_at is not None
+            and convergence is not None
+            and convergence != stop_at
+            and self._reaches_bypassing(tuple(targets), stop_at, convergence, allowed_nodes)
+        ):
+            convergence = stop_at
+        if (
+            loop_ctx
+            and convergence is not None
+            and convergence not in loop_ctx.nodes
+            and convergence != loop_ctx.header
+            and any(target in loop_ctx.nodes for target in targets)
+        ):
+            convergence = loop_ctx.header
+
+        entry_locals = self.locals.copy()
+        entry_new_regs = self._new_defined_regs.copy()
+        new_regs = set(entry_new_regs)
+        arms: List[Tuple[IRBlock, List[IRLocal]]] = []
+
+        def lift_arm(target: CFNode) -> IRBlock:
+            self.locals = entry_locals.copy()
+            self._new_defined_regs = entry_new_regs.copy()
+            arm = self._lift_loop_edge(target, visited, loop_ctx)
+            if arm is None:
+                arm = self._lift_block(target, visited.copy(), stop_at=convergence, loop_ctx=loop_ctx)
+            arms.append((arm, self.locals.copy()))
+            new_regs.update(self._new_defined_regs)
+            return arm
+
+        cases: Dict[IRConst, IRBlock] = {}
+        aliases: Dict[IRConst, List[IRConst]] = {}
+        keys: Dict[CFNode, IRConst] = {}
+        for literal, target in switch.cases:
+            value = IRConst(self.code, IRConst.ConstType.GLOBAL_STRING, value=literal)
+            key = keys.get(target)
+            if key is not None:
+                aliases.setdefault(key, []).append(value)
+                continue
+            keys[target] = value
+            cases[value] = lift_arm(target)
+        default = lift_arm(switch.default)
+        self._new_defined_regs = new_regs
+        self._join_branch_locals(entry_locals, arms, convergence)
+
+        ir_switch = IRSwitch(self.code, entry_locals[switch.value_reg], cases, default, aliases)
+        ir_switch.src_op_idxs = {
+            self._op_id_to_idx[id(op)] for op in switch.ops if id(op) in self._op_id_to_idx
+        }
+        block.statements.append(ir_switch)
+        next_block_ir = self._lift_block(convergence, visited, stop_at=stop_at, loop_ctx=loop_ctx)
+        block.statements.extend(next_block_ir.statements)
 
     def _catch_has_explicit_type(self, catch_branch_node: "CFNode") -> bool:
         """Detect whether the original source wrote an explicit type on the
@@ -1880,6 +2106,57 @@ class IRFunction:
             for (branch, _), local in zip(live, incoming):
                 branch.statements.append(IRAssign(self.code, merged, local))
 
+    def _lift_loop_edge(
+        self, target: Optional[CFNode], visited: Set[CFNode], loop_ctx: Optional[_LoopContext]
+    ) -> Optional[IRBlock]:
+        """Lift a branch edge that leaves the ordinary flow of the enclosing loop.
+
+        Returns the IR for an edge that continues, breaks out of, or is absent from the
+        loop, or None when `target` should be lifted as a regular branch.
+        """
+        assert self.cfg is not None
+        if target is None:
+            return IRBlock(self.code)
+        if loop_ctx and target == loop_ctx.header:
+            branch_block = IRBlock(self.code)
+            branch_block.statements.append(IRContinue(self.code))
+            return branch_block
+        if loop_ctx and target not in loop_ctx.nodes:
+            # A return inside a loop is not a loop break; let the normal
+            # Ret handler lift it as an IRReturn.  The exception is the
+            # loop's own exit node, which post-dominates the header and
+            # therefore represents leaving the loop normally.
+            if (
+                not target.branches
+                and target.ops
+                and target.ops[-1].op == "Ret"
+                and target != loop_ctx.exit_node
+                and loop_ctx.header not in self.cfg.post_dominators.get(target, set())
+            ):
+                return None
+            # Branches that leave the loop may contain side effects before the
+            # exit (e.g. a final push before breaking out of while(true)). Lift
+            # them up to the loop's normal exit node and append a break only if
+            # the branch does not already terminate on its own.
+            if loop_ctx.exit_node is not None:
+                # Lift the exiting branch outside the current loop context so
+                # its statements are preserved; stop at the loop's normal exit
+                # node so post-loop code is not duplicated here.
+                branch_block = self._lift_block(
+                    target,
+                    visited.copy(),
+                    stop_at=loop_ctx.exit_node,
+                    loop_ctx=None,
+                )
+                if branch_block.statements and isinstance(branch_block.statements[-1], (IRReturn, IRThrow)):
+                    return branch_block
+                branch_block.statements.append(IRBreak(self.code))
+                return branch_block
+            branch_block = IRBlock(self.code)
+            branch_block.statements.append(IRBreak(self.code))
+            return branch_block
+        return None
+
     def _lift_block(
         self,
         node: Optional[CFNode],
@@ -1949,7 +2226,10 @@ class IRFunction:
         self._lift_ops_into_block(block, ops_to_process)
 
         # --- 2. Handle the Control Flow based on the Last Opcode ---
-        if last_op and last_op.op in conditionals:
+        string_switch = self._match_string_switch(node) if last_op and last_op.op == "JNull" else None
+        if string_switch is not None:
+            self._lift_string_switch(block, node, string_switch, visited, stop_at, loop_ctx)
+        elif last_op and last_op.op in conditionals:
             # HL conditional jumps: JXxx jumps to the target when condition is TRUE.
             # Compilers emit "JXxx(negated_if_condition) → else_block" so fall-through = then.
             jump_target, fall_through = None, None
@@ -1962,51 +2242,6 @@ class IRFunction:
             # Invert the jump condition to get the actual "if" condition.
             cond_expr = self._build_bool_expr_from_op(last_op)
             cond_expr.invert()
-
-            def make_loop_branch(target: Optional[CFNode]) -> Optional[IRBlock]:
-                if target is None:
-                    return IRBlock(self.code)
-                if loop_ctx and target == loop_ctx.header:
-                    branch_block = IRBlock(self.code)
-                    branch_block.statements.append(IRContinue(self.code))
-                    return branch_block
-                if loop_ctx and target not in loop_ctx.nodes:
-                    # A return inside a loop is not a loop break; let the normal
-                    # Ret handler lift it as an IRReturn.  The exception is the
-                    # loop's own exit node, which post-dominates the header and
-                    # therefore represents leaving the loop normally.
-                    if (
-                        not target.branches
-                        and target.ops
-                        and target.ops[-1].op == "Ret"
-                        and target != loop_ctx.exit_node
-                        and loop_ctx.header not in cfg.post_dominators.get(target, set())
-                    ):
-                        return None
-                    # Branches that leave the loop may contain side effects before the
-                    # exit (e.g. a final push before breaking out of while(true)). Lift
-                    # them up to the loop's normal exit node and append a break only if
-                    # the branch does not already terminate on its own.
-                    if loop_ctx.exit_node is not None:
-                        # Lift the exiting branch outside the current loop context so
-                        # its statements are preserved; stop at the loop's normal exit
-                        # node so post-loop code is not duplicated here.
-                        branch_block = self._lift_block(
-                            target,
-                            visited.copy(),
-                            stop_at=loop_ctx.exit_node,
-                            loop_ctx=None,
-                        )
-                        if branch_block.statements and isinstance(
-                            branch_block.statements[-1], (IRReturn, IRThrow)
-                        ):
-                            return branch_block
-                        branch_block.statements.append(IRBreak(self.code))
-                        return branch_block
-                    branch_block = IRBlock(self.code)
-                    branch_block.statements.append(IRBreak(self.code))
-                    return branch_block
-                return None
 
             stop_nodes = {loop_ctx.header} if loop_ctx else set()
             allowed_nodes = loop_ctx.nodes if loop_ctx else None
@@ -2109,7 +2344,7 @@ class IRFunction:
             def lift_branch(target: Optional[CFNode]) -> IRBlock:
                 self.locals = entry_locals.copy()
                 self._new_defined_regs = entry_new_regs.copy()
-                branch = make_loop_branch(target)
+                branch = self._lift_loop_edge(target, visited, loop_ctx)
                 if branch is None:
                     branch = self._lift_block(
                         target, visited.copy(), stop_at=convergence_node, loop_ctx=loop_ctx
@@ -2170,7 +2405,7 @@ class IRFunction:
                 elif edge_type == "switch: default":
                     default_block = case_block_ir
 
-            block.statements.append(IRSwitch(self.code, val_reg, cases, default_block))
+            block.statements.append(IRSwitch(self.code, val_reg, cases, default_block, aliases))
             # See the Trap case below for why stop_at must be threaded through here.
             next_block_ir = self._lift_block(convergence_node, visited, stop_at=stop_at, loop_ctx=loop_ctx)
             block.statements.extend(next_block_ir.statements)

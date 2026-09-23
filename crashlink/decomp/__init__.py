@@ -142,7 +142,6 @@ from .opt.loops import (
 )
 from .opt.switches import (
     IRIntSwitchOptimizer,
-    IRStringSwitchOptimizer,
     IREnumSwitchOptimizer,
 )
 from .function import (
@@ -236,7 +235,6 @@ __all__ = [
     "IRStringAllocOptimizer",
     "IRStringConcatFolder",
     "IRStringIntConcatOptimizer",
-    "IRStringSwitchOptimizer",
     "IRSwitch",
     "IRTernary",
     "IRNullCoalesce",

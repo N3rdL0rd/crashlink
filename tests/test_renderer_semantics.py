@@ -170,6 +170,56 @@ class NestedCallable {
     }
 }""",
         ),
+        (
+            "SwitchShapes",
+            """enum Shape { Circle(r:Float); Dot; Line; }
+class SwitchShapes {
+    static function fallThrough(s:String):Int {
+        var n = 1;
+        switch (s) {
+            case "a": n += 10;
+            case "bb", "cc": n += 20;
+            case "ddd": n += 30;
+            default: n -= 1;
+        }
+        return n * 2;
+    }
+    static function returns(s:String):Int {
+        switch (s) {
+            case "x": return 1;
+            case "yy": Sys.println("yy");
+        }
+        return 0;
+    }
+    static function looped(words:Array<String>):Int {
+        var n = 0;
+        for (w in words) {
+            switch (w) {
+                case "skip": continue;
+                case "stop": break;
+                case "two", "deux": n += 2;
+                default: n += 1;
+            }
+            n *= 3;
+        }
+        return n;
+    }
+    static function ints(x:Int):String {
+        return switch (x) { case 1, 2: "low"; case 5: "five"; default: "other"; };
+    }
+    static function shapes(s:Shape):Int {
+        return switch (s) { case Dot, Line: 0; case Circle(r): Std.int(r); };
+    }
+    static function main():Void {
+        Sys.println(fallThrough("a") + fallThrough("bb") + fallThrough("cc"));
+        Sys.println(fallThrough("ddd") + fallThrough("e") + fallThrough(null));
+        Sys.println(returns("x") + returns("yy") + returns("z") + returns(null));
+        Sys.println(looped("a,two,skip,deux,stop,b".split(",")));
+        Sys.println(ints(1) + ints(2) + ints(5) + ints(7));
+        Sys.println(shapes(Dot) + shapes(Line) + shapes(Circle(2.5)));
+    }
+}""",
+        ),
     ],
 )
 def test_renderer_roundtrip_preserves_observations(tmp_path, name, source):

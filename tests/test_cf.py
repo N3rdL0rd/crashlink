@@ -96,6 +96,54 @@ def test_short_circuit_chain_lifts_linearly(tmp_path):
     assert rendered.count('"pass"') == 1
 
 
+_STRING_SWITCH_SOURCE = """class StringSwitch {{
+    public static function main() {{ pick("case3"); }}
+    static function pick(s:String):Void {{
+        switch (s) {{
+{cases}
+            default: trace("miss");
+        }}
+        trace("after");
+    }}
+}}
+"""
+
+
+def _build_string_switch(haxe, directory, count):
+    directory.mkdir(parents=True, exist_ok=True)
+    cases = "\n".join(f'            case "case{i}": trace("hit{i}");' for i in range(count))
+    (directory / "StringSwitch.hx").write_text(_STRING_SWITCH_SOURCE.format(cases=cases))
+    compiled = subprocess.run(
+        [haxe, "-hl", "StringSwitch.hl", "-main", "StringSwitch.hx"],
+        cwd=directory,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert compiled.returncode == 0, compiled.stderr
+    return directory / "StringSwitch.hl"
+
+
+def test_string_switch_lifts_linearly(tmp_path):
+    # Each string case is a null check, a length check and a string_compare, all
+    # failing over to the next case. With case bodies falling through to a shared
+    # end, lifting those as plain conditionals re-lifted the rest of the chain
+    # under each failure edge: 3^n IR, and ~20s for just 8 cases.
+    haxe = shutil.which("haxe")
+    if not haxe:
+        pytest.skip("string switch regression requires Haxe")
+    short, _ = _lifted_node_count(_build_string_switch(haxe, tmp_path / "short", 4), "pick")
+    full, rendered = _lifted_node_count(_build_string_switch(haxe, tmp_path / "full", 12), "pick")
+
+    assert full < short * 4, f"lifting is superlinear in case count: {short} -> {full} nodes"
+    assert rendered.count("switch (s)") == 1, rendered
+    for i in range(12):
+        assert rendered.count(f'case "case{i}":') == 1, rendered
+        assert rendered.count(f'"hit{i}"') == 1, rendered
+    assert rendered.count('"miss"') == 1, rendered
+    assert rendered.count('"after"') == 1, rendered
+
+
 def test_switch():
     code = Bytecode.from_path("tests/haxe/Switch.hl")
     func = code.get_test_main()
