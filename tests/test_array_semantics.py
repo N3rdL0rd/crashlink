@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 from typing import cast
 
+import re
 import os
 import shutil
 
@@ -455,4 +456,5 @@ def test_store_capacity_reads_do_not_survive_as_statements():
     # the store is recovered, and the store itself keeps the null fault.
     assert "a.length;" not in body
     assert ".bytes)" not in body
-    assert "a[i] = var7;" in body and "a[j] = tmp;" in body
+    # Both stores are recovered as plain element writes (`a[i]` gets `a[j]`'s old value).
+    assert re.search(r"a\[i\] = (a\[j\]|var\d+);", body) and "a[j] = tmp;" in body

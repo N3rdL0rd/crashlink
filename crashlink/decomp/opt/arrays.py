@@ -718,6 +718,11 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         idx_temp_map: Dict[str, IRExpression] = {}
         rewritten = list(stmts)
         found_any = False
+        # A top-level reassignment of the temp ends its lifetime: later reads belong to
+        # the new value (often another array's `.bytes` in a reused register), so stop
+        # there. Its right-hand side still reads the old value.
+        end = len(stmts)
+        redefined_at = -1
         for j in range(start + 1, len(stmts)):
             use = rewritten[j]
             if (
@@ -734,13 +739,19 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                 new_use.adopt(stmt)  # `stmt` (the bytes-temp definition) is dropped below
                 rewritten[j] = new_use
                 found_any = True
+            if isinstance(use, IRAssign) and isinstance(use.target, IRLocal) and use.target.name == temp.name:
+                end, redefined_at = j + 1, j
+                break
         if not found_any:
             return None
         # Only safe to drop the def if every reference to temp got rewritten
         # above — a leftover raw use (e.g. as a call receiver) would otherwise
         # be left dangling once the definition is removed.
-        for j in range(start + 1, len(rewritten)):
-            if self._contains_local(rewritten[j], temp.name):
+        for j in range(start + 1, end):
+            checked = rewritten[j]
+            if j == redefined_at:
+                checked = cast(IRAssign, checked).expr
+            if self._contains_local(checked, temp.name):
                 return None
         return rewritten[:start] + rewritten[start + 1 :], 1
 
