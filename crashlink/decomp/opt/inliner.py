@@ -2348,10 +2348,14 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                         target_stmt.adopt(stmt)
                     statements_to_remove.append(stmt)
                 made_change_in_pass = True
-                break
+                # Keep scanning this pass rather than restarting from the top: later
+                # candidates only look forward, and anything this inline unlocked
+                # earlier in the block is picked up by the next pass. Restarting after
+                # every inline made long straight-line blocks cubic.
 
             if statements_to_remove:
-                block.statements = [s for s in block.statements if s not in statements_to_remove]
+                removed = {id(s) for s in statements_to_remove}
+                block.statements = [s for s in block.statements if id(s) not in removed]
 
         for idx, stmt in enumerate(block.statements):
             child_continuation = block.statements[idx + 1 :] + continuation

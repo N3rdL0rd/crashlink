@@ -57,6 +57,25 @@ from . import (
 )
 
 
+class _DefsBefore:
+    """`{local: expr}` for the last assignment to each local in `stmts[:end]`, the dict
+    the array matchers take, computed per lookup by scanning backwards."""
+
+    __slots__ = ("_stmts", "_end")
+
+    def __init__(self, stmts: List[IRStatement], end: int) -> None:
+        self._stmts = stmts
+        self._end = end
+
+    def get(self, key: Any, default: Any = None) -> Any:
+        stmts = self._stmts
+        for i in range(self._end - 1, -1, -1):
+            stmt = stmts[i]
+            if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal) and stmt.target == key:
+                return stmt.expr
+        return default
+
+
 class IRNativeArrayAllocOptimizer(TraversingIROptimizer):
     """
     Folds `Native.alloc_array(ty, size)` into `new hl.NativeArray<T>(size)`.
@@ -654,18 +673,16 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
 
                 temp_match = self._try_eliminate_bytes_temp(block.statements, i)
                 if temp_match:
-                    # Unlike the other _try_* helpers above, this one returns
-                    # a full replacement for the whole statement list (the
-                    # match can reach arbitrarily far ahead of `i`), not just
-                    # a local edit at the current position — apply it
-                    # immediately and restart the scan, instead of appending
-                    # more onto `new_statements` from `i` in the *original*
-                    # list, which would duplicate everything already folded
-                    # into the returned list.
+                    # Unlike the other _try_* helpers above, this one returns a full
+                    # replacement for the whole statement list (the match can reach
+                    # arbitrarily far ahead of `i`). Everything before `i` is unchanged
+                    # and the removed definition was at `i`, so carry on scanning the new
+                    # list from the same index; restarting the pass after every match
+                    # made long blocks cubic.
                     new_full_statements, _consumed = temp_match
                     block.statements = new_full_statements
                     made_change = True
-                    break
+                    continue
 
                 new_statements.append(stmt)
                 i += 1
@@ -1161,10 +1178,9 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             return None
         temp = s0.target
 
-        local_defs: Dict[IRLocal, IRExpression] = {}
-        for stmt in stmts[:start]:
-            if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
-                local_defs[stmt.target] = stmt.expr
+        # What each local was last assigned before `start`, looked up only when a
+        # candidate needs it: building it eagerly at every position was quadratic.
+        local_defs = cast(Dict[IRLocal, IRExpression], _DefsBefore(stmts, start))
 
         s0_expr_is_empty_literal = isinstance(s0.expr, IRArrayLiteral) and len(s0.expr.elements) == 0
         if not (s0_expr_is_empty_literal or self._is_empty_arrayobj_anon(s0.expr, local_defs)):

@@ -320,37 +320,54 @@ class IRUnrolledLoopRerollOptimizer(TraversingIROptimizer):
     }
 
     def visit_block(self, block: IRBlock) -> None:
-        changed = True
-        while changed:
-            changed = False
-            statements = block.statements
-            for start in range(len(statements)):
-                rerolled = self._try_reroll(statements, start)
-                if rerolled is None:
-                    continue
+        statements = block.statements
+        # Each statement's shape, computed once: recomputing the shapes of everything
+        # after every start position made long blocks quadratic.
+        shapes: List[Optional[str]] = [self._shape(stmt) for stmt in statements]
+        runs = self._run_lengths(shapes)
+        start = 0
+        while start < len(statements):
+            rerolled = self._try_reroll(statements, start, shapes, runs[start])
+            if rerolled is not None:
+                # The loop has no shape, so it ends every run that reached it: positions
+                # before it can't start matching now, and scanning just moves on.
                 loop, consumed = rerolled
-                block.statements = statements[:start] + [loop] + statements[start + consumed :]
-                changed = True
-                break
+                statements = statements[:start] + [loop] + statements[start + consumed :]
+                shapes = shapes[:start] + [None] + shapes[start + consumed :]
+                runs = self._run_lengths(shapes)
+            start += 1
+        block.statements = statements
 
-    def _try_reroll(self, statements: List[IRStatement], start: int) -> Optional[Tuple[IRIntRangeLoop, int]]:
+    @staticmethod
+    def _run_lengths(shapes: List[Optional[str]]) -> List[int]:
+        """For each position, how many shaped statements follow it (itself included)
+        before one without a shape."""
+        runs = [0] * (len(shapes) + 1)
+        for i in range(len(shapes) - 1, -1, -1):
+            runs[i] = runs[i + 1] + 1 if shapes[i] is not None else 0
+        return runs
+
+    def _try_reroll(
+        self,
+        statements: List[IRStatement],
+        start: int,
+        all_shapes: Optional[List[Optional[str]]] = None,
+        run: Optional[int] = None,
+    ) -> Optional[Tuple[IRIntRangeLoop, int]]:
         available = len(statements) - start
         if available < self._MIN_COPIES:
             return None
-        shapes: List[Optional[str]] = []
-        for stmt in statements[start:]:
-            shape = self._shape(stmt)
-            if shape is None:
-                break
-            shapes.append(shape)
-        if len(shapes) < self._MIN_COPIES:
+        shapes = all_shapes if all_shapes is not None else [self._shape(stmt) for stmt in statements]
+        if run is None:
+            run = self._run_lengths(shapes[start:])[0]
+        if run < self._MIN_COPIES:
             return None
 
-        for period in range(1, min(self._MAX_PERIOD, len(shapes) // self._MIN_COPIES) + 1):
+        for period in range(1, min(self._MAX_PERIOD, run // self._MIN_COPIES) + 1):
             copies = 1
-            while (copies + 1) * period <= len(shapes) and shapes[
-                (copies - 1) * period : copies * period
-            ] == shapes[copies * period : (copies + 1) * period]:
+            while (copies + 1) * period <= run and shapes[
+                start + (copies - 1) * period : start + copies * period
+            ] == shapes[start + copies * period : start + (copies + 1) * period]:
                 copies += 1
             if copies < self._MIN_COPIES:
                 continue
