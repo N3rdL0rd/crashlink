@@ -524,14 +524,18 @@ def pseudo_from_op(
             return f"if reg{op.df['a']} >= reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
         case "JSLte":
             return f"if reg{op.df['a']} <= reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
-        case "JULt" | "JSLt":
+        case "JSLt":
             return f"if reg{op.df['a']} < reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
+        case "JULt":
+            return f"if reg{op.df['a']} <u reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
         case "JUGte":
             return f"if reg{op.df['a']} >=u reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
+        # Not the same as >= / <: a NaN operand makes the ordered comparison false,
+        # so these jump.
         case "JNotLt":
-            return f"if reg{op.df['a']} >= reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
+            return f"if !(reg{op.df['a']} < reg{op.df['b']}): jump to {idx + (op.df['offset'].value + 1)}"
         case "JNotGte":
-            return f"if reg{op.df['a']} < reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
+            return f"if !(reg{op.df['a']} >= reg{op.df['b']}): jump to {idx + (op.df['offset'].value + 1)}"
         case "JNotEq":
             return f"if reg{op.df['a']} != reg{op.df['b']}: jump to {idx + (op.df['offset'].value + 1)}"
         case "JSGt":
