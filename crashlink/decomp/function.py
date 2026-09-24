@@ -1065,9 +1065,15 @@ class IRFunction:
         scratch = {
             op.df["dst"].value for op in chain_ops if "dst" in op.df and op.df["dst"].value != value_reg
         }
-        for target in {body for _, body in cases} | {node}:
-            if any(self._register_live_at(target, reg) for reg in scratch):
+        for body in {body for _, body in cases}:
+            if any(self._register_live_at(body, reg) for reg in scratch):
                 return None
+        # The end is the exception. An exhaustive switch expression over an `enum abstract`
+        # String has no default, and the compiler borrows the not-yet-written result register
+        # as scratch: the code after the switch reads it, having been written by every case
+        # body (none of them reads it first, checked above), so only the no-match path the
+        # type rules out would see the scratch value there. Source code cannot read a
+        # compiler temporary any other way.
         return self._StringSwitch(value_reg, cases, node, nodes, chain_ops)
 
     def _lift_string_switch(
