@@ -68,7 +68,7 @@ from .ir import (
     IRNativeStub,
     _strip_ansi,
 )
-from .cfg import CFNode, CFGraph
+from .cfg import CFNode, CFGraph, _DominatorMap, loop_post_dominators
 from .opt import (
     IROptimizer,
     _bytes_mem_kind,
@@ -81,6 +81,8 @@ from .opt.inliner import (
     IRTerminalValueInliner,
 )
 from .opt.clean import (
+    IRLoopTailContinueFolder,
+    fold_loop_tail,
     IRLoopConditionOptimizer,
     IRSelfAssignOptimizer,
     IRBoolMaterializationCollapser,
@@ -268,7 +270,7 @@ class IRFunction:
         self.cfg_data: Dict[str, Any] = {"nodes": [], "edges": []}
         self.layer_snapshots: List[Tuple[str, str, bool]] = []
         self._lift_cache: Dict[
-            Tuple[Optional[CFNode], Optional[CFNode], int, Tuple[int, ...], frozenset[int]],
+            Tuple[Optional[CFNode], Optional[CFNode], int, Tuple[int, ...], frozenset[int], bool],
             Tuple[IRBlock, List[IRLocal], Set[int]],
         ] = {}
         self._enum_global_map: Dict[int, Tuple[str, tIndex]] = {}
@@ -289,6 +291,10 @@ class IRFunction:
         # source (Haxe's HL codegen is sensitive to it: without the continue a
         # constant-bounds loop with a catch can be unrolled by the compiler).
         self._trap_depth = 0
+        # id(loop context) -> number of regions being lifted in that loop that stop
+        # before its header (see `_lift_block`).
+        self._bounded_regions: Dict[Optional[int], int] = {}
+        self._loop_pdoms: Dict[int, _DominatorMap] = {}
         self._lift(no_lift=no_lift)
         if do_optimize:
             self.optimizers: List[IROptimizer] = [
@@ -303,6 +309,7 @@ class IRFunction:
                 IRLoopConditionOptimizer(self),
                 IRSelfAssignOptimizer(self),
                 IRRedundantContinueEliminator(self),
+                IRLoopTailContinueFolder(self),
                 IRCopyPropOptimizer(self),
                 IRBoolMaterializationCollapser(self),
                 IRShiftConstantOptimizer(self),
@@ -347,6 +354,7 @@ class IRFunction:
                 IRDeadStoreEliminator(self),
                 IRDeadAssignmentEliminator(self),
                 IRGuardOrMerger(self),
+                IRLoopTailContinueFolder(self),
                 IRRedundantRecomputeEliminator(self),
                 IRTernaryRecovery(self),
                 IREmptyConditionalNormalizer(self),
@@ -1096,7 +1104,13 @@ class IRFunction:
             stop_at is not None
             and convergence is not None
             and convergence != stop_at
-            and self._reaches_bypassing(tuple(targets), stop_at, convergence, allowed_nodes)
+            and self._reaches_bypassing(
+                tuple(targets),
+                stop_at,
+                convergence,
+                allowed_nodes,
+                loop_header=loop_ctx.header if loop_ctx else None,
+            )
         ):
             convergence = stop_at
         if (
@@ -1818,17 +1832,27 @@ class IRFunction:
         goal: CFNode,
         barrier: CFNode,
         allowed_nodes: Optional[Set[CFNode]] = None,
+        loop_header: Optional[CFNode] = None,
     ) -> bool:
         """Whether `goal` is reachable from any of `starts` without passing `barrier`.
 
         Used to reject a convergence candidate that the enclosing merge point can
         sidestep: such a candidate does not post-dominate the arms, so lifting an
         arm up to it would run past the enclosing boundary instead of stopping.
+
+        Inside a loop, reaching `loop_header` ends a path (it is lifted as `continue`),
+        so it neither counts as reaching `goal` nor leads on into the next iteration.
+        Otherwise every `if (a && b) continue;` in a loop body would push its merge out
+        to the header, copying the rest of the body into each arm: 2^k copies for k
+        such statements.
         """
+        if loop_header is not None and goal is loop_header:
+            return False
+        barriers = {barrier} if loop_header is None else {barrier, loop_header}
         for start in starts:
             if start is None:
                 continue
-            if goal in self._shortest_distances(start, allowed_nodes, {barrier}):
+            if goal in self._shortest_distances(start, allowed_nodes, barriers):
                 return True
         return False
 
@@ -1926,6 +1950,7 @@ class IRFunction:
                 else IRBlock(self.code)
             )
 
+            fold_loop_tail(body_block)
             block.statements.append(IRPrimitiveLoop(self.code, cond_block, body_block))
         else:
             # `header` was marked visited above so the outer caller won't re-descend into
@@ -1938,6 +1963,7 @@ class IRFunction:
             body_block = self._lift_block(
                 header, body_visited, stop_at=header, loop_ctx=loop_ctx, is_loop_entry=True
             )
+            fold_loop_tail(body_block)
             block.statements.append(
                 IRWhileLoop(
                     self.code,
@@ -2163,6 +2189,40 @@ class IRFunction:
         loop_ctx: Optional[_LoopContext] = None,
         is_loop_entry: bool = False,
     ) -> IRBlock:
+        """Lifts a region (see `_lift_region`), tracking whether it ends at the end of the
+        enclosing loop body. A region bounded by some other node is followed by more code
+        in that loop, so a jump back to the header inside it has to be an explicit
+        `continue`; see `_jumps_to_header_implicitly`."""
+        key = id(loop_ctx) if loop_ctx is not None else None
+        bounded = loop_ctx is not None and stop_at is not None and stop_at is not loop_ctx.header
+        if bounded:
+            self._bounded_regions[key] = self._bounded_regions.get(key, 0) + 1
+        try:
+            return self._lift_region(node, visited, stop_at, loop_ctx, is_loop_entry)
+        finally:
+            if bounded:
+                self._bounded_regions[key] -= 1
+
+    def _loop_post_dominators(self, loop_ctx: _LoopContext) -> _DominatorMap:
+        key = id(loop_ctx.header)
+        pdoms = self._loop_pdoms.get(key)
+        if pdoms is None:
+            pdoms = self._loop_pdoms[key] = loop_post_dominators(loop_ctx.header, loop_ctx.nodes)
+        return pdoms
+
+    def _jumps_to_header_implicitly(self, loop_ctx: _LoopContext) -> bool:
+        """Whether reaching `loop_ctx.header` here can be left implicit: only when every
+        enclosing region of this loop runs to the end of the body, and not inside a try."""
+        return not self._trap_depth and not self._bounded_regions.get(id(loop_ctx), 0)
+
+    def _lift_region(
+        self,
+        node: Optional[CFNode],
+        visited: Set[CFNode],
+        stop_at: Optional[CFNode] = None,
+        loop_ctx: Optional[_LoopContext] = None,
+        is_loop_entry: bool = False,
+    ) -> IRBlock:
         """
         Recursively lifts a CFNode and its successors into an IRBlock.
 
@@ -2199,6 +2259,7 @@ class IRFunction:
             id(loop_ctx),
             tuple(id(local) for local in self.locals),
             frozenset(self._new_defined_regs),
+            loop_ctx is not None and self._jumps_to_header_implicitly(loop_ctx),
         )
         cached = self._lift_cache.get(cache_key)
         if cached is not None:
@@ -2252,6 +2313,25 @@ class IRFunction:
 
             if convergence_node is None and node in cfg.immediate_post_dominators:
                 convergence_node = cfg.immediate_post_dominators[node]
+
+            # In a loop, the nearest node both arms reach is not always where they merge:
+            # in `x = (a && b) ? p : q;` the `q` arm is one link's target, but the other
+            # path skips it and only joins after the assignment. Merging at `q` would lift
+            # everything after the join into the `p` arm as well. Prefer the node every path
+            # through this iteration passes (continues and exits end a path). When there is
+            # none, e.g. `if (a && b) continue; rest`, the nearest pick stands and the
+            # continuing arm gets an explicit `continue`.
+            if (
+                loop_ctx is not None
+                and convergence_node is not None
+                and convergence_node is not loop_ctx.header
+                and convergence_node in loop_ctx.nodes
+            ):
+                loop_pdoms = self._loop_post_dominators(loop_ctx)
+                if node in loop_pdoms and convergence_node not in loop_pdoms[node]:
+                    merge = loop_pdoms.immediate(node)
+                    if merge is not None:
+                        convergence_node = merge
 
             # `_find_convergence_node`'s shortest-combined-distance heuristic can pick
             # one of the branch targets itself as the "convergence" when that target is
@@ -2316,7 +2396,11 @@ class IRFunction:
                 and convergence_node is not None
                 and convergence_node != stop_at
                 and self._reaches_bypassing(
-                    (fall_through, jump_target), stop_at, convergence_node, allowed_nodes
+                    (fall_through, jump_target),
+                    stop_at,
+                    convergence_node,
+                    allowed_nodes,
+                    loop_header=loop_ctx.header if loop_ctx else None,
                 )
             ):
                 convergence_node = stop_at
@@ -2485,8 +2569,13 @@ class IRFunction:
             if node.branches:
                 successor_node, _ = node.branches[0]
                 if loop_ctx and successor_node == loop_ctx.header:
-                    if self._trap_depth:
-                        block.statements.append(IRContinue(self.code))
+                    # Falling into the header ends the body, so the continue is implicit
+                    # when nothing in this loop follows the current region; otherwise
+                    # (and inside a try) it has to be written out.
+                    if not self._jumps_to_header_implicitly(loop_ctx):
+                        # Inside a try the continue was always written out; otherwise it
+                        # only is because code follows, and may be restructured away.
+                        block.statements.append(IRContinue(self.code, synthetic=not self._trap_depth))
                     return block
                 if loop_ctx and successor_node not in loop_ctx.nodes:
                     block.statements.append(IRBreak(self.code))

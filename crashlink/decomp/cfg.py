@@ -254,6 +254,35 @@ class _DominatorMap(Mapping[CFNode, _DominatorSet]):
         return len(self._nodes)
 
 
+def loop_post_dominators(header: CFNode, loop_nodes: Set[CFNode]) -> "_DominatorMap":
+    """Post-dominators within one loop body: a jump back to `header` (a continue), an edge
+    leaving the loop, and a return/throw all end a path. So a node's post-dominator here
+    is where every path through the current iteration that doesn't leave it early meets."""
+    virtual_exit = CFNode([])
+    exits = [
+        n
+        for n in loop_nodes
+        if not n.branches or any(t is header or t not in loop_nodes for t, _ in n.branches)
+    ]
+    preds: Dict[CFNode, List[CFNode]] = {n: [] for n in loop_nodes}
+    for n in loop_nodes:
+        for t, _ in n.branches:
+            if t is not header and t in loop_nodes:
+                preds[t].append(n)
+
+    def successors(node: CFNode) -> List[CFNode]:  # in the reversed graph
+        return exits if node is virtual_exit else preds.get(node, [])
+
+    def predecessors(node: CFNode) -> List[CFNode]:  # in the reversed graph
+        out = [virtual_exit if (t is header or t not in loop_nodes) else t for t, _ in node.branches]
+        return out or [virtual_exit]
+
+    ordered = sorted(loop_nodes, key=lambda n: n.base_offset)
+    return _DominatorMap(
+        ordered, _immediate_dominators(virtual_exit, successors, predecessors), root=virtual_exit
+    )
+
+
 class CFGraph:
     """
     A control flow graph.

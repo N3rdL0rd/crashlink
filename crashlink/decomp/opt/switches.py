@@ -25,6 +25,10 @@ from ..ir import (
     IREnumField,
     IREnumPattern,
     IRReturn,
+    IRWhileLoop,
+    IRPrimitiveLoop,
+    IRForEachLoop,
+    IRIntRangeLoop,
 )
 from . import (
     TraversingIROptimizer,
@@ -290,6 +294,15 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
                 read = False if dispatches and id(node) in dispatches else visit(node.value, live)[1]
                 branches = [visit(child, live) for child in [node.default, *node.cases.values()]]
                 result = any(end for end, _ in branches), read or any(read for _, read in branches)
+            elif isinstance(node, (IRWhileLoop, IRPrimitiveLoop, IRForEachLoop, IRIntRangeLoop)) and not live:
+                # A tag defined in the body is still live at its end, so it flows around
+                # the back edge; that only matters if the next iteration reads it before
+                # redefining it (the condition or body read it when entered live).
+                children = [visit(child, False) for child in node.get_children()]
+                read = any(child_read for _, child_read in children)
+                if any(end for end, _ in children):
+                    read = read or any(visit(child, True)[1] for child in node.get_children())
+                result = any(end for end, _ in children), read
             else:
                 # Unknown control structures cannot propagate a new tag fact
                 # past a backedge or exception boundary. Expression children

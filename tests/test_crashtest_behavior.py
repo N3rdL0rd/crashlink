@@ -105,7 +105,7 @@ def test_observable_mismatches_fail(toolchain, tmp_path, before, after):
     assert result.error
 
 
-@pytest.mark.parametrize("name", ["QualityConstants", "QualityEffects"])
+@pytest.mark.parametrize("name", ["QualityConstants", "QualityEffects", "QualityLoopContinue"])
 def test_shipped_corpus_roundtrip(toolchain, tmp_path, name):
     from crashtest.run import run_case
 
@@ -195,3 +195,20 @@ def test_failing_programs_are_compared_not_skipped(toolchain, tmp_path, left, ri
     assert result.passed is expected
     assert result.original.returncode == 1
     assert result.recompiled.returncode == 1
+
+
+def test_continue_chains_lift_without_duplication(toolchain, tmp_path):
+    # `if (a && b) continue;` used to copy the rest of the loop body into both arms of the
+    # chain's first test, doubling the output for every such statement (2^12 here).
+    from crashlink.core import Bytecode
+    from crashlink.decomp import IRFunction
+    from crashlink.pseudo import pseudo
+
+    source = (Path("tests/quality") / "QualityLoopContinue.hx").read_text()
+    path, error = compile_haxe(source, "QualityLoopContinue", tmp_path)
+    assert error is None, error
+    code = Bytecode.from_path(str(path))
+    chains = next(f for f in code.functions if code.full_func_name(f).endswith("QualityLoopContinue.chains"))
+    out = pseudo(IRFunction(code, chains))
+    assert out.count("sum += 12") == 1
+    assert len(out.splitlines()) < 200

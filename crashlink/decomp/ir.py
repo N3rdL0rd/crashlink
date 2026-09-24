@@ -702,10 +702,13 @@ class IRBreak(IRStatement):
 
 
 class IRContinue(IRStatement):
-    """Continue statement"""
+    """Continue statement. `synthetic` marks one the lifter wrote out for a plain jump
+    back to the loop header that other code follows (see `IRFunction._lift_block`);
+    optimizers may restructure those away, unlike a `continue` from the source."""
 
-    def __init__(self, code: Bytecode):
+    def __init__(self, code: Bytecode, synthetic: bool = False):
         super().__init__(code)
+        self.synthetic = synthetic
 
     def get_children(self) -> List[IRStatement]:
         return []

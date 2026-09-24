@@ -1465,6 +1465,85 @@ class IRCommonBlockMerger(TraversingIROptimizer):
             block.statements = new_statements
 
 
+def _falls_through(block: IRBlock) -> bool:
+    """Whether running `block` can reach its end (it doesn't always jump away)."""
+    if not block.statements:
+        return True
+    last = block.statements[-1]
+    if isinstance(last, (IRReturn, IRThrow, IRBreak, IRContinue)):
+        return False
+    if isinstance(last, IRBlock):
+        return _falls_through(last)
+    if isinstance(last, IRConditional):
+        return _falls_through(last.true_block) or last.false_block is None or _falls_through(last.false_block)
+    return True
+
+
+def _ends_in_synthetic_continue(block: Optional[IRBlock]) -> bool:
+    return (
+        block is not None
+        and bool(block.statements)
+        and isinstance(block.statements[-1], IRContinue)
+        and block.statements[-1].synthetic
+    )
+
+
+def fold_loop_tail(block: IRBlock) -> None:
+    """Tidy the lifter's synthetic `continue`s (see `IRContinue`) in the tail positions of
+    a loop body, where running off the end continues the loop anyway. When an arm that
+    always continues is followed by more code, that code only runs after the other arm,
+    so it moves there:
+
+        if (c) { a; continue; } b;   ->   if (c) { a; } else { b; }
+
+    and a trailing `continue` is dropped. Recurses into the arms of a trailing
+    conditional and the cases of a trailing switch (Haxe cases don't fall through).
+    Try blocks are left alone, and so are `continue`s from the source."""
+    stmts = block.statements
+    while _ends_in_synthetic_continue(block):
+        stmts.pop()
+    for i, stmt in enumerate(stmts):
+        if i == len(stmts) - 1 or not isinstance(stmt, IRConditional):
+            continue
+        true_continues = _ends_in_synthetic_continue(stmt.true_block)
+        false_continues = _ends_in_synthetic_continue(stmt.false_block)
+        if true_continues == false_continues:
+            continue
+        if stmt.false_block is None:
+            stmt.false_block = IRBlock(stmt.code)
+        other = stmt.false_block if true_continues else stmt.true_block
+        if not _falls_through(other):
+            continue
+        other.statements.extend(stmts[i + 1 :])
+        del stmts[i + 1 :]
+        break
+    if not stmts:
+        return
+    last = stmts[-1]
+    if isinstance(last, IRConditional):
+        fold_loop_tail(last.true_block)
+        if last.false_block is not None:
+            fold_loop_tail(last.false_block)
+    elif isinstance(last, IRSwitch):
+        for case_block in last.cases.values():
+            fold_loop_tail(case_block)
+        if last.default is not None:
+            fold_loop_tail(last.default)
+
+
+class IRLoopTailContinueFolder(TraversingIROptimizer):
+    """Applies `fold_loop_tail` to every loop body. The lifter already does this, but a
+    `continue` arm is only recognisable once short-circuit chains have been merged into
+    one condition (`if (a) { if (b) { ...; continue; } }` -> `if (a && b)`)."""
+
+    def before_visit_statement(self, statement: IRStatement) -> None:
+        body = getattr(statement, "body", None)
+        if isinstance(
+            statement, (IRWhileLoop, IRPrimitiveLoop, IRForEachLoop, IRIntRangeLoop)
+        ) and isinstance(body, IRBlock):
+            fold_loop_tail(body)
+
+
 class IRRedundantContinueEliminator(TraversingIROptimizer):
     """
     Removes redundant `else { continue; }` blocks that are the last statement
