@@ -2617,12 +2617,39 @@ class IRFunction:
             block.statements.extend(next_block_ir.statements)
 
         elif last_op and last_op.op == "Switch":
+            allowed_nodes = loop_ctx.nodes if loop_ctx else None
+            loop_header = loop_ctx.header if loop_ctx else None
             convergence_node = self._find_convergence_node(
                 node.branches[0][0] if node.branches else None,
                 node.branches[1][0] if len(node.branches) > 1 else None,
-                allowed_nodes=loop_ctx.nodes if loop_ctx else None,
+                allowed_nodes=allowed_nodes,
                 stop_nodes={loop_ctx.header} if loop_ctx else None,
             )
+            # The nearest node the first two targets share is only a merge point if the
+            # other cases pass it too: in `case 1, 2: a; case 3: b;` it is the shared body
+            # of 1 and 2, and lifting case 3 up to it runs through the rest of the function.
+            # Merge where every case goes when there is such a node, and never past the
+            # enclosing boundary.
+            case_targets = tuple(target for target, _ in node.branches)
+            if loop_ctx is None:
+                post_dominator = cfg.immediate_post_dominators.get(node)
+                if post_dominator is not None and (
+                    convergence_node is None
+                    or (
+                        post_dominator is not convergence_node
+                        and self._reaches_bypassing(case_targets, post_dominator, convergence_node)
+                    )
+                ):
+                    convergence_node = post_dominator
+            if (
+                stop_at is not None
+                and convergence_node is not None
+                and convergence_node is not stop_at
+                and self._reaches_bypassing(
+                    case_targets, stop_at, convergence_node, allowed_nodes, loop_header
+                )
+            ):
+                convergence_node = stop_at
             val_reg = self.locals[last_op.df["reg"].value]
             cases: Dict[IRConst, IRBlock] = {}
             aliases: Dict[IRConst, List[IRConst]] = {}
