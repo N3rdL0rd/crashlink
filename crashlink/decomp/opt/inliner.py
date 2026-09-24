@@ -5,9 +5,10 @@ Inlining and copy-propagation optimizers.
 from __future__ import annotations
 
 import copy
+import itertools
 
 import re
-from typing import TYPE_CHECKING, Dict, Iterator, List, Optional, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union, cast
 
 if TYPE_CHECKING:
     from ..function import IRFunction
@@ -82,6 +83,31 @@ def _is_pure_numeric_cast_tree(expr: IRExpression) -> bool:
             return False
         return _is_pure_numeric_cast_tree(expr.expr)
     return not _has_observable_effects(expr)
+
+
+class _Continuation:
+    """What runs after a statement: the rest of its block, then the rest of each
+    enclosing block. Stored as (list, start) segments rather than copied, so building
+    one per statement of a long block stays linear. Lists are never mutated in place
+    while one is alive (passes build new lists), so this sees what a copy would."""
+
+    __slots__ = ("segments",)
+
+    def __init__(self, segments: Tuple[Tuple[List[IRStatement], int], ...] = ()) -> None:
+        self.segments = segments
+
+    @classmethod
+    def after(
+        cls, statements: List[IRStatement], start: int, rest: "Optional[_Continuation]" = None
+    ) -> "_Continuation":
+        return cls(((statements, start),) + (rest.segments if rest is not None else ()))
+
+    def __iter__(self) -> Iterator[IRStatement]:
+        for statements, start in self.segments:
+            yield from itertools.islice(statements, start, None)
+
+    def __bool__(self) -> bool:
+        return any(start < len(statements) for statements, start in self.segments)
 
 
 class _ScopedLocalLifetime:
@@ -218,7 +244,7 @@ class _ScopedLocalLifetime:
 
         return visit(self.root, [], False) and found
 
-    def dead_in(self, remaining: List[IRStatement], local: IRLocal) -> bool:
+    def dead_in(self, remaining: Iterable[IRStatement], local: IRLocal) -> bool:
         """Like `dead_after`, but for an already-known continuation.
 
         `dead_after` rediscovers the continuation and hazard state by
@@ -1780,7 +1806,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 return True
         return False
 
-    def _flatten_stmts(self, stmts: List[IRStatement]) -> List[IRStatement]:
+    def _flatten_stmts(self, stmts: Iterable[IRStatement]) -> List[IRStatement]:
         """Document-order flattening of a statement list and their nested blocks."""
         out: List[IRStatement] = []
         for s in stmts:
@@ -1790,7 +1816,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                     out.extend(self._flatten_stmts(child.statements))
         return out
 
-    def _local_read_in_continuation(self, continuation: List[IRStatement], local: IRLocal) -> bool:
+    def _local_read_in_continuation(self, continuation: Iterable[IRStatement], local: IRLocal) -> bool:
         """Whether `local` is read anywhere in `continuation` (what executes after
         the current block, e.g. code following the enclosing if/loop). Unlike a
         whole-function scan, this only looks at statements actually reachable after
@@ -1821,7 +1847,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         block: IRBlock,
         i: int,
         new_statements: List[IRStatement],
-        continuation: Optional[List[IRStatement]],
+        continuation: Optional[_Continuation],
         hazardous: bool = False,
     ) -> bool:
         """Move a single-use, pure temp assignment forward to its sole later use
@@ -1921,7 +1947,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         # continuation instead of `dead_after`'s expensive root-to-block
         # search (see `_visit_block_conservative`).
         if hazardous or not _ScopedLocalLifetime(self.func.block).dead_in(
-            statements[use_idx + 1 :] + (continuation or []), temp
+            _Continuation.after(statements, use_idx + 1, continuation), temp
         ):
             return False
 
@@ -1959,7 +1985,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         self,
         block: IRBlock,
         inside_loop_body: bool = False,
-        continuation: Optional[List[IRStatement]] = None,
+        continuation: Optional[_Continuation] = None,
         hazardous: bool = False,
     ) -> None:
         """Only inlines an assignment if it is used in the very next statement.
@@ -1969,7 +1995,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         that is live after the loop (e.g. String.indexOf's search result).
         """
         if continuation is None:
-            continuation = []
+            continuation = _Continuation()
         if not block.statements:
             return
 
@@ -2090,7 +2116,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                                 else (
                                     hazardous
                                     or not _ScopedLocalLifetime(self.func.block).dead_in(
-                                        block.statements[i + 2 :] + continuation, temp_local
+                                        _Continuation.after(block.statements, i + 2, continuation), temp_local
                                     )
                                 )
                             )
@@ -2151,7 +2177,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         block.statements = new_statements
 
         for idx, stmt in enumerate(block.statements):
-            child_continuation = block.statements[idx + 1 :] + continuation
+            child_continuation = _Continuation.after(block.statements, idx + 1, continuation)
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     # This recursion already fully processes `child` with the
@@ -2173,7 +2199,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         self,
         block: IRBlock,
         inside_loop_body: bool = False,
-        continuation: Optional[List[IRStatement]] = None,
+        continuation: Optional[_Continuation] = None,
         hazardous: bool = False,
     ) -> None:
         """Inlines safe expressions everywhere they are used, until no more changes can be made.
@@ -2182,7 +2208,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         loop-carried values remain live after the loop.
         """
         if continuation is None:
-            continuation = []
+            continuation = _Continuation()
         made_change_in_pass = True
         while made_change_in_pass:
             made_change_in_pass = False
@@ -2338,7 +2364,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 # Uses the already-known continuation instead of `dead_after`'s
                 # own expensive root-to-block search (see `_visit_block_conservative`).
                 lifetime_dead = not hazardous and _ScopedLocalLifetime(self.func.block).dead_in(
-                    block.statements[i + 1 :] + continuation, temp_local
+                    _Continuation.after(block.statements, i + 1, continuation), temp_local
                 )
                 if not inside_loop_body and not must_keep_assign and lifetime_dead:
                     # stmt is dropped below; every site the expression got inlined
@@ -2358,7 +2384,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 block.statements = [s for s in block.statements if id(s) not in removed]
 
         for idx, stmt in enumerate(block.statements):
-            child_continuation = block.statements[idx + 1 :] + continuation
+            child_continuation = _Continuation.after(block.statements, idx + 1, continuation)
             for child in stmt.get_children():
                 if isinstance(child, IRBlock):
                     # See _visit_block_conservative: this recursion already
