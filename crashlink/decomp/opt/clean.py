@@ -1350,6 +1350,10 @@ class IRElseFlattener(TraversingIROptimizer):
     inliners. Skips DAG-shared else blocks to avoid duplicating statements.
     """
 
+    _TERMINATORS = (IRReturn, IRThrow, IRBreak, IRContinue)
+    # See IRGuardClauseNormalizer.
+    make_guards = False
+
     def optimize(self) -> None:
         self._block_refs: Dict[int, int] = {}
         if hasattr(self.func, "block"):
@@ -1365,24 +1369,75 @@ class IRElseFlattener(TraversingIROptimizer):
                         visited.add(id(child))
                         self._count_refs(child, visited)
 
+    def _terminates(self, block: Optional[IRBlock]) -> bool:
+        return (
+            block is not None
+            and bool(block.statements)
+            and isinstance(block.statements[-1], self._TERMINATORS)
+        )
+
+    def _always_terminates(self, block: Optional[IRBlock]) -> bool:
+        """Whether every path through `block` ends in a return, throw, break or continue."""
+        if block is None or not block.statements:
+            return False
+        last = block.statements[-1]
+        if isinstance(last, self._TERMINATORS):
+            return True
+        if isinstance(last, IRBlock):
+            return self._always_terminates(last)
+        if isinstance(last, IRConditional):
+            return self._always_terminates(last.true_block) and self._always_terminates(last.false_block)
+        return False
+
+    def _invert_into_guard(self, stmt: IRConditional) -> bool:
+        """Swap the branches of `if (c) { A } else { ...; return }` so the terminating
+        one comes first, inverting the condition. False if it can't be inverted."""
+        condition = stmt.condition
+        if isinstance(condition, IRBoolExpr):
+            try:
+                condition.invert()
+            except DecompError:
+                return False
+        else:
+            stmt.condition = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.NOT, condition)
+        stmt.true_block, stmt.false_block = stmt.false_block, stmt.true_block
+        return True
+
     def visit_block(self, block: IRBlock) -> None:
         new_statements: List[IRStatement] = []
         for stmt in block.statements:
             new_statements.append(stmt)
-            if (
+            if not (
                 isinstance(stmt, IRConditional)
                 and stmt.false_block is not None
                 and stmt.false_block.statements
                 and stmt.true_block.statements
-                and isinstance(
-                    stmt.true_block.statements[-1],
-                    (IRReturn, IRThrow, IRBreak, IRContinue),
-                )
-                and self._block_refs.get(id(stmt.false_block), 0) <= 1
             ):
+                continue
+            if (
+                self.make_guards
+                and len(stmt.false_block.statements) == 1
+                and self._terminates(stmt.false_block)
+                and not self._always_terminates(stmt.true_block)
+                and self._block_refs.get(id(stmt.true_block), 0) <= 1
+                and not self._invert_into_guard(stmt)
+            ):
+                continue
+            if self._terminates(stmt.true_block) and self._block_refs.get(id(stmt.false_block), 0) <= 1:
                 new_statements.extend(stmt.false_block.statements)
                 stmt.false_block = IRBlock(self.func.code)
         block.statements = new_statements
+
+
+class IRGuardClauseNormalizer(IRElseFlattener):
+    """
+    Turns `if (c) { A } else { return; } B` into `if (!c) { return; } A B` when the
+    else branch is a single return, throw, break or continue and the then branch
+    can fall through, the way such guards are written in source. Runs last: earlier
+    passes (typed catches, for one) match the if/else shape.
+    """
+
+    make_guards = True
 
 
 class IRCommonBlockMerger(TraversingIROptimizer):

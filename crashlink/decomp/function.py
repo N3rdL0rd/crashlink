@@ -94,6 +94,7 @@ from .opt.clean import (
     IREmptyConditionalNormalizer,
     IRTypedCatchOptimizer,
     IRElseFlattener,
+    IRGuardClauseNormalizer,
     IRRedundantContinueEliminator,
     IRVoidAssignOptimizer,
     IRDeadTempEliminator,
@@ -363,6 +364,7 @@ class IRFunction:
                 IRArrayGuardResidueEliminator(self),
                 IRTypedCatchOptimizer(self),
                 IREnumSwitchOptimizer(self),
+                IRGuardClauseNormalizer(self),
             ]
             # Splice in plugin optimizers gated to this bytecode (see
             # crashlink.plugins). Which classes apply is a property of the image,
