@@ -90,9 +90,9 @@ def test_short_circuit_chain_lifts_linearly(tmp_path):
     full, rendered = _lifted_node_count(_build_chain(haxe, tmp_path / "full", _LINKS), "guard")
 
     assert full < short * 4, f"lifting is superlinear in chain length: {short} -> {full} nodes"
-    # Each link still reaches its guarded bail-out, and the fall-through tail
-    # is emitted exactly once.
-    assert rendered.count('"bail"') == len(_LINKS)
+    # Every link shares the one bail-out block and the one fall-through tail, so
+    # each is emitted exactly once.
+    assert rendered.count('"bail"') == 1
     assert rendered.count('"pass"') == 1
 
 

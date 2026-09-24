@@ -1976,6 +1976,164 @@ class IRFunction:
         block.statements.extend(next_block_ir.statements)
         return block
 
+    def _substitute_temps(
+        self, expr: Any, values: Dict[str, Tuple[List[int], IRExpression]], order: List[int]
+    ) -> Tuple[Any, bool]:
+        """Replace each local named in `values` by a copy of its value, appending to
+        `order` the indices of the statements that value evaluates, in evaluation order.
+        Returns the new expression and whether it is made only of parts that are safe to
+        evaluate inside a condition (locals, constants, field reads, arithmetic, casts,
+        enum values and calls)."""
+        if expr is None or isinstance(expr, IRConst):
+            return expr, True
+        if isinstance(expr, IRLocal):
+            entry = values.get(expr.name)
+            if entry is None:
+                return expr, True
+            order.extend(entry[0])
+            return self._clone_value(entry[1], {id(self.code): self.code}), True
+        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
+            expr.left, left_ok = self._substitute_temps(expr.left, values, order)
+            expr.right, right_ok = self._substitute_temps(expr.right, values, order)
+            return expr, left_ok and right_ok
+        if isinstance(expr, IRField):
+            expr.target, ok = self._substitute_temps(expr.target, values, order)
+            return expr, ok
+        if isinstance(expr, (IRCast, IRNot, IRNeg)):
+            expr.expr, ok = self._substitute_temps(expr.expr, values, order)
+            return expr, ok
+        if isinstance(expr, IREnumIndex):
+            expr.value, ok = self._substitute_temps(expr.value, values, order)
+            return expr, ok
+        if isinstance(expr, (IRCall, IREnumConstruct)):
+            ok = True
+            if isinstance(expr, IRCall):
+                expr.target, ok = self._substitute_temps(expr.target, values, order)
+            args = []
+            for arg in expr.args:
+                arg, arg_ok = self._substitute_temps(arg, values, order)
+                args.append(arg)
+                ok = ok and arg_ok
+            expr.args = args
+            return expr, ok
+        return expr, False
+
+    @staticmethod
+    def _has_call(expr: Any) -> bool:
+        stack = [expr]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, IRCall):
+                return True
+            stack.extend(node.get_children())
+        return False
+
+    def _short_circuit_link(
+        self, link: Optional[CFNode], shared: Optional[CFNode], loop_ctx: Optional[_LoopContext]
+    ) -> Optional[Tuple[IRBoolExpr, CFNode]]:
+        """If `link` is one more test of a short-circuit chain (entered only from the
+        previous test, ending in a conditional jump with one target `shared`, and
+        computing its operands with assignments to temporaries that nothing reads
+        afterwards), return its condition for reaching `shared` with those temporaries
+        substituted in, and its other target. The link only runs when the chain gets
+        that far, so its calls can move into the condition as long as each runs once
+        and in its original order."""
+        assert self.cfg is not None
+        cfg = self.cfg
+        if link is None or shared is None or link is shared or not link.ops:
+            return None
+        last = link.ops[-1]
+        if last.op not in conditionals or len(link.branches) != 2:
+            return None
+        if len(cfg.predecessors.get(link, ())) != 1 or link in cfg.loops:
+            return None
+        if loop_ctx is not None and (link not in loop_ctx.nodes or link is loop_ctx.header):
+            return None
+        targets = {edge: target for target, edge in link.branches}
+        jump_target, fall_through = targets.get("true"), targets.get("false")
+        if jump_target is None or fall_through is None or (jump_target is shared) == (fall_through is shared):
+            return None
+        other = fall_through if jump_target is shared else jump_target
+        if other is link or (last.op == "JNull" and self._match_string_switch(link) is not None):
+            return None
+        written = {op.df["dst"].value for op in link.ops[:-1] if "dst" in op.df}
+        if any(
+            self._register_live_at(target, reg) for target in (jump_target, fall_through) for reg in written
+        ):
+            return None
+
+        saved_locals, saved_new_regs = self.locals.copy(), self._new_defined_regs.copy()
+        try:
+            scratch = IRBlock(self.code)
+            self._lift_ops_into_block(scratch, link.ops[:-1])
+            values: Dict[str, Tuple[List[int], IRExpression]] = {}
+            for index, stmt in enumerate(scratch.statements):
+                if not isinstance(stmt, IRAssign) or not isinstance(stmt.target, IRLocal):
+                    return None
+                sequence: List[int] = []
+                value, ok = self._substitute_temps(stmt.expr, values, sequence)
+                if not ok:
+                    return None
+                values[stmt.target.name] = (sequence + [index], value)
+            condition = self._build_bool_expr_from_op(last)  # true: jump to `jump_target`
+            if jump_target is not shared:
+                condition.invert()
+            sequence = []
+            condition, ok = self._substitute_temps(condition, values, sequence)
+            if not ok:
+                return None
+            if any(self._has_call(stmt) for stmt in scratch.statements):
+                # Every value that is not a constant has to be evaluated exactly once, in
+                # the order the link computed it.
+                significant = [
+                    index
+                    for index, stmt in enumerate(scratch.statements)
+                    if isinstance(stmt, IRAssign) and not isinstance(stmt.expr, IRConst)
+                ]
+                if [index for index in sequence if index in significant] != significant:
+                    return None
+            condition.adopt(*scratch.statements)
+            return condition, other
+        except DecompError:
+            return None
+        finally:
+            self.locals, self._new_defined_regs = saved_locals, saved_new_regs
+
+    def _absorb_short_circuit(
+        self,
+        condition: IRBoolExpr,
+        then_node: Optional[CFNode],
+        else_node: Optional[CFNode],
+        loop_ctx: Optional[_LoopContext],
+        visited: Set[CFNode],
+    ) -> Tuple[IRBoolExpr, Optional[CFNode], Optional[CFNode]]:
+        """Grow `if (condition) then_node else else_node` over short-circuit links:
+        a `then_node` test that also exits to `else_node` makes `condition && t`, and an
+        `else_node` test that also exits to `then_node` makes `condition || e`."""
+        while True:
+            link = self._short_circuit_link(then_node, else_node, loop_ctx)
+            if link is not None:
+                to_else, other = link
+                assert then_node is not None
+                visited.add(then_node)
+                to_else_expr: IRBoolExpr = to_else
+                try:
+                    to_else_expr.invert()  # now: condition for continuing to `other`
+                except DecompError:
+                    return condition, then_node, else_node
+                condition = IRBoolExpr(self.code, IRBoolExpr.CompareType.AND, condition, to_else_expr)
+                then_node = other
+                continue
+            link = self._short_circuit_link(else_node, then_node, loop_ctx)
+            if link is not None:
+                to_then, other = link
+                assert else_node is not None
+                visited.add(else_node)
+                condition = IRBoolExpr(self.code, IRBoolExpr.CompareType.OR, condition, to_then)
+                else_node = other
+                continue
+            return condition, then_node, else_node
+
     def _build_bool_expr_from_op(self, op: Opcode) -> IRBoolExpr:
         """Helper to create an IRBoolExpr from a conditional jump opcode."""
         cond_map = {
@@ -2301,6 +2459,12 @@ class IRFunction:
             # Invert the jump condition to get the actual "if" condition.
             cond_expr = self._build_bool_expr_from_op(last_op)
             cond_expr.invert()
+            # Fold `a && b` / `a || b` chains into one condition, so the target every
+            # link shares is lifted once rather than once per link (3^n for else-if
+            # chains of three-link conditions).
+            cond_expr, fall_through, jump_target = self._absorb_short_circuit(
+                cond_expr, fall_through, jump_target, loop_ctx, visited
+            )
 
             stop_nodes = {loop_ctx.header} if loop_ctx else set()
             allowed_nodes = loop_ctx.nodes if loop_ctx else None

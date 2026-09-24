@@ -518,6 +518,19 @@ class IRBoolExpr(IRExpression):
             return
         if self.op == IRBoolExpr.CompareType.NOT:
             raise DecompError("Cannot invert NOT operation")
+        elif self.op in (cmp.AND, cmp.OR):
+            # De Morgan: !(a && b) == !a || !b. Inverting is its own inverse, so a failure
+            # on the right undoes the left and leaves this expression as it was.
+            left, right = self.left, self.right
+            if not (isinstance(left, IRBoolExpr) and isinstance(right, IRBoolExpr)):
+                raise DecompError(f"Cannot invert {self.op} of non-boolean operands")
+            left.invert()
+            try:
+                right.invert()
+            except DecompError:
+                left.invert()
+                raise
+            self.op = cmp.OR if self.op == cmp.AND else cmp.AND
         elif self.op == IRBoolExpr.CompareType.TRUE:
             self.op = IRBoolExpr.CompareType.FALSE
         elif self.op == IRBoolExpr.CompareType.FALSE:

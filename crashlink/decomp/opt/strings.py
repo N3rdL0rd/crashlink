@@ -60,8 +60,8 @@ from .inliner import _ScopedLocalLifetime
 class IRGlobalStringOptimizer(TraversingIROptimizer):
     """
     Optimizes `GetGlobal` operations that resolve to constant strings.
-    It replaces an assignment from a global `String` object with a direct
-    assignment of a new IRConst type that holds the string value.
+    It turns every constant that reads a global `String` object, wherever it
+    appears, into an IRConst that holds the string value.
 
     This transforms:
         reg = <IRConst type=OBJ, value=<Obj: ...>>
@@ -71,34 +71,19 @@ class IRGlobalStringOptimizer(TraversingIROptimizer):
 
     TARGET_OPCODES = {"GetGlobal"}
 
-    def visit_block(self, block: IRBlock) -> None:
-        for stmt in block.statements:
-            if not isinstance(stmt, IRAssign):
-                continue
-
-            assign_stmt = stmt
-            expr = assign_stmt.expr
-
-            if not (isinstance(expr, IRConst) and expr.const_type == IRConst.ConstType.GLOBAL_OBJ):
-                continue
-
-            if not (expr.original_index and isinstance(expr.original_index, gIndex)):
-                continue
-
-            global_idx = expr.original_index.value
-            try:
-                string_value = self.func.code.const_str(global_idx)
-
-                dbg_print(f"IRGlobalStringOptimizer: Optimizing GetGlobal for string '{string_value}'")
-
-                new_string_const = IRConst(
-                    self.func.code, IRConst.ConstType.GLOBAL_STRING, value=string_value
-                )
-
-                assign_stmt.expr = new_string_const
-
-            except (ValueError, TypeError):
-                pass
+    def before_visit_statement(self, statement: IRStatement) -> None:
+        if not (isinstance(statement, IRConst) and statement.const_type == IRConst.ConstType.GLOBAL_OBJ):
+            return
+        if not isinstance(statement.original_index, gIndex):
+            return
+        try:
+            string_value = self.func.code.const_str(statement.original_index.value)
+        except (ValueError, TypeError):
+            return
+        dbg_print(f"IRGlobalStringOptimizer: Optimizing GetGlobal for string '{string_value}'")
+        statement.const_type = IRConst.ConstType.GLOBAL_STRING
+        statement.value = string_value
+        statement.original_index = None
 
 
 class IRStringIntConcatOptimizer(TraversingIROptimizer):
