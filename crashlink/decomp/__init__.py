@@ -30,7 +30,6 @@ from .cfg import (
 from .ir import (
     _ANSI_ESCAPE_RE,
     _strip_ansi,
-    _repr_rendered_blocks,
     _type_by_name_cache,
     _get_type_in_code,
     IRStatement,
@@ -254,5 +253,4 @@ __all__ = [
     "_get_type_in_code",
     "_strip_ansi",
     "_type_by_name_cache",
-    "_repr_rendered_blocks",
 ]

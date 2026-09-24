@@ -4,6 +4,7 @@ IR node types for the decompilation pipeline.
 
 from __future__ import annotations
 
+import threading
 import re
 import weakref
 from enum import Enum as _Enum
@@ -32,7 +33,19 @@ def _strip_ansi(s: str) -> str:
     return _ANSI_ESCAPE_RE.sub("", s)
 
 
-_repr_rendered_blocks: Optional[Set[int]] = None
+# Blocks being rendered by repr()/pprint() on the current thread (an ancestor stack, to
+# cut real cycles). Thread-local: decompiles run on worker threads concurrently.
+_repr_state = threading.local()
+
+
+def _rendering_blocks() -> Tuple[Set[int], bool]:
+    """The current thread's set of blocks being rendered, and whether this call made it."""
+    blocks = getattr(_repr_state, "blocks", None)
+    if blocks is None:
+        blocks = _repr_state.blocks = set()
+        return blocks, True
+    return blocks, False
+
 
 _type_by_name_cache: Dict[int, Dict[str, Type]] = {}
 
@@ -117,7 +130,6 @@ class IRBlock(IRStatement):
         self.statements: List[IRStatement] = []
 
     def pprint(self) -> str:
-        global _repr_rendered_blocks
         colors = [36, 31, 32, 33, 34, 35]
 
         depth = id(self) % len(colors)
@@ -126,49 +138,44 @@ class IRBlock(IRStatement):
         if not self.statements:
             return f"\033[{color}m[\033[0m\033[{color}m]\033[0m"
 
-        top = _repr_rendered_blocks is None
-        if top:
-            _repr_rendered_blocks = set()
+        rendering, top = _rendering_blocks()
         try:
             # Ancestor-stack guard: only collapse a block that is its own
             # ancestor (a real cycle). Shared acyclic continuations render fully.
-            if id(self) in _repr_rendered_blocks:  # type: ignore[operator]
+            if id(self) in rendering:
                 return f"\033[{color}m[...]\033[0m"
-            _repr_rendered_blocks.add(id(self))  # type: ignore[union-attr]
+            rendering.add(id(self))
             try:
                 # uniform indentation
                 # plain join, not pformat: pformat repr()s each item twice (fit-check + render),
                 # which compounds exponentially through nested block reprs
                 statements = "\n".join(repr(s) for s in self.statements).replace("\n", "\n\t")
             finally:
-                _repr_rendered_blocks.discard(id(self))  # type: ignore[union-attr]
+                rendering.discard(id(self))
         finally:
             if top:
-                _repr_rendered_blocks = None
+                _repr_state.blocks = None
 
         return f"\033[{color}m[\033[0m\n\t{statements}\n\033[{color}m]\033[0m"
 
     def __repr__(self) -> str:
-        global _repr_rendered_blocks
         if not self.statements:
             return "[]"
 
-        top = _repr_rendered_blocks is None
-        if top:
-            _repr_rendered_blocks = set()
+        rendering, top = _rendering_blocks()
         try:
             # Ancestor-stack guard: only collapse a block that is its own
             # ancestor (a real cycle). Shared acyclic continuations render fully.
-            if id(self) in _repr_rendered_blocks:  # type: ignore[operator]
+            if id(self) in rendering:
                 return "[...]"
-            _repr_rendered_blocks.add(id(self))  # type: ignore[union-attr]
+            rendering.add(id(self))
             try:
                 statements = "\n".join(repr(s) for s in self.statements).replace("\n", "\n\t")
             finally:
-                _repr_rendered_blocks.discard(id(self))  # type: ignore[union-attr]
+                rendering.discard(id(self))
         finally:
             if top:
-                _repr_rendered_blocks = None
+                _repr_state.blocks = None
 
         return "[\n\t" + statements + "\n]"
 
