@@ -1156,46 +1156,19 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         return expr, made_change
 
     def _expr_contains_local(self, expr: IRExpression, local: IRLocal) -> bool:
-        if expr == local:
-            return True
-        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
-            if expr.left and self._expr_contains_local(expr.left, local):
+        # One walk over `get_children`, each node once: descending into the operand
+        # fields and then into get_children as well visited every node twice per level,
+        # 2^depth for a long `a || b || ...` condition.
+        pending: List[IRStatement] = [expr]
+        seen: Set[int] = set()
+        while pending:
+            node = pending.pop()
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
+            if node == local:
                 return True
-            if expr.right and self._expr_contains_local(expr.right, local):
-                return True
-        elif isinstance(expr, IRCall):
-            if expr.target is not None and self._expr_contains_local(expr.target, local):
-                return True
-            for arg in expr.args:
-                if self._expr_contains_local(arg, local):
-                    return True
-        elif isinstance(expr, IRField):
-            if self._expr_contains_local(expr.target, local):
-                return True
-        elif isinstance(expr, IRCast):
-            if self._expr_contains_local(expr.expr, local):
-                return True
-        elif isinstance(expr, IRArrayAccess):
-            if self._expr_contains_local(expr.array, local):
-                return True
-            if self._expr_contains_local(expr.index, local):
-                return True
-        elif isinstance(expr, IRRef):
-            if self._expr_contains_local(expr.target, local):
-                return True
-        elif isinstance(expr, IREnumConstruct):
-            for arg in expr.args:
-                if self._expr_contains_local(arg, local):
-                    return True
-        elif isinstance(expr, IREnumIndex):
-            if self._expr_contains_local(expr.value, local):
-                return True
-        elif isinstance(expr, IREnumField):
-            if self._expr_contains_local(expr.value, local):
-                return True
-        for child in expr.get_children():
-            if isinstance(child, IRExpression) and self._expr_contains_local(child, local):
-                return True
+            pending.extend(child for child in node.get_children() if isinstance(child, IRExpression))
         return False
 
     def _substitute_in_statement(

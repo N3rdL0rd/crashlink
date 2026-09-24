@@ -26,10 +26,8 @@ from ..ir import (
     IRExpression,
     IRBlock,
     IRLocal,
-    IRArithmetic,
     IRAssign,
     IRCall,
-    IRBoolExpr,
     IRConst,
     IRConditional,
     IRPrimitiveLoop,
@@ -45,9 +43,6 @@ from ..ir import (
     IRArrayLiteral,
     IRRef,
     IRRefNew,
-    IREnumConstruct,
-    IREnumIndex,
-    IREnumField,
     IRUnliftedOpcode,
 )
 from . import (
@@ -1553,45 +1548,16 @@ class IRStringConcatFolder(TraversingIROptimizer):
         return False
 
     def _expr_contains_local(self, expr: IRExpression, local: IRLocal) -> bool:
-        if expr == local:
-            return True
-        if isinstance(expr, (IRArithmetic, IRBoolExpr)):
-            if expr.left is not None and self._expr_contains_local(expr.left, local):
+        # One walk over `get_children`, each node once; see
+        # IRTempAssignmentInliner._expr_contains_local for why not operands and children.
+        pending: List[IRStatement] = [expr]
+        seen: Set[int] = set()
+        while pending:
+            node = pending.pop()
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
+            if node == local:
                 return True
-            if expr.right is not None and self._expr_contains_local(expr.right, local):
-                return True
-        elif isinstance(expr, IRCall):
-            if expr.target is not None and self._expr_contains_local(expr.target, local):
-                return True
-            for arg in expr.args:
-                if self._expr_contains_local(arg, local):
-                    return True
-        elif isinstance(expr, IRField):
-            if self._expr_contains_local(expr.target, local):
-                return True
-        elif isinstance(expr, IRCast):
-            if self._expr_contains_local(expr.expr, local):
-                return True
-        elif isinstance(expr, IRArrayAccess):
-            if self._expr_contains_local(expr.array, local):
-                return True
-            if self._expr_contains_local(expr.index, local):
-                return True
-        elif isinstance(expr, IRRef):
-            if self._expr_contains_local(expr.target, local):
-                return True
-        elif isinstance(expr, IREnumConstruct):
-            for arg in expr.args:
-                if self._expr_contains_local(arg, local):
-                    return True
-        elif isinstance(expr, (IREnumIndex, IREnumField)):
-            if self._expr_contains_local(expr.value, local):
-                return True
-        elif isinstance(expr, IRNew):
-            for arg in expr.constructor_args:
-                if self._expr_contains_local(arg, local):
-                    return True
-        for child in expr.get_children():
-            if isinstance(child, IRExpression) and self._expr_contains_local(child, local):
-                return True
+            pending.extend(child for child in node.get_children() if isinstance(child, IRExpression))
         return False
