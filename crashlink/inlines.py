@@ -172,6 +172,8 @@ class InlineFinder:
         #: Functions whose home file matched their class path (not a guess).
         self._named_homes: Set[int] = set()
         self._spans: Optional[Dict[int, List[Tuple[int, int, str]]]] = None
+        self._found: Optional[List[InlinedFunction]] = None
+        self._shapes: Dict[int, List[Shape]] = {}
 
     # --- home file -------------------------------------------------------------
 
@@ -406,8 +408,15 @@ class InlineFinder:
     # --- grouping --------------------------------------------------------------
 
     def find(self, functions: Optional[Sequence[Function]] = None) -> List[InlinedFunction]:
-        """Every inlined function copied into `functions` (all functions by default),
-        most copied first."""
+        """Every inlined function copied into `functions` (all functions by default, which
+        is computed once and cached), most copied first."""
+        if functions is None:
+            if self._found is None:
+                self._found = self._find(None)
+            return self._found
+        return self._find(functions)
+
+    def _find(self, functions: Optional[Sequence[Function]]) -> List[InlinedFunction]:
         funcs = [
             f
             for f in (functions if functions is not None else self.code.functions)
@@ -572,6 +581,12 @@ class InlineFinder:
     def shapes(self, inlined: InlinedFunction) -> List[Shape]:
         """Group the copies of `inlined` by body shape, most common first, with each
         shape's parameter and result types and the constants that differ per site."""
+        cached = self._shapes.get(id(inlined))
+        if cached is None:
+            cached = self._shapes[id(inlined)] = self._compute_shapes(inlined)
+        return cached
+
+    def _compute_shapes(self, inlined: InlinedFunction) -> List[Shape]:
         groups: Dict[Tuple, List[Tuple[InlineSite, List[Tuple[str, str]], List[str]]]] = defaultdict(list)
         for site in inlined.sites:
             key, constants, uses = self._canonical(site)
@@ -632,59 +647,126 @@ class InlineFinder:
         return type_name(self.code, func.regs[reg].resolve(self.code))
 
 
+_CONSTANT_OPS = frozenset({"Int", "Float", "Bool", "String", "Bytes", "Null"})
+
+
+def location(fn: InlinedFunction) -> str:
+    """`path:line` or `path:first-last` of an inlined function (std paths from `std/`)."""
+    path = fn.path.split("/std/", 1)[1] if "/std/" in fn.path else fn.path
+    lines = str(fn.first_line) if fn.first_line == fn.last_line else f"{fn.first_line}-{fn.last_line}"
+    return f"{path}:{lines}"
+
+
+def signature(shape: Shape) -> str:
+    """`(param types) -> result` of a shape, each position's most common type. A result
+    shows only when most of the shape's sites read it afterwards."""
+    params = ", ".join(types.most_common(1)[0][0] for types in shape.input_types)
+    majority = len(shape.sites) / 2
+    results = [types.most_common(1)[0][0] for types in shape.output_types if sum(types.values()) > majority]
+    if not results:
+        return f"({params})"
+    return f"({params}) -> " + (results[0] if len(results) == 1 else "(" + ", ".join(results) + ")")
+
+
+def is_constant(shape: Shape) -> bool:
+    """A body that only loads a constant: a `static inline var` or a constant getter."""
+    return len(shape.key) == 1 and not shape.input_types and shape.key[0][0] in _CONSTANT_OPS
+
+
+def find_at(finder: InlineFinder, spec: str) -> List[InlinedFunction]:
+    """Inlined functions at `path:line` (or every one in `path`); `path` may be any
+    trailing part of the debug file path, e.g. `Cooldown.hx:225`."""
+    path, _, line_text = spec.rpartition(":")
+    if not path or not line_text.isdigit():
+        path, line = spec, None
+    else:
+        line = int(line_text)
+    path = path.replace("\\", "/").lstrip("/")
+    return [
+        fn
+        for fn in finder.find()
+        if (fn.path == path or fn.path.endswith("/" + path))
+        and (line is None or fn.first_line <= line <= fn.last_line)
+    ]
+
+
+def describe(
+    finder: InlineFinder, fn: InlinedFunction, shapes: Optional[int] = 2, annotate: bool = False
+) -> str:
+    """An inlined function's copies and shapes (the first `shapes`, or all for None):
+    parameter and result types, per-site constants, an example caller, and with
+    `annotate` the disassembly of one copy per shape."""
+    code = finder.code
+    callers = {s.findex for s in fn.sites}
+    label = location(fn)
+    if fn.real_name:
+        label += f"  (also exists as {fn.real_name})"
+    whole = sum(1 for s in fn.sites if s.whole_function)
+    note = f", {whole} of them a caller's entire code (build macro?)" if whole else ""
+    out = [f"{label}  [{fn.kind}] {len(fn.sites)} copies in {len(callers)} functions{note}"]
+    nested: Counter = Counter()
+    for site in fn.sites:
+        for file, first, last in site.nested:
+            nested[f"{finder.files[file].rsplit('/', 1)[-1]}:{first}-{last}"] += 1
+    if nested:
+        out.append("  inlines in turn: " + ", ".join(f"{name} x{n}" for name, n in nested.most_common(4)))
+    all_shapes = finder.shapes(fn)
+    for shape in all_shapes if shapes is None else all_shapes[:shapes]:
+        ops = " ".join(op for op, _ in shape.key)
+        kind = " (a constant: static inline var or constant getter)" if is_constant(shape) else ""
+        out.append(f"  shape x{len(shape.sites)} {signature(shape)}: {len(shape.key)} ops: {ops[:150]}{kind}")
+        for i, types in enumerate(shape.input_types):
+            common = ", ".join(f"{t} x{n}" for t, n in types.most_common(3))
+            out.append(f"    in{i}: {common}   first read by {shape.input_uses[i]}")
+        for i, types in enumerate(shape.output_types):
+            common = ", ".join(f"{t} x{n}" for t, n in types.most_common(3))
+            out.append(f"    out{i}: {common}")
+        for index, where, values in shape.varying_constants[:3]:
+            sample = ", ".join(values[:6]) + (" ..." if len(values) > 6 else "")
+            out.append(f"    per-site constant #{index} ({where}): {sample}")
+        example = shape.sites[0]
+        caller = code.full_func_name(code.fn(example.findex))
+        out.append(f"    e.g. {caller} f@{example.findex} ops {example.start}-{example.end}")
+        if annotate:
+            out.extend("      " + line for line in finder.annotate(example).splitlines())
+    if shapes is not None and len(all_shapes) > shapes:
+        out.append(f"  ... {len(all_shapes) - shapes} more shapes")
+    return "\n".join(out)
+
+
+def describe_function(finder: InlineFinder, findex: int) -> str:
+    """The inlined bodies copied into function `findex`, each annotated."""
+    code = finder.code
+    out = []
+    for fn in finder.find():
+        for site in fn.sites:
+            if site.findex == findex:
+                out.append(
+                    (site.start, f"{location(fn)}  ops {site.start}-{site.end}\n{finder.annotate(site)}")
+                )
+    header = f"{code.full_func_name(code.fn(findex))} f@{findex}: {len(out)} inlined copies"
+    return "\n\n".join([header] + [text for _, text in sorted(out)])
+
+
 def report(
-    code: Bytecode, limit: int = 30, shapes_per_function: int = 2, include_generated: bool = False
+    code: Bytecode,
+    limit: int = 30,
+    shapes_per_function: int = 2,
+    include_generated: bool = False,
+    finder: Optional[InlineFinder] = None,
 ) -> str:
     """Human-readable summary of the most copied inlined functions."""
-    finder = InlineFinder(code)
+    finder = finder or InlineFinder(code)
     inlined = finder.find()
-    out: List[str] = []
-    by_kind = Counter()
+    by_kind: Counter = Counter()
     for fn in inlined:
         by_kind[fn.kind] += len(fn.sites)
-    out.append(
+    out = [
         f"{len(inlined)} inlined bodies; copies: "
         + ", ".join(f"{n} from {kind} files" for kind, n in by_kind.most_common())
-    )
-    shown = 0
-    for fn in inlined:
-        if fn.kind != "source" and not include_generated:
-            continue
-        callers = {s.findex for s in fn.sites}
-        label = f"{fn.path}:{fn.first_line}-{fn.last_line}"
-        if fn.real_name:
-            label += f"  (also exists as {fn.real_name})"
-        whole = sum(1 for s in fn.sites if s.whole_function)
-        note = f", {whole} of them a caller's entire code (build macro?)" if whole else ""
-        out.append(f"\n{label}  [{fn.kind}] {len(fn.sites)} copies in {len(callers)} functions{note}")
-        nested: Counter = Counter()
-        for site in fn.sites:
-            for file, first, last in site.nested:
-                nested[f"{finder.files[file].rsplit('/', 1)[-1]}:{first}-{last}"] += 1
-        if nested:
-            out.append("  inlines in turn: " + ", ".join(f"{name} x{n}" for name, n in nested.most_common(4)))
-        for shape in finder.shapes(fn)[:shapes_per_function]:
-            ops = " ".join(op for op, _ in shape.key)
-            constant = (
-                len(shape.key) == 1
-                and not shape.input_types
-                and shape.key[0][0] in ("Int", "Float", "Bool", "String", "Bytes", "Null")
-            )
-            note = " (a constant: static inline var or constant getter)" if constant else ""
-            out.append(f"  shape x{len(shape.sites)}: {len(shape.key)} ops: {ops[:150]}{note}")
-            for i, types in enumerate(shape.input_types):
-                common = ", ".join(f"{t} x{n}" for t, n in types.most_common(3))
-                out.append(f"    in{i}: {common}   first read by {shape.input_uses[i]}")
-            for i, types in enumerate(shape.output_types):
-                common = ", ".join(f"{t} x{n}" for t, n in types.most_common(3))
-                out.append(f"    out{i}: {common}")
-            for index, where, values in shape.varying_constants[:3]:
-                sample = ", ".join(values[:6]) + (" ..." if len(values) > 6 else "")
-                out.append(f"    per-site constant #{index} ({where}): {sample}")
-            example = shape.sites[0]
-            caller = code.full_func_name(code.fn(example.findex))
-            out.append(f"    e.g. {caller} f@{example.findex} ops {example.start}-{example.end}")
-        shown += 1
-        if shown >= limit:
-            break
+    ]
+    shown = [fn for fn in inlined if fn.kind == "source" or include_generated][:limit]
+    for fn in shown:
+        out.append("")
+        out.append(describe(finder, fn, shapes_per_function))
     return "\n".join(out)

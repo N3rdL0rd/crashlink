@@ -31,6 +31,7 @@ For anything that doesn't need a live session, there are subcommands that run on
 | `decompile` | Decompile a function or class to pseudo-Haxe (decompiler is incomplete, usually functional) |
 | `info` | Summary info: version, counts, etc. |
 | `search` | Search strings by substring |
+| `inlines` | Find function bodies the compiler inlined, with their parameter types and per-site constants (`--at File.hx:line`, `--func <findex>`) |
 | `db` | Inspect a `.cldb` debug-info database (`db info`, `db check`, `db renames`, `db comments`) |
 | `hlasm` | Write a whole bytecode image as `.hlasm` source (see [Writing HashLink Bytecode by Hand](/hlasm)) |
 | `hlc` | Transpile bytecode to C, optionally build it (`--build`) |
@@ -93,6 +94,7 @@ This isn't exhaustive (there are 60+ commands; run `help` in a live session for 
 | `nativelibs` | `libs` | List native dynlibs used by the bytecode |
 | `infile <file>` | | Find all functions from a given source file |
 | `debugfiles` | | List all debug files |
+| `inlines [n]`, `inlines at <file:line> [annotate]`, `inlines fn <findex>` | | Inlined function bodies found from debug positions: the most copied ones, one body's shapes (optionally disassembled), or the copies inside one function. Needs a build made with `-D keep-inline-positions` |
 | `source <...>` | | Debug-file/line lookup, in either direction |
 | `op <opcode>` | | Print documentation for an opcode |
 | `hlc <output path>` | | Transpile the loaded bytecode to C |

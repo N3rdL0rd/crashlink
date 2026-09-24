@@ -60,6 +60,7 @@ A few flat, table-style views are available alongside the Navigator for scanning
 - **Globals**: every global with its type, constant initializer and reference count. Double-clicking a `g@N` in the code opens it here.
 - **Types view**: every type in the bytecode (`Obj`, `Enum`, `Virtual`, `Abstract`, `Ref`, `Null`, `Packed`, `Fun`), with a detail pane showing its layout, including fields, methods, enum constructs, and vtable slots.
 - **Natives view**: every native function in the bytecode, sortable by column.
+- **Inlined Functions** (Search or Window menu): bodies the Haxe compiler inlined, found from debug positions, with how often each was copied, in how many functions, and its most common signature. The lower pane lists each shape's parameter and result types and the constants that change per call site, with one copy disassembled and every opcode tagged as callee body, nested body or caller code. Enter or X lists the copies to jump to. **Search › Inlined Copies in Function** lists the copies inside the focused function. It needs a build made with `-D keep-inline-positions`: otherwise the compiler gives inlined code the call site's position.
 - **File Info** (Ctrl+I): path, size, SHA-256, version, table sizes, native libraries, a link to the entry point, and the bytecode sanity checks.
 - **Opcode Reference** (Help menu): every opcode with its operands and description.
 

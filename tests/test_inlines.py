@@ -4,6 +4,7 @@ import subprocess
 import pytest
 
 from crashlink import Bytecode
+from crashlink import inlines
 from crashlink.inlines import InlineFinder
 
 _UTIL = """class Util {
@@ -71,3 +72,12 @@ def test_call_sites_share_parameter_types_and_differ_in_constants(inlined):
     # `k` is folded into each copy as a constant of its own. (Util.own's copy has a shape of
     # its own: the `+ 1` and `return` wrapped around it inherit the inlined position.)
     assert {"7", "9"} <= {value.removesuffix(".0") for value in constants}
+
+
+def test_lookup_by_source_line_and_by_caller(inlined):
+    code, finder, scale = inlined
+    assert inlines.find_at(finder, f"Util.hx:{scale.first_line}") == [scale]
+    # Util.own's own line (the call) holds no inlined body.
+    assert inlines.find_at(finder, "Util.hx:9") == []
+    main = next(f for f in code.functions if code.full_func_name(f) == "$Main.main")
+    assert inlines.describe_function(finder, main.findex.value).splitlines()[0].endswith(": 2 inlined copies")

@@ -67,6 +67,7 @@ _SUBCOMMAND_HELP: Dict[str, str] = {
     "nasm": "Print the original compiled assembly of a function in an HL/C binary",
     "hlasm": "Write a whole bytecode image as .hlasm source (assemble it back with -a)",
     "search": "Search strings in a bytecode file",
+    "inlines": "Find inlined function bodies and their parameter types from debug positions",
     "funcs": "List functions in a bytecode file",
     "decompile": "Decompile a function or class to pseudo-Haxe (INCOMPLETE, usually functional)",
     "db": "Work with .cldb analysis databases",
@@ -123,7 +124,9 @@ def _make_progress_cb() -> "Optional[ProgressCallback]":
 # Subcommands that load exactly one Bytecode, hold it until the process exits, and never load
 # another. Only `main()` enables freezing, and only when dispatching one of these as the whole
 # process, so importing and calling a `*_main` in-process (e.g. from tests) never freezes.
-_ONE_SHOT_SUBCOMMANDS = frozenset({"hlc", "info", "disasm", "search", "funcs", "decompile", "db", "hlasm"})
+_ONE_SHOT_SUBCOMMANDS = frozenset(
+    {"hlc", "info", "disasm", "search", "inlines", "funcs", "decompile", "db", "hlasm"}
+)
 _freeze_gc_after_load = False
 
 
@@ -631,6 +634,67 @@ def search_main(argv: List[str]) -> None:
         print(f'No strings matching "{args.query}".')
     for i, s in matches:
         print(f"s@{i}: {s}")
+
+
+def inlines_main(argv: List[str]) -> None:
+    from . import inlines
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Find function bodies the Haxe compiler inlined, from debug positions. Needs a build "
+            "made with -D keep-inline-positions; otherwise inlined code carries the call site's "
+            "position and there is nothing to find."
+        ),
+        prog="crashlink inlines",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="\n".join(
+            [
+                "examples:",
+                "  crashlink inlines game.hl",
+                "      The most copied inlined bodies, with their parameter types and per-site constants.",
+                "",
+                "  crashlink inlines game.hl --at tool/Cooldown.hx:225 --annotate",
+                "      Every shape of the body inlined from that line, with one copy of each disassembled.",
+                "",
+                "  crashlink inlines game.hl --func 800",
+                "      The inlined copies inside f@800, each op tagged body / nested / caller.",
+            ]
+        ),
+    )
+    parser.add_argument("file", help="Input .hl / .dat file")
+    parser.add_argument(
+        "-n", "--limit", type=int, default=30, help="How many inlined bodies to list (default 30)"
+    )
+    parser.add_argument(
+        "--at", metavar="FILE:LINE", help="Show the inlined body at a source line (or all in a file)"
+    )
+    parser.add_argument(
+        "--func", type=int, metavar="FINDEX", help="Show the inlined copies inside one function"
+    )
+    parser.add_argument(
+        "--annotate", action="store_true", help="With --at, disassemble one copy of each shape"
+    )
+    parser.add_argument(
+        "--generated", action="store_true", help="Also list macro- and compiler-generated code"
+    )
+    parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
+    args = parser.parse_args(argv)
+    code = _load_code_from_cli_path(args.file, args.no_constants)
+    if not code.has_debug_info:
+        print("No debug info in this file: inlined bodies can't be told apart.")
+        return
+    finder = inlines.InlineFinder(code)
+    if args.func is not None:
+        print(inlines.describe_function(finder, args.func))
+    elif args.at:
+        matches = inlines.find_at(finder, args.at)
+        if not matches:
+            print(f"No inlined body at {args.at}.")
+        for fn in matches:
+            print(inlines.describe(finder, fn, shapes=None, annotate=args.annotate))
+            print()
+    else:
+        print(inlines.report(code, args.limit, include_generated=args.generated, finder=finder))
 
 
 def db_main(argv: List[str]) -> None:
@@ -1243,6 +1307,7 @@ class Commands(BaseCommands):
 
     def __init__(self, code: Bytecode):
         self.code = code
+        self._inline_finder: Optional[Any] = None
 
     def _inspection_guard(self) -> bool:
         if not self.code.inspection_only:
@@ -2671,6 +2736,46 @@ class Commands(BaseCommands):
             print("No debug info in bytecode!")
             return
 
+    def inlines(self, args: List[str]) -> None:
+        """Inlined function bodies, found from debug positions (needs a -D keep-inline-positions build).
+
+        Usage:
+          inlines [n]                        the n most copied bodies (default 30)
+          inlines at <file:line> [annotate]  every shape of the body at a line, optionally disassembled
+          inlines fn <findex>                the inlined copies inside one function
+        """
+        from . import inlines
+
+        if not self.code.has_debug_info:
+            print("No debug info in bytecode!")
+            return
+        if self._inline_finder is None:
+            self._inline_finder = inlines.InlineFinder(self.code)
+        finder = self._inline_finder
+        if args and args[0] == "at":
+            if len(args) < 2:
+                print("Usage: inlines at <file:line> [annotate]")
+                return
+            matches = inlines.find_at(finder, args[1])
+            if not matches:
+                print(f"No inlined body at {args[1]}.")
+            for fn in matches:
+                print(
+                    inlines.describe(
+                        finder, fn, shapes=None, annotate=len(args) > 2 and args[2] == "annotate"
+                    )
+                )
+                print()
+        elif args and args[0] in ("fn", "func"):
+            if len(args) < 2 or not args[1].isdigit():
+                print("Usage: inlines fn <findex>")
+                return
+            print(inlines.describe_function(finder, int(args[1])))
+        elif not args or args[0].isdigit():
+            print(inlines.report(self.code, int(args[0]) if args else 30, finder=finder))
+        else:
+            print("Usage: inlines [n] | inlines at <file:line> [annotate] | inlines fn <findex>")
+
     def virt(self, args: List[str]) -> None:
         """Prints a virtual type by tIndex. `virt <index>`"""
         if len(args) == 0:
@@ -3057,6 +3162,7 @@ def main() -> None:
         "nasm": nasm_main,
         "hlasm": hlasm_main,
         "search": search_main,
+        "inlines": inlines_main,
         "funcs": funcs_main,
         "decompile": decompile_main,
         "db": db_main,
