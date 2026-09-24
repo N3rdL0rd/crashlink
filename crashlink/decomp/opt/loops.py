@@ -5,7 +5,7 @@ Loop-reroll and loop-lifting optimizers.
 from __future__ import annotations
 
 import copy
-from typing import Dict, List, Optional, Tuple, cast
+from typing import Dict, List, Optional, Set, Tuple, cast
 
 
 from ...core import tIndex
@@ -319,6 +319,35 @@ class IRUnrolledLoopRerollOptimizer(TraversingIROptimizer):
         IRLocal: (),
     }
 
+    #: Induction variable names, tried in order (then `i1`, `j1`, ...).
+    _INDUCTION_NAMES = ("i", "j", "k")
+
+    def optimize(self) -> None:
+        # A rebuilt loop's variable must not shadow a local of the function or the
+        # variable of a rebuilt loop around it, so every one gets a name nothing uses.
+        self._used_names: Set[str] = {local.name for local in getattr(self.func, "locals", ())}
+        pending: List[IRStatement] = [self.func.block] if hasattr(self.func, "block") else []
+        seen: Set[int] = set()
+        while pending:
+            node = pending.pop()
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
+            if isinstance(node, IRLocal):
+                self._used_names.add(node.name)
+            pending.extend(node.get_children())
+        super().optimize()
+
+    def _fresh_induction_name(self) -> str:
+        suffix = 0
+        while True:
+            for base in self._INDUCTION_NAMES:
+                name = f"{base}{suffix}" if suffix else base
+                if name not in self._used_names:
+                    self._used_names.add(name)
+                    return name
+            suffix += 1
+
     def visit_block(self, block: IRBlock) -> None:
         statements = block.statements
         # Each statement's shape, computed once: recomputing the shapes of everything
@@ -404,7 +433,9 @@ class IRUnrolledLoopRerollOptimizer(TraversingIROptimizer):
             return None
 
         int_type = _get_type_in_code(self.func.code, "I32")
-        elem = IRLocal("i", tIndex(self.func.code.types.index(int_type)), self.func.code)
+        elem = IRLocal(
+            self._fresh_induction_name(), tIndex(self.func.code.types.index(int_type)), self.func.code
+        )
         replacements = {
             id(node): self._induction_expr(elem, cast(int, _int_const_value(node)), step)
             for node, step in zip(first, steps)
