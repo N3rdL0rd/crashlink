@@ -1143,6 +1143,40 @@ def _inverted_bool_expr_to_haxe(expr: IRBoolExpr, code: Bytecode, ir_function: I
         left = _expression_to_haxe(left_expr, code, ir_function)
         right = _expression_to_haxe(right_expr, code, ir_function)
         return f"{left} {op_map[actual_op]} {right}"
+    # Inverting a NaN-safe `!(a < b)` gives back the ordered comparison itself.
+    ordered = {
+        IRBoolExpr.CompareType.NOT_LT: "<",
+        IRBoolExpr.CompareType.NOT_LTE: "<=",
+        IRBoolExpr.CompareType.NOT_GT: ">",
+        IRBoolExpr.CompareType.NOT_GTE: ">=",
+    }
+    if expr.op in ordered:
+        symbol = ordered[expr.op]
+        left = _expr_to_haxe_with_precedence(expr.left, code, ir_function, symbol)
+        right = _expr_to_haxe_with_precedence(expr.right, code, ir_function, symbol, is_right=True)
+        return f"{left} {symbol} {right}"
+    if expr.op == IRBoolExpr.CompareType.NOT and expr.left is not None:
+        inner = _expression_to_haxe(expr.left, code, ir_function)
+        compound = isinstance(expr.left, IRBoolExpr) and expr.left.op in (
+            IRBoolExpr.CompareType.AND,
+            IRBoolExpr.CompareType.OR,
+        )
+        return f"({inner})" if compound else inner
+    if (
+        expr.op in (IRBoolExpr.CompareType.AND, IRBoolExpr.CompareType.OR)
+        and isinstance(expr.left, IRBoolExpr)
+        and isinstance(expr.right, IRBoolExpr)
+    ):
+        # De Morgan: !(a && b) is !a || !b. An inverted `&&` operand becomes an `||`, which
+        # needs parentheses once it sits inside the `&&` an inverted `||` turns into.
+        joiner = "||" if expr.op == IRBoolExpr.CompareType.AND else "&&"
+        parts = []
+        for side in (expr.left, expr.right):
+            text = _inverted_bool_expr_to_haxe(side, code, ir_function)
+            if joiner == "&&" and side.op == IRBoolExpr.CompareType.AND:
+                text = f"({text})"
+            parts.append(text)
+        return f"{parts[0]} {joiner} {parts[1]}"
     return f"!({_expression_to_haxe(expr, code, ir_function)})"
 
 
