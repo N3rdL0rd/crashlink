@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum as _Enum
-from typing import Any, Deque, Dict, List, Optional, Set, Tuple, cast
+from typing import Any, Deque, Dict, FrozenSet, List, Optional, Set, Tuple, cast
 
 from ..core import (
     Bytecode,
@@ -2030,35 +2030,35 @@ class IRFunction:
             stack.extend(node.get_children())
         return False
 
-    def _short_circuit_link(
-        self, link: Optional[CFNode], shared: Optional[CFNode], loop_ctx: Optional[_LoopContext]
-    ) -> Optional[Tuple[IRBoolExpr, CFNode]]:
-        """If `link` is one more test of a short-circuit chain (entered only from the
-        previous test, ending in a conditional jump with one target `shared`, and
-        computing its operands with assignments to temporaries that nothing reads
-        afterwards), return its condition for reaching `shared` with those temporaries
-        substituted in, and its other target. The link only runs when the chain gets
-        that far, so its calls can move into the condition as long as each runs once
-        and in its original order."""
+    def _short_circuit_test(
+        self, test: CFNode, loop_ctx: Optional[_LoopContext], absorbed: Set[CFNode]
+    ) -> Optional[Tuple[IRBoolExpr, CFNode, CFNode]]:
+        """If `test` can join a short-circuit condition (a conditional jump entered only
+        from the tests in `absorbed`, computing its operands with assignments to
+        temporaries that nothing reads afterwards), return its condition for taking the
+        jump with those temporaries substituted in, its jump target and its fall-through.
+        The test only runs when the condition gets that far, so its calls can move into
+        the condition as long as each runs once and in its original order."""
         assert self.cfg is not None
         cfg = self.cfg
-        if link is None or shared is None or link is shared or not link.ops:
+        if not test.ops or test in absorbed:
             return None
-        last = link.ops[-1]
-        if last.op not in conditionals or len(link.branches) != 2:
+        last = test.ops[-1]
+        if last.op not in conditionals or len(test.branches) != 2:
             return None
-        if len(cfg.predecessors.get(link, ())) != 1 or link in cfg.loops:
+        if test in cfg.loops or not absorbed.issuperset(cfg.predecessors.get(test, ())):
             return None
-        if loop_ctx is not None and (link not in loop_ctx.nodes or link is loop_ctx.header):
+        if loop_ctx is not None and (test not in loop_ctx.nodes or test is loop_ctx.header):
             return None
-        targets = {edge: target for target, edge in link.branches}
+        targets = {edge: target for target, edge in test.branches}
         jump_target, fall_through = targets.get("true"), targets.get("false")
-        if jump_target is None or fall_through is None or (jump_target is shared) == (fall_through is shared):
+        if jump_target is None or fall_through is None or jump_target is fall_through:
             return None
-        other = fall_through if jump_target is shared else jump_target
-        if other is link or (last.op == "JNull" and self._match_string_switch(link) is not None):
+        if test in (jump_target, fall_through) or jump_target in absorbed or fall_through in absorbed:
             return None
-        written = {op.df["dst"].value for op in link.ops[:-1] if "dst" in op.df}
+        if last.op == "JNull" and self._match_string_switch(test) is not None:
+            return None
+        written = {op.df["dst"].value for op in test.ops[:-1] if "dst" in op.df}
         if any(
             self._register_live_at(target, reg) for target in (jump_target, fall_through) for reg in written
         ):
@@ -2067,7 +2067,7 @@ class IRFunction:
         saved_locals, saved_new_regs = self.locals.copy(), self._new_defined_regs.copy()
         try:
             scratch = IRBlock(self.code)
-            self._lift_ops_into_block(scratch, link.ops[:-1])
+            self._lift_ops_into_block(scratch, test.ops[:-1])
             values: Dict[str, Tuple[List[int], IRExpression]] = {}
             for index, stmt in enumerate(scratch.statements):
                 if not isinstance(stmt, IRAssign) or not isinstance(stmt.target, IRLocal):
@@ -2077,16 +2077,13 @@ class IRFunction:
                 if not ok:
                     return None
                 values[stmt.target.name] = (sequence + [index], value)
-            condition = self._build_bool_expr_from_op(last)  # true: jump to `jump_target`
-            if jump_target is not shared:
-                condition.invert()
             sequence = []
-            condition, ok = self._substitute_temps(condition, values, sequence)
+            condition, ok = self._substitute_temps(self._build_bool_expr_from_op(last), values, sequence)
             if not ok:
                 return None
             if any(self._has_call(stmt) for stmt in scratch.statements):
                 # Every value that is not a constant has to be evaluated exactly once, in
-                # the order the link computed it.
+                # the order the test computed it.
                 significant = [
                     index
                     for index, stmt in enumerate(scratch.statements)
@@ -2095,46 +2092,106 @@ class IRFunction:
                 if [index for index in sequence if index in significant] != significant:
                     return None
             condition.adopt(*scratch.statements)
-            return condition, other
+            return condition, jump_target, fall_through
         except DecompError:
             return None
         finally:
             self.locals, self._new_defined_regs = saved_locals, saved_new_regs
 
+    def _short_circuit_group(
+        self,
+        start: Optional[CFNode],
+        shared: Optional[CFNode],
+        loop_ctx: Optional[_LoopContext],
+        absorbed: Set[CFNode],
+        targets: FrozenSet[CFNode],
+        nested: bool,
+    ) -> Optional[Tuple[IRBoolExpr, CFNode, Set[CFNode]]]:
+        """Tests starting at `start` that together exit only to `shared` and one other
+        node: their condition for reaching `shared`, that other node, and the tests.
+        Without `nested` this is `start` alone; with it, `start` may grow into a
+        compound condition of its own, as in the `b && c` of `a || (b && c)`. None of
+        `targets`, which enclosing conditions still exit to, becomes a test."""
+        if start is None or shared is None or start is shared or start in targets:
+            return None
+        test = self._short_circuit_test(start, loop_ctx, absorbed)
+        if test is None:
+            return None
+        condition, then_node, else_node = test
+        group = absorbed | {start}
+        if nested:
+            condition, then_node, else_node = self._grow_short_circuit(
+                condition, then_node, else_node, loop_ctx, group, targets | {shared}
+            )
+        if then_node is shared and else_node is not shared:
+            return condition, else_node, group - absorbed
+        if else_node is shared and then_node is not shared:
+            try:
+                condition.invert()
+            except DecompError:
+                return None
+            return condition, then_node, group - absorbed
+        return None
+
+    def _grow_short_circuit(
+        self,
+        condition: IRBoolExpr,
+        then_node: CFNode,
+        else_node: CFNode,
+        loop_ctx: Optional[_LoopContext],
+        absorbed: Set[CFNode],
+        targets: FrozenSet[CFNode] = frozenset(),
+    ) -> Tuple[IRBoolExpr, CFNode, CFNode]:
+        """Grow `if (condition) then_node else else_node` over the tests that follow it:
+        a `then_node` group that also exits to `else_node` makes `condition && t`, and
+        an `else_node` group that also exits to `then_node` makes `condition || e`.
+        Every test in `absorbed` (which this extends) exits only to other tests,
+        `then_node` or `else_node`, so a test entered only from them runs exactly when
+        the condition so far says so. Single tests are tried before nested groups, so
+        recursion follows the nesting of the condition, not its length."""
+        while True:
+            for nested in (False, True):
+                group = self._short_circuit_group(then_node, else_node, loop_ctx, absorbed, targets, nested)
+                if group is not None:
+                    to_else, other, tests = group
+                    try:
+                        to_else.invert()  # now: condition for continuing to `other`
+                    except DecompError:
+                        return condition, then_node, else_node
+                    absorbed |= tests
+                    condition = IRBoolExpr(self.code, IRBoolExpr.CompareType.AND, condition, to_else)
+                    then_node = other
+                    break
+                group = self._short_circuit_group(else_node, then_node, loop_ctx, absorbed, targets, nested)
+                if group is not None:
+                    to_then, other, tests = group
+                    absorbed |= tests
+                    condition = IRBoolExpr(self.code, IRBoolExpr.CompareType.OR, condition, to_then)
+                    else_node = other
+                    break
+            else:
+                return condition, then_node, else_node
+
     def _absorb_short_circuit(
         self,
+        head: CFNode,
         condition: IRBoolExpr,
         then_node: Optional[CFNode],
         else_node: Optional[CFNode],
         loop_ctx: Optional[_LoopContext],
         visited: Set[CFNode],
     ) -> Tuple[IRBoolExpr, Optional[CFNode], Optional[CFNode]]:
-        """Grow `if (condition) then_node else else_node` over short-circuit links:
-        a `then_node` test that also exits to `else_node` makes `condition && t`, and an
-        `else_node` test that also exits to `then_node` makes `condition || e`."""
-        while True:
-            link = self._short_circuit_link(then_node, else_node, loop_ctx)
-            if link is not None:
-                to_else, other = link
-                assert then_node is not None
-                visited.add(then_node)
-                to_else_expr: IRBoolExpr = to_else
-                try:
-                    to_else_expr.invert()  # now: condition for continuing to `other`
-                except DecompError:
-                    return condition, then_node, else_node
-                condition = IRBoolExpr(self.code, IRBoolExpr.CompareType.AND, condition, to_else_expr)
-                then_node = other
-                continue
-            link = self._short_circuit_link(else_node, then_node, loop_ctx)
-            if link is not None:
-                to_then, other = link
-                assert else_node is not None
-                visited.add(else_node)
-                condition = IRBoolExpr(self.code, IRBoolExpr.CompareType.OR, condition, to_then)
-                else_node = other
-                continue
+        """Fold the short-circuit tests after the test at `head`, whose condition for
+        reaching `then_node` is `condition`, into one condition (see
+        `_grow_short_circuit`), marking the folded tests visited."""
+        if then_node is None or else_node is None:
             return condition, then_node, else_node
+        absorbed = {head}
+        condition, then_node, else_node = self._grow_short_circuit(
+            condition, then_node, else_node, loop_ctx, absorbed
+        )
+        visited.update(absorbed - {head})
+        return condition, then_node, else_node
 
     def _build_bool_expr_from_op(self, op: Opcode) -> IRBoolExpr:
         """Helper to create an IRBoolExpr from a conditional jump opcode."""
@@ -2465,7 +2522,7 @@ class IRFunction:
             # link shares is lifted once rather than once per link (3^n for else-if
             # chains of three-link conditions).
             cond_expr, fall_through, jump_target = self._absorb_short_circuit(
-                cond_expr, fall_through, jump_target, loop_ctx, visited
+                node, cond_expr, fall_through, jump_target, loop_ctx, visited
             )
 
             stop_nodes = {loop_ctx.header} if loop_ctx else set()
