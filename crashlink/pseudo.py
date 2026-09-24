@@ -7,6 +7,8 @@ from __future__ import annotations
 import os
 import re
 import weakref
+import threading
+from contextlib import contextmanager
 from typing import Optional, List, Set, Dict, FrozenSet, Tuple, Union, cast, Any, Iterator
 
 from .core import (
@@ -2238,6 +2240,68 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
     return _generate_function_pseudo_mapped(ir_func)[0]
 
 
+def _plan_declarations(
+    ir_func: IRFunction,
+    local_types: Dict[str, str],
+    initial_declared_vars: Set[str],
+    catch_locals: Set[str],
+    foreach_elem_names: Set[str],
+    inline_declarations: Dict[IRStatement, Tuple[str, str]],
+    output_lines: List[str],
+) -> None:
+    """Decide where each local is declared: inline at its defining statement (recorded in
+    `inline_declarations`) or up front (appended to `output_lines`)."""
+    for local_name in local_types:
+        if local_name in initial_declared_vars or local_name == "this":
+            continue
+        # Catch-clause locals are declared by the `catch (e:T)` syntax; skip them.
+        # But if the same name is also explicitly assigned elsewhere (register
+        # reuse for an unrelated local), it still needs a real declaration.
+        if local_name in catch_locals and not _has_explicit_assignment(local_name, ir_func.block):
+            continue
+        # For-each loop variables are declared by the `for (x in y)` syntax - unless
+        # the same name is also assigned somewhere else in the function (register
+        # reuse), in which case it still needs a real declaration.
+        if local_name in foreach_elem_names and not _has_explicit_assignment(local_name, ir_func.block):
+            continue
+        type_str = local_types[local_name]
+        defining_stmt = _find_defining_assignment(local_name, ir_func.block)
+        if defining_stmt is not None:
+            # If the same local is also assigned inside a compound statement that
+            # appears earlier in the block, declaring it at the later assignment
+            # site would produce a use-before-declaration.  Fall back to a top-level
+            # declaration instead.
+            if not _assigned_before_in_block(local_name, ir_func.block, defining_stmt):
+                # Emit inline at the assignment site, preserving statement order.
+                inline_declarations[defining_stmt] = (local_name, type_str)
+                continue
+        # If the variable only lives inside a single compound statement, declare
+        # it inline there rather than pre-declaring at function level.
+        assigned_before_use = _is_definitely_assigned_before_use(local_name, ir_func.block)
+        inner_stmt = (
+            _find_inner_defining_assignment(local_name, ir_func.block) if assigned_before_use else None
+        )
+        if inner_stmt is not None:
+            inline_declarations[inner_stmt] = (local_name, type_str)
+            continue
+        # Declaration placement is independent of initialization: omit synthetic
+        # defaults only when every reachable read has a preceding assignment.
+        if assigned_before_use:
+            output_lines.append(f"    var {local_name}: {type_str};")
+            continue
+        default_init = {
+            "Int": "0",
+            "Float": "0.0",
+            "Bool": "false",
+            "String": '""',
+            "Dynamic": "null",
+        }.get(type_str)
+        if type_str.startswith("Array<"):
+            default_init = "[]"
+        init = f" = {default_init}" if default_init is not None else ""
+        output_lines.append(f"    var {local_name}: {type_str}{init};")
+
+
 def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int, int]]:
     """Like _generate_function_pseudo, but also returns an opcode→line map (body-relative)."""
     code: Bytecode = ir_func.code
@@ -2377,56 +2441,16 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     catch_locals = _collect_catch_local_names(ir_func.block)
     foreach_elem_names = _collect_foreach_elem_names(ir_func.block)
     inline_declarations: Dict[IRStatement, Tuple[str, str]] = {}  # stmt → (name, type_str)
-    for local_name in local_types:
-        if local_name in initial_declared_vars or local_name == "this":
-            continue
-        # Catch-clause locals are declared by the `catch (e:T)` syntax; skip them.
-        # But if the same name is also explicitly assigned elsewhere (register
-        # reuse for an unrelated local), it still needs a real declaration.
-        if local_name in catch_locals and not _has_explicit_assignment(local_name, ir_func.block):
-            continue
-        # For-each loop variables are declared by the `for (x in y)` syntax - unless
-        # the same name is also assigned somewhere else in the function (register
-        # reuse), in which case it still needs a real declaration.
-        if local_name in foreach_elem_names and not _has_explicit_assignment(local_name, ir_func.block):
-            continue
-        type_str = local_types[local_name]
-        defining_stmt = _find_defining_assignment(local_name, ir_func.block)
-        if defining_stmt is not None:
-            # If the same local is also assigned inside a compound statement that
-            # appears earlier in the block, declaring it at the later assignment
-            # site would produce a use-before-declaration.  Fall back to a top-level
-            # declaration instead.
-            if not _assigned_before_in_block(local_name, ir_func.block, defining_stmt):
-                # Emit inline at the assignment site, preserving statement order.
-                inline_declarations[defining_stmt] = (local_name, type_str)
-                continue
-        # If the variable only lives inside a single compound statement, declare
-        # it inline there rather than pre-declaring at function level.
-        assigned_before_use = _is_definitely_assigned_before_use(local_name, ir_func.block)
-        inner_stmt = (
-            _find_inner_defining_assignment(local_name, ir_func.block) if assigned_before_use else None
+    with _memoized_local_reads():
+        _plan_declarations(
+            ir_func,
+            local_types,
+            initial_declared_vars,
+            catch_locals,
+            foreach_elem_names,
+            inline_declarations,
+            output_lines,
         )
-        if inner_stmt is not None:
-            inline_declarations[inner_stmt] = (local_name, type_str)
-            continue
-        # Declaration placement is independent of initialization: omit synthetic
-        # defaults only when every reachable read has a preceding assignment.
-        if assigned_before_use:
-            output_lines.append(f"    var {local_name}: {type_str};")
-            continue
-        default_init = {
-            "Int": "0",
-            "Float": "0.0",
-            "Bool": "false",
-            "String": '""',
-            "Dynamic": "null",
-        }.get(type_str)
-        if type_str.startswith("Array<"):
-            default_init = "[]"
-        init = f" = {default_init}" if default_init is not None else ""
-        output_lines.append(f"    var {local_name}: {type_str}{init};")
-
     op_to_line: Dict[int, int] = {}
     body_lines = _generate_statements(
         ir_func.block.statements,
@@ -2805,78 +2829,176 @@ def _find_inner_defining_assignment(local_name: str, block: IRBlock) -> Optional
     return None
 
 
+# Memoized read-name sets for `_contains_local_name`, active while declarations are
+# planned (read-only analysis of the IR). Thread-local: renders run on worker threads.
+_local_reads_state = threading.local()
+
+
+@contextmanager
+def _memoized_local_reads() -> Iterator[None]:
+    previous = getattr(_local_reads_state, "reads", None)
+    _local_reads_state.reads = {}
+    try:
+        yield
+    finally:
+        _local_reads_state.reads = previous
+
+
+def _read_names(stmt: Optional[IRStatement], memo: Dict[int, FrozenSet[str]]) -> FrozenSet[str]:
+    """Every local name `_contains_local_name` would find in `stmt`, memoized by node."""
+    if stmt is None:
+        return frozenset()
+    key = id(stmt)
+    found = memo.get(key)
+    if found is not None:
+        return found
+    if isinstance(stmt, IRLocal):
+        found = frozenset((stmt.name,))
+        memo[key] = found
+        return found
+    parts: List[Optional[IRStatement]]
+    if isinstance(stmt, (IRArithmetic, IRBoolExpr)):
+        parts = [stmt.left, stmt.right]
+    elif isinstance(stmt, IRCall):
+        parts = [stmt.target, *stmt.args]
+    elif isinstance(stmt, (IRField, IRRef, IRRefNew)):
+        parts = [stmt.target]
+    elif isinstance(stmt, IRArrayAccess):
+        parts = [stmt.array, stmt.index]
+    elif isinstance(stmt, (IRCast, IRNeg, IRNot)):
+        parts = [stmt.expr]
+    elif isinstance(stmt, IRRefGet):
+        parts = [stmt.ref]
+    elif isinstance(stmt, IRRefSet):
+        parts = [stmt.ref, stmt.value]
+    elif isinstance(stmt, IREnumConstruct):
+        parts = list(stmt.args)
+    elif isinstance(stmt, (IREnumIndex, IREnumField)):
+        parts = [stmt.value]
+    elif isinstance(stmt, IRNew):
+        parts = list(stmt.constructor_args)
+    elif isinstance(stmt, IRTrace):
+        parts = [stmt.msg]
+    elif isinstance(stmt, IRReturn):
+        parts = [stmt.value]
+    elif isinstance(stmt, IRAssign):
+        # A local target is a write; a field/array target reads its receiver/index.
+        parts = [stmt.expr] if isinstance(stmt.target, IRLocal) else [stmt.expr, stmt.target]
+    elif isinstance(stmt, IRBlock):
+        parts = list(stmt.statements)
+    elif isinstance(stmt, IRConditional):
+        parts = [stmt.condition, stmt.true_block, stmt.false_block]
+    elif isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop)):
+        parts = [stmt.condition, stmt.body]
+    elif isinstance(stmt, IRSwitch):
+        parts = [stmt.value, *stmt.cases.values(), stmt.default]
+    elif isinstance(stmt, IRTryCatch):
+        parts = [
+            stmt.try_block,
+            stmt.catch_block,
+            *(block for _, block in stmt.extra_catches),
+            stmt.catch_local,
+        ]
+    else:
+        parts = list(stmt.get_children())
+    names: Set[str] = set()
+    for part in parts:
+        names |= _read_names(part, memo)
+    found = frozenset(names)
+    memo[key] = found
+    return found
+
+
 def _contains_local_name(local_name: str, stmt: IRStatement) -> bool:
     """Recursively search `stmt` for a read of the named local."""
+    memo = getattr(_local_reads_state, "reads", None)
+    if memo is not None:
+        return local_name in _read_names(stmt, memo)
+    return _contains_local_name_walk(local_name, stmt)
+
+
+def _contains_local_name_walk(local_name: str, stmt: IRStatement) -> bool:
+    """`_contains_local_name` without the memo."""
     if isinstance(stmt, IRLocal):
         return stmt.name == local_name
     if isinstance(stmt, IRArithmetic):
-        return _contains_local_name(local_name, stmt.left) or _contains_local_name(local_name, stmt.right)
+        return _contains_local_name_walk(local_name, stmt.left) or _contains_local_name_walk(
+            local_name, stmt.right
+        )
     if isinstance(stmt, IRBoolExpr):
-        return (stmt.left is not None and _contains_local_name(local_name, stmt.left)) or (
-            stmt.right is not None and _contains_local_name(local_name, stmt.right)
+        return (stmt.left is not None and _contains_local_name_walk(local_name, stmt.left)) or (
+            stmt.right is not None and _contains_local_name_walk(local_name, stmt.right)
         )
     if isinstance(stmt, IRCall):
-        if stmt.target is not None and _contains_local_name(local_name, stmt.target):
+        if stmt.target is not None and _contains_local_name_walk(local_name, stmt.target):
             return True
-        return any(_contains_local_name(local_name, arg) for arg in stmt.args)
+        return any(_contains_local_name_walk(local_name, arg) for arg in stmt.args)
     if isinstance(stmt, IRField):
-        return _contains_local_name(local_name, stmt.target)
+        return _contains_local_name_walk(local_name, stmt.target)
     if isinstance(stmt, IRArrayAccess):
-        return _contains_local_name(local_name, stmt.array) or _contains_local_name(local_name, stmt.index)
+        return _contains_local_name_walk(local_name, stmt.array) or _contains_local_name_walk(
+            local_name, stmt.index
+        )
     if isinstance(stmt, IRCast):
-        return _contains_local_name(local_name, stmt.expr)
+        return _contains_local_name_walk(local_name, stmt.expr)
     if isinstance(stmt, IRNeg):
-        return _contains_local_name(local_name, stmt.expr)
+        return _contains_local_name_walk(local_name, stmt.expr)
     if isinstance(stmt, IRNot):
-        return _contains_local_name(local_name, stmt.expr)
+        return _contains_local_name_walk(local_name, stmt.expr)
     if isinstance(stmt, IRRef):
-        return _contains_local_name(local_name, stmt.target)
+        return _contains_local_name_walk(local_name, stmt.target)
     if isinstance(stmt, IRRefNew):
-        return _contains_local_name(local_name, stmt.target)
+        return _contains_local_name_walk(local_name, stmt.target)
     if isinstance(stmt, IRRefGet):
-        return _contains_local_name(local_name, stmt.ref)
+        return _contains_local_name_walk(local_name, stmt.ref)
     if isinstance(stmt, IRRefSet):
-        return _contains_local_name(local_name, stmt.ref) or _contains_local_name(local_name, stmt.value)
+        return _contains_local_name_walk(local_name, stmt.ref) or _contains_local_name_walk(
+            local_name, stmt.value
+        )
     if isinstance(stmt, IREnumConstruct):
-        return any(_contains_local_name(local_name, arg) for arg in stmt.args)
+        return any(_contains_local_name_walk(local_name, arg) for arg in stmt.args)
     if isinstance(stmt, (IREnumIndex, IREnumField)):
-        return _contains_local_name(local_name, stmt.value)
+        return _contains_local_name_walk(local_name, stmt.value)
     if isinstance(stmt, IRNew):
-        return any(_contains_local_name(local_name, arg) for arg in stmt.constructor_args)
+        return any(_contains_local_name_walk(local_name, arg) for arg in stmt.constructor_args)
     if isinstance(stmt, IRTrace):
-        return _contains_local_name(local_name, stmt.msg)
+        return _contains_local_name_walk(local_name, stmt.msg)
     if isinstance(stmt, IRReturn):
-        return stmt.value is not None and _contains_local_name(local_name, stmt.value)
+        return stmt.value is not None and _contains_local_name_walk(local_name, stmt.value)
     if isinstance(stmt, IRAssign):
         # A local target is a write, but a field/array target evaluates its
         # receiver/index before storing and therefore reads those locals.
-        return _contains_local_name(local_name, stmt.expr) or (
-            not isinstance(stmt.target, IRLocal) and _contains_local_name(local_name, stmt.target)
+        return _contains_local_name_walk(local_name, stmt.expr) or (
+            not isinstance(stmt.target, IRLocal) and _contains_local_name_walk(local_name, stmt.target)
         )
     if isinstance(stmt, IRBlock):
-        return any(_contains_local_name(local_name, child) for child in stmt.statements)
+        return any(_contains_local_name_walk(local_name, child) for child in stmt.statements)
     if isinstance(stmt, IRConditional):
         return (
-            _contains_local_name(local_name, stmt.condition)
-            or _contains_local_name(local_name, stmt.true_block)
-            or _contains_local_name(local_name, stmt.false_block)
+            _contains_local_name_walk(local_name, stmt.condition)
+            or _contains_local_name_walk(local_name, stmt.true_block)
+            or _contains_local_name_walk(local_name, stmt.false_block)
         )
     if isinstance(stmt, (IRWhileLoop, IRPrimitiveLoop)):
-        return _contains_local_name(local_name, stmt.condition) or _contains_local_name(local_name, stmt.body)
+        return _contains_local_name_walk(local_name, stmt.condition) or _contains_local_name_walk(
+            local_name, stmt.body
+        )
     if isinstance(stmt, IRSwitch):
-        if _contains_local_name(local_name, stmt.value):
+        if _contains_local_name_walk(local_name, stmt.value):
             return True
-        return any(_contains_local_name(local_name, block) for block in stmt.cases.values()) or (
-            stmt.default is not None and _contains_local_name(local_name, stmt.default)
+        return any(_contains_local_name_walk(local_name, block) for block in stmt.cases.values()) or (
+            stmt.default is not None and _contains_local_name_walk(local_name, stmt.default)
         )
     if isinstance(stmt, IRTryCatch):
         return (
-            _contains_local_name(local_name, stmt.try_block)
-            or _contains_local_name(local_name, stmt.catch_block)
-            or any(_contains_local_name(local_name, extra_block) for _, extra_block in stmt.extra_catches)
+            _contains_local_name_walk(local_name, stmt.try_block)
+            or _contains_local_name_walk(local_name, stmt.catch_block)
+            or any(
+                _contains_local_name_walk(local_name, extra_block) for _, extra_block in stmt.extra_catches
+            )
             or (stmt.catch_local is not None and stmt.catch_local.name == local_name)
         )
-    return any(_contains_local_name(local_name, child) for child in stmt.get_children())
+    return any(_contains_local_name_walk(local_name, child) for child in stmt.get_children())
 
 
 def _collect_local_names(stmt: IRStatement) -> Set[str]:
