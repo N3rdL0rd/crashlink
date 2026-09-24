@@ -1083,7 +1083,7 @@ class IRFunction:
             live = [target for target in targets if not self._is_terminal_branch_node(target, loop_ctx)]
             bodies = {body for _, body in switch.cases}
             common = (
-                set.intersection(*(cfg.post_dominators.get(target, set()) for target in live)) - bodies
+                set.intersection(*(set(cfg.post_dominators.get(target, ())) for target in live)) - bodies
                 if live
                 else set()
             )

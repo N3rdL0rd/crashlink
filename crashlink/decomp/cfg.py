@@ -5,7 +5,8 @@ Control-flow graph construction and optimization.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Set, Tuple
+from collections.abc import Mapping
+from typing import Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple
 
 from ..core import (
     Bytecode,
@@ -101,6 +102,158 @@ class CFDeadCodeEliminator(CFOptimizer):
         self.graph.nodes = [n for n in self.graph.nodes if n in reachable]
 
 
+def _immediate_dominators(
+    root: CFNode,
+    successors: Callable[[CFNode], List[CFNode]],
+    predecessors: Callable[[CFNode], Optional[List[CFNode]]],
+) -> Dict[CFNode, CFNode]:
+    """Immediate dominators of every node reachable from `root` (Cooper, Harvey and Kennedy,
+    "A Simple, Fast Dominance Algorithm"). The root maps to itself."""
+    order: List[CFNode] = []  # postorder
+    seen = {root}
+    stack = [(root, iter(successors(root)))]
+    while stack:
+        node, it = stack[-1]
+        for nxt in it:
+            if nxt not in seen:
+                seen.add(nxt)
+                stack.append((nxt, iter(successors(nxt))))
+                break
+        else:
+            stack.pop()
+            order.append(node)
+    order.reverse()  # reverse postorder
+    index = {node: i for i, node in enumerate(order)}
+    idom: Dict[CFNode, CFNode] = {root: root}
+
+    def intersect(a: CFNode, b: CFNode) -> CFNode:
+        while a is not b:
+            while index[a] > index[b]:
+                a = idom[a]
+            while index[b] > index[a]:
+                b = idom[b]
+        return a
+
+    changed = True
+    while changed:
+        changed = False
+        for node in order[1:]:
+            new: Optional[CFNode] = None
+            for pred in predecessors(node) or ():
+                if pred in idom:
+                    new = pred if new is None else intersect(pred, new)
+            if new is not None and idom.get(node) is not new:
+                idom[node] = new
+                changed = True
+    return idom
+
+
+class _DominatorSet:
+    """One node's (post-)dominators: the node and its ancestors in the dominator tree.
+    A read-only set view: membership is O(1) and nothing is materialised."""
+
+    __slots__ = ("_map", "_node")
+
+    def __init__(self, dmap: "_DominatorMap", node: CFNode) -> None:
+        self._map = dmap
+        self._node = node
+
+    def __contains__(self, other: object) -> bool:
+        return self._map.dominates(other, self._node)
+
+    def __len__(self) -> int:
+        return self._map.size(self._node)
+
+    def __iter__(self) -> Iterator[CFNode]:
+        return self._map.chain(self._node)
+
+    def issuperset(self, other: Iterable[CFNode]) -> bool:
+        return all(node in self for node in other)
+
+    def __repr__(self) -> str:
+        return f"<dominators of {self._node.base_offset}: {sorted(n.base_offset for n in self)}>"
+
+
+class _DominatorMap(Mapping[CFNode, _DominatorSet]):
+    """node -> its dominator set, backed by the dominator tree (`idom`). Nodes the tree's
+    root doesn't reach are dominated by every node, matching the iterative fixpoint."""
+
+    def __init__(self, nodes: List[CFNode], idom: Dict[CFNode, CFNode], root: CFNode) -> None:
+        self._nodes = nodes
+        self._node_set = set(nodes)
+        self._idom = idom
+        self._root = root
+        # Pre/post numbering of the tree gives O(1) ancestor tests; depth gives set sizes.
+        children: Dict[CFNode, List[CFNode]] = {}
+        for node, parent in idom.items():
+            if node is not root:
+                children.setdefault(parent, []).append(node)
+        self._pre: Dict[CFNode, int] = {}
+        self._post: Dict[CFNode, int] = {}
+        self._size: Dict[CFNode, int] = {}
+        counter = 0
+        root_counts = root in self._node_set  # a virtual root isn't part of any set
+        stack: List[Tuple[CFNode, bool]] = [(root, False)]
+        while stack:
+            node, leaving = stack.pop()
+            if leaving:
+                self._post[node] = counter
+                counter += 1
+                continue
+            self._pre[node] = counter
+            counter += 1
+            parent_size = self._size[idom[node]] if node is not root else (0 if root_counts else -1)
+            self._size[node] = parent_size + 1
+            stack.append((node, True))
+            stack.extend((child, False) for child in children.get(node, ()))
+
+    def dominates(self, a: object, b: CFNode) -> bool:
+        if not isinstance(a, CFNode) or a not in self._node_set:
+            return False
+        if b not in self._pre:  # unreached: dominated by every node
+            return True
+        pre_a = self._pre.get(a)
+        return pre_a is not None and pre_a <= self._pre[b] and self._post[b] <= self._post[a]
+
+    def size(self, node: CFNode) -> int:
+        return self._size[node] if node in self._pre else len(self._nodes)
+
+    def chain(self, node: CFNode) -> Iterator[CFNode]:
+        if node not in self._pre:
+            yield from self._nodes
+            return
+        while True:
+            if node in self._node_set:
+                yield node
+            if node is self._root:
+                return
+            node = self._idom[node]
+
+    def immediate(self, node: CFNode) -> Optional[CFNode]:
+        """Parent in the tree (None for the root, or when the parent is a virtual root).
+        For an unreached node, which every node dominates, the nearest other unreached node
+        by offset stands in (the old iterative code picked one arbitrarily)."""
+        if node in self._pre:
+            parent = self._idom[node]
+            return parent if parent is not node and parent in self._node_set else None
+        others = [n for n in self._nodes if n is not node and n not in self._pre]
+        if others:
+            return min(others, key=lambda n: (abs(n.base_offset - node.base_offset), n.base_offset))
+        reached = [n for n in self._nodes if n in self._pre]
+        return max(reached, key=lambda n: (self._size[n], -n.base_offset)) if reached else None
+
+    def __getitem__(self, node: CFNode) -> _DominatorSet:
+        if node not in self._node_set:
+            raise KeyError(node)
+        return _DominatorSet(self, node)
+
+    def __iter__(self) -> Iterator[CFNode]:
+        return iter(self._nodes)
+
+    def __len__(self) -> int:
+        return len(self._nodes)
+
+
 class CFGraph:
     """
     A control flow graph.
@@ -115,11 +268,11 @@ class CFGraph:
         # Maps node -> List[predecessor_node]
         self.predecessors: Dict[CFNode, List[CFNode]] = {}
         # Maps node -> Set[dominator_nodes]
-        self.dominators: Dict[CFNode, Set[CFNode]] = {}
+        self.dominators: Mapping[CFNode, _DominatorSet] = {}
         # Maps loop_header_node -> Set[nodes_in_loop]
         self.loops: Dict[CFNode, Set[CFNode]] = {}
         # Maps node -> Set[post_dominator_nodes]
-        self.post_dominators: Dict[CFNode, Set[CFNode]] = {}
+        self.post_dominators: Mapping[CFNode, _DominatorSet] = {}
         # Maps node -> immediate_post_dominator_node
         self.immediate_post_dominators: Dict[CFNode, CFNode | None] = {}
 
@@ -300,39 +453,14 @@ class CFGraph:
 
     def _find_dominators(self) -> None:
         """
-        Computes the dominator for each node using an iterative algorithm.
-        A node 'd' dominates 'n' if every path from entry to 'n' must pass through 'd'.
+        Computes each node's dominators: 'd' dominates 'n' if every path from entry to 'n'
+        passes through 'd'. A node the entry can't reach is dominated by every node (the
+        fixpoint the classic iterative formulation leaves it at).
         """
         if not self.entry:
             return
-
-        all_nodes = self.nodes
-        # Initialize: The only dominator of the start_node is itself.
-        # Every other node is initially "dominated" by all nodes.
-        doms = {node: set(all_nodes) for node in all_nodes}
-        doms[self.entry] = {self.entry}
-
-        changed = True
-        while changed:
-            changed = False
-            # Iterate in a fixed order for deterministic results
-            for node in sorted(all_nodes, key=lambda n: n.base_offset):
-                if node == self.entry:
-                    continue
-
-                # Dom(n) = {n} U intersect(Dom(p) for p in preds(n))
-                preds = self.predecessors.get(node, [])
-                if not preds:
-                    continue  # Should not happen in a connected graph apart from entry
-
-                pred_doms_sets = [doms[p] for p in preds]
-                new_doms = {node}.union(set.intersection(*pred_doms_sets))
-
-                if new_doms != doms[node]:
-                    doms[node] = new_doms
-                    changed = True
-
-        self.dominators = doms
+        idom = _immediate_dominators(self.entry, lambda n: [t for t, _ in n.branches], self.predecessors.get)
+        self.dominators = _DominatorMap(self.nodes, idom, root=self.entry)
 
     def _find_loops(self) -> None:
         """
@@ -369,87 +497,39 @@ class CFGraph:
 
     def _find_post_dominators(self) -> None:
         """
-        Computes post-dominators by running the dominator algorithm on the
-        reversed graph. Handles multiple exit points by creating a virtual exit.
-        A node 'p' post-dominates 'n' if all paths from 'n' to exit pass through 'p'.
-
-        In the reversed graph G', edges are reversed: u→v in G becomes v→u in G'.
-        The virtual EXIT is the start of G'. For the dominator algorithm on G':
-            preds_G'(n) = successors_G(n)
-        Exit nodes (no successors in G) connect only to VIRTUAL_EXIT in G'.
+        Computes post-dominators ('p' post-dominates 'n' if every path from 'n' to an exit
+        passes through 'p') as dominators of the reversed graph, whose root is a virtual
+        node joining every exit. A node that can't reach an exit is post-dominated by every
+        node, as in the classic iterative formulation.
         """
-        all_nodes = self.nodes
-        exit_nodes = [n for n in all_nodes if not n.branches]
-
+        exit_nodes = [n for n in self.nodes if not n.branches]
         if not exit_nodes:
             # Graph with an infinite loop and no exit
             self.post_dominators = {}
             return
 
-        # Use a virtual exit node to unify all original exit nodes.
-        VIRTUAL_EXIT = CFNode([])
-        nodes_for_pd_analysis = all_nodes + [VIRTUAL_EXIT]
+        virtual_exit = CFNode([])
+        preds = self.predecessors
 
-        # Run the iterative dominator algorithm on the reversed graph.
-        pd = {node: set(nodes_for_pd_analysis) for node in nodes_for_pd_analysis}
-        pd[VIRTUAL_EXIT] = {VIRTUAL_EXIT}
+        def successors(node: CFNode) -> List[CFNode]:  # in the reversed graph
+            return exit_nodes if node is virtual_exit else preds.get(node, [])
 
-        changed = True
-        while changed:
-            changed = False
-            for node in sorted(all_nodes, key=lambda n: n.base_offset):
-                # In G', predecessors of `node` = successors of `node` in G.
-                # Exit nodes (no successors in G) connect to VIRTUAL_EXIT in G'.
-                preds_in_reversed_graph = [target for target, _ in node.branches]
-                if not preds_in_reversed_graph:
-                    preds_in_reversed_graph = [VIRTUAL_EXIT]
+        def predecessors(node: CFNode) -> List[CFNode]:  # in the reversed graph
+            return [t for t, _ in node.branches] or [virtual_exit]
 
-                pred_pdom_sets = [pd[p] for p in preds_in_reversed_graph]
-                new_pd = {node}.union(set.intersection(*pred_pdom_sets))
-
-                if new_pd != pd[node]:
-                    pd[node] = new_pd
-                    changed = True
-
-        # Remove the virtual node from the results before storing
-        del pd[VIRTUAL_EXIT]
-        for node in pd:
-            pd[node].discard(VIRTUAL_EXIT)
-
-        self.post_dominators = pd
+        idom = _immediate_dominators(virtual_exit, successors, predecessors)
+        self.post_dominators = _DominatorMap(self.nodes, idom, root=virtual_exit)
 
     def _find_immediate_post_dominators(self) -> None:
         """
-        Calculates the immediate post-dominator for each node.
-        The immediate post-dominator of 'n' is the "closest" post-dominator
-        on any path from 'n' to an exit. It's the parent in the post-dominator tree.
+        Calculates the immediate post-dominator for each node: its parent in the
+        post-dominator tree, or None when only the (virtual) exit post-dominates it.
         """
         if not self.post_dominators:
             return
-
-        self.immediate_post_dominators = {}
-        for n in self.nodes:
-            pdoms_of_n = self.post_dominators.get(n, set())
-            # The immediate post-dominator is the one in the set (excluding n itself)
-            # that is post-dominated by all others.
-            # A simpler way is to find the one whose own post-dominator set has size |pdoms(n)| - 1.
-            idom = None
-            min_extra_pdoms = float("inf")
-
-            for p in pdoms_of_n:
-                if p == n:
-                    continue
-
-                pdoms_of_p = self.post_dominators.get(p, set())
-                # The immediate post-dominator of `n` is `p` if `pdoms(n) - {n}` is a superset of `pdoms(p)`.
-                # We find the `p` that has the largest set of post-dominators itself.
-                if pdoms_of_n.issuperset(pdoms_of_p):
-                    num_extra_pdoms = len(pdoms_of_n) - len(pdoms_of_p)
-                    if num_extra_pdoms < min_extra_pdoms:
-                        min_extra_pdoms = num_extra_pdoms
-                        idom = p
-
-            self.immediate_post_dominators[n] = idom
+        pdoms = self.post_dominators
+        assert isinstance(pdoms, _DominatorMap)
+        self.immediate_post_dominators = {n: pdoms.immediate(n) for n in self.nodes}
 
     def optimize(self, optimizers: List[CFOptimizer]) -> None:
         for optimizer in optimizers:
