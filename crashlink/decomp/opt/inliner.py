@@ -551,8 +551,15 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
 
     def _is_safe_to_duplicate(self, expr: IRExpression, assigned_local: IRLocal) -> bool:
         # A retained assignment has already changed its destination. Re-evaluating
-        # a self-referential RHS now would read the new value, not the old one.
-        return not self._expr_contains_local(expr, assigned_local) and not _has_observable_effects(expr)
+        # an RHS that reads that storage, under this name or another web of the same
+        # register, would read the new value, not the old one.
+        pending: List[IRStatement] = [expr]
+        while pending:
+            node = pending.pop()
+            if isinstance(node, IRLocal) and _ScopedLocalLifetime.kills(assigned_local, node):
+                return False
+            pending.extend(node.get_children())
+        return not _has_observable_effects(expr)
 
     def _is_movable_read(self, expr: IRExpression) -> bool:
         """A plain field/element read: throwing is its only effect.
