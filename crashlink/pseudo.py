@@ -795,7 +795,13 @@ def _expression_to_haxe(
         if isinstance(target_type.definition, Obj) and is_static_name(type_name):
             # A typed HL static-storage access must stay statically visible to
             # Haxe's DCE; a Dynamic alias can discard the referenced field.
-            return f"{destaticify(type_name)}.{expr.field_name}"
+            return _std_private_access(
+                f"{destaticify(type_name)}.{expr.field_name}",
+                target_type.definition,
+                expr.field_name,
+                code,
+                ir_function,
+            )
         if type_name == "String" and expr.field_name == "bytes":
             return f"(@:privateAccess {target_str}.bytes)"
         # Public Array<T> hides the fields of its concrete HL representation.
@@ -814,10 +820,21 @@ def _expression_to_haxe(
         if isinstance(expr.target, IRConst) and isinstance(expr.target.value, Type):
             defn = expr.target.value.definition
             if isinstance(defn, Obj):
-                return f"{destaticify(defn.name.resolve(code))}.{expr.field_name}"
+                return _std_private_access(
+                    f"{destaticify(defn.name.resolve(code))}.{expr.field_name}",
+                    defn,
+                    expr.field_name,
+                    code,
+                    ir_function,
+                )
         # Enum constructor parameters are not real Haxe fields. Cast to Dynamic.
         if isinstance(target_type.definition, Enum) and expr.field_name.startswith("param"):
             return f"({target_str} : Dynamic).{expr.field_name}"
+        # A std class's private field (an inlined `BytesBuffer.addByte` reads `pos`).
+        if isinstance(target_type.definition, Obj):
+            return _std_private_access(
+                f"{target_str}.{expr.field_name}", target_type.definition, expr.field_name, code, ir_function
+            )
         return f"{target_str}.{expr.field_name}"
 
     elif isinstance(expr, IRBoundClosure):
@@ -1099,6 +1116,13 @@ def _expression_to_haxe(
             if isinstance(expr.args[1].get_type().definition, Ref):
                 flag = f"({flag}).get()"
             return f"cast {callee_str}({value}, {flag})"
+        if (
+            isinstance(expr.target, IRField)
+            and callee_str.startswith("(@:privateAccess ")
+            and callee_str.endswith(")")
+        ):
+            # A private method: calling the wrapped field would call a closure of it.
+            return f"(@:privateAccess {callee_str[len('(@:privateAccess ') : -1]}({args_str}))"
         result = f"{callee_str}({args_str})"
         if (
             isinstance(expr.target, IRConst)
@@ -1701,6 +1725,12 @@ def _generate_statements(
             else:
                 target_str = _expression_to_haxe(stmt.target, code, ir_function)
                 value_str = _expression_to_haxe(stmt.expr, code, ir_function)
+            # A private field can't be written through `(@:privateAccess x.f)`: the
+            # metadata has to cover the whole assignment.
+            access = ""
+            if target_str.startswith("(@:privateAccess ") and target_str.endswith(")"):
+                access = "@:privateAccess "
+                target_str = target_str[len("(@:privateAccess ") : -1]
 
             # Compare locals by name since splitting can create different instances.
             def _same_local(a: Optional[IRStatement], b: Optional[IRStatement]) -> bool:
@@ -1748,7 +1778,7 @@ def _generate_statements(
                 )
             ):
                 op_sym = "++" if stmt.expr.op == IRArithmetic.ArithmeticType.ADD else "--"
-                output_lines.append(f"{indent}{target_str}{op_sym};")
+                output_lines.append(f"{indent}{access}{target_str}{op_sym};")
             # Detect x += y patterns: target = target op expr
             elif (
                 _is_self_ref_arith
@@ -1762,9 +1792,9 @@ def _generate_statements(
                 )
             ):
                 rhs_str = _expression_to_haxe(stmt.expr.right, code, ir_function)
-                output_lines.append(f"{indent}{target_str} {_compound_ops[stmt.expr.op]} {rhs_str};")
+                output_lines.append(f"{indent}{access}{target_str} {_compound_ops[stmt.expr.op]} {rhs_str};")
             else:
-                output_lines.append(f"{indent}{target_str} = {value_str};")
+                output_lines.append(f"{indent}{access}{target_str} = {value_str};")
 
         elif isinstance(stmt, IRTrace):
             args = [_expression_to_haxe(stmt.msg, code, ir_function)]
@@ -3331,6 +3361,21 @@ def _is_std_function(func: "Function", code: Bytecode) -> bool:
     except Exception:
         return False
     return "/std/" in path.replace("\\", "/")
+
+
+def _std_private_access(
+    rendered: str, owner: Obj, member: str, code: Bytecode, ir_function: Optional[IRFunction]
+) -> str:
+    """`rendered` (an access to `owner.member`), in `@:privateAccess` when that's a private
+    member of a std type and the access isn't from inside the type."""
+    owner_name = destaticify(owner.name.resolve(code))
+    if (
+        _is_private_std_member(owner_name, member)
+        and _containing_class_name(ir_function, code) != owner_name
+        and _is_std_class_obj(code, owner)
+    ):
+        return f"(@:privateAccess {rendered})"
+    return rendered
 
 
 def _is_private_std_member(class_name: str, member_name: str) -> bool:
