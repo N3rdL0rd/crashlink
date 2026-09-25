@@ -206,6 +206,27 @@ def describe_type(code: Bytecode, index: int) -> str:
     return "\n".join(lines)
 
 
+#: Generic std classes by bytecode name, with how many type parameters source must give.
+_STD_GENERIC_PARAMS = {
+    "haxe.ds.BalancedTree": 2,
+    "haxe.ds.GenericCell": 1,
+    "haxe.ds.GenericStack": 1,
+    "haxe.ds.List": 1,
+    "haxe.ds.TreeNode": 2,
+    "haxe.iterators.ArrayIterator": 1,
+    "haxe.iterators.ArrayKeyValueIterator": 1,
+    "haxe.iterators.DynamicAccessIterator": 1,
+    "haxe.iterators.DynamicAccessKeyValueIterator": 1,
+    "haxe.iterators.MapKeyValueIterator": 2,
+    "hl.NativeArrayIterator": 1,
+    "hl.NativeArrayKeyValueIterator": 1,
+    "hl.types.ArrayObjIterator": 1,
+    "hl.types.BytesIterator": 1,
+    "sys.thread.Deque": 1,
+    "sys.thread.Tls": 1,
+}
+
+
 def type_to_haxe(type: str) -> str:
     """
     Maps internal HashLink type names to Haxe type names.
@@ -252,6 +273,10 @@ def type_to_haxe(type: str) -> str:
         return "Dynamic"
     if type.startswith("Virtual["):
         return "Dynamic"
+    params = _STD_GENERIC_PARAMS.get(type)
+    if params:
+        # HL erases type parameters; source still has to supply them.
+        return f"{type}<{', '.join(['Dynamic'] * params)}>"
     return destaticify(mapping.get(type, type))
 
 
