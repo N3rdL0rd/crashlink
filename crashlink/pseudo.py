@@ -81,6 +81,7 @@ from .decomp import (
     IRNullCoalesce,
 )
 from .decomp.ir import IREnumPattern
+from .decomp.opt.clean import default_arg_regs, default_arg_value
 
 
 def _indent_str(level: int) -> str:
@@ -4985,8 +4986,15 @@ def _stub_method(code: Bytecode, func: Function, is_instance: bool, dynamic: Opt
     ret_type: Optional[Type] = None
     if isinstance(fun_def, Fun):
         start = 1 if is_instance else 0
+        defaults = default_arg_regs(code, func)
         for i, arg_idx in enumerate(fun_def.args[start:]):
             t = disasm._haxe_annotation(code, arg_idx.resolve(code))
+            load = defaults.get(start + i)
+            if load is not None:
+                value_type = disasm._haxe_annotation(code, func.regs[load.df["dst"].value].resolve(code))
+                default = _expression_to_haxe(default_arg_value(code, load), code, None)
+                params.append(f"arg{i}: {value_type} = {default}")
+                continue
             optional = "?" if id(fun_def) in disasm._trace_signature_types(code)[1] and start + i == 1 else ""
             params.append(f"{optional}arg{i}: {t}" if t else f"{optional}arg{i}")
         ret_type = fun_def.ret.resolve(code)

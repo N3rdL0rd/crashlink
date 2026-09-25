@@ -1558,7 +1558,7 @@ def default_arg_regs(code: Bytecode, func: Function) -> Dict[int, Opcode]:
     return found
 
 
-def _default_value(code: Bytecode, load: Opcode) -> IRConst:
+def default_arg_value(code: Bytecode, load: Opcode) -> IRConst:
     """The constant a default-argument prologue's `load` writes."""
     if load.op == "Bool":
         return IRConst(code, IRConst.ConstType.BOOL, value=load.df["value"].value)
@@ -1706,7 +1706,7 @@ class IRDefaultArgumentRecovery(TraversingIROptimizer):
                         isinstance(definition.expr, IRConst)
                         and definition.expr.const_type == IRConst.ConstType.NULL
                     ):
-                        call.args[i] = _default_value(self.func.code, load)
+                        call.args[i] = default_arg_value(self.func.code, load)
                         omitted.append(i)
                     else:
                         continue
