@@ -1752,14 +1752,23 @@ def _generate_statements(
                 val = expr.value.value if hasattr(expr.value, "value") else expr.value
                 return int(val)
 
+            def _same_receiver(a: IRExpression, b: IRExpression) -> bool:
+                if isinstance(a, IRLocal) and isinstance(b, IRLocal):
+                    return a.name == b.name
+                # A static field's receiver is its class's global object.
+                return (
+                    isinstance(a, IRConst)
+                    and isinstance(b, IRConst)
+                    and a.const_type == b.const_type == IRConst.ConstType.GLOBAL_OBJ
+                    and a.value is b.value
+                )
+
             def _field_eq(a: IRStatement, b: IRStatement) -> bool:
                 return (
                     isinstance(a, IRField)
                     and isinstance(b, IRField)
                     and a.field_name == b.field_name
-                    and isinstance(a.target, IRLocal)
-                    and isinstance(b.target, IRLocal)
-                    and a.target.name == b.target.name
+                    and _same_receiver(a.target, b.target)
                 )
 
             if (
