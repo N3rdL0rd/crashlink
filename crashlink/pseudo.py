@@ -336,6 +336,9 @@ def _expr_to_haxe_with_precedence(
     For the right operand of a non-associative op, same-tier children also
     need parens since flattening would silently change the value."""
     rendered = _expression_to_haxe(expr, code, ir_function)
+    # A conversion that renders as its operand (Int to Float) binds like the operand.
+    while isinstance(expr, IRCast) and rendered == _expression_to_haxe(expr.expr, code, ir_function):
+        expr = expr.expr
     if isinstance(expr, IRArithmetic):
         child_prec = _HAXE_OP_PRECEDENCE.get(expr.op.symbol, 10)
         parent_prec = _HAXE_OP_PRECEDENCE.get(parent_op, 10)
