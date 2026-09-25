@@ -3547,22 +3547,34 @@ def _find_receiver_local(class_name: str, ir_function: IRFunction, code: Bytecod
     return candidates[0] if candidates else None
 
 
+def _ancestors(code: Bytecode, obj: Optional[Obj]) -> Iterator[Obj]:
+    """`obj`'s super class, then its super's, and so on."""
+    seen: Set[int] = set()
+    current = obj
+    while current is not None and current.super and current.super.value > 0 and id(current) not in seen:
+        seen.add(id(current))
+        try:
+            parent = current.super.resolve(code).definition
+        except Exception:
+            return
+        if not isinstance(parent, Obj):
+            return
+        yield parent
+        current = parent
+
+
+def _ancestor_declares(code: Bytecode, obj: Optional[Obj], method_name: str) -> bool:
+    """True if a class above `obj` declares `method_name`. A class lists only the methods it
+    declares or overrides, so the one to override can sit anywhere up the chain."""
+    return any(
+        proto.name.resolve(code) == method_name for parent in _ancestors(code, obj) for proto in parent.protos
+    )
+
+
 def _method_overrides(method_name: str, ir_class: "Union[IRClass, _PseudoClass]", code: Bytecode) -> bool:
     """Return True if ir_class declares a method that overrides a superclass method."""
     primary_obj = ir_class.dynamic if ir_class.dynamic else ir_class.static
-    if not primary_obj or not primary_obj.super or primary_obj.super.value <= 0:
-        return False
-    try:
-        super_type = primary_obj.super.resolve(code)
-        super_obj = super_type.definition
-        if not isinstance(super_obj, Obj):
-            return False
-        for proto in super_obj.protos:
-            if proto.name.resolve(code) == method_name:
-                return True
-    except Exception:
-        pass
-    return False
+    return _ancestor_declares(code, primary_obj, method_name)
 
 
 def _find_type_by_haxe_name(code: Bytecode, haxe_name: str) -> Optional[Type]:
@@ -4678,16 +4690,8 @@ def class_field_lines(code: Bytecode, obj: Obj) -> List[str]:
 
 
 def _overrides_super(code: Bytecode, dynamic: Optional[Obj], method_name: str) -> bool:
-    """True if `method_name` is declared by the direct super class (needs `override`)."""
-    if dynamic is None or not dynamic.super or dynamic.super.value <= 0:
-        return False
-    try:
-        super_def = dynamic.super.resolve(code).definition
-        if isinstance(super_def, Obj):
-            return any(p.name.resolve(code) == method_name for p in super_def.protos)
-    except Exception:
-        pass
-    return False
+    """True if `method_name` is declared by a super class (needs `override`)."""
+    return _ancestor_declares(code, dynamic, method_name)
 
 
 def _stub_method(code: Bytecode, func: Function, is_instance: bool, dynamic: Optional[Obj]) -> Optional[str]:

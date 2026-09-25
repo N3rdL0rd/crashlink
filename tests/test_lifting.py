@@ -212,7 +212,7 @@ def test_parameter_shadowing_preserves_second_parameter_name():
     # with the same debug name. The signature must keep the real second param
     # name `v`, not duplicate `pos`.
     out = _decompile_at("tests/haxe/Clazz.hl", 88)
-    assert "public function setDyn(pos: Int, v: Dynamic): Void" in out
+    assert "public override function setDyn(pos: Int, v: Dynamic): Void" in out
     assert "pos: Int, pos: Dynamic" not in out
 
 
