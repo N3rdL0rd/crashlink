@@ -3724,20 +3724,17 @@ def _try_instance_method_call(
 
 
 def _is_super_call(callee_class_name: str, ir_function: IRFunction, code: Bytecode) -> bool:
-    """True if `callee_class_name` is the direct superclass of the function
-    that's currently being rendered (i.e. this call is `super.foo()`, not a
-    same-class `this.foo()`)."""
+    """True if `callee_class_name` is a superclass of the function being rendered (i.e.
+    this call is `super.foo()`, not a same-class `this.foo()`). The implementation `super`
+    reaches is the nearest one up the chain, which needn't be the direct superclass's."""
     containing = getattr(ir_function, "_containing_class", None)
     if containing is None:
         return False
     primary_obj = containing.dynamic if containing.dynamic else containing.static
-    if primary_obj is None or not primary_obj.super or primary_obj.super.value <= 0:
-        return False
-    super_type = primary_obj.super.resolve(code)
-    if not isinstance(super_type.definition, Obj):
-        return False
-    super_name = destaticify(super_type.definition.name.resolve(code))
-    return super_name == callee_class_name
+    return any(
+        destaticify(parent.name.resolve(code)) == callee_class_name
+        for parent in _ancestors(code, primary_obj)
+    )
 
 
 def _find_receiver_local(class_name: str, ir_function: IRFunction, code: Bytecode) -> Optional[str]:
