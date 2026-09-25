@@ -1519,9 +1519,10 @@ def default_arg_regs(code: Bytecode, func: Function) -> Dict[int, Opcode]:
 
     HL passes an optional basic-typed argument (`flag = false`) as an `hl.Ref`
     and opens the function with `if (flag == null) v = false else v = *flag`
-    for each one, in order; nothing else reads the reference.
+    for each one, in order. Nothing else reads the reference: the register
+    may be reused afterwards, but written before it is read.
     """
-    from ..function import _op_reads
+    from ..function import _op_reads, _op_writes
 
     fun_type = func.type.resolve(code).definition
     arity = len(fun_type.args) if isinstance(fun_type, Fun) else 0
@@ -1544,8 +1545,16 @@ def default_arg_regs(code: Bytecode, func: Function) -> Dict[int, Opcode]:
             break
         found[test.df["reg"].value] = load
         i += 4
-    if any(reg in found for op in ops[i:] for reg in _op_reads(op)):
-        return {}
+    pending = set(found)
+    for op in ops[i:]:
+        if not pending:
+            break
+        read = pending.intersection(_op_reads(op))
+        if read:
+            for reg in read:
+                del found[reg]
+            pending -= read
+        pending.discard(_op_writes(op))
     return found
 
 
