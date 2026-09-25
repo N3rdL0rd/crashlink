@@ -5,6 +5,7 @@ Pseudocode generation routines to create a Haxe representation of the decompiled
 from __future__ import annotations
 
 import os
+import functools
 import re
 import weakref
 import threading
@@ -3332,39 +3333,31 @@ def _is_std_function(func: "Function", code: Bytecode) -> bool:
     return "/std/" in path.replace("\\", "/")
 
 
-# Haxe std members that source code cannot name directly. HL lowers a few
-# language constructs into calls to these internals (try/catch ->
-# `Exception.caught`, string building -> `String.__alloc__`, properties ->
-# `get_x`/`set_x`), and std classes call their own private helpers, so a
-# decompiled call site only recompiles wrapped in `@:privateAccess`.
-#
-# Everything else the std exposes is public by construction: the original
-# program compiled against it, so annotating those calls is pure noise.
-# Keyed by simple class name, because HL debug names are sometimes
-# unqualified (`Exception.caught`) and sometimes not (`haxe.Exception.caught`).
-_PRIVATE_STD_MEMBERS: Dict[str, FrozenSet[str]] = {
-    "Exception": frozenset({"caught", "thrown", "unwrap"}),
-    "CallStack": frozenset({"exceptionToString", "itemToString", "equalItems", "asArray"}),
-    "NativeStackTrace": frozenset({"exceptionStackRaw", "callStackRaw", "resolveSymbol"}),
-    "String": frozenset({"bytes", "findChar", "toUtf8", "fromUCS2", "fromUTF8", "call_toString"}),
-    "Sys": frozenset({"getPath", "makePath"}),
-    "ArrayBase": frozenset({"isArrayObj"}),
-    "ArrayBytes": frozenset({"bytes", "size"}),
-    "ArrayObj": frozenset({"array"}),
-    "ArrayDyn": frozenset({"array", "allowReinterpret"}),
-}
-
-
 def _is_private_std_member(class_name: str, member_name: str) -> bool:
-    """Return True if Haxe hides this std member from outside code."""
+    """Return True if Haxe hides this std member from code outside its type."""
     if member_name.startswith("__"):
-        return True
-    if len(member_name) > 4 and member_name[:4] in ("get_", "set_"):
-        # Property accessors are private unless explicitly published, and the
-        # std never publishes them.
-        return True
-    simple = class_name.rsplit(".", 1)[-1].lstrip("$")
-    return member_name in _PRIVATE_STD_MEMBERS.get(simple, frozenset())
+        return True  # compiler internals (`__alloc__`, `__constructor__`)
+    members = _private_std_members(class_name.lstrip("$"))
+    return members is not None and member_name in members
+
+
+@functools.lru_cache(maxsize=None)
+def _private_std_members(class_name: str) -> Optional[FrozenSet[str]]:
+    """The private members of a std type by its bytecode name. Debug names are sometimes
+    unqualified, and a secondary type (`hl.CoreType`) drops its module, so a name that isn't
+    a path in the table matches by simple name; an HL specialisation of a generic class
+    (`ArrayBytes_Int`) by the class it specialises."""
+    from .std_private import PRIVATE_STD_MEMBERS
+
+    if class_name in PRIVATE_STD_MEMBERS:
+        return PRIVATE_STD_MEMBERS[class_name]
+    for name in (class_name.rsplit(".", 1)[-1], class_name.rsplit(".", 1)[-1].split("_", 1)[0]):
+        matches = [
+            members for path, members in PRIVATE_STD_MEMBERS.items() if path.rsplit(".", 1)[-1] == name
+        ]
+        if matches:
+            return frozenset().union(*matches)
+    return None
 
 
 def _call_needs_private_access(func: "Function", code: Bytecode) -> bool:
