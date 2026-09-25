@@ -41,6 +41,22 @@ from .core import (
 from .opcodes import opcodes
 
 
+# Kinds of Haxe's basic value types, which can't hold null.
+_BASIC_KINDS = frozenset(
+    kind.value
+    for kind in (
+        Type.Kind.VOID,
+        Type.Kind.U8,
+        Type.Kind.U16,
+        Type.Kind.I32,
+        Type.Kind.I64,
+        Type.Kind.F32,
+        Type.Kind.F64,
+        Type.Kind.BOOL,
+    )
+)
+
+
 def _enum_name(code: Bytecode, definition: Enum) -> str:
     if definition.name.value != 0:
         return definition.name.resolve(code)
@@ -419,8 +435,14 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
             if isinstance(definition, Virtual) and not native:
                 # An anonymous structure, fields in the order the compiler laid them out.
                 # Function-typed fields are methods (iterators, interfaces): a class's
-                # methods don't satisfy a structure's function-typed vars.
+                # methods don't satisfy a structure's function-typed vars. HL keeps no
+                # optionality, but an optional basic field is laid out as Null<T>: a
+                # structure with one was declared with optional fields, which literals
+                # may leave out, so its nullable fields are marked optional.
                 members = []
+                has_optional = any(
+                    isinstance(f.type.resolve(code).definition, Null) for f in definition.fields
+                )
                 for f in definition.fields:
                     name, ftype = f.name.resolve(code), f.type.resolve(code)
                     fdef = ftype.definition
@@ -430,7 +452,9 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                         )
                         members.append(f"function {name}({params}): {render(fdef.ret.resolve(code))};")
                     else:
-                        members.append(f"var {name}: {render(ftype)};")
+                        nullable = ftype.kind.value not in _BASIC_KINDS
+                        optional = "@:optional " if has_optional and nullable else ""
+                        members.append(f"{optional}var {name}: {render(ftype)};")
                 return f"{{ {' '.join(members)} }}" if members else "{}"
             if native:
                 if isinstance(definition, Abstract):
