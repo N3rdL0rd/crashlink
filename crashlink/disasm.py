@@ -325,9 +325,9 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                 return f"hl.Ref<{render(definition.type.resolve(code))}>"
             if key in positions:
                 return "haxe.PosInfos"
+            if isinstance(definition, Null):
+                return f"Null<{render(definition.type.resolve(code))}>"
             if native:
-                if isinstance(definition, Null):
-                    return f"Null<{render(definition.type.resolve(code))}>"
                 if isinstance(definition, Abstract):
                     name = definition.name.resolve(code).replace('"', '\\"')
                     return f'hl.Abstract<"{name}">'
