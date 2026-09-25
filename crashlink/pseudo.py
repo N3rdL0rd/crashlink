@@ -2187,7 +2187,13 @@ def _generate_statements(
 
         # Register simple assignments for render-time substitution into later uses.
         if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal):
-            registerable = _is_simple_render_expr(stmt.expr)
+            registerable = _is_simple_render_expr(stmt.expr) and not (
+                # `half = var7`: the source reads `half`; printing its reads as the
+                # compiler temp it was copied from only loses the name.
+                isinstance(stmt.expr, IRLocal)
+                and re.fullmatch(r"var\d+", stmt.expr.name)
+                and not re.fullmatch(r"var\d+", stmt.target.name)
+            )
             if (
                 not registerable
                 and re.fullmatch(r"var\d+", stmt.target.name)
