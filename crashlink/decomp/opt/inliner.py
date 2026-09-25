@@ -1724,7 +1724,8 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         conditional/loop condition, switch value, or return/throw value.
         Field/array-store destinations stay with `_call_move_ok`, which
         already proves those safe independently of the call being moved; a
-        read at the head of a field store's object is covered here.
+        read at the head of a field store's object, or in the value stored
+        into a local's or constant's field, is covered here.
         """
         if isinstance(stmt, IRAssign):
             if (
@@ -1733,7 +1734,20 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 and not self._expr_contains_local(stmt.expr, temp)
             ):
                 # `temp.a.b = v`: a store evaluates its object before its value.
-                return self._movable_single_occurrence(stmt.target.target, temp)
+                if self._movable_single_occurrence(stmt.target.target, temp):
+                    return True
+            if isinstance(stmt.target, IRField):
+                # `o.f = g(temp)`: an object held in a local or constant is
+                # fixed whatever the value's evaluation does.
+                obj = stmt.target.target
+                if not (
+                    isinstance(obj, IRConst)
+                    or (isinstance(obj, IRLocal) and obj != temp and not self._is_address_taken(obj))
+                ):
+                    return False
+                return isinstance(stmt.expr, IRExpression) and self._movable_single_occurrence(
+                    stmt.expr, temp
+                )
             if not isinstance(stmt.target, IRLocal) or stmt.target == temp:
                 return False
             return isinstance(stmt.expr, IRExpression) and self._movable_single_occurrence(stmt.expr, temp)
