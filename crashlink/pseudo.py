@@ -246,7 +246,10 @@ def _is_expression_switch(
             return None
         cases[val] = s.expr
     default_expr: Optional[IRExpression] = None
-    if switch_stmt.default:
+    # HL gives even an exhaustive enum switch a fall-through default, left empty.
+    if switch_stmt.default and not (
+        not switch_stmt.default.statements and _switch_is_exhaustive(switch_stmt)
+    ):
         if len(switch_stmt.default.statements) != 1:
             return None
         s = switch_stmt.default.statements[0]
@@ -260,6 +263,47 @@ def _is_expression_switch(
     if target is None:
         return None
     return target, cases, default_expr
+
+
+def _switch_enum(switch_stmt: IRSwitch) -> Tuple[Optional[Enum], IRExpression]:
+    """The enum a switch dispatches on, if any, and the enum value it tests."""
+    value = switch_stmt.value
+    if isinstance(value, IREnumIndex):
+        definition = value.value.get_type().definition
+        return (definition if isinstance(definition, Enum) else None), value.value
+    definition = value.get_type().definition
+    if isinstance(definition, Enum):
+        return definition, value
+    # A switch on an int that may be an enum index: the cases read the enum's fields.
+    detected = _detect_enum_value_from_cases(switch_stmt)
+    if detected is not None:
+        definition = detected.get_type().definition
+        if isinstance(definition, Enum):
+            return definition, detected
+    return None, value
+
+
+def _same_value(a: IRExpression, b: IRExpression) -> bool:
+    """The same local, or the very same expression node."""
+    if isinstance(a, IRLocal) and isinstance(b, IRLocal):
+        return a.name == b.name
+    return a is b
+
+
+def _switch_is_exhaustive(switch_stmt: IRSwitch) -> bool:
+    """Whether the cases of an enum switch cover every constructor."""
+    enum, _ = _switch_enum(switch_stmt)
+    if enum is None:
+        return False
+    names = [construct.name.resolve(switch_stmt.code) for construct in enum.constructs]
+    covered: Set[int] = set()
+    for key in switch_stmt.cases:
+        for value in switch_stmt.case_values(key):
+            if value.const_type == IRConst.ConstType.INT:
+                covered.add(int(value.value.value if hasattr(value.value, "value") else value.value))
+            elif isinstance(value.value, str) and value.value in names:
+                covered.add(names.index(value.value))
+    return len(covered) == len(enum.constructs)
 
 
 # Haxe operator precedence (higher number = tighter binding).  Used to emit
@@ -2016,12 +2060,23 @@ def _generate_statements(
                     declared_vars_in_scope.add(local_name)
                 else:
                     output_lines.append(f"{indent}{target.name} = switch ({enum_value_str}) {{")
+                _, tested = _switch_enum(stmt)
                 for case_value, case_block in stmt.cases.items():
+                    values = stmt.case_values(case_value)
                     case_str = ", ".join(
-                        _case_value_to_haxe(value, enum_type, code, ir_function)
-                        for value in stmt.case_values(case_value)
+                        _case_value_to_haxe(value, enum_type, code, ir_function) for value in values
                     )
-                    expr_str = _expression_to_haxe(case_exprs[case_value], code, ir_function)
+                    case_expr = case_exprs[case_value]
+                    if (
+                        len(values) == 1
+                        and isinstance(case_expr, IREnumField)
+                        and _same_value(case_expr.value, tested)
+                        and case_expr.field_name.startswith("param")
+                    ):
+                        # The case's own capture, which `_case_value_to_haxe` names argN.
+                        expr_str = f"arg{case_expr.field_name.removeprefix('param')}"
+                    else:
+                        expr_str = _expression_to_haxe(case_expr, code, ir_function)
                     output_lines.append(f"{indent}    case {case_str}: {expr_str};")
                 if default_expr is not None:
                     expr_str = _expression_to_haxe(default_expr, code, ir_function)
