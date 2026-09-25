@@ -1723,9 +1723,17 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         feeding the very next assignment's RHS, or `temp` sitting in a
         conditional/loop condition, switch value, or return/throw value.
         Field/array-store destinations stay with `_call_move_ok`, which
-        already proves those safe independently of the call being moved.
+        already proves those safe independently of the call being moved; a
+        read at the head of a field store's object is covered here.
         """
         if isinstance(stmt, IRAssign):
+            if (
+                isinstance(stmt.target, IRField)
+                and isinstance(stmt.expr, IRExpression)
+                and not self._expr_contains_local(stmt.expr, temp)
+            ):
+                # `temp.a.b = v`: a store evaluates its object before its value.
+                return self._movable_single_occurrence(stmt.target.target, temp)
             if not isinstance(stmt.target, IRLocal) or stmt.target == temp:
                 return False
             return isinstance(stmt.expr, IRExpression) and self._movable_single_occurrence(stmt.expr, temp)
