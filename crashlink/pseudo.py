@@ -181,7 +181,8 @@ def _method_registry(code: Bytecode) -> Dict[int, Tuple[Obj, str, bool]]:
             fn = binding.findex.resolve(code)
             if isinstance(fn, Function):
                 field = binding.field.resolve_obj(code, obj)
-                registry[fn.findex.value] = (obj, field.name.resolve(code), False)
+                # Bound on the instance half: a `dynamic` method's default body.
+                registry[fn.findex.value] = (obj, field.name.resolve(code), not obj.is_static)
     _method_registry_cache[cache_key] = (weakref.ref(code), registry)
     return registry
 
@@ -2490,6 +2491,8 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     if is_instance and not is_constructor and containing is not None:
         if _method_overrides(func_name_str, containing, code):
             override_kw = "override "
+        if _is_dynamic_method(code, containing.dynamic, func_core):
+            override_kw += "dynamic "
 
     params_str_list = []
     return_type_str = "Void"
@@ -3725,10 +3728,25 @@ def _is_ancestor(code: Bytecode, ancestor: Obj, obj: Obj) -> bool:
 
 
 def _ancestor_declares(code: Bytecode, obj: Optional[Obj], method_name: str) -> bool:
-    """True if a class above `obj` declares `method_name`. A class lists only the methods it
-    declares or overrides, so the one to override can sit anywhere up the chain."""
-    return any(
-        proto.name.resolve(code) == method_name for parent in _ancestors(code, obj) for proto in parent.protos
+    """True if a class above `obj` declares `method_name`, as a method or a `dynamic` one.
+    A class lists only the methods it declares or overrides, so the one to override can sit
+    anywhere up the chain."""
+    return any(method_name in _declared_methods(code, parent) for parent in _ancestors(code, obj))
+
+
+def _declared_methods(code: Bytecode, obj: Obj) -> Set[str]:
+    names = {proto.name.resolve(code) for proto in obj.protos}
+    if not obj.is_static:
+        names.update(binding.field.resolve_obj(code, obj).name.resolve(code) for binding in obj.bindings)
+    return names
+
+
+def _is_dynamic_method(code: Bytecode, obj: Optional[Obj], func: Function) -> bool:
+    """Whether `func` is the default body of one of `obj`'s `dynamic` methods."""
+    return (
+        obj is not None
+        and not obj.is_static
+        and any(binding.findex.value == func.findex.value for binding in obj.bindings)
     )
 
 
@@ -4918,6 +4936,8 @@ def _stub_method(code: Bytecode, func: Function, is_instance: bool, dynamic: Opt
     override_kw = (
         "override " if (is_instance and not is_ctor and _overrides_super(code, dynamic, name)) else ""
     )
+    if is_instance and not is_ctor and _is_dynamic_method(code, dynamic, func):
+        override_kw += "dynamic "
     ret_decl = "" if is_ctor else (f": {ret_name}" if ret_name else "")
     header = f"public {static_kw}{override_kw}function {name}({', '.join(params)}){ret_decl} {{"
 
