@@ -1338,6 +1338,81 @@ class IRBlockFlattener(TraversingIROptimizer):
             )
 
 
+class IRDynamicMethodInitEliminator(TraversingIROptimizer):
+    """Drops a constructor's `if (this.f == null) this.f = <method f>` prologue.
+
+    Haxe gives every constructor of a class with `dynamic` methods (its own or
+    inherited) one of these per method, to bind the default body to the instance.
+    Source never writes them and recompiling adds them back.
+    """
+
+    def optimize(self) -> None:
+        func = self.func.func
+        if self.func.code.partial_func_name(func) != "__constructor__" or not self.func.block.statements:
+            return
+        this_type = func.regs[0].resolve(self.func.code).definition
+        if not isinstance(this_type, Obj):
+            return
+        dynamic_methods = self._dynamic_methods(this_type)
+        statements = self.func.block.statements
+        kept = [stmt for stmt in statements if not self._is_init(stmt, dynamic_methods)]
+        if len(kept) != len(statements):
+            self.func.block.statements = kept
+
+    def _dynamic_methods(self, obj: Obj) -> Set[str]:
+        code = self.func.code
+        names: Set[str] = set()
+        seen: Set[int] = set()
+        current: Optional[Obj] = obj
+        while current is not None and id(current) not in seen:
+            seen.add(id(current))
+            if not current.is_static:
+                names.update(
+                    binding.field.resolve_obj(code, current).name.resolve(code)
+                    for binding in current.bindings
+                )
+            parent = (
+                current.super.resolve(code).definition if current.super and current.super.value > 0 else None
+            )
+            current = parent if isinstance(parent, Obj) else None
+        return names
+
+    def _is_init(self, stmt: IRStatement, dynamic_methods: Set[str]) -> bool:
+        if not (
+            isinstance(stmt, IRConditional)
+            and not stmt.false_block.statements
+            and isinstance(stmt.condition, IRBoolExpr)
+            and stmt.condition.op == IRBoolExpr.CompareType.NULL
+        ):
+            return False
+        field = stmt.condition.left
+        if not (
+            isinstance(field, IRField)
+            and field.field_name in dynamic_methods
+            and isinstance(field.target, IRLocal)
+            and field.target.name == "this"
+        ):
+            return False
+        # `t = this.f; this.f = t` (or folded, `this.f = this.f`): the method bound to
+        # `this` (see InstanceClosure).
+        body = stmt.true_block.statements
+        if len(body) == 1:
+            return (
+                isinstance(body[0], IRAssign)
+                and _structurally_equal(body[0].target, field)
+                and _structurally_equal(body[0].expr, field)
+            )
+        return (
+            len(body) == 2
+            and isinstance(body[0], IRAssign)
+            and isinstance(body[0].target, IRLocal)
+            and _structurally_equal(body[0].expr, field)
+            and isinstance(body[1], IRAssign)
+            and _structurally_equal(body[1].target, field)
+            and body[1].expr == body[0].target
+        )
+
+
 class IREmptyConditionalNormalizer(TraversingIROptimizer):
     """
     Un-inverts `if (a >= b) {}` (both branches emptied by dead-store
