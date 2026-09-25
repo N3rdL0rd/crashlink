@@ -1566,7 +1566,7 @@ def default_arg_value(code: Bytecode, load: Opcode) -> IRConst:
     return IRConst(code, const_type, load.df["ptr"])
 
 
-class IRDefaultArgumentRecovery(TraversingIROptimizer):
+class IRDefaultArgumentRecovery(IROptimizer):
     """
     Recovers default argument values (see `default_arg_regs`). Drops the
     callee's prologue, records each default in `IRFunction.default_args` for
@@ -1578,9 +1578,8 @@ class IRDefaultArgumentRecovery(TraversingIROptimizer):
 
     def optimize(self) -> None:
         self._strip_prologue()
-        self._reads: Dict[int, int] = {}
-        self._count_reads(self.func.block, set())
-        super().optimize()
+        if hasattr(self.func, "block"):
+            self._pass_values()
 
     def _strip_prologue(self) -> None:
         regs = set(default_arg_regs(self.func.code, self.func.func))
@@ -1633,24 +1632,30 @@ class IRDefaultArgumentRecovery(TraversingIROptimizer):
             return param, (given.target, read.target), given.expr
         return None
 
-    def _count_reads(self, node: IRStatement, seen: Set[int]) -> None:
+    def _scan(
+        self,
+        node: IRStatement,
+        seen: Set[int],
+        reads: Dict[int, int],
+        writes: Dict[int, List[IRAssign]],
+    ) -> None:
+        """Count local reads (locals are shared objects, so every occurrence)
+        and gather each local's writes."""
         if id(node) in seen:
             return
         seen.add(id(node))
-        if isinstance(node, IRLocal):
-            self._reads[id(node)] = self._reads.get(id(node), 0) + 1
-            return
         children = node.get_children()
         if isinstance(node, IRAssign) and isinstance(node.target, IRLocal):
+            writes.setdefault(id(node.target), []).append(node)
             children = [node.expr]
         for child in children:
-            # Locals are shared objects, so count every occurrence.
             if isinstance(child, IRLocal):
-                self._reads[id(child)] = self._reads.get(id(child), 0) + 1
+                reads[id(child)] = reads.get(id(child), 0) + 1
             else:
-                self._count_reads(child, seen)
+                self._scan(child, seen, reads, writes)
 
     def _calls(self, expr: IRStatement, found: List[IRCall]) -> None:
+        """Calls in `expr`, not descending into nested blocks."""
         if isinstance(expr, IRBlock):
             return
         if isinstance(expr, IRCall):
@@ -1675,47 +1680,168 @@ class IRDefaultArgumentRecovery(TraversingIROptimizer):
                 current = current.super.resolve(self.func.code).definition
         return None, 0
 
-    def _definition(self, stmts: List[IRStatement], j: int, local: IRLocal) -> Optional[IRAssign]:
-        """The write before `stmts[j]` of a temp read only there."""
-        if self._reads.get(id(local)) != 1:
-            return None
-        return next((s for s in reversed(stmts[:j]) if isinstance(s, IRAssign) and s.target is local), None)
-
-    def visit_block(self, block: IRBlock) -> None:
-        stmts = block.statements
+    def _pass_values(self) -> None:
+        reads: Dict[int, int] = {}
+        writes: Dict[int, List[IRAssign]] = {}
+        self._scan(self.func.block, set(), reads, writes)
+        rewritten: Dict[int, int] = {}
+        self._forwards: List[IRConditional] = []
+        self._visit_calls(self.func.block, set(), writes, rewritten)
         dropped: Set[int] = set()
-        for j, stmt in enumerate(stmts):
-            calls: List[IRCall] = []
-            self._calls(stmt, calls)
-            for call in calls:
-                callee, first = self._callee(call)
-                defaults = default_arg_regs(self.func.code, callee) if callee is not None else {}
-                if not defaults:
-                    continue
-                omitted: List[int] = []
-                for i, arg in enumerate(call.args):
-                    load = defaults.get(i + first)
-                    definition = (
-                        self._definition(stmts, j, arg) if load and isinstance(arg, IRLocal) else None
-                    )
-                    if load is None or definition is None:
-                        continue
-                    if isinstance(definition.expr, IRRefNew) and isinstance(definition.expr.target, IRLocal):
-                        call.args[i] = definition.expr.target
-                    elif (
-                        isinstance(definition.expr, IRConst)
-                        and definition.expr.const_type == IRConst.ConstType.NULL
-                    ):
-                        call.args[i] = default_arg_value(self.func.code, load)
-                        omitted.append(i)
-                    else:
-                        continue
-                    dropped.add(id(definition))
-                while omitted and omitted[-1] == len(call.args) - 1:
-                    call.args.pop()
-                    omitted.pop()
+        for key, count in rewritten.items():
+            defs = writes[key]
+            if count == reads.get(key) and all(isinstance(d.expr, (IRRefNew, IRConst)) for d in defs):
+                dropped.update(id(d) for d in defs)
+        for forward in self._forwards:
+            # The unboxed copy only feeds the reference: an anonymous temp
+            # holds nothing past it, so the whole forward goes with its writes.
+            arms = [
+                *forward.true_block.statements,
+                *(forward.false_block.statements if forward.false_block else []),
+            ]
+            copy = next(
+                s for s in arms if isinstance(s, IRAssign) and not isinstance(s.expr, (IRRefNew, IRConst))
+            )
+            if (
+                all(id(s) in dropped for s in arms if s is not copy)
+                and isinstance(copy.target, IRLocal)
+                and re.fullmatch(r"var\d+", copy.target.name)
+            ):
+                dropped.add(id(forward))
         if dropped:
-            block.statements = [s for s in stmts if id(s) not in dropped]
+            self._drop(self.func.block, dropped, set())
+
+    def _visit_calls(
+        self, node: IRStatement, seen: Set[int], writes: Dict[int, List[IRAssign]], rewritten: Dict[int, int]
+    ) -> None:
+        if id(node) in seen:
+            return
+        seen.add(id(node))
+        if isinstance(node, IRBlock):
+            for j, stmt in enumerate(node.statements):
+                calls: List[IRCall] = []
+                self._calls(stmt, calls)
+                for call in calls:
+                    self._pass_call(call, node.statements, j, writes, rewritten)
+        for child in node.get_children():
+            if not isinstance(child, IRExpression):
+                self._visit_calls(child, seen, writes, rewritten)
+
+    def _pass_call(
+        self,
+        call: IRCall,
+        stmts: List[IRStatement],
+        j: int,
+        writes: Dict[int, List[IRAssign]],
+        rewritten: Dict[int, int],
+    ) -> None:
+        callee, first = self._callee(call)
+        defaults = default_arg_regs(self.func.code, callee) if callee is not None else {}
+        omitted: List[int] = []
+        for i, arg in enumerate(call.args):
+            load = defaults.get(i + first)
+            if load is None:
+                continue
+            value = self._passed_value(arg, stmts, j, writes) if isinstance(arg, IRLocal) else arg
+            if isinstance(value, IRRefNew) and isinstance(value.target, IRLocal):
+                # The callee reads through the reference on entry, which is
+                # the value the local holds at the call.
+                call.args[i] = value.target
+            elif isinstance(value, IRConst) and value.const_type == IRConst.ConstType.NULL:
+                call.args[i] = default_arg_value(self.func.code, load)
+                omitted.append(i)
+            elif isinstance(value, IRLocal):
+                call.args[i] = value
+            else:
+                continue
+            if isinstance(arg, IRLocal):
+                rewritten[id(arg)] = rewritten.get(id(arg), 0) + 1
+        while omitted and omitted[-1] == len(call.args) - 1:
+            call.args.pop()
+            omitted.pop()
+
+    def _passed_value(
+        self, temp: IRLocal, stmts: List[IRStatement], j: int, writes: Dict[int, List[IRAssign]]
+    ) -> Optional[IRExpression]:
+        """What `temp` passes at `stmts[j]`: its only write's value, or else
+        the nearest write before it in the block. A `Null<T>` local forwarded
+        as `if (v == null) temp = null else { x = v; temp = new Ref(x); }`
+        passes `v` itself."""
+        defs = writes.get(id(temp), [])
+        if len(defs) == 1:
+            return defs[0].expr
+        for prior in reversed(stmts[:j]):
+            if isinstance(prior, IRAssign) and prior.target is temp:
+                return prior.expr
+            if isinstance(prior, IRConditional):
+                forwarded = self._forwarded(prior, temp)
+                if forwarded is not None:
+                    self._forwards.append(prior)
+                    return forwarded
+            if any(id(d) in self._writes_under(prior) for d in defs):
+                return None
+        return None
+
+    @staticmethod
+    def _writes_under(node: IRStatement) -> Set[int]:
+        found: Set[int] = set()
+        pending: List[IRStatement] = [node]
+        seen: Set[int] = set()
+        while pending:
+            n = pending.pop()
+            if id(n) in seen or isinstance(n, IRExpression):
+                continue
+            seen.add(id(n))
+            if isinstance(n, IRAssign):
+                found.add(id(n))
+            pending.extend(n.get_children())
+        return found
+
+    @staticmethod
+    def _forwarded(stmt: IRConditional, temp: IRLocal) -> Optional[IRLocal]:
+        cond = stmt.condition
+        if not (
+            isinstance(cond, IRBoolExpr)
+            and cond.op in (IRBoolExpr.CompareType.NULL, IRBoolExpr.CompareType.NOT_NULL)
+            and isinstance(cond.left, IRLocal)
+            and stmt.false_block is not None
+        ):
+            return None
+        source = cond.left
+        null_arm, value_arm = stmt.true_block.statements, stmt.false_block.statements
+        if cond.op == IRBoolExpr.CompareType.NOT_NULL:
+            null_arm, value_arm = value_arm, null_arm
+        if not (
+            len(null_arm) == 1
+            and isinstance(null_arm[0], IRAssign)
+            and null_arm[0].target is temp
+            and isinstance(null_arm[0].expr, IRConst)
+            and null_arm[0].expr.const_type == IRConst.ConstType.NULL
+            and len(value_arm) == 2
+        ):
+            return None
+        unbox, ref = value_arm
+        if (
+            isinstance(ref, IRAssign)
+            and ref.target is temp
+            and isinstance(ref.expr, IRRefNew)
+            and isinstance(unbox, IRAssign)
+            and unbox.target is ref.expr.target
+            and IRSelfAssignOptimizer._strip_casts(unbox.expr) is source
+        ):
+            return source
+        return None
+
+    def _drop(self, node: IRStatement, dropped: Set[int], seen: Set[int]) -> None:
+        """Remove the statements in `dropped` from every block under `node`."""
+        if id(node) in seen:
+            return
+        seen.add(id(node))
+        if isinstance(node, IRBlock):
+            node.statements = [s for s in node.statements if id(s) not in dropped]
+        for child in node.get_children():
+            if isinstance(child, (IRBlock, IRStatement)) and not isinstance(child, IRExpression):
+                self._drop(child, dropped, seen)
 
 
 class IRDynamicMethodInitEliminator(TraversingIROptimizer):
