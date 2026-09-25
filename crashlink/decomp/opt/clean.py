@@ -1490,6 +1490,32 @@ class IRElseFlattener(TraversingIROptimizer):
             return self._always_terminates(last.true_block) and self._always_terminates(last.false_block)
         return False
 
+    @staticmethod
+    def _first_op(block: IRBlock) -> Optional[int]:
+        """Lowest opcode index behind `block`'s statements, None if untracked."""
+        best: Optional[int] = None
+        seen: Set[int] = set()
+        pending: List[IRStatement] = list(block.statements)
+        while pending:
+            node = pending.pop()
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
+            if node.src_op_idxs:
+                low = min(node.src_op_idxs)
+                if best is None or low < best:
+                    best = low
+            pending.extend(node.get_children())
+        return best
+
+    def _laid_out_as_guard(self, stmt: IRConditional) -> bool:
+        """Haxe lays a then-branch out before its else, so a terminator placed
+        after the code it would guard was written as the `else`."""
+        assert stmt.false_block is not None
+        exit_op = self._first_op(stmt.false_block)
+        body_op = self._first_op(stmt.true_block)
+        return exit_op is None or body_op is None or exit_op < body_op
+
     def _invert_into_guard(self, stmt: IRConditional) -> bool:
         """Swap the branches of `if (c) { A } else { ...; return }` so the terminating
         one comes first, inverting the condition. False if it can't be inverted."""
@@ -1521,6 +1547,7 @@ class IRElseFlattener(TraversingIROptimizer):
                 and self._terminates(stmt.false_block)
                 and not self._always_terminates(stmt.true_block)
                 and self._block_refs.get(id(stmt.true_block), 0) <= 1
+                and self._laid_out_as_guard(stmt)
                 and not self._invert_into_guard(stmt)
             ):
                 continue
@@ -1533,9 +1560,10 @@ class IRElseFlattener(TraversingIROptimizer):
 class IRGuardClauseNormalizer(IRElseFlattener):
     """
     Turns `if (c) { A } else { return; } B` into `if (!c) { return; } A B` when the
-    else branch is a single return, throw, break or continue and the then branch
-    can fall through, the way such guards are written in source. Runs last: earlier
-    passes (typed catches, for one) match the if/else shape.
+    else branch is a single return, throw, break or continue, the then branch can
+    fall through, and the bytecode places the exit before `A`, the way such guards
+    are written in source. Runs last: earlier passes (typed catches, for one)
+    match the if/else shape.
     """
 
     make_guards = True
