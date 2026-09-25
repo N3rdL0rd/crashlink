@@ -1555,7 +1555,7 @@ class IRFunction:
                 block.statements.append(
                     IRAssign(
                         self.code,
-                        IRArrayAccess(self.code, arr_local, idx_local, src_local.get_type()),
+                        IRArrayAccess(self.code, arr_local, idx_local, self.func.regs[op.df["src"].value]),
                         src_local,
                     )
                 )
