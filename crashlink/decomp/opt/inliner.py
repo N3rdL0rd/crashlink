@@ -1150,7 +1150,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 new_args.append(new_arg)
                 made_change = made_change or changed
             expr.args = new_args
-        elif isinstance(expr, IREnumIndex):
+        elif isinstance(expr, (IREnumIndex, IRStringConvert)):
             expr.value, changed = self._substitute_in_expr(expr.value, target, replacement)
             made_change = made_change or changed
         elif isinstance(expr, IREnumField):
