@@ -87,6 +87,7 @@ from crashlink.database import (
     save_database,
 )
 from crashlink.decomp.function import IRFunction, _cached_enum_global_map
+from crashlink.decomp.inline_calls import inline_index
 from crashlink.globals import VERSION, set_dbg_callback
 from crashlink.pseudo import _method_registry, class_field_lines, pseudo_oplines
 
@@ -315,9 +316,11 @@ class _IndexBuildThread(QThread):
             with _bulk_build():
                 self._future.result()
                 if not self._code.inspection_only and not self.isInterruptionRequested():
-                    # The first decompile would otherwise pay this whole-image scan
-                    # (~1 s on large games) while the user waits for the tab.
+                    # The first decompile would otherwise pay these whole-image scans
+                    # (~1 s and ~15 s on large games) while the user waits for the tab.
                     _cached_enum_global_map(self._code)
+                    if not self.isInterruptionRequested():
+                        inline_index(self._code)
             self.signals.finished.emit(self.generation)
         except Exception as e:
             self.signals.error.emit(self.generation, str(e))
