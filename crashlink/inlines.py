@@ -330,13 +330,27 @@ class InlineFinder:
             or run_outer[2] < outer[1] - BODY_LINE_GAP
         ):
             return False
-        # Values the copy has computed so far, still unchanged.
+        # Values the copy has computed so far, still unchanged. Caller-positioned
+        # opcodes in between can still be the body's own (an opcode takes the
+        # position of the last operand it evaluated, often an argument): their
+        # results count as the copy's when they read it. The run continues the
+        # copy only if it reads one of these itself; caller code consuming the
+        # copy's result means the copy ended there.
         live: Set[int] = set()
         for k in group_ops:
             dst = _writes(func.ops[k])
             if dst is not None:
                 live.add(dst)
-        for k in range(group[-1][1] + 1, run[1] + 1):
+        for k in range(group[-1][1] + 1, run[0]):
+            op = func.ops[k]
+            dst = _writes(op)
+            if dst is None:
+                continue
+            if any(reg in live for reg in _reads(op)):
+                live.add(dst)
+            else:
+                live.discard(dst)
+        for k in range(run[0], run[1] + 1):
             op = func.ops[k]
             if any(reg in live for reg in _reads(op)):
                 return True
