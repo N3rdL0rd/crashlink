@@ -2733,27 +2733,35 @@ class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
                 and s.target.target == temp
                 and isinstance(s.expr, IRExpression)
                 and not self._expr_uses_local(s.expr, temp)
+                and all(name != s.target.field_name for name, _ in fields)
             ):
                 fields.append((s.target.field_name, s.expr))
                 j += 1
                 continue
             break
 
-        if not fields or j >= len(stmts):
+        if not fields:
             return None
-
-        use_stmt = stmts[j]
-        if self._count_local_refs(use_stmt, temp) != 1:
-            return None
-        for later in stmts[j + 1 :]:
-            if self._stmt_uses_local(later, temp):
-                return None
 
         literal = IRObjectLiteral(self.func.code, fields)
-        if not self._substitute_use(use_stmt, temp, literal):
+        if (
+            j < len(stmts)
+            and self._count_local_refs(stmts[j], temp) == 1
+            and not any(self._stmt_uses_local(later, temp) for later in stmts[j + 1 :])
+            and self._substitute_use(stmts[j], temp, literal)
+        ):
+            stmts[j].adopt(*stmts[start:j])  # the alloc + field-assign statements are dropped
+            return stmts[j], j - start + 1
+
+        # Used more than once: the literal initialises the local. A structure type
+        # (what the local is declared as) needs every one of its fields.
+        if isinstance(alloc_defn, Virtual) and {name for name, _ in fields} != {
+            field.name.resolve(self.func.code) for field in alloc_defn.fields
+        }:
             return None
-        use_stmt.adopt(*stmts[start:j])  # the alloc + field-assign statements are dropped
-        return use_stmt, j - start + 1
+        init = IRAssign(self.func.code, temp, literal)
+        init.adopt(*stmts[start:j])
+        return init, j - start
 
     def _substitute_use(self, stmt: IRStatement, local: IRLocal, replacement: IRExpression) -> bool:
         if isinstance(stmt, IRAssign):

@@ -327,6 +327,22 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                 return "haxe.PosInfos"
             if isinstance(definition, Null):
                 return f"Null<{render(definition.type.resolve(code))}>"
+            if isinstance(definition, Virtual) and not native:
+                # An anonymous structure, fields in the order the compiler laid them out.
+                # Function-typed fields are methods (iterators, interfaces): a class's
+                # methods don't satisfy a structure's function-typed vars.
+                members = []
+                for f in definition.fields:
+                    name, ftype = f.name.resolve(code), f.type.resolve(code)
+                    fdef = ftype.definition
+                    if isinstance(fdef, Fun):
+                        params = ", ".join(
+                            f"a{i}: {render(a.resolve(code))}" for i, a in enumerate(fdef.args)
+                        )
+                        members.append(f"function {name}({params}): {render(fdef.ret.resolve(code))};")
+                    else:
+                        members.append(f"var {name}: {render(ftype)};")
+                return f"{{ {' '.join(members)} }}" if members else "{}"
             if native:
                 if isinstance(definition, Abstract):
                     name = definition.name.resolve(code).replace('"', '\\"')
