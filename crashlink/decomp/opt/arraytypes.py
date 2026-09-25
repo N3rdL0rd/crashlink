@@ -27,6 +27,7 @@ from ..ir import (
     IRField,
     IRArrayAccess,
     IRArrayLiteral,
+    IRForEachLoop,
     IRNativeArrayNew,
     _get_type_in_code,
     IRCall,
@@ -195,6 +196,9 @@ def _walk_statement(
                     et = _uniform_element_type(lit.elements, code)
                     if et is not None:
                         _record_array_source(stmt.target, et, code, global_cache)
+    elif isinstance(stmt, IRForEachLoop):
+        # `for (x in arr)` reads every element into x.
+        _record_array_source(_strip_cast(stmt.array), stmt.elem.get_type(), code, global_cache)
     for child in stmt.get_children():
         if isinstance(child, IRBlock):
             _walk_block(child, code, visited, global_cache)
