@@ -599,8 +599,9 @@ class IRFunction:
         expression it came from. Only unnamed registers are split: parameters and
         debug-named variables are real source variables. A register whose address
         escapes (a `Ref` read by anything but the call right after it, which is how
-        natives such as `itos` take out-parameters), that a try body writes (a catch
-        handler sees it mid-way), or that receives a caught exception keeps a single local.
+        natives such as `itos` take out-parameters), that a try body writes and its catch
+        handler can read (the handler sees it mid-way), or that receives a caught exception
+        keeps a single local.
         """
         self._web_of_def: Dict[int, int] = {}
         self._web_locals: Dict[int, IRLocal] = {}
@@ -631,6 +632,8 @@ class IRFunction:
                 for k in readers.get(ref, ())
             )
 
+        # Per try body: its handler's first op, and the registers the body writes.
+        handlers: List[Tuple[int, Set[int]]] = []
         for i, op in enumerate(ops):
             if op.op == "Ref":
                 # An out-parameter is only written through during the call itself,
@@ -641,10 +644,8 @@ class IRFunction:
                 # The exception register belongs to the catch (lifted separately).
                 eligible.discard(op.df["exc"].value)
                 handler = i + op.df["offset"].value + 1
-                for k in range(i + 1, min(handler, len(ops))):
-                    dst = _op_writes(ops[k])
-                    if dst is not None:
-                        eligible.discard(dst)
+                written_in_try = {_op_writes(ops[k]) for k in range(i + 1, min(handler, len(ops)))}
+                handlers.append((handler, {r for r in written_in_try if r is not None}))
         if not eligible:
             return
 
@@ -675,6 +676,16 @@ class IRFunction:
                 if new != live_in[node]:
                     live_in[node] = new
                     changed = True
+
+        # A throw can leave a try body at any point, so what a handler (and whatever
+        # follows it) reads may come from any definition in the body: a register the
+        # handler can read stays one local. One it can't read is split like any other.
+        node_at = {node.base_offset: node for node in nodes}
+        for handler, written in handlers:
+            handler_node = node_at.get(handler)
+            eligible -= written & live_in[handler_node] if handler_node is not None else written
+        if not eligible:
+            return
 
         parent: Dict[int, int] = {}
 
