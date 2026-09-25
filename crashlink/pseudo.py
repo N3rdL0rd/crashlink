@@ -1764,6 +1764,7 @@ def _generate_statements(
 
             if (
                 isinstance(stmt.expr, IRArithmetic)
+                and stmt.expr.step
                 and isinstance(stmt.expr.right, IRConst)
                 and _const_int_value(stmt.expr.right) == 1
                 and stmt.expr.op in (IRArithmetic.ArithmeticType.ADD, IRArithmetic.ArithmeticType.SUB)

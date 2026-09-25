@@ -1714,33 +1714,25 @@ class IRFunction:
             elif op.op == "Incr":
                 dst_local = self.locals[op.df["dst"].value]
                 old_local = source_locals[op.df["dst"].value]
-                block.statements.append(
-                    IRAssign(
-                        self.code,
-                        dst_local,
-                        IRArithmetic(
-                            self.code,
-                            old_local,
-                            IRConst(self.code, IRConst.ConstType.INT, value=1),
-                            IRArithmetic.ArithmeticType.ADD,
-                        ),
-                    )
+                step = IRArithmetic(
+                    self.code,
+                    old_local,
+                    IRConst(self.code, IRConst.ConstType.INT, value=1),
+                    IRArithmetic.ArithmeticType.ADD,
                 )
+                step.step = True
+                block.statements.append(IRAssign(self.code, dst_local, step))
             elif op.op == "Decr":
                 dst_local = self.locals[op.df["dst"].value]
                 old_local = source_locals[op.df["dst"].value]
-                block.statements.append(
-                    IRAssign(
-                        self.code,
-                        dst_local,
-                        IRArithmetic(
-                            self.code,
-                            old_local,
-                            IRConst(self.code, IRConst.ConstType.INT, value=1),
-                            IRArithmetic.ArithmeticType.SUB,
-                        ),
-                    )
+                step = IRArithmetic(
+                    self.code,
+                    old_local,
+                    IRConst(self.code, IRConst.ConstType.INT, value=1),
+                    IRArithmetic.ArithmeticType.SUB,
                 )
+                step.step = True
+                block.statements.append(IRAssign(self.code, dst_local, step))
             elif op.op == "Neg":
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = source_locals[op.df["src"].value]

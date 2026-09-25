@@ -303,6 +303,8 @@ class IRArithmetic(IRExpression):
         self.right = right
         self.op = op
         self._cached_type: Optional[Type] = None
+        # Lifted from Incr/Decr: source `x++`/`x--`, where `x += 1` is an Add.
+        self.step = False
 
     def get_type(self) -> Type:
         if self._cached_type is not None:
