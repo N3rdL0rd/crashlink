@@ -823,14 +823,14 @@ def _expression_to_haxe(
         return f"{ref_str}.get()"
 
     elif isinstance(expr, IREnumConstruct):
-        # A synthesized anonymous enum (see disasm.type_name) may name its
-        # sole construct with the same colliding raw pool string as the enum
-        # itself - qualify with the synthetic enum name so the call resolves
-        # to the construct, not to whatever real global shares that name.
+        # Qualified with the enum: a bare constructor only resolves where Haxe can infer
+        # the enum from context, which a Dynamic or generic argument does not give it.
+        # (A synthesized anonymous enum, see disasm.type_name, is qualified the same way,
+        # so its construct isn't taken for whatever real global shares the name.)
         construct_name = expr.construct_name
         enum_def = expr.enum_type_idx.resolve(code).definition
-        if isinstance(enum_def, Enum) and enum_def.name.value == 0:
-            construct_name = f"{disasm._enum_name(code, enum_def)}.{construct_name}"
+        if isinstance(enum_def, Enum):
+            construct_name = f"{destaticify(disasm._enum_name(code, enum_def))}.{construct_name}"
         if expr.args:
             args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.args)
             return f"{construct_name}({args_str})"
