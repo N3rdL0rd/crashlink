@@ -1020,6 +1020,12 @@ def _expression_to_haxe(
                 return f"(@:privateAccess String.__alloc__({bytes_str}, {len_str}))"
 
             callee_str = _expression_to_haxe(expr.target, code, ir_function)
+            if callee_str == "null":
+                # A constant-propagated optional callback (an inlined `?onDone`): Haxe
+                # only calls it once the type says it's a function, which the call gives.
+                params = ", ".join(disasm._haxe_annotation(code, arg.get_type()) for arg in expr.args)
+                ret = disasm._haxe_annotation(code, expr.get_type())
+                callee_str = f"(null : ({params}) -> {ret})"
             # Std functions used as direct call targets can usually be rendered
             # with their Haxe-qualified name (e.g. Std.random, Math.random)
             # instead of a synthetic extern stub.
