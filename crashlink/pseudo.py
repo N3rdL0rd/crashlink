@@ -1737,12 +1737,6 @@ def _generate_statements(
             def _same_local(a: Optional[IRStatement], b: Optional[IRStatement]) -> bool:
                 return isinstance(a, IRLocal) and isinstance(b, IRLocal) and a.name == b.name
 
-            _is_self_ref_arith = (
-                isinstance(stmt.target, IRLocal)
-                and isinstance(stmt.expr, IRArithmetic)
-                and _same_local(stmt.expr.left, stmt.target)
-            )
-
             _compound_ops = {
                 IRArithmetic.ArithmeticType.ADD: "+=",
                 IRArithmetic.ArithmeticType.SUB: "-=",
@@ -1780,12 +1774,13 @@ def _generate_statements(
             ):
                 op_sym = "++" if stmt.expr.op == IRArithmetic.ArithmeticType.ADD else "--"
                 output_lines.append(f"{indent}{access}{target_str}{op_sym};")
-            # Detect x += y patterns: target = target op expr
+            # Detect x += y and o.f += y patterns: target = target op expr
             elif (
-                _is_self_ref_arith
-                and isinstance(stmt.target, IRLocal)
-                and isinstance(stmt.expr, IRArithmetic)
-                and _same_local(stmt.expr.left, stmt.target)
+                isinstance(stmt.expr, IRArithmetic)
+                and (
+                    (isinstance(stmt.target, IRLocal) and _same_local(stmt.expr.left, stmt.target))
+                    or (isinstance(stmt.target, IRField) and _field_eq(stmt.expr.left, stmt.target))
+                )
                 and stmt.expr.op in _compound_ops
                 and not (
                     stmt.expr.op in (IRArithmetic.ArithmeticType.SDIV, IRArithmetic.ArithmeticType.SMOD)
