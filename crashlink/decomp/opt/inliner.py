@@ -2113,6 +2113,14 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                         # yields `temp = expr` — `expr` still evaluates exactly
                         # once, at the same point.
                         pure_copy_kill = self._is_pure_copy_kill(next_stmt, temp_local)
+                        # `t = e; v = t - x` with `v` on t's register (HL computes into the
+                        # left operand's register, `var v = e - x`): the read comes first,
+                        # and the store ends the temp's value.
+                        rebinds = (
+                            isinstance(next_stmt, IRAssign)
+                            and isinstance(next_stmt.target, IRLocal)
+                            and _ScopedLocalLifetime.kills(next_stmt.target, temp_local)
+                        )
                         if (
                             self._stmt_contains_local(next_stmt, temp_local)
                             and not (
@@ -2122,7 +2130,11 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                                     or self._count_local_reads(next_stmt, temp_local) > 1
                                 )
                             )
-                            and (pure_copy_kill or not self._is_local_redefined(temp_local, [next_stmt]))
+                            and (
+                                pure_copy_kill
+                                or rebinds
+                                or not self._is_local_redefined(temp_local, [next_stmt])
+                            )
                             and not self._stmt_reassigns_any(
                                 next_stmt, self._collect_free_locals(expr_to_inline)
                             )
@@ -2135,7 +2147,8 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                             # root-to-block search for the same information.
                             later_uses = (
                                 False
-                                if inside_loop_body and self._provably_loop_fresh(block, i, temp_local)
+                                if rebinds
+                                or (inside_loop_body and self._provably_loop_fresh(block, i, temp_local))
                                 else (
                                     hazardous
                                     or not _ScopedLocalLifetime(self.func.block).dead_in(
