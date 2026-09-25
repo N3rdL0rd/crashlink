@@ -276,20 +276,37 @@ class _ReferenceAwareOptimizer(TraversingIROptimizer):
 
     def __init__(self, function: "IRFunction"):
         super().__init__(function)
-        self._address_names: Set[str] = set()
-        self._address_regs: Set[int] = set()
-        pending = [self.func.block] if hasattr(self.func, "block") else []
-        visited: Set[int] = set()
-        while pending:
-            node = pending.pop()
-            if id(node) in visited:
-                continue
-            visited.add(id(node))
-            if isinstance(node, (IRRef, IRRefNew)) and isinstance(node.target, IRLocal):
-                self._address_names.add(node.target.name)
-                if node.target.reg_idx is not None:
-                    self._address_regs.add(node.target.reg_idx)
-            pending.extend(node.get_children())
+        # Computed on first use, while this pass runs: every optimizer is built
+        # before any runs, and earlier passes remove references (a recovered
+        # `Std.string` conversion drops its count cell's `Ref`).
+        self._address_sets: Optional[Tuple[Set[str], Set[int]]] = None
+
+    def _address_taken_sets(self) -> Tuple[Set[str], Set[int]]:
+        if self._address_sets is None:
+            names: Set[str] = set()
+            regs: Set[int] = set()
+            pending = [self.func.block] if hasattr(self.func, "block") else []
+            visited: Set[int] = set()
+            while pending:
+                node = pending.pop()
+                if id(node) in visited:
+                    continue
+                visited.add(id(node))
+                if isinstance(node, (IRRef, IRRefNew)) and isinstance(node.target, IRLocal):
+                    names.add(node.target.name)
+                    if node.target.reg_idx is not None:
+                        regs.add(node.target.reg_idx)
+                pending.extend(node.get_children())
+            self._address_sets = (names, regs)
+        return self._address_sets
+
+    @property
+    def _address_names(self) -> Set[str]:
+        return self._address_taken_sets()[0]
+
+    @property
+    def _address_regs(self) -> Set[int]:
+        return self._address_taken_sets()[1]
 
     def _is_address_taken(self, local: IRLocal) -> bool:
         return local.name in self._address_names or local.reg_idx in self._address_regs
