@@ -1160,6 +1160,12 @@ class IRArrayGuardResidueEliminator(TraversingIROptimizer):
     """
 
     _STORAGE_FIELDS = ("length", "bytes", "array")
+    _FAULTING_OPS = (
+        IRArithmetic.ArithmeticType.SDIV,
+        IRArithmetic.ArithmeticType.UDIV,
+        IRArithmetic.ArithmeticType.SMOD,
+        IRArithmetic.ArithmeticType.UMOD,
+    )
 
     def visit_block(self, block: IRBlock) -> None:
         statements = block.statements
@@ -1168,12 +1174,32 @@ class IRArrayGuardResidueEliminator(TraversingIROptimizer):
             block.statements = kept
 
     def _is_residue(self, stmts: List[IRStatement], idx: int) -> bool:
-        stmt = stmts[idx]
-        if not (isinstance(stmt, IRField) and stmt.field_name in self._STORAGE_FIELDS):
-            return False
-        base = stmt.target
-        if not isinstance(base, IRLocal):
-            return False
+        bases = self._storage_bases(stmts[idx])
+        return bool(bases) and all(self._faults_later(stmts, idx, base) for base in bases)
+
+    def _storage_bases(self, expr: IRStatement) -> Optional[List[IRLocal]]:
+        """The receivers of the storage reads `expr` consists of, if that's all it does.
+
+        Integer arithmetic over them (the shifted element offset `a.length << 2`) is
+        residue too; division is not, since it can fault on its own.
+        """
+        if isinstance(expr, IRField):
+            if expr.field_name in self._STORAGE_FIELDS and isinstance(expr.target, IRLocal):
+                return [expr.target]
+            return None
+        if isinstance(expr, IRArithmetic) and expr.op not in self._FAULTING_OPS:
+            left, right = self._operand_bases(expr.left), self._operand_bases(expr.right)
+            if left is None or right is None:
+                return None
+            return left + right
+        return None
+
+    def _operand_bases(self, expr: IRExpression) -> Optional[List[IRLocal]]:
+        if isinstance(expr, IRLocal) or (isinstance(expr, IRConst) and not _has_observable_effects(expr)):
+            return []
+        return self._storage_bases(expr)
+
+    def _faults_later(self, stmts: List[IRStatement], idx: int, base: IRLocal) -> bool:
         for later in stmts[idx + 1 :]:
             if self._dereferences(later, base):
                 return True
