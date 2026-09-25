@@ -1794,6 +1794,16 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         if start >= len(stmts):
             return None
         s = stmts[start]
+        # `t = [...]; target = ArrayDyn.alloc(t, true)` with `t` read only there:
+        # the literal is the wrapped array itself.
+        held: Optional[IRAssign] = None
+        if (
+            isinstance(s, IRAssign)
+            and isinstance(s.target, IRLocal)
+            and isinstance(s.expr, IRArrayLiteral)
+            and start + 1 < len(stmts)
+        ):
+            held, s = s, stmts[start + 1]
         if not isinstance(s, IRAssign) or not isinstance(s.expr, IRCall):
             return None
         call = s.expr
@@ -1802,6 +1812,11 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         if len(call.args) != 2:
             return None
         first_arg, second_arg = call.args
+        if held is not None:
+            temp = held.target
+            if not isinstance(temp, IRLocal) or first_arg is not temp or self._occurrences(temp) != 2:
+                return None
+            first_arg = held.expr
         # A local already owns an allocated array. Substituting its defining
         # literal here would allocate twice and break identity and aliasing.
         if not isinstance(first_arg, IRArrayLiteral):
@@ -1825,7 +1840,26 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                     break
         if not true_ok:
             return None
+        if held is not None:
+            return IRAssign(self.func.code, s.target, first_arg).adopt(held, s), 2
         return IRAssign(self.func.code, s.target, first_arg).adopt(s), 1
+
+    def _occurrences(self, local: IRLocal) -> int:
+        """How many times the `local` object appears in the function, as a
+        write target or a read."""
+        count = 0
+        seen: Set[int] = set()
+        pending: List[IRStatement] = [self.func.block]
+        while pending:
+            node = pending.pop()
+            if node is local:
+                count += 1
+                continue
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
+            pending.extend(node.get_children())
+        return count
 
     @staticmethod
     def _expr_eq(a: Optional[IRExpression], b: Optional[IRExpression]) -> bool:
