@@ -16,6 +16,7 @@ line. Matching the body works either way; positions only add confidence.
 
 from __future__ import annotations
 
+import copy
 import threading
 import weakref
 from collections import Counter
@@ -23,9 +24,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
-from ..core import Bytecode, Function, Obj, Opcode, Type, destaticify, fIndex
+from ..core import Bytecode, Fun, Function, Obj, Opcode, Type, destaticify, fIndex, tIndex
 from ..std_inline import is_std_inline
 from .ir import (
+    IRInlineCall,
     IRArithmetic,
     IRArrayAccess,
     IRAssign,
@@ -102,7 +104,9 @@ def _collapsing_disabled() -> Iterator[None]:
 class InlineTemplate:
     """One inline function, as a pattern to find its copies by."""
 
-    function: Function
+    #: The function, or None when it was rebuilt from its copies (see
+    #: `_rebuilt_templates`): its body is then what the copies share.
+    function: Optional[Function]
     owner: Obj
     name: str
     #: The receiver is parameter 0.
@@ -117,13 +121,14 @@ class InlineTemplate:
     span: Optional[Tuple[int, int, int]]
     weight: int = 0
     uses: Counter = field(default_factory=Counter)
-    #: Every non-placeholder node of the body is free of observable effects.
-    pure: bool = True
     #: Another template has the same body: a copy can't be attributed.
     ambiguous: bool = False
 
     def root(self) -> IRStatement:
         return self.expression if self.expression is not None else self.statements[0]
+
+    def findex(self) -> Optional[int]:
+        return self.function.findex.value if self.function is not None else None
 
 
 class InlineIndex:
@@ -131,7 +136,12 @@ class InlineIndex:
 
     def __init__(self, templates: List[InlineTemplate]) -> None:
         self.templates = sorted(templates, key=lambda t: -t.weight)
-        self.by_findex = {t.function.findex.value: t for t in self.templates}
+        self.by_findex = {t.function.findex.value: t for t in self.templates if t.function is not None}
+        #: Rebuilt templates by the class they are declared in.
+        self.rebuilt: Dict[int, List[InlineTemplate]] = {}
+        for template in self.templates:
+            if template.function is None:
+                self.rebuilt.setdefault(id(template.owner), []).append(template)
         self.expressions: Dict[Tuple, List[InlineTemplate]] = {}
         self.statements: Dict[Tuple, List[InlineTemplate]] = {}
         for template in self.templates:
@@ -273,6 +283,7 @@ def _build_templates(code: Bytecode) -> List[InlineTemplate]:
         template = _template(code, func, owner, name, instance)
         if template is not None:
             templates.append(template)
+    templates.extend(_rebuilt_templates(code, templates))
     by_shape: Dict[str, List[InlineTemplate]] = {}
     for template in templates:
         by_shape.setdefault(_shape(template), []).append(template)
@@ -281,6 +292,282 @@ def _build_templates(code: Bytecode) -> List[InlineTemplate]:
             for template in same:
                 template.ambiguous = True
     return templates
+
+
+#: Copies of a function to see before rebuilding it: a function inlined once is
+#: just code. Constants count as arguments only where copies of one shape differ.
+MIN_REBUILD_COPIES = 2
+#: Hosts larger than this aren't decompiled just to read a copy out of them.
+MAX_REBUILD_HOST_OPS = 2000
+
+
+def _rebuilt_templates(code: Bytecode, surviving: List[InlineTemplate]) -> List[InlineTemplate]:
+    """Templates for inline functions that no longer exist, from the copies the
+    debug positions find (see `inlines.InlineFinder`). In a copy, the code on the
+    function's own lines is the body; what the caller computed in place, and the
+    constants that differ between copies, are its arguments."""
+    from ..inlines import InlineFinder
+
+    if not code.debugfiles or not code.debugfiles.value:
+        return []
+    try:
+        finder = InlineFinder(code)
+        found = finder.find()
+    except Exception:
+        return []
+    owners = _classes_by_path(code)
+    known = {(t.span[0], t.span[1]) for t in surviving if t.span is not None}
+    type_index = {id(t): i for i, t in enumerate(code.types)}
+    hosts: Dict[int, Any] = {}
+    names: Set[Tuple[int, str]] = set()
+    result: List[InlineTemplate] = []
+    for inlined in found:
+        if (
+            inlined.kind != "source"
+            or inlined.real_name is not None
+            or (inlined.file, inlined.first_line) in known
+        ):
+            continue
+        owner = _owner_of(owners, inlined.path)
+        name = f"inlineL{inlined.first_line}"
+        if owner is None or (id(owner), name) in names:
+            continue
+        if len(inlined.sites) < MIN_REBUILD_COPIES:
+            continue
+        shape = finder.shapes(inlined)[0]
+        site = min(shape.sites, key=lambda s: len(getattr(code.fn(s.findex), "ops", ())))
+        host = code.fn(site.findex)
+        if not isinstance(host, Function) or len(host.ops) > MAX_REBUILD_HOST_OPS:
+            continue
+        if site.findex not in hosts:
+            hosts[site.findex] = _decompile(code, host)
+        ir = hosts[site.findex]
+        if ir is None:
+            continue
+        varying = _varying_constant_ops(finder, site, shape)
+        template = _rebuild(code, ir, set(site.ops), varying, owner, name, type_index)
+        if template is None:
+            continue
+        template.span = (inlined.file, inlined.first_line, inlined.last_line)
+        names.add((id(owner), name))
+        result.append(template)
+    return result
+
+
+def _argument_types(code: Bytecode, node: Any) -> List[Type]:
+    """Declared types of a call's arguments (`args`, without a method's receiver)."""
+    if not isinstance(node, IRCall):
+        return []
+    target = node.target
+    fun_type: Any = None
+    if isinstance(target, IRConst) and isinstance(target.value, Function):
+        fun_type = target.value.type.resolve(code).definition
+        skip = 0
+    elif isinstance(target, IRField):
+        fun_type = target.get_type().definition
+        skip = 1 if node.call_type == IRCall.CallType.METHOD else 0
+    if not isinstance(fun_type, Fun):
+        return []
+    return [a.resolve(code) for a in fun_type.args[skip:]]
+
+
+def _has_operation(node: Any) -> bool:
+    if isinstance(node, _WEIGHTED) and not isinstance(node, IRField):
+        return True
+    return any(_has_operation(c) for c in node.get_children())
+
+
+def _decompile(code: Bytecode, func: Function) -> Any:
+    from .function import IRFunction
+
+    try:
+        with _collapsing_disabled():
+            return IRFunction(code, func)
+    except Exception:
+        return None
+
+
+def _classes_by_path(code: Bytecode) -> Dict[str, Obj]:
+    """Classes by the path of the module that declares them (`tool/Cooldown.hx`)."""
+    result: Dict[str, Obj] = {}
+    for typ in code.types:
+        obj = typ.definition
+        if not isinstance(obj, Obj):
+            continue
+        parts = obj.name.resolve(code).split(".")
+        if (
+            parts[-1].startswith("$")
+            or parts[-1].endswith("_Impl_")
+            or any(p.startswith("_") for p in parts[:-1])
+        ):
+            continue
+        result.setdefault("/".join(parts) + ".hx", obj)
+    return result
+
+
+def _owner_of(owners: Dict[str, Obj], path: str) -> Optional[Obj]:
+    parts = path.replace("\\", "/").split("/")
+    for i in range(len(parts)):
+        owner = owners.get("/".join(parts[i:]))
+        if owner is not None:
+            return owner
+    return None
+
+
+def _varying_constant_ops(finder: Any, site: Any, shape: Any) -> Set[int]:
+    """Opcodes of `site` loading a constant that other copies of the same shape
+    load differently: an argument, not part of the body. Counts constants the
+    way `InlineFinder._canonical` indexes them."""
+    from ..inlines import _VALUE_KINDS
+    from ..opcodes import opcodes
+
+    varying = {index for index, _, _ in shape.varying_constants}
+    if not varying:
+        return set()
+    func = finder.code.fn(site.findex)
+    ops: Set[int] = set()
+    position = 0
+    for k in site.ops:
+        op = func.ops[k]
+        kinds = opcodes.get(op.op or "", {})
+        for key in op.df:
+            if kinds.get(key) in _VALUE_KINDS:
+                if position in varying:
+                    ops.add(k)
+                position += 1
+    return ops
+
+
+def _rebuild(
+    code: Bytecode,
+    ir: Any,
+    body_ops: Set[int],
+    varying: Set[int],
+    owner: Obj,
+    name: str,
+    type_index: Dict[int, int],
+) -> Optional[InlineTemplate]:
+    """A copy's body as a template: the one expression built from `body_ops`,
+    its other parts turned into parameters."""
+    parents: Dict[int, Any] = {}
+    nodes: List[Any] = []
+    seen: Set[int] = set()
+    pending: List[Tuple[Any, Any]] = [(s, None) for s in ir.block.statements]
+    while pending:
+        node, parent = pending.pop()
+        if id(node) in seen:
+            continue
+        seen.add(id(node))
+        parents[id(node)] = parent
+        nodes.append(node)
+        pending.extend((child, node) for child in node.get_children())
+
+    def in_body(node: Any) -> bool:
+        ops = node.src_op_idxs
+        return bool(ops) and ops <= body_ops and not ops & varying
+
+    roots: Dict[int, Any] = {}
+    for node in nodes:
+        if not isinstance(node, IRExpression) or isinstance(node, IRLocal) or not in_body(node):
+            continue
+        while isinstance(parents.get(id(node)), IRExpression) and in_body(parents[id(node)]):
+            node = parents[id(node)]
+        roots[id(node)] = node
+    if len(roots) != 1:
+        return None  # several statements: only expression bodies are rebuilt
+    root = next(iter(roots.values()))
+    # A conversion around the result is the caller's use of it (it carries the
+    # body's position because the result was its last operand).
+    while isinstance(root, IRCast) and in_body(root.expr):
+        root = root.expr
+
+    contains: Dict[int, bool] = {}
+
+    def has_body(node: Any) -> bool:
+        key = id(node)
+        if key not in contains:
+            contains[key] = in_body(node) or any(has_body(c) for c in node.get_children())
+        return contains[key]
+
+    def is_parameter(node: IRExpression) -> bool:
+        if isinstance(node, IRLocal):
+            return True
+        if isinstance(node, IRConst):
+            # Loaded by the caller, or differently by other copies: an argument.
+            ops = node.src_op_idxs
+            return bool(ops & varying) or bool(ops) and not ops <= body_ops
+        return not has_body(node)
+
+    params: List[IRExpression] = []
+    param_types: List[Type] = []
+    by_local: Dict[Tuple[str, Optional[int]], int] = {}
+
+    def parameter(node: IRExpression, slot: Optional[Type]) -> Optional[IRLocal]:
+        key = (node.name, node.reg_idx) if isinstance(node, IRLocal) else None
+        index = by_local.get(key) if key is not None else None
+        if index is None:
+            index = len(params)
+            params.append(node)
+            # An untyped `null` takes the type of the argument it is passed as.
+            typ = node.get_type()
+            if isinstance(node, IRConst) and node.const_type == IRConst.ConstType.NULL and slot is not None:
+                typ = slot
+            param_types.append(typ)
+            if key is not None:
+                by_local[key] = index
+        typ = param_types[index]
+        if id(typ) not in type_index:
+            return None
+        return IRLocal(f"v{index}", tIndex(type_index[id(typ)]), code, reg_idx=index)
+
+    def build(node: Any, slot: Optional[Type] = None) -> Optional[Any]:
+        if isinstance(node, IRBlock) or not isinstance(node, IRStatement):
+            return None
+        if node is not root and isinstance(node, IRExpression) and is_parameter(node):
+            return parameter(node, slot)
+        copied = copy.copy(node)
+        copied.src_op_idxs = set(node.src_op_idxs)
+        slots = _argument_types(code, node)
+        for attr, value in vars(node).items():
+            if attr == "code":
+                continue
+            if isinstance(value, IRStatement):
+                built = build(value)
+                if built is None:
+                    return None
+                setattr(copied, attr, built)
+            elif isinstance(value, list) and any(isinstance(v, IRStatement) for v in value):
+                items = [
+                    build(v, slots[i] if attr == "args" and i < len(slots) else None)
+                    if isinstance(v, IRStatement)
+                    else v
+                    for i, v in enumerate(value)
+                ]
+                if any(item is None for item in items):
+                    return None
+                setattr(copied, attr, items)
+        return copied
+
+    expression = build(root)
+    if not isinstance(expression, IRExpression) or not _has_operation(expression):
+        # A lone constant is an `inline var`; a bare field chain is a receiver
+        # another copy reads through, not a function.
+        return None
+    template = InlineTemplate(
+        function=None,
+        owner=owner,
+        name=name,
+        instance=False,
+        param_types=param_types,
+        param_regs={i: i for i in range(len(params))},
+        expression=expression,
+        statements=[],
+        span=None,
+    )
+    if not _scan_body(template, expression) or set(template.uses) != set(range(len(params))):
+        return None
+    template.weight += sum(n - 1 for n in template.uses.values())
+    return template if template.weight > 0 else None
 
 
 def _template(
@@ -349,12 +636,7 @@ def _scan_body(template: InlineTemplate, node: Any) -> bool:
         return False
     if isinstance(node, _WEIGHTED):
         template.weight += 1
-    if isinstance(node, IRExpression) and not isinstance(node, (IRLocal, IRCast)):
-        if _node_effects(node):
-            template.pure = False
-    elif isinstance(node, IRAssign):
-        template.pure = False
-    if isinstance(node, (IRConst,)):
+    if isinstance(node, IRConst):
         return True
     if type(node).__name__ not in _MATCHABLE:
         return False
@@ -438,11 +720,22 @@ class _Match:
         self.code = code
         self.template = template
         self.env: Dict[int, IRExpression] = {}
-        self.order: List[int] = []
+        #: In evaluation order: the index of each effectful argument, and -1 for
+        #: each effect of the body itself.
+        self.events: List[int] = []
 
     def node(self, p: Any, t: Any) -> bool:
         if isinstance(p, IRLocal):
             return self._bind(self.template.param_regs[p.reg_idx], t)
+        if not self._node(p, t):
+            return False
+        # Operands evaluate before the operation (children are matched in
+        # evaluation order), so this records when the body's own effect happens.
+        if isinstance(p, IRAssign) or (isinstance(p, IRExpression) and _node_effects(p)):
+            self.events.append(-1)
+        return True
+
+    def _node(self, p: Any, t: Any) -> bool:
         if p is None or t is None:
             return p is None and t is None
         if type(p) is not type(t):
@@ -506,19 +799,24 @@ class _Match:
         if not _assignable(self.code, t.get_type(), self.template.param_types[index]):
             return False
         self.env[index] = t
-        self.order.append(index)
+        if _effectful(t):
+            self.events.append(index)
         return True
 
     def valid(self) -> bool:
         """The call evaluates each argument once, in parameter order, before the
-        body; the copy evaluated them where the body reads them."""
-        template = self.template
-        effectful = [i for i in self.order if _effectful(self.env[i])]
-        if not effectful:
-            return True
-        if not template.pure or any(template.uses[i] > 1 for i in effectful):
-            return False
-        return effectful == sorted(effectful)
+        body; the copy evaluated them where the body reads them. The two agree
+        when the effectful arguments are read once each, in parameter order,
+        before any effect of the body."""
+        last = -1
+        for event in self.events:
+            if event < 0:
+                last = len(self.template.param_types)
+            elif event < last or self.template.uses[event] > 1:
+                return False
+            else:
+                last = event
+        return True
 
 
 def _effectful(expr: IRExpression) -> bool:
@@ -585,7 +883,7 @@ class IRInlineCallRecovery(TraversingIROptimizer):
     def _statement_call(self, stmts: List[IRStatement], i: int) -> Optional[Tuple[IRStatement, int]]:
         for template in self.index.statements.get(_node_key(stmts[i]), ()):
             n = len(template.statements)
-            if template.function.findex.value == self.own or i + n > len(stmts):
+            if template.findex() == self.own or i + n > len(stmts):
                 continue
             match = _Match(self.func.code, template)
             if all(match.node(p, t) for p, t in zip(template.statements, stmts[i : i + n])) and self._accept(
@@ -607,15 +905,15 @@ class IRInlineCallRecovery(TraversingIROptimizer):
         if isinstance(expr, (IRLocal, IRConst)):
             return expr
         for template in self.index.expressions.get(_node_key(expr), ()):
-            if template.function.findex.value == self.own:
+            if template.findex() == self.own:
                 continue
             match = _Match(self.func.code, template)
             if match.node(template.expression, expr) and self._accept(match, [expr]):
                 call = self._call(match)
                 call.adopt(expr)
                 # Arguments can hold further copies.
-                call.args = [self._rewrite(a) for a in call.args]
-                if isinstance(call.target, IRField):
+                self._rewrite_children(call)
+                if isinstance(call, IRCall) and isinstance(call.target, IRField):
                     call.target.target = self._rewrite(call.target.target)
                 return call
         self._rewrite_children(expr)
@@ -624,7 +922,10 @@ class IRInlineCallRecovery(TraversingIROptimizer):
     def _accept(self, match: _Match, nodes: List[IRStatement]) -> bool:
         if not match.valid():
             return False
-        return match.template.weight >= MIN_UNCONFIRMED_WEIGHT or self._positioned(match, nodes)
+        # A rebuilt body is only known from the copies positions found.
+        if match.template.function is not None and match.template.weight >= MIN_UNCONFIRMED_WEIGHT:
+            return True
+        return self._positioned(match, nodes)
 
     def _positioned(self, match: _Match, nodes: List[IRStatement]) -> bool:
         """Whether an opcode of the copy (not of its arguments) sits on the
@@ -647,11 +948,15 @@ class IRInlineCallRecovery(TraversingIROptimizer):
             pending.extend(node.get_children())
         return False
 
-    def _call(self, match: _Match) -> IRCall:
+    def _call(self, match: _Match) -> IRExpression:
         template = match.template
         code = self.func.code
         args = [match.env[i] for i in range(len(template.param_types))]
         fun = template.function
+        if fun is None:
+            assert template.expression is not None
+            owner = destaticify(template.owner.name.resolve(code))
+            return IRInlineCall(code, owner, template.name, args, template.expression.get_type())
         if template.instance:
             target = IRField(code, args[0], template.name, fun.type)
             return IRCall(code, IRCall.CallType.METHOD, target, args[1:])

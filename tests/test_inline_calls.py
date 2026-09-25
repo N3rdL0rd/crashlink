@@ -3,7 +3,7 @@
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Optional
 
 import pytest
 
@@ -39,12 +39,16 @@ class Main {
 """
 
 
-def _compile(directory: Path, source: str) -> Path:
+def _compile(directory: Path, source: str, *flags: str, files: Optional[Dict[str, str]] = None) -> Path:
     directory.mkdir(parents=True)
     (directory / "Main.hx").write_text(source)
+    for name, text in (files or {}).items():
+        (directory / name).write_text(text)
     target = directory / "program.hl"
     result = subprocess.run(
-        ["haxe", "-cp", str(directory), "-main", "Main", "-hl", str(target)], capture_output=True, text=True
+        ["haxe", "-cp", str(directory), "-main", "Main", "-hl", str(target), *flags],
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0, result.stderr
     return target
@@ -85,4 +89,57 @@ def test_inline_copies_become_calls_that_recompile_identically(tmp_path: Path) -
         line for text in (helpers, main) for line in text.splitlines() if not line.startswith("// ...")
     )
     recompiled = _compile(tmp_path / "recompiled", decompiled)
+    assert _main_ops(recompiled) == _main_ops(original)
+
+
+HELPERS = """
+class Cd {
+    public var fast:Map<Int, Bool> = new Map();
+    public function new() {}
+    public inline function has(k:Int):Bool return fast.exists(k * 7 + 1);
+    public static inline function scale(v:Float, by:Float):Float return v * by * 0.5 + 1.0;
+}
+"""
+
+CALLER = """
+class Main {
+    static function main() {
+        var c = new Cd();
+        var f = Math.random();
+        var k = Std.random(3);
+        Sys.println(Cd.scale(f, 3.0));
+        if (c.has(k)) Sys.println("a");
+        Sys.println(Cd.scale(f * 2, f));
+        if (c.has(k + 5)) Sys.println("b");
+    }
+}
+"""
+
+
+def test_removed_inline_functions_are_rebuilt_from_their_copies(tmp_path: Path) -> None:
+    """With full dead-code elimination the functions are gone; the copies' debug
+    positions (kept with keep-inline-positions) still give their bodies."""
+    if not shutil.which("haxe"):
+        pytest.skip("inline call regressions require Haxe")
+    flags = ("-dce", "full", "-D", "keep-inline-positions")
+    original = _compile(tmp_path / "original", CALLER, *flags, files={"Cd.hx": HELPERS})
+    code = Bytecode.from_path(str(original))
+    main = IRClass(code, code.get_test_obj("Main")).pseudo(max_classes=0)
+    helpers = IRClass(code, code.get_test_obj("Cd")).pseudo(max_classes=0)
+
+    # The multiply in `v * by` carries the caller's position (its last operand
+    # is an argument), so it stays with the caller.
+    for call in (
+        "Cd.inlineL5(c.fast, k)",
+        "Cd.inlineL5(c.fast, k + 5)",
+        "Cd.inlineL6(f * 3.0)",
+        "Cd.inlineL6(f * 2.0 * f)",
+    ):
+        assert call in main
+    assert "public static inline function inlineL5(v0: haxe.ds.IntMap<Dynamic>, v1: Int): Bool {" in helpers
+
+    decompiled = "\n".join(
+        line for text in (helpers, main) for line in text.splitlines() if not line.startswith("// ...")
+    )
+    recompiled = _compile(tmp_path / "recompiled", decompiled, *flags)
     assert _main_ops(recompiled) == _main_ops(original)

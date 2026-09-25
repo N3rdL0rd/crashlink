@@ -80,9 +80,9 @@ from .decomp import (
     IRTernary,
     IRNullCoalesce,
 )
-from .decomp.ir import IREnumPattern
+from .decomp.ir import IREnumPattern, IRInlineCall
 from .decomp.opt.clean import default_arg_regs, default_arg_value
-from .decomp.inline_calls import is_inline_template
+from .decomp.inline_calls import inline_index, is_inline_template
 
 
 def _indent_str(level: int) -> str:
@@ -913,6 +913,9 @@ def _expression_to_haxe(
         index = int(expr.field_name.removeprefix("param"))
         return f"Type.enumParameters({inner})[{index}]"
 
+    elif isinstance(expr, IRInlineCall):
+        args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.args)
+        return f"{expr.owner}.{expr.name}({args_str})"
     elif isinstance(expr, IRCall):
         callee_str: str
         if (
@@ -4742,6 +4745,11 @@ def _class_body(
             output_lines.append(f"{indent_str}{line}")
         output_lines.append("")
 
+    # Inline functions no longer in the bytecode, rebuilt from their copies.
+    for declaration in rebuilt_inline_declarations(code, primary_obj):
+        output_lines.extend(f"{indent_str}{line}" for line in declaration.splitlines())
+        output_lines.append("")
+
     # Emit any anonymous closures referenced by this class as private helpers,
     # except the ones already rendered inline at their creation site.
     for findex, helper_ir in sorted(helper_irs.items()):
@@ -4760,6 +4768,24 @@ def _class_body(
 
     output_lines.append("}")
     return disasm.source_paths("\n".join(output_lines)), referenced_classes, super_name
+
+
+def rebuilt_inline_declarations(code: Bytecode, obj: Obj) -> List[str]:
+    """Declarations of the inline functions of `obj` rebuilt from their copies
+    (see `decomp.inline_calls`), which the bytecode no longer holds."""
+    declarations = []
+    for template in inline_index(code).rebuilt.get(id(obj), ()):
+        if template.ambiguous or template.expression is None:
+            continue
+        params = ", ".join(
+            f"v{i}: {disasm._haxe_annotation(code, typ)}" for i, typ in enumerate(template.param_types)
+        )
+        ret = disasm._haxe_annotation(code, template.expression.get_type())
+        body = _expression_to_haxe(template.expression, code, None)
+        declarations.append(
+            f"public static inline function {template.name}({params}): {ret} {{\n{_indent_str(1)}return {body};\n}}"
+        )
+    return declarations
 
 
 def _class_pseudo_recursive(

@@ -466,6 +466,27 @@ class IRCall(IRExpression):
         return f"<IRCall: {self.target}({', '.join([str(arg) for arg in self.args])})>"
 
 
+class IRInlineCall(IRExpression):
+    """A call to an inline function no longer in the bytecode, rebuilt from its
+    inlined copies (see `decomp.inline_calls`): `Owner.name(args)`."""
+
+    def __init__(self, code: Bytecode, owner: str, name: str, args: List[IRExpression], ret: Type):
+        super().__init__(code)
+        self.owner = owner
+        self.name = name
+        self.args = args
+        self.ret = ret
+
+    def get_type(self) -> Type:
+        return self.ret
+
+    def get_children(self) -> List[IRStatement]:
+        return list(self.args)
+
+    def __repr__(self) -> str:
+        return f"<IRInlineCall: {self.owner}.{self.name}({', '.join(str(a) for a in self.args)})>"
+
+
 class IRBoolExpr(IRExpression):
     """Base class for boolean expressions"""
 
