@@ -604,6 +604,16 @@ class IRBoolMaterializationCollapser(TraversingIROptimizer):
                         ):
                             cond = copy.copy(cond)
                             cond.invert()
+                        elif isinstance(cond, IRBoolExpr) and cond.op in (
+                            IRBoolExpr.CompareType.AND,
+                            IRBoolExpr.CompareType.OR,
+                        ):
+                            # The chain came from jumps, not a `!` over a value:
+                            # De Morgan gives back the jumps' own condition.
+                            try:
+                                cond.invert()
+                            except DecompError:
+                                cond = IRNot(self.func.code, cond)
                         else:
                             cond = cond.expr if isinstance(cond, IRNot) else IRNot(self.func.code, cond)
                     assign = IRAssign(self.func.code, target, cond)
