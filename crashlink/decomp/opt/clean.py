@@ -2710,6 +2710,20 @@ class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
     """
 
     TARGET_OPCODES = {"New"}
+    # Where `_set_child` can put a folded temp's value. Not a reference: `new Ref(t)`
+    # takes the temp's address, which substituting would change.
+    _SETTABLE_PARENTS = (
+        IRArithmetic,
+        IRBoolExpr,
+        IRCall,
+        IRField,
+        IRCast,
+        IRArrayAccess,
+        IRNew,
+        IREnumConstruct,
+        IREnumField,
+        IRArrayLiteral,
+    )
 
     def visit_block(self, block: IRBlock) -> None:
         made_change = True
@@ -2749,8 +2763,13 @@ class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
             return None
         temp = stmt.target
 
-        fields: List[Tuple[str, IRExpression]] = []
+        # HL allocates the object, then evaluates and stores each field in order; a
+        # field's value may be computed into temps first. A literal evaluates its
+        # fields in the same order, so those temps fold into the value they feed.
+        stores: List[Tuple[str, IRExpression, List[Tuple[IRLocal, IRExpression]]]] = []
+        pending: List[Tuple[IRLocal, IRExpression]] = []
         j = start + 1
+        end = j
         while j < len(stmts):
             s = stmts[j]
             if (
@@ -2759,35 +2778,113 @@ class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
                 and s.target.target == temp
                 and isinstance(s.expr, IRExpression)
                 and not self._expr_uses_local(s.expr, temp)
-                and all(name != s.target.field_name for name, _ in fields)
+                and all(name != s.target.field_name for name, _, _ in stores)
             ):
-                fields.append((s.target.field_name, s.expr))
+                if not self._temps_fold_into(s.expr, pending, stmts, j):
+                    break
+                stores.append((s.target.field_name, s.expr, pending))
+                pending = []
+                j += 1
+                end = j
+                continue
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRLocal)
+                and re.fullmatch(r"var\d+", s.target.name)
+                and s.target != temp
+                and isinstance(s.expr, IRExpression)
+                and not self._expr_uses_local(s.expr, temp)
+                and all(s.target != local for local, _ in pending)
+            ):
+                pending.append((s.target, s.expr))
                 j += 1
                 continue
             break
+        j = end
 
-        if not fields:
+        if not stores:
             return None
 
-        literal = IRObjectLiteral(self.func.code, fields)
+        # The field values are only rewritten once the fold is certain.
+        literal = IRObjectLiteral(self.func.code, [])
+
+        def commit() -> None:
+            literal.fields = [(name, self._substitute_temps(value, temps)) for name, value, temps in stores]
+
         if (
             j < len(stmts)
             and self._count_local_refs(stmts[j], temp) == 1
             and not any(self._stmt_uses_local(later, temp) for later in stmts[j + 1 :])
             and self._substitute_use(stmts[j], temp, literal)
         ):
+            commit()
             stmts[j].adopt(*stmts[start:j])  # the alloc + field-assign statements are dropped
             return stmts[j], j - start + 1
 
         # Used more than once: the literal initialises the local. A structure type
         # (what the local is declared as) needs every one of its fields.
-        if isinstance(alloc_defn, Virtual) and {name for name, _ in fields} != {
+        if isinstance(alloc_defn, Virtual) and {name for name, _, _ in stores} != {
             field.name.resolve(self.func.code) for field in alloc_defn.fields
         }:
             return None
+        commit()
         init = IRAssign(self.func.code, temp, literal)
         init.adopt(*stmts[start:j])
         return init, j - start
+
+    def _temps_fold_into(
+        self,
+        value: IRExpression,
+        temps: List[Tuple[IRLocal, IRExpression]],
+        stmts: List[IRStatement],
+        store_idx: int,
+    ) -> bool:
+        """Whether the temps computed for a field fold into its `value`.
+
+        Each has to be read exactly once, by the value or by a later temp that is, in
+        the order the temps were computed, where it can be replaced, and never again
+        after the store.
+        """
+        if not temps:
+            return True
+        defs = {local.name: expr for local, expr in temps}
+        order: List[str] = []
+        replaceable = True
+
+        def walk(expr: IRStatement, parent: Optional[IRStatement]) -> None:
+            nonlocal replaceable
+            if isinstance(expr, IRLocal) and expr.name in defs:
+                if parent is not None and not isinstance(parent, self._SETTABLE_PARENTS):
+                    replaceable = False
+                walk(defs[expr.name], None)
+                order.append(expr.name)
+                return
+            for child in expr.get_children():
+                walk(child, expr)
+
+        walk(value, None)
+        if not replaceable or order != [local.name for local, _ in temps]:
+            return False
+        for local, _ in temps:
+            for later in stmts[store_idx + 1 :]:
+                if isinstance(later, IRAssign) and later.target == local:
+                    if self._expr_uses_local(later.expr, local):
+                        return False
+                    break
+                if self._stmt_uses_local(later, local):
+                    return False
+        return True
+
+    def _substitute_temps(
+        self, value: IRExpression, temps: List[Tuple[IRLocal, IRExpression]]
+    ) -> IRExpression:
+        """`value` with the temps `_temps_fold_into` accepted replaced by what they hold."""
+        for local, expr in reversed(temps):
+            if value == local:
+                value = expr
+            else:
+                self._replace_in_expr(value, local, expr)
+        return value
 
     def _substitute_use(self, stmt: IRStatement, local: IRLocal, replacement: IRExpression) -> bool:
         if isinstance(stmt, IRAssign):
