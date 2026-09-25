@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, TypeVar
 
 from ..core import (
     Bytecode,
+    Fun,
     Function,
     Native,
     Opcode,
@@ -444,12 +445,13 @@ class IRCall(IRExpression):
             raise DecompError("Non-CLOSURE calls must not have a local target")
 
     def get_type(self) -> Type:
-        # for now, assume closure calls return dynamic type
-        if self.call_type == IRCall.CallType.CLOSURE:
-            return _get_type_in_code(self.code, "Dyn")
+        """The type of the value the call returns."""
         if self.call_type == IRCall.CallType.THIS or self.target is None:
             return _get_type_in_code(self.code, "Obj")
-        return self.target.get_type()
+        callee = self.target.get_type().definition
+        if isinstance(callee, Fun):
+            return callee.ret.resolve(self.code)
+        return _get_type_in_code(self.code, "Dyn")
 
     def get_children(self) -> List[IRStatement]:
         children: List[IRStatement] = []

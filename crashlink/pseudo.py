@@ -1192,6 +1192,7 @@ def _expression_to_haxe(
             and isinstance(source_def, Obj)
             and target_def is not source_def
             and not _is_ancestor(code, target_def, source_def)
+            and not inner.startswith("cast ")  # already unchecked, typed by its context
         ):
             # A downcast (`Entity` to `en.Hero`) is only implicit from Dynamic; from a
             # class it needs `cast`, which compiles to the same SafeCast.
