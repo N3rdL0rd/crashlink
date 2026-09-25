@@ -619,6 +619,167 @@ class IRBoolMaterializationCollapser(TraversingIROptimizer):
         block.statements = new_statements
 
 
+class IRShortCircuitValueRecovery(TraversingIROptimizer):
+    """
+    Recovers `&&` and `||` used as values. HL lowers `v = a && b` to
+    `if (a) { v = b; } else { v = false; }`, and `return a || b` to a branch
+    that returns `true` beside one that computes `b` (the return is duplicated
+    into both paths). The constant arm always comes after the other in the
+    bytecode, which is what separates this from a source guard like
+    `if (!a) return false; return b;`, so other layouts are left alone.
+    """
+
+    @staticmethod
+    def _single(block: Optional[IRBlock]) -> Optional[IRStatement]:
+        return block.statements[0] if block is not None and len(block.statements) == 1 else None
+
+    @staticmethod
+    def _bool_const(expr: Optional[IRExpression]) -> Optional[bool]:
+        if isinstance(expr, IRConst) and expr.const_type == IRConst.ConstType.BOOL:
+            return bool(expr.value)
+        return None
+
+    @staticmethod
+    def _is_bool(expr: Optional[IRExpression]) -> bool:
+        return expr is not None and expr.get_type().kind.value == Type.Kind.BOOL.value
+
+    def _as_bool_expr(self, expr: IRExpression) -> IRBoolExpr:
+        if isinstance(expr, IRBoolExpr):
+            return expr
+        return IRBoolExpr(self.func.code, IRBoolExpr.CompareType.ISTRUE, expr)
+
+    def _combine(
+        self, cond: IRExpression, const_on_true: bool, const: bool, value: IRExpression
+    ) -> IRBoolExpr:
+        """`cond ? const : value` (or `cond ? value : const`) as `&&`/`||`."""
+        left = self._as_bool_expr(cond)
+        if const_on_true != const:
+            # `c ? false : v` is `!c && v`, and `c ? v : true` is `!c || v`.
+            try:
+                left.invert()
+            except DecompError:
+                left = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.NOT, left)
+        op = IRBoolExpr.CompareType.OR if const else IRBoolExpr.CompareType.AND
+        return IRBoolExpr(self.func.code, op, left, self._as_bool_expr(value))
+
+    def _const_after(self, const_part: IRBlock, value_part: IRBlock) -> bool:
+        const_op = IRElseFlattener._first_op(const_part)
+        value_op = IRElseFlattener._first_op(value_part)
+        return const_op is not None and value_op is not None and const_op > value_op
+
+    def _value_arm(self, stmt: IRStatement, const_arm: IRStatement) -> Optional[Tuple[bool, IRExpression]]:
+        """The constant and the value of a (constant arm, value arm) pair of the
+        same kind: two returns, or two writes to one local."""
+        if isinstance(const_arm, IRReturn) and isinstance(stmt, IRReturn):
+            const, value = self._bool_const(const_arm.value), stmt.value
+        elif (
+            isinstance(const_arm, IRAssign)
+            and isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRLocal)
+            and const_arm.target == stmt.target
+            and isinstance(stmt.expr, IRExpression)
+        ):
+            const, value = self._bool_const(const_arm.expr), stmt.expr
+        else:
+            return None
+        if const is None or value is None or self._bool_const(value) is not None or not self._is_bool(value):
+            return None
+        return const, value
+
+    def _rewrite(self, stmts: List[IRStatement], i: int) -> Optional[Tuple[IRStatement, int]]:
+        """The statement replacing `stmts[i]` and how many statements it spans."""
+        stmt = stmts[i]
+        assert isinstance(stmt, IRConditional)
+        code = self.func.code
+        t, f = self._single(stmt.true_block), self._single(stmt.false_block)
+        nxt = stmts[i + 1] if i + 1 < len(stmts) else None
+        if t is None:
+            return None
+        for const_on_true, const_arm, value_arm, const_block, value_block in (
+            (True, t, f, stmt.true_block, stmt.false_block),
+            (False, f, t, stmt.false_block, stmt.true_block),
+        ):
+            if const_arm is None or value_arm is None or not self._const_after(const_block, value_block):
+                continue
+            pair = self._value_arm(value_arm, const_arm)
+            if pair is not None:
+                # `if (c) { v = b; } else { v = K; }`, or the same with returns.
+                combined = self._combine(stmt.condition, const_on_true, pair[0], pair[1])
+                if isinstance(value_arm, IRReturn):
+                    return IRReturn(code, combined), 1
+                assert isinstance(value_arm, IRAssign)
+                return IRAssign(code, value_arm.target, combined), 1
+            if (
+                isinstance(const_arm, IRReturn)
+                and isinstance(value_arm, IRAssign)
+                and isinstance(value_arm.target, IRLocal)
+                and isinstance(nxt, IRReturn)
+                and nxt.value == value_arm.target
+                and isinstance(value_arm.expr, IRExpression)
+                and self._is_bool(value_arm.expr)
+                and (const := self._bool_const(const_arm.value)) is not None
+            ):
+                # `if (c) { v = b; } else { return K; } return v;`
+                return IRAssign(
+                    code,
+                    value_arm.target,
+                    self._combine(stmt.condition, const_on_true, const, value_arm.expr),
+                ), 1
+        if (
+            isinstance(t, IRReturn)
+            and (const := self._bool_const(t.value)) is not None
+            and not (stmt.false_block and stmt.false_block.statements)
+            and nxt is not None
+        ):
+            # Flattened: `if (c) { return K; } return b;` or `... v = b; return v;`
+            after = stmts[i + 2] if i + 2 < len(stmts) else None
+            if isinstance(nxt, IRReturn) and nxt.value is not None:
+                value, span, rebuilt = nxt.value, 2, None
+            elif (
+                isinstance(nxt, IRAssign)
+                and isinstance(nxt.target, IRLocal)
+                and isinstance(after, IRReturn)
+                and after.value == nxt.target
+                and isinstance(nxt.expr, IRExpression)
+            ):
+                value, span, rebuilt = nxt.expr, 2, nxt.target
+            else:
+                return None
+            if self._bool_const(value) is not None or not self._is_bool(value):
+                return None
+            value_part = IRBlock(code)
+            value_part.statements = [nxt]
+            if not self._const_after(stmt.true_block, value_part):
+                return None
+            combined = self._combine(stmt.condition, True, const, value)
+            if rebuilt is None:
+                return IRReturn(code, combined), span
+            return IRAssign(code, rebuilt, combined), span
+        return None
+
+    def visit_block(self, block: IRBlock) -> None:
+        stmts = block.statements
+        new_statements: List[IRStatement] = []
+        changed = False
+        i = 0
+        while i < len(stmts):
+            stmt = stmts[i]
+            rewritten = self._rewrite(stmts, i) if isinstance(stmt, IRConditional) else None
+            if rewritten is None:
+                new_statements.append(stmt)
+                i += 1
+                continue
+            replacement, span = rewritten
+            assert isinstance(stmt, IRConditional)
+            arms = [*stmt.true_block.statements, *(stmt.false_block.statements if stmt.false_block else [])]
+            replacement.adopt(*stmts[i : i + span], *arms)
+            new_statements.append(replacement)
+            i += span
+            changed = True
+        if changed:
+            block.statements = new_statements
+
+
 class IRTernaryRecovery(TraversingIROptimizer):
     """Recovers the ternary operator from HL's statement-level conditional write.
 

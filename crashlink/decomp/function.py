@@ -108,6 +108,7 @@ from .opt.clean import (
     IRDynamicMethodInitEliminator,
     IRShiftConstantOptimizer,
     IRGuardOrMerger,
+    IRShortCircuitValueRecovery,
     IRTernaryRecovery,
 )
 from .opt.strings import (
@@ -383,6 +384,7 @@ class IRFunction:
                 IRGuardOrMerger(self),
                 IRLoopTailContinueFolder(self),
                 IRRedundantRecomputeEliminator(self),
+                IRShortCircuitValueRecovery(self),
                 IRTernaryRecovery(self),
                 IREmptyConditionalNormalizer(self),
                 IRTerminalValueInliner(self),
