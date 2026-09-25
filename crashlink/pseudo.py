@@ -2097,7 +2097,16 @@ def _generate_statements(
             case_subs: List[Dict[IRLocal, Tuple[str, Set[IRLocal]]]] = []
             for case_value, case_block in stmt.cases.items():
                 pattern = stmt.enum_patterns.get(case_value)
-                param_names = None if pattern else _enum_case_params(case_block, switch_value_expr)
+                unbound: Optional[Set[str]] = getattr(ir_function, "_unbound_reads", None)
+                if unbound is None and ir_function is not None:
+                    unbound = _unbound_reads(ir_function.block)
+                    setattr(ir_function, "_unbound_reads", unbound)
+                captures = (
+                    None
+                    if pattern or unbound is None
+                    else _pattern_captures(case_block, switch_value_expr, unbound)
+                )
+                param_names = [capture for capture, _ in captures] if captures else None
                 case_str = ", ".join(
                     _enum_pattern_to_haxe(stmt.enum_patterns[value], code)
                     if pattern
@@ -2105,6 +2114,9 @@ def _generate_statements(
                     for value in stmt.case_values(case_value)
                 )
                 output_lines.append(f"{indent}    case {case_str}:")
+                for capture, local in captures or ():
+                    if local is not None:
+                        output_lines.append(f"{indent}        {local} = {capture};")
                 case_statements = case_block.statements[len(param_names) if param_names else 0 :]
                 branch_subs = render_subs.copy()
                 output_lines.extend(
@@ -2116,9 +2128,9 @@ def _generate_statements(
                     )
                 )
                 case_subs.append(branch_subs)
-                if param_names:
-                    for name in param_names:
-                        declared_vars_in_scope.add(name)
+                if captures:
+                    for capture, local in captures:
+                        declared_vars_in_scope.add(local or capture)
                 else:
                     for s in case_statements:
                         if isinstance(s, IRAssign) and isinstance(s.target, IRLocal):
@@ -3422,6 +3434,66 @@ def _enum_case_params(case_block: IRBlock, switch_value: IRExpression) -> Option
     return params if params else None
 
 
+def _switch_case_bindings(switch_stmt: IRSwitch) -> Dict[int, List[str]]:
+    """Per case block (by id), the locals its `local = value.paramN` prologue binds."""
+    if isinstance(switch_stmt.value, IREnumIndex):
+        switch_value = switch_stmt.value.value
+    else:
+        detected = _detect_enum_value_from_cases(switch_stmt)
+        switch_value = detected if detected is not None else switch_stmt.value
+    bindings: Dict[int, List[str]] = {}
+    for case_value, block in switch_stmt.cases.items():
+        if case_value in switch_stmt.enum_patterns:
+            continue
+        params = _enum_case_params(block, switch_value)
+        if params:
+            bindings[id(block)] = params
+    return bindings
+
+
+def _unbound_reads(root: IRStatement) -> Set[str]:
+    """Locals read somewhere other than inside a case that binds them itself.
+
+    A pattern variable is scoped to its case: a local read anywhere else can't be one.
+    """
+    names: Set[str] = set()
+    seen: Set[int] = set()
+
+    def walk(node: IRStatement, bound: FrozenSet[str]) -> None:
+        if id(node) in seen:
+            return
+        seen.add(id(node))
+        if isinstance(node, IRLocal):
+            if node.name not in bound:
+                names.add(node.name)
+            return
+        if isinstance(node, IRAssign) and isinstance(node.target, IRLocal):
+            walk(node.expr, bound)
+            return
+        if isinstance(node, IRSwitch):
+            bindings = _switch_case_bindings(node)
+            for child in node.get_children():
+                walk(child, bound | frozenset(bindings.get(id(child), ())))
+            return
+        for child in node.get_children():
+            walk(child, bound)
+
+    walk(root, frozenset())
+    return names
+
+
+def _pattern_captures(
+    case_block: IRBlock, switch_value: IRExpression, unbound: Set[str]
+) -> Optional[List[Tuple[str, Optional[str]]]]:
+    """The names a case pattern binds for the `local = value.paramN` prologue of its
+    block, each with the local to assign it to when that local is also read outside
+    the cases binding it (see `_unbound_reads`), else None."""
+    params = _enum_case_params(case_block, switch_value)
+    if params is None:
+        return None
+    return [(f"arg{i}", name) if name in unbound else (name, None) for i, name in enumerate(params)]
+
+
 def _case_value_to_haxe(
     case_value: IRConst,
     enum_type: Optional["Enum"],
@@ -3769,6 +3841,7 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
     locals: Dict[str, str] = {}
     seen: Set[int] = set()
     pattern_locals: Set[str] = set()
+    unbound = _unbound_reads(root)
 
     def collect_pattern(pattern: IREnumPattern) -> None:
         for slot in pattern.slots.values():
@@ -3792,13 +3865,13 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
             for case_value, case_block in stmt.cases.items():
                 if case_value in stmt.enum_patterns:
                     continue
-                params = _enum_case_params(case_block, switch_value)
-                if params:
-                    pattern_locals.update(params)
+                captures = _pattern_captures(case_block, switch_value, unbound)
+                if captures:
+                    pattern_locals.update(capture for capture, local in captures if local is None)
             if stmt.default is not None:
-                params = _enum_case_params(stmt.default, switch_value)
-                if params:
-                    pattern_locals.update(params)
+                captures = _pattern_captures(stmt.default, switch_value, unbound)
+                if captures:
+                    pattern_locals.update(capture for capture, local in captures if local is None)
         if isinstance(stmt, IRLocal):
             if stmt.name in pattern_locals:
                 return
