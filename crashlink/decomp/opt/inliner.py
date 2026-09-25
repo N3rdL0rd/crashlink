@@ -2121,6 +2121,22 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                             and isinstance(next_stmt.target, IRLocal)
                             and _ScopedLocalLifetime.kills(next_stmt.target, temp_local)
                         )
+                        # A store to a field the expression reads is still exact when the
+                        # temp is the first thing its right-hand side evaluates (`t = o.f;
+                        # o.f = t op r` is `o.f op= r`): the read happens before `r` and the store.
+                        free_locals = self._collect_free_locals(expr_to_inline)
+                        if (
+                            isinstance(next_stmt, IRAssign)
+                            and isinstance(next_stmt.target, IRField)
+                            and (
+                                next_stmt.expr == temp_local
+                                or (
+                                    isinstance(next_stmt.expr, IRArithmetic)
+                                    and next_stmt.expr.left == temp_local
+                                )
+                            )
+                        ):
+                            free_locals.discard(f"field:{next_stmt.target.field_name}")
                         if (
                             self._stmt_contains_local(next_stmt, temp_local)
                             and not (
@@ -2135,9 +2151,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                                 or rebinds
                                 or not self._is_local_redefined(temp_local, [next_stmt])
                             )
-                            and not self._stmt_reassigns_any(
-                                next_stmt, self._collect_free_locals(expr_to_inline)
-                            )
+                            and not self._stmt_reassigns_any(next_stmt, free_locals)
                         ):
                             # `_provably_loop_fresh` overrides the hazard/continuation
                             # check below when it has already independently proven the
