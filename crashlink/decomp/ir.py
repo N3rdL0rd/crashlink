@@ -237,12 +237,20 @@ class IRLocal(IRExpression):
         # only signal that the source used `UInt` rather than `Int` — without
         # it, the conversion recompiles as the (wrong) signed `ToSFloat`.
         self.is_unsigned: bool = False
+        # The live-range web this local stands for, when its register was split into
+        # webs (see IRFunction._build_webs); None otherwise.
+        self.web: Optional[int] = None
 
     def get_type(self) -> Type:
         return self.type.resolve(self.code)
 
     def same_register(self, other: "IRLocal") -> bool:
-        """Return True if this local and `other` originate from the same VM register."""
+        """Return True if this local and `other` originate from the same VM register.
+
+        Two webs of one register (see `IRFunction._build_webs`) are separate values that
+        merely shared storage: neither redefines the other."""
+        if self.web is not None and other.web is not None and self.web != other.web:
+            return False
         return self.reg_idx is not None and other.reg_idx is not None and self.reg_idx == other.reg_idx
 
     def __eq__(self, other: object) -> bool:

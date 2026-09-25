@@ -246,6 +246,30 @@ def _cached_enum_global_map(code: Bytecode) -> Dict[int, Tuple[str, tIndex]]:
     return cached
 
 
+_DST_READ_OPS = frozenset({"Setref", "Incr", "Decr"})
+
+
+def _op_reads(op: Opcode) -> List[int]:
+    """Registers `op` reads (`dst` too for Setref/Incr/Decr)."""
+    regs: List[int] = []
+    for key, operand in op.df.items():
+        if key == "dst" and op.op not in _DST_READ_OPS:
+            continue
+        if isinstance(operand, Reg):
+            regs.append(operand.value)
+        elif isinstance(operand, Regs):
+            regs.extend(r.value for r in operand.value)
+    return regs
+
+
+def _op_writes(op: Opcode) -> Optional[int]:
+    """The register `op` writes, if any (Setref writes through its `dst`, not to it)."""
+    dst = op.df.get("dst")
+    if isinstance(dst, Reg) and op.op != "Setref":
+        return dst.value
+    return None
+
+
 class IRFunction:
     """
     Intermediate representation of a function.
@@ -393,6 +417,7 @@ class IRFunction:
         self._build_assign_map()
         self._new_defined_regs: Set[int] = set()
         self._name_locals()
+        self._build_webs()
         if not no_lift:
             if self.cfg.entry:
                 self.block = self._lift_block(self.cfg.entry, set())
@@ -564,8 +589,200 @@ class IRFunction:
                 return True
         return False
 
+    def _build_webs(self) -> None:
+        """Split each compiler temporary's register into webs: definitions that reach a
+        common use share a web, and each web becomes its own local.
+
+        HashLink reuses a temporary's register for unrelated values (`reg3` holds a sum,
+        then an index, then a count). As one local, every reuse reads as a reassignment
+        of one variable, which keeps the inliner from folding each value back into the
+        expression it came from. Only unnamed registers are split: parameters and
+        debug-named variables are real source variables. A register whose address
+        escapes (a `Ref` read by anything but the call right after it, which is how
+        natives such as `itos` take out-parameters), that a try body writes (a catch
+        handler sees it mid-way), or that receives a caught exception keeps a single local.
+        """
+        self._web_of_def: Dict[int, int] = {}
+        self._web_locals: Dict[int, IRLocal] = {}
+        self._web_names: Dict[int, int] = {}
+        assert self.cfg is not None
+        ops = self.ops
+        regs = self.func.regs
+        if not ops or self.cfg.entry is None:
+            return
+        nargs = self.func.resolve_nargs(self.code)
+        eligible = {
+            r
+            for r in range(nargs, len(regs))
+            if r not in self._user_reg_indices
+            and regs[r].resolve(self.code).kind.value != Type.Kind.VOID.value
+        }
+        calls = ("Call0", "Call1", "Call2", "Call3", "Call4", "CallN")
+        readers: Dict[int, List[int]] = {}
+        for i, op in enumerate(ops):
+            for r in _op_reads(op):
+                readers.setdefault(r, []).append(i)
+
+        def out_param(i: int) -> bool:
+            # Every read of the ref register is a call right after a `Ref` writing it.
+            ref = ops[i].df["dst"].value
+            return all(
+                k > 0 and ops[k].op in calls and ops[k - 1].op == "Ref" and _op_writes(ops[k - 1]) == ref
+                for k in readers.get(ref, ())
+            )
+
+        for i, op in enumerate(ops):
+            if op.op == "Ref":
+                # An out-parameter is only written through during the call itself,
+                # which reaching definitions already attribute to the right web.
+                if not out_param(i):
+                    eligible.discard(op.df["src"].value)
+            elif op.op == "Trap":
+                # The exception register belongs to the catch (lifted separately).
+                eligible.discard(op.df["exc"].value)
+                handler = i + op.df["offset"].value + 1
+                for k in range(i + 1, min(handler, len(ops))):
+                    dst = _op_writes(ops[k])
+                    if dst is not None:
+                        eligible.discard(dst)
+        if not eligible:
+            return
+
+        nodes = list(self.cfg.nodes)
+        # Liveness of eligible registers at each block entry.
+        uses: Dict[CFNode, Set[int]] = {}
+        defs: Dict[CFNode, Set[int]] = {}
+        for node in nodes:
+            read_first: Set[int] = set()
+            written: Set[int] = set()
+            for op in node.ops:
+                for r in _op_reads(op):
+                    if r in eligible and r not in written:
+                        read_first.add(r)
+                w = _op_writes(op)
+                if w in eligible:
+                    written.add(w)
+            uses[node], defs[node] = read_first, written
+        live_in: Dict[CFNode, Set[int]] = {node: set(uses[node]) for node in nodes}
+        changed = True
+        while changed:
+            changed = False
+            for node in reversed(nodes):
+                out: Set[int] = set()
+                for succ, _ in node.branches:
+                    out |= live_in.get(succ, set())
+                new = uses[node] | (out - defs[node])
+                if new != live_in[node]:
+                    live_in[node] = new
+                    changed = True
+
+        parent: Dict[int, int] = {}
+
+        def find(x: int) -> int:
+            parent.setdefault(x, x)
+            root = x
+            while parent[root] != root:
+                root = parent[root]
+            while parent[x] != root:
+                parent[x], x = root, parent[x]
+            return root
+
+        def union(a: int, b: int) -> bool:
+            ra, rb = find(a), find(b)
+            if ra == rb:
+                return False
+            parent[max(ra, rb)] = min(ra, rb)
+            return True
+
+        # Forward: which definition holds each register. Entry "definitions" are
+        # negative ids; two definitions meeting at a join where the register is still
+        # live are one web.
+        state_in: Dict[CFNode, Dict[int, int]] = {self.cfg.entry: {r: -(r + 1) for r in eligible}}
+        read_webs: Set[int] = set()
+        pending = [self.cfg.entry]
+        while pending:
+            node = pending.pop()
+            state = dict(state_in[node])
+            for k, op in enumerate(node.ops):
+                for r in _op_reads(op):
+                    if r in eligible and r in state:
+                        read_webs.add(state[r])
+                w = _op_writes(op)
+                if w in eligible:
+                    state[w] = node.base_offset + k
+                    find(node.base_offset + k)
+            for succ, _ in node.branches:
+                target = state_in.get(succ)
+                if target is None:
+                    state_in[succ] = dict(state)
+                    pending.append(succ)
+                    continue
+                grew = False
+                live = live_in.get(succ, set())
+                for r, holder in state.items():
+                    if r not in target:
+                        target[r] = holder
+                        grew = True
+                    elif r in live and union(target[r], holder):
+                        grew = True
+                if grew:
+                    pending.append(succ)
+
+        entry_read = {find(-(r + 1)) for r in eligible if find(-(r + 1)) in {find(x) for x in read_webs}}
+        next_name = len(regs)
+        named_first: Set[int] = set()
+        for idx in sorted(i for i in parent if i >= 0):
+            r = _op_writes(ops[idx])
+            if r is None:
+                continue
+            web = find(idx)
+            self._web_of_def[idx] = web
+            if web in self._web_names:
+                continue
+            if web == find(-(r + 1)) or (r not in named_first and find(-(r + 1)) not in entry_read):
+                # The register's first web keeps its `varN` name.
+                self._web_names[web] = r
+                named_first.add(r)
+            else:
+                self._web_names[web] = next_name
+                next_name += 1
+        for r in eligible:
+            entry = find(-(r + 1))
+            if entry in entry_read:
+                self._web_locals[entry] = self.locals[r]
+                self.locals[r].web = entry
+
+    def _enter_web(self, op_idx: int) -> bool:
+        """Switch the register `op_idx` writes to its web's local; False if it isn't split."""
+        web = self._web_of_def.get(op_idx)
+        if web is None:
+            return False
+        reg = _op_writes(self.ops[op_idx])
+        assert reg is not None
+        local = self._web_locals.get(web)
+        if local is None:
+            number = self._web_names[web]
+            if (
+                number == reg
+                and self.locals[reg].defining_op_idx is None
+                and self.locals[reg].name == f"var{reg}"
+            ):
+                local = self.locals[reg]
+                local.defining_op_idx = op_idx
+            else:
+                local = IRLocal(
+                    f"var{number}", self.func.regs[reg], code=self.code, reg_idx=reg, defining_op_idx=op_idx
+                )
+                self.all_locals.append(local)
+            local.web = web
+            self._web_locals[web] = local
+        self.locals[reg] = local
+        return True
+
     def _check_assign(self, op_idx: int) -> None:
         """Check if this op index has an assign entry and split the local if needed."""
+        if self._enter_web(op_idx):
+            return
         op = self.ops[op_idx]
         new_reg_idx: Optional[int] = None
         prior_name: Optional[str] = None

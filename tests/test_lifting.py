@@ -253,8 +253,10 @@ def test_loop_carried_value_preserved_after_internal_break():
     # result in a loop-carried temporary. A previous inliner bug removed the
     # assignment and left `p = 0; return p;` instead of the real result.
     out = _decompile_at("tests/haxe/Clazz.hl", 5)
-    assert "p = var9" in out
-    assert "p = var9 >> 1" in out
+    carried = re.search(r"var p: Int = (var\d+);", out)
+    assert carried, out
+    assert f"p = {carried[1]} >> 1" in out
+    assert f"{carried[1]} = var" in out
     assert "p = 0 >> 1" not in out
 
 

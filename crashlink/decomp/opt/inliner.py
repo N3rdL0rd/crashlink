@@ -125,6 +125,15 @@ class _ScopedLocalLifetime:
     def aliases(left: IRLocal, right: IRLocal) -> bool:
         return left.name == right.name or left.same_register(right)
 
+    @staticmethod
+    def kills(target: IRLocal, local: IRLocal) -> bool:
+        """Whether writing `target` overwrites `local`'s storage.
+
+        Unlike a read, a write ends the value whichever web of the register it
+        starts (see `IRFunction._build_webs`).
+        """
+        return target.name == local.name or (target.reg_idx is not None and target.reg_idx == local.reg_idx)
+
     def reads(self, node: IRStatement, local: IRLocal, excluded: Optional[IRBlock] = None) -> bool:
         seen: Set[int] = set()
 
@@ -151,7 +160,7 @@ class _ScopedLocalLifetime:
                     if (
                         isinstance(stmt, IRAssign)
                         and isinstance(stmt.target, IRLocal)
-                        and self.aliases(stmt.target, local)
+                        and self.kills(stmt.target, local)
                     ):
                         return False
                 return False
@@ -167,7 +176,7 @@ class _ScopedLocalLifetime:
                 if (
                     isinstance(stmt, IRAssign)
                     and isinstance(stmt.target, IRLocal)
-                    and self.aliases(stmt.target, local)
+                    and self.kills(stmt.target, local)
                 ):
                     return True
             return True
@@ -259,7 +268,7 @@ class _ScopedLocalLifetime:
             if (
                 isinstance(stmt, IRAssign)
                 and isinstance(stmt.target, IRLocal)
-                and self.aliases(stmt.target, local)
+                and self.kills(stmt.target, local)
             ):
                 return True
         return True
@@ -639,8 +648,12 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
         for s in later_statements:
             if self._stmt_contains_local_read(s, local):
                 return True
-            # a top-level reassignment kills the value; later reads don't count
-            if isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target.name == local.name:
+            # a top-level write to the register kills the value; later reads don't count
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRLocal)
+                and _ScopedLocalLifetime.kills(s.target, local)
+            ):
                 break
         return False
 
@@ -832,7 +845,7 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
                         used_outside = False
                         if not (
                             isinstance(assign_next_stmt.target, IRLocal)
-                            and assign_next_stmt.target.name == assigned_local.name
+                            and _ScopedLocalLifetime.kills(assign_next_stmt.target, assigned_local)
                         ):
                             for s in block.statements[i + 2 :]:
                                 if self._stmt_contains_local_read(s, assigned_local):
@@ -841,7 +854,7 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
                                 if (
                                     isinstance(s, IRAssign)
                                     and isinstance(s.target, IRLocal)
-                                    and s.target.name == assigned_local.name
+                                    and _ScopedLocalLifetime.kills(s.target, assigned_local)
                                 ):
                                     break
                         if used_outside and not self._is_safe_to_duplicate(expr_to_inline, assigned_local):
@@ -2243,6 +2256,16 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                     continue
 
                 remaining_statements = block.statements[i + 1 :]
+                # A top-level write to the register ends this value whichever web it
+                # starts; its right-hand side still reads the old value.
+                for j, s in enumerate(remaining_statements):
+                    if (
+                        isinstance(s, IRAssign)
+                        and isinstance(s.target, IRLocal)
+                        and _ScopedLocalLifetime.kills(s.target, temp_local)
+                    ):
+                        remaining_statements = remaining_statements[: j + 1]
+                        break
                 must_keep_assign = False
                 boundary_stmt: Optional[IRStatement] = None
                 if self.past_kills:
