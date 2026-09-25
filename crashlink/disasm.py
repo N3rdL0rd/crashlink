@@ -53,6 +53,12 @@ def _enum_name(code: Bytecode, definition: Enum) -> str:
     raise ValueError("Anonymous enum definition is not in the bytecode type table")
 
 
+def enum_construct_name(code: Bytecode, definition: Enum, index: int) -> str:
+    """A constructor's name. The one constructor of an anonymous capture
+    context has none, so it gets one that Haxe accepts."""
+    return definition.constructs[index].name.resolve(code) or "Ctx"
+
+
 def type_name(code: Bytecode, typ: Type) -> str:
     """
     Generates a human-readable name for a type.

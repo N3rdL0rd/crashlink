@@ -1910,7 +1910,7 @@ class IRFunction:
                 enum_def = enum_type.resolve(self.code).definition
                 cid = op.df["construct"].value
                 construct_name = (
-                    enum_def.constructs[cid].name.resolve(self.code)
+                    disasm.enum_construct_name(self.code, enum_def, cid)
                     if cid < len(enum_def.constructs)
                     else f"construct_{cid}"
                 )
@@ -1928,7 +1928,7 @@ class IRFunction:
                 enum_def = enum_type.resolve(self.code).definition
                 cid = op.df["construct"].value
                 construct_name = (
-                    enum_def.constructs[cid].name.resolve(self.code)
+                    disasm.enum_construct_name(self.code, enum_def, cid)
                     if cid < len(enum_def.constructs)
                     else f"construct_{cid}"
                 )
@@ -3215,7 +3215,7 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                     enum_def = enum_type.definition
                     cid = op.df["construct"].value
                     cname = (
-                        enum_def.constructs[cid].name.resolve(code)
+                        disasm.enum_construct_name(code, enum_def, cid)
                         if cid < len(enum_def.constructs)
                         else f"construct_{cid}"
                     )

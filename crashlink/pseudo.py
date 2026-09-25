@@ -298,7 +298,7 @@ def _switch_is_exhaustive(switch_stmt: IRSwitch) -> bool:
     enum, _ = _switch_enum(switch_stmt)
     if enum is None:
         return False
-    names = [construct.name.resolve(switch_stmt.code) for construct in enum.constructs]
+    names = [disasm.enum_construct_name(switch_stmt.code, enum, i) for i in range(len(enum.constructs))]
     covered: Set[int] = set()
     for key in switch_stmt.cases:
         for value in switch_stmt.case_values(key):
@@ -3456,7 +3456,7 @@ def _detect_enum_value_from_cases(stmt: "IRSwitch") -> Optional["IRExpression"]:
 def _enum_pattern_to_haxe(pattern: IREnumPattern, code: Bytecode) -> str:
     enum = cast(Enum, pattern.enum_type.resolve(code).definition)
     construct = enum.constructs[pattern.constructor_index]
-    name = construct.name.resolve(code)
+    name = disasm.enum_construct_name(code, enum, pattern.constructor_index)
     if enum.name.value == 0:
         name = f"{disasm._enum_name(code, enum)}.{name}"
     params = []
@@ -3587,7 +3587,7 @@ def _case_value_to_haxe(
         idx = int(case_value.value.value if hasattr(case_value.value, "value") else case_value.value)
         if idx < len(enum_type.constructs):
             construct = enum_type.constructs[idx]
-            name = construct.name.resolve(code)
+            name = disasm.enum_construct_name(code, enum_type, idx)
             params = (
                 param_names
                 if param_names
@@ -4524,8 +4524,8 @@ def _enum_pseudo(enum_def: "Enum", code: Bytecode, name: Optional[str] = None) -
     if name is None:
         name = destaticify(disasm._enum_name(code, enum_def))
     lines = [f"enum {name} {{"]
-    for construct in enum_def.constructs:
-        cname = construct.name.resolve(code)
+    for index, construct in enumerate(enum_def.constructs):
+        cname = disasm.enum_construct_name(code, enum_def, index)
         params = []
         for i, pidx in enumerate(construct.params):
             ptype = pidx.resolve(code)

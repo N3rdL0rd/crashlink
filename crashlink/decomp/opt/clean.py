@@ -3268,8 +3268,11 @@ class IREnumConstructorFolder(TraversingIROptimizer):
                 enum_def = stmt.expr.enum_type_idx.resolve(self.func.code).definition
                 construct = None
                 if isinstance(enum_def, Enum):
-                    for c in enum_def.constructs:
-                        if c.name.resolve(self.func.code) == stmt.expr.construct_name:
+                    for index, c in enumerate(enum_def.constructs):
+                        if (
+                            disasm.enum_construct_name(self.func.code, enum_def, index)
+                            == stmt.expr.construct_name
+                        ):
                             construct = c
                             break
                 if construct is not None and construct.params:
