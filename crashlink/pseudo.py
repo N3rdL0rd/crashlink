@@ -26,7 +26,7 @@ from .core import (
     gIndex,
 )
 from . import disasm
-from . import hxsl
+from . import hxbit, hxsl
 from .decomp import (
     STATIC_INIT_UNRECOVERABLE,
     IRBreak,
@@ -4591,10 +4591,28 @@ def _class_body(
         if isinstance(super_type.definition, Obj):
             super_name = destaticify(super_type.definition.name.resolve(code))
             header += f" extends {super_name}"
+    # A class hxbit's `Serializable` macro rewrote is rendered as written:
+    # without the members the macro generates again on recompile.
+    serializable = hxbit.serializable_class(ir_class)
+    static_methods = ir_class.static_methods
+    methods = ir_class.methods
+    static_fields = ir_class.static_fields
+    fields = ir_class.fields
+    if serializable is not None:
+        if serializable.root:
+            header += " implements hxbit.Serializable"
+        static_methods = [m for m in static_methods if not hxbit.is_generated_method(m)]
+        methods = [m for m in methods if not hxbit.is_generated_method(m)]
+        static_fields = [f for f in static_fields if not hxbit.is_generated_field(code, f[0], f[1], True)]
+        fields = [f for f in fields if not hxbit.is_generated_field(code, f[0], f[1], False)]
+        for method in static_methods + methods:
+            hxbit.restore_serialize_override(method)
+            if serializable.root and code.partial_func_name(method.func) == "__constructor__":
+                hxbit.strip_uid_prologue(method)
     header += " {"
 
     anon_funcs: Dict[int, "Function"] = {}
-    for ir_func in ir_class.static_methods + ir_class.methods:
+    for ir_func in static_methods + methods:
         anon_funcs.update(_collect_anonymous_functions(ir_func.block, code))
     # Static-init recovery renders anonymous closures as bare `__anon_<findex>`
     # identifiers (see _collect_static_field_inits); pull those in too.
@@ -4615,7 +4633,7 @@ def _class_body(
         helper_ir = IRFunction(code, func)
         helper_irs[findex] = helper_ir
         pending.extend(_collect_anonymous_functions(helper_ir.block, code).values())
-    all_methods = ir_class.static_methods + ir_class.methods + list(helper_irs.values())
+    all_methods = static_methods + methods + list(helper_irs.values())
 
     # Closures whose body is a single expression are rendered at the point they
     # are created; the rest stay lifted helpers. Which ones actually got
@@ -4630,7 +4648,7 @@ def _class_body(
         if body is not None:
             inline_bodies[findex] = body
     inlined: Set[int] = set()
-    for ir_func in ir_class.static_methods + ir_class.methods:
+    for ir_func in static_methods + methods:
         setattr(ir_func, "_inline_closure_bodies", inline_bodies)
         setattr(ir_func, "_inlined_closures", inlined)
 
@@ -4639,7 +4657,7 @@ def _class_body(
     func_externs: Dict[int, Tuple[str, int]] = {}
     referenced_classes: Set[str] = set()
     referenced_enums: Dict[str, Enum] = {}
-    annotation_types = [typ for _, typ in ir_class.static_fields + ir_class.fields]
+    annotation_types = [typ for _, typ in static_fields + fields]
     annotation_types.extend(getattr(ir_class, "field_elem_types", {}).values())
     annotation_types.extend(method.func.type.resolve(code) for method in all_methods)
     seen_types: Set[int] = set()
@@ -4678,8 +4696,8 @@ def _class_body(
 
     output_lines.append(header)
 
-    if ir_class.static_fields:
-        for field_name, field_type in ir_class.static_fields:
+    if static_fields:
+        for field_name, field_type in static_fields:
             field_type_haxe = disasm._haxe_annotation(code, field_type)
             if field_type_haxe == "Array<Dynamic>":
                 elem_types = getattr(ir_class, "field_elem_types", {})
@@ -4698,25 +4716,26 @@ def _class_body(
             )
         output_lines.append("")
 
-    if ir_class.fields:
-        for field_name, field_type in ir_class.fields:
+    if fields:
+        for field_name, field_type in fields:
             field_type_haxe = disasm._haxe_annotation(code, field_type)
             if field_type_haxe == "Array<Dynamic>":
                 elem_types = getattr(ir_class, "field_elem_types", {})
                 if field_name in elem_types:
                     elem_haxe = disasm._haxe_annotation(code, elem_types[field_name])
                     field_type_haxe = f"Array<{elem_haxe}>"
-            output_lines.append(f"{indent_str}public var {field_name}: {field_type_haxe};")
+            meta = "@:s " if serializable is not None and field_name in serializable.fields else ""
+            output_lines.append(f"{indent_str}{meta}public var {field_name}: {field_type_haxe};")
         output_lines.append("")
 
-    for ir_func in ir_class.static_methods:
+    for ir_func in static_methods:
         setattr(ir_func, "_containing_class", ir_class)
         func_str = _generate_function_pseudo(ir_func)
         for line in func_str.split("\n"):
             output_lines.append(f"{indent_str}{line}")
         output_lines.append("")
 
-    for ir_func in ir_class.methods:
+    for ir_func in methods:
         setattr(ir_func, "_containing_class", ir_class)
         func_str = _generate_function_pseudo(ir_func)
         for line in func_str.split("\n"):

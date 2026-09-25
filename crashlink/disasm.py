@@ -39,6 +39,7 @@ from .core import (
     is_static_name,
 )
 from .opcodes import opcodes
+from .hxbit import is_serializable_virtual
 
 
 # Kinds of Haxe's basic value types, which can't hold null.
@@ -432,6 +433,8 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                 return "haxe.PosInfos"
             if isinstance(definition, Null):
                 return f"Null<{render(definition.type.resolve(code))}>"
+            if isinstance(definition, Virtual) and not native and is_serializable_virtual(code, definition):
+                return "hxbit.Serializable"
             if isinstance(definition, Virtual) and not native:
                 # An anonymous structure, fields in the order the compiler laid them out.
                 # Function-typed fields are methods (iterators, interfaces): a class's
