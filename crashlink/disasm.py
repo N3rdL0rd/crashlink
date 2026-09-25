@@ -164,7 +164,7 @@ def describe_type(code: Bytecode, index: int) -> str:
     lines = [f"t@{index}  {type_summary(code, index)}  ({defn.__class__.__name__})"]
 
     if isinstance(defn, Obj):
-        if defn.super and defn.super.value is not None:
+        if defn.super is not None and defn.super.value >= 0:
             try:
                 lines.append(f"extends {type_name(code, defn.super.resolve(code))}")
             except Exception:

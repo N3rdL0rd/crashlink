@@ -2142,9 +2142,9 @@ class Bytecode(Serialisable):
         processed_class_ids = set()
 
         def get_all_parent_methods(obj_def: Obj) -> Dict[str, int]:
-            # This helper is likely okay, but let's make it safer
             parent_methods = {}
-            if obj_def.super and obj_def.super.value is not None:
+            # -1 is "no superclass"; resolving it would index the last type.
+            if obj_def.super is not None and obj_def.super.value >= 0:
                 try:
                     super_type = obj_def.super.resolve(self)
                     # Prevent self-inheritance loops.

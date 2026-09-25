@@ -50,6 +50,31 @@ def _make_test_code():
     return code
 
 
+def test_root_class_has_no_superclass():
+    """-1 marks a class without a superclass: it must never resolve, since
+    Python would index the last type. With a subclass last, that looped."""
+    code = _make_test_code()
+    root = len(code.types) - 1
+    child_def = Obj()
+    child_def.name = strRef(0)
+    child_def.super = tIndex(root)
+    child_def._global = gIndex()
+    child_def._global.value = 0
+    child_def.fields = []
+    child_def.protos = []
+    child_def.bindings = []
+    child_type = Type()
+    child_type.kind.value = Type.Kind.OBJ.value
+    child_type.definition = child_def
+    code.types.append(child_type)
+
+    code.virtuals_built = False
+    code._build_virtual_tables()
+
+    assert "extends" not in disasm.describe_type(code, root)
+    assert "extends" in disasm.describe_type(code, root + 1)
+
+
 def _make_operand(param_type):
     if param_type == "Regs":
         regs = Regs()

@@ -2073,7 +2073,7 @@ class Commands(BaseCommands):
                 print(f"  Object Name: s@{obj_def.name.value}(Error resolving string)")
             print(f"    Number of Fields: {obj_def.nfields.value}")
             print(f"    Number of Prototypes: {obj_def.nprotos.value}")
-            if obj_def.super and obj_def.super.value is not None:
+            if obj_def.super is not None and obj_def.super.value >= 0:
                 try:
                     super_type_name = disasm.type_name(self.code, obj_def.super.resolve(self.code))
                     print(f"    Super Type: {super_type_name} (t@{obj_def.super.value})")

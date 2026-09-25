@@ -322,7 +322,7 @@ def get_obj(tindex: int) -> str:
     class_name = obj_def.name.resolve(code)
     lines = [f"--- {class_name} (t@{tindex}) ---"]
 
-    if obj_def.super and obj_def.super.value is not None:
+    if obj_def.super is not None and obj_def.super.value >= 0:
         try:
             super_name = _disasm.type_name(code, obj_def.super.resolve(code))
         except Exception:
