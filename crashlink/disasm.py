@@ -4,6 +4,7 @@ Human-readable disassembly of opcodes and utilities to work at a relatively low 
 
 from __future__ import annotations
 
+import re
 import weakref
 from collections import OrderedDict
 from typing import Any, List, Optional, Dict, Tuple
@@ -204,6 +205,63 @@ def describe_type(code: Bytecode, index: int) -> str:
         lines.extend(users if users else ["  (nothing found)"])
 
     return "\n".join(lines)
+
+
+#: Standard-library types declared in another type's module, by bytecode name. Source
+#: must name them through that module (`Type.ValueType`, not `ValueType`).
+_STD_MODULE_PATHS = {
+    "IMap": "Map.IMap",
+    "SysError": "Sys.SysError",
+    "ValueType": "Type.ValueType",
+    "XmlType": "Xml.XmlType",
+    "haxe.EnumValueTools": "haxe.EnumTools.EnumValueTools",
+    "haxe.MainEvent": "haxe.MainLoop.MainEvent",
+    "haxe.StackItem": "haxe.CallStack.StackItem",
+    "haxe.TypeResolver": "haxe.Unserializer.TypeResolver",
+    "haxe.ds.GenericCell": "haxe.ds.GenericStack.GenericCell",
+    "haxe.ds.TreeNode": "haxe.ds.BalancedTree.TreeNode",
+    "hl.CoreEnum": "hl.BaseType.CoreEnum",
+    "hl.CoreType": "hl.BaseType.CoreType",
+    "hl.Enum": "hl.BaseType.Enum",
+    "hl.GcFlag": "hl.Gc.GcFlag",
+    "hl.NativeArrayIterator": "hl.NativeArray.NativeArrayIterator",
+    "hl.TypeKind": "hl.Type.TypeKind",
+    "hl.types.ArrayDynIterator": "hl.types.ArrayDyn.ArrayDynIterator",
+    "hl.types.ArrayObjIterator": "hl.types.ArrayObj.ArrayObjIterator",
+    "hl.types.BytesIterator": "hl.types.ArrayBytes.BytesIterator",
+    "hl.types.BytesMapData": "hl.types.BytesMap.BytesMapData",
+    "hl.types.Int64MapData": "hl.types.Int64Map.Int64MapData",
+    "hl.types.IntMapData": "hl.types.IntMap.IntMapData",
+    "hl.types.ObjectMapData": "hl.types.ObjectMap.ObjectMapData",
+    "sys.io.FileHandle": "sys.io.File.FileHandle",
+}
+_PRIVATE_TYPE_PATH = re.compile(r"(?<![\w.])((?:[a-z_]\w*\.)*)_([A-Z]\w*)\.([A-Z]\w*)")
+_STD_MODULE_TYPE = re.compile(
+    r"(?<![\w.])("
+    + "|".join(re.escape(name) for name in sorted(_STD_MODULE_PATHS, key=len, reverse=True))
+    + r")(?![\w])"
+)
+_STRING_LITERAL = re.compile(r"\"(?:[^\"\\\n]|\\.)*\"|'(?:[^'\\\n]|\\.)*'")
+
+
+def source_paths(text: str) -> str:
+    """Rewrite type paths in rendered code to the ones source uses: a private type
+    `pkg._Mod.T` (its bytecode name) is `pkg.Mod.T`, and a std type declared in another
+    type's module goes through it (`ValueType` is `Type.ValueType`). String literals are
+    left alone."""
+
+    def fix(code: str) -> str:
+        code = _PRIVATE_TYPE_PATH.sub(r"\1\2.\3", code)
+        return _STD_MODULE_TYPE.sub(lambda m: _STD_MODULE_PATHS[m.group(1)], code)
+
+    out = []
+    last = 0
+    for literal in _STRING_LITERAL.finditer(text):
+        out.append(fix(text[last : literal.start()]))
+        out.append(literal.group(0))
+        last = literal.end()
+    out.append(fix(text[last:]))
+    return "".join(out)
 
 
 #: Generic std classes by bytecode name, with how many type parameters source must give.

@@ -2505,7 +2505,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
 
     output_lines.append("}")
 
-    return "\n".join(output_lines), op_to_line
+    return disasm.source_paths("\n".join(output_lines)), op_to_line
 
 
 def pseudo(ir_func: IRFunction) -> str:
@@ -4465,7 +4465,7 @@ def _class_body(
         output_lines.pop()
 
     output_lines.append("}")
-    return "\n".join(output_lines), referenced_classes, super_name
+    return disasm.source_paths("\n".join(output_lines)), referenced_classes, super_name
 
 
 def _class_pseudo_recursive(
