@@ -134,6 +134,7 @@ from .opt.loops import (
     IRForEachLoopOptimizer,
     IRIntRangeLoopOptimizer,
 )
+from .inline_calls import IRInlineCallRecovery
 from .opt.switches import (
     IRIntSwitchOptimizer,
     IREnumSwitchOptimizer,
@@ -399,6 +400,7 @@ class IRFunction:
                 IRTypedCatchOptimizer(self),
                 IREnumSwitchOptimizer(self),
                 IRGuardClauseNormalizer(self),
+                IRInlineCallRecovery(self),
             ]
             # Splice in plugin optimizers gated to this bytecode (see
             # crashlink.plugins). Which classes apply is a property of the image,
@@ -2006,6 +2008,15 @@ class IRFunction:
             if op_idx is not None and len(block.statements) > _prev_len:
                 stmt = block.statements[-1]
                 stmt.src_op_idx = op_idx
+                # The value the opcode computes carries it too, wherever folding
+                # moves it (locals are shared, so they carry none).
+                if (
+                    isinstance(stmt, IRAssign)
+                    and isinstance(stmt.expr, IRExpression)
+                    and not isinstance(stmt.expr, IRLocal)
+                    and not stmt.expr.src_op_idxs
+                ):
+                    stmt.expr.src_op_idx = op_idx
                 if _debuginfo is not None:
                     try:
                         ref = _debuginfo[op_idx]
