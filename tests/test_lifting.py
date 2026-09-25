@@ -235,7 +235,7 @@ def test_string_fromuc2_length_never_stale():
     # sequence into __alloc__ is fine (and preferable) once the length operand
     # is the call itself, but must never capture the stale 0.
     out = _decompile_at("tests/haxe/Clazz.hl", 18)
-    assert "Native.n31_ucs2length(b, 0)" in out
+    assert "b.ucs2Length(0)" in out
     assert "__alloc__(b, 0)" not in out
 
 

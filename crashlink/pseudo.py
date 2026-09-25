@@ -549,7 +549,7 @@ def _expression_to_haxe(
             # There is no direct Haxe equivalent, so emit null as a placeholder.
             return "null"
         elif isinstance(expr.value, Native):
-            return f"Native.{_native_binding_name(expr.value, code)}"
+            return _std_native_value(expr.value, code) or f"Native.{_native_binding_name(expr.value, code)}"
         elif expr.const_type == IRConst.ConstType.INT:
             val = expr.value.value if hasattr(expr.value, "value") else expr.value
             val = int(val)
@@ -1002,10 +1002,21 @@ def _expression_to_haxe(
             signature = expr.target.value.type.resolve(code).definition
             if not isinstance(signature, Fun) or len(signature.args) != len(expr.args):
                 raise ValueError("Native call does not match its recovered signature")
-            args_str = ", ".join(
+            arg_strs = [
                 _expression_for_type(arg, typ.resolve(code), code, ir_function)
                 for arg, typ in zip(expr.args, signature.args)
-            )
+            ]
+            std_api = _std_native_api(expr.target.value, code)
+            if std_api is not None:
+                owner, method, is_static, is_public = std_api
+                call = None
+                if is_static:
+                    call = f"{owner}.{method}({', '.join(arg_strs)})"
+                elif arg_strs:
+                    call = f"{_wrap_receiver(arg_strs[0])}.{method}({', '.join(arg_strs[1:])})"
+                if call is not None:
+                    return call if is_public else f"(@:privateAccess {call})"
+            args_str = ", ".join(arg_strs)
         else:
             args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in expr.args)
         # HashLink's internal ArrayBase.alloc* helpers return ArrayBytes_* types
@@ -3801,9 +3812,10 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
     return locals
 
 
-def _collect_natives(root: IRStatement) -> List[Native]:
+def _collect_natives(root: IRStatement, code: Bytecode) -> List[Native]:
     """
-    Recursively collect all Native constants referenced in an IR tree.
+    Recursively collect the Native constants an IR tree renders through the `Native`
+    extern: the ones not written as their std API (see `_std_native_value`).
     """
     natives: Dict[int, Native] = {}
     seen: Set[int] = set()
@@ -3812,8 +3824,20 @@ def _collect_natives(root: IRStatement) -> List[Native]:
         if id(stmt) in seen:
             return
         seen.add(id(stmt))
+        if (
+            isinstance(stmt, IRCall)
+            and isinstance(stmt.target, IRConst)
+            and isinstance(stmt.target.value, Native)
+        ):
+            api = _std_native_api(stmt.target.value, code)
+            if api is None or (not api[2] and not stmt.args):
+                natives[id(stmt.target.value)] = stmt.target.value
+            for arg in stmt.args:
+                visit(arg)
+            return
         if isinstance(stmt, IRConst) and isinstance(stmt.value, Native):
-            natives[id(stmt.value)] = stmt.value
+            if _std_native_value(stmt.value, code) is None:
+                natives[id(stmt.value)] = stmt.value
         for child in stmt.get_children():
             visit(child)
 
@@ -3971,6 +3995,27 @@ def _function_extern(externs: Dict[int, Tuple[str, int]], code: Bytecode) -> str
         lines.append(f"    static function {name}({params}): {ret};")
     lines.append("}")
     return "\n".join(lines)
+
+
+def _std_native_api(native: Native, code: Bytecode) -> Optional[Tuple[str, str, bool, bool]]:
+    """The std method a native implements, as (type, method, is_static, is_public), if it's one."""
+    from .std_natives import STD_NATIVES
+
+    return STD_NATIVES.get((native.lib.resolve(code), native.name.resolve(code)))
+
+
+def _std_native_value(native: Native, code: Bytecode) -> Optional[str]:
+    """A native used as a value, as its std API: only a static member is one without a receiver."""
+    api = _std_native_api(native, code)
+    if api is None or not api[2]:
+        return None
+    ref = f"{api[0]}.{api[1]}"
+    return ref if api[3] else f"(@:privateAccess {ref})"
+
+
+def _wrap_receiver(text: str) -> str:
+    """Parenthesise a rendered receiver unless it's a plain name or member chain."""
+    return text if re.fullmatch(r"[\w.]+", text) else f"({text})"
 
 
 def _native_binding_name(native: Native, code: Bytecode) -> str:
@@ -4378,7 +4423,7 @@ def _class_body(
             elif isinstance(definition, Enum):
                 referenced_enums[destaticify(disasm._enum_name(code, definition))] = definition
     for ir_func in all_methods:
-        natives.extend(_collect_natives(ir_func.block))
+        natives.extend(_collect_natives(ir_func.block, code))
         func_externs.update(_collect_function_externs(ir_func.block, code))
         referenced_classes.update(_collect_referenced_user_classes(ir_func.block, code, {class_name}))
         referenced_enums.update(_collect_referenced_enums(ir_func.block, code))
