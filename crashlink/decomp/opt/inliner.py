@@ -1946,8 +1946,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             return False
         use_stmt.adopt(current_stmt)
         dbg_print(f"Forward-inlining single-use temp '{temp.name}' to its use site.")
-        # Drop the definition; keep every statement between it and the use.
-        del statements[i]
+        # The caller drops the definition; every statement between it and the use stays.
         return True
 
     def _is_throw_capable_read(self, expr: IRExpression) -> bool:
@@ -1970,6 +1969,20 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         return isinstance(
             stmt, (IRConditional, IRWhileLoop, IRPrimitiveLoop, IRForEachLoop, IRIntRangeLoop, IRSwitch)
         )
+
+    @staticmethod
+    def _resume_after_drop(statements: List[IRStatement], new_statements: List[IRStatement], i: int) -> int:
+        """`statements[i]` was folded into `statements[i + 1]`, which is examined next.
+
+        The statement emitted before it is examined again first: the fold can make it
+        adjacent to its own use (`b = f(a); c = g(t); d = h(b, c)` once `t` is folded
+        leaves `b` right before `d`), which a single forward scan would otherwise miss
+        until a later pass.
+        """
+        if new_statements:
+            statements[i] = new_statements.pop()
+            return i
+        return i + 1
 
     def _visit_block_conservative(
         self,
@@ -2117,8 +2130,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                                     assert isinstance(next_stmt, IRAssign)
                                     next_stmt.expr = expr_to_inline
                                     next_stmt.adopt(current_stmt)
-                                    new_statements.append(next_stmt)
-                                    i += 2
+                                    i = self._resume_after_drop(statements, new_statements, i)
                                     inlined = True
                                 else:
                                     substituted = self._substitute_in_statement(
@@ -2132,6 +2144,8 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                                             block, i, temp_local
                                         ):
                                             new_statements.append(current_stmt)
+                                            new_statements.append(next_stmt)
+                                            i += 2
                                         else:
                                             next_stmt.adopt(current_stmt)  # current_stmt is dropped
                                             # If this inline merged a user variable into a conditional,
@@ -2139,8 +2153,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                                             # become a target for further user-var inlining.
                                             if self._is_user_local(temp_local):
                                                 next_stmt._no_user_inline = True
-                                        new_statements.append(next_stmt)
-                                        i += 2
+                                            i = self._resume_after_drop(statements, new_statements, i)
                                         inlined = True
 
             # Not consumed by the immediately-following statement: try to move a
@@ -2159,6 +2172,11 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 and isinstance(current_stmt.expr, IRExpression)
             ):
                 inlined = self._forward_inline_single_use(block, i, new_statements, continuation, hazardous)
+                if inlined:
+                    if new_statements:
+                        statements[i] = new_statements.pop()
+                    else:
+                        del statements[i]
 
             if not inlined:
                 new_statements.append(current_stmt)

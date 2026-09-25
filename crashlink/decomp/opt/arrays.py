@@ -14,6 +14,7 @@ from ...core import (
     Fun,
     Function,
     Native,
+    Obj,
     Type,
 )
 from ... import disasm
@@ -684,10 +685,45 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
                     made_change = True
                     continue
 
+                self._rewrite_direct_bytes_accesses(stmt)
                 new_statements.append(stmt)
                 i += 1
             else:
                 block.statements = new_statements
+
+    def _rewrite_direct_bytes_accesses(self, stmt: IRStatement) -> None:
+        """Rewrite `arr.bytes[idx << n]` on a typed array to `arr[idx]`, in place.
+
+        The inliner folds the `.bytes` temp that `_try_eliminate_bytes_temp` looks for
+        straight into its use when nothing else sits in between. Nested blocks are left
+        to their own visit, so a guarded load is still matched as a whole first.
+        """
+        pending: List[IRStatement] = [stmt]
+        seen: Set[int] = set()
+        while pending:
+            node = pending.pop()
+            if id(node) in seen or isinstance(node, IRBlock):
+                continue
+            seen.add(id(node))
+            if (
+                isinstance(node, IRArrayAccess)
+                and isinstance(node.array, IRField)
+                and node.array.field_name == "bytes"
+                and not (isinstance(node.array.target, IRLocal) and node.array.target.name == "this")
+                and self._is_array_bytes(node.array.target)
+                and isinstance(node.index, IRArithmetic)
+                and node.index.op.value == "<<"
+                and isinstance(node.index.right, IRConst)
+            ):
+                node.array, node.index = node.array.target, node.index.left
+                node.bytes_access_kind = None  # now an element access, not an hl.Bytes accessor
+            pending.extend(node.get_children())
+
+    def _is_array_bytes(self, expr: IRExpression) -> bool:
+        definition = expr.get_type().definition
+        return isinstance(definition, Obj) and definition.name.resolve(self.func.code).startswith(
+            "hl.types.ArrayBytes_"
+        )
 
     def _try_eliminate_bytes_temp(
         self, stmts: List[IRStatement], start: int
