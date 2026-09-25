@@ -2004,6 +2004,23 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             return self._is_throw_capable_read(expr.value)
         return False
 
+    def _reads_in_body(self, stmt: IRStatement, local: IRLocal) -> bool:
+        """Whether a control-flow `stmt` reads `local` inside a branch, case or
+        loop body, rather than in the subject it evaluates up front."""
+        if not self._use_is_speculative(stmt):
+            return False
+        subjects: List[Optional[IRExpression]] = []
+        if isinstance(stmt, (IRConditional, IRWhileLoop)):
+            subjects = [stmt.condition]
+        elif isinstance(stmt, IRSwitch):
+            subjects = [stmt.value]
+        elif isinstance(stmt, IRForEachLoop):
+            subjects = [stmt.array]
+        elif isinstance(stmt, IRIntRangeLoop):
+            subjects = [stmt.start, stmt.end]
+        in_subjects = sum(self._count_local_reads(e, local) for e in subjects if e is not None)
+        return self._count_local_reads(stmt, local) > in_subjects
+
     def _use_is_speculative(self, stmt: IRStatement) -> bool:
         """Whether substituting into `stmt` could evaluate the expression on
         paths where it previously did not run: the branches of a conditional,
@@ -2409,6 +2426,13 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                     )
                     > 0
                     for j in use_indices
+                ):
+                    continue
+                # Likewise the original computed the value once, ahead of any
+                # branch: moving real computation into a branch or loop body
+                # (rather than its condition) relocates it in the bytecode.
+                if self._has_nontrivial_computation(expr_to_inline) and any(
+                    self._reads_in_body(remaining_statements[j], temp_local) for j in use_indices
                 ):
                     continue
                 blocked = False
