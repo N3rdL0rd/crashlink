@@ -102,6 +102,7 @@ from .opt.clean import (
     IRDeadStoreEliminator,
     IRSequentialTempFolder,
     IRDeadAssignmentEliminator,
+    IRDefaultArgumentRecovery,
     IRConstructorFolder,
     IREnumConstructorFolder,
     IRAnonObjectLiteralOptimizer,
@@ -293,6 +294,8 @@ class IRFunction:
         self.block: IRBlock = IRBlock(code)
         self.locals: List[IRLocal] = []
         self.all_locals: List[IRLocal] = []  # all created locals including superseded splits
+        # Parameter register -> (local holding its value, default), see IRDefaultArgumentRecovery.
+        self.default_args: Dict[int, Tuple[IRLocal, IRConst]] = {}
         self.opcodes: str = ""
         self.cfg_data: Dict[str, Any] = {"nodes": [], "edges": []}
         self.layer_snapshots: List[Tuple[str, str, bool]] = []
@@ -326,6 +329,7 @@ class IRFunction:
         if do_optimize:
             self.optimizers: List[IROptimizer] = [
                 IRBlockFlattener(self),
+                IRDefaultArgumentRecovery(self),
                 IRConstructorFolder(self),
                 IREnumConstructorFolder(self),
                 IRPrimitiveJumpLifter(self),

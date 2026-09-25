@@ -12,10 +12,13 @@ if TYPE_CHECKING:
     from ..function import IRFunction
 
 from ...core import (
+    Bytecode,
     DynObj,
     Enum,
+    Fun,
     Function,
     Obj,
+    Opcode,
     Type,
     Virtual,
     destaticify,
@@ -59,6 +62,7 @@ from ..ir import (
     IRObjectLiteral,
     IRArrayAccess,
     IRRef,
+    IRRefGet,
     IRRefNew,
     IREnumConstruct,
     IREnumIndex,
@@ -1507,6 +1511,202 @@ class IRBlockFlattener(TraversingIROptimizer):
             dbg_print(
                 f"IRBlockFlattener: Processed block. Original item count: {len(original_statements)}, New item count: {len(new_statements)}"
             )
+
+
+def default_arg_regs(code: Bytecode, func: Function) -> Dict[int, Opcode]:
+    """Parameter registers `func` gives a default value, with the opcode that
+    loads each default.
+
+    HL passes an optional basic-typed argument (`flag = false`) as an `hl.Ref`
+    and opens the function with `if (flag == null) v = false else v = *flag`
+    for each one, in order; nothing else reads the reference.
+    """
+    from ..function import _op_reads
+
+    fun_type = func.type.resolve(code).definition
+    arity = len(fun_type.args) if isinstance(fun_type, Fun) else 0
+    ops = func.ops
+    found: Dict[int, Opcode] = {}
+    i = 0
+    while i + 3 < len(ops):
+        test, load, skip, unref = ops[i : i + 4]
+        if not (
+            test.op == "JNotNull"
+            and test.df["offset"].value == 2
+            and test.df["reg"].value < arity
+            and load.op in ("Int", "Float", "Bool")
+            and skip.op == "JAlways"
+            and skip.df["offset"].value == 1
+            and unref.op == "Unref"
+            and unref.df["src"].value == test.df["reg"].value
+            and unref.df["dst"].value == load.df["dst"].value
+        ):
+            break
+        found[test.df["reg"].value] = load
+        i += 4
+    if any(reg in found for op in ops[i:] for reg in _op_reads(op)):
+        return {}
+    return found
+
+
+def _default_value(code: Bytecode, load: Opcode) -> IRConst:
+    """The constant a default-argument prologue's `load` writes."""
+    if load.op == "Bool":
+        return IRConst(code, IRConst.ConstType.BOOL, value=load.df["value"].value)
+    const_type = IRConst.ConstType.INT if load.op == "Int" else IRConst.ConstType.FLOAT
+    return IRConst(code, const_type, load.df["ptr"])
+
+
+class IRDefaultArgumentRecovery(TraversingIROptimizer):
+    """
+    Recovers default argument values (see `default_arg_regs`). Drops the
+    callee's prologue, records each default in `IRFunction.default_args` for
+    the signature, and names the value after its parameter. At call sites of
+    such functions, passes the value instead of `new hl.Ref(value)`, and
+    leaves out arguments passed as `null` (the default), which Haxe rejects
+    for a basic type: trailing ones are dropped, others spelled out.
+    """
+
+    def optimize(self) -> None:
+        self._strip_prologue()
+        self._reads: Dict[int, int] = {}
+        self._count_reads(self.func.block, set())
+        super().optimize()
+
+    def _strip_prologue(self) -> None:
+        regs = set(default_arg_regs(self.func.code, self.func.func))
+        stmts = self.func.block.statements
+        while regs and stmts:
+            entry = self._prologue_entry(stmts[0], regs)
+            if entry is None:
+                break
+            param, values, const = entry
+            assert param.reg_idx is not None  # matched against `regs`
+            for value in values:
+                value.name = param.name
+            self.func.default_args[param.reg_idx] = (values[0], const)
+            stmts.pop(0)
+
+    @staticmethod
+    def _prologue_entry(
+        stmt: IRStatement, regs: Set[int]
+    ) -> Optional[Tuple[IRLocal, Tuple[IRLocal, IRLocal], IRConst]]:
+        """`(parameter, the two value locals, default)` of one
+        `if (p == null) v = K else v = p.get()`."""
+        if not isinstance(stmt, IRConditional) or stmt.false_block is None:
+            return None
+        cond = stmt.condition
+        if not (
+            isinstance(cond, IRBoolExpr)
+            and cond.op in (IRBoolExpr.CompareType.NULL, IRBoolExpr.CompareType.NOT_NULL)
+            and isinstance(cond.left, IRLocal)
+            and cond.left.reg_idx in regs
+        ):
+            return None
+        param = cond.left
+        arms = (stmt.true_block, stmt.false_block)
+        if cond.op == IRBoolExpr.CompareType.NOT_NULL:
+            arms = arms[::-1]
+        if any(len(arm.statements) != 1 for arm in arms):
+            return None
+        given, read = arms[0].statements[0], arms[1].statements[0]
+        if (
+            isinstance(given, IRAssign)
+            and isinstance(given.target, IRLocal)
+            and isinstance(given.expr, IRConst)
+            and isinstance(read, IRAssign)
+            and isinstance(read.target, IRLocal)
+            and read.target == given.target
+            and read.target.same_register(given.target)
+            and isinstance(read.expr, IRRefGet)
+            and read.expr.ref is param
+        ):
+            return param, (given.target, read.target), given.expr
+        return None
+
+    def _count_reads(self, node: IRStatement, seen: Set[int]) -> None:
+        if id(node) in seen:
+            return
+        seen.add(id(node))
+        if isinstance(node, IRLocal):
+            self._reads[id(node)] = self._reads.get(id(node), 0) + 1
+            return
+        children = node.get_children()
+        if isinstance(node, IRAssign) and isinstance(node.target, IRLocal):
+            children = [node.expr]
+        for child in children:
+            # Locals are shared objects, so count every occurrence.
+            if isinstance(child, IRLocal):
+                self._reads[id(child)] = self._reads.get(id(child), 0) + 1
+            else:
+                self._count_reads(child, seen)
+
+    def _calls(self, expr: IRStatement, found: List[IRCall]) -> None:
+        if isinstance(expr, IRBlock):
+            return
+        if isinstance(expr, IRCall):
+            found.append(expr)
+        for child in expr.get_children():
+            self._calls(child, found)
+
+    def _callee(self, call: IRCall) -> Tuple[Optional[Function], int]:
+        """The called function and the register its first argument lands in."""
+        target = call.target
+        if call.call_type == IRCall.CallType.FUNC and isinstance(target, IRConst):
+            return (target.value, 0) if isinstance(target.value, Function) else (None, 0)
+        if call.call_type == IRCall.CallType.METHOD and isinstance(target, IRField):
+            current = target.target.get_type().definition
+            while isinstance(current, Obj):
+                for proto in current.protos:
+                    if proto.name.resolve(self.func.code) == target.field_name:
+                        fn = proto.findex.resolve(self.func.code)
+                        return (fn, 1) if isinstance(fn, Function) else (None, 0)
+                if current.super is None or current.super.value < 0:
+                    break
+                current = current.super.resolve(self.func.code).definition
+        return None, 0
+
+    def _definition(self, stmts: List[IRStatement], j: int, local: IRLocal) -> Optional[IRAssign]:
+        """The write before `stmts[j]` of a temp read only there."""
+        if self._reads.get(id(local)) != 1:
+            return None
+        return next((s for s in reversed(stmts[:j]) if isinstance(s, IRAssign) and s.target is local), None)
+
+    def visit_block(self, block: IRBlock) -> None:
+        stmts = block.statements
+        dropped: Set[int] = set()
+        for j, stmt in enumerate(stmts):
+            calls: List[IRCall] = []
+            self._calls(stmt, calls)
+            for call in calls:
+                callee, first = self._callee(call)
+                defaults = default_arg_regs(self.func.code, callee) if callee is not None else {}
+                if not defaults:
+                    continue
+                omitted: List[int] = []
+                for i, arg in enumerate(call.args):
+                    load = defaults.get(i + first)
+                    definition = (
+                        self._definition(stmts, j, arg) if load and isinstance(arg, IRLocal) else None
+                    )
+                    if load is None or definition is None:
+                        continue
+                    if isinstance(definition.expr, IRRefNew) and isinstance(definition.expr.target, IRLocal):
+                        call.args[i] = definition.expr.target
+                    elif (
+                        isinstance(definition.expr, IRConst)
+                        and definition.expr.const_type == IRConst.ConstType.NULL
+                    ):
+                        call.args[i] = _default_value(self.func.code, load)
+                        omitted.append(i)
+                    else:
+                        continue
+                    dropped.add(id(definition))
+                while omitted and omitted[-1] == len(call.args) - 1:
+                    call.args.pop()
+                    omitted.pop()
+        if dropped:
+            block.statements = [s for s in stmts if id(s) not in dropped]
 
 
 class IRDynamicMethodInitEliminator(TraversingIROptimizer):

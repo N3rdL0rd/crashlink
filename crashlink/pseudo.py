@@ -2589,6 +2589,11 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             if id(core_fun_type_def) in disasm._trace_signature_types(code)[1] and local_idx == 1:
                 param_name = "?" + param_name
             param_type_decl = f": {arg_haxe_type_name}" if arg_haxe_type_name else ""
+            default = ir_func.default_args.get(local_idx)
+            if default is not None:
+                value, const = default
+                value_type = disasm._haxe_annotation(code, value.get_type())
+                param_type_decl = f": {value_type} = {_expression_to_haxe(const, code, ir_func)}"
             params_str_list.append(f"{param_name}{param_type_decl}")
 
         ret_core_type = core_fun_type_def.ret.resolve(code)
