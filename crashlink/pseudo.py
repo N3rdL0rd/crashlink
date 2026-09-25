@@ -2014,6 +2014,14 @@ def _generate_statements(
         elif isinstance(stmt, IRForEachLoop):
             elem_str = stmt.elem.name
             array_str = _expression_to_haxe(stmt.array, code, ir_function)
+            source = stmt.array
+            while isinstance(source, IRCast):  # a Dynamic-to-array cast prints as its operand
+                source = source.expr
+            if not isinstance(source, IRArrayLiteral) and source.get_type().kind.value == Type.Kind.DYN.value:
+                # An array out of an erased container (a `Map<Int, Array<T>>` value):
+                # Haxe won't iterate Dynamic, but a Dynamic value checks as any type.
+                elem_type = disasm._haxe_annotation(code, stmt.elem.get_type())
+                array_str = f"({array_str} : Array<{elem_type}>)"
             output_lines.append(f"{indent}for ({elem_str} in {array_str}) {{")
             body_subs = render_subs.copy()
             output_lines.extend(
