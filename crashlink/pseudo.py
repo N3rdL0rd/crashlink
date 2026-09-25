@@ -1107,6 +1107,16 @@ def _expression_to_haxe(
         inner = _expression_to_haxe(expr.expr, code, ir_function)
         if target_name == "I32" and source_name in {"F32", "F64"}:
             return f"Std.int({inner})"
+        target_def, source_def = expr.get_type().definition, expr.expr.get_type().definition
+        if (
+            isinstance(target_def, Obj)
+            and isinstance(source_def, Obj)
+            and target_def is not source_def
+            and not _is_ancestor(code, target_def, source_def)
+        ):
+            # A downcast (`Entity` to `en.Hero`) is only implicit from Dynamic; from a
+            # class it needs `cast`, which compiles to the same SafeCast.
+            return f"(cast {inner} : {disasm.type_to_haxe(target_name)})"
         return inner
 
     elif isinstance(expr, IRPrimitiveJump):  # Should be gone, but as a fallback
@@ -3572,6 +3582,10 @@ def _ancestors(code: Bytecode, obj: Optional[Obj]) -> Iterator[Obj]:
             return
         yield parent
         current = parent
+
+
+def _is_ancestor(code: Bytecode, ancestor: Obj, obj: Obj) -> bool:
+    return any(parent is ancestor for parent in _ancestors(code, obj))
 
 
 def _ancestor_declares(code: Bytecode, obj: Optional[Obj], method_name: str) -> bool:
