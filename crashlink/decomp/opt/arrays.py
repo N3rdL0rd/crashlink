@@ -1315,128 +1315,107 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         new_assign.adopt(*stmts[start - preceding_to_pop : alloc_idx + 1])
         return new_assign, consume_count, preceding_to_pop
 
-    def _index_shift(self, idx: IRStatement, local: IRLocal) -> Optional[int]:
-        """Return the shift amount if `idx` is `local << const`."""
-        if not isinstance(idx, IRArithmetic):
-            return None
-        if idx.op.value != "<<":
-            return None
-        if not isinstance(idx.left, IRLocal) or idx.left.name != local.name:
-            return None
-        if not isinstance(idx.right, IRConst) or idx.right.const_type != IRConst.ConstType.INT:
-            return None
-        val = idx.right.value.value if hasattr(idx.right.value, "value") else idx.right.value
-        return int(val)
+    def _parse_literal_stores(
+        self, stmts: List[IRStatement], i: int, bytes_var: IRLocal
+    ) -> Optional[Tuple[int, int, List[IRExpression]]]:
+        """Parse the element stores of a typed array literal, starting at `stmts[i]`.
 
-    def _parse_store_and_increment(
-        self,
-        stmts: List[IRStatement],
-        i: int,
-        bytes_var: IRLocal,
-        idx_var: IRLocal,
-        values: List[IRExpression],
-        expected_shift: Optional[int] = None,
-    ) -> Optional[Tuple[int, int]]:
-        """Parse one element store of a typed array literal.
+        HashLink writes element k as `bytes[idx << n] = value` with a running index
+        `idx`, bumped after every store. The value and the shifted index may sit in
+        temps of their own, and the index may be one local incremented in place, a
+        fresh local per step (`i1 = i0 + 1`, once register webs are split) or a folded
+        constant. Each store's index is therefore evaluated from the integers defined
+        in the window, and has to be the next element's position.
 
-        HashLink lowers a single element in several ways; the smallest window is
-        ``bytes[idx << n] = value; idx++`` and larger windows may cache the value
-        and/or the shifted index in temporaries.  We accept any window of up to
-        five statements that ends with ``idx_var++`` and whose preceding
-        statements are only assignments to the temporaries consumed by the store.
-
-        Returns ``(index_after_increment, shift)`` or None.
+        Returns `(index of the first statement past the stores, shift, values)`.
         """
+        known: Dict[str, Tuple[int, IRExpression]] = {}  # window locals holding a known integer
+        pending: Dict[str, IRExpression] = {}  # value/offset temps not consumed yet
+        defined: Dict[str, IRLocal] = {}
+        values: List[IRExpression] = []
+        shift: Optional[int] = None
 
-        def is_idx_increment(stmt: IRStatement) -> bool:
-            if not isinstance(stmt, IRAssign) or stmt.target != idx_var:
-                return False
-            expr = stmt.expr
-            if isinstance(expr, IRCast):
-                expr = expr.expr
-            if not isinstance(expr, IRArithmetic) or expr.op != IRArithmetic.ArithmeticType.ADD:
-                return False
-            if expr.left != idx_var:
-                return False
-            if not isinstance(expr.right, IRConst) or expr.right.const_type != IRConst.ConstType.INT:
-                return False
-            return _int_const_value(expr.right) == 1
-
-        def effective_shift(index_expr: IRExpression, before: int) -> Optional[int]:
-            if isinstance(index_expr, IRArithmetic):
-                return self._index_shift(index_expr, idx_var)
-            if isinstance(index_expr, IRLocal):
-                for k in range(before - 1, -1, -1):
-                    s = stmts[i + k]
-                    if isinstance(s, IRAssign) and s.target == index_expr:
-                        if isinstance(s.expr, IRArithmetic):
-                            return self._index_shift(s.expr, idx_var)
-                        break
+        def int_value(expr: IRExpression) -> Optional[int]:
+            if isinstance(expr, IRConst):
+                return _int_const_value(expr)
+            if isinstance(expr, IRLocal) and expr.name in known:
+                return known[expr.name][0]
+            if isinstance(expr, IRArithmetic) and expr.op in (
+                IRArithmetic.ArithmeticType.ADD,
+                IRArithmetic.ArithmeticType.SUB,
+            ):
+                left, right = int_value(expr.left), int_value(expr.right)
+                if left is None or right is None:
+                    return None
+                return left + right if expr.op == IRArithmetic.ArithmeticType.ADD else left - right
             return None
 
-        def unwrap_value(expr: IRExpression, before: int) -> Optional[IRExpression]:
-            if not isinstance(expr, IRLocal):
-                return expr
-            for k in range(before - 1, -1, -1):
-                s = stmts[i + k]
-                if isinstance(s, IRAssign) and s.target == expr:
-                    return s.expr
-            return None
-
-        max_window = 5
-        for inc_offset in range(1, max_window + 1):
-            if i + inc_offset >= len(stmts):
+        while i < len(stmts):
+            stmt = stmts[i]
+            if not isinstance(stmt, IRAssign):
                 break
-            if not is_idx_increment(stmts[i + inc_offset]):
+            target = stmt.target
+            if isinstance(target, IRLocal):
+                if target.name == bytes_var.name:
+                    break
+                value = int_value(stmt.expr)
+                pending.pop(target.name, None)
+                known.pop(target.name, None)
+                if value is not None:
+                    known[target.name] = (value, stmt.expr)
+                elif _has_observable_effects(stmt.expr) and pending:
+                    break  # an effect may not move past a value still waiting for its store
+                elif self._local_in_stmt(stmt.expr, bytes_var):
+                    break
+                else:
+                    pending[target.name] = stmt.expr
+                defined[target.name] = target
+                i += 1
                 continue
-            store_offset = inc_offset - 1
-            store = stmts[i + store_offset]
-            if not isinstance(store, IRAssign) or not isinstance(store.target, IRArrayAccess):
-                continue
-            access = store.target
-            if not isinstance(access.array, IRLocal) or access.array.name != bytes_var.name:
-                continue
-
-            shift = effective_shift(access.index, store_offset)
+            if not (
+                isinstance(target, IRArrayAccess)
+                and isinstance(target.array, IRLocal)
+                and target.array.name == bytes_var.name
+            ):
+                break
+            index = target.index
+            if isinstance(index, IRLocal) and index.name in pending:
+                index = pending.pop(index.name)
+            if not (
+                isinstance(index, IRArithmetic)
+                and index.op.value == "<<"
+                and int_value(index.right) is not None
+                and int_value(index.left) == len(values)
+            ):
+                break
+            index_shift = int_value(index.right)
             if shift is None:
-                continue
-            if expected_shift is not None and shift != expected_shift:
-                continue
-
-            value = unwrap_value(store.expr, store_offset)
-            if value is None:
-                continue
-
-            consumed: Set[str] = set()
-            if isinstance(access.index, IRLocal):
-                consumed.add(access.index.name)
-            if isinstance(store.expr, IRLocal):
-                consumed.add(store.expr.name)
-            # The shifted-index temp may be computed as ``tmp = const; tmp = idx << tmp``.
-            for k in range(store_offset - 1, -1, -1):
-                s = stmts[i + k]
-                if isinstance(s, IRAssign) and isinstance(s.target, IRLocal):
-                    if s.target.name in consumed:
-                        if (
-                            isinstance(s.expr, IRArithmetic)
-                            and s.expr.op.value == "<<"
-                            and isinstance(s.expr.right, IRLocal)
-                        ):
-                            consumed.add(s.expr.right.name)
-                        continue
-                    # Allow dead compiler-temp assignments that are not read before the store.
-                    dead = True
-                    for m in range(k + 1, store_offset + 1):
-                        if self._local_in_stmt(stmts[i + m], s.target):
-                            dead = False
-                            break
-                    if dead:
-                        continue
+                shift = index_shift
+            elif index_shift != shift:
                 break
-            else:
-                values.append(value)
-                return i + inc_offset + 1, shift
-        return None
+            element = stmt.expr
+            if isinstance(element, IRLocal) and element.name in pending:
+                element = pending.pop(element.name)
+            elif isinstance(element, IRLocal) and element.name in known:
+                element = known[element.name][1]
+            if pending and any(_has_observable_effects(expr) for expr in pending.values()):
+                break  # an effect computed ahead of an earlier element
+            values.append(element)
+            i += 1
+
+        if not values or shift is None:
+            return None
+        # The window's temps disappear with the fold: none may be read after it,
+        # until a plain reassignment starts a new value.
+        for local in defined.values():
+            for later in stmts[i + 1 :]:
+                if isinstance(later, IRAssign) and later.target == local:
+                    if self._local_in_stmt(later.expr, local):
+                        return None
+                    break
+                if self._local_in_stmt(later, local):
+                    return None
+        return i, shift, values
 
     _ALLOC_ELEM_TYPE_NAMES: Dict[str, str] = {
         "allocI32": "I32",
@@ -1516,109 +1495,10 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
         if not self._is_alloc_bytes(stmt.expr):
             return None
 
-        values: List[IRExpression] = []
-        i: Optional[int] = None
-        idx_var: Optional[IRLocal] = None
-        shift: Optional[int] = None
-
-        # Pattern 1: explicit `idx_var = 0` then a sequence of stores.
-        if start + 1 < len(stmts):
-            stmt2 = stmts[start + 1]
-            if (
-                isinstance(stmt2, IRAssign)
-                and isinstance(stmt2.target, IRLocal)
-                and isinstance(stmt2.expr, IRConst)
-                and stmt2.expr.const_type == IRConst.ConstType.INT
-                and int(stmt2.expr.value.value if hasattr(stmt2.expr.value, "value") else stmt2.expr.value)
-                == 0
-            ):
-                idx_var = stmt2.target
-                parsed = self._parse_store_and_increment(stmts, start + 2, bytes_var, idx_var, values)
-                if parsed is not None:
-                    i, shift = parsed
-                    while True:
-                        nxt = self._parse_store_and_increment(stmts, i, bytes_var, idx_var, values, shift)
-                        if nxt is None:
-                            break
-                        i, _ = nxt
-                    if not values:
-                        i = None
-
-        # Pattern 2: first store uses a constant 0 index; the counter is inferred
-        # from the following increment (e.g. `bytes[0 << n] = v0; idx++; ...`).
-        if i is None and shift is None and start + 2 < len(stmts):
-            first_store = stmts[start + 1]
-            if isinstance(first_store, IRAssign) and isinstance(first_store.target, IRArrayAccess):
-                access = first_store.target
-                if (
-                    isinstance(access.array, IRLocal)
-                    and access.array.name == bytes_var.name
-                    and isinstance(access.index, IRArithmetic)
-                    and access.index.op.value == "<<"
-                    and isinstance(access.index.left, IRConst)
-                    and access.index.left.const_type == IRConst.ConstType.INT
-                    and int(
-                        access.index.left.value.value
-                        if hasattr(access.index.left.value, "value")
-                        else access.index.left.value
-                    )
-                    == 0
-                    and isinstance(access.index.right, IRConst)
-                    and access.index.right.const_type == IRConst.ConstType.INT
-                ):
-                    shift = int(
-                        access.index.right.value.value
-                        if hasattr(access.index.right.value, "value")
-                        else access.index.right.value
-                    )
-                    values = [first_store.expr]
-                    inc_stmt = stmts[start + 2]
-                    if (
-                        isinstance(inc_stmt, IRAssign)
-                        and isinstance(inc_stmt.target, IRLocal)
-                        and isinstance(inc_stmt.expr, IRArithmetic)
-                        and inc_stmt.expr.op.value == "+"
-                        and isinstance(inc_stmt.expr.left, IRLocal)
-                        and isinstance(inc_stmt.expr.right, IRConst)
-                        and inc_stmt.expr.right.const_type == IRConst.ConstType.INT
-                        and int(
-                            inc_stmt.expr.right.value.value
-                            if hasattr(inc_stmt.expr.right.value, "value")
-                            else inc_stmt.expr.right.value
-                        )
-                        == 1
-                    ):
-                        idx_var = inc_stmt.target
-                        parsed = self._parse_store_and_increment(
-                            stmts, start + 3, bytes_var, idx_var, values, shift
-                        )
-                        if parsed is not None:
-                            i, _ = parsed
-                            while True:
-                                nxt = self._parse_store_and_increment(
-                                    stmts, i, bytes_var, idx_var, values, shift
-                                )
-                                if nxt is None:
-                                    break
-                                i, _ = nxt
-                        else:
-                            values = []
-                            shift = None
-
-        if not values or idx_var is None or i is None or shift is None:
+        parsed = self._parse_literal_stores(stmts, start + 1, bytes_var)
+        if parsed is None:
             return None
-
-        # Allow an optional `idx_var = count` assignment before the alloc call.
-        if i < len(stmts):
-            opt = stmts[i]
-            if (
-                isinstance(opt, IRAssign)
-                and isinstance(opt.target, IRLocal)
-                and opt.target.name == idx_var.name
-                and isinstance(opt.expr, IRConst)
-                and opt.expr.const_type == IRConst.ConstType.INT
-            ):
-                i += 1
+        i, shift, values = parsed
 
         # arr_var = alloc*(bytes_var, count) OR return alloc*(bytes_var, count)
         if i >= len(stmts):
