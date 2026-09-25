@@ -103,6 +103,7 @@ from .opt.clean import (
     IRSequentialTempFolder,
     IRDeadAssignmentEliminator,
     IRDefaultArgumentRecovery,
+    IRInterfaceCacheCollapser,
     IRConstructorFolder,
     IREnumConstructorFolder,
     IRAnonObjectLiteralOptimizer,
@@ -330,6 +331,7 @@ class IRFunction:
             self.optimizers: List[IROptimizer] = [
                 IRBlockFlattener(self),
                 IRDefaultArgumentRecovery(self),
+                IRInterfaceCacheCollapser(self),
                 IRConstructorFolder(self),
                 IREnumConstructorFolder(self),
                 IRPrimitiveJumpLifter(self),

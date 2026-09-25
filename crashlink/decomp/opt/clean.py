@@ -1844,6 +1844,118 @@ class IRDefaultArgumentRecovery(IROptimizer):
                 self._drop(child, dropped, seen)
 
 
+class IRInterfaceCacheCollapser(TraversingIROptimizer):
+    """
+    Undoes HL's conversion of an object to an interface. The object keeps the
+    converted value in an unnamed field, so `t = x` as an interface lowers to
+    `if (x == null) t = null else { t = x.<cache>; if (t == null) { t = x;
+    x.<cache> = t; } }`, which reads back as the plain assignment. `this` is
+    never null, so its conversion is just the inner load and fill.
+    """
+
+    def _collapse(self, stmt: IRConditional) -> Optional[IRAssign]:
+        cond = stmt.condition
+        if not (
+            isinstance(cond, IRBoolExpr)
+            and cond.op in (IRBoolExpr.CompareType.NULL, IRBoolExpr.CompareType.NOT_NULL)
+            and isinstance(cond.left, IRLocal)
+        ):
+            return None
+        source = cond.left
+        null_arm = stmt.true_block.statements
+        value_arm = stmt.false_block.statements if stmt.false_block is not None else []
+        if cond.op == IRBoolExpr.CompareType.NOT_NULL:
+            null_arm, value_arm = value_arm, null_arm
+        if not (len(null_arm) == 1 and len(value_arm) == 2):
+            return None
+        null_write = null_arm[0]
+        if not (
+            isinstance(null_write, IRAssign)
+            and isinstance(null_write.target, IRLocal)
+            and isinstance(null_write.expr, IRConst)
+            and null_write.expr.const_type == IRConst.ConstType.NULL
+        ):
+            return None
+        collapsed = self._load_and_fill(value_arm[0], value_arm[1], null_write.target, source)
+        return collapsed.adopt(stmt, null_write) if collapsed is not None else None
+
+    def _load_and_fill(
+        self, load: IRStatement, fill: IRStatement, temp: IRLocal, source: IRLocal
+    ) -> Optional[IRAssign]:
+        """`t = x.<cache>; if (t == null) { t = x; x.<cache> = t; }` as `t = x`."""
+        if not (
+            isinstance(load, IRAssign)
+            and load.target is temp
+            and isinstance(load.expr, IRField)
+            and load.expr.target is source
+            and isinstance(load.expr.get_type().definition, Virtual)
+            and self._is_cache_slot(source, load.expr.field_name)
+            and isinstance(fill, IRConditional)
+            and isinstance(fill.condition, IRBoolExpr)
+            and fill.condition.op == IRBoolExpr.CompareType.NULL
+            and fill.condition.left is temp
+            and not (fill.false_block and fill.false_block.statements)
+            and len(fill.true_block.statements) == 2
+        ):
+            return None
+        convert, store = fill.true_block.statements
+        if not (
+            isinstance(convert, IRAssign)
+            and convert.target is temp
+            and IRSelfAssignOptimizer._strip_casts(convert.expr) is source
+            and isinstance(store, IRAssign)
+            and isinstance(store.target, IRField)
+            and store.target.target is source
+            and store.target.field_name == load.expr.field_name
+            and store.expr is temp
+        ):
+            return None
+        return IRAssign(self.func.code, temp, convert.expr).adopt(load, fill, convert, store)
+
+    def _is_cache_slot(self, obj: IRLocal, name: str) -> bool:
+        """The field has no source name: the compiler added it."""
+        definition = obj.get_type().definition
+        while isinstance(definition, Obj):
+            for f in definition.fields:
+                if f.name.resolve(self.func.code) == name:
+                    return False
+            if definition.super is None or definition.super.value < 0:
+                break
+            definition = definition.super.resolve(self.func.code).definition
+        return name.startswith("__hidden")
+
+    def visit_block(self, block: IRBlock) -> None:
+        changed = False
+        new_statements: List[IRStatement] = []
+        stmts = block.statements
+        i = 0
+        while i < len(stmts):
+            stmt = stmts[i]
+            collapsed: Optional[IRAssign] = None
+            span = 1
+            if isinstance(stmt, IRConditional):
+                collapsed = self._collapse(stmt)
+            elif (
+                i + 1 < len(stmts)
+                and isinstance(stmt, IRAssign)
+                and isinstance(stmt.target, IRLocal)
+                and isinstance(stmt.expr, IRField)
+                and isinstance(stmt.expr.target, IRLocal)
+                and stmt.expr.target.name == "this"
+            ):
+                collapsed = self._load_and_fill(stmt, stmts[i + 1], stmt.target, stmt.expr.target)
+                span = 2
+            if collapsed is None:
+                new_statements.append(stmt)
+                i += 1
+                continue
+            new_statements.append(collapsed)
+            i += span
+            changed = True
+        if changed:
+            block.statements = new_statements
+
+
 class IRDynamicMethodInitEliminator(TraversingIROptimizer):
     """Drops a constructor's `if (this.f == null) this.f = <method f>` prologue.
 
