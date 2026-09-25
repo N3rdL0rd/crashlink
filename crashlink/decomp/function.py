@@ -1030,6 +1030,15 @@ class IRFunction:
             fun_def = self.func.type.resolve(self.code).definition
             if isinstance(fun_def, Fun):
                 param_count = max(0, len(fun_def.args) - (1 if has_this else 0))
+                # An abstract's methods compile to statics of its `_Impl_` class
+                # taking the value as a leading `this` the debug info leaves out.
+                named = len({assign[0].resolve(self.code) for assign in param_candidates})
+                if (
+                    not has_this
+                    and named == param_count - 1
+                    and self.code.full_func_name(self.func).rsplit(".", 1)[0].endswith("_Impl_")
+                ):
+                    param_start, param_count = 1, named
             seen_param_names: Set[str] = set()
             param_idx = 0
             for assign in param_candidates:
