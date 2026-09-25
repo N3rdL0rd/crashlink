@@ -4667,7 +4667,8 @@ def _obj_fields(code: Bytecode, obj: Optional[Obj]) -> List[Tuple[str, Type]]:
     for field in getattr(obj, "fields", []):
         try:
             name = field.name.resolve(code)
-            if name not in binding_names:
+            # Unnamed slots are compiler padding: source can't declare or name them.
+            if name and name not in binding_names:
                 res.append((name, field.type.resolve(code)))
         except Exception:
             pass
@@ -4866,7 +4867,8 @@ def stub_all(code: Bytecode) -> Iterator[Tuple[str, str]]:
     scales to a whole image. Files with only standalone functions are skipped."""
     reg = _method_registry(code)
     for file_path, entries in disasm.file_class_map(code).items():
-        if all(e.canonical_name == "(standalone)" for e in entries):
+        # `?` holds code the compiler synthesised, not a source file.
+        if file_path == "?" or all(e.canonical_name == "(standalone)" for e in entries):
             continue
         text = _stub_from_entries(code, reg, entries)
         if text.strip():
