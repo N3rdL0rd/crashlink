@@ -338,3 +338,13 @@ def test_stub_file_signatures_and_bodies():
     # void method is empty, non-void method stubs with a throw (type-checks)
     assert "function main(): Void" in out
     assert 'throw "stub' in out and "function method(): Int" in out
+
+
+def test_temporaries_in_a_named_register_fold_into_their_expression():
+    # PointImpl.transform: `var mx = m.a * x + m.c * y + m.x;`. HashLink sums into
+    # the register `mx` later takes: before `mx` exists it only holds temporaries,
+    # which must fold back instead of reading as `var2 += ...` on one local.
+    out = _decompile_named("tests/haxe/Heaps3D.hl", "h2d.col.PointImpl.transform")
+    assert "var mx: Float = m.a * this.x + m.c * this.y + m.x;" in out
+    assert "var my: Float = m.b * this.x + m.d * this.y + m.y;" in out
+    assert "+=" not in out

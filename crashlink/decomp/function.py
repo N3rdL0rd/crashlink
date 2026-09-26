@@ -608,8 +608,11 @@ class IRFunction:
         HashLink reuses a temporary's register for unrelated values (`reg3` holds a sum,
         then an index, then a count). As one local, every reuse reads as a reassignment
         of one variable, which keeps the inliner from folding each value back into the
-        expression it came from. Only unnamed registers are split: parameters and
-        debug-named variables are real source variables. A register whose address
+        expression it came from. Parameters are real source variables and stay whole.
+        A debug-named register is a variable only in the webs holding a named
+        definition, which a write continuing it (`k++`, `k = k + x`) joins; its other
+        webs are temporaries the register held before or after the variable, and are
+        split like an unnamed register's. A register whose address
         escapes (a `Ref` read by anything but the call right after it, which is how
         natives such as `itos` take out-parameters), that a try body writes and its catch
         handler can read (the handler sees it mid-way), or that receives a caught exception
@@ -627,9 +630,9 @@ class IRFunction:
         eligible = {
             r
             for r in range(nargs, len(regs))
-            if r not in self._user_reg_indices
-            and regs[r].resolve(self.code).kind.value != Type.Kind.VOID.value
+            if regs[r].resolve(self.code).kind.value != Type.Kind.VOID.value
         }
+        named_regs = eligible & self._user_reg_indices
         calls = ("Call0", "Call1", "Call2", "Call3", "Call4", "CallN")
         readers: Dict[int, List[int]] = {}
         for i, op in enumerate(ops):
@@ -722,6 +725,8 @@ class IRFunction:
         # live are one web.
         state_in: Dict[CFNode, Dict[int, int]] = {self.cfg.entry: {r: -(r + 1) for r in eligible}}
         read_webs: Set[int] = set()
+        # Definitions continuing a named variable, and the definitions they read.
+        continued: Dict[int, Set[int]] = {}
         pending = [self.cfg.entry]
         while pending:
             node = pending.pop()
@@ -732,6 +737,8 @@ class IRFunction:
                         read_webs.add(state[r])
                 w = _op_writes(op)
                 if w in eligible:
+                    if w in named_regs and w in state and self._is_continuation_write(op):
+                        continued.setdefault(node.base_offset + k, set()).add(state[w])
                     state[w] = node.base_offset + k
                     find(node.base_offset + k)
             for succ, _ in node.branches:
@@ -752,12 +759,29 @@ class IRFunction:
                     pending.append(succ)
 
         entry_read = {find(-(r + 1)) for r in eligible if find(-(r + 1)) in {find(x) for x in read_webs}}
+        # A named register read before any definition isn't split at all.
+        named_regs -= {r for r in named_regs if find(-(r + 1)) in entry_read}
+        variable_webs = {
+            find(idx)
+            for idx in parent
+            if idx >= 0 and (r := _op_writes(ops[idx])) in named_regs and r in self._op_assigns.get(idx, {})
+        }
+        grew = True
+        while grew:
+            grew = False
+            for idx, sources in continued.items():
+                if find(idx) not in variable_webs and any(find(src) in variable_webs for src in sources):
+                    union(idx, next(src for src in sources if find(src) in variable_webs))
+                    variable_webs = {find(web) for web in variable_webs} | {find(idx)}
+                    grew = True
         next_name = len(regs)
         named_first: Set[int] = set()
         for idx in sorted(i for i in parent if i >= 0):
             r = _op_writes(ops[idx])
             if r is None:
                 continue
+            if r in self._user_reg_indices and (r not in named_regs or find(idx) in variable_webs):
+                continue  # the variable itself, named from debug info
             web = find(idx)
             self._web_of_def[idx] = web
             if web in self._web_names:
@@ -770,6 +794,8 @@ class IRFunction:
                 self._web_names[web] = next_name
                 next_name += 1
         for r in eligible:
+            if r in self._user_reg_indices:
+                continue
             entry = find(-(r + 1))
             if entry in entry_read:
                 self._web_locals[entry] = self.locals[r]

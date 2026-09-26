@@ -249,8 +249,9 @@ class IRLocal(IRExpression):
         """Return True if this local and `other` originate from the same VM register.
 
         Two webs of one register (see `IRFunction._build_webs`) are separate values that
-        merely shared storage: neither redefines the other."""
-        if self.web is not None and other.web is not None and self.web != other.web:
+        merely shared storage: neither redefines the other. That includes a debug-named
+        variable (which has no web) and the temporaries its register held around it."""
+        if self.web != other.web:
             return False
         return self.reg_idx is not None and other.reg_idx is not None and self.reg_idx == other.reg_idx
 
