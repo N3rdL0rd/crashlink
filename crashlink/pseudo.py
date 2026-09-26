@@ -26,7 +26,7 @@ from .core import (
     gIndex,
 )
 from . import disasm
-from . import hxbit, hxsl
+from . import abstracts, hxbit, hxsl
 from .decomp import (
     STATIC_INIT_UNRECOVERABLE,
     IRBreak,
@@ -586,6 +586,9 @@ def _expression_to_haxe(
                 # named class or enum.
                 defn = expr.value.definition
                 if isinstance(defn, (Obj, Enum)):
+                    abstract = abstracts.abstract_of(code, defn) if isinstance(defn, Obj) else None
+                    if abstract is not None:
+                        return _abstract_ref(abstract, code, ir_function)
                     try:
                         resolved = defn.name.resolve(code)
                     except Exception:
@@ -798,7 +801,7 @@ def _expression_to_haxe(
             # A typed HL static-storage access must stay statically visible to
             # Haxe's DCE; a Dynamic alias can discard the referenced field.
             return _std_private_access(
-                f"{destaticify(type_name)}.{expr.field_name}",
+                f"{_static_owner_path(code, target_type.definition, type_name, ir_function)}.{expr.field_name}",
                 target_type.definition,
                 expr.field_name,
                 code,
@@ -823,7 +826,7 @@ def _expression_to_haxe(
             defn = expr.target.value.definition
             if isinstance(defn, Obj):
                 return _std_private_access(
-                    f"{destaticify(defn.name.resolve(code))}.{expr.field_name}",
+                    f"{_static_owner_path(code, defn, defn.name.resolve(code), ir_function)}.{expr.field_name}",
                     defn,
                     expr.field_name,
                     code,
@@ -930,6 +933,13 @@ def _expression_to_haxe(
                 rendered = _render_string_concat(expr, code, ir_function)
                 if rendered is not None:
                     return rendered
+
+        # An abstract's members are statics of its `_Impl_` class, which source can't
+        # name: go back to the abstract's own syntax.
+        if isinstance(expr.target, IRConst) and isinstance(expr.target.value, Function):
+            abstract = abstracts.abstract_of_function(code, expr.target.value)
+            if abstract is not None:
+                return _render_abstract_call(expr, expr.target.value, abstract, code, ir_function)
 
         # HashLink emits array push/pop as static calls on the internal array
         # implementation classes. Render them as the instance methods Haxe expects.
@@ -2539,12 +2549,29 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     if getattr(ir_func, "_force_static", False):
         is_instance = False
 
+    # An abstract's methods take `this` as their leading argument, and its
+    # constructor is `_new`, every argument of which is a parameter.
+    abstract = abstracts.abstract_of_function(code, func_core)
+    abstract_constructor = False
+    if abstract is not None and not getattr(ir_func, "_force_static", False):
+        if func_core.findex.value == abstract.constructor:
+            abstract_constructor = True
+            func_name_str = "new"
+            signature = func_core.type.resolve(code).definition
+            if isinstance(signature, Fun):
+                _abstract_constructor_body(ir_func, signature)
+        elif func_core.findex.value in abstract.instance:
+            is_instance = True
+            for local in ir_func.all_locals:
+                if local.reg_idx == 0:
+                    local.name = "this"
+
     # A better way might be to just call disasm.is_static
-    if not is_instance:
+    if not is_instance and not abstract_constructor:
         static_kw = "static "
 
     override_kw = ""
-    if is_instance and not is_constructor and containing is not None:
+    if is_instance and not is_constructor and containing is not None and abstract is None:
         if _method_overrides(func_name_str, containing, code):
             override_kw = "override "
         if _is_dynamic_method(code, containing.dynamic, func_core):
@@ -2605,7 +2632,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         return_type_str = disasm._haxe_annotation(code, ret_core_type)
 
     # Constructors do not declare a return type in Haxe.
-    if is_constructor:
+    if is_constructor or abstract_constructor:
         return_type_str = ""
 
     params_joined_str = ", ".join(params_str_list)
@@ -2619,6 +2646,8 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     # For instance methods and constructors, register 0 is `this` — skip it.
     if (is_instance or is_constructor) and ir_func.locals:
         initial_declared_vars.add(ir_func.locals[0].name)
+    if abstract_constructor:
+        initial_declared_vars.add("this")
 
     # Classify locals: those with an unconditional first assignment can be declared
     # inline at that assignment site (`var x = expr;`); those without must be
@@ -2658,7 +2687,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         unused_static_aliases=unused_static_aliases,
     )
     # Suppress trailing bare `return;` for Void functions and constructors — it's implicit.
-    is_void_return = return_type_str in ("Void", "void") or is_constructor
+    is_void_return = return_type_str in ("Void", "void") or is_constructor or abstract_constructor
     if is_void_return and body_lines and body_lines[-1].strip() == "return;":
         body_lines = body_lines[:-1]
     output_lines.extend(body_lines)
@@ -2699,7 +2728,17 @@ def pseudo_oplines(ir_func: IRFunction) -> Tuple[str, Dict[int, int]]:
             if isinstance(first_arg_type.definition, Obj):
                 class_name_suggestion = destaticify(disasm.type_name(ir_func.code, first_arg_type))
 
-    final_output = [f"class {class_name_suggestion} {{"]
+    abstract = (
+        abstracts.abstract_of_function(ir_func.code, ir_func.func)
+        if isinstance(ir_func.func, Function)
+        else None
+    )
+    header = (
+        disasm.source_paths(abstract.header(ir_func.code))
+        if abstract is not None
+        else f"class {class_name_suggestion}"
+    )
+    final_output = [f"{header} {{"]
     final_output.extend(["    " + line for line in function_body_str.split("\n")])
     final_output.append("}")
 
@@ -3737,6 +3776,129 @@ def _try_instance_method_call(
     return f"{arg_expr_str}.{method_name}"
 
 
+def _static_owner_path(code: Bytecode, obj: Obj, name: str, ir_function: Optional[IRFunction]) -> str:
+    """How source names the class holding a static member: the abstract for an
+    abstract's `_Impl_` class, which source can't name."""
+    abstract = abstracts.abstract_of(code, obj)
+    return _abstract_ref(abstract, code, ir_function) if abstract is not None else destaticify(name)
+
+
+def _abstract_ref(abstract: abstracts.Abstract, code: Bytecode, ir_function: Optional[IRFunction]) -> str:
+    """How code in `ir_function` names `abstract`: unqualified within its module (its
+    own members, other abstracts of the module and the module's main class), qualified
+    elsewhere."""
+    if ir_function is not None and isinstance(ir_function.func, Function):
+        caller = abstracts.abstract_of_function(code, ir_function.func)
+        if caller is not None:
+            module = caller.module
+        else:
+            module = destaticify(code.full_func_name(ir_function.func).rpartition(".")[0])
+        if module == abstract.module:
+            return abstract.name
+    return abstract.path
+
+
+def _render_abstract_call(
+    expr: IRCall,
+    func: "Function",
+    abstract: abstracts.Abstract,
+    code: Bytecode,
+    ir_function: Optional[IRFunction],
+) -> str:
+    """A call to a member of an abstract, as source writes it: `new Name(..)`,
+    `Name.member(..)`, or on a value `(value : Name).member(..)` / `.property`."""
+    findex = func.findex.value
+    args = [_expression_to_haxe(arg, code, ir_function) for arg in expr.args]
+    method = code.partial_func_name(func)
+    ref = _abstract_ref(abstract, code, ir_function)
+    if findex == abstract.constructor:
+        return f"new {ref}({', '.join(args)})"
+    if findex not in abstract.instance or not expr.args:
+        return f"{ref}.{method}({', '.join(args)})"
+    accessor = abstract.accessor(findex)
+    member = accessor[0].name if accessor is not None else method
+    receiver = _abstract_receiver(expr.args[0], args[0], member, abstract, code, ir_function)
+    if accessor is None:
+        return f"{receiver}{method}({', '.join(args[1:])})"
+    if accessor[1]:
+        return f"{receiver}{member} = {args[1]}"
+    return f"{receiver}{member}"
+
+
+def _abstract_receiver(
+    value: IRExpression,
+    rendered: str,
+    member: str,
+    abstract: abstracts.Abstract,
+    code: Bytecode,
+    ir_function: Optional[IRFunction],
+) -> str:
+    """What goes before `member` to reach it on `value`, dot included. The value has
+    the underlying type, so it's checked as the abstract (`(v : Name).`), a cast that
+    compiles to nothing; inside the abstract's own methods, `this` needs no prefix
+    unless a local shadows the member."""
+    if (
+        isinstance(value, IRLocal)
+        and value.name == "this"
+        and ir_function is not None
+        and isinstance(ir_function.func, Function)
+        and abstracts.abstract_of_function(code, ir_function.func) is abstract
+        and not any(local.name == member for local in ir_function.all_locals)
+    ):
+        return ""
+    if (
+        isinstance(value, IRCall)
+        and isinstance(value.target, IRConst)
+        and isinstance(value.target.value, Function)
+        and value.target.value.findex.value == abstract.constructor
+    ):
+        return f"{rendered}."
+    return f"({rendered} : {_abstract_ref(abstract, code, ir_function)})."
+
+
+def _abstract_constructor_body(ir_func: IRFunction, signature: Fun) -> None:
+    """Rewrite the body of an abstract's `_new` into its constructor's. `_new` returns
+    the value it built; source assigns it to `this`. When every return gives back the
+    same local, that local is `this`; otherwise each returned value is assigned to it."""
+    if getattr(ir_func, "_abstract_constructor", False):
+        return
+    setattr(ir_func, "_abstract_constructor", True)
+    code = ir_func.code
+    returns: List[Tuple[IRBlock, int]] = []
+    seen: Set[int] = set()
+    pending: List[IRStatement] = [ir_func.block]
+    while pending:
+        node = pending.pop()
+        if id(node) in seen:
+            continue
+        seen.add(id(node))
+        if isinstance(node, IRBlock):
+            returns.extend((node, i) for i, stmt in enumerate(node.statements) if isinstance(stmt, IRReturn))
+        pending.extend(node.get_children())
+    values = [cast(IRReturn, block.statements[i]).value for block, i in returns]
+    registers = {value.reg_idx for value in values if isinstance(value, IRLocal)}
+    if (
+        values
+        and all(isinstance(value, IRLocal) for value in values)
+        and len(registers) == 1
+        and next(iter(registers)) is not None
+        and cast(int, next(iter(registers))) >= len(signature.args)
+    ):
+        register = next(iter(registers))
+        for local in ir_func.all_locals:
+            if local.reg_idx == register:
+                local.name = "this"
+        for block, i in returns:
+            cast(IRReturn, block.statements[i]).value = None
+        return
+    this = IRLocal("this", signature.ret, code)
+    # Splice from the back so earlier indices in the same block stay valid.
+    for block, i in sorted(returns, key=lambda r: r[1], reverse=True):
+        value = cast(IRReturn, block.statements[i]).value
+        if value is not None:
+            block.statements[i : i + 1] = [IRAssign(code, this, value), IRReturn(code, None)]
+
+
 def _is_super_call(callee_class_name: str, ir_function: IRFunction, code: Bytecode) -> bool:
     """True if `callee_class_name` is a superclass of the function being rendered (i.e.
     this call is `super.foo()`, not a same-class `this.foo()`). The implementation `super`
@@ -4588,6 +4750,9 @@ def _class_body(
     indent_str = _indent_str(1)
 
     header = f"class {class_name}"
+    abstract = abstracts.abstract_of(code, primary_obj)
+    if abstract is not None:
+        header = abstract.header(code)
     super_name: Optional[str] = None
     if ir_class.dynamic and ir_class.dynamic.super and ir_class.dynamic.super.value > 0:
         super_type = ir_class.dynamic.super.resolve(code)
@@ -4729,6 +4894,14 @@ def _class_body(
                     field_type_haxe = f"Array<{elem_haxe}>"
             meta = "@:s " if serializable is not None and field_name in serializable.fields else ""
             output_lines.append(f"{indent_str}{meta}public var {field_name}: {field_type_haxe};")
+        output_lines.append("")
+
+    if abstract is not None and abstract.properties:
+        for prop in abstract.properties.values():
+            read = "get" if prop.getter is not None else "never"
+            write = "set" if prop.setter is not None else "never"
+            prop_type = disasm._haxe_annotation(code, prop.type)
+            output_lines.append(f"{indent_str}public var {prop.name}({read}, {write}): {prop_type};")
         output_lines.append("")
 
     for ir_func in static_methods:
@@ -5025,6 +5198,17 @@ def _stub_method(code: Bytecode, func: Function, is_instance: bool, dynamic: Opt
     name = "new" if is_ctor else (raw if raw and raw != "<none>" else f"f{func.findex.value}")
     if is_ctor:
         is_instance = True
+    abstract = abstracts.abstract_of_function(code, func)
+    if abstract is not None:
+        is_instance = func.findex.value in abstract.instance
+        if func.findex.value == abstract.constructor:
+            fun = func.type.resolve(code).definition
+            if not isinstance(fun, Fun):
+                return None
+            params = ", ".join(
+                f"arg{i}: {disasm._haxe_annotation(code, a.resolve(code))}" for i, a in enumerate(fun.args)
+            )
+            return f"public function new({params}) {{\n    this = {_stub_default(fun.ret.resolve(code))};\n}}"
 
     fun_def = func.type.resolve(code).definition
     params: List[str] = []
@@ -5091,8 +5275,20 @@ def _stub_class(code: Bytecode, primary: Obj) -> str:
         super_def = dynamic.super.resolve(code).definition
         if isinstance(super_def, Obj):
             header += f" extends {destaticify(super_def.name.resolve(code))}"
+    abstract = abstracts.abstract_of(code, primary)
+    if abstract is not None:
+        underlying = abstract.underlying_annotation(code)
+        header = f"abstract {abstract.name}({underlying}) from {underlying} to {underlying}"
     header += " {"
     lines.append(header)
+    if abstract is not None and abstract.properties:
+        for prop in abstract.properties.values():
+            read = "get" if prop.getter is not None else "never"
+            write = "set" if prop.setter is not None else "never"
+            lines.append(
+                f"    public var {prop.name}({read}, {write}): {disasm._haxe_annotation(code, prop.type)};"
+            )
+        lines.append("")
 
     fields = class_field_lines(code, primary)
     lines.extend(f"    {field}" for field in fields)
