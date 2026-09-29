@@ -404,6 +404,26 @@ def test_trace_is_not_collapsed_across_a_rebound_log(tmp_path):
     assert 'trace("live"); //' in out
 
 
+def test_trace_with_an_explicit_position_stays_a_call(tmp_path):
+    if not shutil.which("haxe"):
+        pytest.skip("Haxe required to build the fixture")
+    out = _decompile_source(
+        tmp_path,
+        "TraceExplicit",
+        """class TraceExplicit {
+    static function main():Void {
+        var file = Sys.args().length > 0 ? "a.hx" : "b.hx";
+        haxe.Log.trace("msg", { fileName : file, lineNumber : 0, className : null, methodName : null });
+    }
+}""",
+    )
+    # `trace("msg")` would print this call site's own position, not the given one.
+    assert (
+        'haxe.Log.trace("msg", { fileName: file, lineNumber: 0, className: null, methodName: null });' in out
+    )
+    assert 'trace("msg"); //' not in out
+
+
 def test_single_expression_closures_render_inline(tmp_path):
     if not shutil.which("haxe"):
         pytest.skip("Haxe required to build the fixture")

@@ -494,6 +494,10 @@ class IRTraceOptimizer(TraversingIROptimizer):
             self._sweep_dead_scaffold(stmts, alloc_idx, idx, consumed)
 
         pos_info = {name: self._literal_value(stmts, alloc_idx, idx, value) for name, value in fields.items()}
+        if not self._is_generated_position(pos_info):
+            # An explicit position (`haxe.Log.trace(msg, { fileName: p.file, ... })`):
+            # `trace(msg)` would print the call site's own instead.
+            return None
         msg, msg_def = self._resolve_msg(stmts, idx, call.args[0], consumed)
         if msg_def is not None:
             consumed.add(msg_def)
@@ -640,6 +644,16 @@ class IRTraceOptimizer(TraversingIROptimizer):
                 fields[s.target.field_name] = s.expr
                 defs.add(k)
         return fields, defs
+
+    @staticmethod
+    def _is_generated_position(pos_info: Dict[str, Any]) -> bool:
+        """Whether a position is one the compiler fills in for `trace`: every field a
+        constant, a string but for the line."""
+        line = pos_info.get("lineNumber")
+        line = line.value if hasattr(line, "value") and not isinstance(line, IRExpression) else line
+        return isinstance(line, int) and all(
+            isinstance(pos_info.get(name), str) for name in ("fileName", "className", "methodName")
+        )
 
     def _literal_value(self, stmts: List[IRStatement], start: int, end: int, expr: IRExpression) -> Any:
         """Position metadata is rendered as a comment, so reduce it to plain
