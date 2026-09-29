@@ -370,16 +370,22 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
         return visit(self.func.block)
 
     def _decision(self, statements: List[IRStatement], start: int):
-        if start + 1 >= len(statements):
+        """A test of an enum value's constructor at `start`: `idx = enumIndex(v);
+        if (idx == k)`, or the same with the index folded into the condition, in
+        which case the assignment is None."""
+        if start >= len(statements):
             return None
-        assignment, conditional = statements[start : start + 2]
-        if not (
-            isinstance(assignment, IRAssign)
-            and isinstance(assignment.target, IRLocal)
-            and isinstance(assignment.expr, IREnumIndex)
-            and isinstance(assignment.expr.value, IRLocal)
-            and isinstance(conditional, IRConditional)
+        assignment: Optional[IRAssign] = None
+        conditional = statements[start]
+        first = statements[start]
+        if (
+            isinstance(first, IRAssign)
+            and isinstance(first.target, IRLocal)
+            and isinstance(first.expr, IREnumIndex)
+            and start + 1 < len(statements)
         ):
+            assignment, conditional = first, statements[start + 1]
+        if not isinstance(conditional, IRConditional):
             return None
         condition = conditional.condition
         if not isinstance(condition, IRBoolExpr) or condition.op not in (
@@ -388,12 +394,18 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
         ):
             return None
         left, right = condition.left, condition.right
-        if isinstance(right, IRLocal):
+        tested = assignment.target if assignment is not None else None
+        if isinstance(right, (IRLocal, IREnumIndex)):
             left, right = right, left
-        if left != assignment.target or not isinstance(right, IRConst):
+        if not isinstance(right, IRConst):
+            return None
+        if assignment is not None and left != tested:
+            return None
+        index_expr = assignment.expr if assignment is not None else left
+        if not isinstance(index_expr, IREnumIndex) or not isinstance(index_expr.value, IRLocal):
             return None
         index = _int_const_value(right)
-        value = assignment.expr.value
+        value = index_expr.value
         enum = value.get_type().definition
         if index is None or not isinstance(enum, Enum) or not 0 <= index < len(enum.constructs):
             return None
@@ -426,8 +438,11 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
         # Extraction records remain ordered; materialize real destinations in
         # the successful case instead of shadowing function locals in patterns.
         fields: List[Tuple[IRStatement, IREnumField, IREnumPattern, int]] = []
-        removed: List[IRStatement] = [assignment, conditional.condition]
-        indices = [assignment.target.name]
+        removed: List[IRStatement] = [conditional.condition]
+        indices: List[str] = []
+        if assignment is not None:
+            removed.insert(0, assignment)
+            indices.append(cast(IRLocal, assignment.target).name)
         intermediates: Set[str] = set()
         seen_destinations: Set[str] = set()
         seen_slots: Set[Tuple[int, int]] = set()
@@ -460,7 +475,8 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
                 body_statements = current.statements[position:]
                 break
             nested_assign, nested_cond, nested_value, nested_index, nested_success, failure = nested
-            if position + 2 != len(current.statements) or not _stmt_lists_structurally_equal(
+            test_length = 1 if nested_assign is None else 2
+            if position + test_length != len(current.statements) or not _stmt_lists_structurally_equal(
                 default.statements, failure.statements
             ):
                 return None
@@ -478,8 +494,10 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
             source[2].slots[source[3]] = child
             facts[nested_value.name] = child
             intermediates.add(nested_value.name)
-            removed.extend([nested_assign, nested_cond.condition])
-            indices.append(nested_assign.target.name)
+            removed.append(nested_cond.condition)
+            if nested_assign is not None:
+                removed.append(nested_assign)
+                indices.append(cast(IRLocal, nested_assign.target).name)
             current = nested_success
         excluded = {id(node) for node in removed}
         # Index locals can be reused, but their old tag value must not escape.
@@ -532,7 +550,7 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
         )
         switch = IRSwitch(self.func.code, value, {key: body}, default).adopt(*removed)
         switch.enum_patterns[key] = root
-        return switch, 2
+        return switch, 1 if assignment is None else 2
 
     def _try_singleton_region(
         self, statements: List[IRStatement], start: int

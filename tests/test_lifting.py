@@ -348,3 +348,11 @@ def test_temporaries_in_a_named_register_fold_into_their_expression():
     assert "var mx: Float = m.a * this.x + m.c * this.y + m.x;" in out
     assert "var my: Float = m.b * this.x + m.d * this.y + m.y;" in out
     assert "+=" not in out
+
+
+def test_enum_switch_recovered_from_folded_index_tests():
+    # format.gif.Tools.loopCount: once the constructor index folds into each test
+    # (`if (Type.enumIndex(block) == 1)`), the nested tests are still one pattern.
+    out = _decompile_named("tests/haxe/Heaps3D.hl", "format.gif.$Tools.loopCount")
+    assert "case BExtension(EApplicationExtension(AENetscapeLooping(loops))):" in out
+    assert "Type.enumIndex" not in out
