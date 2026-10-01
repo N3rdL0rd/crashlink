@@ -5098,8 +5098,14 @@ def _stub_default(typ: Type) -> str:
 
 
 def _find_constructor(code: Bytecode, obj: Obj) -> Optional[Function]:
-    """The `__constructor__` function of a class, searching protos and bindings."""
-    entries = list(getattr(obj, "protos", [])) + list(getattr(obj, "bindings", []))
+    """The `__constructor__` function of a class, searching the protos and bindings of
+    both halves (it's bound on the static one)."""
+    entries = [
+        entry
+        for half in _obj_pair(obj)
+        if half is not None
+        for entry in list(getattr(half, "protos", [])) + list(getattr(half, "bindings", []))
+    ]
     for entry in entries:
         try:
             fn = entry.findex.resolve(code)
@@ -5242,15 +5248,32 @@ def _stub_method(code: Bytecode, func: Function, is_instance: bool, dynamic: Opt
     if is_ctor:
         # A derived class must call super(); supply type-correct default args so
         # the stub compiles even when we don't reproduce the real constructor.
-        if dynamic is not None and dynamic.super and dynamic.super.value > 0:
-            parent_def = dynamic.super.resolve(code).definition
+        # The nearest ancestor's constructor is the one `super()` calls; with none,
+        # Haxe rejects the call.
+        pctor = (
+            next(
+                (
+                    ctor
+                    for parent in _ancestors(code, dynamic)
+                    if (ctor := _find_constructor(code, parent)) is not None
+                ),
+                None,
+            )
+            if dynamic is not None
+            else None
+        )
+        if pctor is not None:
             super_args = ""
-            if isinstance(parent_def, Obj):
-                pctor = _find_constructor(code, parent_def)
-                if pctor is not None:
-                    pfun = pctor.type.resolve(code).definition
-                    if isinstance(pfun, Fun) and len(pfun.args) > 1:
-                        super_args = ", ".join(_stub_default(a.resolve(code)) for a in pfun.args[1:])
+            pfun = pctor.type.resolve(code).definition
+            if isinstance(pfun, Fun) and len(pfun.args) > 1:
+                # A parameter with a default takes it: its declared type may not be nullable.
+                pdefaults = default_arg_regs(code, pctor)
+                super_args = ", ".join(
+                    _expression_to_haxe(default_arg_value(code, pdefaults[k]), code, None)
+                    if k in pdefaults
+                    else _stub_default(a.resolve(code))
+                    for k, a in enumerate(pfun.args[1:], 1)
+                )
             body = f"    super({super_args});"
     elif ret_type is not None and ret_type.kind.value != Type.Kind.VOID.value:
         # `throw` type-checks against any return type — the standard stub body.

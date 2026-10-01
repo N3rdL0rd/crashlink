@@ -333,11 +333,21 @@ def test_stub_file_signatures_and_bodies():
     # class + field kept
     assert "class Clazz extends Parent" in out
     assert "public var b: Int;" in out
-    # constructor calls super so it compiles
-    assert "public function new()" in out and "super(" in out
+    # Parent declares no constructor, so the stub's can't call one
+    assert "public function new()" in out and "super(" not in out
     # void method is empty, non-void method stubs with a throw (type-checks)
     assert "function main(): Void" in out
     assert 'throw "stub' in out and "function method(): Int" in out
+
+
+def test_stub_constructor_passes_the_parent_constructor_defaults():
+    from crashlink import Bytecode
+    from crashlink.pseudo import stub_file
+
+    out = stub_file(Bytecode.from_path("tests/haxe/DefaultArgInherit.hl"), "DefaultArgInherit.hx")
+    assert out is not None
+    # `Base(x:Int = 1, y:Int = 2)`: null can't be passed for an Int.
+    assert "super(1, 2);" in out
 
 
 def test_temporaries_in_a_named_register_fold_into_their_expression():
