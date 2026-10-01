@@ -70,7 +70,7 @@ The Jump and Search menus cover the CLI's lookups: **Go to File Offset** (which 
 
 **Edit › Edit Function as .hlasm** (Ctrl+E) opens the focused function as [.hlasm](/hlasm) text. Apply assembles it against the loaded file, reports any error with its line, and swaps the function in as an undoable edit; new strings and numbers are added to the pools.
 
-**File › Export** writes the (possibly edited) bytecode back out (as bytecode or as `.hlasm`), transpiles to HL/C, stubs one or all source files, generates API docs or a MkDocs site, recovers hxsl shaders, and saves a class together with every class it references. Exports run in the background and report the output path when done.
+**File › Export** writes the (possibly edited) bytecode back out (as bytecode or as `.hlasm`), transpiles to HL/C, stubs a source file, exports the whole image as a Haxe project (decompiled or stubbed), generates API docs or a MkDocs site, recovers hxsl shaders, and saves a class together with every class it references. Exports run in the background and report the output path when done.
 
 ## Errors and stability
 

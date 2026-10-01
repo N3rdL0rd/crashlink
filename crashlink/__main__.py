@@ -21,7 +21,7 @@ import tempfile
 import textwrap
 import traceback
 import webbrowser
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Set
+from typing import Any, Callable, Dict, List, Optional, Tuple, Set
 
 from crashlink.hlc import code_to_c, code_to_c_files
 
@@ -66,6 +66,7 @@ _SUBCOMMAND_HELP: Dict[str, str] = {
     "disasm": "Disassemble a function from a bytecode file",
     "nasm": "Print the original compiled assembly of a function in an HL/C binary",
     "hlasm": "Write a whole bytecode image as .hlasm source (assemble it back with -a)",
+    "project": "Export a whole image as a Haxe project: every module, decompiled or stubbed",
     "search": "Search strings in a bytecode file",
     "inlines": "Find inlined function bodies and their parameter types from debug positions",
     "funcs": "List functions in a bytecode file",
@@ -125,7 +126,7 @@ def _make_progress_cb() -> "Optional[ProgressCallback]":
 # another. Only `main()` enables freezing, and only when dispatching one of these as the whole
 # process, so importing and calling a `*_main` in-process (e.g. from tests) never freezes.
 _ONE_SHOT_SUBCOMMANDS = frozenset(
-    {"hlc", "info", "disasm", "search", "inlines", "funcs", "decompile", "db", "hlasm"}
+    {"hlc", "info", "disasm", "search", "inlines", "funcs", "decompile", "db", "hlasm", "project"}
 )
 _freeze_gc_after_load = False
 
@@ -606,6 +607,57 @@ def hlasm_main(argv: List[str]) -> None:
         print(f"{args.file} -> {args.output}")
     else:
         sys.stdout.write(text)
+
+
+def project_main(argv: List[str]) -> None:
+    from . import project
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Export a whole bytecode image as a Haxe project: every type outside the std in the "
+            "module it was declared in, natives as externs, and a build.hxml that compiles it "
+            "back to HashLink. Function bodies are decompiled, or stubbed with --stubs."
+        ),
+        prog="crashlink project",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="\n".join(
+            [
+                "examples:",
+                "  crashlink project game.hl out/",
+                "      Decompile every function into a project under out/; build it with",
+                "      `haxe build.hxml` from out/.",
+                "",
+                "  crashlink project game.hl out/ --stubs",
+                "      Every type and signature, bodies stubbed: compiles whatever the decompiler",
+                "      makes of the bodies. A skeleton to fill in module by module.",
+            ]
+        ),
+    )
+    parser.add_argument("file", help="Input .hl / .dat file")
+    parser.add_argument("output", help="Folder to write the project into")
+    parser.add_argument("--stubs", action="store_true", help="Stub every function body")
+    parser.add_argument("-N", "--no-constants", action="store_true", help="Skip constant resolution")
+    args = parser.parse_args(argv)
+    code = _load_code_from_cli_path(args.file, args.no_constants)
+    progress = None
+    bar = None
+    if USE_TQDM:
+        try:
+            from tqdm import tqdm as _tqdm
+
+            bar = _tqdm(unit="module", desc="stubbing" if args.stubs else "decompiling")
+
+            def progress(done: int, total: int) -> None:
+                assert bar is not None
+                bar.total = total
+                bar.update(done - bar.n)
+        except ImportError:
+            pass
+    files = project.export(code, stubs=args.stubs, progress=progress)
+    if bar is not None:
+        bar.close()
+    project.write(args.output, files)
+    print(f"Wrote {len(files)} files to {args.output}")
 
 
 def search_main(argv: List[str]) -> None:
@@ -1728,40 +1780,52 @@ class Commands(BaseCommands):
         _emit_haxe(out)
 
     def autostub(self, args: List[str]) -> None:
-        """Stub every file in the debug database to a target folder. `autostub <folder>`
+        """Write the whole image as a stubbed Haxe project. `autostub <folder>`
 
-        Writes a compilable stub (see `stub`) for each source file, laid out under
-        <folder> mirroring each file's Haxe package (e.g. tool/log/LogUtils.hx).
-        For bootstrapping a large decompilation project: a whole compilable
-        skeleton you fill in file by file."""
+        Every type in the module it was declared in, with its fields and exact
+        signatures; bodies become type-correct placeholders (see `stub`). The
+        project compiles with `haxe build.hxml`: a skeleton to fill in module by
+        module. `project` writes the same project with bodies decompiled."""
+        self._export_project(args, "autostub", stubs=True)
+
+    def project(self, args: List[str]) -> None:
+        """Write the whole image as a decompiled Haxe project. `project <folder>`
+
+        Every type outside the std in the module it was declared in, natives as
+        externs, and a `build.hxml` compiling it back to HashLink. `autostub`
+        writes the same project with every body stubbed."""
+        if self._inspection_guard():
+            return
+        self._export_project(args, "project", stubs=False)
+
+    def _export_project(self, args: List[str], command: str, stubs: bool) -> None:
         if not args:
-            print("Usage: autostub <folder>")
+            print(f"Usage: {command} <folder>")
             return
-        if not self.code.has_debug_info:
-            print("Debug info not found.")
-            return
-        from .pseudo import stub_all
+        from . import project
 
-        out_dir = args[0]
-        items: Iterable[Tuple[str, str]] = stub_all(self.code)
+        progress = None
+        bar = None
         try:
             from tqdm import tqdm
 
-            items = tqdm(items, unit="file", desc="stubbing")
+            bar = tqdm(unit="module", desc="stubbing" if stubs else "decompiling")
+
+            def progress(done: int, total: int) -> None:
+                assert bar is not None
+                bar.total = total
+                bar.update(done - bar.n)
         except ImportError:
             pass
-
-        written = 0
-        for rel_path, text in items:
-            dest = os.path.join(out_dir, rel_path)
-            try:
-                os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
-                with open(dest, "w", encoding="utf-8") as f:
-                    f.write(text + "\n")
-                written += 1
-            except OSError as e:
-                print(f"[warning] could not write {dest}: {e}", file=sys.stderr)
-        print(f"Wrote {written} stub file(s) to {out_dir}")
+        files = project.export(self.code, stubs=stubs, progress=progress)
+        if bar is not None:
+            bar.close()
+        try:
+            project.write(args[0], files)
+        except OSError as e:
+            print(f"[error] could not write {args[0]}: {e}", file=sys.stderr)
+            return
+        print(f"Wrote {len(files)} file(s) to {args[0]}")
 
     @alias("cp")
     def copy(self, args: List[str]) -> None:
@@ -3161,6 +3225,7 @@ def main() -> None:
         "disasm": disasm_main,
         "nasm": nasm_main,
         "hlasm": hlasm_main,
+        "project": project_main,
         "search": search_main,
         "inlines": inlines_main,
         "funcs": funcs_main,

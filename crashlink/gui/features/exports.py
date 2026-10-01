@@ -1,5 +1,5 @@
 """File > Export: write the (possibly edited) bytecode back out (as bytecode or .hlasm), and run the CLI's
-generators (HL/C, stubs, API docs, MkDocs, shaders, self-contained classes).
+generators (HL/C, stubs, Haxe projects, API docs, MkDocs, shaders, self-contained classes).
 Each export runs in the background and logs the output path when done."""
 
 from __future__ import annotations
@@ -151,25 +151,23 @@ class _Exporter(QObject):
 
         self._run("Writing stub…", work, "Stub written")
 
-    def stub_all(self) -> None:
+    def project(self, stubs: bool) -> None:
+        """The whole image as a Haxe project (see `crashlink.project`)."""
         code = self._code()
         if code is None:
             return
-        if not code.has_debug_info:
-            QMessageBox.information(
-                self.mw, "No debug info", "Stubbing needs debug info (source file names)."
-            )
-            return
-        folder = QFileDialog.getExistingDirectory(self.mw, "Stub All Files Into")
+        title = "Write Stubbed Project Into" if stubs else "Write Decompiled Project Into"
+        folder = QFileDialog.getExistingDirectory(self.mw, title)
         if not folder:
             return
-        from ...pseudo import stub_all
+        from ... import project
 
         def work() -> str:
-            _write_files(folder, {rel: text + "\n" for rel, text in stub_all(code)})
+            _write_files(folder, project.export(code, stubs=stubs))
             return folder
 
-        self._run("Stubbing every source file…", work, "Stubs written")
+        label = "Stubbing every module…" if stubs else "Decompiling every module…"
+        self._run(label, work, "Project written")
 
     def api_docs(self) -> None:
         code = self._code()
@@ -260,7 +258,8 @@ def install(mw: "MainWindow") -> None:
     menu.addSeparator()
     menu.addAction("Class With Dependencies…", exporter.class_with_deps)
     menu.addAction("Stub Source File…", exporter.stub_file)
-    menu.addAction("Stub All Files…", exporter.stub_all)
+    menu.addAction("Decompiled Project…", lambda: exporter.project(stubs=False))
+    menu.addAction("Stubbed Project…", lambda: exporter.project(stubs=True))
     menu.addSeparator()
     menu.addAction("API Docs…", exporter.api_docs)
     menu.addAction("MkDocs Site…", exporter.mkdocs)

@@ -72,10 +72,11 @@ class Abstract:
     def underlying_annotation(self, code: Bytecode) -> str:
         return disasm._haxe_annotation(code, self.underlying) if self.underlying is not None else "Dynamic"
 
-    def header(self, code: Bytecode) -> str:
-        """The declaration line, up to the opening brace."""
+    def header(self, code: Bytecode, name: Optional[str] = None) -> str:
+        """The declaration line, up to the opening brace, declaring `name` (default
+        `declared`)."""
         underlying = self.underlying_annotation(code)
-        return f"abstract {self.declared}({underlying}) from {underlying} to {underlying}"
+        return f"abstract {name or self.declared}({underlying}) from {underlying} to {underlying}"
 
     def accessor(self, findex: int) -> Optional[Tuple[Property, bool]]:
         """The property `findex` reads (False) or writes (True), if it's an accessor."""

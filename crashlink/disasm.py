@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 import weakref
 from collections import OrderedDict
-from typing import Any, List, Optional, Dict, Tuple
+from typing import Any, Callable, List, Optional, Dict, Tuple
 
 try:
     from tqdm import tqdm
@@ -258,6 +258,11 @@ def source_paths(text: str) -> str:
         code = _PRIVATE_TYPE_PATH.sub(r"\1\2.\3", code)
         return _STD_MODULE_TYPE.sub(lambda m: _STD_MODULE_PATHS[m.group(1)], code)
 
+    return outside_literals(text, fix)
+
+
+def outside_literals(text: str, fix: Callable[[str], str]) -> str:
+    """Apply `fix` to the code of `text` between its string literals."""
     out = []
     last = 0
     for literal in _STRING_LITERAL.finditer(text):

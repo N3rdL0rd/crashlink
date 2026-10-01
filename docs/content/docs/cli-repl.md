@@ -34,6 +34,7 @@ For anything that doesn't need a live session, there are subcommands that run on
 | `inlines` | Find function bodies the compiler inlined, with their parameter types and per-site constants (`--at File.hx:line`, `--func <findex>`) |
 | `db` | Inspect a `.cldb` debug-info database (`db info`, `db check`, `db renames`, `db comments`) |
 | `hlasm` | Write a whole bytecode image as `.hlasm` source (see [Writing HashLink Bytecode by Hand](/hlasm)) |
+| `project` | Export a whole image as a Haxe project that compiles with `haxe build.hxml`: bodies decompiled, or stubbed with `--stubs` |
 | `hlc` | Transpile bytecode to C, optionally build it (`--build`) |
 | `mcp` | Run crashlink as an MCP server |
 | `gui` | Launch the graphical bytecode inspector |
@@ -69,7 +70,8 @@ This isn't exhaustive (there are 60+ commands; run `help` in a live session for 
 | `decomp <idx>` | `decompile`, `dec`, `pseudo`, `d` | Decompile a function to pseudo-Haxe |
 | `decompfile <file>` | `df` | Decompile every function in a debug source file, grouped by class |
 | `stub <file>` | `stubfile` | Emit a compilable stub of a file (signatures kept, bodies stubbed) |
-| `autostub <folder>` | | Stub every file in the debug database to a folder |
+| `project <folder>` | | Write the whole image as a Haxe project, bodies decompiled (see [the `project` subcommand](#one-shot-subcommands)) |
+| `autostub <folder>` | | The same project with every body stubbed: compiles regardless of how bodies decompile |
 | `findfunc <query>` | `ff` | Search functions by name substring, or list functions in a source file |
 | `fnn <name>` | | Print a function by exact name |
 | `patch <idx>` | `edit` | Edit a function as [.hlasm](/hlasm) in `$VISUAL`/`$EDITOR` (or a small editor window), then apply it; `save` writes the result |

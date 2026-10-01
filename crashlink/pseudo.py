@@ -10,6 +10,7 @@ import re
 import weakref
 import threading
 from contextlib import contextmanager
+from dataclasses import dataclass, field as dc_field
 from typing import Optional, List, Set, Dict, FrozenSet, Tuple, Union, cast, Any, Iterator
 
 from .core import (
@@ -4722,6 +4723,35 @@ def class_pseudo(ir_class: "IRClass", max_classes: Optional[int] = None) -> str:
     return "\n\n".join(_class_pseudo_recursive(ir_class, set(), max_classes=max_classes))
 
 
+@dataclass
+class ProjectExterns:
+    """Natives and std functions the modules of a project call, declared once for all
+    of them (`extern class Native`, `extern class StdFuncs` in the root package)."""
+
+    natives: Dict[int, Native] = dc_field(default_factory=dict)
+    functions: Dict[int, Tuple[str, int]] = dc_field(default_factory=dict)
+
+    def declarations(self, code: Bytecode) -> Dict[str, str]:
+        """Module name -> source of the extern classes, for the ones anything calls."""
+        result = {}
+        if self.natives:
+            result["Native"] = _native_extern(list(self.natives.values()), code)
+        if self.functions:
+            result["StdFuncs"] = _function_extern(self.functions, code)
+        return result
+
+
+@dataclass
+class ModuleDeclaration:
+    """A class rendered as a declaration of a project module (see `crashlink.project`):
+    under its short name, `private` when only its module may name it, and with the
+    externs it calls collected in `externs` rather than declared before it."""
+
+    name: str
+    private: bool
+    externs: ProjectExterns
+
+
 def _implements_clause(code: Bytecode, dynamic: Optional[Obj]) -> str:
     """` implements I` for each interface the class is registered as implementing, but one
     another of them extends. hxbit's `Serializable` is left to `hxbit`: its macro
@@ -4855,15 +4885,16 @@ def _interface_dependencies(code: Bytecode, interface: typeinit.Interface) -> Se
 
 
 def _class_body(
-    ir_class: "IRClass", emitted_enums: Optional[Set[int]] = None
+    ir_class: "IRClass", emitted_enums: Optional[Set[int]] = None, module: Optional[ModuleDeclaration] = None
 ) -> Tuple[str, Set[str], Optional[str]]:
     """Render one class's own body — header, static + instance fields, methods and
     anonymous-closure helpers — with no cross-file recursion.
 
     Returns (source, referenced_class_names, super_name). This is the single place
     class bodies are rendered: `class_pseudo` wraps it with recursive emission of
-    referenced classes (for single-class recompilation), while `decompile_file`
-    calls it flat per class for a whole-file dump.
+    referenced classes (for single-class recompilation), `decompile_file` calls it
+    flat per class for a whole-file dump, and `crashlink.project` with `module` for
+    a declaration of a project module.
     """
     code: Bytecode = ir_class.code
     primary_obj = ir_class.dynamic if ir_class.dynamic else ir_class.static
@@ -4871,11 +4902,13 @@ def _class_body(
         return "// Error: IRClass contains no valid Obj definitions.", set(), None
 
     class_name = destaticify(primary_obj.name.resolve(code))
+    declared = class_name if module is None else module.name
+    private = "private " if module is not None and module.private else ""
 
     interface = typeinit.interface_of(code, primary_obj)
     if interface is not None:
         return (
-            _interface_pseudo(code, interface, class_name),
+            _interface_pseudo(code, interface, declared, private),
             _interface_dependencies(code, interface),
             None,
         )
@@ -4891,10 +4924,10 @@ def _class_body(
     output_lines: List[str] = []
     indent_str = _indent_str(1)
 
-    header = f"class {class_name}"
+    header = f"{private}class {declared}"
     abstract = abstracts.abstract_of(code, primary_obj)
     if abstract is not None:
-        header = abstract.header(code)
+        header = private + abstract.header(code, declared if module is not None else None)
     super_name: Optional[str] = None
     if ir_class.dynamic and ir_class.dynamic.super and ir_class.dynamic.super.value > 0:
         super_type = ir_class.dynamic.super.resolve(code)
@@ -4998,8 +5031,14 @@ def _class_body(
     for implemented in typeinit.implemented(code, ir_class.dynamic):
         if implemented.name not in STD_TYPES and implemented.name != "hxbit.Serializable":
             referenced_classes.add(destaticify(implemented.obj.name.resolve(code)))
-    native_extern = _native_extern(natives, code)
-    func_extern = _function_extern(func_externs, code)
+    if module is not None:
+        # A project declares every named enum in its own module, and the natives and
+        # std externs once for all modules. A closure's capture context is the class's.
+        module.externs.natives.update((native.findex.value, native) for native in natives)
+        module.externs.functions.update(func_externs)
+        referenced_enums = {name: enum for name, enum in referenced_enums.items() if not enum.name.value}
+    native_extern = _native_extern(natives, code) if module is None else ""
+    func_extern = _function_extern(func_externs, code) if module is None else ""
     if native_extern:
         output_lines.append(native_extern)
         output_lines.append("")
@@ -5440,21 +5479,25 @@ def _stub_method(code: Bytecode, func: Function, is_instance: bool, dynamic: Opt
     return f"{header}\n{body}\n}}" if body else f"{header}\n}}"
 
 
-def _stub_class(code: Bytecode, primary: Obj) -> str:
+def _stub_class(code: Bytecode, primary: Obj, module: Optional[ModuleDeclaration] = None) -> str:
     """A class rendered as a compilable stub straight from its Obj: fields + method
-    signatures, no decompilation (so it's fast and can't crash on hard bodies)."""
+    signatures, no decompilation (so it's fast and can't crash on hard bodies).
+    `module` declares it in a project module (see `_class_body`)."""
     dynamic, static = _obj_pair(primary)
     named = dynamic if dynamic is not None else static
     assert named is not None
     # Short name only: the package is declared once per file (a dotted name in a
     # `class` declaration isn't valid Haxe). `extends`/type refs stay qualified.
     class_name = destaticify(named.name.resolve(code)).rsplit(".", 1)[-1]
+    if module is not None:
+        class_name = module.name
+    private = "private " if module is not None and module.private else ""
     interface = typeinit.interface_of(code, static)
     if interface is not None:
-        return _interface_pseudo(code, interface, class_name)
+        return _interface_pseudo(code, interface, class_name, private)
 
     lines: List[str] = []
-    header = f"class {class_name}"
+    header = f"{private}class {class_name}"
     if dynamic is not None and dynamic.super and dynamic.super.value > 0:
         super_def = dynamic.super.resolve(code).definition
         if isinstance(super_def, Obj):
@@ -5463,7 +5506,7 @@ def _stub_class(code: Bytecode, primary: Obj) -> str:
     abstract = abstracts.abstract_of(code, primary)
     if abstract is not None:
         underlying = abstract.underlying_annotation(code)
-        header = f"abstract {abstract.name}({underlying}) from {underlying} to {underlying}"
+        header = f"{private}abstract {class_name if module is not None else abstract.name}({underlying}) from {underlying} to {underlying}"
     header += " {"
     lines.append(header)
     if abstract is not None and abstract.properties:
@@ -5546,40 +5589,3 @@ def _stub_from_entries(code: Bytecode, reg: Dict[int, Any], entries: List[Any]) 
     # A packaged file needs a matching `package` declaration to compile under its
     # directory on the classpath.
     return f"package {package};\n\n{body}" if package else body
-
-
-def _stub_output_path(file_path: str, entries: List[Any], reg: Dict[int, Any], code: Bytecode) -> str:
-    """Relative on-disk path for a file's stub, mirroring its Haxe package.
-
-    A file's package comes from its first class's dotted name (`tool.log.LogUtils`
-    -> `tool/log/`), which is stable even when the debug path is an absolute
-    build-machine path (`/home/.../std/hl/_std/String.hx`). The filename is the
-    debug path's basename."""
-    filename = os.path.basename(file_path.replace("\\", "/"))
-    pkg = ""
-    for entry in entries:
-        if entry.canonical_name == "(standalone)" or not entry.methods:
-            continue
-        reg_entry = reg.get(entry.methods[0].findex)
-        if reg_entry is None:
-            continue
-        canonical = destaticify(reg_entry[0].name.resolve(code))
-        if "." in canonical:
-            pkg = canonical.rsplit(".", 1)[0].replace(".", "/")
-        break
-    return f"{pkg}/{filename}" if pkg else filename
-
-
-def stub_all(code: Bytecode) -> Iterator[Tuple[str, str]]:
-    """Yield (relative-output-path, stub-source) for every debug file with classes.
-
-    Computes the file→class map once (unlike calling `stub_file` per file), so it
-    scales to a whole image. Files with only standalone functions are skipped."""
-    reg = _method_registry(code)
-    for file_path, entries in disasm.file_class_map(code).items():
-        # `?` holds code the compiler synthesised, not a source file.
-        if file_path == "?" or all(e.canonical_name == "(standalone)" for e in entries):
-            continue
-        text = _stub_from_entries(code, reg, entries)
-        if text.strip():
-            yield _stub_output_path(file_path, entries, reg, code), text
