@@ -40,6 +40,7 @@ from .core import (
 )
 from .opcodes import opcodes
 from .hxbit import is_serializable_virtual
+from .std_types import STD_TYPES, STD_WRAPPED
 
 
 # Kinds of Haxe's basic value types, which can't hold null.
@@ -231,32 +232,12 @@ def describe_type(code: Bytecode, index: int) -> str:
 
 
 #: Standard-library types declared in another type's module, by bytecode name. Source
-#: must name them through that module (`Type.ValueType`, not `ValueType`).
+#: must name them through that module (`Type.ValueType`, not `ValueType`). Private types
+#: are rewritten by `_PRIVATE_TYPE_PATH`, and `StdTypes` is imported everywhere.
 _STD_MODULE_PATHS = {
-    "IMap": "Map.IMap",
-    "SysError": "Sys.SysError",
-    "ValueType": "Type.ValueType",
-    "XmlType": "Xml.XmlType",
-    "haxe.EnumValueTools": "haxe.EnumTools.EnumValueTools",
-    "haxe.MainEvent": "haxe.MainLoop.MainEvent",
-    "haxe.StackItem": "haxe.CallStack.StackItem",
-    "haxe.TypeResolver": "haxe.Unserializer.TypeResolver",
-    "haxe.ds.GenericCell": "haxe.ds.GenericStack.GenericCell",
-    "haxe.ds.TreeNode": "haxe.ds.BalancedTree.TreeNode",
-    "hl.CoreEnum": "hl.BaseType.CoreEnum",
-    "hl.CoreType": "hl.BaseType.CoreType",
-    "hl.Enum": "hl.BaseType.Enum",
-    "hl.GcFlag": "hl.Gc.GcFlag",
-    "hl.NativeArrayIterator": "hl.NativeArray.NativeArrayIterator",
-    "hl.TypeKind": "hl.Type.TypeKind",
-    "hl.types.ArrayDynIterator": "hl.types.ArrayDyn.ArrayDynIterator",
-    "hl.types.ArrayObjIterator": "hl.types.ArrayObj.ArrayObjIterator",
-    "hl.types.BytesIterator": "hl.types.ArrayBytes.BytesIterator",
-    "hl.types.BytesMapData": "hl.types.BytesMap.BytesMapData",
-    "hl.types.Int64MapData": "hl.types.Int64Map.Int64MapData",
-    "hl.types.IntMapData": "hl.types.IntMap.IntMapData",
-    "hl.types.ObjectMapData": "hl.types.ObjectMap.ObjectMapData",
-    "sys.io.FileHandle": "sys.io.File.FileHandle",
+    name: source
+    for name, source in STD_TYPES.items()
+    if name != source and not re.search(r"(^|\.)_", name) and not source.startswith("StdTypes.")
 }
 _PRIVATE_TYPE_PATH = re.compile(r"(?<![\w.])((?:[a-z_]\w*\.)*)_([A-Z]\w*)\.([A-Z]\w*)")
 _STD_MODULE_TYPE = re.compile(
@@ -294,6 +275,7 @@ _STD_GENERIC_PARAMS = {
     "haxe.ds.GenericStack": 1,
     "haxe.ds.List": 1,
     "haxe.ds.TreeNode": 2,
+    "haxe.IMap": 2,
     "haxe.iterators.ArrayIterator": 1,
     "haxe.iterators.ArrayKeyValueIterator": 1,
     "haxe.iterators.DynamicAccessIterator": 1,
@@ -459,15 +441,17 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                         optional = "@:optional " if has_optional and nullable else ""
                         members.append(f"{optional}var {name}: {render(ftype)};")
                 return f"{{ {' '.join(members)} }}" if members else "{}"
-            if native:
-                if isinstance(definition, Abstract):
-                    name = definition.name.resolve(code).replace('"', '\\"')
-                    return f'hl.Abstract<"{name}">'
-                if current.kind.value == Type.Kind.I64.value:
-                    return "hl.I64"
-                if current.kind.value == Type.Kind.U8.value:
-                    return "hl.UI8"
-            return type_to_haxe(type_name(code, current))
+            if isinstance(definition, Abstract):
+                name = definition.name.resolve(code).replace('"', '\\"')
+                return f'hl.Abstract<"{name}">'
+            if current.kind.value == Type.Kind.I64.value:
+                return "hl.I64"
+            if current.kind.value == Type.Kind.U8.value:
+                return "hl.UI8"
+            name = type_name(code, current)
+            # A private std class an std abstract wraps (`haxe.Int64`): a declared type
+            # can only be the abstract, which converts from it.
+            return STD_WRAPPED.get(name) or type_to_haxe(name)
         finally:
             active.remove(key)
 
