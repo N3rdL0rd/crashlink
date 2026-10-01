@@ -24,9 +24,11 @@ from .core import (
     destaticify,
     is_static_name,
     gIndex,
+    Virtual,
 )
 from . import disasm
-from . import abstracts, hxbit, hxsl
+from . import abstracts, hxbit, hxsl, typeinit
+from .std_types import STD_TYPES
 from .decomp import (
     STATIC_INIT_UNRECOVERABLE,
     IRBreak,
@@ -4720,6 +4722,138 @@ def class_pseudo(ir_class: "IRClass", max_classes: Optional[int] = None) -> str:
     return "\n\n".join(_class_pseudo_recursive(ir_class, set(), max_classes=max_classes))
 
 
+def _implements_clause(code: Bytecode, dynamic: Optional[Obj]) -> str:
+    """` implements I` for each interface the class is registered as implementing, but one
+    another of them extends. hxbit's `Serializable` is left to `hxbit`: its macro
+    regenerates the members it requires."""
+    implemented = typeinit.implemented(code, dynamic)
+    implied = {id(ancestor) for interface in implemented for ancestor in interface.ancestors()}
+    return "".join(
+        f" implements {disasm.type_to_haxe(interface.name)}"
+        for interface in implemented
+        if interface.name != "hxbit.Serializable" and id(interface) not in implied
+    )
+
+
+def _chain(code: Bytecode, obj: Obj) -> List[Obj]:
+    return [obj, *_ancestors(code, obj)]
+
+
+def _interface_properties(code: Bytecode, interface: typeinit.Interface) -> Dict[str, Tuple[bool, Type]]:
+    """Fields of an interface that are properties without storage, `name -> (has a setter,
+    type)`: no implementor has the field itself, only accessors. Fields an implementor
+    stores are rendered plain, on both sides, like the class's own."""
+    names = {member.name.resolve(code) for member in interface.virtual.fields}
+    found = {}
+    for member in interface.virtual.fields:
+        name = member.name.resolve(code)
+        member_type = member.type.resolve(code)
+        if isinstance(member_type.definition, Fun) or not interface.implementors:
+            continue
+        stored = any(
+            name in [field.name.resolve(code) for field in obj.fields]
+            for implementor in interface.implementors
+            for obj in _chain(code, implementor)
+        )
+        if not stored:
+            found[name] = (f"set_{name}" in names, member_type)
+    return found
+
+
+def _implementation(code: Bytecode, interface: typeinit.Interface, name: str) -> Optional[Function]:
+    """An implementor's method `name`, inherited ones included."""
+    for implementor in interface.implementors:
+        for obj in _chain(code, implementor):
+            for proto in obj.protos:
+                if proto.name.resolve(code) == name:
+                    func = proto.findex.resolve(code)
+                    if isinstance(func, Function):
+                        return func
+    return None
+
+
+def _interface_pseudo(code: Bytecode, interface: typeinit.Interface, name: str, private: str = "") -> str:
+    """An interface declaration from the type its values have: a member per field,
+    methods for function-typed ones. `private` prefixes the declaration. A parameter an
+    implementation gives a default has it here too (`a: T = v`), which is how Haxe matches
+    the two: HL passes an optional basic value by reference."""
+    properties = _interface_properties(code, interface)
+    inherited = {
+        member.name.resolve(code) for parent in interface.parents for member in parent.virtual.fields
+    }
+    extends = "".join(f" extends {disasm.type_to_haxe(parent.name)}" for parent in interface.parents)
+    lines = [f"{private}interface {name}{extends} {{"]
+    for member in interface.virtual.fields:
+        member_name = member.name.resolve(code)
+        if member_name in inherited:
+            continue
+        member_type = member.type.resolve(code)
+        signature = member_type.definition
+        if isinstance(signature, Fun):
+            implementation = _implementation(code, interface, member_name)
+            defaults = default_arg_regs(code, implementation) if implementation is not None else {}
+            params = []
+            for i, arg in enumerate(signature.args):
+                load = defaults.get(i + 1)
+                if load is not None and implementation is not None:
+                    value_type = implementation.regs[load.df["dst"].value].resolve(code)
+                    default = _expression_to_haxe(default_arg_value(code, load), code, None)
+                    params.append(f"a{i}: {disasm._haxe_annotation(code, value_type)} = {default}")
+                else:
+                    params.append(f"a{i}: {disasm._haxe_annotation(code, arg.resolve(code))}")
+            ret = disasm._haxe_annotation(code, signature.ret.resolve(code))
+            lines.append(f"    function {member_name}({', '.join(params)}): {ret};")
+        elif member_name in properties:
+            setter = "set" if properties[member_name][0] else "never"
+            lines.append(
+                f"    var {member_name}(get, {setter}): {disasm._haxe_annotation(code, member_type)};"
+            )
+        else:
+            lines.append(f"    var {member_name}: {disasm._haxe_annotation(code, member_type)};")
+    lines.append("}")
+    return disasm.source_paths("\n".join(lines))
+
+
+def _implemented_properties(code: Bytecode, dynamic: Optional[Obj]) -> List[str]:
+    """Declarations of the storage-less properties a class's interfaces require (see
+    `_interface_properties`), in the first class of the chain implementing them. An
+    accessor the bytecode doesn't have (an `inline` one, inlined everywhere) is declared
+    too, failing if called."""
+    if dynamic is None:
+        return []
+    ancestors = list(_ancestors(code, dynamic))
+    inherited = {id(interface) for obj in ancestors for interface in typeinit.implemented(code, obj)}
+    methods = {proto.name.resolve(code) for obj in _chain(code, dynamic) for proto in obj.protos}
+    lines = []
+    declared: Set[str] = set()
+    for interface in typeinit.implemented(code, dynamic):
+        if id(interface) in inherited:
+            continue
+        for name, (setter, typ) in _interface_properties(code, interface).items():
+            if name in declared:
+                continue
+            declared.add(name)
+            annotation = disasm._haxe_annotation(code, typ)
+            lines.append(f"public var {name}(get, {'set' if setter else 'never'}): {annotation};")
+            if f"get_{name}" not in methods:
+                lines.append(
+                    f'function get_{name}(): {annotation} {{ throw "get_{name}: inline, not in the bytecode"; }}'
+                )
+    return lines
+
+
+def _interface_dependencies(code: Bytecode, interface: typeinit.Interface) -> Set[str]:
+    """User classes an interface's member types name."""
+    names: Set[str] = set()
+    seen: Set[int] = set()
+    for member in interface.virtual.fields:
+        for typ in _annotation_dependencies(member.type.resolve(code), code, seen):
+            definition = typ.definition
+            if isinstance(definition, Obj) and not _is_std_class_obj(code, definition):
+                names.add(destaticify(definition.name.resolve(code)))
+    return names
+
+
 def _class_body(
     ir_class: "IRClass", emitted_enums: Optional[Set[int]] = None
 ) -> Tuple[str, Set[str], Optional[str]]:
@@ -4737,6 +4871,14 @@ def _class_body(
         return "// Error: IRClass contains no valid Obj definitions.", set(), None
 
     class_name = destaticify(primary_obj.name.resolve(code))
+
+    interface = typeinit.interface_of(code, primary_obj)
+    if interface is not None:
+        return (
+            _interface_pseudo(code, interface, class_name),
+            _interface_dependencies(code, interface),
+            None,
+        )
 
     # If this class is an hxsl shader, its real source is the serialized ShaderData
     # (the bytecode only holds generated uniform-plumbing). Recover and render it.
@@ -4766,6 +4908,14 @@ def _class_body(
     methods = ir_class.methods
     static_fields = ir_class.static_fields
     fields = ir_class.fields
+    header += _implements_clause(code, ir_class.dynamic)
+    # An unnamed virtual-typed slot caches the object as one of its interfaces:
+    # the compiler adds it, source never declares it.
+    fields = [
+        (name, typ)
+        for name, typ in fields
+        if not (name.startswith("__hidden") and isinstance(typ.definition, Virtual))
+    ]
     if serializable is not None:
         if serializable.root:
             header += " implements hxbit.Serializable"
@@ -4845,6 +4995,9 @@ def _class_body(
         referenced_enums.update(_collect_referenced_enums(ir_func.block, code))
     for ref_set in getattr(ir_class, "static_field_init_refs", {}).values():
         referenced_classes.update(ref_set - {class_name})
+    for implemented in typeinit.implemented(code, ir_class.dynamic):
+        if implemented.name not in STD_TYPES and implemented.name != "hxbit.Serializable":
+            referenced_classes.add(destaticify(implemented.obj.name.resolve(code)))
     native_extern = _native_extern(natives, code)
     func_extern = _function_extern(func_externs, code)
     if native_extern:
@@ -4894,6 +5047,11 @@ def _class_body(
                     field_type_haxe = f"Array<{elem_haxe}>"
             meta = "@:s " if serializable is not None and field_name in serializable.fields else ""
             output_lines.append(f"{indent_str}{meta}public var {field_name}: {field_type_haxe};")
+        output_lines.append("")
+
+    properties = _implemented_properties(code, ir_class.dynamic)
+    if properties:
+        output_lines.extend(f"{indent_str}{line}" for line in properties)
         output_lines.append("")
 
     if abstract is not None and abstract.properties:
@@ -5291,6 +5449,9 @@ def _stub_class(code: Bytecode, primary: Obj) -> str:
     # Short name only: the package is declared once per file (a dotted name in a
     # `class` declaration isn't valid Haxe). `extends`/type refs stay qualified.
     class_name = destaticify(named.name.resolve(code)).rsplit(".", 1)[-1]
+    interface = typeinit.interface_of(code, static)
+    if interface is not None:
+        return _interface_pseudo(code, interface, class_name)
 
     lines: List[str] = []
     header = f"class {class_name}"
@@ -5298,6 +5459,7 @@ def _stub_class(code: Bytecode, primary: Obj) -> str:
         super_def = dynamic.super.resolve(code).definition
         if isinstance(super_def, Obj):
             header += f" extends {destaticify(super_def.name.resolve(code))}"
+    header += _implements_clause(code, dynamic)
     abstract = abstracts.abstract_of(code, primary)
     if abstract is not None:
         underlying = abstract.underlying_annotation(code)
@@ -5313,7 +5475,7 @@ def _stub_class(code: Bytecode, primary: Obj) -> str:
             )
         lines.append("")
 
-    fields = class_field_lines(code, primary)
+    fields = class_field_lines(code, primary) + _implemented_properties(code, dynamic)
     lines.extend(f"    {field}" for field in fields)
     if fields:
         lines.append("")
