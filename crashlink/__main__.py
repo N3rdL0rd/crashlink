@@ -3206,6 +3206,48 @@ def _print_help_all(
             pass
 
 
+def _assemble_to_path(source: str, output: Optional[str]) -> int:
+    """
+    Assembles a `.hlasm` file to bytecode and returns the process exit code.
+
+    The image is assembled and serialised in memory before the destination is touched, and then moved
+    into place atomically, so a failed assembly never truncates the input or a pre-existing output.
+    """
+    src = Path(source)
+    dest = Path(output) if output else src.with_suffix(".hl")
+    try:
+        same = dest.exists() and src.exists() and dest.samefile(src)
+    except OSError:
+        same = False
+    if same:
+        print(
+            f"crashlink: error: refusing to overwrite the input file {src}; pass -o to choose an output",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        data = AsmFile.from_path(str(src)).assemble().serialise()
+    except AsmError as e:
+        print(f"crashlink: error: {src}: {e}", file=sys.stderr)
+        return 1
+    except OSError as e:
+        print(f"crashlink: error: {e}", file=sys.stderr)
+        return 1
+    tmp = dest.with_name(f".{dest.name}.{os.getpid()}.tmp")
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with open(tmp, "xb") as f:
+            f.write(data)
+        os.replace(tmp, dest)
+    except OSError as e:
+        if tmp.exists():
+            tmp.unlink()
+        print(f"crashlink: error: {e}", file=sys.stderr)
+        return 1
+    print(f"{src} -> {dest}")
+    return 0
+
+
 def main() -> None:
     """
     Main entrypoint.
@@ -3345,18 +3387,7 @@ def main() -> None:
         globals.DEBUG = False
 
     if args.assemble:
-        out = (
-            args.output
-            if args.output
-            else os.path.join(
-                os.path.dirname(args.file),
-                ".".join(os.path.basename(args.file).split(".")[:-1]) + ".hl",
-            )
-        )
-        with open(out, "wb") as f:
-            f.write(AsmFile.from_path(args.file).assemble().serialise())
-            print(f"{args.file} -> {'.'.join(os.path.basename(args.file).split('.')[:-1]) + '.hl'}")
-            return
+        sys.exit(_assemble_to_path(args.file, args.output))
 
     if args.dehlc:
         try:
