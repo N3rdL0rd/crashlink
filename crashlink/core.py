@@ -1585,7 +1585,12 @@ class Opcode(Serialisable):
         return self.op
 
     def serialise(self) -> bytes:
-        opcode_name = self.validate()
+        return self.encode_validated(self.validate())
+
+    def encode_validated(self, opcode_name: Optional[str] = None) -> bytes:
+        """Encode without re-running `validate()`; the caller guarantees the opcode is well formed."""
+        opcode_name = opcode_name or self.op
+        assert opcode_name is not None
         return VarInt(_OPCODE_IDS[opcode_name]).serialise() + b"".join(
             self.df[name].serialise() for name in opcodes[opcode_name]
         )
@@ -1877,7 +1882,11 @@ class Function(Serialisable):
         self.insert_op(code, len(self.ops), op, debugRef=debugRef)
         return len(self.ops) - 1
 
-    def serialise(self) -> bytes:
+    def serialise(self, *, validated: bool = False) -> bytes:
+        """
+        Serialise the function. `validated=True` skips re-checking each opcode's schema and is only
+        for callers (`Bytecode.serialise`) that have already run `Bytecode._validate_structure`.
+        """
         self.nops.value = len(self.ops)
         self.nregs.value = len(self.regs)
         if self.assigns:
@@ -1886,6 +1895,7 @@ class Function(Serialisable):
             assert len(self.debuginfo.value) == self.nops.value, (
                 f"Invalid number of debugrefs - {len(self.debuginfo.value)} (debuginfo) != {self.nops.value} (nops) - did you use insert_op?"
             )
+        encode_op = Opcode.encode_validated if validated else Opcode.serialise
         res = b"".join(
             [
                 self.type.serialise(),
@@ -1893,7 +1903,7 @@ class Function(Serialisable):
                 self.nregs.serialise(),
                 self.nops.serialise(),
                 b"".join([reg.serialise() for reg in self.regs]),
-                b"".join([op.serialise() for op in self.ops]),
+                b"".join([encode_op(op) for op in self.ops]),
             ]
         )
         if self.has_debug and self.debuginfo:
@@ -2697,9 +2707,9 @@ class Bytecode(Serialisable):
             ]
         )
         if USE_TQDM:
-            res += b"".join([func.serialise() for func in tqdm(self.functions)])
+            res += b"".join([func.serialise(validated=True) for func in tqdm(self.functions)])
         else:
-            res += b"".join([func.serialise() for func in self.functions])
+            res += b"".join([func.serialise(validated=True) for func in self.functions])
         if self.constants:
             res += b"".join([constant.serialise() for constant in self.constants])
         dbg_print(f"Final size: {hex(len(res))}")
