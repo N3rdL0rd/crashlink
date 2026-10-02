@@ -100,11 +100,11 @@ class SetStringCommand(QUndoCommand):
         self._on_applied = on_applied
 
     def redo(self) -> None:
-        self._code.strings.value[self._index] = self._new_value
+        self._code.strings.set(self._index, self._new_value)
         self._on_applied(None)
 
     def undo(self) -> None:
-        self._code.strings.value[self._index] = self._old_value
+        self._code.strings.set(self._index, self._old_value)
         self._on_applied(None)
 
 

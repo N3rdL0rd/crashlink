@@ -519,13 +519,17 @@ class StringsBlock(Serialisable):
     Block of strings in the bytecode. Contains a list of strings and their lengths.
     """
 
-    __slots__ = ("length", "lengths")
+    __slots__ = ("length", "lengths", "_index", "_indexed_list", "_indexed_len")
 
     def __init__(self) -> None:
         self.length = SerialisableInt()
         self.length.length = 4
         self.value: List[str] = []
         self.lengths: List[VarInt] = []
+        # Lazily-built lookup for find_or_add: value -> first index, covering value[:_indexed_len].
+        self._index: Dict[str, int] = {}
+        self._indexed_list: Optional[List[str]] = None
+        self._indexed_len = 0
 
     def deserialise(self, f: BinaryIO | BytesIO, nstrings: int) -> "StringsBlock":
         self.length.deserialise(f, length=4)
@@ -582,12 +586,43 @@ class StringsBlock(Serialisable):
     def find_or_add(self, val: str) -> int:
         """
         Finds and returns the index of a string value in this block, or adds it to this block and returns its index.
+
+        Lookups go through a lazily-built value -> first index map, so adding many strings is linear
+        overall. Strings appended to (or a whole list swapped into) `value` are picked up automatically; to
+        change a string in place use `set` so the map stays exact.
         """
-        try:
-            return self.value.index(val)
-        except ValueError:
-            self.value.append(val)
-            return len(self.value) - 1
+        values = self.value
+        if self._indexed_list is not values or self._indexed_len > len(values):
+            self._reindex()
+        index = self._index
+        for i in range(self._indexed_len, len(values)):
+            index.setdefault(values[i], i)
+        self._indexed_len = len(values)
+        found = index.get(val)
+        if found is not None and values[found] != val:
+            # Edited in place behind our back; rebuild once rather than trust a stale entry.
+            self._reindex()
+            index = self._index
+            for i, existing in enumerate(values):
+                index.setdefault(existing, i)
+            self._indexed_len = len(values)
+            found = index.get(val)
+        if found is not None:
+            return found
+        values.append(val)
+        index[val] = len(values) - 1
+        self._indexed_len = len(values)
+        return len(values) - 1
+
+    def set(self, index: int, val: str) -> None:
+        """Replaces the string at `index`, keeping `find_or_add`'s lookup exact. Raises IndexError out of range."""
+        self.value[index] = val
+        self._indexed_list = None  # edits are rare; the next lookup rebuilds the map
+
+    def _reindex(self) -> None:
+        self._index = {}
+        self._indexed_list = self.value
+        self._indexed_len = 0
 
 
 class BytesBlock(Serialisable):

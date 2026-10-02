@@ -2294,7 +2294,7 @@ class Commands(BaseCommands):
             print("Invalid index.")
             return
         try:
-            self.code.strings.value[index] = " ".join(args[1:])
+            self.code.strings.set(index, " ".join(args[1:]))
         except IndexError:
             print("String not found.")
         print("String set.")
