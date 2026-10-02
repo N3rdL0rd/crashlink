@@ -140,3 +140,34 @@ def test_broken_plugin_file_leaves_no_registrations_or_module(tmp_path, monkeypa
         plugins.load_file(str(path))
     assert plugins.registered() == []
     assert "crashlink_plugin_half_broken" not in sys.modules
+
+
+def _plugin_in(directory, marker):
+    directory.mkdir(parents=True)
+    (directory / "marker_plugin.py").write_text(f"open({str(marker)!r}, 'w').close()\n")
+
+
+def test_current_directory_plugins_are_not_executed(tmp_path, monkeypatch):
+    marker = tmp_path / "ran"
+    work = tmp_path / "work"
+    _plugin_in(work / ".crashlink" / "plugins", marker)
+    monkeypatch.chdir(work)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("CRASHLINK_PLUGINS", raising=False)
+
+    plugins.registered()
+
+    assert not marker.exists()
+
+
+def test_env_var_opts_a_project_directory_in(tmp_path, monkeypatch):
+    marker = tmp_path / "ran"
+    work = tmp_path / "work"
+    _plugin_in(work / ".crashlink" / "plugins", marker)
+    monkeypatch.chdir(work)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CRASHLINK_PLUGINS", ".crashlink/plugins")
+
+    plugins.registered()
+
+    assert marker.exists()

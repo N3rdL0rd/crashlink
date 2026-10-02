@@ -18,8 +18,9 @@ pipeline, gated by when they should apply:
 
 Plugins are plain Python files. They're auto-discovered from, in order:
   * every dir on `$CRASHLINK_PLUGINS` (os.pathsep-separated),
-  * `~/.crashlink/plugins/`,
-  * `./.crashlink/plugins/` (project-local).
+  * `~/.crashlink/plugins/`.
+The current directory is never searched, since plugins are arbitrary code; to use a project-local
+plugin directory, point `$CRASHLINK_PLUGINS` at it (e.g. `CRASHLINK_PLUGINS=.crashlink/plugins`).
 Each file registers optimizers at import time via `@optimizer(...)` /
 `register_optimizer(...)`. A plugin that fails to import, whose gate raises, or whose optimizer raises
 is skipped with a `RuntimeWarning` and never crashes a decompile.
@@ -152,12 +153,14 @@ def optimizers_for(code: "Bytecode", position: str) -> List[Type["IROptimizer"]]
 
 
 def plugin_dirs() -> List[str]:
+    """Directories searched for plugins. The current directory is deliberately not one of them:
+    plugins are arbitrary code, so a directory you merely run crashlink from must not execute anything.
+    Use `$CRASHLINK_PLUGINS` to opt a project directory in."""
     dirs: List[str] = []
     env = os.environ.get("CRASHLINK_PLUGINS")
     if env:
         dirs.extend(d for d in env.split(os.pathsep) if d)
     dirs.append(os.path.join(os.path.expanduser("~"), ".crashlink", "plugins"))
-    dirs.append(os.path.join(os.getcwd(), ".crashlink", "plugins"))
     return dirs
 
 

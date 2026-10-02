@@ -19,7 +19,7 @@ Each registration also picks a `position` in the pipeline: `"end"` (the default)
 
 ## Writing one
 
-Plugins are plain Python files, auto-discovered from, in order: every directory listed in `$CRASHLINK_PLUGINS` (`os.pathsep`-separated), `~/.crashlink/plugins/`, and `./.crashlink/plugins/` (project-local). Any `.py` file in one of those directories that doesn't start with `_` gets imported once per session. A plugin registers its optimizer at import time via the `@optimizer(...)` decorator (or `register_optimizer(...)` directly, which returns the class so it also works as a decorator).
+Plugins are plain Python files, auto-discovered from, in order: every directory listed in `$CRASHLINK_PLUGINS` (`os.pathsep`-separated), then `~/.crashlink/plugins/`. Any `.py` file in one of those directories that doesn't start with `_` gets imported once per session. The current directory is never searched, because a plugin is arbitrary code and running crashlink next to an untrusted sample must not execute it; to keep plugins with a project, point the variable at them (`CRASHLINK_PLUGINS=.crashlink/plugins crashlink ...`). A plugin registers its optimizer at import time via the `@optimizer(...)` decorator (or `register_optimizer(...)` directly, which returns the class so it also works as a decorator).
 
 A minimal example, `~/.crashlink/plugins/deadcells.py`:
 
