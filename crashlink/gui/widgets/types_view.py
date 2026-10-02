@@ -52,7 +52,7 @@ class TypesView(QWidget):
         layout.setSpacing(0)
 
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Filter types…")
+        self._search.setPlaceholderText("Filter types...")
         self._search.setClearButtonEnabled(True)
         self._search.textChanged.connect(self._apply_filter)
         layout.addWidget(self._search)

@@ -109,7 +109,7 @@ from .widgets.xref_panel import (
 )
 
 
-# View mode cycling: Tab steps through split → disassembly → decompiled → …
+# View mode cycling: Tab steps through split → disassembly → decompiled → ...
 _VIEW_MODE_CYCLE = [SPLIT, DISASM, PSEUDO]
 _VIEW_MODE_NAMES = {SPLIT: "Split", DISASM: "Disassembly", PSEUDO: "Decompiled"}
 _VIEW_MODE_GLYPHS = {SPLIT: "◧", DISASM: "≡", PSEUDO: "{ }"}
@@ -478,7 +478,7 @@ class _FindBar(QFrame):
         row.setSpacing(6)
         row.addWidget(QLabel("Find"))
         self._input = QLineEdit()
-        self._input.setPlaceholderText("Search this pane…")
+        self._input.setPlaceholderText("Search this pane...")
         self._input.setClearButtonEnabled(True)
         self._input.textChanged.connect(self._on_text_changed)
         self._input.installEventFilter(self)
@@ -614,7 +614,7 @@ class _WelcomePage(QWidget):
         title = QLabel("crashlink")
         title.setObjectName("welcomeTitle")
         column.addWidget(title)
-        open_btn = QPushButton("Open file…  (Ctrl+O)")
+        open_btn = QPushButton("Open file...  (Ctrl+O)")
         open_btn.setObjectName("welcomeOpen")
         open_btn.clicked.connect(self.open_requested)
         column.addWidget(open_btn, 0, Qt.AlignmentFlag.AlignLeft)
@@ -789,7 +789,7 @@ class MainWindow(QMainWindow):
         # path of the currently-open bytecode file, for the sibling .cldb and Save Database
         self._source_path: Optional[str] = None
         # findex → (pseudo_text, opline_map) loaded from a .cldb, consumed by _open_class_tab
-        # to skip the "decompiling…" flash; a real decompile still runs to warm _ir_cache
+        # to skip the "decompiling..." flash; a real decompile still runs to warm _ir_cache
         self._db_cache: Dict[int, Tuple[str, Dict[int, int]]] = {}
         self._db_load_thread: Optional[_DbLoadThread] = None
         self._index_build_thread: Optional[_IndexBuildThread] = None
@@ -1072,16 +1072,16 @@ class MainWindow(QMainWindow):
 
     def _build_menu(self) -> None:
         fm = self.menu("File")
-        fm.addAction("Open…", QKeySequence("Ctrl+O"), self._open_file)
+        fm.addAction("Open...", QKeySequence("Ctrl+O"), self._open_file)
         self._recent_menu = fm.addMenu("Open Recent")
         self._rebuild_recent_menu()
         fm.addSeparator()
         fm.addAction("Save Database", QKeySequence("Ctrl+S"), self._save_database)
-        fm.addAction("Load Database…", self._open_database_file)
+        fm.addAction("Load Database...", self._open_database_file)
         fm.addSeparator()
         export_menu = self.menu("File/Export")
-        export_menu.addAction("Disassembly of Current Tab…", self._export_disasm)
-        export_menu.addAction("Pseudocode of Current Tab…", self._export_pseudo)
+        export_menu.addAction("Disassembly of Current Tab...", self._export_disasm)
+        export_menu.addAction("Pseudocode of Current Tab...", self._export_pseudo)
         export_menu.addSeparator()
         self._quit_action = QAction("Quit", self)
         self._quit_action.setShortcut(QKeySequence("Ctrl+Q"))
@@ -1113,7 +1113,7 @@ class MainWindow(QMainWindow):
         self._forward_action = self._central_action(
             "Forward", ["Ctrl+Return", "Alt+Right"], self.navigate_forward
         )
-        self._jump_action = self._central_action("Jump to Function…", ["G"], self._open_jump_dialog)
+        self._jump_action = self._central_action("Jump to Function...", ["G"], self._open_jump_dialog)
         jm.addAction(self._back_action)
         jm.addAction(self._forward_action)
         jm.addSeparator()
@@ -1121,7 +1121,7 @@ class MainWindow(QMainWindow):
         self._update_history_actions()
 
         sm = self.menu("Search")
-        find_action = QAction("Find in Pane…", self)
+        find_action = QAction("Find in Pane...", self)
         find_action.setShortcut(QKeySequence("Ctrl+F"))
         find_action.triggered.connect(self._open_find)
         sm.addAction(find_action)
@@ -1140,8 +1140,8 @@ class MainWindow(QMainWindow):
         wm.addAction("Types", self._open_types_tab)
 
         hm = self.menu("Help")
-        hm.addAction("Keyboard Shortcuts…", self._show_shortcuts)
-        hm.addAction("About crashlink…", self._show_about)
+        hm.addAction("Keyboard Shortcuts...", self._show_shortcuts)
+        hm.addAction("About crashlink...", self._show_about)
 
     def _central_action(self, text: str, keys: List[str], slot: Callable[[], None]) -> QAction:
         """A QAction whose shortcut is live only while the central code area has focus."""
@@ -1556,8 +1556,10 @@ class MainWindow(QMainWindow):
 
         self._progress_bar.setVisible(True)
         self._progress_bar.setValue(0)
-        self._status_label.setText(f"Loading {path}…")
-        self._busy.start("Reading bytecode…" if not self._loaded_via_dehlc else "Reading binary…", key="load")
+        self._status_label.setText(f"Loading {path}...")
+        self._busy.start(
+            "Reading bytecode..." if not self._loaded_via_dehlc else "Reading binary...", key="load"
+        )
 
         if self._loaded_via_dehlc:
             thread: QThread = _DehlcLoadThread(path, self._generation)
@@ -1629,7 +1631,7 @@ class MainWindow(QMainWindow):
 
         # Pre-warm the xref/search/source-map indices in the background so the
         # first 'X' lookup doesn't stall the UI thread building them on demand.
-        self._busy.start("Building xref table…", key="index")
+        self._busy.start("Building xref table...", key="index")
         self._index_build_thread = _IndexBuildThread(self._worker, code, generation)
         self._index_build_thread.signals.finished.connect(self._on_index_finished)
         self._index_build_thread.signals.error.connect(self._on_index_error)
@@ -1876,7 +1878,7 @@ class MainWindow(QMainWindow):
             self.show_xrefs(word, groups)
             self._log_panel.result(f"Xrefs for '{word}': {len(groups)} target(s)")
 
-        self.run_background(f"Finding references to {word}…", lambda: resolve_targets(code, word), show)
+        self.run_background(f"Finding references to {word}...", lambda: resolve_targets(code, word), show)
 
     # ── Types table ──────────────────────────────────────────────────────────
 
@@ -2034,7 +2036,7 @@ class MainWindow(QMainWindow):
         self._class_fields[class_key] = self._class_field_lines(all_fi)
 
         # Seed from a loaded .cldb where available, so cached functions render
-        # immediately instead of flashing "decompiling…" — a real decompile still
+        # immediately instead of flashing "decompiling..." — a real decompile still
         # runs below to warm _ir_cache for rename/xref support.
         if not self._code.inspection_only:
             for fi in all_fi:
@@ -2076,7 +2078,7 @@ class MainWindow(QMainWindow):
             cached = self._db_cache.get(fi)
             if cached is not None:
                 # Seed from a loaded .cldb so cached functions render immediately
-                # instead of flashing "decompiling…" — a real decompile still runs
+                # instead of flashing "decompiling..." — a real decompile still runs
                 # below to warm _ir_cache for rename/xref support.
                 text, opmap = cached
                 self._class_results[class_key][fi] = text
@@ -2096,7 +2098,7 @@ class MainWindow(QMainWindow):
                 methods.append(
                     (
                         fi,
-                        f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}",
+                        f"class {display_name} {{\n    // f@{fi}  decompiling...\n}}",
                     )
                 )
 
@@ -2118,7 +2120,7 @@ class MainWindow(QMainWindow):
 
         pending = len(to_decompile)
         if pending:
-            self._status_label.setText(f"Decompiling {display_name} ({pending}/{len(all_fi)} methods)…")
+            self._status_label.setText(f"Decompiling {display_name} ({pending}/{len(all_fi)} methods)...")
         else:
             self._status_label.setText(f"{display_name}, {len(all_fi)} methods")
 
@@ -2130,7 +2132,7 @@ class MainWindow(QMainWindow):
             )
             return
         self._active_decompiles += 1
-        self._busy.start("Decompiling…", key="decompile")
+        self._busy.start("Decompiling...", key="decompile")
         self._decomp_request += 1
         token = (self._generation, self._decomp_request)
         self._decomp_tokens[(class_key, findex)] = token
@@ -2310,7 +2312,7 @@ class MainWindow(QMainWindow):
         for fi in all_fi:
             text = results.get(fi)
             if text is None:
-                text = f"class {display_name} {{\n    // f@{fi}  decompiling…\n}}"
+                text = f"class {display_name} {{\n    // f@{fi}  decompiling...\n}}"
             methods.append((fi, text))
 
         view.load_pseudo(display_name, methods, fields=self._class_fields.get(class_key))
@@ -2500,7 +2502,7 @@ class MainWindow(QMainWindow):
             self._log_panel.result(f"Xrefs for '{word}': {len(groups)} target(s)")
 
         # Name resolution scans every type/field/string: keep it off the UI thread.
-        self.run_background(f"Finding references to {word}…", lambda: resolve_targets(code, word), show)
+        self.run_background(f"Finding references to {word}...", lambda: resolve_targets(code, word), show)
 
     def _resolve_locals(self, findex: int, word: str) -> Optional[XrefGroup]:
         """Build a group of every occurrence of `word` (a local) in the focused
@@ -2561,7 +2563,7 @@ class MainWindow(QMainWindow):
         view = sync.class_view
         if op_idx >= 0:
             sync.disasm_view.scroll_to_op(findex, op_idx)
-        # Focus whichever pane is showing so keys (Esc, X, N, …) act on it.
+        # Focus whichever pane is showing so keys (Esc, X, N, ...) act on it.
         (sync.disasm_view if self._view_mode == DISASM else view).setFocus()
         self._on_function_focused(findex)
 

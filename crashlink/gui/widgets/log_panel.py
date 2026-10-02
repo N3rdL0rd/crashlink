@@ -395,7 +395,7 @@ class LogPanel(QWidget):
         from ...__main__ import handle_cmd
 
         self._cli_running = True
-        self._prompt_label.setText("…")
+        self._prompt_label.setText("...")
         self._prompt_label.setToolTip(f"Running: !{cmd_line}")
 
         def work() -> None:
@@ -529,7 +529,7 @@ class LogPanel(QWidget):
             except Exception as e:
                 val_repr = f"<repr failed: {e}>"
             if len(val_repr) > 100:
-                val_repr = val_repr[:100] + "…"
+                val_repr = val_repr[:100] + "..."
             self._append_raw(f"  {name} = {val_repr}", "text")
 
     def _resolve_findex(self, args: List[str]) -> Optional[int]:

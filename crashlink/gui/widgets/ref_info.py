@@ -66,7 +66,7 @@ class RefInfo:
         if value is None:
             return None
         if len(value) > _INLINE_STRING_MAX:
-            value = value[: _INLINE_STRING_MAX - 1] + "…"
+            value = value[: _INLINE_STRING_MAX - 1] + "..."
         return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
 
     # ── Hover text (rich text) ───────────────────────────────────────────────
@@ -125,7 +125,7 @@ class RefInfo:
             except Exception:
                 fields = []
             if fields:
-                shown = ", ".join(fields[:12]) + (" …" if len(fields) > 12 else "")
+                shown = ", ".join(fields[:12]) + (" ..." if len(fields) > 12 else "")
                 text += f"<br>fields: {html.escape(shown)}"
         return text
 

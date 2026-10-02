@@ -1,7 +1,7 @@
 """
 Example crashlink plugin optimizer for Dead Cells.
 
-Dead Cells' logging macros (`tool.log.LogUtils.logInformation`, `logError`, …)
+Dead Cells' logging macros (`tool.log.LogUtils.logInformation`, `logError`, ...)
 inline the call site's source position as a trailing anonymous object, e.g.:
 
     var pos = {};
@@ -85,4 +85,4 @@ class StripLogPositions(TraversingIROptimizer):
 # the image's SHA-256 (printed by `crashlink <file> sha`, or `code.sha256`):
 #
 #     from crashlink.plugins import register_optimizer
-#     register_optimizer(StripLogPositions, sha="7d1f…the image's sha…")
+#     register_optimizer(StripLogPositions, sha="7d1f...the image's sha...")

@@ -237,7 +237,7 @@ def test_export_menu_actions_reach_their_handlers(window, monkeypatch):
     )
     gc.collect()
     for action in window.menu("File/Export").actions():
-        if action.text() in ("Save Bytecode As…", "Save as .hlasm…"):
+        if action.text() in ("Save Bytecode As...", "Save as .hlasm..."):
             action.trigger()
     assert asked == ["Save Bytecode As", "Save as .hlasm"]
 

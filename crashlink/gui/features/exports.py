@@ -95,7 +95,7 @@ class _Exporter(QObject):
                 f.write(data)
             return path
 
-        self._run("Serialising bytecode…", work, "Bytecode saved")
+        self._run("Serialising bytecode...", work, "Bytecode saved")
 
     def save_hlasm(self) -> None:
         code = self._code()
@@ -108,7 +108,7 @@ class _Exporter(QObject):
             return
         from ...asm import to_hlasm
 
-        self._run("Writing .hlasm…", lambda: _write_text(path, to_hlasm(code)), ".hlasm written")
+        self._run("Writing .hlasm...", lambda: _write_text(path, to_hlasm(code)), ".hlasm written")
 
     def transpile_c(self) -> None:
         code = self._code()
@@ -121,7 +121,7 @@ class _Exporter(QObject):
             return
         from ...hlc import code_to_c
 
-        self._run("Transpiling to HL/C…", lambda: _write_text(path, code_to_c(code)), "HL/C written")
+        self._run("Transpiling to HL/C...", lambda: _write_text(path, code_to_c(code)), "HL/C written")
 
     def stub_file(self) -> None:
         code = self._code()
@@ -149,7 +149,7 @@ class _Exporter(QObject):
                 raise ValueError(f"No debug file matching {name!r}")
             return _write_text(path, text + "\n")
 
-        self._run("Writing stub…", work, "Stub written")
+        self._run("Writing stub...", work, "Stub written")
 
     def project(self, stubs: bool) -> None:
         """The whole image as a Haxe project (see `crashlink.project`)."""
@@ -166,7 +166,7 @@ class _Exporter(QObject):
             _write_files(folder, project.export(code, stubs=stubs))
             return folder
 
-        label = "Stubbing every module…" if stubs else "Decompiling every module…"
+        label = "Stubbing every module..." if stubs else "Decompiling every module..."
         self._run(label, work, "Project written")
 
     def api_docs(self) -> None:
@@ -181,7 +181,7 @@ class _Exporter(QObject):
             _write_files(folder, disasm.gen_docs(code))
             return folder
 
-        self._run("Generating API docs…", work, "API docs written")
+        self._run("Generating API docs...", work, "API docs written")
 
     def mkdocs(self) -> None:
         code = self._code()
@@ -198,7 +198,7 @@ class _Exporter(QObject):
             _write_files(folder, disasm.gen_mkdocs(code, site_name=site_name or "API Reference"))
             return folder
 
-        self._run("Generating MkDocs site…", work, "MkDocs project written (run `mkdocs serve` there)")
+        self._run("Generating MkDocs site...", work, "MkDocs project written (run `mkdocs serve` there)")
 
     def shaders(self) -> None:
         code = self._code(needs_bytecode=False)
@@ -219,7 +219,7 @@ class _Exporter(QObject):
             _write_files(folder, files)
             return folder
 
-        self._run("Recovering shaders…", work, "Shaders written")
+        self._run("Recovering shaders...", work, "Shaders written")
 
     def class_with_deps(self) -> None:
         code = self._code()
@@ -243,7 +243,7 @@ class _Exporter(QObject):
 
         obj = classes[name]
         self._run(
-            f"Decompiling {name} and every class it references…",
+            f"Decompiling {name} and every class it references...",
             lambda: _write_text(path, IRClass(code, obj).pseudo(max_classes=None)),
             "Class written",
         )
@@ -252,15 +252,15 @@ class _Exporter(QObject):
 def install(mw: "MainWindow") -> None:
     exporter = _Exporter(mw)
     menu = mw.menu("File/Export")
-    menu.addAction("Save Bytecode As…", exporter.save_bytecode)
-    menu.addAction("Save as .hlasm…", exporter.save_hlasm)
-    menu.addAction("Transpile to C (HL/C)…", exporter.transpile_c)
+    menu.addAction("Save Bytecode As...", exporter.save_bytecode)
+    menu.addAction("Save as .hlasm...", exporter.save_hlasm)
+    menu.addAction("Transpile to C (HL/C)...", exporter.transpile_c)
     menu.addSeparator()
-    menu.addAction("Class With Dependencies…", exporter.class_with_deps)
-    menu.addAction("Stub Source File…", exporter.stub_file)
-    menu.addAction("Decompiled Project…", lambda: exporter.project(stubs=False))
-    menu.addAction("Stubbed Project…", lambda: exporter.project(stubs=True))
+    menu.addAction("Class With Dependencies...", exporter.class_with_deps)
+    menu.addAction("Stub Source File...", exporter.stub_file)
+    menu.addAction("Decompiled Project...", lambda: exporter.project(stubs=False))
+    menu.addAction("Stubbed Project...", lambda: exporter.project(stubs=True))
     menu.addSeparator()
-    menu.addAction("API Docs…", exporter.api_docs)
-    menu.addAction("MkDocs Site…", exporter.mkdocs)
-    menu.addAction("Recover Shaders…", exporter.shaders)
+    menu.addAction("API Docs...", exporter.api_docs)
+    menu.addAction("MkDocs Site...", exporter.mkdocs)
+    menu.addAction("Recover Shaders...", exporter.shaders)

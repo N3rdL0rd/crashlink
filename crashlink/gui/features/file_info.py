@@ -141,7 +141,7 @@ class FileInfoView(QWidget):
             return
         self._verify.setEnabled(False)
         self._mw.run_background(
-            "Running sanity checks…",
+            "Running sanity checks...",
             lambda: capture_output(code.is_ok),
             self._checks_done,
             self._checks_failed,
@@ -173,7 +173,7 @@ def open_file_info(mw: "MainWindow") -> None:
 
 
 def install(mw: "MainWindow") -> None:
-    action = QAction("File Info…", mw)
+    action = QAction("File Info...", mw)
     action.setShortcut(QKeySequence("Ctrl+I"))
     action.triggered.connect(lambda: open_file_info(mw))
     mw.menu("File").addAction(action)

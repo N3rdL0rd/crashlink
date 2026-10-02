@@ -149,7 +149,7 @@ class InternalsView(QWidget):
         self._set_title(f"f@{findex} {code.full_func_name(func)}")
         self._layers = []
         self._passes.clear()
-        self._diff.setPlainText("Capturing optimizer passes…")
+        self._diff.setPlainText("Capturing optimizer passes...")
 
         def done(result: Tuple[List[_Layer], str]) -> None:
             if request == self._request:
@@ -160,7 +160,7 @@ class InternalsView(QWidget):
                 self._diff.setPlainText(f"Decompiling failed: {message}")
 
         self._mw.run_background(
-            f"Capturing passes for f@{findex}…", lambda: _capture(code, func), done, failed
+            f"Capturing passes for f@{findex}...", lambda: _capture(code, func), done, failed
         )
 
     def _loaded(self, findex: int, layers: List[_Layer], final_ir: str) -> None:

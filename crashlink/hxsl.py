@@ -237,7 +237,7 @@ class HaxeUnserializer:
 
     def _err(self, msg: str) -> "UnserializeError":
         ctx = self.s[max(0, self.pos - 20) : self.pos + 20]
-        return UnserializeError(f"{msg} at {self.pos}: …{ctx}…")
+        return UnserializeError(f"{msg} at {self.pos}: ...{ctx}...")
 
     def _read_int(self) -> int:
         start = self.pos
@@ -374,7 +374,7 @@ def _type_str(t: Any) -> str:
             f"var {c.get('name', '?')} : {_type_str(c.get('type'))}" for c in fields if isinstance(c, dict)
         )
         return "{ " + inner + " }"
-    # Strip the leading T: TFloat->Float, TMat4->Mat4, TSampler2D->Sampler2D, …
+    # Strip the leading T: TFloat->Float, TMat4->Mat4, TSampler2D->Sampler2D, ...
     return name[1:] if name.startswith("T") else name
 
 
@@ -497,7 +497,7 @@ class _ShaderPrinter:
     def render(self, raw: Dict[str, Any], base: str = "") -> str:
         """Render the shader body. Every top-level line is prefixed with `base`, and
         nested blocks indent from there, so the whole thing sits cleanly inside its
-        enclosing `static var SRC = { … }`."""
+        enclosing `static var SRC = { ... }`."""
         self.buf = []
         vars_ = raw.get("vars") or []
         for v in vars_:
@@ -524,7 +524,7 @@ class _ShaderPrinter:
 
     def _var(self, v: Any, tabs: str) -> None:
         """A top-level shader var declaration (the interface): source qualifiers,
-        the kind's metadata (`@param`/`@global`/… — bare `var` for Var/Local), then
+        the kind's metadata (`@param`/`@global`/... — bare `var` for Var/Local), then
         `var name : type`."""
         if not isinstance(v, dict):
             self.add("?")
@@ -751,7 +751,7 @@ class _ShaderPrinter:
 def render_shader(shader: Shader) -> str:
     """Render a recovered shader back to hxsl Haxe source."""
     unit = "    "
-    # Body sits two levels deep: inside the class, inside `static var SRC = { … }`.
+    # Body sits two levels deep: inside the class, inside `static var SRC = { ... }`.
     body = _ShaderPrinter(unit=unit).render(shader.raw, base=unit * 2).rstrip("\n") + "\n"
     class_name = shader.name.rsplit(".", 1)[-1]
     return f"class {class_name} extends hxsl.Shader {{\n{unit}static var SRC = {{\n{body}{unit}}};\n}}"

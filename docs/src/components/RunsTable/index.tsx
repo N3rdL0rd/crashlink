@@ -33,7 +33,7 @@ export default function RunsTable(): React.ReactElement {
   }
 
   if (runs === null) {
-    return <p>Loading runs…</p>;
+    return <p>Loading runs...</p>;
   }
 
   return (

@@ -50,7 +50,7 @@ class NativesView(QWidget):
         layout.setSpacing(0)
 
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Filter natives…")
+        self._search.setPlaceholderText("Filter natives...")
         self._search.setClearButtonEnabled(True)
         self._search.textChanged.connect(self._apply_filter)
         layout.addWidget(self._search)

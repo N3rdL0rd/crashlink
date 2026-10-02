@@ -29,7 +29,7 @@ Example (`~/.crashlink/plugins/deadcells.py`):
     from crashlink.plugins import optimizer
     from crashlink.decomp import TraversingIROptimizer
 
-    @optimizer(sha="7d1f…the image's sha…")
+    @optimizer(sha="7d1f...the image's sha...")
     class StripLogPositions(TraversingIROptimizer):
         def visit_expression(self, expr): ...
 """

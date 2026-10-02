@@ -77,7 +77,7 @@ def code_from_bin(
     # ------------------------------------------------------------------
     # Pass 1: types
     # ------------------------------------------------------------------
-    report("Analysing hl_init_types…")
+    report("Analysing hl_init_types...")
     ctx.log("Pass 1: analysing hl_init_types...")
     init_analysis = analyse_init_types(bin_view)
     ctx.log(
@@ -86,7 +86,7 @@ def code_from_bin(
     )
 
     ctx.log("Pass 1.2: recovering type order...")
-    report("Recovering type order…")
+    report("Recovering type order...")
     type_names, order_confident = recover_type_order(bin_view, init_analysis)
     ctx.log(f"  {len(type_names)} types (order {'confirmed' if order_confident else 'hybrid'})")
     if not order_confident:
@@ -106,7 +106,7 @@ def code_from_bin(
     # Pass 2: strings
     # ------------------------------------------------------------------
     ctx.log("Pass 2: recovering strings...")
-    report("Recovering strings…")
+    report("Recovering strings...")
     _recover_strings(ctx)
     _recover_hash_names(ctx, _resolve_plt_targets(bin_view))
     for name in _dwarf_local_names(bin_view):
@@ -121,7 +121,7 @@ def code_from_bin(
     # Pass 3: functions & natives
     # ------------------------------------------------------------------
     ctx.log("Pass 3: recovering functions & natives...")
-    report("Recovering functions & natives…")
+    report("Recovering functions & natives...")
     functions, natives, entrypoint = _recover_functions(ctx)
     _recover_native_names(ctx, natives, code.types)
 
@@ -144,7 +144,7 @@ def code_from_bin(
     # Pass 4: globals
     # ------------------------------------------------------------------
     ctx.log("Pass 4: recovering globals...")
-    report("Recovering globals…")
+    report("Recovering globals...")
     global_types = _recover_globals(ctx, code, init_analysis, string_type_ti)
     code.nglobals = VarInt(len(global_types))
     code.global_types = global_types
@@ -154,7 +154,7 @@ def code_from_bin(
     # Pass 3.5: constant pools (synthesised from function-body immediates).
     # ------------------------------------------------------------------
     ctx.log("Pass 3.5: synthesising int/float pools...")
-    report("Synthesising constant pools…")
+    report("Synthesising constant pools...")
     rec_ints, rec_floats = _recover_constant_pools(ctx, bin_view)
     from ..core import SerialisableInt
 

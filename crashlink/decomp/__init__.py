@@ -3,8 +3,8 @@ Decompilation, IR and control flow graph generation.
 
 Sub-modules
 -----------
-cfg        Control-flow graph (CFNode, CFGraph, …)
-ir         IR node classes (IRStatement, IRBlock, IRLocal, …)
+cfg        Control-flow graph (CFNode, CFGraph, ...)
+ir         IR node classes (IRStatement, IRBlock, IRLocal, ...)
 opt        Optimizer base classes and sub-packages
 function   Top-level orchestrators (IRFunction, IRClass)
 """

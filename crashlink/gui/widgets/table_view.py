@@ -1,4 +1,4 @@
-"""A filterable, sortable, model-backed table for large lists (strings, globals, …).
+"""A filterable, sortable, model-backed table for large lists (strings, globals, ...).
 
 QTableWidget creates an item object per cell, which is slow for tens of thousands
 of rows; this uses a plain-tuple model behind a sort/filter proxy instead."""

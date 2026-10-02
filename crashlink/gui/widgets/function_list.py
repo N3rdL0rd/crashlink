@@ -99,7 +99,7 @@ class FunctionList(QWidget):
 
         # ── Search ────────────────────────────────────────────
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Search functions and classes…")
+        self._search.setPlaceholderText("Search functions and classes...")
         self._search.setClearButtonEnabled(True)
         self._search.setContentsMargins(8, 4, 8, 4)
         layout.addWidget(self._search)
@@ -418,7 +418,7 @@ class FunctionList(QWidget):
                 self._list.addItem(item)
                 count += 1
                 if count >= _SEARCH_CAP:
-                    self._add_note(f"… {_SEARCH_CAP}+ results, refine your query")
+                    self._add_note(f"... {_SEARCH_CAP}+ results, refine your query")
                     break
         if count == 0:
             hint = "" if self._show_std else " (tick stdlib to include the standard library)"

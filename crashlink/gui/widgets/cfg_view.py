@@ -48,7 +48,7 @@ _PAGE_GRAPH = 1
 # Smallest zoom the graph opens at: below this, block text is unreadable, so a big
 # graph opens legible at its entry block instead of shrunk to fit.
 _MIN_READABLE_SCALE = 0.6
-# Cap on opcode lines drawn per block; longer blocks end with a "… N more" line.
+# Cap on opcode lines drawn per block; longer blocks end with a "... N more" line.
 _MAX_BLOCK_LINES = 40
 
 _SVG_NS = "{http://www.w3.org/2000/svg}"
@@ -95,7 +95,7 @@ def _build_dot(ir: IRFunction, theme: Theme) -> Tuple[str, Dict[str, Tuple[int, 
                 text = op.op or "?"
             rows.append(f"{node.base_offset + i:>4}  {text}")
         if len(node.ops) > _MAX_BLOCK_LINES:
-            rows.append(f"      … {len(node.ops) - _MAX_BLOCK_LINES} more")
+            rows.append(f"      ... {len(node.ops) - _MAX_BLOCK_LINES} more")
         label = "\\l".join(_escape(row) for row in rows) + "\\l"
         extra = ""
         if node is cfg.entry:
@@ -263,7 +263,7 @@ class CfgView(QWidget):
 
     def show_pending(self) -> None:
         self._generation += 1
-        self._show_message("Decompiling…")
+        self._show_message("Decompiling...")
 
     def show_native(self) -> None:
         self._generation += 1
@@ -288,7 +288,7 @@ class CfgView(QWidget):
         generation = self._generation
         self._findex = findex
         self._ir = ir
-        self._show_message("Rendering control-flow graph…")
+        self._show_message("Rendering control-flow graph...")
         theme = self._theme
         signals = self._signals
 

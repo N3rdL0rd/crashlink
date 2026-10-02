@@ -23,7 +23,7 @@ _MAX_DISPLAY = 400
 def _display(value: str) -> str:
     """One-line, escaped rendering of a string constant."""
     text = value.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
-    return text if len(text) <= _MAX_DISPLAY else text[: _MAX_DISPLAY - 1] + "…"
+    return text if len(text) <= _MAX_DISPLAY else text[: _MAX_DISPLAY - 1] + "..."
 
 
 def _string_rows(code: Bytecode) -> List[Tuple[Any, ...]]:
@@ -41,7 +41,7 @@ class StringsView(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         self.table = FilterTable(
             ["Index", "Length", "Xrefs", "Value"],
-            "Filter strings…",
+            "Filter strings...",
         )
         self.table.row_activated.connect(self._show_xrefs)
         self.table.xref_requested.connect(self._show_xrefs)
@@ -56,9 +56,9 @@ class StringsView(QWidget):
         if code is None:
             self.table.set_rows([])
             return
-        self.table.set_placeholder_message("loading…")
+        self.table.set_placeholder_message("loading...")
         self._mw.run_background(
-            "Indexing strings…",
+            "Indexing strings...",
             lambda: _string_rows(code),
             lambda rows: self.table.set_rows(rows, column_widths=(80, 70, 60)),
         )
@@ -100,7 +100,7 @@ class StringsView(QWidget):
         value = code.strings.value[index] if code is not None else ""
         menu = QMenu(self)
         menu.addAction("Cross-references\tX", lambda: self._show_xrefs(row))
-        menu.addAction("Edit string…\tF2", lambda: self._edit(row))
+        menu.addAction("Edit string...\tF2", lambda: self._edit(row))
         menu.addSeparator()
         menu.addAction("Copy value", lambda: QGuiApplication.clipboard().setText(value))
         menu.addAction("Copy index", lambda: QGuiApplication.clipboard().setText(str(index)))
@@ -119,4 +119,4 @@ def install(mw: "MainWindow") -> None:
     action.setShortcut(QKeySequence("Shift+F12"))
     action.triggered.connect(lambda: open_strings(mw))
     mw.menu("Window").addAction(action)
-    mw.menu("Search").addAction("Strings…", lambda: open_strings(mw))
+    mw.menu("Search").addAction("Strings...", lambda: open_strings(mw))

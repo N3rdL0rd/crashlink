@@ -98,7 +98,7 @@ class InlinesView(QWidget):
         splitter = QSplitter(Qt.Orientation.Vertical)
         self.table = FilterTable(
             ["Location", "Copies", "Callers", "Shapes", "Signature", "Kind", "Also exists as"],
-            "Filter inlined bodies…",
+            "Filter inlined bodies...",
         )
         self.table.row_activated.connect(self._show_copies)
         self.table.xref_requested.connect(self._show_copies)
@@ -127,8 +127,8 @@ class InlinesView(QWidget):
             self.table.set_rows([])
             self.table.set_placeholder_message("no debug info")
             return
-        self.table.set_placeholder_message("analysing…")
-        self._mw.run_background("Finding inlined bodies…", lambda: _analyse(code), self._on_analysed)
+        self.table.set_placeholder_message("analysing...")
+        self._mw.run_background("Finding inlined bodies...", lambda: _analyse(code), self._on_analysed)
 
     def _on_analysed(self, result: _Analysis) -> None:
         self._finder, self._found, rows = result
@@ -233,7 +233,7 @@ def _show_copies_in_function(mw: "MainWindow", tracker: _FocusTracker) -> None:
     if view.finder is not None:
         show(view.finder)
     else:
-        mw.run_background("Finding inlined bodies…", lambda: _analyse(code)[0], show)
+        mw.run_background("Finding inlined bodies...", lambda: _analyse(code)[0], show)
 
 
 def install(mw: "MainWindow") -> None:
@@ -241,5 +241,5 @@ def install(mw: "MainWindow") -> None:
     action = QAction("Inlined Functions", mw)
     action.triggered.connect(lambda: open_inlines(mw))
     mw.menu("Window").addAction(action)
-    mw.menu("Search").addAction("Inlined Functions…", lambda: open_inlines(mw))
+    mw.menu("Search").addAction("Inlined Functions...", lambda: open_inlines(mw))
     mw.menu("Search").addAction("Inlined Copies in Function", lambda: _show_copies_in_function(mw, tracker))

@@ -218,7 +218,7 @@ def xrefs_by_index(mw: "MainWindow") -> None:
 
 def open_opcode_reference(mw: "MainWindow") -> None:
     def build() -> QWidget:
-        table = FilterTable(["Opcode", "Operands", "Description"], "Filter opcodes…")
+        table = FilterTable(["Opcode", "Operands", "Description"], "Filter opcodes...")
         rows = []
         for name, schema in opcodes.items():
             operands = ", ".join(f"{param}: {kind}" for param, kind in schema.items())
@@ -238,9 +238,9 @@ def install(mw: "MainWindow") -> None:
 
     jump = mw.menu("Jump")
     jump.addSeparator()
-    jump.addAction(action("Go to File Offset…", "Ctrl+Shift+O", lambda: go_to_offset(mw)))
-    jump.addAction(action("Go to Source Location…", "Ctrl+L", lambda: go_to_source(mw)))
-    mw.menu("Search").addAction(action("Cross-References…", "Ctrl+Shift+X", lambda: xrefs_by_index(mw)))
+    jump.addAction(action("Go to File Offset...", "Ctrl+Shift+O", lambda: go_to_offset(mw)))
+    jump.addAction(action("Go to Source Location...", "Ctrl+L", lambda: go_to_source(mw)))
+    mw.menu("Search").addAction(action("Cross-References...", "Ctrl+Shift+X", lambda: xrefs_by_index(mw)))
     help_menu = mw.menu("Help")
     reference = QAction("Opcode Reference", mw)
     reference.triggered.connect(lambda: open_opcode_reference(mw))

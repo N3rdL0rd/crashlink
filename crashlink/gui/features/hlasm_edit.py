@@ -172,5 +172,5 @@ def install(mw: "MainWindow") -> None:
     editor = _FunctionEditor(mw)
     menu = mw.menu("Edit")
     menu.addSeparator()
-    action = menu.addAction("Edit Function as .hlasm…", editor.open)
+    action = menu.addAction("Edit Function as .hlasm...", editor.open)
     action.setShortcut(QKeySequence("Ctrl+E"))

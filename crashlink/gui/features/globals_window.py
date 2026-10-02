@@ -29,7 +29,7 @@ def _initial_value(code: Bytecode, gindex: int) -> str:
     if init is None:
         return ""
     text = repr(init)
-    return text if len(text) <= 300 else text[:299] + "…"
+    return text if len(text) <= 300 else text[:299] + "..."
 
 
 def _global_rows(code: Bytecode) -> List[Tuple[Any, ...]]:
@@ -52,7 +52,7 @@ class GlobalsView(QWidget):
         self._pending_select: Optional[int] = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.table = FilterTable(["Index", "Type", "Xrefs", "Initial value"], "Filter globals…")
+        self.table = FilterTable(["Index", "Type", "Xrefs", "Initial value"], "Filter globals...")
         self.table.row_activated.connect(self._show_xrefs)
         self.table.xref_requested.connect(self._show_xrefs)
         self.table.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -65,8 +65,8 @@ class GlobalsView(QWidget):
         if code is None:
             self.table.set_rows([])
             return
-        self.table.set_placeholder_message("loading…")
-        self._mw.run_background("Indexing globals…", lambda: _global_rows(code), self._loaded)
+        self.table.set_placeholder_message("loading...")
+        self._mw.run_background("Indexing globals...", lambda: _global_rows(code), self._loaded)
 
     def _loaded(self, rows: List[Tuple[Any, ...]]) -> None:
         self.table.set_rows(rows, column_widths=(80, 320, 60))
