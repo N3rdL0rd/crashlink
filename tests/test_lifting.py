@@ -351,18 +351,18 @@ def test_stub_constructor_passes_the_parent_constructor_defaults():
 
 
 def test_temporaries_in_a_named_register_fold_into_their_expression():
-    # PointImpl.transform: `var mx = m.a * x + m.c * y + m.x;`. HashLink sums into
-    # the register `mx` later takes: before `mx` exists it only holds temporaries,
+    # `var mx = m.a * x + m.c * y + m.x;` (Heaps' PointImpl.transform). HashLink sums
+    # into the register `mx` later takes: before `mx` exists it only holds temporaries,
     # which must fold back instead of reading as `var2 += ...` on one local.
-    out = _decompile_named("tests/haxe/Heaps3D.hl", "h2d.col.PointImpl.transform")
+    out = _decompile_named("tests/haxe/NamedRegisterTemps.hl", "NamedRegisterTemps.transform")
     assert "var mx: Float = m.a * this.x + m.c * this.y + m.x;" in out
     assert "var my: Float = m.b * this.x + m.d * this.y + m.y;" in out
     assert "+=" not in out
 
 
 def test_enum_switch_recovered_from_folded_index_tests():
-    # format.gif.Tools.loopCount: once the constructor index folds into each test
-    # (`if (Type.enumIndex(block) == 1)`), the nested tests are still one pattern.
-    out = _decompile_named("tests/haxe/Heaps3D.hl", "format.gif.$Tools.loopCount")
-    assert "case BExtension(EApplicationExtension(AENetscapeLooping(loops))):" in out
+    # Shaped like format.gif.Tools.loopCount: once the constructor index folds into
+    # each test (`if (Type.enumIndex(block) == 1)`), the nested tests are still one pattern.
+    out = _decompile_named("tests/haxe/FoldedEnumSwitch.hl", "$FoldedEnumSwitch.loopCount")
+    assert "case Ext(Application(NetscapeLooping(loops))):" in out
     assert "Type.enumIndex" not in out
