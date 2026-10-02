@@ -2123,13 +2123,16 @@ class Bytecode(Serialisable):
         """
         Returns a lazily-built map of fIndex value -> Function|Native, for fast resolution.
         """
-        if self._findex_map is None:
-            self._findex_map = {}
-            for function in self.functions:
-                self._findex_map[function.findex.value] = function
+        found = self._findex_map
+        if found is None:
+            # Fill a local and publish once: another thread that sees the attribute must see all of it.
+            found: Dict[int, "Function | Native"] = {
+                function.findex.value: function for function in self.functions
+            }
             for native in self.natives:
-                self._findex_map[native.findex.value] = native
-        return self._findex_map
+                found[native.findex.value] = native
+            self._findex_map = found
+        return found
 
     def _build_virtual_tables(self) -> None:
         """
