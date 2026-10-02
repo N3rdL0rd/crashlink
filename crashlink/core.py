@@ -2241,15 +2241,20 @@ class Bytecode(Serialisable):
         path: str,
         search_magic: bool = True,
         progress_cb: Optional[ProgressCallback] = None,
+        init_globals: bool = True,
     ) -> "Bytecode":
         """
         Create a new Bytecode instance from a file path.
+
+        Pass `init_globals=False` to skip resolving constants, which helps with problematic bytecode.
         """
         # One read serves both parsing (BytesIO reads are cheaper than a
         # buffered file's) and hashing, instead of opening the file twice.
         with open(path, "rb") as fh:
             data = fh.read()
-        instance = cls.from_bytes(data, search_magic=search_magic, progress_cb=progress_cb)
+        instance = cls.from_bytes(
+            data, search_magic=search_magic, progress_cb=progress_cb, init_globals=init_globals
+        )
         instance.source_path = path
         return instance
 
@@ -2259,12 +2264,15 @@ class Bytecode(Serialisable):
         data: bytes,
         search_magic: bool = True,
         progress_cb: Optional[ProgressCallback] = None,
+        init_globals: bool = True,
     ) -> "Bytecode":
         """
         Create a new Bytecode instance from a `bytes` object.
         """
         f = BytesIO(data)
-        instance = cls().deserialise(f, search_magic=search_magic, progress_cb=progress_cb)
+        instance = cls().deserialise(
+            f, search_magic=search_magic, init_globals=init_globals, progress_cb=progress_cb
+        )
         f.close()
         instance.sha256 = hashlib.sha256(data).hexdigest()
         return instance

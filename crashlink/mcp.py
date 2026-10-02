@@ -64,8 +64,7 @@ def load_bytecode(path: str, no_constants: bool = False) -> str:
     """
     global _code
     try:
-        with open(path, "rb") as f:
-            _code = Bytecode().deserialise(f, init_globals=not no_constants)
+        _code = Bytecode.from_path(path, init_globals=not no_constants)
     except FileNotFoundError:
         raise RuntimeError(f"File not found: {path}")
     except Exception as e:
@@ -827,8 +826,7 @@ def run_mcp_server(preload_path: Optional[str] = None) -> None:
     global _code
     if preload_path:
         try:
-            with open(preload_path, "rb") as f:
-                _code = Bytecode().deserialise(f)
+            _code = Bytecode.from_path(preload_path)
             print(f"[crashlink-mcp] Preloaded: {preload_path}", file=sys.stderr)
         except Exception as e:
             print(

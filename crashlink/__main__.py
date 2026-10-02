@@ -158,11 +158,9 @@ def _read_code_from_cli_path(path: str, no_constants: bool) -> Bytecode:
     if is_haxe:
         stripped = path.split(".")[0]
         subprocess.run(["haxe", "-hl", f"{stripped}.hl", "-main", path])
-        with open(f"{stripped}.hl", "rb") as f:
-            return Bytecode().deserialise(f, init_globals=not no_constants, progress_cb=_make_progress_cb())
+        path = f"{stripped}.hl"
 
-    with open(path, "rb") as f:
-        return Bytecode().deserialise(f, init_globals=not no_constants, progress_cb=_make_progress_cb())
+    return Bytecode.from_path(path, init_globals=not no_constants, progress_cb=_make_progress_cb())
 
 
 def _default_hlc_output(path: str) -> str:
