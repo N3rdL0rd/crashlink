@@ -21,8 +21,8 @@ Plugins are plain Python files. They're auto-discovered from, in order:
   * `~/.crashlink/plugins/`,
   * `./.crashlink/plugins/` (project-local).
 Each file registers optimizers at import time via `@optimizer(...)` /
-`register_optimizer(...)`. A broken plugin logs and is skipped, never crashing a
-decompile.
+`register_optimizer(...)`. A plugin that fails to import, whose gate raises, or whose optimizer raises
+is skipped with a `RuntimeWarning` and never crashes a decompile.
 
 Example (`~/.crashlink/plugins/deadcells.py`):
 
@@ -39,6 +39,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import sys
+import warnings
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Sequence, Set, Type, Union, TYPE_CHECKING
 
@@ -59,6 +60,7 @@ class PluginEntry:
 
 _registry: List[PluginEntry] = []
 _loaded_dirs: Set[str] = set()
+_generation = 0
 
 
 def bytecode_sha(code: "Bytecode") -> Optional[str]:
@@ -96,6 +98,7 @@ def register_optimizer(
     _registry.append(
         PluginEntry(optimizer_cls, _make_predicate(sha, when), position, name or optimizer_cls.__name__)
     )
+    _bump_generation()
     return optimizer_cls
 
 
@@ -125,12 +128,24 @@ def clear() -> None:
     """Drop all registered plugins and reset discovery (mainly for tests)."""
     _registry.clear()
     _loaded_dirs.clear()
+    _bump_generation()
 
 
 def optimizers_for(code: "Bytecode", position: str) -> List[Type["IROptimizer"]]:
     """Optimizer classes that apply to `code` at the given pipeline position."""
     ensure_loaded()
-    return [e.optimizer_cls for e in _registry if e.position == position and e.predicate(code)]
+    applicable: List[Type["IROptimizer"]] = []
+    for e in _registry:
+        if e.position != position:
+            continue
+        try:
+            applies = e.predicate(code)
+        except Exception as err:
+            _report(f"gate for optimizer {e.name} raised {type(err).__name__}: {err}; it was skipped")
+            continue
+        if applies:
+            applicable.append(e.optimizer_cls)
+    return applicable
 
 
 # --- discovery -------------------------------------------------------------
@@ -166,6 +181,7 @@ def load_file(path: str) -> None:
 
 def _load_file(path: str) -> None:
     mod_name = "crashlink_plugin_" + os.path.splitext(os.path.basename(path))[0]
+    registered_before = len(_registry)
     try:
         spec = importlib.util.spec_from_file_location(mod_name, path)
         if spec is None or spec.loader is None:
@@ -173,7 +189,29 @@ def _load_file(path: str) -> None:
         mod = importlib.util.module_from_spec(spec)
         sys.modules[mod_name] = mod
         spec.loader.exec_module(mod)
-    except Exception as e:  # a broken plugin must never crash a decompile
-        from .globals import dbg_print
+    except (Exception, SystemExit) as e:  # a broken plugin must never crash a decompile
+        # Leave no half-initialised module or half-registered passes behind.
+        sys.modules.pop(mod_name, None)
+        del _registry[registered_before:]
+        _bump_generation()
+        _report(f"failed to load plugin {path}: {type(e).__name__}: {e}")
 
-        dbg_print(f"[plugins] failed to load {path}: {e}")
+
+def _bump_generation() -> None:
+    global _generation
+    _generation += 1
+
+
+def generation() -> int:
+    """Changes whenever the set of registered plugins does; lets callers cache what applies to an image."""
+    return _generation
+
+
+def _report(message: str) -> None:
+    """Surface a plugin problem to the user (once per distinct message, by the default warning filter)."""
+    warnings.warn(f"crashlink plugin: {message}", RuntimeWarning, stacklevel=3)
+
+
+def report_failure(entry_name: str, error: BaseException) -> None:
+    """Report that plugin optimizer `entry_name` raised and was skipped."""
+    _report(f"optimizer {entry_name} raised {type(error).__name__}: {error}; it was skipped")

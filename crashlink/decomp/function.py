@@ -280,6 +280,9 @@ class IRFunction:
     Intermediate representation of a function.
     """
 
+    # Ids of the plugin-supplied passes in `optimizers`; only these are isolated from failing.
+    _plugin_optimizer_ids: FrozenSet[int] = frozenset()
+
     def __init__(
         self,
         code: Bytecode,
@@ -403,19 +406,28 @@ class IRFunction:
                 IRInlineCallRecovery(self),
             ]
             # Splice in plugin optimizers gated to this bytecode (see
-            # crashlink.plugins). Which classes apply is a property of the image,
-            # so resolve it once per Bytecode and cache it on the code object.
-            plugin_classes = self.code._plugin_optimizer_classes
-            if plugin_classes is None:
-                from ..plugins import optimizers_for
+            # crashlink.plugins). Which classes apply is a property of the image, so
+            # resolve it once per Bytecode and cache it on the code object. The cache
+            # is keyed on the plugin registry's generation so plugins registered later
+            # (a REPL or GUI session loading one) are picked up.
+            from .. import plugins
 
-                plugin_classes = (
-                    optimizers_for(self.code, "start"),
-                    optimizers_for(self.code, "end"),
+            cached = self.code._plugin_optimizer_classes
+            if cached is None:
+                plugins.ensure_loaded()  # first use for this image; also stats the discovery dirs
+            if cached is None or cached[0] != plugins.generation():
+                generation = plugins.generation()
+                cached = (
+                    generation,
+                    plugins.optimizers_for(self.code, "start"),
+                    plugins.optimizers_for(self.code, "end"),
                 )
-                self.code._plugin_optimizer_classes = plugin_classes
-            starts, ends = plugin_classes
-            self.optimizers = [cls(self) for cls in starts] + self.optimizers + [cls(self) for cls in ends]
+                self.code._plugin_optimizer_classes = cached
+            _, starts, ends = cached
+            start_passes = [cls(self) for cls in starts]
+            end_passes = [cls(self) for cls in ends]
+            self._plugin_optimizer_ids = frozenset(id(o) for o in start_passes + end_passes)
+            self.optimizers = start_passes + self.optimizers + end_passes
             self._optimize()
             self.apply_annotations()
 
@@ -912,12 +924,22 @@ class IRFunction:
             self.opcodes = disasm.func(self.code, self.func)
             self.cfg_data = self._cfg_to_dict()
             self.layer_snapshots.append(("LLIR", _strip_ansi(self.block.pprint()), True))
+        plugin_ids = self._plugin_optimizer_ids
         for o in self.optimizers:
-            ran = o.should_run()
-            if DEBUG:
-                dbg_print(f"----- {o.__class__.__name__} ({'ran' if ran else 'skipped'}) -----")
-            if ran:
-                o.optimize()
+            try:
+                ran = o.should_run()
+                if DEBUG:
+                    dbg_print(f"----- {o.__class__.__name__} ({'ran' if ran else 'skipped'}) -----")
+                if ran:
+                    o.optimize()
+            except Exception as e:
+                if id(o) not in plugin_ids:
+                    raise
+                # A plugin pass is user code: skip it rather than losing the whole function.
+                from ..plugins import report_failure
+
+                report_failure(o.__class__.__name__, e)
+                ran = False
             if DEBUG:
                 dbg_print(self.block.pprint())
             if self.capture_layers:

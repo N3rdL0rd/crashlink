@@ -1,5 +1,9 @@
 """Tests for the plugin-optimizer system."""
 
+import sys
+
+import pytest
+
 import crashlink.plugins as plugins
 from crashlink import Bytecode
 from crashlink.decomp import IRFunction, TraversingIROptimizer
@@ -85,3 +89,54 @@ def test_plugin_can_mutate_decompilation():
     after = pseudo(IRFunction(active, active.functions[0]))
 
     assert before != after
+
+
+def test_raising_plugin_optimizer_is_skipped_with_warning():
+    class Boom(TraversingIROptimizer):
+        def optimize(self) -> None:
+            raise RuntimeError("boom")
+
+    base = _fresh()
+    expected = pseudo(IRFunction(base, base.functions[0]))
+
+    code = _fresh()
+    plugins.register_optimizer(Boom)
+    with pytest.warns(RuntimeWarning, match="Boom raised RuntimeError: boom"):
+        got = pseudo(IRFunction(code, code.functions[0]))
+    assert got == expected
+
+
+def test_raising_gate_is_skipped_with_warning():
+    def broken_gate(_code: Bytecode) -> bool:
+        raise ZeroDivisionError("gate bug")
+
+    code = _fresh()
+    plugins.register_optimizer(_MarkerOptimizer, when=broken_gate)
+    with pytest.warns(RuntimeWarning, match="gate for optimizer _MarkerOptimizer"):
+        IRFunction(code, code.functions[0])
+    assert not _ran
+
+
+def test_plugin_registered_after_first_decompile_applies():
+    code = _fresh()
+    IRFunction(code, code.functions[0])
+    plugins.register_optimizer(_MarkerOptimizer)
+    IRFunction(code, code.functions[0])
+    assert _ran, "a plugin registered mid-session must apply to later functions of an already-used image"
+
+
+def test_broken_plugin_file_leaves_no_registrations_or_module(tmp_path, monkeypatch):
+    monkeypatch.setattr(plugins, "plugin_dirs", lambda: [])  # ignore any plugins installed on this machine
+    path = tmp_path / "half_broken.py"
+    path.write_text(
+        "from crashlink.plugins import optimizer\n"
+        "from crashlink.decomp import TraversingIROptimizer\n"
+        "@optimizer()\n"
+        "class Early(TraversingIROptimizer):\n"
+        "    pass\n"
+        "raise SystemExit(3)\n"
+    )
+    with pytest.warns(RuntimeWarning, match="failed to load plugin .*half_broken.py: SystemExit"):
+        plugins.load_file(str(path))
+    assert plugins.registered() == []
+    assert "crashlink_plugin_half_broken" not in sys.modules
