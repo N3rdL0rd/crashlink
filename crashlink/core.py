@@ -1490,11 +1490,7 @@ class Native(Serialisable):
         """
         Resolves all functions that call this native.
         """
-        caller_indices = []
-        for func in code.functions:
-            if any(call_idx.value == self.findex.value for call_idx in func.calls):
-                caller_indices.append(func.findex)
-        return caller_indices
+        return list(code.callers_map().get(self.findex.value, ()))
 
     def serialise(self) -> bytes:
         return b"".join(
@@ -1805,11 +1801,7 @@ class Function(Serialisable):
         """
         Resolves all functions that call this function.
         """
-        caller_indices = []
-        for func in code.functions:
-            if any(call_idx.value == self.findex.value for call_idx in func.calls):
-                caller_indices.append(func.findex)
-        return caller_indices
+        return list(code.callers_map().get(self.findex.value, ()))
 
     def resolve_fun(self, code: "Bytecode") -> Fun:
         """
@@ -2008,6 +2000,7 @@ class Bytecode(Serialisable):
         self.section_offsets: Dict[str, int] = {}
         self.cached_all: List[Type] | None = None
         self._findex_map: Dict[int, "Function | Native"] | None = None
+        self._callers_map: Dict[int, List["fIndex"]] | None = None
         self._proto_map: Dict[int, "Proto"] | None = None
         self._field_map: Dict[int, "Field"] | None = None
         self._proto_owner_map: Dict[int, "Obj"] | None = None
@@ -2052,6 +2045,7 @@ class Bytecode(Serialisable):
         `self.functions` or `self.natives` outside of normal deserialisation.
         """
         self._findex_map = None
+        self._callers_map = None
         # The decompiler's global -> enum-constructor map is traced out of the
         # static initializers' opcodes, so mutating functions invalidates it too.
         self._enum_global_map = None
@@ -2133,6 +2127,20 @@ class Bytecode(Serialisable):
             for native in self.natives:
                 found[native.findex.value] = native
             self._findex_map = found
+        return found
+
+    def callers_map(self) -> Dict[int, List["fIndex"]]:
+        """
+        Returns a lazily-built map of fIndex value -> the functions whose `calls` list it, each
+        caller once and in function order. Cleared by `invalidate_findex_cache`.
+        """
+        found = self._callers_map
+        if found is None:
+            found = {}
+            for function in self.functions:
+                for target in {call.value for call in function.calls}:
+                    found.setdefault(target, []).append(function.findex)
+            self._callers_map = found
         return found
 
     def _build_virtual_tables(self) -> None:
