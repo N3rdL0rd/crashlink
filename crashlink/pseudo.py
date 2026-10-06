@@ -523,6 +523,18 @@ def _resolve_array_access(
     return arr_str, idx_str, None
 
 
+def _erased_array_into_typed(value_str: str, value: IRExpression, code: Bytecode) -> str:
+    """`cast` an array whose element type was erased (`Array<Dynamic>`) before it is stored in an
+    `Array<T>` declaration: Haxe does not convert between the two implicitly."""
+    if value_str.startswith("cast ") or not isinstance(value, (IRCall, IREnumField, IRLocal)):
+        return value_str
+    if isinstance(value, IRLocal) and value.array_elem_type is not None:
+        return value_str
+    if disasm._haxe_annotation(code, value.get_type()) != "Array<Dynamic>":
+        return value_str
+    return f"cast {value_str}"
+
+
 def _expression_for_type(
     expr: IRExpression, typ: Type, code: Bytecode, ir_function: Optional[IRFunction]
 ) -> str:
@@ -1738,6 +1750,8 @@ def _generate_statements(
             value_str = _expression_to_haxe(stmt.expr, code, ir_function)
             if type_str.startswith("hl.BytesAccess") and not value_str.startswith("cast "):
                 value_str = f"cast {value_str}"
+            if type_str.startswith("Array<") and type_str != "Array<Dynamic>":
+                value_str = _erased_array_into_typed(value_str, stmt.expr, code)
             if type_str == "Dynamic" and (
                 isinstance(stmt.expr, IRConst)
                 and isinstance(stmt.expr.value, Type)
@@ -1798,6 +1812,8 @@ def _generate_statements(
             else:
                 target_str = _expression_to_haxe(stmt.target, code, ir_function)
                 value_str = _expression_to_haxe(stmt.expr, code, ir_function)
+                if isinstance(stmt.target, IRLocal) and stmt.target.array_elem_type is not None:
+                    value_str = _erased_array_into_typed(value_str, stmt.expr, code)
             # A private field can't be written through `(@:privateAccess x.f)`: the
             # metadata has to cover the whole assignment.
             access = ""

@@ -340,3 +340,28 @@ class Main {
         },
     )
 
+
+
+def test_erased_array_returned_into_typed_local(tmp_path: Path) -> None:
+    _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Item { public var n:Int = 0; public var m:Int = 0; public function new() {} }
+class Ctx {
+    public var index = 0;
+    var c = new Item();
+    public function new() {}
+    public function get() return [c];
+}
+class Main {
+    static function main() {
+        var ctx = new Ctx();
+        Sys.println(ctx.get()[ctx.index++].n += 2);
+        var ctx = new Ctx();
+        Sys.println(ctx.get()[ctx.index++].m += 2);
+    }
+}
+"""
+        },
+    )
