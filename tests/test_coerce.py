@@ -204,3 +204,20 @@ class Main {
     }
     _, expected, actual = roundtrip(tmp_path, modules)
     assert actual == expected
+
+
+def test_calling_a_lambda_bound_to_a_constant_parenthesises_it(tmp_path: Path) -> None:
+    modules = {
+        "Main.hx": """
+class Main {
+    static function main() {
+        var tools = { first: function(a:Array<Dynamic>, i:Int) { return 1; } };
+        var args:Array<Dynamic> = [1, 2];
+        var got = tools.first(args, 0);
+        Sys.println(got != 45);
+    }
+}
+"""
+    }
+    _, expected, actual = roundtrip(tmp_path, modules)
+    assert actual == expected
