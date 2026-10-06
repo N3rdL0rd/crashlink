@@ -496,12 +496,14 @@ def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction]) 
             rendered[i] = _expression_to_haxe(made.target, code, ir_function)
         elif not isinstance(params[i], Ref):
             rendered[i] = f"{rendered[i]}.get()"
-    while (
-        rendered
-        and isinstance(expr.args[len(rendered) - 1], IRConst)
-        and expr.args[len(rendered) - 1].const_type == IRConst.ConstType.NULL
-        and isinstance(params[len(rendered) - 1], Ref)
-    ):
+    while rendered:
+        last = expr.args[len(rendered) - 1]
+        if not (
+            isinstance(last, IRConst)
+            and last.const_type == IRConst.ConstType.NULL
+            and isinstance(params[len(rendered) - 1], Ref)
+        ):
+            break
         rendered.pop()
     return rendered
 
