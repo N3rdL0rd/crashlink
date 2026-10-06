@@ -1793,11 +1793,34 @@ class IRDefaultArgumentRecovery(IROptimizer):
             for reg, (_, load) in overriding_default_arg_regs(self.func.code, callee).items():
                 defaults.setdefault(reg, load)
         omitted: List[int] = []
+        abstract = callee is not None and [op.op for op in callee.ops] == ["Null", "Throw"]
         for i, arg in enumerate(call.args):
             load = defaults.get(i + first)
-            if load is None:
+            if load is None and not abstract:
                 continue
             value = self._passed_value(arg, stmts, j, writes) if isinstance(arg, IRLocal) else arg
+            if load is None:
+                # An abstract method nothing overrides has no default to name: a
+                # reference is still how the optional argument was passed.
+                if isinstance(value, IRRefNew) and isinstance(value.target, IRLocal):
+                    call.args[i] = value.target
+                    if isinstance(arg, IRLocal):
+                        rewritten[id(arg)] = rewritten.get(id(arg), 0) + 1
+                elif isinstance(value, IRConst) and value.const_type == IRConst.ConstType.NULL:
+                    # No implementation reads it, so any value stands for the absent one,
+                    # which a basic parameter can't be given as `null`.
+                    assert callee is not None
+                    fun_type = callee.type.resolve(self.func.code).definition
+                    basic = fun_type.args[i + first].resolve(self.func.code).definition if isinstance(fun_type, Fun) else None
+                    if isinstance(basic, Bool):
+                        call.args[i] = IRConst(self.func.code, IRConst.ConstType.BOOL, value=False)
+                    elif isinstance(basic, I32):
+                        call.args[i] = IRConst(self.func.code, IRConst.ConstType.INT, value=0)
+                    else:
+                        continue
+                    if isinstance(arg, IRLocal):
+                        rewritten[id(arg)] = rewritten.get(id(arg), 0) + 1
+                continue
             if isinstance(value, IRRefNew) and isinstance(value.target, IRLocal):
                 # The callee reads through the reference on entry, which is
                 # the value the local holds at the call.

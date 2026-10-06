@@ -262,3 +262,22 @@ def test_position_literal_without_custom_params_is_a_pos_infos(tmp_path: Path) -
     ]
     assert bare and all(disasm._haxe_annotation(code, typ) == "haxe.PosInfos" for typ in bare)
     assert _run(folder / "out.hl") == _run(original)
+
+
+UNIMPLEMENTED = """
+abstract class Base {
+    public function new() {}
+    public abstract function f(x:Int, flag:Bool = false):Int;
+}
+class Main {
+    @:keep static function call(b:Base) return b.f(1) + b.f(1, true);
+    static function main() {
+        Sys.println(call != null);
+    }
+}
+"""
+
+
+def test_abstract_method_without_overrides_called_with_optional_arguments(tmp_path: Path) -> None:
+    original, folder = _roundtrip(tmp_path, UNIMPLEMENTED)
+    assert _run(folder / "out.hl") == _run(original)
