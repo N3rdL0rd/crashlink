@@ -173,3 +173,35 @@ class Main {
         },
     )
     assert "default:" in text["Main.hx"]
+
+
+def test_struct_classes_and_packed_fields(tmp_path: Path) -> None:
+    text = roundtrip(
+        tmp_path,
+        {
+            "Main.hx": """
+@:struct class Point {
+    public var x:Int;
+    public function new(x:Int) { this.x = x; }
+    public function toString():String return "Point(" + x + ")";
+}
+class Holder {
+    @:packed public var p:Point;
+    public function new() { p = new Point(3); }
+}
+class Main {
+    static function main() {
+        var arr = new hl.NativeArray<Point>(2);
+        arr[0] = new Point(1);
+        arr[1] = new Point(2);
+        Sys.println(Std.string(arr));
+        var h = new Holder();
+        h.p.x = 9;
+        Sys.println(h.p.x);
+    }
+}
+"""
+        },
+    )
+    assert "@:struct class Point" in text["Main.hx"]
+    assert "@:packed public var p: Point;" in text["Main.hx"]

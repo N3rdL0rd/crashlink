@@ -22,6 +22,8 @@ from .core import (
     Fun,
     Native,
     Enum,
+    Packed,
+    Struct,
     destaticify,
     is_static_name,
     gIndex,
@@ -174,7 +176,7 @@ def _method_registry(code: Bytecode) -> Dict[int, Tuple[Obj, str, bool]]:
         return cached[1]
     registry: Dict[int, Tuple[Obj, str, bool]] = {}
     for t in code.types:
-        if t.kind.value != Type.Kind.OBJ.value:
+        if t.kind.value not in (Type.Kind.OBJ.value, Type.Kind.STRUCT.value):
             continue
         obj = t.definition
         if not isinstance(obj, Obj):
@@ -231,6 +233,11 @@ def _basic_type_globals(code: Bytecode) -> Dict[int, str]:
                 found[df["global"].value] = typed_objs[df["src"].value]
     _basic_type_globals_cache[id(code)] = (weakref.ref(code), found)
     return found
+
+
+def _struct_meta(obj: Optional[Obj]) -> str:
+    """`@:struct ` for a class the image stores as a struct (a plain pointer-free HL layout)."""
+    return "@:struct " if isinstance(obj, Struct) else ""
 
 
 def _containing_class_for(ir_func: IRFunction, code: Bytecode) -> Optional[_PseudoClass]:
@@ -4990,7 +4997,7 @@ def _class_body(
     output_lines: List[str] = []
     indent_str = _indent_str(1)
 
-    header = f"{private}class {declared}"
+    header = f"{_struct_meta(primary_obj)}{private}class {declared}"
     abstract = abstracts.abstract_of(code, primary_obj)
     if abstract is not None:
         header = private + abstract.header(code, declared if module is not None else None)
@@ -5151,6 +5158,8 @@ def _class_body(
                     elem_haxe = disasm._haxe_annotation(code, elem_types[field_name])
                     field_type_haxe = f"Array<{elem_haxe}>"
             meta = "@:s " if serializable is not None and field_name in serializable.fields else ""
+            if isinstance(field_type.definition, Packed):
+                meta += "@:packed "
             output_lines.append(f"{indent_str}{meta}public var {field_name}: {field_type_haxe};")
         output_lines.append("")
 
@@ -5563,7 +5572,7 @@ def _stub_class(code: Bytecode, primary: Obj, module: Optional[ModuleDeclaration
         return _interface_pseudo(code, interface, class_name, private)
 
     lines: List[str] = []
-    header = f"{private}class {class_name}"
+    header = f"{_struct_meta(dynamic)}{private}class {class_name}"
     if dynamic is not None and dynamic.super and dynamic.super.value > 0:
         super_def = dynamic.super.resolve(code).definition
         if isinstance(super_def, Obj):

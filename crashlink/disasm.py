@@ -84,7 +84,7 @@ def type_name(code: Bytecode, typ: Type) -> str:
     typedef = type(typ.definition)
     defn = typ.definition
 
-    if typedef == Obj and isinstance(defn, Obj):
+    if isinstance(defn, Obj):  # a `@:struct` class is an Obj too
         return defn.name.resolve(code)
     elif typedef == Virtual and isinstance(defn, Virtual):
         fields = []
@@ -429,6 +429,8 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                 ret = render(definition.ret.resolve(code))
                 params = f"({', '.join(args)})" if args else "Void"
                 return f"({params} -> {ret})"
+            if isinstance(definition, Packed):  # `@:packed` is on the field, the type is the struct
+                return render(definition.inner.resolve(code))
             if isinstance(definition, Ref):
                 return f"hl.Ref<{render(definition.type.resolve(code))}>"
             if key in positions:
