@@ -2699,7 +2699,12 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     params_joined_str = ", ".join(params_str_list)
     ret_decl = f": {return_type_str}" if return_type_str else ""
     access_kw = "public "
-    inline_kw = "inline " if containing is not None and is_inline_template(code, func_core) else ""
+    # A `dynamic` method is rebindable, so it cannot be inlined.
+    inline_kw = (
+        "inline "
+        if containing is not None and "dynamic" not in override_kw and is_inline_template(code, func_core)
+        else ""
+    )
     func_header = f"{access_kw}{static_kw}{override_kw}{inline_kw}function {func_name_str}({params_joined_str}){ret_decl} {{"
     output_lines.append(func_header)
 
