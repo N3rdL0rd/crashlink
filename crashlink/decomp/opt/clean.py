@@ -1885,15 +1885,15 @@ class IRInterfaceCacheCollapser(TraversingIROptimizer):
         """`t = x.<cache>; if (t == null) { t = x; x.<cache> = t; }` as `t = x`."""
         if not (
             isinstance(load, IRAssign)
-            and load.target is temp
+            and load.target == temp
             and isinstance(load.expr, IRField)
-            and load.expr.target is source
+            and load.expr.target == source
             and isinstance(load.expr.get_type().definition, Virtual)
             and self._is_cache_slot(source, load.expr.field_name)
             and isinstance(fill, IRConditional)
             and isinstance(fill.condition, IRBoolExpr)
             and fill.condition.op == IRBoolExpr.CompareType.NULL
-            and fill.condition.left is temp
+            and fill.condition.left == temp
             and not (fill.false_block and fill.false_block.statements)
             and len(fill.true_block.statements) == 2
         ):
@@ -1901,16 +1901,70 @@ class IRInterfaceCacheCollapser(TraversingIROptimizer):
         convert, store = fill.true_block.statements
         if not (
             isinstance(convert, IRAssign)
-            and convert.target is temp
-            and IRSelfAssignOptimizer._strip_casts(convert.expr) is source
+            and convert.target == temp
+            and IRSelfAssignOptimizer._strip_casts(convert.expr) == source
             and isinstance(store, IRAssign)
             and isinstance(store.target, IRField)
-            and store.target.target is source
+            and store.target.target == source
             and store.target.field_name == load.expr.field_name
-            and store.expr is temp
+            and store.expr == temp
         ):
             return None
         return IRAssign(self.func.code, temp, convert.expr).adopt(load, fill, convert, store)
+
+    def _unused_conversion(self, stmt: IRConditional) -> bool:
+        """A conversion whose result is never read.
+
+        `if (x == null) a = null else { t = x.<cache>; fill }` writes the converted
+        value to `a` on one path and `t` on the other only when nothing reads it:
+        a real use would join both paths in one local (see `_collapse`).
+        """
+        cond = stmt.condition
+        if not (
+            isinstance(cond, IRBoolExpr)
+            and cond.op in (IRBoolExpr.CompareType.NULL, IRBoolExpr.CompareType.NOT_NULL)
+            and isinstance(cond.left, IRLocal)
+        ):
+            return False
+        null_arm = stmt.true_block.statements
+        value_arm = stmt.false_block.statements if stmt.false_block is not None else []
+        if cond.op == IRBoolExpr.CompareType.NOT_NULL:
+            null_arm, value_arm = value_arm, null_arm
+        if not (
+            len(null_arm) == 1
+            and len(value_arm) == 2
+            and isinstance(null_arm[0], IRAssign)
+            and isinstance(null_arm[0].target, IRLocal)
+            and isinstance(null_arm[0].expr, IRConst)
+            and null_arm[0].expr.const_type == IRConst.ConstType.NULL
+            and isinstance(value_arm[0], IRAssign)
+            and isinstance(value_arm[0].target, IRLocal)
+            and value_arm[0].target != null_arm[0].target
+        ):
+            return False
+        load, fill, source = value_arm[0], value_arm[1], cond.left
+        if not (
+            isinstance(load.expr, IRField)
+            and load.expr.target == source
+            and self._is_cache_slot(source, load.expr.field_name)
+            and isinstance(fill, IRConditional)
+            and isinstance(fill.condition, IRBoolExpr)
+            and fill.condition.op == IRBoolExpr.CompareType.NULL
+            and fill.condition.left == load.target
+            and not (fill.false_block and fill.false_block.statements)
+            and len(fill.true_block.statements) == 2
+        ):
+            return False
+        convert, store = fill.true_block.statements
+        return (
+            isinstance(convert, IRAssign)
+            and IRSelfAssignOptimizer._strip_casts(convert.expr) == source
+            and isinstance(store, IRAssign)
+            and isinstance(store.target, IRField)
+            and store.target.target == source
+            and store.target.field_name == load.expr.field_name
+            and store.expr == convert.target
+        )
 
     def _is_cache_slot(self, obj: IRLocal, name: str) -> bool:
         """The field has no source name: the compiler added it."""
@@ -1933,6 +1987,10 @@ class IRInterfaceCacheCollapser(TraversingIROptimizer):
             stmt = stmts[i]
             collapsed: Optional[IRAssign] = None
             span = 1
+            if isinstance(stmt, IRConditional) and self._unused_conversion(stmt):
+                changed = True
+                i += 1
+                continue
             if isinstance(stmt, IRConditional):
                 collapsed = self._collapse(stmt)
             elif (

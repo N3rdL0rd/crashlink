@@ -57,3 +57,30 @@ class Main {
         },
     )
     assert '(() -> "test")()' in files["src/Main.hx"]
+
+
+def test_interface_conversion_cache_slot_is_not_exposed(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+interface Foo<T> { function whatever<X>():Int; }
+interface I2 {}
+class T implements Foo<Dynamic> implements I2 {
+    public function new() {}
+    public function whatever<X>():Int return 42;
+}
+class Main {
+    static function discard(v:T) { cast(v, I2); }
+    static function main() {
+        var r = new T();
+        Sys.println(r.whatever());
+        var r:Foo<Dynamic> = new T();
+        Sys.println(r.whatever());
+        discard(r == null ? null : new T());
+    }
+}
+"""
+        },
+    )
+    assert "__hidden" not in files["src/Main.hx"]
