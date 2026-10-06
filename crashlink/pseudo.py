@@ -417,13 +417,21 @@ def _expr_to_haxe_with_precedence(
     return rendered
 
 
+_LAMBDA_START = re.compile(r"(\([^()]*\)|\w+) -> ")
+
+
+def _paren_lambda(rendered: str) -> str:
+    """A lambda written as an operand or callee extends as far right as it can: parenthesise it."""
+    return f"({rendered})" if _LAMBDA_START.match(rendered) else rendered
+
+
 def _paren_comparison_operand(
     expr: Optional[IRExpression], code: Bytecode, ir_function: Optional[IRFunction]
 ) -> str:
     """Render a comparison operand, parenthesizing it when it's itself a
     comparison — `<`/`==` are left-associative in Haxe, so `a < b == c < d`
     parses as `((a<b)==c)<d`, not `(a<b)==(c<d)`."""
-    rendered = _expression_to_haxe(expr, code, ir_function)
+    rendered = _paren_lambda(_expression_to_haxe(expr, code, ir_function))
     if isinstance(expr, IRBoolExpr) and expr.op in (
         IRBoolExpr.CompareType.LT,
         IRBoolExpr.CompareType.LTE,
@@ -734,9 +742,9 @@ def _expression_to_haxe(
                 return f"(({left} : hl.I64) ^ {sign}) {symbol} (({right} : hl.I64) ^ {sign})"
             return f"({left} : UInt) {symbol} ({right} : UInt)"
         if expr.op == IRBoolExpr.CompareType.NULL:
-            return f"{_expression_to_haxe(expr.left, code, ir_function)} == null"
+            return f"{_paren_lambda(_expression_to_haxe(expr.left, code, ir_function))} == null"
         elif expr.op == IRBoolExpr.CompareType.NOT_NULL:
-            return f"{_expression_to_haxe(expr.left, code, ir_function)} != null"
+            return f"{_paren_lambda(_expression_to_haxe(expr.left, code, ir_function))} != null"
         elif expr.op == IRBoolExpr.CompareType.ISTRUE:
             return _expression_to_haxe(expr.left, code, ir_function)
         elif expr.op == IRBoolExpr.CompareType.ISFALSE:
@@ -1150,9 +1158,7 @@ def _expression_to_haxe(
         ):
             # A private method: calling the wrapped field would call a closure of it.
             return f"(@:privateAccess {callee_str[len('(@:privateAccess ') : -1]}({args_str}))"
-        if re.match(r"(\([^()]*\)|\w+) -> ", callee_str):
-            # A lambda used directly as the callee must be parenthesised to be called.
-            callee_str = f"({callee_str})"
+        callee_str = _paren_lambda(callee_str)
         result = f"{callee_str}({args_str})"
         if (
             isinstance(expr.target, IRConst)
@@ -2440,7 +2446,11 @@ def _closure_inline_body(helper_ir: IRFunction) -> Optional[Tuple[List[str], str
     rendered = _generate_statements([statements[0]], helper_ir.code, helper_ir, 0, set())
     if len(rendered) != 1:
         return None
-    body = rendered[0].strip().rstrip(";")
+    body = rendered[0].strip()
+    if isinstance(statements[0], IRTrace):
+        # The statement form ends in a position comment, which would swallow the rest of the line.
+        body = body.rsplit(" // {", 1)[0].rstrip()
+    body = body.rstrip(";")
     if not body or "\n" in body:
         return None
     if isinstance(statements[0], IRReturn) and body.startswith("return "):

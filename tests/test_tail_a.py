@@ -84,3 +84,24 @@ class Main {
         },
     )
     assert "__hidden" not in files["src/Main.hx"]
+
+
+def test_trace_lambda_passed_as_adapted_callback(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Base {}
+class Sprite extends Base { public function new() {} }
+class Main {
+    static function each<T:Base>(l:Array<T>, f:T->Void) {}
+    static function main() {
+        each([new Sprite()], sprite -> trace(sprite));
+        Sys.println("done");
+    }
+}
+"""
+        },
+    )
+    # A position comment inside a one-line lambda would swallow the rest of the line.
+    assert "// {" not in "".join(line for line in files["src/Main.hx"].splitlines() if "->" in line)
