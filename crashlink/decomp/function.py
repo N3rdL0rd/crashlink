@@ -3499,6 +3499,9 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                             and destaticify(disasm.type_name(code, signature.args[0].resolve(code))) == cname
                         ):
                             call_text = f"{arg_values[0]}.{mname}({', '.join(arg_values[1:])})"
+                    if cname == "String" and mname == "__add__" and len(arg_values) == 2:
+                        # `String.__add__` is the `+` operator; a static initializer is plain text here.
+                        call_text = f"({arg_values[0]} + {arg_values[1]})"
                     reg_value[dst.value] = call_text
                     reg_refs[dst.value] = {cname}
                     for a in call_arg_regs:

@@ -289,3 +289,19 @@ class Main {
 """
         },
     )
+
+
+def test_string_concat_in_static_initializer(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Main {
+    static inline function join(a:String, b:String) return a + "." + b;
+    static var NAMES = [join("unit", "A"), join("unit", "B")];
+    static function main() Sys.println(NAMES.join(","));
+}
+"""
+        },
+    )
+    assert "__add__" not in files["src/Main.hx"]
