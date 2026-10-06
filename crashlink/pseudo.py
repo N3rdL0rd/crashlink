@@ -486,6 +486,15 @@ def _is_untyped_array_access_class(typ: "Type", code: Bytecode) -> bool:
     return name in ("hl.types.ArrayBase", "hl.types.ArrayAccess")
 
 
+def _has_array_access(typ: "Type", code: Bytecode) -> bool:
+    """True if `typ` is one of the concrete HL array classes, whose `get`/`set` are their `[]`.
+
+    Any other receiver (a map, a class with its own `get`/`set`, a structure) has no
+    array access in source, so a call of that name stays a call."""
+    name = disasm.type_name(code, typ)
+    return name.startswith("hl.types.Array") and not _is_untyped_array_access_class(typ, code)
+
+
 def _resolve_array_access(
     expr: "IRArrayAccess", code: Bytecode, ir_function: Optional[IRFunction]
 ) -> Tuple[str, str, Optional[str]]:
@@ -1024,9 +1033,7 @@ def _expression_to_haxe(
         # The abstract `hl.types.ArrayBase`/`ArrayAccess` base classes (used
         # when the concrete element type isn't known statically) define no
         # such operator at all — bracket syntax on them doesn't compile.
-        if isinstance(expr.target, IRField) and not _is_untyped_array_access_class(
-            expr.target.target.get_type(), code
-        ):
+        if isinstance(expr.target, IRField) and _has_array_access(expr.target.target.get_type(), code):
             if expr.target.field_name in ("getDyn", "get") and len(expr.args) == 1:
                 arr = _expression_to_haxe(expr.target.target, code, ir_function)
                 idx = _expression_to_haxe(expr.args[0], code, ir_function)

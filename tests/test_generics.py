@@ -88,3 +88,61 @@ class Main {
 """
         },
     )
+
+
+def test_get_and_set_calls_on_non_arrays_stay_calls(tmp_path: Path) -> None:
+    # `get`/`set` collapse to `[]` only on HL arrays; a map or a class with its own `set` keeps the call.
+    text = roundtrip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Pair {
+    public var a:Int;
+    public var b:Int;
+    public function new() { a = 1; b = 2; }
+    public inline function set(x:Int, y:Int) { a = x; b = y; }
+}
+class Store {
+    var items:Map<String, Int> = new Map();
+    public function new() { items.set("k", 5); }
+    @:generic public function get<T:Int>(key:Class<T>):Int return cast items.get(Reflect.field(key, "NAME"));
+    public function at(key:String):Int return items.get(key);
+}
+class Main {
+    static function main() {
+        var p = new Pair();
+        p.set(7, 8);
+        Sys.println(p.a + p.b);
+        var s = new Store();
+        Sys.println(s.at("k"));
+        var arr = [1, 2, 3];
+        arr[1] = arr[2] + 1;
+        Sys.println(arr);
+    }
+}
+"""
+        },
+    )
+    assert "this[" not in text["Main.hx"]
+
+
+def test_string_code_unit_read_is_not_element_access(tmp_path: Path) -> None:
+    text = roundtrip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Main {
+    static function count(s:String):Int {
+        var n = 0;
+        for (c in new haxe.iterators.StringIteratorUnicode(s)) if (c >= 65536) n++;
+        return n;
+    }
+    static function main() {
+        Sys.println(count("a\\u{1F600}b"));
+        var f = function() (for (c in inline new haxe.iterators.StringIteratorUnicode("")) {});
+        f();
+    }
+}
+"""
+        },
+    )
