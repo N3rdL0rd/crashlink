@@ -39,6 +39,7 @@ from .core import (
     is_static_name,
 )
 from .opcodes import opcodes
+from . import typeinit
 from .hxbit import is_serializable_virtual
 from .std_types import STD_TYPES, STD_WRAPPED
 
@@ -444,6 +445,7 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                 has_optional = any(
                     isinstance(f.type.resolve(code).definition, Null) for f in definition.fields
                 )
+                dynamic = typeinit.dynamic_members(code, definition)
                 for f in definition.fields:
                     name, ftype = f.name.resolve(code), f.type.resolve(code)
                     fdef = ftype.definition
@@ -451,7 +453,8 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                         params = ", ".join(
                             f"a{i}: {render(a.resolve(code))}" for i, a in enumerate(fdef.args)
                         )
-                        members.append(f"function {name}({params}): {render(fdef.ret.resolve(code))};")
+                        kw = "dynamic " if name in dynamic else ""
+                        members.append(f"{kw}function {name}({params}): {render(fdef.ret.resolve(code))};")
                     else:
                         nullable = ftype.kind.value not in _BASIC_KINDS
                         optional = "@:optional " if has_optional and nullable else ""

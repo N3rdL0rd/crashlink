@@ -4865,6 +4865,7 @@ def _interface_pseudo(code: Bytecode, interface: typeinit.Interface, name: str, 
     implementation gives a default has it here too (`a: T = v`), which is how Haxe matches
     the two: HL passes an optional basic value by reference."""
     properties = _interface_properties(code, interface)
+    dynamic = typeinit.dynamic_members(code, interface.virtual)
     inherited = {
         member.name.resolve(code) for parent in interface.parents for member in parent.virtual.fields
     }
@@ -4889,7 +4890,8 @@ def _interface_pseudo(code: Bytecode, interface: typeinit.Interface, name: str, 
                 else:
                     params.append(f"a{i}: {disasm._haxe_annotation(code, arg.resolve(code))}")
             ret = disasm._haxe_annotation(code, signature.ret.resolve(code))
-            lines.append(f"    function {member_name}({', '.join(params)}): {ret};")
+            kw = "dynamic " if member_name in dynamic else ""
+            lines.append(f"    {kw}function {member_name}({', '.join(params)}): {ret};")
         elif member_name in properties:
             setter = "set" if properties[member_name][0] else "never"
             lines.append(

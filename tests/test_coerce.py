@@ -123,3 +123,30 @@ class Main {
     }
     sources, expected, actual = roundtrip(tmp_path, modules)
     assert actual == expected
+
+
+def test_interface_with_dynamic_method_keeps_it_dynamic(tmp_path: Path) -> None:
+    modules = {
+        "Main.hx": """
+interface Hook { dynamic function fire():Void; }
+class Impl implements Hook {
+    public var fired = false;
+    public function new() {}
+    public dynamic function fire():Void { fired = true; }
+}
+class Main {
+    static function main() {
+        var impl = new Impl();
+        var hook:Hook = impl;
+        hook.fire();
+        Sys.println(impl.fired);
+        impl.fired = false;
+        hook.fire = function() impl.fired = false;
+        hook.fire();
+        Sys.println(impl.fired);
+    }
+}
+"""
+    }
+    sources, expected, actual = roundtrip(tmp_path, modules)
+    assert actual == expected
