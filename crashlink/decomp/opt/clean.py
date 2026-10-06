@@ -3492,10 +3492,24 @@ class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
         # fields in the same order, so those temps fold into the value they feed.
         stores: List[Tuple[str, IRExpression, List[Tuple[IRLocal, IRExpression]]]] = []
         pending: List[Tuple[IRLocal, IRExpression]] = []
+        aliases: List[IRStatement] = []
         j = start + 1
         end = j
         while j < len(stmts):
             s = stmts[j]
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRLocal)
+                and s.expr == temp
+                and s.target != temp
+                and not re.fullmatch(r"var\d+", s.target.name)
+                and not pending
+            ):
+                # `var b = a` compiled to one register is re-emitted as a copy right after
+                # the allocation, ahead of the stores that initialise the object.
+                aliases.append(s)
+                j += 1
+                continue
             if (
                 isinstance(s, IRAssign)
                 and isinstance(s.target, IRField)
@@ -3528,6 +3542,12 @@ class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
 
         if not stores:
             return None
+        moved = [s for s in stmts[start + 1 : j] if any(s is a for a in aliases)]
+        if moved:
+            # The copies share the object, so they can follow the stores.
+            kept = [s for s in stmts[start + 1 : j] if not any(s is a for a in moved)]
+            stmts[start + 1 : j] = kept + moved
+            j -= len(moved)
 
         # The field values are only rewritten once the fold is certain.
         literal = IRObjectLiteral(self.func.code, [])
