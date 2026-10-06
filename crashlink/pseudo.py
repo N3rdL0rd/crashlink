@@ -1150,6 +1150,9 @@ def _expression_to_haxe(
         ):
             # A private method: calling the wrapped field would call a closure of it.
             return f"(@:privateAccess {callee_str[len('(@:privateAccess ') : -1]}({args_str}))"
+        if re.match(r"(\([^()]*\)|\w+) -> ", callee_str):
+            # A lambda used directly as the callee must be parenthesised to be called.
+            callee_str = f"({callee_str})"
         result = f"{callee_str}({args_str})"
         if (
             isinstance(expr.target, IRConst)
