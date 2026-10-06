@@ -3462,7 +3462,9 @@ class IRConstructorFolder(TraversingIROptimizer):
                             aliases.append(next_stmt)
                             continue
                         if any(
-                            isinstance(a, IRAssign) and self._statement_uses_local(next_stmt, a.target)
+                            isinstance(a, IRAssign)
+                            and isinstance(a.target, IRLocal)
+                            and self._statement_uses_local(next_stmt, a.target)
                             for a in aliases
                         ):
                             break

@@ -286,7 +286,7 @@ def _source_local_name(code: Bytecode, name: str) -> str:
                 full = definition.name.resolve(code)
                 if "." in full:
                     roots.add(full.lstrip("$").split(".", 1)[0])
-        code._package_roots = roots  # type: ignore[attr-defined]
+        setattr(code, "_package_roots", roots)
     return f"{name}_" if name in roots else name
 
 
@@ -3507,9 +3507,18 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                     abstract = (
                         abstracts.abstract_of_function(code, fun) if isinstance(fun, Function) else None
                     )
-                    if abstract is not None and fun.findex.value == abstract.constructor:
+                    if (
+                        abstract is not None
+                        and isinstance(fun, Function)
+                        and fun.findex.value == abstract.constructor
+                    ):
                         call = f"new {abstract.path}({', '.join(values)})"
-                    elif abstract is not None and fun.findex.value in abstract.instance and values:
+                    elif (
+                        abstract is not None
+                        and isinstance(fun, Function)
+                        and fun.findex.value in abstract.instance
+                        and values
+                    ):
                         call = f"({values[0]} : {abstract.path}).{mname}({', '.join(values[1:])})"
                     elif abstract is not None:
                         call = f"{abstract.path}.{mname}({', '.join(values)})"
