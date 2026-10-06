@@ -271,3 +271,21 @@ class Main {
 """
         },
     )
+
+
+def test_structure_cast_back_to_array(tmp_path: Path) -> None:
+    _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Main {
+    static function main() {
+        var a:{function pop():Int;} = [1, 2];
+        a.pop();
+        var b:Array<Int> = cast a;
+        Sys.println(b.length + ":" + b[0]);
+    }
+}
+"""
+        },
+    )

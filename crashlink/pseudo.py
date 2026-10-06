@@ -1257,6 +1257,13 @@ def _expression_to_haxe(
             # A downcast (`Entity` to `en.Hero`) is only implicit from Dynamic; from a
             # class it needs `cast`, which compiles to the same SafeCast.
             return f"(cast {inner} : {disasm.type_to_haxe(target_name)})"
+        if (
+            isinstance(target_def, Obj)
+            and isinstance(source_def, Virtual)
+            and not inner.startswith("cast ")
+        ):
+            # A structure is only implicitly a class from Dynamic.
+            return f"(cast {inner} : {disasm.type_to_haxe(target_name)})"
         return inner
 
     elif isinstance(expr, IRPrimitiveJump):  # Should be gone, but as a fallback
