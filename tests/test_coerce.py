@@ -272,3 +272,26 @@ class Main {
     }
     _, expected, actual = roundtrip(tmp_path, modules)
     assert actual == expected
+
+
+def test_boxed_number_read_as_another_number_type(tmp_path: Path) -> None:
+    modules = {
+        "Main.hx": """
+class Main {
+    static function toBoxedInt(v:Null<Float>):Null<Int> {
+        var x:Dynamic = v;
+        return x;
+    }
+    static function toInt(v:Null<Float>):Int {
+        var x:Dynamic = v;
+        return x;
+    }
+    static function main() {
+        Sys.println(toBoxedInt(2.0));
+        Sys.println(toInt(3.0));
+    }
+}
+"""
+    }
+    _, expected, actual = roundtrip(tmp_path, modules)
+    assert actual == expected

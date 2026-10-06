@@ -15,6 +15,7 @@ from typing import Optional, List, Set, Dict, FrozenSet, Tuple, Union, cast, Any
 
 from .core import (
     Bytecode,
+    Null,
     Obj,
     Ref,
     Type,
@@ -1280,6 +1281,20 @@ def _expression_to_haxe(
         if target_name == "I32" and source_name in {"F32", "F64"}:
             return f"Std.int({inner})"
         target_def, source_def = expr.get_type().definition, expr.expr.get_type().definition
+        if isinstance(target_def, Null) != isinstance(source_def, Null) or (
+            isinstance(target_def, Null) and isinstance(source_def, Null)
+        ):
+            # A boxed number read as another number type (`Null<Float>` as `Null<Int>`) is a
+            # run-time conversion Haxe will not make implicitly; through Dynamic it will.
+            target_basic = target_def.type.resolve(code) if isinstance(target_def, Null) else expr.get_type()
+            source_basic = source_def.type.resolve(code) if isinstance(source_def, Null) else expr.expr.get_type()
+            numeric = {Type.Kind.I32.value, Type.Kind.F32.value, Type.Kind.F64.value}
+            if (
+                target_basic.kind.value != source_basic.kind.value
+                and target_basic.kind.value in numeric
+                and source_basic.kind.value in numeric
+            ):
+                return f"({inner} : Dynamic)"
         if (
             isinstance(target_def, Obj)
             and isinstance(source_def, Obj)
