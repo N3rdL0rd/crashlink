@@ -450,6 +450,13 @@ def _paren_comparison_operand(
     return rendered
 
 
+def _literal_key(name: str) -> str:
+    """A field name as an object literal writes it: quoted when it is not an identifier."""
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+        return name
+    return '"' + disasm._escape_str(name, '"') + '"'
+
+
 def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction]) -> List[str]:
     """Rendered arguments of a call. HL passes an optional basic argument as an
     `hl.Ref` (null when omitted); Haxe source leaves an omitted trailing one out, and
@@ -920,7 +927,9 @@ def _expression_to_haxe(
         return f"[{elements}]"
 
     elif isinstance(expr, IRObjectLiteral):
-        fields = ", ".join(f"{k}: {_expression_to_haxe(v, code, ir_function)}" for k, v in expr.fields)
+        fields = ", ".join(
+            f"{_literal_key(k)}: {_expression_to_haxe(v, code, ir_function)}" for k, v in expr.fields
+        )
         return f"{{ {fields} }}" if fields else "{}"
 
     elif isinstance(expr, IRRef):

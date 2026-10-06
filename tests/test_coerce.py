@@ -169,3 +169,18 @@ class Main {
     sources, expected, actual = roundtrip(tmp_path, modules)
     assert 'second("a")' in sources["Main.hx"]
     assert actual == expected
+
+
+def test_object_literal_keeps_field_names_that_are_not_identifiers(tmp_path: Path) -> None:
+    modules = {
+        "Main.hx": """
+class Main {
+    static function main() {
+        var o:Dynamic = {"a-b": 1, "x\\ny": 2, plain: 3};
+        Sys.println(Reflect.field(o, "a-b") + Reflect.field(o, "x\\ny") + Reflect.field(o, "plain"));
+    }
+}
+"""
+    }
+    _, expected, actual = roundtrip(tmp_path, modules)
+    assert actual == expected
