@@ -2617,6 +2617,9 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     # A better way might be to just call disasm.is_static
     if not is_instance and not abstract_constructor:
         static_kw = "static "
+        holder = _method_registry(code).get(func_core.findex.value)
+        if holder is not None and holder[0].is_static and _is_static_dynamic_method(holder[0], func_core):
+            static_kw = "static dynamic "
 
     override_kw = ""
     if is_instance and not is_constructor and containing is not None and abstract is None:
@@ -2686,7 +2689,11 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     params_joined_str = ", ".join(params_str_list)
     ret_decl = f": {return_type_str}" if return_type_str else ""
     access_kw = "public "
-    inline_kw = "inline " if containing is not None and is_inline_template(code, func_core) else ""
+    # A `dynamic` function is rebound at run time, so Haxe refuses to also inline it.
+    is_dynamic = "dynamic" in static_kw or "dynamic" in override_kw
+    inline_kw = (
+        "inline " if containing is not None and not is_dynamic and is_inline_template(code, func_core) else ""
+    )
     func_header = f"{access_kw}{static_kw}{override_kw}{inline_kw}function {func_name_str}({params_joined_str}){ret_decl} {{"
     output_lines.append(func_header)
 
@@ -4022,6 +4029,11 @@ def _is_dynamic_method(code: Bytecode, obj: Optional[Obj], func: Function) -> bo
         and not obj.is_static
         and any(binding.findex.value == func.findex.value for binding in obj.bindings)
     )
+
+
+def _is_static_dynamic_method(obj: Obj, func: Function) -> bool:
+    """Whether `func` is the default body of a `static dynamic` method of the class whose statics are `obj`."""
+    return any(binding.findex.value == func.findex.value for binding in obj.bindings)
 
 
 def _method_overrides(method_name: str, ir_class: "Union[IRClass, _PseudoClass]", code: Bytecode) -> bool:

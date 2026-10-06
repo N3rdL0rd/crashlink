@@ -82,3 +82,22 @@ class Main {
     sources, expected, actual = roundtrip(tmp_path, modules)
     assert "bind" not in sources["Main.hx"]
     assert actual == expected
+
+
+def test_static_dynamic_function_can_be_reassigned(tmp_path: Path) -> None:
+    modules = {
+        "Main.hx": """
+class Main {
+    static dynamic function twice(x:Int):Int return x * 2;
+    static function swap() { twice = function(x:Int) return x * 3; return 1; }
+    static function main() {
+        Sys.println(twice(2));
+        swap();
+        Sys.println(twice(2));
+    }
+}
+"""
+    }
+    sources, expected, actual = roundtrip(tmp_path, modules)
+    assert "static dynamic function twice" in sources["Main.hx"]
+    assert actual == expected
