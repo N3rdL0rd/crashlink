@@ -5152,6 +5152,9 @@ def _class_body(
                 init_str = ""
                 comment = "  // initializer not recovered"
             else:
+                if init is not None and init.startswith("(__anon_") and field_type_haxe.startswith("Array<"):
+                    # The initializer's helper returns the erased array.
+                    init = f"cast {init}"
                 init_str = f" = {init}" if init is not None else ""
                 comment = ""
             output_lines.append(

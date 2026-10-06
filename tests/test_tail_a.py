@@ -365,3 +365,26 @@ class Main {
 """
         },
     )
+
+
+def test_static_vector_of_vectors_initializer(tmp_path: Path) -> None:
+    _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+import haxe.ds.Vector;
+class Main {
+    static var foo:Vector<Vector<Int>> = {
+        var vec = new Vector<Vector<Int>>(10);
+        vec[0] = new Vector<Int>(2);
+        vec[0][0] = 0;
+        vec;
+    }
+    static function main() {
+        foo[0][0] += 1;
+        Sys.println(foo[0][0]);
+    }
+}
+"""
+        },
+    )
