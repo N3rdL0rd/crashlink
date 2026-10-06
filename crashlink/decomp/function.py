@@ -2076,6 +2076,10 @@ class IRFunction:
             if op_idx is not None:
                 for reg, alias in self._op_aliases.get(op_idx, ()):
                     src_local = self.locals[reg]
+                    # A name another register still holds (a parameter the copy would shadow)
+                    # can't be re-bound: the later reads of that register would read the copy.
+                    if any(other.name == alias for other in self.locals if other.reg_idx != reg):
+                        continue
                     alias_local = IRLocal(alias, self.func.regs[reg], code=self.code)
                     self.all_locals.append(alias_local)
                     block.statements.append(IRAssign(self.code, alias_local, src_local))

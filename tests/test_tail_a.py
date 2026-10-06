@@ -165,3 +165,24 @@ class Main {
         },
     )
     assert "new C(2)" in files["src/Main.hx"]
+
+
+def test_swap_through_a_temporary_keeps_parameter_reads(tmp_path: Path) -> None:
+    _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Main {
+    static function swap(ca:Int, cb:Int) {
+        var tmp = ca;
+        ca = cb;
+        cb = tmp;
+        return 'ca: $ca, cb: $cb';
+    }
+    static function main() {
+        Sys.println(swap(1, 2));
+    }
+}
+"""
+        },
+    )
