@@ -186,3 +186,25 @@ class Main {
 """
         },
     )
+
+
+def test_int_literal_stored_in_nullable_int64(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+import haxe.Int64;
+class Main {
+    function new() {}
+    var nullableValue:Null<Int64>;
+    function check(value:Int64) return nullableValue == value;
+    function run() {
+        nullableValue = 29;
+        Sys.println(check(29));
+    }
+    static function main() new Main().run();
+}
+"""
+        },
+    )
+    assert "(29 : hl.I64)" in files["src/Main.hx"]

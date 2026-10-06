@@ -26,6 +26,7 @@ from .core import (
     is_static_name,
     gIndex,
     Virtual,
+    Null,
 )
 from . import disasm
 from . import abstracts, hxbit, hxsl, typeinit
@@ -1226,6 +1227,15 @@ def _expression_to_haxe(
         inner = _expression_to_haxe(expr.expr, code, ir_function)
         if target_name == "I32" and source_name in {"F32", "F64"}:
             return f"Std.int({inner})"
+        target_inner = expr.get_type().definition
+        if (
+            isinstance(target_inner, Null)
+            and target_inner.type.resolve(code).kind.value == Type.Kind.I64.value
+            and isinstance(expr.expr, IRConst)
+            and expr.expr.const_type == IRConst.ConstType.INT
+        ):
+            # An Int literal does not convert to a nullable 64-bit integer by itself.
+            return f"({inner} : hl.I64)"
         target_def, source_def = expr.get_type().definition, expr.expr.get_type().definition
         if (
             isinstance(target_def, Obj)
