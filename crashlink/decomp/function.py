@@ -312,6 +312,7 @@ class IRFunction:
         self.capture_layers: bool = capture_layers
         self._render_subs: Optional[Any] = None
         self._containing_class: Optional[Any] = None
+        self._rendered_as_lambda: bool = False
         if isinstance(func, Native):
             # Native entries have no HL bytecode; represent them as a stub block.
             self.block.statements.append(IRNativeStub(code, func))

@@ -69,6 +69,43 @@ def _get_type_in_code(code: Bytecode, name: str) -> Type:
     return found
 
 
+_basic_type_globals_cache: Dict[int, Dict[int, Type]] = {}
+
+
+def basic_type_of_global(code: Bytecode, gindex: int) -> Optional[Type]:
+    """The primitive type (Int, Float, Bool, Dynamic...) whose runtime type object lives
+    in global `gindex`, or None.
+
+    HL boot code builds these as `o = new hl.CoreType/CoreEnum; o.__type__ = <type op>;
+    SetGlobal g, o`; the global itself is typed as the opaque `hl.BaseType`, so the
+    initialiser is the only place that says which primitive it stands for."""
+    key = id(code)
+    found = _basic_type_globals_cache.get(key)
+    if found is None:
+        found = {}
+        for func in code.functions:
+            ops = func.ops
+            if not any(op.op == "SetGlobal" for op in ops) or not any(op.op == "Type" for op in ops):
+                continue
+            type_regs: Dict[int, Type] = {}
+            holders: Dict[int, Type] = {}
+            for op in ops:
+                name = op.op
+                if name == "Type":
+                    type_regs[op.df["dst"].value] = op.df["ty"].resolve(code)
+                elif name == "SetField":
+                    src = op.df["src"].value
+                    if src in type_regs:
+                        holders[op.df["obj"].value] = type_regs[src]
+                elif name == "SetGlobal":
+                    src = op.df["src"].value
+                    if src in holders:
+                        found.setdefault(op.df["global"].value, holders[src])
+        _basic_type_globals_cache[key] = found
+        weakref.finalize(code, _basic_type_globals_cache.pop, key, None)
+    return found.get(gindex)
+
+
 _AdoptSelf = TypeVar("_AdoptSelf", bound="IRStatement")
 
 
