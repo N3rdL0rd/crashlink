@@ -127,7 +127,7 @@ class Main {
 
 
 def test_string_code_unit_read_is_not_element_access(tmp_path: Path) -> None:
-    text = roundtrip(
+    roundtrip(
         tmp_path,
         {
             "Main.hx": """
