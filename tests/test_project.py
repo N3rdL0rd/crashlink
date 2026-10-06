@@ -14,7 +14,10 @@ MODULES: Dict[str, str] = {
     "Main.hx": """
 import pk.Mod;
 class Main {
+    // Never traced, so the image has no haxe.Log.trace to show this is a PosInfos.
+    static function at(?pos:haxe.PosInfos):String return pos.methodName + "/" + pos.className;
     static function main() {
+        Sys.println(at());
         var s:pk.Mod.Shape = new Mod(2);
         Sys.println(s.area() + Mod.make().n + Mod.secret());
         Sys.println(pk.Mod.Color.Green(4));
@@ -105,6 +108,7 @@ def test_project_recompiles_and_runs_the_same(original: Path, tmp_path: Path) ->
     assert "class Mod implements pk.Shape {" in module
     assert "class Helper {" in module
     assert "private class Hidden {" in module
+    assert "pos: haxe.PosInfos" in (src / "Main.hx").read_text()
     assert "make(): pk.Mod.Helper" in module
     # An interface has no code to place it by: it gets a module of its own.
     assert "interface Shape {" in (src / "pk" / "Shape.hx").read_text()

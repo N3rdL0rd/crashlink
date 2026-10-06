@@ -351,12 +351,35 @@ def type_to_haxe(type: str) -> str:
 _trace_type_cache: Dict[int, Tuple[Any, set[int], set[int]]] = {}
 
 
+_POS_INFOS_LAYOUT = {
+    "fileName": "String",
+    "lineNumber": "I32",
+    "className": "String",
+    "methodName": "String",
+    "customParams": "hl.types.ArrayDyn",
+}
+
+
+def _is_pos_infos(code: Bytecode, definition: Any) -> bool:
+    """Whether a structure has the exact layout of `haxe.PosInfos`.
+
+    The type is structural (a typedef), so no type of its own survives in the image, and
+    `haxe.Log.trace` is absent from any program that never traces. The layout is the
+    evidence: five fields of these names and types (laid out by name) are the compiler's own, and
+    `haxe.PosInfos` is interchangeable with any structure of that shape except that its
+    `customParams` is optional, which a rendered structure cannot say."""
+    if not isinstance(definition, Virtual):
+        return False
+    fields = {f.name.resolve(code): type_name(code, f.type.resolve(code)) for f in definition.fields}
+    return fields == _POS_INFOS_LAYOUT
+
+
 def _trace_signature_types(code: Bytecode) -> Tuple[set[int], set[int]]:
-    """Recover PosInfos only through the actual haxe.Log.trace field contract."""
+    """The structures that are `haxe.PosInfos`, and the `haxe.Log.trace` callback types taking one."""
     cached = _trace_type_cache.get(id(code))
     if cached is not None and cached[0]() is code:
         return cached[1], cached[2]
-    positions: set[int] = set()
+    positions = {id(typ.definition) for typ in code.types if _is_pos_infos(code, typ.definition)}
     callbacks: set[int] = set()
     for typ in code.types:
         obj = typ.definition
@@ -372,20 +395,8 @@ def _trace_signature_types(code: Bytecode) -> Tuple[set[int], set[int]]:
                 continue
             if not isinstance(callback.ret.resolve(code).definition, Void):
                 continue
-            position = callback.args[1].resolve(code).definition
-            if not isinstance(position, Virtual):
-                continue
-            fields = {f.name.resolve(code): type_name(code, f.type.resolve(code)) for f in position.fields}
-            if fields != {
-                "fileName": "String",
-                "lineNumber": "I32",
-                "className": "String",
-                "methodName": "String",
-                "customParams": "hl.types.ArrayDyn",
-            }:
-                continue
-            positions.add(id(position))
-            callbacks.add(id(callback))
+            if id(callback.args[1].resolve(code).definition) in positions:
+                callbacks.add(id(callback))
     _trace_type_cache[id(code)] = (weakref.ref(code), positions, callbacks)
     return positions, callbacks
 
@@ -395,7 +406,7 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
 
     Bound values must supply their destination type, not the receiver-inclusive
     implementation signature. Other Virtual layouts remain erased: shape alone
-    does not establish a source-level interface or PosInfos provenance.
+    does not establish a source-level interface.
     """
     positions, callbacks = _trace_signature_types(code)
     active: set[int] = set()
