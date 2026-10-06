@@ -217,6 +217,30 @@ def _array_element_type(
     return None
 
 
+# Array methods whose result has the receiver's element type.
+_ELEMENT_PRESERVING_METHODS = {
+    f"{cls}.{method}"
+    for cls in ("hl.types.ArrayObj", "hl.types.ArrayDyn")
+    for method in ("copy", "slice", "concat", "splice", "filter")
+}
+
+
+def _array_origin(expr: IRExpression, code: Bytecode) -> IRExpression:
+    """The array `expr` shares an element type with: itself, or the receiver of
+    a `copy()`/`slice()`-style call."""
+    expr = _strip_cast(expr)
+    if (
+        isinstance(expr, IRCall)
+        and expr.call_type == IRCall.CallType.FUNC
+        and isinstance(expr.target, IRConst)
+        and isinstance(expr.target.value, Function)
+        and expr.args
+        and code.full_func_name(expr.target.value) in _ELEMENT_PRESERVING_METHODS
+    ):
+        return _strip_cast(expr.args[0])
+    return expr
+
+
 def _propagate_array_assignments(
     block: IRBlock,
     code: Bytecode,
@@ -233,7 +257,7 @@ def _propagate_array_assignments(
     visited.add(id(block))
     for stmt in block.statements:
         if isinstance(stmt, IRAssign):
-            tgt, src = _strip_cast(stmt.target), _strip_cast(stmt.expr)
+            tgt, src = _strip_cast(stmt.target), _array_origin(stmt.expr, code)
             if _is_erased_array(tgt, code) and _is_erased_array(src, code):
                 src_elem = _array_element_type(src, code, global_cache)
                 tgt_elem = _array_element_type(tgt, code, global_cache)

@@ -74,7 +74,12 @@ def _enum_name(code: Bytecode, definition: Enum) -> str:
 def enum_construct_name(code: Bytecode, definition: Enum, index: int) -> str:
     """A constructor's name. The one constructor of an anonymous capture
     context has none, so it gets one that Haxe accepts."""
-    return definition.constructs[index].name.resolve(code) or "Ctx"
+    construct = definition.constructs[index]
+    # Its name index is 0, which reads as the table's first string (not necessarily empty,
+    # and `String` would shadow the type inside the module).
+    if definition.name.value == 0 and construct.name.value == 0:
+        return "Ctx"
+    return construct.name.resolve(code) or "Ctx"
 
 
 def type_name(code: Bytecode, typ: Type) -> str:
