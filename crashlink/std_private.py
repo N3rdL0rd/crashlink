@@ -179,6 +179,7 @@ PRIVATE_STD_MEMBERS: Dict[str, FrozenSet[str]] = {
     "haxe.NativeStackTrace": frozenset({"callStackRaw", "exceptionStackRaw", "resolveSymbol"}),
     "haxe.Resource": frozenset({"__init__", "content"}),
     "haxe.ds.IntMap": frozenset({"h"}),
+    "haxe.ds.List": frozenset({"h", "q"}),
     "haxe.ds.StringMap": frozenset({"h"}),
     "haxe.ds.StringMap.StringMapKeysIterator": frozenset({"arr", "length", "pos"}),
     "haxe.ds.Vector": frozenset({"get_length"}),

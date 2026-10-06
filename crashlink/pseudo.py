@@ -676,8 +676,8 @@ def _expression_to_haxe(
 
     elif isinstance(expr, IRNeg):
         inner = _expression_to_haxe(expr.expr, code, ir_function)
-        if isinstance(expr.expr, IRArithmetic):
-            inner = f"({inner})"
+        if isinstance(expr.expr, IRArithmetic) or inner.startswith("-"):
+            inner = f"({inner})"  # `--1` would lex as a decrement
         return f"-{inner}"
 
     elif isinstance(expr, IRNot):
@@ -771,6 +771,17 @@ def _expression_to_haxe(
                 # `a < b == c < d` would otherwise parse as `((a<b)==c)<d`.
                 left = _paren_comparison_operand(left_expr, code, ir_function)
                 right = _paren_comparison_operand(right_expr, code, ir_function)
+            if (
+                actual_op in (IRBoolExpr.CompareType.EQ, IRBoolExpr.CompareType.NEQ)
+                and isinstance(right_expr, IRConst)
+                and right_expr.const_type == IRConst.ConstType.NULL
+                and isinstance(left_expr, IRCast)
+                and left_expr.get_type().kind.value == Type.Kind.NULL.value
+                and left_expr.expr.get_type().kind.value in (Type.Kind.I32.value, Type.Kind.F64.value, Type.Kind.BOOL.value)
+            ):
+                # A primitive compared with null goes through `Null<T>`; bare `i == null`
+                # is an error on static targets.
+                left = f"({left} : {disasm._haxe_annotation(code, left_expr.get_type())})"
             return f"{left} {op_map[actual_op]} {right}"
         elif expr.left:
             raise NotImplementedError(f"Unhandled unary IRBoolExpr op: {expr.op} on {expr.left}")
@@ -843,6 +854,8 @@ def _expression_to_haxe(
             return _std_private_access(
                 f"{target_str}.{expr.field_name}", target_type.definition, expr.field_name, code, ir_function
             )
+        if target_str == "{}":
+            return f"({{}} : Dynamic).{expr.field_name}"  # a bare `{}.x` isn't an expression
         return f"{target_str}.{expr.field_name}"
 
     elif isinstance(expr, IRBoundClosure):
@@ -1215,10 +1228,27 @@ def _expression_to_haxe(
             return f"Std.int({inner})"
         target_def, source_def = expr.get_type().definition, expr.expr.get_type().definition
         if (
+            isinstance(target_def, Virtual)
+            and isinstance(expr.expr, IRObjectLiteral)
+            and {name for name, _ in expr.expr.fields} - {f.name.resolve(code) for f in target_def.fields}
+        ):
+            # A fresh literal may not carry fields its expected structure lacks; typing it
+            # as its own wider structure first makes the narrowing an ordinary subtype use.
+            members = " ".join(
+                f"var {name}: {disasm._haxe_annotation(code, value.get_type())};"
+                for name, value in expr.expr.fields
+            )
+            return f"({inner} : {{ {members} }})"
+        if (
             isinstance(target_def, Obj)
-            and isinstance(source_def, Obj)
-            and target_def is not source_def
-            and not _is_ancestor(code, target_def, source_def)
+            and (
+                (
+                    isinstance(source_def, Obj)
+                    and target_def is not source_def
+                    and not _is_ancestor(code, target_def, source_def)
+                )
+                or isinstance(source_def, Virtual)  # a structural value only reaches a class via `cast`
+            )
             and not inner.startswith("cast ")  # already unchecked, typed by its context
         ):
             # A downcast (`Entity` to `en.Hero`) is only implicit from Dynamic; from a
@@ -1693,11 +1723,19 @@ def _generate_statements(
             value_str = _expression_to_haxe(stmt.expr, code, ir_function)
             if type_str.startswith("hl.BytesAccess") and not value_str.startswith("cast "):
                 value_str = f"cast {value_str}"
-            if type_str == "Dynamic" and (
-                isinstance(stmt.expr, IRConst)
-                and isinstance(stmt.expr.value, Type)
-                or isinstance(stmt.expr, IRField)
-                and isinstance(stmt.expr.get_type().definition, Fun)
+            if (
+                type_str == "Dynamic"
+                and (
+                    isinstance(stmt.expr, IRConst)
+                    and isinstance(stmt.expr.value, Type)
+                    or isinstance(stmt.expr, IRField)
+                    and isinstance(stmt.expr.get_type().definition, Fun)
+                )
+                # An `Array<T>` result that the bytecode types as the erased ArrayBase
+                # (`slice`) is not assignable to that class in Haxe; let it infer.
+                or type_str in ("hl.types.ArrayBase", "hl.types.ArrayAccess")
+                # A std private type (`haxe.ds.List.ListNode`) can't be named outside its module.
+                or _is_std_private_type(stmt.target.get_type(), code)
             ):
                 output_lines.append(f"{indent}var {local_name} = {value_str};")
             else:
@@ -3426,6 +3464,13 @@ def _std_property_accessor_name(func: "Function", code: Bytecode, remaining_args
     if not prop_name or not _is_std_function(func, code):
         return None
     return prop_name
+
+
+def _is_std_private_type(typ: "Type", code: Bytecode) -> bool:
+    """True for a type the std declares `private` in another type's module: the bytecode
+    names it `pkg._Module.Name`, and source outside that module can't name it."""
+    name = disasm.type_name(code, typ)
+    return name in STD_TYPES and bool(re.search(r"\._[^.]+\.[^.]+$", name))
 
 
 def _is_std_function(func: "Function", code: Bytecode) -> bool:
