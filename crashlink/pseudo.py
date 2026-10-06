@@ -458,6 +458,20 @@ def _literal_key(name: str) -> str:
     return '"' + disasm._escape_str(name, '"') + '"'
 
 
+def _is_dynamic_int_read(operand: Optional[IRExpression]) -> bool:
+    """An Int that is the conversion of a boxed value some expression produced. The box's
+    source type may be Dynamic (a generic's erased result), which types arithmetic as Float."""
+    if not isinstance(operand, IRCast) or operand.get_type().kind.value != Type.Kind.I32.value:
+        return False
+    source: IRStatement = operand.expr
+    while isinstance(source, IRCast):
+        source = source.expr
+    return not isinstance(source, (IRLocal, IRConst)) and source.get_type().kind.value in (
+        Type.Kind.DYN.value,
+        Type.Kind.NULL.value,
+    )
+
+
 def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction]) -> List[str]:
     """Rendered arguments of a call. HL passes an optional basic argument as an
     `hl.Ref` (null when omitted); Haxe source leaves an omitted trailing one out, and
@@ -732,6 +746,12 @@ def _expression_to_haxe(
                 # Haxe recognizes Std.int(integer / integer) as integer division.
                 return f"Std.int({result})"
             return result
+        if expr.get_type().kind.value == Type.Kind.I32.value and symbol in ("-", "*"):
+            # Haxe types arithmetic on a Dynamic operand as Float; the bytecode read it as an Int.
+            left, right = (
+                f"({text} : Int)" if _is_dynamic_int_read(operand) else text
+                for operand, text in ((expr.left, left), (expr.right, right))
+            )
         return f"{left} {symbol} {right}"
 
     elif isinstance(expr, IRNeg):

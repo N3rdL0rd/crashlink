@@ -295,3 +295,21 @@ class Main {
     }
     _, expected, actual = roundtrip(tmp_path, modules)
     assert actual == expected
+
+
+def test_integer_arithmetic_on_a_generic_result_stays_an_int(tmp_path: Path) -> None:
+    modules = {
+        "Main.hx": """
+class Main {
+    static function key() return "k";
+    static function main() {
+        var m = [key() => 5];
+        var x = --m[key()];
+        var y = m[key()] * 3;
+        Sys.println(x + y + m["k"]);
+    }
+}
+"""
+    }
+    _, expected, actual = roundtrip(tmp_path, modules)
+    assert actual == expected
