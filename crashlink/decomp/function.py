@@ -19,7 +19,6 @@ from ..core import (
     Obj,
     Opcode,
     Reg,
-    Struct,
     Regs,
     Type,
     Virtual,
@@ -459,12 +458,7 @@ class IRFunction:
         """Return True if this function is bound as a prototype on a class."""
         findex = self.func.findex.value
         owner = self.code.get_proto_owner(findex)
-        # `Struct` is an `Obj` subclass for struct-kind types, which don't count as classes here.
-        return (
-            owner is not None
-            and not isinstance(owner, Struct)
-            and self.code.get_findex_map().get(findex) is self.func
-        )
+        return owner is not None and self.code.get_findex_map().get(findex) is self.func
 
     def _build_assign_map(self) -> None:
         """Build a mapping from op index to (register, name) for SSA-esque splitting."""

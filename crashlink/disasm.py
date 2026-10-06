@@ -84,7 +84,7 @@ def type_name(code: Bytecode, typ: Type) -> str:
     typedef = type(typ.definition)
     defn = typ.definition
 
-    if typedef == Obj and isinstance(defn, Obj):
+    if isinstance(defn, Obj):  # a `@:struct` class is an Obj too
         return defn.name.resolve(code)
     elif typedef == Virtual and isinstance(defn, Virtual):
         fields = []
@@ -279,6 +279,8 @@ _STD_GENERIC_PARAMS = {
     "haxe.ds.GenericCell": 1,
     "haxe.ds.GenericStack": 1,
     "haxe.ds.List": 1,
+    "haxe.ds.Option": 1,
+    "haxe.ds.Either": 2,
     "haxe.ds.TreeNode": 2,
     "haxe.IMap": 2,
     "haxe.iterators.ArrayIterator": 1,
@@ -315,6 +317,8 @@ def type_to_haxe(type: str) -> str:
         "Fun": "Dynamic",
         "TypeType": "hl.Type",
         "hl.Class": "Class<Dynamic>",
+        # `Enum<T>` and the runtime types of Int/Float/Bool/Dynamic share this one class.
+        "hl.BaseType": "Dynamic",
     }
     if type.startswith("hl.types.ArrayBytes_"):
         suffix = type[len("hl.types.ArrayBytes_") :]
@@ -425,6 +429,8 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                 ret = render(definition.ret.resolve(code))
                 params = f"({', '.join(args)})" if args else "Void"
                 return f"({params} -> {ret})"
+            if isinstance(definition, Packed):  # `@:packed` is on the field, the type is the struct
+                return render(definition.inner.resolve(code))
             if isinstance(definition, Ref):
                 return f"hl.Ref<{render(definition.type.resolve(code))}>"
             if key in positions:
