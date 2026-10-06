@@ -279,6 +279,8 @@ _STD_GENERIC_PARAMS = {
     "haxe.ds.GenericCell": 1,
     "haxe.ds.GenericStack": 1,
     "haxe.ds.List": 1,
+    "haxe.ds.Option": 1,
+    "haxe.ds.Either": 2,
     "haxe.ds.TreeNode": 2,
     "haxe.IMap": 2,
     "haxe.iterators.ArrayIterator": 1,
