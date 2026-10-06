@@ -402,19 +402,31 @@ def _trace_signature_types(code: Bytecode) -> Tuple[set[int], set[int]]:
     return positions, callbacks
 
 
-_omitted_field_cache: Dict[int, Tuple[Any, Dict[int, set[str]]]] = {}
+_omitted_field_cache: Dict[int, Tuple[Any, Dict[int, set[str]], Dict[int, set[str]]]] = {}
 
 
 def _omitted_literal_fields(code: Bytecode) -> Dict[int, set[str]]:
-    """The fields each structure's literals leave out, by `id` of its definition.
+    return _structure_facts(code)[0]
+
+
+def _stored_function_fields(code: Bytecode) -> Dict[int, set[str]]:
+    """The function-typed fields code stores into, by `id` of the structure's definition:
+    only a `var` field can be assigned, a method can't be rebound."""
+    return _structure_facts(code)[1]
+
+
+def _structure_facts(code: Bytecode) -> Tuple[Dict[int, set[str]], Dict[int, set[str]]]:
+    """The fields each structure's literals leave out, and the function-typed ones code
+    stores into, both by `id` of its definition.
 
     A literal allocates the structure then stores its fields in turn, so a field that is
     never stored before the register is reused is one the literal omitted: the field is
     optional, which the compiled structure does not record."""
     cached = _omitted_field_cache.get(id(code))
     if cached is not None and cached[0]() is code:
-        return cached[1]
+        return cached[1], cached[2]
     omitted: Dict[int, set[str]] = {}
+    stored_functions: Dict[int, set[str]] = {}
 
     def finish(typ: Virtual, stored: set[str]) -> None:
         for f in typ.fields:
@@ -429,6 +441,11 @@ def _omitted_literal_fields(code: Bytecode) -> Dict[int, set[str]]:
         for op in func.ops:
             df = op.df
             if op.op == "SetField":
+                target = func.regs[df["obj"].value].resolve(code).definition
+                if isinstance(target, Virtual):
+                    member = target.fields[df["field"].value]
+                    if isinstance(member.type.resolve(code).definition, Fun):
+                        stored_functions.setdefault(id(target), set()).add(member.name.resolve(code))
                 entry = live.get(df["obj"].value)
                 if entry is not None and entry[0] is not None:
                     entry[1].add(entry[0].fields[df["field"].value].name.resolve(code))
@@ -457,8 +474,8 @@ def _omitted_literal_fields(code: Bytecode) -> Dict[int, set[str]]:
         for entry in live.values():
             if entry[0] is not None:
                 finish(*entry)  # type: ignore[arg-type]
-    _omitted_field_cache[id(code)] = (weakref.ref(code), omitted)
-    return omitted
+    _omitted_field_cache[id(code)] = (weakref.ref(code), omitted, stored_functions)
+    return omitted, stored_functions
 
 
 def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
@@ -505,6 +522,7 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                     isinstance(f.type.resolve(code).definition, Null) for f in definition.fields
                 )
                 omitted = _omitted_literal_fields(code).get(key, set())
+                stored = _stored_function_fields(code).get(key, set())
                 declared: set[str] = set()
                 for f in definition.fields:
                     name, ftype = f.name.resolve(code), f.type.resolve(code)
@@ -516,7 +534,7 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                     fdef = ftype.definition
                     if name in omitted and ftype.kind.value not in _BASIC_KINDS:
                         members.append(f"@:optional var {name}: {render(ftype)};")
-                    elif isinstance(fdef, Fun):
+                    elif isinstance(fdef, Fun) and name not in stored:
                         params = ", ".join(
                             f"a{i}: {render(a.resolve(code))}" for i, a in enumerate(fdef.args)
                         )

@@ -181,3 +181,21 @@ class Main {
 def test_interface_redeclaring_an_inherited_field_renders_one_declaration(tmp_path: Path) -> None:
     original, folder = _roundtrip(tmp_path, REDECLARED)
     assert _run(folder / "out.hl") == _run(original)
+
+
+BORROWED = """
+class Main {
+    static function main() {
+        var a = [0, 4];
+        var k = Lambda.array({ iterator: a.iterator });
+        Sys.println(k);
+        var counts = { inc: () -> a.length, dec: () -> a[0] };
+        Sys.println(counts.inc() + counts.dec());
+    }
+}
+"""
+
+
+def test_function_field_stored_into_a_structure_is_a_var(tmp_path: Path) -> None:
+    original, folder = _roundtrip(tmp_path, BORROWED)
+    assert _run(folder / "out.hl") == _run(original)
