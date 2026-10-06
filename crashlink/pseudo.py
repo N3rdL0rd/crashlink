@@ -30,6 +30,7 @@ from .core import (
     gIndex,
     Virtual,
     Dyn,
+    Null,
 )
 from . import disasm
 from . import abstracts, hxbit, hxsl, typeinit
@@ -532,6 +533,14 @@ def _constant_null_compare(
     return None
 
 
+_LAMBDA_START = re.compile(r"(\([^()]*\)|\w+) -> ")
+
+
+def _paren_lambda(rendered: str) -> str:
+    """A lambda written as an operand or callee extends as far right as it can: parenthesise it."""
+    return f"({rendered})" if _LAMBDA_START.match(rendered) else rendered
+
+
 def _paren_comparison_operand(
     expr: Optional[IRExpression], code: Bytecode, ir_function: Optional[IRFunction]
 ) -> str:
@@ -701,6 +710,18 @@ def _resolve_array_access(
     return arr_str, idx_str, None
 
 
+def _erased_array_into_typed(value_str: str, value: IRExpression, code: Bytecode) -> str:
+    """`cast` an array whose element type was erased (`Array<Dynamic>`) before it is stored in an
+    `Array<T>` declaration: Haxe does not convert between the two implicitly."""
+    if value_str.startswith("cast ") or not isinstance(value, (IRCall, IREnumField, IRLocal)):
+        return value_str
+    if isinstance(value, IRLocal) and value.array_elem_type is not None:
+        return value_str
+    if disasm._haxe_annotation(code, value.get_type()) != "Array<Dynamic>":
+        return value_str
+    return f"cast {value_str}"
+
+
 def _expression_for_type(
     expr: IRExpression, typ: Type, code: Bytecode, ir_function: Optional[IRFunction]
 ) -> str:
@@ -751,11 +772,26 @@ def _expression_to_haxe(
                     if isinstance(fun_type, Fun) and fun_type.args:
                         first_arg_type = fun_type.args[0].resolve(code)
                         first_arg_type_name = destaticify(disasm.type_name(code, first_arg_type))
-                        if first_arg_type_name == class_name and ir_function is not None:
+                        is_static_member = (
+                            (code.full_func_name(func) or "")
+                            .rsplit(".", 1)[0]
+                            .rsplit(".", 1)[-1]
+                            .startswith("$")
+                        )
+                        if (
+                            first_arg_type_name == class_name
+                            and ir_function is not None
+                            and not is_static_member
+                        ):
                             receiver = _find_receiver_local(class_name, ir_function, code)
                             if receiver:
                                 return f"{receiver}.{method_name}"
                     return f"{class_name}.{method_name}"
+            if name and is_std and "." not in name:
+                # A std static used as a value (`Reflect.compareMethods(String.fromCharCode, ..)`).
+                std_name = _std_call_name(func, code)
+                if std_name and "." in std_name:
+                    return std_name
             if name:
                 return name
             inline = _inline_anonymous(func, code, ir_function)
@@ -1024,6 +1060,13 @@ def _expression_to_haxe(
             target_str = _expression_to_haxe(expr.target, code, ir_function)
         target_type = expr.target.get_type()
         type_name = disasm.type_name(code, target_type)
+        if (
+            isinstance(expr.target, IRCast)
+            and isinstance(target_type.definition, Virtual)
+            and isinstance(expr.target.expr.get_type().definition, Obj)
+        ):
+            # A class converted to an interface to read one of its fields: the class itself has no such field.
+            target_str = f"(cast {target_str} : {disasm._haxe_annotation(code, target_type)})"
         if isinstance(target_type.definition, Obj) and is_static_name(type_name):
             # A typed HL static-storage access must stay statically visible to
             # Haxe's DCE; a Dynamic alias can discard the referenced field.
@@ -1422,7 +1465,9 @@ def _expression_to_haxe(
             return "[]"
         else:
             args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args)
-            rendered = f"new {disasm.type_to_haxe(type_name)}({args_str})"
+            rendered = (
+                f"new {disasm.STD_WRAPPED.get(type_name) or disasm.type_to_haxe(type_name)}({args_str})"
+            )
             owner = expr.get_type().definition
             # A private constructor of a std class (an inlined `JsonParser.parse`).
             return (
@@ -1458,6 +1503,15 @@ def _expression_to_haxe(
         if target_name == "I32" and source_name == "I64":
             # `Int64.low` of an inlined std call: the cast truncates to the low 32 bits.
             return f"{inner}.toInt()" if re.fullmatch(r"\w+", inner) else f"({inner} : hl.I64).toInt()"
+        target_inner = expr.get_type().definition
+        if (
+            isinstance(target_inner, Null)
+            and target_inner.type.resolve(code).kind.value == Type.Kind.I64.value
+            and isinstance(expr.expr, IRConst)
+            and expr.expr.const_type == IRConst.ConstType.INT
+        ):
+            # An Int literal does not convert to a nullable 64-bit integer by itself.
+            return f"({inner} : hl.I64)"
         target_def, source_def = expr.get_type().definition, expr.expr.get_type().definition
         if isinstance(target_def, Null) != isinstance(source_def, Null) or (
             isinstance(target_def, Null) and isinstance(source_def, Null)
@@ -2066,6 +2120,8 @@ def _generate_statements(
             else:
                 target_str = _expression_to_haxe(stmt.target, code, ir_function)
                 value_str = _expression_to_haxe(stmt.expr, code, ir_function)
+                if isinstance(stmt.target, IRLocal) and stmt.target.array_elem_type is not None:
+                    value_str = _erased_array_into_typed(value_str, stmt.expr, code)
             # A private field can't be written through `(@:privateAccess x.f)`: the
             # metadata has to cover the whole assignment.
             access = ""
@@ -2779,7 +2835,11 @@ def _closure_inline_body(helper_ir: IRFunction) -> Optional[Tuple[List[str], str
     rendered = _generate_statements([statements[0]], helper_ir.code, helper_ir, 0, set())
     if len(rendered) != 1:
         return None
-    body = rendered[0].strip().rstrip(";")
+    body = rendered[0].strip()
+    if isinstance(statements[0], IRTrace):
+        # The statement form ends in a position comment, which would swallow the rest of the line.
+        body = body.rsplit(" // {", 1)[0].rstrip()
+    body = body.rstrip(";")
     if not body or "\n" in body:
         return None
     if isinstance(statements[0], IRReturn) and body.startswith("return "):
@@ -4145,6 +4205,10 @@ def _try_instance_method_call(
         return None
     class_name, method_name = parts
     # Static wrapper names like $PatchMe.main have a '$' prefix on the class.
+    raw_owner = (code.full_func_name(func) or "").rsplit(".", 1)[0].rsplit(".", 1)[-1]
+    if raw_owner.startswith("$") and not _is_std_function(func, code):
+        # A user static that happens to take its own class first is not a method.
+        return None
     class_name = class_name.lstrip("$")
 
     # Instance methods have the receiver as their first typed argument.
@@ -5524,6 +5588,9 @@ def _class_body(
                 init_str = ""
                 comment = "  // initializer not recovered"
             else:
+                if init is not None and init.startswith("(__anon_") and field_type_haxe.startswith("Array<"):
+                    # The initializer's helper returns the erased array.
+                    init = f"cast {init}"
                 init_str = f" = {init}" if init is not None else ""
                 comment = ""
             output_lines.append(

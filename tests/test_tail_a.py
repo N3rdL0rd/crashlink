@@ -1,0 +1,389 @@
+"""Decompiled output of assorted one-off shapes recompiles and behaves the same."""
+
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Dict
+
+import pytest
+
+from crashlink import Bytecode, project
+from crashtest.behavior import resolve_hl_runtime
+
+
+def _run(program: Path) -> str:
+    runtime = resolve_hl_runtime()
+    assert runtime is not None
+    result = subprocess.run([runtime, str(program)], capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stderr
+    return result.stdout
+
+
+def _round_trip(tmp_path: Path, sources: Dict[str, str]) -> Dict[str, str]:
+    """Compile `sources`, export the image, recompile it and compare behaviour; return the files."""
+    if not shutil.which("haxe") or resolve_hl_runtime() is None:
+        pytest.skip("project round trips require Haxe and HashLink")
+    for name, source in sources.items():
+        (tmp_path / "src" / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "src" / name).write_text(source)
+    original = tmp_path / "original.hl"
+    result = subprocess.run(
+        ["haxe", "-cp", str(tmp_path / "src"), "-main", "Main", "-hl", str(original)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    files = project.export(Bytecode.from_path(str(original)))
+    folder = tmp_path / "project"
+    project.write(str(folder), files)
+    result = subprocess.run(["haxe", "build.hxml"], cwd=folder, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert _run(folder / "out.hl") == _run(original)
+    return files
+
+
+def test_lambda_callee_is_parenthesised(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Main {
+    static function main() {
+        var data:Dynamic<() -> String> = {test: () -> "test"};
+        Sys.println(data.test());
+    }
+}
+"""
+        },
+    )
+    assert '(() -> "test")()' in files["src/Main.hx"]
+
+
+def test_interface_conversion_cache_slot_is_not_exposed(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+interface Foo<T> { function whatever<X>():Int; }
+interface I2 {}
+class T implements Foo<Dynamic> implements I2 {
+    public function new() {}
+    public function whatever<X>():Int return 42;
+}
+class Main {
+    static function discard(v:T) { cast(v, I2); }
+    static function main() {
+        var r = new T();
+        Sys.println(r.whatever());
+        var r:Foo<Dynamic> = new T();
+        Sys.println(r.whatever());
+        discard(r == null ? null : new T());
+    }
+}
+"""
+        },
+    )
+    assert "__hidden" not in files["src/Main.hx"]
+
+
+def test_trace_lambda_passed_as_adapted_callback(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Base {}
+class Sprite extends Base { public function new() {} }
+class Main {
+    static function each<T:Base>(l:Array<T>, f:T->Void) {}
+    static function main() {
+        each([new Sprite()], sprite -> trace(sprite));
+        Sys.println("done");
+    }
+}
+"""
+        },
+    )
+    # A position comment inside a one-line lambda would swallow the rest of the line.
+    assert "// {" not in "".join(line for line in files["src/Main.hx"].splitlines() if "->" in line)
+
+
+def test_object_literal_with_non_identifier_field(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Main {
+    static function main() {
+        var o = {foo: 1, "bar-1": 2, baz: 3};
+        Sys.println(o.foo + Reflect.field(o, "bar-1") + o.baz);
+    }
+}
+"""
+        },
+    )
+    assert '"bar-1": 2' in files["src/Main.hx"]
+
+
+def test_instance_method_in_static_initializer(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Main {
+    static var C = ["1", "2"];
+    static var B = C.concat(["3", "4"]);
+    static function main() {
+        Sys.println(B.join(""));
+    }
+}
+"""
+        },
+    )
+    assert "Main.C.concat(" in files["src/Main.hx"]
+
+
+def test_constructor_arguments_survive_an_alias_of_the_instance(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+private class C {
+    var i:Int;
+    public function new(i:Int) { this.i = i; }
+    public function getI() return i;
+}
+class Main {
+    static function main() {
+        var c1 = new C(1);
+        var c2 = new C(2);
+        var c2Dyn:Dynamic = c2;
+        Sys.println(Reflect.callMethod(c1, c2.getI, []));
+        Sys.println(Reflect.callMethod(c2, c2Dyn.getI, []));
+    }
+}
+"""
+        },
+    )
+    assert "new C(2)" in files["src/Main.hx"]
+
+
+def test_swap_through_a_temporary_keeps_parameter_reads(tmp_path: Path) -> None:
+    _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Main {
+    static function swap(ca:Int, cb:Int) {
+        var tmp = ca;
+        ca = cb;
+        cb = tmp;
+        return 'ca: $ca, cb: $cb';
+    }
+    static function main() {
+        Sys.println(swap(1, 2));
+    }
+}
+"""
+        },
+    )
+
+
+def test_int_literal_stored_in_nullable_int64(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+import haxe.Int64;
+class Main {
+    function new() {}
+    var nullableValue:Null<Int64>;
+    function check(value:Int64) return nullableValue == value;
+    function run() {
+        nullableValue = 29;
+        Sys.println(check(29));
+    }
+    static function main() new Main().run();
+}
+"""
+        },
+    )
+    assert "(29 : hl.I64)" in files["src/Main.hx"]
+
+
+def test_dynamic_method_body_reads_its_receiver(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Main {
+    function new() {}
+    function show(v:Dynamic) Sys.println(v);
+    dynamic function run(t:Dynamic) {
+        show(t);
+    }
+    static function main() new Main().run(2);
+}
+"""
+        },
+    )
+    assert "this.show" in files["src/Main.hx"]
+
+
+def test_static_taking_its_own_class_is_not_called_as_a_method(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Base {
+    public function new() {}
+    public function name() return "base";
+    public static function call(i:Base) return i.name();
+}
+class Kid extends Base {
+    override public function name() return "kid";
+    public static function call(i:Kid) return "kid:" + i.name();
+}
+class Main {
+    static function main() {
+        var k = new Kid();
+        Sys.println(Base.call(k));
+        Sys.println(Kid.call(k));
+    }
+}
+"""
+        },
+    )
+    assert "Kid.call(" in files["src/Main.hx"]
+
+
+def test_field_read_through_an_interface_cast(tmp_path: Path) -> None:
+    _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Base {}
+interface IFace { public var z:Int; }
+class Impl extends Base implements IFace { public var z:Int; public function new() { z = 5; } }
+class Main {
+    static function foo(b:Base):Int return cast(b, IFace).z;
+    static function main() { Sys.println(foo(new Impl())); }
+}
+"""
+        },
+    )
+
+
+def test_structure_cast_back_to_array(tmp_path: Path) -> None:
+    _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Main {
+    static function main() {
+        var a:{function pop():Int;} = [1, 2];
+        a.pop();
+        var b:Array<Int> = cast a;
+        Sys.println(b.length + ":" + b[0]);
+    }
+}
+"""
+        },
+    )
+
+
+def test_string_concat_in_static_initializer(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Main {
+    static inline function join(a:String, b:String) return a + "." + b;
+    static var NAMES = [join("unit", "A"), join("unit", "B")];
+    static function main() Sys.println(NAMES.join(","));
+}
+"""
+        },
+    )
+    assert "__add__" not in files["src/Main.hx"]
+
+
+def test_std_static_used_as_a_value(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Main {
+    static function main() Sys.println(Reflect.compareMethods(String.fromCharCode, String.fromCharCode));
+}
+"""
+        },
+    )
+    assert "String.fromCharCode" in files["src/Main.hx"]
+
+
+def test_bytes_data_is_named_by_its_abstract(tmp_path: Path) -> None:
+    _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+import haxe.io.Bytes;
+class Main {
+    static function main() {
+        var b1 = Bytes.ofString("AB");
+        var x = new haxe.io.BytesData(b1.getData().bytes, b1.length);
+        var b2 = Bytes.ofData(x);
+        b2.set(0, 67);
+        Sys.println(b1.get(0) + ":" + b2.get(0));
+    }
+}
+"""
+        },
+    )
+
+
+def test_erased_array_returned_into_typed_local(tmp_path: Path) -> None:
+    _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Item { public var n:Int = 0; public var m:Int = 0; public function new() {} }
+class Ctx {
+    public var index = 0;
+    var c = new Item();
+    public function new() {}
+    public function get() return [c];
+}
+class Main {
+    static function main() {
+        var ctx = new Ctx();
+        Sys.println(ctx.get()[ctx.index++].n += 2);
+        var ctx = new Ctx();
+        Sys.println(ctx.get()[ctx.index++].m += 2);
+    }
+}
+"""
+        },
+    )
+
+
+def test_static_vector_of_vectors_initializer(tmp_path: Path) -> None:
+    _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+import haxe.ds.Vector;
+class Main {
+    static var foo:Vector<Vector<Int>> = {
+        var vec = new Vector<Vector<Int>>(10);
+        vec[0] = new Vector<Int>(2);
+        vec[0][0] = 0;
+        vec;
+    }
+    static function main() {
+        foo[0][0] += 1;
+        Sys.println(foo[0][0]);
+    }
+}
+"""
+        },
+    )

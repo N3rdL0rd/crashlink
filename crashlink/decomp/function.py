@@ -476,6 +476,21 @@ class IRFunction:
         owner = self.code.get_proto_owner(findex)
         return owner is not None and self.code.get_findex_map().get(findex) is self.func
 
+    def _takes_unnamed_receiver(self, named: int) -> bool:
+        """Whether a static function's first parameter is a receiver the debug info doesn't name.
+
+        An abstract's methods are statics of its `_Impl_` class and a `dynamic` method's
+        default body is a static of its own class; both take the value as a leading `this`.
+        """
+        fun_def = self.func.type.resolve(self.code).definition
+        if not isinstance(fun_def, Fun) or named != len(fun_def.args) - 1:
+            return False
+        owner = self.code.full_func_name(self.func).rsplit(".", 1)[0]
+        if owner.endswith("_Impl_"):
+            return True
+        first = fun_def.args[0].resolve(self.code).definition
+        return isinstance(first, Obj) and first.name.resolve(self.code) == owner
+
     def _build_assign_map(self) -> None:
         """Build a mapping from op index to (register, name) for SSA-esque splitting."""
         self._op_assigns: Dict[int, Dict[int, str]] = {}
@@ -1066,6 +1081,7 @@ class IRFunction:
         # by one onto the wrong registers.
         is_ctor_wrapper = self.code.partial_func_name(self.func) == "__constructor__"
         has_this = is_instance or has_this_ops or is_ctor_wrapper
+        has_dynamic_receiver = False
         if self.func.has_debug and self.func.assigns:
             for assign in self.func.assigns:
                 # assign: Tuple[strRef (name), VarInt (op index)]
@@ -1096,12 +1112,11 @@ class IRFunction:
                 # An abstract's methods compile to statics of its `_Impl_` class
                 # taking the value as a leading `this` the debug info leaves out.
                 named = len({assign[0].resolve(self.code) for assign in param_candidates})
-                if (
-                    not has_this
-                    and named == param_count - 1
-                    and self.code.full_func_name(self.func).rsplit(".", 1)[0].endswith("_Impl_")
-                ):
+                if not has_this and self._takes_unnamed_receiver(named):
                     param_start, param_count = 1, named
+                    has_dynamic_receiver = (
+                        not self.code.full_func_name(self.func).rsplit(".", 1)[0].endswith("_Impl_")
+                    )
             seen_param_names: Set[str] = set()
             param_idx = 0
             for assign in param_candidates:
@@ -1196,7 +1211,7 @@ class IRFunction:
                     self.locals[r].name = f"{name}{suffix}"
                     suffix += 1
 
-        if self.locals and self.locals[0].name == "var0" and has_this:
+        if self.locals and self.locals[0].name == "var0" and (has_this or has_dynamic_receiver):
             self.locals[0].name = "this"
         dbg_print("Named locals:", self.locals)
 
@@ -2087,6 +2102,10 @@ class IRFunction:
             if op_idx is not None:
                 for reg, alias in self._op_aliases.get(op_idx, ()):
                     src_local = self.locals[reg]
+                    # A name another register still holds (a parameter the copy would shadow)
+                    # can't be re-bound: the later reads of that register would read the copy.
+                    if any(other.name == alias for other in self.locals if other.reg_idx != reg):
+                        continue
                     alias_local = IRLocal(alias, self.func.regs[reg], code=self.code)
                     self.all_locals.append(alias_local)
                     block.statements.append(IRAssign(self.code, alias_local, src_local))
@@ -3498,6 +3517,15 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                         call = f"({values[0]} + {values[1]})"  # the compiler's string concatenation
                     else:
                         call = f"{cname}.{mname}({', '.join(values)})"
+                        signature = fun.type.resolve(code).definition if isinstance(fun, Function) else None
+                        if (
+                            values
+                            and isinstance(signature, Fun)
+                            and signature.args
+                            and destaticify(disasm.type_name(code, signature.args[0].resolve(code))) == cname
+                        ):
+                            # An instance method called directly takes its receiver first: `r.m(args)`.
+                            call = f"{values[0]}.{mname}({', '.join(values[1:])})"
                     reg_value[dst.value] = call
                     reg_refs[dst.value] = {cname}
                     for a in call_arg_regs:
