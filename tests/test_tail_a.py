@@ -305,3 +305,17 @@ class Main {
         },
     )
     assert "__add__" not in files["src/Main.hx"]
+
+
+def test_std_static_used_as_a_value(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Main {
+    static function main() Sys.println(Reflect.compareMethods(String.fromCharCode, String.fromCharCode));
+}
+"""
+        },
+    )
+    assert "String.fromCharCode" in files["src/Main.hx"]

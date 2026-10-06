@@ -575,6 +575,11 @@ def _expression_to_haxe(
                             if receiver:
                                 return f"{receiver}.{method_name}"
                     return f"{class_name}.{method_name}"
+            if name and is_std and "." not in name:
+                # A std static used as a value (`Reflect.compareMethods(String.fromCharCode, ..)`).
+                std_name = _std_call_name(func, code)
+                if std_name and "." in std_name:
+                    return std_name
             if name:
                 return name
             inline = _inline_anonymous(func, code, ir_function)
