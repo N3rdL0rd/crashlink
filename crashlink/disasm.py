@@ -20,6 +20,7 @@ except ImportError:
 from .core import (
     Abstract,
     Bytecode,
+    DynObj,
     Fun,
     Function,
     Native,
@@ -380,7 +381,10 @@ def _is_pos_infos(code: Bytecode, definition: Any) -> bool:
     if not isinstance(definition, Virtual):
         return False
     fields = {f.name.resolve(code): type_name(code, f.type.resolve(code)) for f in definition.fields}
-    return fields == _POS_INFOS_LAYOUT
+    # A position built without its optional `customParams` has the layout without it.
+    return fields == _POS_INFOS_LAYOUT or fields == {
+        name: typ for name, typ in _POS_INFOS_LAYOUT.items() if name != "customParams"
+    }
 
 
 def _trace_signature_types(code: Bytecode) -> Tuple[set[int], set[int]]:
@@ -408,6 +412,82 @@ def _trace_signature_types(code: Bytecode) -> Tuple[set[int], set[int]]:
                 callbacks.add(id(callback))
     _trace_type_cache[id(code)] = (weakref.ref(code), positions, callbacks)
     return positions, callbacks
+
+
+_omitted_field_cache: Dict[int, Tuple[Any, Dict[int, set[str]], Dict[int, set[str]]]] = {}
+
+
+def _omitted_literal_fields(code: Bytecode) -> Dict[int, set[str]]:
+    return _structure_facts(code)[0]
+
+
+def _stored_function_fields(code: Bytecode) -> Dict[int, set[str]]:
+    """The function-typed fields code stores into, by `id` of the structure's definition:
+    only a `var` field can be assigned, a method can't be rebound."""
+    return _structure_facts(code)[1]
+
+
+def _structure_facts(code: Bytecode) -> Tuple[Dict[int, set[str]], Dict[int, set[str]]]:
+    """The fields each structure's literals leave out, and the function-typed ones code
+    stores into, both by `id` of its definition.
+
+    A literal allocates the structure then stores its fields in turn, so a field that is
+    never stored before the register is reused is one the literal omitted: the field is
+    optional, which the compiled structure does not record."""
+    cached = _omitted_field_cache.get(id(code))
+    if cached is not None and cached[0]() is code:
+        return cached[1], cached[2]
+    omitted: Dict[int, set[str]] = {}
+    stored_functions: Dict[int, set[str]] = {}
+
+    def finish(typ: Virtual, stored: set[str]) -> None:
+        for f in typ.fields:
+            name = f.name.resolve(code)
+            if name not in stored:
+                omitted.setdefault(id(typ), set()).add(name)
+
+    for func in code.functions:
+        # A register allocated as a structure, or as a dynamic object a structure
+        # is then made of (`{}` typed as a typedef), with the names stored so far.
+        live: Dict[int, Tuple[Optional[Virtual], set[str]]] = {}
+        for op in func.ops:
+            df = op.df
+            if op.op == "SetField":
+                target = func.regs[df["obj"].value].resolve(code).definition
+                if isinstance(target, Virtual):
+                    member = target.fields[df["field"].value]
+                    if isinstance(member.type.resolve(code).definition, Fun):
+                        stored_functions.setdefault(id(target), set()).add(member.name.resolve(code))
+                entry = live.get(df["obj"].value)
+                if entry is not None and entry[0] is not None:
+                    entry[1].add(entry[0].fields[df["field"].value].name.resolve(code))
+                continue
+            if op.op == "DynSet":
+                entry = live.get(df["obj"].value)
+                if entry is not None and entry[0] is None:
+                    entry[1].add(df["field"].resolve(code))
+                continue
+            if op.op == "Setref" or "dst" not in df:
+                continue
+            reg = df["dst"].value
+            entry = live.pop(reg, None)
+            if entry is not None and entry[0] is not None:
+                finish(entry[0], entry[1])
+            definition = func.regs[reg].resolve(code).definition
+            if op.op == "New":
+                if isinstance(definition, Virtual):
+                    live[reg] = (definition, set())
+                elif isinstance(definition, DynObj):
+                    live[reg] = (None, set())
+            elif op.op == "ToVirtual" and isinstance(definition, Virtual):
+                source = live.get(df["src"].value)
+                if source is not None and source[0] is None:
+                    finish(definition, source[1])
+        for entry in live.values():
+            if entry[0] is not None:
+                finish(entry[0], entry[1])
+    _omitted_field_cache[id(code)] = (weakref.ref(code), omitted, stored_functions)
+    return omitted, stored_functions
 
 
 def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
@@ -455,10 +535,20 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                 has_optional = any(
                     isinstance(f.type.resolve(code).definition, Null) for f in definition.fields
                 )
+                omitted = _omitted_literal_fields(code).get(key, set())
+                stored = _stored_function_fields(code).get(key, set())
+                declared: set[str] = set()
                 for f in definition.fields:
                     name, ftype = f.name.resolve(code), f.type.resolve(code)
+                    # An interface redeclaring a field of one it extends lists both: the first,
+                    # the interface's own, is the one a structure can have.
+                    if name in declared:
+                        continue
+                    declared.add(name)
                     fdef = ftype.definition
-                    if isinstance(fdef, Fun):
+                    if name in omitted and ftype.kind.value not in _BASIC_KINDS:
+                        members.append(f"@:optional var {name}: {render(ftype)};")
+                    elif isinstance(fdef, Fun) and name not in stored:
                         params = ", ".join(
                             f"a{i}: {render(a.resolve(code))}" for i, a in enumerate(fdef.args)
                         )

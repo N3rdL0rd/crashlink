@@ -12,11 +12,13 @@ if TYPE_CHECKING:
     from ..function import IRFunction
 
 from ...core import (
+    Bool,
     Bytecode,
     DynObj,
     Enum,
     Fun,
     Function,
+    I32,
     Obj,
     Opcode,
     Type,
@@ -1559,6 +1561,54 @@ def default_arg_regs(code: Bytecode, func: Function) -> Dict[int, Opcode]:
     return found
 
 
+def overriding_default_arg_regs(code: Bytecode, func: Function) -> Dict[int, Tuple[Function, Opcode]]:
+    """The defaults of an abstract method, which has none of its own: it is declared with
+    plain basic parameters, but the implementations that override it take each optional
+    one by reference and open with the check giving the default. Each is `(implementation,
+    the opcode loading it)`, from the first override giving one."""
+    return _overriding_defaults(code, func)
+
+
+def _overriding_defaults(code: Bytecode, func: Function) -> Dict[int, Tuple[Function, Opcode]]:
+    # An abstract method's body is `throw null`.
+    if [op.op for op in func.ops] != ["Null", "Throw"]:
+        return {}
+    wanted = set(range(1, 16))
+    owner = next(
+        (
+            obj
+            for typ in code.types
+            if isinstance(obj := typ.definition, Obj)
+            and any(proto.findex.value == func.findex.value for proto in obj.protos)
+        ),
+        None,
+    )
+    if owner is None:
+        return {}
+    name = code.partial_func_name(func)
+    found: Dict[int, Tuple[Function, Opcode]] = {}
+    for typ in code.types:
+        obj = typ.definition
+        if not isinstance(obj, Obj) or obj is owner:
+            continue
+        current, hops = obj, 0
+        while current.super is not None and current.super.value >= 0 and hops < 64 and current is not owner:
+            parent = current.super.resolve(code).definition
+            if not isinstance(parent, Obj):
+                break
+            current, hops = parent, hops + 1
+        if current is not owner:
+            continue
+        for proto in obj.protos:
+            impl = proto.findex.resolve(code)
+            if proto.name.resolve(code) != name or not isinstance(impl, Function):
+                continue
+            for reg, load in default_arg_regs(code, impl).items():
+                if reg in wanted:
+                    found.setdefault(reg, (impl, load))
+    return found
+
+
 def default_arg_value(code: Bytecode, load: Opcode) -> IRConst:
     """The constant a default-argument prologue's `load` writes."""
     if load.op == "Bool":
@@ -1738,12 +1788,42 @@ class IRDefaultArgumentRecovery(IROptimizer):
     ) -> None:
         callee, first = self._callee(call)
         defaults = default_arg_regs(self.func.code, callee) if callee is not None else {}
+        if callee is not None:
+            for reg, (_, load) in overriding_default_arg_regs(self.func.code, callee).items():
+                defaults.setdefault(reg, load)
         omitted: List[int] = []
+        abstract = callee is not None and [op.op for op in callee.ops] == ["Null", "Throw"]
         for i, arg in enumerate(call.args):
             load = defaults.get(i + first)
-            if load is None:
+            if load is None and not abstract:
                 continue
             value = self._passed_value(arg, stmts, j, writes) if isinstance(arg, IRLocal) else arg
+            if load is None:
+                # An abstract method nothing overrides has no default to name: a
+                # reference is still how the optional argument was passed.
+                if isinstance(value, IRRefNew) and isinstance(value.target, IRLocal):
+                    call.args[i] = value.target
+                    if isinstance(arg, IRLocal):
+                        rewritten[id(arg)] = rewritten.get(id(arg), 0) + 1
+                elif isinstance(value, IRConst) and value.const_type == IRConst.ConstType.NULL:
+                    # No implementation reads it, so any value stands for the absent one,
+                    # which a basic parameter can't be given as `null`.
+                    assert callee is not None
+                    fun_type = callee.type.resolve(self.func.code).definition
+                    basic = (
+                        fun_type.args[i + first].resolve(self.func.code).definition
+                        if isinstance(fun_type, Fun)
+                        else None
+                    )
+                    if isinstance(basic, Bool):
+                        call.args[i] = IRConst(self.func.code, IRConst.ConstType.BOOL, value=False)
+                    elif isinstance(basic, I32):
+                        call.args[i] = IRConst(self.func.code, IRConst.ConstType.INT, value=0)
+                    else:
+                        continue
+                    if isinstance(arg, IRLocal):
+                        rewritten[id(arg)] = rewritten.get(id(arg), 0) + 1
+                continue
             if isinstance(value, IRRefNew) and isinstance(value.target, IRLocal):
                 # The callee reads through the reference on entry, which is
                 # the value the local holds at the call.
@@ -3503,10 +3583,24 @@ class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
         # fields in the same order, so those temps fold into the value they feed.
         stores: List[Tuple[str, IRExpression, List[Tuple[IRLocal, IRExpression]]]] = []
         pending: List[Tuple[IRLocal, IRExpression]] = []
+        aliases: List[IRStatement] = []
         j = start + 1
         end = j
         while j < len(stmts):
             s = stmts[j]
+            if (
+                isinstance(s, IRAssign)
+                and isinstance(s.target, IRLocal)
+                and s.expr == temp
+                and s.target != temp
+                and not re.fullmatch(r"var\d+", s.target.name)
+                and not pending
+            ):
+                # `var b = a` compiled to one register is re-emitted as a copy right after
+                # the allocation, ahead of the stores that initialise the object.
+                aliases.append(s)
+                j += 1
+                continue
             if (
                 isinstance(s, IRAssign)
                 and isinstance(s.target, IRField)
@@ -3539,6 +3633,12 @@ class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
 
         if not stores:
             return None
+        moved = [s for s in stmts[start + 1 : j] if any(s is a for a in aliases)]
+        if moved:
+            # The copies share the object, so they can follow the stores.
+            kept = [s for s in stmts[start + 1 : j] if not any(s is a for a in moved)]
+            stmts[start + 1 : j] = kept + moved
+            j -= len(moved)
 
         # The field values are only rewritten once the fold is certain.
         literal = IRObjectLiteral(self.func.code, [])

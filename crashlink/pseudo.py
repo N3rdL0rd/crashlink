@@ -28,6 +28,7 @@ from .core import (
     is_static_name,
     gIndex,
     Virtual,
+    Dyn,
 )
 from . import disasm
 from . import abstracts, hxbit, hxsl, typeinit
@@ -86,7 +87,7 @@ from .decomp import (
     IRNullCoalesce,
 )
 from .decomp.ir import IREnumPattern, IRInlineCall, basic_type_of_global
-from .decomp.opt.clean import default_arg_regs, default_arg_value
+from .decomp.opt.clean import default_arg_regs, default_arg_value, overriding_default_arg_regs
 from .decomp.inline_calls import inline_index, is_inline_template
 
 
@@ -1317,8 +1318,12 @@ def _expression_to_haxe(
 
     elif isinstance(expr, IRNew):
         type_name = disasm.type_name(code, expr.get_type())
-        if type_name == "DynObj" or type_name.startswith("Virtual["):
+        if type_name == "DynObj":
             return "{}"
+        if type_name.startswith("Virtual["):
+            # A structure whose fields are stored one by one (a literal that could not be
+            # folded): an empty literal does not satisfy the structure.
+            return "cast {}" if type_name != "Virtual[]" else "{}"
         elif type_name == "hl.types.ArrayObj" and not expr.constructor_args:
             # `new ArrayObj()` is Haxe's `new Array<T>()` / `[]` for typed
             # object arrays. Render as `[]` so Haxe infers the element type
@@ -2800,9 +2805,14 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     core_fun_type_def = func_core.type.resolve(code).definition
     if isinstance(core_fun_type_def, Fun):
         start_arg = 1 if is_instance or is_constructor else 0
+        erased = (
+            _erased_parameters(code, containing.dynamic, func_name_str)
+            if is_instance and not is_constructor and containing is not None
+            else set()
+        )
         for i, arg_type_idx in enumerate(core_fun_type_def.args[start_arg:]):
             arg_core_type = arg_type_idx.resolve(code)
-            arg_haxe_type_name = disasm._haxe_annotation(code, arg_core_type)
+            arg_haxe_type_name = "Dynamic" if i in erased else disasm._haxe_annotation(code, arg_core_type)
 
             param_name = f"arg{i}"
             local_idx = start_arg + i
@@ -2843,6 +2853,11 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
                 value, const = default
                 value_type = disasm._haxe_annotation(code, value.get_type())
                 param_type_decl = f": {value_type} = {_expression_to_haxe(const, code, ir_func)}"
+            elif (inherited := overriding_default_arg_regs(code, func_core).get(local_idx)) is not None:
+                impl, load = inherited
+                value_type = disasm._haxe_annotation(code, impl.regs[load.df["dst"].value].resolve(code))
+                default_value = _expression_to_haxe(default_arg_value(code, load), code, ir_func)
+                param_type_decl = f": {value_type} = {default_value}"
             params_str_list.append(f"{param_name}{param_type_decl}")
 
         ret_core_type = core_fun_type_def.ret.resolve(code)
@@ -2855,7 +2870,12 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     params_joined_str = ", ".join(params_str_list)
     ret_decl = f": {return_type_str}" if return_type_str else ""
     access_kw = "public "
-    inline_kw = "inline " if containing is not None and is_inline_template(code, func_core) else ""
+    # A `dynamic` method can be rebound and so is never `inline`.
+    inline_kw = (
+        "inline "
+        if containing is not None and "dynamic" not in override_kw and is_inline_template(code, func_core)
+        else ""
+    )
     func_header = f"{access_kw}{static_kw}{override_kw}{inline_kw}function {func_name_str}({params_joined_str}){ret_decl} {{"
     output_lines.append(func_header)
 
@@ -5649,6 +5669,47 @@ def class_field_lines(code: Bytecode, obj: Obj) -> List[str]:
     return lines
 
 
+def _erased_parameters(code: Bytecode, dynamic: Optional[Obj], method_name: str) -> Set[int]:
+    """Parameters of a method that an interface its class (or a super class) implements
+    declares `Dynamic`: an interface with type parameters is erased to `Dynamic` there,
+    while the implementation has the concrete type. Haxe matches the two parameter lists
+    exactly, so they are declared `Dynamic` on the implementation as well. The same goes
+    for a method overriding one of a generic class, whose parameters were erased there."""
+    erased: Set[int] = set()
+    if dynamic is None:
+        return erased
+    for parent in _ancestors(code, dynamic):
+        signatures = [
+            (proto.findex.resolve(code).type.resolve(code).definition, 1)
+            for proto in parent.protos
+            if proto.name.resolve(code) == method_name and isinstance(proto.findex.resolve(code), Function)
+        ] + [
+            (field.type.resolve(code).definition, 0)
+            for field in parent.fields
+            if field.name.resolve(code) == method_name
+        ]
+        for signature, skip in signatures:
+            if isinstance(signature, Fun):
+                erased.update(
+                    i
+                    for i, arg in enumerate(signature.args[skip:])
+                    if isinstance(arg.resolve(code).definition, Dyn)
+                )
+    for obj in _chain(code, dynamic):
+        for interface in typeinit.implemented(code, obj):
+            for iface in [interface, *interface.ancestors()]:
+                for member in iface.virtual.fields:
+                    signature = member.type.resolve(code).definition
+                    if member.name.resolve(code) != method_name or not isinstance(signature, Fun):
+                        continue
+                    erased.update(
+                        i
+                        for i, arg in enumerate(signature.args)
+                        if isinstance(arg.resolve(code).definition, Dyn)
+                    )
+    return erased
+
+
 def _overrides_super(code: Bytecode, dynamic: Optional[Obj], method_name: str) -> bool:
     """True if `method_name` is declared by a super class (needs `override`)."""
     return _ancestor_declares(code, dynamic, method_name)
@@ -5681,12 +5742,16 @@ def _stub_method(code: Bytecode, func: Function, is_instance: bool, dynamic: Opt
     ret_type: Optional[Type] = None
     if isinstance(fun_def, Fun):
         start = 1 if is_instance else 0
-        defaults = default_arg_regs(code, func)
+        defaults = {reg: (func, load) for reg, load in default_arg_regs(code, func).items()}
+        for reg, found in overriding_default_arg_regs(code, func).items():
+            defaults.setdefault(reg, found)
+        erased = _erased_parameters(code, dynamic, name) if is_instance and not is_ctor else set()
         for i, arg_idx in enumerate(fun_def.args[start:]):
-            t = disasm._haxe_annotation(code, arg_idx.resolve(code))
-            load = defaults.get(start + i)
-            if load is not None:
-                value_type = disasm._haxe_annotation(code, func.regs[load.df["dst"].value].resolve(code))
+            t = "Dynamic" if i in erased else disasm._haxe_annotation(code, arg_idx.resolve(code))
+            found = defaults.get(start + i)
+            if found is not None:
+                owner, load = found
+                value_type = disasm._haxe_annotation(code, owner.regs[load.df["dst"].value].resolve(code))
                 default = _expression_to_haxe(default_arg_value(code, load), code, None)
                 params.append(f"arg{i}: {value_type} = {default}")
                 continue
