@@ -221,3 +221,19 @@ class Main {
     }
     _, expected, actual = roundtrip(tmp_path, modules)
     assert actual == expected
+
+
+def test_std_static_used_as_a_value_keeps_its_class(tmp_path: Path) -> None:
+    modules = {
+        "Main.hx": """
+class Main {
+    static function main() {
+        var parse = Std.parseInt;
+        var rd = Std.random;
+        Sys.println(parse("12") + rd(1));
+    }
+}
+"""
+    }
+    sources, expected, actual = roundtrip(tmp_path, modules)
+    assert actual == expected

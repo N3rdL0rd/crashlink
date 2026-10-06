@@ -601,6 +601,12 @@ def _expression_to_haxe(
             is_std = _is_std_function(func, code)
             if name and "." in name and not is_std:
                 return name
+            if is_std and name and "." not in name:
+                # A std static used as a value (`var rd = Std.random`) is named through its class.
+                full = code.full_func_name(func) or ""
+                std_name = _std_call_name(func, code)
+                if std_name and re.search(r"(^|\.)\$[^.]+\.[^.]+$", full):
+                    return std_name
             # Static wrappers often drop the class from the partial name; use
             # the full name so method/closure references are qualified.
             if not is_std:
