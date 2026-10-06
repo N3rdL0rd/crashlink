@@ -567,7 +567,10 @@ def _expression_to_haxe(
                     if isinstance(fun_type, Fun) and fun_type.args:
                         first_arg_type = fun_type.args[0].resolve(code)
                         first_arg_type_name = destaticify(disasm.type_name(code, first_arg_type))
-                        if first_arg_type_name == class_name and ir_function is not None:
+                        is_static_member = (code.full_func_name(func) or "").rsplit(".", 1)[0].rsplit(".", 1)[
+                            -1
+                        ].startswith("$")
+                        if first_arg_type_name == class_name and ir_function is not None and not is_static_member:
                             receiver = _find_receiver_local(class_name, ir_function, code)
                             if receiver:
                                 return f"{receiver}.{method_name}"
@@ -3792,6 +3795,10 @@ def _try_instance_method_call(
         return None
     class_name, method_name = parts
     # Static wrapper names like $PatchMe.main have a '$' prefix on the class.
+    raw_owner = (code.full_func_name(func) or "").rsplit(".", 1)[0].rsplit(".", 1)[-1]
+    if raw_owner.startswith("$") and not _is_std_function(func, code):
+        # A user static that happens to take its own class first is not a method.
+        return None
     class_name = class_name.lstrip("$")
 
     # Instance methods have the receiver as their first typed argument.

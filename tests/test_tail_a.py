@@ -227,3 +227,30 @@ class Main {
         },
     )
     assert "this.show" in files["src/Main.hx"]
+
+
+def test_static_taking_its_own_class_is_not_called_as_a_method(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Base {
+    public function new() {}
+    public function name() return "base";
+    public static function call(i:Base) return i.name();
+}
+class Kid extends Base {
+    override public function name() return "kid";
+    public static function call(i:Kid) return "kid:" + i.name();
+}
+class Main {
+    static function main() {
+        var k = new Kid();
+        Sys.println(Base.call(k));
+        Sys.println(Kid.call(k));
+    }
+}
+"""
+        },
+    )
+    assert "Kid.call(" in files["src/Main.hx"]
