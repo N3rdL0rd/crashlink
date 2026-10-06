@@ -450,6 +450,40 @@ def _paren_comparison_operand(
     return rendered
 
 
+def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction]) -> List[str]:
+    """Rendered arguments of a call. HL passes an optional basic argument as an
+    `hl.Ref` (null when omitted); Haxe source leaves an omitted trailing one out, and
+    gives a declared basic parameter the value rather than a reference to it."""
+    rendered = [_expression_to_haxe(arg, code, ir_function) for arg in expr.args]
+    if expr.target is None:
+        return rendered
+    signature = expr.target.get_type().definition
+    if not isinstance(signature, Fun) or len(signature.args) < len(expr.args):
+        return rendered
+    params = [arg.resolve(code).definition for arg in signature.args[len(signature.args) - len(expr.args) :]]
+    for i, arg in enumerate(expr.args):
+        if not isinstance(arg.get_type().definition, Ref):
+            continue
+        # A reference made for this call only stands for the value it holds.
+        made = arg
+        if isinstance(arg, IRLocal) and ir_function is not None:
+            defining = _find_defining_assignment(arg.name, ir_function.block)
+            if isinstance(defining, IRAssign) and isinstance(defining.expr, IRRefNew):
+                made = defining.expr
+        if isinstance(made, IRRefNew) and isinstance(params[i], Ref):
+            rendered[i] = _expression_to_haxe(made.target, code, ir_function)
+        elif not isinstance(params[i], Ref):
+            rendered[i] = f"{rendered[i]}.get()"
+    while (
+        rendered
+        and isinstance(expr.args[len(rendered) - 1], IRConst)
+        and expr.args[len(rendered) - 1].const_type == IRConst.ConstType.NULL
+        and isinstance(params[len(rendered) - 1], Ref)
+    ):
+        rendered.pop()
+    return rendered
+
+
 def _is_untyped_array_access_class(typ: "Type", code: Bytecode) -> bool:
     """True if `typ` is hl.types.ArrayBase/ArrayAccess — the type-erased base
     classes that back every concrete typed array (ArrayBytes_T, ArrayObj,
@@ -1132,7 +1166,7 @@ def _expression_to_haxe(
                     return call if is_public else f"(@:privateAccess {call})"
             args_str = ", ".join(arg_strs)
         else:
-            args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in expr.args)
+            args_str = ", ".join(_call_args(expr, code, ir_function))
         # HashLink's internal ArrayBase.alloc* helpers return ArrayBytes_* types
         # that are not directly assignable to Array<T> locals. Insert a cast so
         # the decompiled output recompiles without changing the underlying call.
@@ -2470,6 +2504,10 @@ def _closure_inline_body(helper_ir: IRFunction) -> Optional[Tuple[List[str], str
     names = [local.name for local in helper_ir.locals[: len(signature.args)]]
     if len(names) != len(signature.args):
         return None
+    for index, (value, const) in helper_ir.default_args.items():
+        if index < len(names):
+            # The body reads the parameter through the local that holds its value.
+            names[index] = f"{value.name} = {_expression_to_haxe(const, helper_ir.code, helper_ir)}"
     rendered = _generate_statements([statements[0]], helper_ir.code, helper_ir, 0, set())
     if len(rendered) != 1:
         return None
@@ -2618,7 +2656,11 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     if not is_instance and not abstract_constructor:
         static_kw = "static "
         holder = _method_registry(code).get(func_core.findex.value)
-        if holder is not None and holder[0].is_static and _is_static_dynamic_method(holder[0], func_core):
+        if (
+            holder is not None
+            and holder[0].is_static
+            and _is_static_dynamic_method(code, holder[0], func_core, holder[1])
+        ):
             static_kw = "static dynamic "
 
     override_kw = ""
@@ -4031,9 +4073,34 @@ def _is_dynamic_method(code: Bytecode, obj: Optional[Obj], func: Function) -> bo
     )
 
 
-def _is_static_dynamic_method(obj: Obj, func: Function) -> bool:
-    """Whether `func` is the default body of a `static dynamic` method of the class whose statics are `obj`."""
-    return any(binding.findex.value == func.findex.value for binding in obj.bindings)
+_written_statics_cache: Dict[int, Tuple["weakref.ReferenceType[Bytecode]", Set[Tuple[int, str]]]] = {}
+
+
+def _written_statics(code: Bytecode) -> Set[Tuple[int, str]]:
+    """(`id()` of a static half, field name) of every static field some function assigns."""
+    cached = _written_statics_cache.get(id(code))
+    if cached is not None and cached[0]() is code:
+        return cached[1]
+    written: Set[Tuple[int, str]] = set()
+    for func in code.functions:
+        for op in func.ops:
+            if op.op != "SetField":
+                continue
+            target = func.regs[op.df["obj"].value].resolve(code).definition
+            if isinstance(target, Obj) and target.is_static:
+                written.add((id(target), op.df["field"].resolve_obj(code, target).name.resolve(code)))
+    _written_statics_cache[id(code)] = (weakref.ref(code), written)
+    return written
+
+
+def _is_static_dynamic_method(code: Bytecode, obj: Obj, func: Function, name: str) -> bool:
+    """Whether `func` is the default body of a `static dynamic` method of the class whose statics are
+    `obj`: a function is bound to its static field also when it is only kept, so the field has to be
+    one the program assigns."""
+    return (
+        any(binding.findex.value == func.findex.value for binding in obj.bindings)
+        and (id(obj), name) in _written_statics(code)
+    )
 
 
 def _method_overrides(method_name: str, ir_class: "Union[IRClass, _PseudoClass]", code: Bytecode) -> bool:

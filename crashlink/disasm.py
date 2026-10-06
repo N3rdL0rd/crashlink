@@ -421,6 +421,12 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
         try:
             if isinstance(definition, Fun):
                 args = [render(arg.resolve(code)) for arg in definition.args]
+                if not native:
+                    # HL passes an optional basic value by reference: `?Int` is `hl.Ref<Int>`.
+                    for i, arg in enumerate(definition.args):
+                        arg_def = arg.resolve(code).definition
+                        if isinstance(arg_def, Ref):
+                            args[i] = "?" + render(arg_def.type.resolve(code))
                 if key in callbacks:
                     args[1] = "?" + args[1]
                 ret = render(definition.ret.resolve(code))

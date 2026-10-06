@@ -150,3 +150,22 @@ class Main {
     }
     sources, expected, actual = roundtrip(tmp_path, modules)
     assert actual == expected
+
+
+def test_lambda_with_optional_argument_is_called_without_it(tmp_path: Path) -> None:
+    # HL passes the omitted optional Int as a null `hl.Ref<Int>`; the source left it out.
+    modules = {
+        "Main.hx": """
+class Main {
+    static function main() {
+        var first = (arg) -> "x";
+        var second = (name:String, count = 3) -> first(count) + name + count;
+        Sys.println(second("a"));
+        Sys.println(second("b", 5));
+    }
+}
+"""
+    }
+    sources, expected, actual = roundtrip(tmp_path, modules)
+    assert 'second("a")' in sources["Main.hx"]
+    assert actual == expected
