@@ -15,7 +15,6 @@ from typing import Optional, List, Set, Dict, FrozenSet, Tuple, Union, cast, Any
 
 from .core import (
     Bytecode,
-    Null,
     Obj,
     Ref,
     Type,
@@ -2052,6 +2051,8 @@ def _generate_statements(
             value_str = _expression_to_haxe(stmt.expr, code, ir_function)
             if type_str.startswith("hl.BytesAccess") and not value_str.startswith("cast "):
                 value_str = f"cast {value_str}"
+            if type_str.startswith("Array<") and type_str != "Array<Dynamic>":
+                value_str = _erased_array_into_typed(value_str, stmt.expr, code)
             if (
                 type_str == "Dynamic"
                 and (
