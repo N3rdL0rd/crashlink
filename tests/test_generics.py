@@ -146,3 +146,30 @@ class Main {
 """
         },
     )
+
+
+def test_enum_switch_with_empty_default_keeps_it(tmp_path: Path) -> None:
+    # `case _:` with no body is dropped from the bytecode; the switch must still cover every constructor.
+    text = roundtrip(
+        tmp_path,
+        {
+            "Main.hx": """
+enum Mode { One; Two; Three; }
+class Main {
+    static var seen:String = "";
+    static function note(m:Mode) {
+        switch m {
+            case One: seen += "one";
+            case _:
+        }
+    }
+    static function main() {
+        note(Two);
+        note(One);
+        Sys.println(seen);
+    }
+}
+"""
+        },
+    )
+    assert "default:" in text["Main.hx"]

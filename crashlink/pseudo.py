@@ -2283,6 +2283,9 @@ def _generate_statements(
                 for s in stmt.default.statements:
                     if isinstance(s, IRAssign) and isinstance(s.target, IRLocal):
                         declared_vars_in_scope.add(s.target.name)
+            elif _switch_enum(stmt)[0] is not None and not _switch_is_exhaustive(stmt):
+                # The source had a `case _:` with nothing in it; Haxe rejects the switch without it.
+                output_lines.append(f"{indent}    default:")
             output_lines.append(f"{indent}}}")
             valid_keys = set(render_subs.keys())
             for subs in case_subs:
