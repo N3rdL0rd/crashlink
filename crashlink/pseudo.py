@@ -5437,7 +5437,9 @@ def _erased_parameters(code: Bytecode, dynamic: Optional[Obj], method_name: str)
         for signature, skip in signatures:
             if isinstance(signature, Fun):
                 erased.update(
-                    i for i, arg in enumerate(signature.args[skip:]) if isinstance(arg.resolve(code).definition, Dyn)
+                    i
+                    for i, arg in enumerate(signature.args[skip:])
+                    if isinstance(arg.resolve(code).definition, Dyn)
                 )
     for obj in _chain(code, dynamic):
         for interface in typeinit.implemented(code, obj):
@@ -5447,7 +5449,9 @@ def _erased_parameters(code: Bytecode, dynamic: Optional[Obj], method_name: str)
                     if member.name.resolve(code) != method_name or not isinstance(signature, Fun):
                         continue
                     erased.update(
-                        i for i, arg in enumerate(signature.args) if isinstance(arg.resolve(code).definition, Dyn)
+                        i
+                        for i, arg in enumerate(signature.args)
+                        if isinstance(arg.resolve(code).definition, Dyn)
                     )
     return erased
 

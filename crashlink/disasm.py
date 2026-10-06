@@ -463,7 +463,7 @@ def _structure_facts(code: Bytecode) -> Tuple[Dict[int, set[str]], Dict[int, set
             reg = df["dst"].value
             entry = live.pop(reg, None)
             if entry is not None and entry[0] is not None:
-                finish(*entry)  # type: ignore[arg-type]
+                finish(entry[0], entry[1])
             definition = func.regs[reg].resolve(code).definition
             if op.op == "New":
                 if isinstance(definition, Virtual):
@@ -476,7 +476,7 @@ def _structure_facts(code: Bytecode) -> Tuple[Dict[int, set[str]], Dict[int, set
                     finish(definition, source[1])
         for entry in live.values():
             if entry[0] is not None:
-                finish(*entry)  # type: ignore[arg-type]
+                finish(entry[0], entry[1])
     _omitted_field_cache[id(code)] = (weakref.ref(code), omitted, stored_functions)
     return omitted, stored_functions
 

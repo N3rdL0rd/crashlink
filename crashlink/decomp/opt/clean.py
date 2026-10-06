@@ -17,12 +17,10 @@ from ...core import (
     DynObj,
     Enum,
     Fun,
-    F64,
     Function,
     I32,
     Obj,
     Opcode,
-    Ref,
     Type,
     Virtual,
     destaticify,
@@ -1811,7 +1809,11 @@ class IRDefaultArgumentRecovery(IROptimizer):
                     # which a basic parameter can't be given as `null`.
                     assert callee is not None
                     fun_type = callee.type.resolve(self.func.code).definition
-                    basic = fun_type.args[i + first].resolve(self.func.code).definition if isinstance(fun_type, Fun) else None
+                    basic = (
+                        fun_type.args[i + first].resolve(self.func.code).definition
+                        if isinstance(fun_type, Fun)
+                        else None
+                    )
                     if isinstance(basic, Bool):
                         call.args[i] = IRConst(self.func.code, IRConst.ConstType.BOOL, value=False)
                     elif isinstance(basic, I32):
