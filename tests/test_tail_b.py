@@ -38,7 +38,9 @@ def _round_trip(tmp_path: Path, modules: Dict[str, str]) -> Tuple[Dict[str, str]
     project.write(str(folder), files)
     rebuilt = subprocess.run(["haxe", "build.hxml"], cwd=folder, capture_output=True, text=True)
     assert rebuilt.returncode == 0, rebuilt.stderr
-    sources = {str(path.relative_to(folder / "src")): path.read_text() for path in (folder / "src").rglob("*.hx")}
+    sources = {
+        str(path.relative_to(folder / "src")): path.read_text() for path in (folder / "src").rglob("*.hx")
+    }
     return sources, _run(original), _run(folder / "out.hl")
 
 

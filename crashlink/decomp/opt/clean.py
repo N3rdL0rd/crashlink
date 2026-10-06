@@ -1878,7 +1878,11 @@ class IRInterfaceCacheCollapser(TraversingIROptimizer):
             return None
         # An unread conversion may load into a different temp than the null arm clears.
         load = value_arm[0]
-        temp = load.target if isinstance(load, IRAssign) and isinstance(load.target, IRLocal) else null_write.target
+        temp = (
+            load.target
+            if isinstance(load, IRAssign) and isinstance(load.target, IRLocal)
+            else null_write.target
+        )
         collapsed = self._load_and_fill(load, value_arm[1], temp, source)
         if collapsed is None:
             return None

@@ -777,7 +777,8 @@ def _expression_to_haxe(
                 and right_expr.const_type == IRConst.ConstType.NULL
                 and isinstance(left_expr, IRCast)
                 and left_expr.get_type().kind.value == Type.Kind.NULL.value
-                and left_expr.expr.get_type().kind.value in (Type.Kind.I32.value, Type.Kind.F64.value, Type.Kind.BOOL.value)
+                and left_expr.expr.get_type().kind.value
+                in (Type.Kind.I32.value, Type.Kind.F64.value, Type.Kind.BOOL.value)
             ):
                 # A primitive compared with null goes through `Null<T>`; bare `i == null`
                 # is an error on static targets.

@@ -275,7 +275,6 @@ def _op_writes(op: Opcode) -> Optional[int]:
     return None
 
 
-
 def _source_local_name(code: Bytecode, name: str) -> str:
     """A local's source name, renamed when it would shadow the first segment of a
     qualified type path (`misc.Foo` is unreachable beside a local `misc`)."""
