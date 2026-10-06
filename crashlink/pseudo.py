@@ -83,9 +83,17 @@ from .decomp import (
     IRTernary,
     IRNullCoalesce,
 )
-from .decomp.ir import IREnumPattern, IRInlineCall
+from .decomp.ir import IREnumPattern, IRInlineCall, basic_type_of_global
 from .decomp.opt.clean import default_arg_regs, default_arg_value
 from .decomp.inline_calls import inline_index, is_inline_template
+
+
+_BASIC_TYPE_NAMES = {
+    Type.Kind.I32.value: "Int",
+    Type.Kind.F64.value: "Float",
+    Type.Kind.BOOL.value: "Bool",
+    Type.Kind.DYN.value: "Dynamic",
+}
 
 
 def _indent_str(level: int) -> str:
@@ -588,6 +596,12 @@ def _expression_to_haxe(
                 # `untyped $globalN()` fallback whenever the global's type is a
                 # named class or enum.
                 defn = expr.value.definition
+                if isinstance(defn, Obj) and defn.name.resolve(code) == "hl.BaseType":
+                    # The runtime type object of a primitive: Std.isOfType(x, Int), catch (e:Bool)...
+                    basic = basic_type_of_global(code, expr.original_index.value)
+                    basic_name = _BASIC_TYPE_NAMES.get(basic.kind.value) if basic is not None else None
+                    if basic_name is not None:
+                        return basic_name
                 if isinstance(defn, (Obj, Enum)):
                     abstract = abstracts.abstract_of(code, defn) if isinstance(defn, Obj) else None
                     if abstract is not None:
@@ -2434,6 +2448,7 @@ def _closure_inline_body(helper_ir: IRFunction) -> Optional[Tuple[List[str], str
     names = [local.name for local in helper_ir.locals[: len(signature.args)]]
     if len(names) != len(signature.args):
         return None
+    helper_ir._rendered_as_lambda = True
     rendered = _generate_statements([statements[0]], helper_ir.code, helper_ir, 0, set())
     if len(rendered) != 1:
         return None
@@ -3914,7 +3929,10 @@ def _abstract_constructor_body(ir_func: IRFunction, signature: Fun) -> None:
 def _is_super_call(callee_class_name: str, ir_function: IRFunction, code: Bytecode) -> bool:
     """True if `callee_class_name` is a superclass of the function being rendered (i.e.
     this call is `super.foo()`, not a same-class `this.foo()`). The implementation `super`
-    reaches is the nearest one up the chain, which needn't be the direct superclass's."""
+    reaches is the nearest one up the chain, which needn't be the direct superclass's.
+    Haxe rejects `super` inside a local function, so lambdas never report one."""
+    if getattr(ir_function, "_rendered_as_lambda", False):
+        return False
     containing = getattr(ir_function, "_containing_class", None)
     if containing is None:
         return False

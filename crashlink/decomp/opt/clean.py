@@ -28,6 +28,7 @@ from ...errors import DecompError
 from ... import disasm
 from ...globals import DEBUG, dbg_print
 from ..ir import (
+    basic_type_of_global,
     IRStatement,
     IRExpression,
     IRBlock,
@@ -4225,6 +4226,7 @@ class IRTypedCatchOptimizer(IROptimizer):
             return []
         stmts = tc.catch_block.statements
         self._dispatch_aliases: Set[IRLocal] = set()
+        self._catch_all: Optional[List[IRStatement]] = None
         arms: List[Tuple[Type, IRBlock]] = []
         unwrap_arms: List[Tuple[Type, IRBlock]] = []
         consumed = self._parse_check_chain(stmts, 0, e, arms, unwrap_arms)
@@ -4250,6 +4252,11 @@ class IRTypedCatchOptimizer(IROptimizer):
             clauses.append(clause)
         if any(clause is None for clause in clauses):
             return []
+        if self._catch_all is not None:
+            catch_all = self._make_catch_all(self._catch_all, e)
+            if catch_all is None:
+                return []
+            clauses.append(catch_all)
         if any(
             self._references_local(body, alias)
             for alias in self._dispatch_aliases
@@ -4286,19 +4293,39 @@ class IRTypedCatchOptimizer(IROptimizer):
     ) -> Optional[int]:
         """Walk native `X.check(e)` arms. Returns the index just past the
         terminal `throw e`, or None if the shape breaks."""
+        flat_prev_terminates = True
+        last_was_unwrap = False
         while True:
             if i >= len(stmts):
+                # The dispatch ends without rethrowing: an empty `catch (e:Dynamic)`.
+                if arms and self._catch_all is None and flat_prev_terminates:
+                    self._catch_all = []
+                    return len(stmts)
                 return None
             stmt = stmts[i]
             if isinstance(stmt, IRThrow) and stmt.value is e:
                 return i + 1
+            start = i
             type_alias, i = self._consume_type_alias(stmts, i)
-            if i + 1 >= len(stmts):
-                return None
-            matched = self._match_check_pair(stmts[i], stmts[i + 1], e, type_alias)
+            matched = None
+            if i + 1 < len(stmts):
+                matched = self._match_check_pair(stmts[i], stmts[i + 1], e, type_alias)
             if matched is None:
-                return None
+                # Neither a dispatch pair nor the terminal rethrow: the rest of
+                # the chain is the `catch (e:Dynamic)` clause.
+                if (
+                    not arms
+                    or not flat_prev_terminates
+                    or self._catch_all is not None
+                    or self._std_call(stmts[i], "check") is not None
+                ):
+                    return None
+                self._catch_all = list(stmts[start:])
+                if type_alias is not None:
+                    self._dispatch_aliases.discard(type_alias.target)
+                return len(stmts)
             typ, tname, body, cond = matched
+            last_was_unwrap = tname == "haxe.ValueException"
             if tname == "haxe.ValueException":
                 if unwrap_arms:
                     return None
@@ -4310,6 +4337,8 @@ class IRTypedCatchOptimizer(IROptimizer):
             if len(else_stmts) == 1 and isinstance(else_stmts[0], IRThrow) and else_stmts[0].value is e:
                 return i + 2
             if len(else_stmts) == 0:
+                # An unwrap arm ends in `throw ve` for every value no sub-arm takes.
+                flat_prev_terminates = last_was_unwrap or self._terminates(body.statements)
                 i += 2
                 continue
             if self._parse_check_chain(else_stmts, 0, e, arms, unwrap_arms) != len(else_stmts):
@@ -4373,6 +4402,17 @@ class IRTypedCatchOptimizer(IROptimizer):
             stmt = stmts[i]
             if isinstance(stmt, IRThrow) and stmt.value is ve:
                 return i + 1
+            if (
+                payload_local is not None
+                and isinstance(stmt, IRAssign)
+                and stmt.target is payload_local
+                and isinstance(stmt.expr, IRField)
+                and stmt.expr.target is ve
+                and stmt.expr.field_name == "value"
+            ):
+                # The payload register is reloaded before each sub-test.
+                i += 1
+                continue
             type_alias, i = self._consume_type_alias(stmts, i)
             if i + 1 >= len(stmts):
                 return None
@@ -4402,7 +4442,9 @@ class IRTypedCatchOptimizer(IROptimizer):
             cond = stmts[i + 1]
             if not isinstance(cond, IRConditional):
                 return None
-            typ = type_const.value
+            typ = self._const_class_type(type_const)
+            if typ is None:
+                return None
             cond_expr = cond.condition
             if self._is_true_cond(cond_expr, assign.target):
                 sub_arms.append((typ, cond.true_block))
@@ -4415,23 +4457,60 @@ class IRTypedCatchOptimizer(IROptimizer):
                 if self._parse_isotype_chain(else_stmts, 0, ve, sub_arms, payload_local) != len(else_stmts):
                     return None
                 return i + 2
-            if (
-                isinstance(cond_expr, IRBoolExpr)
-                and cond_expr.op == IRBoolExpr.CompareType.ISFALSE
-                and cond_expr.left is assign.target
-            ):
+            extra_types = self._guard_extra_types(cond_expr, assign.target, ve, payload_local)
+            if extra_types is not None:
                 # Final arm as a guard: `if (!t) throw ve;` with the arm body
-                # inline after it.
+                # inline after it. Arms with identical bodies are merged by
+                # earlier passes into `if (!t && !isOfType(..)) throw ve;`.
                 then_stmts = cond.true_block.statements
                 if not (
                     len(then_stmts) == 1 and isinstance(then_stmts[0], IRThrow) and then_stmts[0].value is ve
                 ):
                     return None
-                tail = IRBlock(self.func.code)
-                tail.statements = list(stmts[i + 2 :])
-                sub_arms.append((typ, tail))
+                for extra in [typ, *extra_types]:
+                    tail = IRBlock(self.func.code)
+                    tail.statements = list(stmts[i + 2 :])
+                    sub_arms.append((extra, tail))
                 return len(stmts)
             return None
+
+    def _guard_extra_types(
+        self, cond: IRExpression, test: IRLocal, ve: IRLocal, payload_local: Optional[IRLocal]
+    ) -> Optional[List[Type]]:
+        """For `!test` or `!test && !isOfType(ve.value, X) && ...`, the types X of the
+        extra tests (empty for the plain guard); None if `cond` is neither."""
+
+        def negated(term: IRExpression) -> Optional[IRExpression]:
+            if isinstance(term, IRBoolExpr) and term.op == IRBoolExpr.CompareType.ISFALSE:
+                return term.left
+            return None
+
+        terms: List[IRExpression] = []
+        todo: List[Optional[IRExpression]] = [cond]
+        while todo:
+            term = todo.pop(0)
+            if isinstance(term, IRBoolExpr) and term.op == IRBoolExpr.CompareType.AND:
+                todo[:0] = [term.left, term.right]
+            elif term is not None:
+                terms.append(term)
+        if not terms or negated(terms[0]) is not test:
+            return None
+        types: List[Type] = []
+        for term in terms[1:]:
+            call = self._as_std_call(negated(term), "isOfType")
+            if call is None or len(call.args) != 2:
+                return None
+            field, type_const = call.args
+            if not (
+                (isinstance(field, IRField) and field.target is ve and field.field_name == "value")
+                or (payload_local is not None and field is payload_local)
+            ):
+                return None
+            typ = self._const_class_type(type_const)
+            if typ is None:
+                return None
+            types.append(typ)
+        return types
 
     # --- arm-pair and clause helpers ---------------------------------------
 
@@ -4445,11 +4524,29 @@ class IRTypedCatchOptimizer(IROptimizer):
             and stmt.expr.const_type == IRConst.ConstType.GLOBAL_OBJ
             and isinstance(stmt.expr.value, Type)
             and isinstance(stmt.expr.value.definition, Obj)
-            and "$" in stmt.expr.value.definition.name.resolve(self.func.code)
+            and (
+                "$" in stmt.expr.value.definition.name.resolve(self.func.code)
+                or self._is_basic_type_const(stmt.expr)
+            )
         ):
             self._dispatch_aliases.add(stmt.target)
             return stmt, i + 1
         return None, i
+
+    def _is_basic_type_const(self, const: IRConst) -> bool:
+        defn = const.value.definition if isinstance(const.value, Type) else None
+        return isinstance(defn, Obj) and defn.name.resolve(self.func.code) == "hl.BaseType"
+
+    def _const_class_type(self, const: IRExpression) -> Optional[Type]:
+        """The type a class-object constant stands for. Primitives (Int, Bool...) all load a
+        global typed `hl.BaseType`; their initialiser says which one it is."""
+        if not (isinstance(const, IRConst) and isinstance(const.value, Type)):
+            return None
+        if self._is_basic_type_const(const):
+            if const.original_index is None:
+                return None
+            return basic_type_of_global(self.func.code, const.original_index.value)
+        return const.value
 
     def _match_check_pair(
         self, assign: IRStatement, cond: IRStatement, e: IRLocal, type_alias: Optional[IRAssign] = None
@@ -4474,16 +4571,48 @@ class IRTypedCatchOptimizer(IROptimizer):
             return None
         if not (isinstance(cond, IRConditional) and self._is_true_cond(cond.condition, assign.target)):
             return None
-        typ = type_const.value
+        typ = self._const_class_type(type_const)
+        if typ is None:
+            return None
         return typ, self._type_name(typ), cond.true_block, cond
+
+    def _instance_type(self, typ: Type) -> Type:
+        """The instance type behind a class-object type (`$Foo` -> `Foo`); enum
+        class objects have no dynamic Obj counterpart, so match the Enum by name."""
+        defn = typ.definition
+        if not (isinstance(defn, Obj) and defn.is_static):
+            return typ
+        try:
+            return defn.dynamic.get_containing_type(self.func.code)
+        except ValueError:
+            pass
+        want = self._type_name(typ)
+        for candidate in self.func.code.types:
+            if isinstance(candidate.definition, Enum) and self._type_name(candidate) == want:
+                return candidate
+        return typ
+
+    def _make_catch_all(self, stmts: List[IRStatement], e: IRLocal) -> Optional[Tuple[IRLocal, IRBlock]]:
+        """The `catch (e:Dynamic)` clause: whatever follows the last dispatch test.
+        A body that reads the raw catch register would see HL's wrapper, not the
+        unwrapped value the source clause binds, so such bodies are not restored."""
+        body = IRBlock(self.func.code)
+        body.statements = list(stmts)
+        if self._references_dispatch(body, e):
+            return None
+        dyn = next(
+            (i for i, t in enumerate(self.func.code.types) if t.kind.value == Type.Kind.DYN.value), None
+        )
+        if dyn is None:
+            return None
+        return IRLocal("e", tIndex(dyn), self.func.code), body
 
     def _make_clause(
         self, typ: Type, body: IRBlock, e: IRLocal, native: bool = False
     ) -> Optional[Tuple[IRLocal, IRBlock]]:
         """Return (binding_local, body) for one restored clause, or None if the
         body uses the caught value in a shape we don't recognize."""
-        if isinstance(typ.definition, Obj) and typ.definition.is_static:
-            typ = typ.definition.dynamic.get_containing_type(self.func.code)
+        typ = self._instance_type(typ)
         stmts = body.statements
         # Wrapped-value clauses can retain the explicit payload-register load
         # followed by a typed cast. Bind the typed result, not the dynamic
@@ -4556,6 +4685,19 @@ class IRTypedCatchOptimizer(IROptimizer):
         self.func.all_locals.append(binding)
         return binding, body
 
+    def _terminates(self, stmts: List[IRStatement]) -> bool:
+        """True if control never falls out of the end of `stmts`."""
+        if not stmts:
+            return False
+        last = stmts[-1]
+        if isinstance(last, (IRReturn, IRThrow, IRBreak, IRContinue)):
+            return True
+        if isinstance(last, IRConditional):
+            return self._terminates(last.true_block.statements) and self._terminates(
+                last.false_block.statements
+            )
+        return False
+
     def _is_value_field(self, expr: IRStatement) -> bool:
         """True for `<something>.value` field reads (the ValueException payload)."""
         return isinstance(expr, IRField) and expr.field_name == "value"
@@ -4619,7 +4761,10 @@ class IRTypedCatchOptimizer(IROptimizer):
         """If stmt is `t = <std fn named want_name>(...)`, return the call."""
         if not (isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)):
             return None
-        call = stmt.expr
+        return self._as_std_call(stmt.expr, want_name)
+
+    def _as_std_call(self, call: Optional[IRExpression], want_name: str) -> Optional[IRCall]:
+        """`call` itself if it is a call of a std function named `want_name`."""
         if not isinstance(call, IRCall):
             return None
         target = call.target
