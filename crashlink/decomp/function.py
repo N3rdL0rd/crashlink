@@ -28,7 +28,7 @@ from ..core import (
 )
 from ..errors import DecompError
 from ..globals import DEBUG, dbg_print
-from .. import disasm
+from .. import abstracts, disasm
 from ..opcodes import arithmetic, conditionals, simple_calls
 from .ir import (
     IRExpression,
@@ -3149,6 +3149,14 @@ STATIC_INIT_UNRECOVERABLE = "<unrecoverable static initializer>"
 
 def _static_call_name_parts(func: Function, code: Bytecode) -> Optional[Tuple[str, str]]:
     """Return (class_name, method_name) for a static function, e.g. for rendering `Class.method(...)` call text."""
+    abstract = abstracts.abstract_of_function(code, func)
+    if (
+        abstract is not None
+        and func.findex.value not in abstract.instance
+        and func.findex.value != abstract.constructor
+    ):
+        # A static member of an abstract is written on the abstract; its `_Impl_` class has no source name.
+        return abstract.path, code.partial_func_name(func)
     name = code.partial_func_name(func)
     if not name or name == "<none>":
         name = None

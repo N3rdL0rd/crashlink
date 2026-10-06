@@ -936,6 +936,15 @@ def _expression_to_haxe(
                 rendered = _render_string_concat(expr, code, ir_function)
                 if rendered is not None:
                     return rendered
+            # `cast(v, C)` and `Std.isOfType(v, C)` on a class reach `hl.BaseType.check` with the
+            # class object as receiver; source has no such call, `Std.isOfType` is the same test.
+            if (
+                _is_std_function(func, code)
+                and code.full_func_name(func) == "hl.BaseType.check"
+                and len(expr.args) == 2
+            ):
+                cls = _expression_to_haxe(expr.args[0], code, ir_function)
+                return f"Std.isOfType({_expression_to_haxe(expr.args[1], code, ir_function)}, {cls})"
 
         # An abstract's members are statics of its `_Impl_` class, which source can't
         # name: go back to the abstract's own syntax.

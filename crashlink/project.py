@@ -389,6 +389,22 @@ def _publish_named_privates(modules: List[Module], files: Dict[str, str]) -> Non
         )
 
 
+def _name_privates_locally(modules: List[Module], files: Dict[str, str]) -> None:
+    """Inside its own module, a private type is named bare. `pkg.Mod.T` finds a private
+    `T` as a type, but in an expression (`Std.isOfType(x, pkg.Mod.T)`) Haxe reads
+    `pkg.Mod` as the module's main class and `T` as one of its fields, and finds none.
+    Other modules only name a type that `_publish_named_privates` has made public."""
+    for module in modules:
+        names = [d.name for d in module.declarations if d.private]
+        if not names or not module.package:
+            continue
+        pattern = re.compile(
+            r"(?<![\w.])" + re.escape(module.dotted) + r"\.(" + "|".join(map(re.escape, names)) + r")(?!\w)"
+        )
+        file = f"src/{module.path}"
+        files[file] = disasm.outside_literals(files[file], lambda chunk: pattern.sub(r"\1", chunk))
+
+
 def export(
     code: Bytecode,
     stubs: bool = False,
@@ -410,6 +426,7 @@ def export(
             progress(done + 1, len(modules))
     _qualify_shadowed_std(modules, files)
     _publish_named_privates(modules, files)
+    _name_privates_locally(modules, files)
     for name, text in externs.declarations(code).items():
         if f"src/{name}.hx" in files:
             raise ValueError(f"the image declares a type {name!r}, which the project's externs need")

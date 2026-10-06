@@ -18,6 +18,9 @@ class Main {
     static function at(?pos:haxe.PosInfos):String return pos.methodName + "/" + pos.className;
     static function main() {
         Sys.println(at());
+        var b:pk.Mod.Base = new pk.Mod.Kid();
+        Sys.println(cast(b, pk.Mod.Marked) != null);
+        Sys.println(pk.Meter.origin.twice());
         var s:pk.Mod.Shape = new Mod(2);
         Sys.println(s.area() + Mod.make().n + Mod.secret());
         Sys.println(pk.Mod.Color.Green(4));
@@ -35,8 +38,11 @@ class Mod implements Shape {
     public function new(k:Int) { this.k = k; }
     public function area() return 2.0 * k;
     public static function make():Helper return new Helper(3);
-    public static function secret():Int return new Hidden().v;
+    public static function secret():Int return new Hidden().v + (Std.isOfType(new Hidden(), Hidden) ? 1 : 0);
 }
+class Base { public function new() {} }
+interface Marked {}
+class Kid extends Base implements Marked { public function kid():Int return 4; }
 class Helper { public var n:Int; public function new(n) this.n = n; }
 private class Hidden { public var v = 7; public function new() {} }
 enum Color { Red; Green(v:Int); }
@@ -46,6 +52,8 @@ package pk;
 abstract Meter(Float) {
     public function new(v:Float) this = v;
     public function twice():Float return this * 2;
+    @:from static function fromInt(v:Int):Meter return new Meter(v + 0.5);
+    public static var origin:Meter = Meter.fromInt(3);
 }
 """,
     "pk/Array.hx": """
@@ -108,6 +116,12 @@ def test_project_recompiles_and_runs_the_same(original: Path, tmp_path: Path) ->
     assert "class Mod implements pk.Shape {" in module
     assert "class Helper {" in module
     assert "private class Hidden {" in module
+    # In an expression, `pk.Mod.Hidden` reads as a field of class Mod; a private type is named bare.
+    assert "pk.Mod.Hidden" not in module
+    # `cast(b, Kid)` reaches hl.BaseType.check with the class as receiver; Haxe has no such call.
+    assert ".check(" not in (src / "Main.hx").read_text()
+    # A static member of an abstract is written on the abstract, not on its `_Impl_` class.
+    assert "_Impl_" not in (src / "pk" / "Meter.hx").read_text()
     assert "pos: haxe.PosInfos" in (src / "Main.hx").read_text()
     assert "make(): pk.Mod.Helper" in module
     # An interface has no code to place it by: it gets a module of its own.
