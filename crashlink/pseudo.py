@@ -1216,7 +1216,7 @@ def _expression_to_haxe(
             return "[]"
         else:
             args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args)
-            return f"new {disasm.type_to_haxe(type_name)}({args_str})"
+            return f"new {disasm.STD_WRAPPED.get(type_name) or disasm.type_to_haxe(type_name)}({args_str})"
 
     elif isinstance(expr, IRNativeArrayNew):
         elem_haxe_type = disasm._haxe_annotation(code, expr.elem_type)

@@ -319,3 +319,23 @@ class Main {
         },
     )
     assert "String.fromCharCode" in files["src/Main.hx"]
+
+
+def test_bytes_data_is_named_by_its_abstract(tmp_path: Path) -> None:
+    _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+import haxe.io.Bytes;
+class Main {
+    static function main() {
+        var b1 = Bytes.ofString("AB");
+        var x = new haxe.io.BytesData(b1.getData().bytes, b1.length);
+        var b2 = Bytes.ofData(x);
+        b2.set(0, 67);
+        Sys.println(b1.get(0) + ":" + b2.get(0));
+    }
+}
+"""
+        },
+    )

@@ -636,6 +636,7 @@ STD_TYPES: Dict[str, str] = {
 #: can't name the class, only the abstract, which converts from it.
 STD_WRAPPED: Dict[str, str] = {
     "haxe._Int64.___Int64": "haxe.Int64",
+    "haxe.io.BytesDataImpl": "haxe.io.BytesData",
     "sys.thread._EventLoop.RegularEvent": "sys.thread.EventLoop.EventHandler",
     "sys.thread._Thread.HaxeThread": "sys.thread.Thread",
 }
