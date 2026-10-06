@@ -375,6 +375,14 @@ _HAXE_NON_ASSOC_OPS = {"-", "/", "%"}
 _HAXE_BITWISE_OPS = {"&", "|", "^"}
 
 
+_LAMBDA_START = re.compile(r"\([^()]*\) -> ")
+
+
+def _is_lambda_text(rendered: str) -> bool:
+    """A rendered `(args) -> body`, whose body would swallow a following operator."""
+    return _LAMBDA_START.match(rendered) is not None
+
+
 def _expr_to_haxe_with_precedence(
     expr: Optional[IRExpression],
     code: Bytecode,
@@ -387,6 +395,8 @@ def _expr_to_haxe_with_precedence(
     For the right operand of a non-associative op, same-tier children also
     need parens since flattening would silently change the value."""
     rendered = _expression_to_haxe(expr, code, ir_function)
+    if _is_lambda_text(rendered):
+        return f"({rendered})"
     # A conversion that renders as its operand (Int to Float) binds like the operand.
     while isinstance(expr, IRCast) and rendered == _expression_to_haxe(expr.expr, code, ir_function):
         expr = expr.expr
@@ -424,6 +434,8 @@ def _paren_comparison_operand(
     comparison — `<`/`==` are left-associative in Haxe, so `a < b == c < d`
     parses as `((a<b)==c)<d`, not `(a<b)==(c<d)`."""
     rendered = _expression_to_haxe(expr, code, ir_function)
+    if _is_lambda_text(rendered):
+        return f"({rendered})"
     if isinstance(expr, IRBoolExpr) and expr.op in (
         IRBoolExpr.CompareType.LT,
         IRBoolExpr.CompareType.LTE,
@@ -734,9 +746,9 @@ def _expression_to_haxe(
                 return f"(({left} : hl.I64) ^ {sign}) {symbol} (({right} : hl.I64) ^ {sign})"
             return f"({left} : UInt) {symbol} ({right} : UInt)"
         if expr.op == IRBoolExpr.CompareType.NULL:
-            return f"{_expression_to_haxe(expr.left, code, ir_function)} == null"
+            return f"{_paren_comparison_operand(expr.left, code, ir_function)} == null"
         elif expr.op == IRBoolExpr.CompareType.NOT_NULL:
-            return f"{_expression_to_haxe(expr.left, code, ir_function)} != null"
+            return f"{_paren_comparison_operand(expr.left, code, ir_function)} != null"
         elif expr.op == IRBoolExpr.CompareType.ISTRUE:
             return _expression_to_haxe(expr.left, code, ir_function)
         elif expr.op == IRBoolExpr.CompareType.ISFALSE:
@@ -854,6 +866,9 @@ def _expression_to_haxe(
         obj_str = _expression_to_haxe(expr.obj, code, ir_function)
         fun_type = expr.fun.type.resolve(code).definition
         extra_args = fun_type.args[1:] if isinstance(fun_type, Fun) else []
+        adapted = _closure_adapter(expr, obj_str, code, ir_function)
+        if adapted is not None:
+            return adapted
         inline = _inline_closure(expr, obj_str, len(extra_args), code, ir_function)
         if inline is not None:
             return inline
@@ -2403,6 +2418,27 @@ def _inline_closure(
         return None
     getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
     return f"({', '.join(params[1:])}) -> {body}"
+
+
+def _closure_adapter(
+    expr: "IRBoundClosure", obj_str: str, code: Bytecode, ir_function: Optional[IRFunction]
+) -> Optional[str]:
+    """The captured function itself, when the bound helper only forwards to it.
+
+    Haxe converts a function value to a function type that differs only in a
+    return (or Dynamic argument) type by wrapping it in a helper that calls the
+    original with the same arguments. The source wrote the function value; Haxe
+    adapts it again when the result is recompiled.
+    """
+    helpers = getattr(ir_function, "_inline_closure_bodies", None)
+    entry = helpers.get(expr.fun.findex.value) if helpers else None
+    if entry is None:
+        return None
+    params, body = entry
+    if not params or body != f"{params[0]}({', '.join(params[1:])})":
+        return None
+    getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
+    return obj_str
 
 
 def _inline_anonymous(func: "Function", code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:

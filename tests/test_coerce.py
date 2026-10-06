@@ -63,3 +63,22 @@ class Main {
     }
     _, expected, actual = roundtrip(tmp_path, modules)
     assert actual == expected
+
+
+def test_function_converted_to_another_function_type_stays_a_function_value(tmp_path: Path) -> None:
+    # Passing `() -> Int` as `() -> Void` makes Haxe wrap it in `f == null ? null : () -> f()`.
+    modules = {
+        "Main.hx": """
+class Main {
+    static var count = 0;
+    static function run(test:() -> Void, again:Dynamic -> Int) { test(); Sys.println(again(4)); }
+    static function main() {
+        run(function() { count++; return 1; }, function(x:Int) return x * 2);
+        Sys.println(count);
+    }
+}
+"""
+    }
+    sources, expected, actual = roundtrip(tmp_path, modules)
+    assert "bind" not in sources["Main.hx"]
+    assert actual == expected
