@@ -3160,6 +3160,10 @@ def _find_inner_defining_assignment(local_name: str, block: IRBlock) -> Optional
         # assignment in the loop body, recursing in case it nests deeper.
         if _contains_local_name(local_name, stmt.condition):
             return None
+        # A test at the end of the body becomes the `while` of a do-while, outside the body's scope.
+        for tail in stmt.body.statements[-2:]:
+            if isinstance(tail, IRConditional) and _contains_local_name(local_name, tail.condition):
+                return None
         inner = _find_defining_assignment(local_name, stmt.body)
         if inner is not None:
             return inner

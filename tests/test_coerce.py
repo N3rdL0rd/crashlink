@@ -184,3 +184,23 @@ class Main {
     }
     _, expected, actual = roundtrip(tmp_path, modules)
     assert actual == expected
+
+
+def test_do_while_condition_sees_locals_computed_in_it(tmp_path: Path) -> None:
+    modules = {
+        "Main.hx": """
+class Main {
+    static function id(v:Int) return v;
+    static function main() {
+        var i = 0;
+        var acc = "";
+        do {
+            acc += ";" + i;
+        } while (id(i++) + id(i++) < 10);
+        Sys.println(acc + i);
+    }
+}
+"""
+    }
+    _, expected, actual = roundtrip(tmp_path, modules)
+    assert actual == expected
