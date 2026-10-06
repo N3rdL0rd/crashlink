@@ -1479,6 +1479,8 @@ def _expression_to_haxe(
             isinstance(target_def, Virtual)
             and isinstance(expr.expr, IRObjectLiteral)
             and {name for name, _ in expr.expr.fields} - {f.name.resolve(code) for f in target_def.fields}
+            # A structure type can't name a field that isn't an identifier (`"a-b"`).
+            and all(name.isidentifier() for name, _ in expr.expr.fields)
         ):
             # A fresh literal may not carry fields its expected structure lacks; typing it
             # as its own wider structure first makes the narrowing an ordinary subtype use.
