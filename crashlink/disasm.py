@@ -372,7 +372,10 @@ def _is_pos_infos(code: Bytecode, definition: Any) -> bool:
     if not isinstance(definition, Virtual):
         return False
     fields = {f.name.resolve(code): type_name(code, f.type.resolve(code)) for f in definition.fields}
-    return fields == _POS_INFOS_LAYOUT
+    # A position built without its optional `customParams` has the layout without it.
+    return fields == _POS_INFOS_LAYOUT or fields == {
+        name: typ for name, typ in _POS_INFOS_LAYOUT.items() if name != "customParams"
+    }
 
 
 def _trace_signature_types(code: Bytecode) -> Tuple[set[int], set[int]]:

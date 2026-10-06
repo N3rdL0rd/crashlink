@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from crashlink import Bytecode, project
+from crashlink import Bytecode, disasm, project
+from crashlink.core import Virtual
 from crashtest.behavior import resolve_hl_runtime
 
 MAIN = """
@@ -220,4 +221,44 @@ class Main {
 
 def test_abstract_method_called_with_optional_basic_arguments(tmp_path: Path) -> None:
     original, folder = _roundtrip(tmp_path, ABSTRACT_DEFAULTS)
+    assert _run(folder / "out.hl") == _run(original)
+
+
+POSITIONS = """
+class Main {
+    static var tmp:String;
+    static function at(?pos:haxe.PosInfos):String return pos.methodName;
+    static function main() {
+        var o = {rec:(null:Dynamic)};
+        o.rec = o;
+        try {
+            tmp = Std.string(o);
+            Sys.println(at());
+        } catch (e:Dynamic) {
+            Sys.println(at() + e);
+        }
+        var a:Array<Dynamic> = [];
+        a.push(a);
+        try {
+            tmp = Std.string(a);
+            Sys.println(at());
+        } catch (e:Dynamic) {
+            Sys.println(at() + e);
+        }
+    }
+}
+"""
+
+
+def test_position_literal_without_custom_params_is_a_pos_infos(tmp_path: Path) -> None:
+    original, folder = _roundtrip(tmp_path, POSITIONS)
+    code = Bytecode.from_path(str(original))
+    bare = [
+        typ
+        for typ in code.types
+        if isinstance(typ.definition, Virtual)
+        and {f.name.resolve(code) for f in typ.definition.fields}
+        == {"className", "fileName", "lineNumber", "methodName"}
+    ]
+    assert bare and all(disasm._haxe_annotation(code, typ) == "haxe.PosInfos" for typ in bare)
     assert _run(folder / "out.hl") == _run(original)
