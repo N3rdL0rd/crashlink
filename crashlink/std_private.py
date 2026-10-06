@@ -35,6 +35,7 @@ PRIVATE_STD_MEMBERS: Dict[str, FrozenSet[str]] = {
             "regexp_new_options",
         }
     ),
+    "IntIterator": frozenset({"max", "min"}),
     "Reflect": frozenset({"_makeVarArgs", "getObjectFields"}),
     "Std": frozenset({"__add__", "__init__", "rnd", "rnd_float", "rnd_int", "rnd_sys", "toStringDepth"}),
     "String": frozenset(
@@ -127,6 +128,7 @@ PRIVATE_STD_MEMBERS: Dict[str, FrozenSet[str]] = {
             "xor",
         }
     ),
+    "Xml": frozenset({"attributeMap", "children", "ensureElementType", "new"}),
     "haxe.Exception": frozenset(
         {
             "__exceptionMessage",
@@ -174,6 +176,20 @@ PRIVATE_STD_MEMBERS: Dict[str, FrozenSet[str]] = {
             "set_val",
             "subInt",
             "val",
+        }
+    ),
+    "haxe.format.JsonParser": frozenset(
+        {
+            "doParse",
+            "invalidChar",
+            "invalidNumber",
+            "new",
+            "nextChar",
+            "parseNumber",
+            "parseRec",
+            "parseString",
+            "pos",
+            "str",
         }
     ),
     "haxe.NativeStackTrace": frozenset({"callStackRaw", "exceptionStackRaw", "resolveSymbol"}),

@@ -417,6 +417,54 @@ def _expr_to_haxe_with_precedence(
     return rendered
 
 
+def _null_operand(expr: Optional[IRExpression], code: Bytecode, ir_function: Optional[IRFunction]) -> str:
+    """The operand of a null test; a lambda (`(x) -> x`) takes the `== null` into its body
+    unless grouped."""
+    rendered = _expression_to_haxe(expr, code, ir_function)
+    return f"({rendered})" if re.match(r"\([\w, ]*\) ->", rendered) else rendered
+
+
+_NON_NULLABLE_KINDS = {
+    Type.Kind.U8.value,
+    Type.Kind.U16.value,
+    Type.Kind.I32.value,
+    Type.Kind.I64.value,
+    Type.Kind.F32.value,
+    Type.Kind.F64.value,
+    Type.Kind.BOOL.value,
+}
+
+
+def _null_test(
+    expr: Optional[IRExpression], code: Bytecode, ir_function: Optional[IRFunction], op: str
+) -> str:
+    """`expr == null` / `expr != null`. A basic type is never null (an inlined `isNull<T>`
+    on an `Int`), and Haxe rejects the comparison on a static target: it's a constant."""
+    if isinstance(expr, (IRLocal, IRConst)) and expr.get_type().kind.value in _NON_NULLABLE_KINDS:
+        return "false" if op == "==" else "true"
+    return f"{_null_operand(expr, code, ir_function)} {op} null"
+
+
+def _constant_null_compare(
+    left: IRExpression, right: IRExpression, op: IRBoolExpr.CompareType
+) -> Optional[str]:
+    """The constant a comparison of a basic type against a `null` literal is."""
+    if op not in (IRBoolExpr.CompareType.EQ, IRBoolExpr.CompareType.NEQ):
+        return None
+    for value, other in ((left, right), (right, left)):
+        while isinstance(value, IRCast):  # boxing it as `Null<T>` doesn't make it null
+            value = value.expr
+        if (
+            isinstance(other, IRConst)
+            and other.const_type == IRConst.ConstType.NULL
+            and isinstance(value, (IRLocal, IRConst))
+            and value is not other
+            and value.get_type().kind.value in _NON_NULLABLE_KINDS
+        ):
+            return "false" if op == IRBoolExpr.CompareType.EQ else "true"
+    return None
+
+
 def _paren_comparison_operand(
     expr: Optional[IRExpression], code: Bytecode, ir_function: Optional[IRFunction]
 ) -> str:
@@ -734,9 +782,9 @@ def _expression_to_haxe(
                 return f"(({left} : hl.I64) ^ {sign}) {symbol} (({right} : hl.I64) ^ {sign})"
             return f"({left} : UInt) {symbol} ({right} : UInt)"
         if expr.op == IRBoolExpr.CompareType.NULL:
-            return f"{_expression_to_haxe(expr.left, code, ir_function)} == null"
+            return _null_test(expr.left, code, ir_function, "==")
         elif expr.op == IRBoolExpr.CompareType.NOT_NULL:
-            return f"{_expression_to_haxe(expr.left, code, ir_function)} != null"
+            return _null_test(expr.left, code, ir_function, "!=")
         elif expr.op == IRBoolExpr.CompareType.ISTRUE:
             return _expression_to_haxe(expr.left, code, ir_function)
         elif expr.op == IRBoolExpr.CompareType.ISFALSE:
@@ -763,6 +811,9 @@ def _expression_to_haxe(
             ):
                 left_expr, right_expr = right_expr, left_expr
                 actual_op = swap_map[actual_op]
+            constant = _constant_null_compare(left_expr, right_expr, actual_op)
+            if constant is not None:
+                return constant
             typekind_render = _render_typekind_comparison(left_expr, right_expr, code, ir_function)
             if typekind_render is not None:
                 left, right = typekind_render
@@ -771,6 +822,7 @@ def _expression_to_haxe(
                 # `a < b == c < d` would otherwise parse as `((a<b)==c)<d`.
                 left = _paren_comparison_operand(left_expr, code, ir_function)
                 right = _paren_comparison_operand(right_expr, code, ir_function)
+                left, right = _type_i64_literals(left_expr, right_expr, left, right)
             return f"{left} {op_map[actual_op]} {right}"
         elif expr.left:
             raise NotImplementedError(f"Unhandled unary IRBoolExpr op: {expr.op} on {expr.left}")
@@ -1187,7 +1239,14 @@ def _expression_to_haxe(
             return "[]"
         else:
             args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args)
-            return f"new {disasm.type_to_haxe(type_name)}({args_str})"
+            rendered = f"new {disasm.type_to_haxe(type_name)}({args_str})"
+            owner = expr.get_type().definition
+            # A private constructor of a std class (an inlined `JsonParser.parse`).
+            return (
+                _std_private_access(rendered, owner, "new", code, ir_function)
+                if isinstance(owner, Obj)
+                else rendered
+            )
 
     elif isinstance(expr, IRNativeArrayNew):
         elem_haxe_type = disasm._haxe_annotation(code, expr.elem_type)
@@ -1213,6 +1272,9 @@ def _expression_to_haxe(
         inner = _expression_to_haxe(expr.expr, code, ir_function)
         if target_name == "I32" and source_name in {"F32", "F64"}:
             return f"Std.int({inner})"
+        if target_name == "I32" and source_name == "I64":
+            # `Int64.low` of an inlined std call: the cast truncates to the low 32 bits.
+            return f"{inner}.toInt()" if re.fullmatch(r"\w+", inner) else f"({inner} : hl.I64).toInt()"
         target_def, source_def = expr.get_type().definition, expr.expr.get_type().definition
         if (
             isinstance(target_def, Obj)
@@ -1223,7 +1285,9 @@ def _expression_to_haxe(
         ):
             # A downcast (`Entity` to `en.Hero`) is only implicit from Dynamic; from a
             # class it needs `cast`, which compiles to the same SafeCast.
-            return f"(cast {inner} : {disasm.type_to_haxe(target_name)})"
+            # `cast (v : T).m()` reads as the typed cast `cast (v : T)`, so group the operand.
+            operand = f"({inner})" if inner.startswith("(") else inner
+            return f"(cast {operand} : {disasm.type_to_haxe(target_name)})"
         return inner
 
     elif isinstance(expr, IRPrimitiveJump):  # Should be gone, but as a fallback
@@ -1231,6 +1295,25 @@ def _expression_to_haxe(
 
     # Fallback for unknown expressions
     return f"/* <UnknownExpr: {type(expr).__name__}> */"
+
+
+def _type_i64_literals(
+    left_expr: IRExpression, right_expr: IRExpression, left: str, right: str
+) -> Tuple[str, str]:
+    """The rendered operands of a comparison, an Int literal against an I64 typed as one:
+    Haxe won't compare the two otherwise."""
+
+    def is_i64(expr: IRExpression) -> bool:
+        return expr.get_type().kind.value == Type.Kind.I64.value
+
+    def is_literal(expr: IRExpression) -> bool:
+        return isinstance(expr, IRConst) or (isinstance(expr, IRCast) and isinstance(expr.expr, IRConst))
+
+    if is_i64(left_expr) and not is_literal(left_expr) and is_literal(right_expr):
+        right = f"({right} : hl.I64)"
+    elif is_i64(right_expr) and not is_literal(right_expr) and is_literal(left_expr):
+        left = f"({left} : hl.I64)"
+    return left, right
 
 
 def _inverted_bool_expr_to_haxe(expr: IRBoolExpr, code: Bytecode, ir_function: IRFunction) -> str:
@@ -1243,9 +1326,9 @@ def _inverted_bool_expr_to_haxe(expr: IRBoolExpr, code: Bytecode, ir_function: I
         IRBoolExpr.CompareType.GTE: "<",
     }
     if expr.op == IRBoolExpr.CompareType.NULL:
-        return f"{_expression_to_haxe(expr.left, code, ir_function)} != null"
+        return _null_test(expr.left, code, ir_function, "!=")
     if expr.op == IRBoolExpr.CompareType.NOT_NULL:
-        return f"{_expression_to_haxe(expr.left, code, ir_function)} == null"
+        return _null_test(expr.left, code, ir_function, "==")
     if expr.op == IRBoolExpr.CompareType.ISTRUE:
         return f"!{_expression_to_haxe(expr.left, code, ir_function)}"
     if expr.op == IRBoolExpr.CompareType.ISFALSE:
@@ -1268,8 +1351,12 @@ def _inverted_bool_expr_to_haxe(expr: IRBoolExpr, code: Bytecode, ir_function: I
         if isinstance(left_expr, IRConst) and not isinstance(right_expr, IRConst) and actual_op in swap_map:
             left_expr, right_expr = right_expr, left_expr
             actual_op = swap_map[actual_op]
+        constant = _constant_null_compare(left_expr, right_expr, actual_op)
+        if constant is not None:
+            return "true" if constant == "false" else "false"
         left = _expression_to_haxe(left_expr, code, ir_function)
         right = _expression_to_haxe(right_expr, code, ir_function)
+        left, right = _type_i64_literals(left_expr, right_expr, left, right)
         return f"{left} {op_map[actual_op]} {right}"
     # Inverting a NaN-safe `!(a < b)` gives back the ordered comparison itself.
     ordered = {
@@ -3443,6 +3530,12 @@ def _std_private_access(
     """`rendered` (an access to `owner.member`), in `@:privateAccess` when that's a private
     member of a std type and the access isn't from inside the type."""
     owner_name = destaticify(owner.name.resolve(code))
+    abstract = abstracts.abstract_of(code, owner)
+    if abstract is not None and abstract.std:
+        # The private static of a std abstract (an inlined `Int64.make` reads `MASK`).
+        if _is_private_std_member(abstract.module, member):
+            return f"(@:privateAccess {rendered})"
+        return rendered
     if (
         _is_private_std_member(owner_name, member)
         and _containing_class_name(ir_function, code) != owner_name
@@ -3817,6 +3910,25 @@ def _render_abstract_call(
     code: Bytecode,
     ir_function: Optional[IRFunction],
 ) -> str:
+    """`_render_abstract_call_raw`, typed as the class the call is erased to: a std
+    abstract's member that returns a class returns the abstract, which doesn't unify with
+    its underlying class (`UInt8Array` into the `ArrayBufferViewImpl` a local holds)."""
+    rendered = _render_abstract_call_raw(expr, func, abstract, code, ir_function)
+    signature = func.type.resolve(code).definition
+    if abstract.std and isinstance(signature, Fun) and func.findex.value != abstract.constructor:
+        ret = signature.ret.resolve(code)
+        if isinstance(ret.definition, Obj):
+            return f"(cast ({rendered}) : {disasm._haxe_annotation(code, ret)})"
+    return rendered
+
+
+def _render_abstract_call_raw(
+    expr: IRCall,
+    func: "Function",
+    abstract: abstracts.Abstract,
+    code: Bytecode,
+    ir_function: Optional[IRFunction],
+) -> str:
     """A call to a member of an abstract, as source writes it: `new Name(..)`,
     `Name.member(..)`, or on a value `(value : Name).member(..)` / `.property`."""
     findex = func.findex.value
@@ -3865,7 +3977,18 @@ def _abstract_receiver(
         and value.target.value.findex.value == abstract.constructor
     ):
         return f"{rendered}."
-    return f"({rendered} : {_abstract_ref(abstract, code, ir_function)})."
+    type_args = abstract.type_args
+    if type_args == "<Dynamic>":
+        # A one-parameter std abstract over an array (`Rest<T>`) takes its element type
+        # from the array: `Rest<Dynamic>` would read a typed array as an `Array<Dynamic>`.
+        element = value
+        while isinstance(element, IRCast):
+            element = element.expr
+        match = re.fullmatch(r"Array<(.+)>", disasm._haxe_annotation(code, element.get_type()))
+        if match:
+            type_args = f"<{match.group(1)}>"
+            rendered = _expression_to_haxe(element, code, ir_function)
+    return f"({rendered} : {_abstract_ref(abstract, code, ir_function)}{type_args})."
 
 
 def _abstract_constructor_body(ir_func: IRFunction, signature: Fun) -> None:
@@ -3916,7 +4039,8 @@ def _is_super_call(callee_class_name: str, ir_function: IRFunction, code: Byteco
     this call is `super.foo()`, not a same-class `this.foo()`). The implementation `super`
     reaches is the nearest one up the chain, which needn't be the direct superclass's."""
     containing = getattr(ir_function, "_containing_class", None)
-    if containing is None:
+    # A local function (or its lifted body) can't reach `super`: its `this` is a capture.
+    if containing is None or getattr(ir_function, "_anon_name", None):
         return False
     primary_obj = containing.dynamic if containing.dynamic else containing.static
     return any(
