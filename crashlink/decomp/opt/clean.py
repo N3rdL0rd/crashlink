@@ -3540,7 +3540,40 @@ class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
         IRArrayLiteral,
     )
 
+    def _sink_allocations(self, stmts: List[IRStatement]) -> None:
+        """Move an anonymous-object allocation down to its first field store.
+
+        A field's value may be computed by statements that do not touch the object
+        (an `if` choosing a closure); the allocation has no effect of its own, so
+        it can wait for them and the stores can then form one literal.
+        """
+        i = 0
+        while i < len(stmts):
+            stmt = stmts[i]
+            if (
+                isinstance(stmt, IRAssign)
+                and isinstance(stmt.target, IRLocal)
+                and isinstance(stmt.expr, IRNew)
+                and not stmt.expr.constructor_args
+                and isinstance(stmt.expr.get_type().definition, (DynObj, Virtual))
+            ):
+                k = i + 1
+                while k < len(stmts) and not self._stmt_uses_local(stmts[k], stmt.target):
+                    k += 1
+                first = stmts[k] if k < len(stmts) else None
+                if (
+                    k > i + 1
+                    and isinstance(first, IRAssign)
+                    and isinstance(first.target, IRField)
+                    and first.target.target == stmt.target
+                    and not any(isinstance(between, IRBlock) for between in stmts[i + 1 : k])
+                ):
+                    stmts.insert(k - 1, stmts.pop(i))
+                    continue
+            i += 1
+
     def visit_block(self, block: IRBlock) -> None:
+        self._sink_allocations(block.statements)
         made_change = True
         while made_change:
             made_change = False

@@ -40,6 +40,7 @@ from .core import (
     is_static_name,
 )
 from .opcodes import opcodes
+from . import typeinit
 from .hxbit import is_serializable_virtual
 from .std_types import STD_TYPES, STD_WRAPPED
 
@@ -509,6 +510,12 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
         try:
             if isinstance(definition, Fun):
                 args = [render(arg.resolve(code)) for arg in definition.args]
+                if not native:
+                    # HL passes an optional basic value by reference: `?Int` is `hl.Ref<Int>`.
+                    for i, arg in enumerate(definition.args):
+                        arg_def = arg.resolve(code).definition
+                        if isinstance(arg_def, Ref):
+                            args[i] = "?" + render(arg_def.type.resolve(code))
                 if key in callbacks:
                     args[1] = "?" + args[1]
                 ret = render(definition.ret.resolve(code))
@@ -538,6 +545,7 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                 omitted = _omitted_literal_fields(code).get(key, set())
                 stored = _stored_function_fields(code).get(key, set())
                 declared: set[str] = set()
+                dynamic = typeinit.dynamic_members(code, definition)
                 for f in definition.fields:
                     name, ftype = f.name.resolve(code), f.type.resolve(code)
                     # An interface redeclaring a field of one it extends lists both: the first,
@@ -552,7 +560,8 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                         params = ", ".join(
                             f"a{i}: {render(a.resolve(code))}" for i, a in enumerate(fdef.args)
                         )
-                        members.append(f"function {name}({params}): {render(fdef.ret.resolve(code))};")
+                        kw = "dynamic " if name in dynamic else ""
+                        members.append(f"{kw}function {name}({params}): {render(fdef.ret.resolve(code))};")
                     else:
                         nullable = ftype.kind.value not in _BASIC_KINDS
                         optional = "@:optional " if has_optional and nullable else ""

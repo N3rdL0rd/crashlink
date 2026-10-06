@@ -15,6 +15,7 @@ from typing import Optional, List, Set, Dict, FrozenSet, Tuple, Union, cast, Any
 
 from .core import (
     Bytecode,
+    Null,
     Obj,
     Ref,
     Type,
@@ -431,6 +432,14 @@ _HAXE_NON_ASSOC_OPS = {"-", "/", "%"}
 _HAXE_BITWISE_OPS = {"&", "|", "^"}
 
 
+_LAMBDA_START = re.compile(r"\([^()]*\) -> ")
+
+
+def _is_lambda_text(rendered: str) -> bool:
+    """A rendered `(args) -> body`, whose body would swallow a following operator."""
+    return _LAMBDA_START.match(rendered) is not None
+
+
 def _expr_to_haxe_with_precedence(
     expr: Optional[IRExpression],
     code: Bytecode,
@@ -443,6 +452,8 @@ def _expr_to_haxe_with_precedence(
     For the right operand of a non-associative op, same-tier children also
     need parens since flattening would silently change the value."""
     rendered = _expression_to_haxe(expr, code, ir_function)
+    if _is_lambda_text(rendered):
+        return f"({rendered})"
     # A conversion that renders as its operand (Int to Float) binds like the operand.
     while isinstance(expr, IRCast) and rendered == _expression_to_haxe(expr.expr, code, ir_function):
         expr = expr.expr
@@ -528,6 +539,8 @@ def _paren_comparison_operand(
     comparison — `<`/`==` are left-associative in Haxe, so `a < b == c < d`
     parses as `((a<b)==c)<d`, not `(a<b)==(c<d)`."""
     rendered = _expression_to_haxe(expr, code, ir_function)
+    if _is_lambda_text(rendered):
+        return f"({rendered})"
     if isinstance(expr, IRBoolExpr) and expr.op in (
         IRBoolExpr.CompareType.LT,
         IRBoolExpr.CompareType.LTE,
@@ -539,6 +552,63 @@ def _paren_comparison_operand(
         IRBoolExpr.CompareType.UGTE,
     ):
         return f"({rendered})"
+    return rendered
+
+
+def _literal_key(name: str) -> str:
+    """A field name as an object literal writes it: quoted when it is not an identifier."""
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+        return name
+    return '"' + disasm._escape_str(name, '"') + '"'
+
+
+def _is_dynamic_int_read(operand: Optional[IRExpression]) -> bool:
+    """An Int that is the conversion of a boxed value some expression produced. The box's
+    source type may be Dynamic (a generic's erased result), which types arithmetic as Float."""
+    if not isinstance(operand, IRCast) or operand.get_type().kind.value != Type.Kind.I32.value:
+        return False
+    source: IRStatement = operand.expr
+    while isinstance(source, IRCast):
+        source = source.expr
+    return not isinstance(source, (IRLocal, IRConst)) and source.get_type().kind.value in (
+        Type.Kind.DYN.value,
+        Type.Kind.NULL.value,
+    )
+
+
+def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction]) -> List[str]:
+    """Rendered arguments of a call. HL passes an optional basic argument as an
+    `hl.Ref` (null when omitted); Haxe source leaves an omitted trailing one out, and
+    gives a declared basic parameter the value rather than a reference to it."""
+    rendered = [_expression_to_haxe(arg, code, ir_function) for arg in expr.args]
+    if expr.target is None:
+        return rendered
+    signature = expr.target.get_type().definition
+    if not isinstance(signature, Fun) or len(signature.args) < len(expr.args):
+        return rendered
+    params = [arg.resolve(code).definition for arg in signature.args[len(signature.args) - len(expr.args) :]]
+    for i, arg in enumerate(expr.args):
+        if not isinstance(arg.get_type().definition, Ref):
+            continue
+        # A reference made for this call only stands for the value it holds.
+        made = arg
+        if isinstance(arg, IRLocal) and ir_function is not None:
+            defining = _find_defining_assignment(arg.name, ir_function.block)
+            if isinstance(defining, IRAssign) and isinstance(defining.expr, IRRefNew):
+                made = defining.expr
+        if isinstance(made, IRRefNew) and isinstance(params[i], Ref):
+            rendered[i] = _expression_to_haxe(made.target, code, ir_function)
+        elif not isinstance(params[i], Ref):
+            rendered[i] = f"{rendered[i]}.get()"
+    while rendered:
+        last = expr.args[len(rendered) - 1]
+        if not (
+            isinstance(last, IRConst)
+            and last.const_type == IRConst.ConstType.NULL
+            and isinstance(params[len(rendered) - 1], Ref)
+        ):
+            break
+        rendered.pop()
     return rendered
 
 
@@ -665,6 +735,12 @@ def _expression_to_haxe(
             is_std = _is_std_function(func, code)
             if name and "." in name and not is_std:
                 return name
+            if is_std and name and "." not in name:
+                # A std static used as a value (`var rd = Std.random`) is named through its class.
+                full = code.full_func_name(func) or ""
+                std_name = _std_call_name(func, code)
+                if std_name and re.search(r"(^|\.)\$[^.]+\.[^.]+$", full):
+                    return std_name
             # Static wrappers often drop the class from the partial name; use
             # the full name so method/closure references are qualified.
             if not is_std:
@@ -798,6 +874,12 @@ def _expression_to_haxe(
                 # Haxe recognizes Std.int(integer / integer) as integer division.
                 return f"Std.int({result})"
             return result
+        if expr.get_type().kind.value == Type.Kind.I32.value and symbol in ("-", "*"):
+            # Haxe types arithmetic on a Dynamic operand as Float; the bytecode read it as an Int.
+            left, right = (
+                f"({text} : Int)" if _is_dynamic_int_read(operand) else text
+                for operand, text in ((expr.left, left), (expr.right, right))
+            )
         return f"{left} {symbol} {right}"
 
     elif isinstance(expr, IRNeg):
@@ -998,6 +1080,9 @@ def _expression_to_haxe(
         obj_str = _expression_to_haxe(expr.obj, code, ir_function)
         fun_type = expr.fun.type.resolve(code).definition
         extra_args = fun_type.args[1:] if isinstance(fun_type, Fun) else []
+        adapted = _closure_adapter(expr, obj_str, code, ir_function)
+        if adapted is not None:
+            return adapted
         inline = _inline_closure(expr, obj_str, len(extra_args), code, ir_function)
         if inline is not None:
             return inline
@@ -1015,7 +1100,9 @@ def _expression_to_haxe(
         return f"[{elements}]"
 
     elif isinstance(expr, IRObjectLiteral):
-        fields = ", ".join(f"{k}: {_expression_to_haxe(v, code, ir_function)}" for k, v in expr.fields)
+        fields = ", ".join(
+            f"{_literal_key(k)}: {_expression_to_haxe(v, code, ir_function)}" for k, v in expr.fields
+        )
         return f"{{ {fields} }}" if fields else "{}"
 
     elif isinstance(expr, IRRef):
@@ -1259,7 +1346,7 @@ def _expression_to_haxe(
                     return call if is_public else f"(@:privateAccess {call})"
             args_str = ", ".join(arg_strs)
         else:
-            args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in expr.args)
+            args_str = ", ".join(_call_args(expr, code, ir_function))
         # HashLink's internal ArrayBase.alloc* helpers return ArrayBytes_* types
         # that are not directly assignable to Array<T> locals. Insert a cast so
         # the decompiled output recompiles without changing the underlying call.
@@ -1292,6 +1379,8 @@ def _expression_to_haxe(
         ):
             # A private method: calling the wrapped field would call a closure of it.
             return f"(@:privateAccess {callee_str[len('(@:privateAccess ') : -1]}({args_str}))"
+        if _is_lambda_text(callee_str):
+            callee_str = f"({callee_str})"
         result = f"{callee_str}({args_str})"
         if (
             isinstance(expr.target, IRConst)
@@ -1370,6 +1459,22 @@ def _expression_to_haxe(
             # `Int64.low` of an inlined std call: the cast truncates to the low 32 bits.
             return f"{inner}.toInt()" if re.fullmatch(r"\w+", inner) else f"({inner} : hl.I64).toInt()"
         target_def, source_def = expr.get_type().definition, expr.expr.get_type().definition
+        if isinstance(target_def, Null) != isinstance(source_def, Null) or (
+            isinstance(target_def, Null) and isinstance(source_def, Null)
+        ):
+            # A boxed number read as another number type (`Null<Float>` as `Null<Int>`) is a
+            # run-time conversion Haxe will not make implicitly; through Dynamic it will.
+            target_basic = target_def.type.resolve(code) if isinstance(target_def, Null) else expr.get_type()
+            source_basic = (
+                source_def.type.resolve(code) if isinstance(source_def, Null) else expr.expr.get_type()
+            )
+            numeric = {Type.Kind.I32.value, Type.Kind.F32.value, Type.Kind.F64.value}
+            if (
+                target_basic.kind.value != source_basic.kind.value
+                and target_basic.kind.value in numeric
+                and source_basic.kind.value in numeric
+            ):
+                return f"({inner} : Dynamic)"
         if (
             isinstance(target_def, Virtual)
             and isinstance(expr.expr, IRObjectLiteral)
@@ -2614,6 +2719,27 @@ def _inline_closure(
     return f"({', '.join(params[1:])}) -> {body}"
 
 
+def _closure_adapter(
+    expr: "IRBoundClosure", obj_str: str, code: Bytecode, ir_function: Optional[IRFunction]
+) -> Optional[str]:
+    """The captured function itself, when the bound helper only forwards to it.
+
+    Haxe converts a function value to a function type that differs only in a
+    return (or Dynamic argument) type by wrapping it in a helper that calls the
+    original with the same arguments. The source wrote the function value; Haxe
+    adapts it again when the result is recompiled.
+    """
+    helpers = getattr(ir_function, "_inline_closure_bodies", None)
+    entry = helpers.get(expr.fun.findex.value) if helpers else None
+    if entry is None:
+        return None
+    params, body = entry
+    if not params or body != f"{params[0]}({', '.join(params[1:])})":
+        return None
+    getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
+    return obj_str
+
+
 def _inline_anonymous(func: "Function", code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
     """Render a reference to a capture-free anonymous function as a lambda."""
     if ir_function is None:
@@ -2644,6 +2770,10 @@ def _closure_inline_body(helper_ir: IRFunction) -> Optional[Tuple[List[str], str
     if len(names) != len(signature.args):
         return None
     helper_ir._rendered_as_lambda = True
+    for index, (value, const) in helper_ir.default_args.items():
+        if index < len(names):
+            # The body reads the parameter through the local that holds its value.
+            names[index] = f"{value.name} = {_expression_to_haxe(const, helper_ir.code, helper_ir)}"
     rendered = _generate_statements([statements[0]], helper_ir.code, helper_ir, 0, set())
     if len(rendered) != 1:
         return None
@@ -2791,6 +2921,13 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     # A better way might be to just call disasm.is_static
     if not is_instance and not abstract_constructor:
         static_kw = "static "
+        holder = _method_registry(code).get(func_core.findex.value)
+        if (
+            holder is not None
+            and holder[0].is_static
+            and _is_static_dynamic_method(code, holder[0], func_core, holder[1])
+        ):
+            static_kw = "static dynamic "
 
     override_kw = ""
     if is_instance and not is_constructor and containing is not None and abstract is None:
@@ -2870,11 +3007,10 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     params_joined_str = ", ".join(params_str_list)
     ret_decl = f": {return_type_str}" if return_type_str else ""
     access_kw = "public "
-    # A `dynamic` method can be rebound and so is never `inline`.
+    # A `dynamic` function is rebound at run time, so Haxe refuses to also inline it.
+    is_dynamic = "dynamic" in static_kw or "dynamic" in override_kw
     inline_kw = (
-        "inline "
-        if containing is not None and "dynamic" not in override_kw and is_inline_template(code, func_core)
-        else ""
+        "inline " if containing is not None and not is_dynamic and is_inline_template(code, func_core) else ""
     )
     func_header = f"{access_kw}{static_kw}{override_kw}{inline_kw}function {func_name_str}({params_joined_str}){ret_decl} {{"
     output_lines.append(func_header)
@@ -3291,6 +3427,10 @@ def _find_inner_defining_assignment(local_name: str, block: IRBlock) -> Optional
         # assignment in the loop body, recursing in case it nests deeper.
         if _contains_local_name(local_name, stmt.condition):
             return None
+        # A test at the end of the body becomes the `while` of a do-while, outside the body's scope.
+        for tail in stmt.body.statements[-2:]:
+            if isinstance(tail, IRConditional) and _contains_local_name(local_name, tail.condition):
+                return None
         inner = _find_defining_assignment(local_name, stmt.body)
         if inner is not None:
             return inner
@@ -4260,6 +4400,36 @@ def _is_dynamic_method(code: Bytecode, obj: Optional[Obj], func: Function) -> bo
     )
 
 
+_written_statics_cache: Dict[int, Tuple["weakref.ReferenceType[Bytecode]", Set[Tuple[int, str]]]] = {}
+
+
+def _written_statics(code: Bytecode) -> Set[Tuple[int, str]]:
+    """(`id()` of a static half, field name) of every static field some function assigns."""
+    cached = _written_statics_cache.get(id(code))
+    if cached is not None and cached[0]() is code:
+        return cached[1]
+    written: Set[Tuple[int, str]] = set()
+    for func in code.functions:
+        for op in func.ops:
+            if op.op != "SetField":
+                continue
+            target = func.regs[op.df["obj"].value].resolve(code).definition
+            if isinstance(target, Obj) and target.is_static:
+                written.add((id(target), op.df["field"].resolve_obj(code, target).name.resolve(code)))
+    _written_statics_cache[id(code)] = (weakref.ref(code), written)
+    return written
+
+
+def _is_static_dynamic_method(code: Bytecode, obj: Obj, func: Function, name: str) -> bool:
+    """Whether `func` is the default body of a `static dynamic` method of the class whose statics are
+    `obj`: a function is bound to its static field also when it is only kept, so the field has to be
+    one the program assigns."""
+    return any(binding.findex.value == func.findex.value for binding in obj.bindings) and (
+        id(obj),
+        name,
+    ) in _written_statics(code)
+
+
 def _method_overrides(method_name: str, ir_class: "Union[IRClass, _PseudoClass]", code: Bytecode) -> bool:
     """Return True if ir_class declares a method that overrides a superclass method."""
     primary_obj = ir_class.dynamic if ir_class.dynamic else ir_class.static
@@ -5089,6 +5259,7 @@ def _interface_pseudo(code: Bytecode, interface: typeinit.Interface, name: str, 
     implementation gives a default has it here too (`a: T = v`), which is how Haxe matches
     the two: HL passes an optional basic value by reference."""
     properties = _interface_properties(code, interface)
+    dynamic = typeinit.dynamic_members(code, interface.virtual)
     inherited = {
         member.name.resolve(code) for parent in interface.parents for member in parent.virtual.fields
     }
@@ -5113,7 +5284,8 @@ def _interface_pseudo(code: Bytecode, interface: typeinit.Interface, name: str, 
                 else:
                     params.append(f"a{i}: {disasm._haxe_annotation(code, arg.resolve(code))}")
             ret = disasm._haxe_annotation(code, signature.ret.resolve(code))
-            lines.append(f"    function {member_name}({', '.join(params)}): {ret};")
+            kw = "dynamic " if member_name in dynamic else ""
+            lines.append(f"    {kw}function {member_name}({', '.join(params)}): {ret};")
         elif member_name in properties:
             setter = "set" if properties[member_name][0] else "never"
             lines.append(

@@ -13,7 +13,7 @@ import weakref
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-from .core import Bytecode, Function, Obj, Type, Virtual
+from .core import Bytecode, Fun, Function, Obj, Type, Virtual
 
 
 @dataclass
@@ -76,6 +76,41 @@ def interface_of(code: Bytecode, obj: Optional[Obj]) -> Optional[Interface]:
 def implemented(code: Bytecode, obj: Optional[Obj]) -> List[Interface]:
     """The interfaces the class whose instance half is `obj` is registered as implementing."""
     return registry(code).implements.get(id(obj), []) if obj is not None else []
+
+
+def dynamic_members(code: Bytecode, virtual: Virtual) -> List[str]:
+    """Members of an interface's value type that its implementors declare `dynamic`.
+
+    A `dynamic` method is stored in the instance as a function-typed field, while an
+    ordinary method lives in the class's prototype, so a function-typed member that an
+    implementor holds as a field is a `dynamic` one."""
+    found: List[str] = []
+    for interface in registry(code).interfaces.values():
+        if interface.virtual is not virtual:
+            continue
+        for member in virtual.fields:
+            name = member.name.resolve(code)
+            if name in found or not isinstance(member.type.resolve(code).definition, Fun):
+                continue
+            for implementor in interface.implementors:
+                current: Optional[Obj] = implementor
+                seen = set()
+                while current is not None and id(current) not in seen:
+                    seen.add(id(current))
+                    if any(
+                        field.name.resolve(code) == name
+                        and isinstance(field.type.resolve(code).definition, Fun)
+                        for field in current.fields
+                    ):
+                        found.append(name)
+                        break
+                    if not current.super or current.super.value <= 0:
+                        break
+                    parent = current.super.resolve(code).definition
+                    current = parent if isinstance(parent, Obj) else None
+                if name in found:
+                    break
+    return found
 
 
 def _read(code: Bytecode) -> Registry:
