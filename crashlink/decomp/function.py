@@ -275,6 +275,23 @@ def _op_writes(op: Opcode) -> Optional[int]:
     return None
 
 
+
+def _source_local_name(code: Bytecode, name: str) -> str:
+    """A local's source name, renamed when it would shadow the first segment of a
+    qualified type path (`misc.Foo` is unreachable beside a local `misc`)."""
+    roots: Optional[Set[str]] = getattr(code, "_package_roots", None)
+    if roots is None:
+        roots = set()
+        for typ in code.types:
+            definition = typ.definition
+            if isinstance(definition, (Obj, Enum)) and definition.name.value != 0:
+                full = definition.name.resolve(code)
+                if "." in full:
+                    roots.add(full.lstrip("$").split(".", 1)[0])
+        code._package_roots = roots  # type: ignore[attr-defined]
+    return f"{name}_" if name in roots else name
+
+
 class IRFunction:
     """
     Intermediate representation of a function.
@@ -494,7 +511,7 @@ class IRFunction:
                 reg = op.df["dst"].value
             except KeyError:
                 continue
-            name = assign[0].resolve(self.code)
+            name = _source_local_name(self.code, assign[0].resolve(self.code))
             self._user_reg_indices.add(reg)
             if val not in self._op_assigns:
                 self._op_assigns[val] = {}
@@ -1069,7 +1086,7 @@ class IRFunction:
                 except KeyError:
                     pass
                 if reg is not None:
-                    name = assign[0].resolve(self.code)
+                    name = _source_local_name(self.code, assign[0].resolve(self.code))
                     if name not in reg_assigns[reg]:
                         reg_assigns[reg].append(name)
         if self.func.assigns and self.func.has_debug:
@@ -1096,7 +1113,7 @@ class IRFunction:
             for assign in param_candidates:
                 if param_count is not None and param_idx >= param_count:
                     break
-                name = assign[0].resolve(self.code)
+                name = _source_local_name(self.code, assign[0].resolve(self.code))
                 # A body local can shadow a parameter with the same debug name
                 # (e.g. ArrayBytes.getDyn's `pos`). Keep only the first parameter
                 # use of a name and continue with the next parameter slot.
@@ -3240,7 +3257,10 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
             if op.op in ("Int", "Float"):
                 try:
                     resolved = op.df["ptr"].resolve(code)
-                    reg_value[dst.value] = str(getattr(resolved, "value", resolved))
+                    value = getattr(resolved, "value", resolved)
+                    if op.op == "Int" and isinstance(value, int):
+                        value = (value + 0x80000000) % 0x100000000 - 0x80000000
+                    reg_value[dst.value] = str(value)
                     reg_refs.pop(dst.value, None)
                 except Exception:
                     reg_value.pop(dst.value, None)
