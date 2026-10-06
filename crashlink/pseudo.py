@@ -1176,8 +1176,12 @@ def _expression_to_haxe(
 
     elif isinstance(expr, IRNew):
         type_name = disasm.type_name(code, expr.get_type())
-        if type_name == "DynObj" or type_name.startswith("Virtual["):
+        if type_name == "DynObj":
             return "{}"
+        if type_name.startswith("Virtual["):
+            # A structure whose fields are stored one by one (a literal that could not be
+            # folded): an empty literal does not satisfy the structure.
+            return "cast {}" if type_name != "Virtual[]" else "{}"
         elif type_name == "hl.types.ArrayObj" and not expr.constructor_args:
             # `new ArrayObj()` is Haxe's `new Array<T>()` / `[]` for typed
             # object arrays. Render as `[]` so Haxe infers the element type
