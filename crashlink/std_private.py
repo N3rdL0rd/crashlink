@@ -35,6 +35,7 @@ PRIVATE_STD_MEMBERS: Dict[str, FrozenSet[str]] = {
             "regexp_new_options",
         }
     ),
+    "IntIterator": frozenset({"max", "min"}),
     "Reflect": frozenset({"_makeVarArgs", "getObjectFields"}),
     "Std": frozenset({"__add__", "__init__", "rnd", "rnd_float", "rnd_int", "rnd_sys", "toStringDepth"}),
     "String": frozenset(

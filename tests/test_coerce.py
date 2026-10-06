@@ -237,3 +237,38 @@ class Main {
     }
     sources, expected, actual = roundtrip(tmp_path, modules)
     assert actual == expected
+
+
+def test_static_initialiser_concatenates_constant_strings(tmp_path: Path) -> None:
+    modules = {
+        "Main.hx": """
+class Main {
+    static inline function u2(a:String, b:String) return a + "." + b;
+    static var NAMES = ["x", u2("unit", "Name")];
+    static function main() {
+        Sys.println(NAMES.join(","));
+    }
+}
+"""
+    }
+    _, expected, actual = roundtrip(tmp_path, modules)
+    assert actual == expected
+
+
+def test_int_iterator_fields_are_reached_through_private_access(tmp_path: Path) -> None:
+    modules = {
+        "Main.hx": """
+class Main {
+    static inline function each(it:IntIterator, f:Int -> Void) {
+        while (it.hasNext()) f(it.next());
+    }
+    static function main() {
+        var total = 0;
+        each(0...4, function(x) total += x);
+        Sys.println(total);
+    }
+}
+"""
+    }
+    _, expected, actual = roundtrip(tmp_path, modules)
+    assert actual == expected

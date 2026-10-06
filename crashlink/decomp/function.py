@@ -3473,9 +3473,12 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                         reg_refs.pop(dst.value, None)
                 elif fname_parts is not None and all(a in reg_value for a in call_arg_regs):
                     cname, mname = fname_parts
-                    reg_value[dst.value] = (
-                        f"{cname}.{mname}({', '.join(reg_value[a] for a in call_arg_regs)})"
-                    )
+                    if (cname, mname) == ("String", "__add__") and len(call_arg_regs) == 2:
+                        # A constant concatenation (`"a" + "b"`): `__add__` is private to String.
+                        rendered_call = f"({reg_value[call_arg_regs[0]]} + {reg_value[call_arg_regs[1]]})"
+                    else:
+                        rendered_call = f"{cname}.{mname}({', '.join(reg_value[a] for a in call_arg_regs)})"
+                    reg_value[dst.value] = rendered_call
                     reg_refs[dst.value] = {cname}
                     for a in call_arg_regs:
                         reg_refs[dst.value] |= reg_refs.get(a, set())
