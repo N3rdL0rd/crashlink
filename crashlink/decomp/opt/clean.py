@@ -3343,6 +3343,9 @@ class IRConstructorFolder(TraversingIROptimizer):
                     and not stmt.expr.constructor_args
                 ):
                     folded = False
+                    # Copies of the new instance into another variable (`var d:Dynamic = c`),
+                    # which share the object and so may follow its construction.
+                    aliases: List[IRStatement] = []
                     for j in range(i + 1, len(block.statements)):
                         next_stmt = block.statements[j]
                         ctor_args = self._match_constructor_call(next_stmt, stmt.target)
@@ -3352,11 +3355,25 @@ class IRConstructorFolder(TraversingIROptimizer):
                             # arguments), and place the folded `new` after them.
                             stmt.expr.constructor_args = ctor_args
                             stmt.adopt(next_stmt)  # constructor-call opcode is dropped below
-                            new_statements.extend(block.statements[i + 1 : j])
+                            new_statements.extend(s for s in block.statements[i + 1 : j] if s not in aliases)
                             new_statements.append(stmt)
+                            new_statements.extend(aliases)
                             i = j + 1
                             made_change = True
                             folded = True
+                            break
+                        if (
+                            isinstance(next_stmt, IRAssign)
+                            and isinstance(next_stmt.target, IRLocal)
+                            and next_stmt.target != stmt.target
+                            and next_stmt.expr == stmt.target
+                        ):
+                            aliases.append(next_stmt)
+                            continue
+                        if any(
+                            isinstance(a, IRAssign) and self._statement_uses_local(next_stmt, a.target)
+                            for a in aliases
+                        ):
                             break
                         # We can only fold across statements that don't touch the
                         # freshly allocated instance.

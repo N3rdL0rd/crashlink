@@ -140,3 +140,28 @@ class Main {
         },
     )
     assert "Main.C.concat(" in files["src/Main.hx"]
+
+
+def test_constructor_arguments_survive_an_alias_of_the_instance(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+private class C {
+    var i:Int;
+    public function new(i:Int) { this.i = i; }
+    public function getI() return i;
+}
+class Main {
+    static function main() {
+        var c1 = new C(1);
+        var c2 = new C(2);
+        var c2Dyn:Dynamic = c2;
+        Sys.println(Reflect.callMethod(c1, c2.getI, []));
+        Sys.println(Reflect.callMethod(c2, c2Dyn.getI, []));
+    }
+}
+"""
+        },
+    )
+    assert "new C(2)" in files["src/Main.hx"]
