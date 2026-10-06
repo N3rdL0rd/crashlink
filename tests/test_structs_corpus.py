@@ -144,3 +144,40 @@ class Main {
 def test_generic_interface_and_class_overrides_recompile_and_behave_the_same(tmp_path: Path) -> None:
     original, folder = _roundtrip(tmp_path, GENERICS)
     assert _run(folder / "out.hl") == _run(original)
+
+
+REDECLARED = """
+interface IVar { function value():String; }
+interface IUserVar extends IVar { function owner():String; }
+interface IEntity { var id:Int; function fetch(n:String):IVar; }
+interface IUser extends IEntity {
+    var id:Int;
+    var label:String;
+    function fetch(n:String):IUserVar;
+}
+class UV implements IUserVar {
+    public function new() {}
+    public function value() return "v";
+    public function owner() return "o";
+}
+class User implements IUser {
+    public var id:Int = 3;
+    public var label:String = "l";
+    public function new() {}
+    public function fetch(n:String):IUserVar return new UV();
+}
+class Main {
+    static function main() {
+        var u = new User();
+        var bare:IEntity = u;
+        var user:IUser = u;
+        Sys.println(user.label + user.id);
+        Sys.println(bare.fetch("a").value() + bare.id + u.fetch("b").owner());
+    }
+}
+"""
+
+
+def test_interface_redeclaring_an_inherited_field_renders_one_declaration(tmp_path: Path) -> None:
+    original, folder = _roundtrip(tmp_path, REDECLARED)
+    assert _run(folder / "out.hl") == _run(original)

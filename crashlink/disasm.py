@@ -505,8 +505,14 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                     isinstance(f.type.resolve(code).definition, Null) for f in definition.fields
                 )
                 omitted = _omitted_literal_fields(code).get(key, set())
+                declared: set[str] = set()
                 for f in definition.fields:
                     name, ftype = f.name.resolve(code), f.type.resolve(code)
+                    # An interface redeclaring a field of one it extends lists both: the first,
+                    # the interface's own, is the one a structure can have.
+                    if name in declared:
+                        continue
+                    declared.add(name)
                     fdef = ftype.definition
                     if name in omitted and ftype.kind.value not in _BASIC_KINDS:
                         members.append(f"@:optional var {name}: {render(ftype)};")
