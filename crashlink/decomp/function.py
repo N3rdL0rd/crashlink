@@ -1103,8 +1103,8 @@ class IRFunction:
                 named = len({assign[0].resolve(self.code) for assign in param_candidates})
                 if not has_this and self._takes_unnamed_receiver(named):
                     param_start, param_count = 1, named
-                    has_dynamic_receiver = not self.code.full_func_name(self.func).rsplit(".", 1)[0].endswith(
-                        "_Impl_"
+                    has_dynamic_receiver = (
+                        not self.code.full_func_name(self.func).rsplit(".", 1)[0].endswith("_Impl_")
                     )
             seen_param_names: Set[str] = set()
             param_idx = 0

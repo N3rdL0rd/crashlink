@@ -579,10 +579,17 @@ def _expression_to_haxe(
                     if isinstance(fun_type, Fun) and fun_type.args:
                         first_arg_type = fun_type.args[0].resolve(code)
                         first_arg_type_name = destaticify(disasm.type_name(code, first_arg_type))
-                        is_static_member = (code.full_func_name(func) or "").rsplit(".", 1)[0].rsplit(".", 1)[
-                            -1
-                        ].startswith("$")
-                        if first_arg_type_name == class_name and ir_function is not None and not is_static_member:
+                        is_static_member = (
+                            (code.full_func_name(func) or "")
+                            .rsplit(".", 1)[0]
+                            .rsplit(".", 1)[-1]
+                            .startswith("$")
+                        )
+                        if (
+                            first_arg_type_name == class_name
+                            and ir_function is not None
+                            and not is_static_member
+                        ):
                             receiver = _find_receiver_local(class_name, ir_function, code)
                             if receiver:
                                 return f"{receiver}.{method_name}"
@@ -1274,11 +1281,7 @@ def _expression_to_haxe(
             # A downcast (`Entity` to `en.Hero`) is only implicit from Dynamic; from a
             # class it needs `cast`, which compiles to the same SafeCast.
             return f"(cast {inner} : {disasm.type_to_haxe(target_name)})"
-        if (
-            isinstance(target_def, Obj)
-            and isinstance(source_def, Virtual)
-            and not inner.startswith("cast ")
-        ):
+        if isinstance(target_def, Obj) and isinstance(source_def, Virtual) and not inner.startswith("cast "):
             # A structure is only implicitly a class from Dynamic.
             return f"(cast {inner} : {disasm.type_to_haxe(target_name)})"
         return inner

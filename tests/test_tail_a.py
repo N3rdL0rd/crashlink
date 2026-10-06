@@ -341,7 +341,6 @@ class Main {
     )
 
 
-
 def test_erased_array_returned_into_typed_local(tmp_path: Path) -> None:
     _round_trip(
         tmp_path,
