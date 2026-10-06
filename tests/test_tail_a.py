@@ -208,3 +208,22 @@ class Main {
         },
     )
     assert "(29 : hl.I64)" in files["src/Main.hx"]
+
+
+def test_dynamic_method_body_reads_its_receiver(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Main {
+    function new() {}
+    function show(v:Dynamic) Sys.println(v);
+    dynamic function run(t:Dynamic) {
+        show(t);
+    }
+    static function main() new Main().run(2);
+}
+"""
+        },
+    )
+    assert "this.show" in files["src/Main.hx"]
