@@ -879,7 +879,11 @@ def _expression_to_haxe(
         return f"[{elements}]"
 
     elif isinstance(expr, IRObjectLiteral):
-        fields = ", ".join(f"{k}: {_expression_to_haxe(v, code, ir_function)}" for k, v in expr.fields)
+        fields = ", ".join(
+            f"{k if k.isidentifier() else chr(34) + disasm._escape_str(k, chr(34)) + chr(34)}: "
+            f"{_expression_to_haxe(v, code, ir_function)}"
+            for k, v in expr.fields
+        )
         return f"{{ {fields} }}" if fields else "{}"
 
     elif isinstance(expr, IRRef):

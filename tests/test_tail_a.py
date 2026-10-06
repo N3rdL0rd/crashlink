@@ -105,3 +105,20 @@ class Main {
     )
     # A position comment inside a one-line lambda would swallow the rest of the line.
     assert "// {" not in "".join(line for line in files["src/Main.hx"].splitlines() if "->" in line)
+
+
+def test_object_literal_with_non_identifier_field(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Main {
+    static function main() {
+        var o = {foo: 1, "bar-1": 2, baz: 3};
+        Sys.println(o.foo + Reflect.field(o, "bar-1") + o.baz);
+    }
+}
+"""
+        },
+    )
+    assert '"bar-1": 2' in files["src/Main.hx"]

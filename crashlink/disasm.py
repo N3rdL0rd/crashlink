@@ -441,6 +441,9 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                 # structure with one was declared with optional fields, which literals
                 # may leave out, so its nullable fields are marked optional.
                 members = []
+                if not all(f.name.resolve(code).isidentifier() for f in definition.fields):
+                    # `"bar-1"` can be written in a literal but not named in a type.
+                    return "Dynamic"
                 has_optional = any(
                     isinstance(f.type.resolve(code).definition, Null) for f in definition.fields
                 )
