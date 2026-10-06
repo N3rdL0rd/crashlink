@@ -98,7 +98,8 @@ def dynamic_members(code: Bytecode, virtual: Virtual) -> List[str]:
                 while current is not None and id(current) not in seen:
                     seen.add(id(current))
                     if any(
-                        field.name.resolve(code) == name and isinstance(field.type.resolve(code).definition, Fun)
+                        field.name.resolve(code) == name
+                        and isinstance(field.type.resolve(code).definition, Fun)
                         for field in current.fields
                     ):
                         found.append(name)

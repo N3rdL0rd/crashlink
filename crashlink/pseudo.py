@@ -1307,7 +1307,9 @@ def _expression_to_haxe(
             # A boxed number read as another number type (`Null<Float>` as `Null<Int>`) is a
             # run-time conversion Haxe will not make implicitly; through Dynamic it will.
             target_basic = target_def.type.resolve(code) if isinstance(target_def, Null) else expr.get_type()
-            source_basic = source_def.type.resolve(code) if isinstance(source_def, Null) else expr.expr.get_type()
+            source_basic = (
+                source_def.type.resolve(code) if isinstance(source_def, Null) else expr.expr.get_type()
+            )
             numeric = {Type.Kind.I32.value, Type.Kind.F32.value, Type.Kind.F64.value}
             if (
                 target_basic.kind.value != source_basic.kind.value
@@ -4153,10 +4155,10 @@ def _is_static_dynamic_method(code: Bytecode, obj: Obj, func: Function, name: st
     """Whether `func` is the default body of a `static dynamic` method of the class whose statics are
     `obj`: a function is bound to its static field also when it is only kept, so the field has to be
     one the program assigns."""
-    return (
-        any(binding.findex.value == func.findex.value for binding in obj.bindings)
-        and (id(obj), name) in _written_statics(code)
-    )
+    return any(binding.findex.value == func.findex.value for binding in obj.bindings) and (
+        id(obj),
+        name,
+    ) in _written_statics(code)
 
 
 def _method_overrides(method_name: str, ir_class: "Union[IRClass, _PseudoClass]", code: Bytecode) -> bool:
