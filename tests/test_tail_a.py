@@ -254,3 +254,20 @@ class Main {
         },
     )
     assert "Kid.call(" in files["src/Main.hx"]
+
+
+def test_field_read_through_an_interface_cast(tmp_path: Path) -> None:
+    _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Base {}
+interface IFace { public var z:Int; }
+class Impl extends Base implements IFace { public var z:Int; public function new() { z = 5; } }
+class Main {
+    static function foo(b:Base):Int return cast(b, IFace).z;
+    static function main() { Sys.println(foo(new Impl())); }
+}
+"""
+        },
+    )
