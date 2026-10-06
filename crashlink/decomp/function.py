@@ -3469,9 +3469,18 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                         reg_refs.pop(dst.value, None)
                 elif fname_parts is not None and all(a in reg_value for a in call_arg_regs):
                     cname, mname = fname_parts
-                    reg_value[dst.value] = (
-                        f"{cname}.{mname}({', '.join(reg_value[a] for a in call_arg_regs)})"
-                    )
+                    arg_values = [reg_value[a] for a in call_arg_regs]
+                    call_text = f"{cname}.{mname}({', '.join(arg_values)})"
+                    if isinstance(fun, Function) and arg_values:
+                        # An instance method called directly takes its receiver first: `r.m(args)`.
+                        signature = fun.type.resolve(code).definition
+                        if (
+                            isinstance(signature, Fun)
+                            and signature.args
+                            and destaticify(disasm.type_name(code, signature.args[0].resolve(code))) == cname
+                        ):
+                            call_text = f"{arg_values[0]}.{mname}({', '.join(arg_values[1:])})"
+                    reg_value[dst.value] = call_text
                     reg_refs[dst.value] = {cname}
                     for a in call_arg_regs:
                         reg_refs[dst.value] |= reg_refs.get(a, set())

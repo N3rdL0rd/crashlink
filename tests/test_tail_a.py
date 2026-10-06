@@ -122,3 +122,21 @@ class Main {
         },
     )
     assert '"bar-1": 2' in files["src/Main.hx"]
+
+
+def test_instance_method_in_static_initializer(tmp_path: Path) -> None:
+    files = _round_trip(
+        tmp_path,
+        {
+            "Main.hx": """
+class Main {
+    static var C = ["1", "2"];
+    static var B = C.concat(["3", "4"]);
+    static function main() {
+        Sys.println(B.join(""));
+    }
+}
+"""
+        },
+    )
+    assert "Main.C.concat(" in files["src/Main.hx"]
