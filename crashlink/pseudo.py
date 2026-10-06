@@ -539,6 +539,10 @@ def _resolve_array_access(
         )
         if keep_bytes:
             arr_str = _expression_to_haxe(expr.array, code, ir_function)
+            kind = getattr(expr, "bytes_access_kind", None)
+            if kind and kind != "UI8" and disasm.type_name(code, target.get_type()) == "String":
+                # hl.Bytes indexes by byte; only its own accessor reads a wider element.
+                return arr_str, _expression_to_haxe(expr.index, code, ir_function), kind
         else:
             arr_str = _expression_to_haxe(target, code, ir_function)
         idx_str = _expression_to_haxe(expr.index.left, code, ir_function)

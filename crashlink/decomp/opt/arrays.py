@@ -740,6 +740,9 @@ class IRArrayPatternOptimizer(TraversingIROptimizer):
             return None
         temp = stmt.target
         arr_expr: IRExpression = stmt.expr.target
+        # A String has no element access: its `.bytes` is read through hl.Bytes accessors.
+        if disasm.type_name(self.func.code, arr_expr.get_type()) == "String":
+            return None
         # When the bytes field is loaded off `this`, the receiver is the array
         # impl class itself: collapse to `this.bytes[i]`, not `this[i]` (which
         # has no array accessor and won't recompile).
