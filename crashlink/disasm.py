@@ -20,6 +20,7 @@ except ImportError:
 from .core import (
     Abstract,
     Bytecode,
+    DynObj,
     Fun,
     Function,
     Native,
@@ -401,6 +402,65 @@ def _trace_signature_types(code: Bytecode) -> Tuple[set[int], set[int]]:
     return positions, callbacks
 
 
+_omitted_field_cache: Dict[int, Tuple[Any, Dict[int, set[str]]]] = {}
+
+
+def _omitted_literal_fields(code: Bytecode) -> Dict[int, set[str]]:
+    """The fields each structure's literals leave out, by `id` of its definition.
+
+    A literal allocates the structure then stores its fields in turn, so a field that is
+    never stored before the register is reused is one the literal omitted: the field is
+    optional, which the compiled structure does not record."""
+    cached = _omitted_field_cache.get(id(code))
+    if cached is not None and cached[0]() is code:
+        return cached[1]
+    omitted: Dict[int, set[str]] = {}
+
+    def finish(typ: Virtual, stored: set[str]) -> None:
+        for f in typ.fields:
+            name = f.name.resolve(code)
+            if name not in stored:
+                omitted.setdefault(id(typ), set()).add(name)
+
+    for func in code.functions:
+        # A register allocated as a structure, or as a dynamic object a structure
+        # is then made of (`{}` typed as a typedef), with the names stored so far.
+        live: Dict[int, Tuple[Optional[Virtual], set[str]]] = {}
+        for op in func.ops:
+            df = op.df
+            if op.op == "SetField":
+                entry = live.get(df["obj"].value)
+                if entry is not None and entry[0] is not None:
+                    entry[1].add(entry[0].fields[df["field"].value].name.resolve(code))
+                continue
+            if op.op == "DynSet":
+                entry = live.get(df["obj"].value)
+                if entry is not None and entry[0] is None:
+                    entry[1].add(df["field"].resolve(code))
+                continue
+            if op.op == "Setref" or "dst" not in df:
+                continue
+            reg = df["dst"].value
+            entry = live.pop(reg, None)
+            if entry is not None and entry[0] is not None:
+                finish(*entry)  # type: ignore[arg-type]
+            definition = func.regs[reg].resolve(code).definition
+            if op.op == "New":
+                if isinstance(definition, Virtual):
+                    live[reg] = (definition, set())
+                elif isinstance(definition, DynObj):
+                    live[reg] = (None, set())
+            elif op.op == "ToVirtual" and isinstance(definition, Virtual):
+                source = live.get(df["src"].value)
+                if source is not None and source[0] is None:
+                    finish(definition, source[1])
+        for entry in live.values():
+            if entry[0] is not None:
+                finish(*entry)  # type: ignore[arg-type]
+    _omitted_field_cache[id(code)] = (weakref.ref(code), omitted)
+    return omitted
+
+
 def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
     """Render retained signatures, falling back to the existing erased type map.
 
@@ -444,10 +504,13 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                 has_optional = any(
                     isinstance(f.type.resolve(code).definition, Null) for f in definition.fields
                 )
+                omitted = _omitted_literal_fields(code).get(key, set())
                 for f in definition.fields:
                     name, ftype = f.name.resolve(code), f.type.resolve(code)
                     fdef = ftype.definition
-                    if isinstance(fdef, Fun):
+                    if name in omitted and ftype.kind.value not in _BASIC_KINDS:
+                        members.append(f"@:optional var {name}: {render(ftype)};")
+                    elif isinstance(fdef, Fun):
                         params = ", ".join(
                             f"a{i}: {render(a.resolve(code))}" for i, a in enumerate(fdef.args)
                         )
