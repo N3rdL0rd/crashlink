@@ -193,6 +193,46 @@ def _method_registry(code: Bytecode) -> Dict[int, Tuple[Obj, str, bool]]:
     return registry
 
 
+_BASIC_TYPE_NAMES = {
+    Type.Kind.I32.value: "Int",
+    Type.Kind.F64.value: "Float",
+    Type.Kind.BOOL.value: "Bool",
+    Type.Kind.DYN.value: "Dynamic",
+}
+_basic_type_globals_cache: Dict[int, Tuple["weakref.ReferenceType[Bytecode]", Dict[int, str]]] = {}
+
+
+def _basic_type_globals(code: Bytecode) -> Dict[int, str]:
+    """Map global index -> `Int`/`Float`/`Bool`/`Dynamic` for the globals holding those runtime types.
+
+    HL has no class for them: the compiler's init code allocates a core type object, stores the
+    primitive type in its `__type__` field and puts it in a global, which is what `Int` as a value
+    (`Std.isOfType(v, Int)`) reads."""
+    cached = _basic_type_globals_cache.get(id(code))
+    if cached is not None and cached[0]() is code:
+        return cached[1]
+    found: Dict[int, str] = {}
+    for func in code.functions:
+        type_regs: Dict[int, str] = {}
+        typed_objs: Dict[int, str] = {}
+        for op in func.ops:
+            df = op.df
+            if op.op == "Type":
+                basic = _BASIC_TYPE_NAMES.get(df["ty"].resolve(code).kind.value)
+                if basic is not None:
+                    type_regs[df["dst"].value] = basic
+                else:
+                    type_regs.pop(df["dst"].value, None)
+            elif op.op == "New":
+                typed_objs.pop(df["dst"].value, None)
+            elif op.op == "SetField" and df["field"].value == 0 and df["src"].value in type_regs:
+                typed_objs[df["obj"].value] = type_regs[df["src"].value]
+            elif op.op == "SetGlobal" and df["src"].value in typed_objs:
+                found[df["global"].value] = typed_objs[df["src"].value]
+    _basic_type_globals_cache[id(code)] = (weakref.ref(code), found)
+    return found
+
+
 def _containing_class_for(ir_func: IRFunction, code: Bytecode) -> Optional[_PseudoClass]:
     """Return a lightweight containing class for instance methods, or None."""
     info = _method_registry(code).get(ir_func.func.findex.value)
@@ -587,6 +627,9 @@ def _expression_to_haxe(
                 # the source-level name (`C`) instead of the opaque
                 # `untyped $globalN()` fallback whenever the global's type is a
                 # named class or enum.
+                basic = _basic_type_globals(code).get(expr.original_index.value)
+                if basic is not None:
+                    return basic
                 defn = expr.value.definition
                 if isinstance(defn, (Obj, Enum)):
                     abstract = abstracts.abstract_of(code, defn) if isinstance(defn, Obj) else None
