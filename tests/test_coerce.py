@@ -101,3 +101,25 @@ class Main {
     sources, expected, actual = roundtrip(tmp_path, modules)
     assert "static dynamic function twice" in sources["Main.hx"]
     assert actual == expected
+
+
+def test_structure_with_function_field_is_built_as_one_literal(tmp_path: Path) -> None:
+    # The field's value is chosen by a conversion `if` between the allocation and the store,
+    # and the structure type declares `iterator` as a method that a `{}` allocation cannot supply.
+    modules = {
+        "Main.hx": """
+class Main {
+    static function count(it:{ function iterator():Iterator<Int>; }) {
+        var n = 0;
+        for (x in it.iterator()) n += x;
+        return n;
+    }
+    static function main() {
+        var a = [1, 4];
+        Sys.println(count({ iterator: a.iterator }));
+    }
+}
+"""
+    }
+    sources, expected, actual = roundtrip(tmp_path, modules)
+    assert actual == expected
