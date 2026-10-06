@@ -12,13 +12,17 @@ if TYPE_CHECKING:
     from ..function import IRFunction
 
 from ...core import (
+    Bool,
     Bytecode,
     DynObj,
     Enum,
     Fun,
+    F64,
     Function,
+    I32,
     Obj,
     Opcode,
+    Ref,
     Type,
     Virtual,
     destaticify,
@@ -1558,6 +1562,54 @@ def default_arg_regs(code: Bytecode, func: Function) -> Dict[int, Opcode]:
     return found
 
 
+def overriding_default_arg_regs(code: Bytecode, func: Function) -> Dict[int, Tuple[Function, Opcode]]:
+    """The defaults of an abstract method, which has none of its own: it is declared with
+    plain basic parameters, but the implementations that override it take each optional
+    one by reference and open with the check giving the default. Each is `(implementation,
+    the opcode loading it)`, from the first override giving one."""
+    return _overriding_defaults(code, func)
+
+
+def _overriding_defaults(code: Bytecode, func: Function) -> Dict[int, Tuple[Function, Opcode]]:
+    # An abstract method's body is `throw null`.
+    if [op.op for op in func.ops] != ["Null", "Throw"]:
+        return {}
+    wanted = set(range(1, 16))
+    owner = next(
+        (
+            obj
+            for typ in code.types
+            if isinstance(obj := typ.definition, Obj)
+            and any(proto.findex.value == func.findex.value for proto in obj.protos)
+        ),
+        None,
+    )
+    if owner is None:
+        return {}
+    name = code.partial_func_name(func)
+    found: Dict[int, Tuple[Function, Opcode]] = {}
+    for typ in code.types:
+        obj = typ.definition
+        if not isinstance(obj, Obj) or obj is owner:
+            continue
+        current, hops = obj, 0
+        while current.super is not None and current.super.value >= 0 and hops < 64 and current is not owner:
+            parent = current.super.resolve(code).definition
+            if not isinstance(parent, Obj):
+                break
+            current, hops = parent, hops + 1
+        if current is not owner:
+            continue
+        for proto in obj.protos:
+            impl = proto.findex.resolve(code)
+            if proto.name.resolve(code) != name or not isinstance(impl, Function):
+                continue
+            for reg, load in default_arg_regs(code, impl).items():
+                if reg in wanted:
+                    found.setdefault(reg, (impl, load))
+    return found
+
+
 def default_arg_value(code: Bytecode, load: Opcode) -> IRConst:
     """The constant a default-argument prologue's `load` writes."""
     if load.op == "Bool":
@@ -1737,6 +1789,9 @@ class IRDefaultArgumentRecovery(IROptimizer):
     ) -> None:
         callee, first = self._callee(call)
         defaults = default_arg_regs(self.func.code, callee) if callee is not None else {}
+        if callee is not None:
+            for reg, (_, load) in overriding_default_arg_regs(self.func.code, callee).items():
+                defaults.setdefault(reg, load)
         omitted: List[int] = []
         for i, arg in enumerate(call.args):
             load = defaults.get(i + first)

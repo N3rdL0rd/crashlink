@@ -85,7 +85,7 @@ from .decomp import (
     IRNullCoalesce,
 )
 from .decomp.ir import IREnumPattern, IRInlineCall
-from .decomp.opt.clean import default_arg_regs, default_arg_value
+from .decomp.opt.clean import default_arg_regs, default_arg_value, overriding_default_arg_regs
 from .decomp.inline_calls import inline_index, is_inline_template
 
 
@@ -2648,6 +2648,11 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
                 value, const = default
                 value_type = disasm._haxe_annotation(code, value.get_type())
                 param_type_decl = f": {value_type} = {_expression_to_haxe(const, code, ir_func)}"
+            elif (inherited := overriding_default_arg_regs(code, func_core).get(local_idx)) is not None:
+                impl, load = inherited
+                value_type = disasm._haxe_annotation(code, impl.regs[load.df["dst"].value].resolve(code))
+                default_value = _expression_to_haxe(default_arg_value(code, load), code, ir_func)
+                param_type_decl = f": {value_type} = {default_value}"
             params_str_list.append(f"{param_name}{param_type_decl}")
 
         ret_core_type = core_fun_type_def.ret.resolve(code)
@@ -5479,13 +5484,16 @@ def _stub_method(code: Bytecode, func: Function, is_instance: bool, dynamic: Opt
     ret_type: Optional[Type] = None
     if isinstance(fun_def, Fun):
         start = 1 if is_instance else 0
-        defaults = default_arg_regs(code, func)
+        defaults = {reg: (func, load) for reg, load in default_arg_regs(code, func).items()}
+        for reg, found in overriding_default_arg_regs(code, func).items():
+            defaults.setdefault(reg, found)
         erased = _erased_parameters(code, dynamic, name) if is_instance and not is_ctor else set()
         for i, arg_idx in enumerate(fun_def.args[start:]):
             t = "Dynamic" if i in erased else disasm._haxe_annotation(code, arg_idx.resolve(code))
-            load = defaults.get(start + i)
-            if load is not None:
-                value_type = disasm._haxe_annotation(code, func.regs[load.df["dst"].value].resolve(code))
+            found = defaults.get(start + i)
+            if found is not None:
+                owner, load = found
+                value_type = disasm._haxe_annotation(code, owner.regs[load.df["dst"].value].resolve(code))
                 default = _expression_to_haxe(default_arg_value(code, load), code, None)
                 params.append(f"arg{i}: {value_type} = {default}")
                 continue

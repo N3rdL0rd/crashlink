@@ -199,3 +199,25 @@ class Main {
 def test_function_field_stored_into_a_structure_is_a_var(tmp_path: Path) -> None:
     original, folder = _roundtrip(tmp_path, BORROWED)
     assert _run(folder / "out.hl") == _run(original)
+
+
+ABSTRACT_DEFAULTS = """
+abstract class Base {
+    public function new() {}
+    public abstract function f(x:Int, flag:Bool = false, n:Int = 3):Int;
+}
+class Impl extends Base {
+    public function f(x:Int, flag:Bool = true, n:Int = 7):Int return x + (flag ? 10 : 1) + n;
+}
+class Main {
+    static function call(b:Base) return b.f(100) + b.f(100, false) + b.f(100, true, 5);
+    static function main() {
+        Sys.println(call(new Impl()));
+    }
+}
+"""
+
+
+def test_abstract_method_called_with_optional_basic_arguments(tmp_path: Path) -> None:
+    original, folder = _roundtrip(tmp_path, ABSTRACT_DEFAULTS)
+    assert _run(folder / "out.hl") == _run(original)
