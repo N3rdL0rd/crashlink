@@ -4483,7 +4483,20 @@ class IRTypedCatchOptimizer(IROptimizer):
         """Return (binding_local, body) for one restored clause, or None if the
         body uses the caught value in a shape we don't recognize."""
         if isinstance(typ.definition, Obj) and typ.definition.is_static:
-            typ = typ.definition.dynamic.get_containing_type(self.func.code)
+            if typ.definition._dynamic is not None:
+                typ = typ.definition.dynamic.get_containing_type(self.func.code)
+            else:
+                # `catch (e:SomeEnum)` tests the enum's `$Enum` static holder, which has
+                # no dynamic Obj: the caught type is the Enum type of the same name.
+                wanted = self._type_name(typ)
+                enums = [
+                    t
+                    for t in self.func.code.types
+                    if isinstance(t.definition, Enum) and disasm.type_name(self.func.code, t) == wanted
+                ]
+                if len(enums) != 1:
+                    return None
+                typ = enums[0]
         stmts = body.statements
         # Wrapped-value clauses can retain the explicit payload-register load
         # followed by a typed cast. Bind the typed result, not the dynamic
