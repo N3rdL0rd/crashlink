@@ -91,3 +91,4 @@ sweep.hx
 /local/heaps-win/
 *.h.gch
 .uv-cache/
+crashtest/hxsmith-runs/

@@ -1,0 +1,3 @@
+package utest;
+
+interface ITest {}

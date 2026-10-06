@@ -54,6 +54,12 @@ def main() -> None:
 
     subparsers.add_parser("build", help="Build the result site")
     _auto_parser = subparsers.add_parser("auto", help="Run all tests and build the site")
+    from .hxsmith import cli as hxsmith_cli
+
+    hxsmith_cli.add_parser(subparsers)
+    from .hxcorpus import cli as hxcorpus_cli
+
+    hxcorpus_cli.add_parser(subparsers)
 
     args = parser.parse_args()
     if args.command == "run":
@@ -62,6 +68,14 @@ def main() -> None:
         else:
             success = run()
         raise SystemExit(0 if success else 1)
+    elif args.command == "hxsmith":
+        from .hxsmith import cli
+
+        raise SystemExit(cli.main(args))
+    elif args.command == "hxcorpus":
+        from .hxcorpus import cli as corpus_cli
+
+        raise SystemExit(corpus_cli.main(args))
     elif args.command == "sweep":
         sweep(args.bytecode, args.count, args.out)
     elif args.command == "build":
