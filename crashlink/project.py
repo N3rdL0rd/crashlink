@@ -225,7 +225,7 @@ def layout(code: Bytecode) -> Layout:
         raw = definition.name.resolve(code)
         abstract = abstracts.abstract_of(code, definition)
         if abstract is not None:
-            if id(abstract) in seen_abstracts:
+            if abstract.std or id(abstract) in seen_abstracts:
                 continue
             seen_abstracts.add(id(abstract))
             package, _, module = abstract.module.rpartition(".")

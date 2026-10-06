@@ -3464,9 +3464,22 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                         reg_refs.pop(dst.value, None)
                 elif fname_parts is not None and all(a in reg_value for a in call_arg_regs):
                     cname, mname = fname_parts
-                    reg_value[dst.value] = (
-                        f"{cname}.{mname}({', '.join(reg_value[a] for a in call_arg_regs)})"
+                    values = [reg_value[a] for a in call_arg_regs]
+                    # An abstract's members are statics of an `_Impl_` class source can't name.
+                    abstract = (
+                        abstracts.abstract_of_function(code, fun) if isinstance(fun, Function) else None
                     )
+                    if abstract is not None and fun.findex.value == abstract.constructor:
+                        call = f"new {abstract.path}({', '.join(values)})"
+                    elif abstract is not None and fun.findex.value in abstract.instance and values:
+                        call = f"({values[0]} : {abstract.path}).{mname}({', '.join(values[1:])})"
+                    elif abstract is not None:
+                        call = f"{abstract.path}.{mname}({', '.join(values)})"
+                    elif (cname, mname) == ("String", "__add__") and len(values) == 2:
+                        call = f"({values[0]} + {values[1]})"  # the compiler's string concatenation
+                    else:
+                        call = f"{cname}.{mname}({', '.join(values)})"
+                    reg_value[dst.value] = call
                     reg_refs[dst.value] = {cname}
                     for a in call_arg_regs:
                         reg_refs[dst.value] |= reg_refs.get(a, set())

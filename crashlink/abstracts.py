@@ -22,8 +22,20 @@ from typing import Dict, FrozenSet, Optional, Tuple
 
 from . import disasm
 from .core import Bytecode, Fun, Function, Obj, Type, destaticify
+from .std_types import STD_TYPES
 
 IMPL_SUFFIX = "_Impl_"
+
+#: Type parameters of the std's generic abstracts, which a type annotation must give.
+STD_TYPE_PARAMS = {
+    "haxe.Rest": 1,
+    "haxe.ds.Map": 2,
+    "haxe.ds.HashMap": 2,
+    "haxe.ds.Vector": 1,
+    "haxe.ds.ReadOnlyArray": 1,
+    "haxe.DynamicAccess": 1,
+    "hl.Ref": 1,
+}
 
 
 @dataclass(frozen=True)
@@ -56,6 +68,8 @@ class Abstract:
     constructor: Optional[int]
     #: Instance properties by name.
     properties: Dict[str, Property] = field(default_factory=dict)
+    #: Whether the abstract is the std's: it keeps its API and isn't declared by the project.
+    std: bool = False
 
     @property
     def name(self) -> str:
@@ -68,6 +82,12 @@ class Abstract:
         package, _, module = prefix.rpartition(".")
         module = module.removeprefix("_")
         return f"{package}.{module}" if package else module
+
+    @property
+    def type_args(self) -> str:
+        """The type arguments a std generic abstract is annotated with (`<Dynamic>`)."""
+        count = STD_TYPE_PARAMS.get(self.module, 0) if self.std else 0
+        return f"<{', '.join(['Dynamic'] * count)}>" if count else ""
 
     def underlying_annotation(self, code: Bytecode) -> str:
         return disasm._haxe_annotation(code, self.underlying) if self.underlying is not None else "Dynamic"
@@ -125,10 +145,18 @@ def _abstract(code: Bytecode, obj: Obj) -> Optional[Abstract]:
             continue
         if isinstance(func, Function):
             functions.append(func)
-    # The std isn't recompiled from decompiled output; its abstracts keep their API.
-    # With no members left there's nothing to declare either.
-    if not functions or all(disasm.is_std(code, func) for func in functions):
-        return None
+    module, _, impl = name.rpartition(".")
+    short = impl.lstrip("$")[: -len(IMPL_SUFFIX)]
+    path = f"{module}.{short}" if module else short
+    # The std isn't recompiled from decompiled output; its abstracts keep their API, and
+    # the project's code names them by it (`Int64_Impl_.MASK` is `Int64.MASK`).
+    std = bool(functions) and all(disasm.is_std(code, func) for func in functions)
+    if not std:
+        owner = module.rpartition(".")[0]
+        owner = (
+            f"{owner}.{module.rpartition('.')[2].removeprefix('_')}" if owner else module.removeprefix("_")
+        )
+        std = owner in STD_TYPES
 
     instance = set()
     constructor: Optional[int] = None
@@ -151,11 +179,19 @@ def _abstract(code: Bytecode, obj: Obj) -> Optional[Abstract]:
             underlying = signature.args[0].resolve(code)
         if method.startswith("get_") and len(signature.args) == 1:
             getters[method[4:]] = (func.findex.value, signature.ret.resolve(code))
-        elif method.startswith("set_") and len(signature.args) == 2:
+        elif (
+            method.startswith("set_")
+            and len(signature.args) == 2
+            and signature.ret.resolve(code) is signature.args[1].resolve(code)
+        ):
+            # A setter returns the value it took; `@:op(A += B) set_add` doesn't.
             setters[method[4:]] = (func.findex.value, signature.args[1].resolve(code))
 
     properties = {}
+    methods = {code.partial_func_name(func) for func in functions}
     for prop in sorted(set(getters) | set(setters)):
+        if prop in methods:
+            continue  # the accessor pair's name is a method's: no property of that name
         getter, setter = getters.get(prop), setters.get(prop)
         typ = getter[1] if getter is not None else setters[prop][1]
         if getter is not None and setter is not None and getter[1] is not setter[1]:
@@ -164,11 +200,8 @@ def _abstract(code: Bytecode, obj: Obj) -> Optional[Abstract]:
             prop, typ, getter[0] if getter is not None else None, setter[0] if setter is not None else None
         )
 
-    module, _, impl = name.rpartition(".")
-    short = impl.lstrip("$")[: -len(IMPL_SUFFIX)]
-    path = f"{module}.{short}" if module else short
     declared = destaticify(name)[: -len(IMPL_SUFFIX)]
-    return Abstract(obj, path, declared, underlying, frozenset(instance), constructor, properties)
+    return Abstract(obj, path, declared, underlying, frozenset(instance), constructor, properties, std)
 
 
 def _index(code: Bytecode) -> _Index:
