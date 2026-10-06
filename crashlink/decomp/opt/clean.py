@@ -1876,8 +1876,14 @@ class IRInterfaceCacheCollapser(TraversingIROptimizer):
             and null_write.expr.const_type == IRConst.ConstType.NULL
         ):
             return None
-        collapsed = self._load_and_fill(value_arm[0], value_arm[1], null_write.target, source)
-        return collapsed.adopt(stmt, null_write) if collapsed is not None else None
+        # An unread conversion may load into a different temp than the null arm clears.
+        load = value_arm[0]
+        temp = load.target if isinstance(load, IRAssign) and isinstance(load.target, IRLocal) else null_write.target
+        collapsed = self._load_and_fill(load, value_arm[1], temp, source)
+        if collapsed is None:
+            return None
+        collapsed.target = null_write.target
+        return collapsed.adopt(stmt, null_write)
 
     def _load_and_fill(
         self, load: IRStatement, fill: IRStatement, temp: IRLocal, source: IRLocal
@@ -1885,15 +1891,15 @@ class IRInterfaceCacheCollapser(TraversingIROptimizer):
         """`t = x.<cache>; if (t == null) { t = x; x.<cache> = t; }` as `t = x`."""
         if not (
             isinstance(load, IRAssign)
-            and load.target is temp
+            and load.target == temp
             and isinstance(load.expr, IRField)
-            and load.expr.target is source
+            and load.expr.target == source
             and isinstance(load.expr.get_type().definition, Virtual)
             and self._is_cache_slot(source, load.expr.field_name)
             and isinstance(fill, IRConditional)
             and isinstance(fill.condition, IRBoolExpr)
             and fill.condition.op == IRBoolExpr.CompareType.NULL
-            and fill.condition.left is temp
+            and fill.condition.left == temp
             and not (fill.false_block and fill.false_block.statements)
             and len(fill.true_block.statements) == 2
         ):
@@ -1901,13 +1907,13 @@ class IRInterfaceCacheCollapser(TraversingIROptimizer):
         convert, store = fill.true_block.statements
         if not (
             isinstance(convert, IRAssign)
-            and convert.target is temp
-            and IRSelfAssignOptimizer._strip_casts(convert.expr) is source
+            and isinstance(convert.target, IRLocal)
+            and IRSelfAssignOptimizer._strip_casts(convert.expr) == source
             and isinstance(store, IRAssign)
             and isinstance(store.target, IRField)
-            and store.target.target is source
+            and store.target.target == source
             and store.target.field_name == load.expr.field_name
-            and store.expr is temp
+            and store.expr == convert.target
         ):
             return None
         return IRAssign(self.func.code, temp, convert.expr).adopt(load, fill, convert, store)
