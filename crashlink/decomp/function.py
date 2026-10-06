@@ -3240,7 +3240,11 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
             if op.op in ("Int", "Float"):
                 try:
                     resolved = op.df["ptr"].resolve(code)
-                    reg_value[dst.value] = str(getattr(resolved, "value", resolved))
+                    literal = getattr(resolved, "value", resolved)
+                    if op.op == "Int":
+                        # a 32-bit pattern above 2^31 (a UInt literal) is not a valid Int in Haxe source
+                        literal = (int(literal) + 0x80000000) % 0x100000000 - 0x80000000
+                    reg_value[dst.value] = str(literal)
                     reg_refs.pop(dst.value, None)
                 except Exception:
                     reg_value.pop(dst.value, None)
