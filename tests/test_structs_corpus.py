@@ -67,12 +67,11 @@ def _run(program: Path) -> str:
     return result.stdout
 
 
-@pytest.fixture
-def exported(tmp_path: Path):
+def _roundtrip(tmp_path: Path, source: str):
     if not shutil.which("haxe") or resolve_hl_runtime() is None:
         pytest.skip("round trips require Haxe and HashLink")
     (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "Main.hx").write_text(MAIN)
+    (tmp_path / "src" / "Main.hx").write_text(source)
     original = tmp_path / "original.hl"
     built = subprocess.run(
         ["haxe", "-cp", str(tmp_path / "src"), "-main", "Main", "-hl", str(original)],
@@ -87,11 +86,61 @@ def exported(tmp_path: Path):
     return original, folder
 
 
-def test_structure_literals_recompile_and_behave_the_same(exported) -> None:
-    original, folder = exported
+def test_structure_literals_recompile_and_behave_the_same(tmp_path: Path) -> None:
+    original, folder = _roundtrip(tmp_path, MAIN)
     # A copy of the object that compiled to the same register does not keep its literal from folding.
     text = (folder / "src" / "Main.hx").read_text()
     start = text.index("function aliased")
     aliased = text[start : text.index("function ", start + 1)]
     assert "cast {}" not in aliased
+    assert _run(folder / "out.hl") == _run(original)
+
+
+GENERICS = """
+interface I<T> { function foo(v:T, w:Int):T; }
+abstract class Base implements I<Int> {
+    public function new() {}
+}
+class Real extends Base {
+    public function foo(v:Int, w:Int):Int return v + w;
+}
+
+class Holder<T> {
+    public var seen:Array<String> = [];
+    public function new() {}
+    public dynamic function onItem(item:T):Void seen.push("base");
+    public function trigger(item:T) onItem(item);
+}
+class Upper extends Holder<String> {
+    override function onItem(item:String):Void seen.push(item.toUpperCase());
+}
+
+class Plain {
+    public var got:String;
+    public function new() {}
+    public dynamic function put(item:String):Void got = item;
+    public function go(item:String) put(item);
+}
+class Loud extends Plain {
+    override function put(item:String):Void got = item + "!";
+}
+
+class Main {
+    static function main() {
+        var r = new Real();
+        var i:I<Int> = r;
+        Sys.println(i.foo(3, 4));
+        var u = new Upper();
+        u.trigger("ho");
+        Sys.println(u.seen);
+        var l = new Loud();
+        l.go("x");
+        Sys.println(l.got);
+    }
+}
+"""
+
+
+def test_generic_interface_and_class_overrides_recompile_and_behave_the_same(tmp_path: Path) -> None:
+    original, folder = _roundtrip(tmp_path, GENERICS)
     assert _run(folder / "out.hl") == _run(original)
