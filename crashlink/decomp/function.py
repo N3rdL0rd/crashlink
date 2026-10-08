@@ -3248,6 +3248,10 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
         reg_global: Dict[int, int] = {}
         pending_new: Dict[int, str] = {}
         empty_array_regs: Set[int] = set()
+        # anonymous-struct literals under construction: reg -> {field: (value, refs)} in write order
+        virtual_builds: Dict[int, Dict[str, Tuple[str, Set[str]]]] = {}
+        # Ref ops taken of a known constant (e.g. the `allowReinterpret` flag of ArrayDyn.alloc)
+        ref_of: Dict[int, int] = {}
         # in-progress array-literal builds: alloc reg -> (declared length, {index: (value, refs)})
         array_builds: Dict[int, Tuple[int, Dict[int, Tuple[str, Set[str]]]]] = {}
         # Packed numeric literals use alloc_bytes + byte-offset stores + ArrayBase.alloc*.
@@ -3259,6 +3263,8 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
             if dst is not None:
                 bytes_builds.pop(dst.value, None)
                 pending_new.pop(dst.value, None)
+                virtual_builds.pop(dst.value, None)
+                ref_of.pop(dst.value, None)
             if (op.op or "").startswith("J") or op.op in ("Switch", "Label", "Trap"):
                 # branchy control flow (e.g. switch-computed initializers): can't safely
                 # track a single value across merge points with a flat linear scan
@@ -3268,6 +3274,8 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                 array_builds.clear()
                 bytes_builds.clear()
                 pending_new.clear()
+                virtual_builds.clear()
+                ref_of.clear()
                 continue
             if op.op in ("Int", "Float"):
                 try:
@@ -3333,9 +3341,33 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                         reg_value[dst.value] = cname
                 except Exception:
                     reg_value.pop(dst.value, None)
+            elif op.op in ("Mov", "ToDyn", "ToSFloat", "ToUFloat", "SafeCast", "UnsafeCast"):
+                # boxing/unboxing and register copies leave the source-level value unchanged
+                src = op.df["src"].value
+                if src in reg_value:
+                    reg_value[dst.value] = reg_value[src]
+                    if src in reg_refs:
+                        reg_refs[dst.value] = reg_refs[src]
+                    else:
+                        reg_refs.pop(dst.value, None)
+                    if src in virtual_builds:
+                        virtual_builds[dst.value] = virtual_builds[src]
+                else:
+                    reg_value.pop(dst.value, None)
+                    reg_refs.pop(dst.value, None)
+                reg_global.pop(dst.value, None)
+            elif op.op == "Ref":
+                ref_of[dst.value] = op.df["src"].value
+                reg_value.pop(dst.value, None)
+                reg_refs.pop(dst.value, None)
             elif op.op == "New":
                 try:
                     typ = entry.regs[dst.value].resolve(code)
+                    if isinstance(typ.definition, Virtual):
+                        virtual_builds[dst.value] = {}
+                        reg_value[dst.value] = "{}"
+                        reg_refs.pop(dst.value, None)
+                        continue
                     if isinstance(typ.definition, Obj):
                         pending_new[dst.value] = destaticify(typ.definition.name.resolve(code))
                 except Exception:
@@ -3502,6 +3534,19 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                     if dst is not None:
                         reg_value.pop(dst.value, None)
                         reg_refs.pop(dst.value, None)
+                elif (
+                    fname_parts == ("hl.types.ArrayDyn", "alloc")
+                    and len(call_arg_regs) == 2
+                    and call_arg_regs[0] in reg_value
+                    and call_arg_regs[1] in ref_of
+                ):
+                    # Array<Dynamic> literal: the second arg is a Ref to the allowReinterpret
+                    # flag; the source value is the literal itself
+                    reg_value[dst.value] = reg_value[call_arg_regs[0]]
+                    if call_arg_regs[0] in reg_refs:
+                        reg_refs[dst.value] = reg_refs[call_arg_regs[0]]
+                    else:
+                        reg_refs.pop(dst.value, None)
                 elif fname_parts is not None and all(a in reg_value for a in call_arg_regs):
                     cname, mname = fname_parts
                     values = [reg_value[a] for a in call_arg_regs]
@@ -3625,6 +3670,16 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                 else:
                     reg_value.pop(dst.value, None)
                     reg_refs.pop(dst.value, None)
+                    # a class's static-holder global used as a value is the class reference itself
+                    try:
+                        gdef = code.global_types[gi].resolve(code).definition
+                        if isinstance(gdef, Obj):
+                            gname = gdef.name.resolve(code)
+                            if gname.rsplit(".", 1)[-1].startswith("$"):
+                                reg_value[dst.value] = destaticify(gname)
+                                reg_refs[dst.value] = {destaticify(gname)}
+                    except Exception:
+                        pass
                 reg_global[dst.value] = gi
             elif op.op == "Field":
                 obj_reg = op.df["obj"].value
@@ -3665,7 +3720,27 @@ def _collect_static_field_inits(code: Bytecode) -> Dict[int, Dict[str, str]]:
                 obj_reg = op.df["obj"].value
                 src_reg = op.df["src"].value
                 gi = reg_global.get(obj_reg)
-                if gi is not None:
+                if obj_reg in virtual_builds:
+                    try:
+                        vdef = entry.regs[obj_reg].resolve(code).definition
+                        fname = op.df["field"].resolve_obj(code, vdef).name.resolve(code)
+                        fields = virtual_builds[obj_reg]
+                        if src_reg in reg_value and reg_value[src_reg] != STATIC_INIT_UNRECOVERABLE:
+                            fields[fname] = (reg_value[src_reg], reg_refs.get(src_reg, set()))
+                            reg_value[obj_reg] = (
+                                "{" + ", ".join(f"{k}: {v[0]}" for k, v in fields.items()) + "}"
+                            )
+                            refs = set()
+                            for v in fields.values():
+                                refs |= v[1]
+                            reg_refs[obj_reg] = refs
+                        else:
+                            reg_value[obj_reg] = STATIC_INIT_UNRECOVERABLE
+                            reg_refs.pop(obj_reg, None)
+                    except Exception:
+                        reg_value[obj_reg] = STATIC_INIT_UNRECOVERABLE
+                        reg_refs.pop(obj_reg, None)
+                elif gi is not None:
                     try:
                         defn = code.global_types[gi].resolve(code).definition
                         if isinstance(defn, Obj):
