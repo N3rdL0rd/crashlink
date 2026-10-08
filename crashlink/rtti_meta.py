@@ -172,7 +172,7 @@ def _scan(code: Bytecode, entry: Function) -> Dict[str, Meta]:
             if name == "Call2" and fname == "$Type.initEnum":
                 holder = values.get(args[1])
                 if (
-                    dst is not None
+                    dst >= 0
                     and isinstance(holder, _TypeRef)
                     and isinstance(holder.type.definition, Enum)
                 ):
