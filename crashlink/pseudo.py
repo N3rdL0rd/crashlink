@@ -584,18 +584,79 @@ def _is_dynamic_int_read(operand: Optional[IRExpression]) -> bool:
     )
 
 
-def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction]) -> List[str]:
+def _null_guarded_ref_source(local: IRLocal, block: IRBlock) -> Optional[IRExpression]:
+    """The nullable value a reference local was made from.
+
+    Passing a `Null<T>` to an optional basic parameter compiles to
+    `r = x == null ? null : new hl.Ref(x)`; source just passes `x`."""
+    for stmt in block.statements:
+        found = _null_guarded_ref_in(local, stmt)
+        if found is not None:
+            return found
+    return None
+
+
+def _null_guarded_ref_in(local: IRLocal, stmt: IRStatement) -> Optional[IRExpression]:
+    if isinstance(stmt, IRConditional):
+        condition = stmt.condition
+        if (
+            isinstance(condition, IRBoolExpr)
+            and condition.op in (IRBoolExpr.CompareType.NULL, IRBoolExpr.CompareType.NOT_NULL)
+            and isinstance(condition.left, IRLocal)
+        ):
+            null_branch, make_branch = stmt.true_block, stmt.false_block
+            if condition.op == IRBoolExpr.CompareType.NOT_NULL:
+                null_branch, make_branch = make_branch, null_branch
+            nulls, makes = null_branch.statements, make_branch.statements
+            if (
+                len(nulls) == 1
+                and isinstance(nulls[0], IRAssign)
+                and nulls[0].target == local
+                and isinstance(nulls[0].expr, IRConst)
+                and nulls[0].expr.const_type == IRConst.ConstType.NULL
+                and makes
+                and isinstance(makes[-1], IRAssign)
+                and makes[-1].target == local
+                and isinstance(makes[-1].expr, IRRefNew)
+            ):
+                # The value it holds is the checked one, possibly through a converting copy.
+                held = makes[-1].expr.target
+                copies = {
+                    s.target.name: s.expr
+                    for s in makes[:-1]
+                    if isinstance(s, IRAssign) and isinstance(s.target, IRLocal)
+                }
+                while isinstance(held, IRLocal) and held.name in copies:
+                    held = copies[held.name]
+                    while isinstance(held, IRCast):
+                        held = held.expr
+                if isinstance(held, IRLocal) and held.name == condition.left.name:
+                    return condition.left
+    for child in stmt.get_children():
+        if isinstance(child, IRBlock):
+            found = _null_guarded_ref_source(local, child)
+            if found is not None:
+                return found
+        elif isinstance(child, IRStatement):
+            found = _null_guarded_ref_in(local, child)
+            if found is not None:
+                return found
+    return None
+
+
+def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction], skip: int = 0) -> List[str]:
     """Rendered arguments of a call. HL passes an optional basic argument as an
     `hl.Ref` (null when omitted); Haxe source leaves an omitted trailing one out, and
     gives a declared basic parameter the value rather than a reference to it."""
-    rendered = [_expression_to_haxe(arg, code, ir_function) for arg in expr.args]
+    call_args = expr.args[skip:]
+    rendered = [_expression_to_haxe(arg, code, ir_function) for arg in call_args]
     if expr.target is None:
         return rendered
     signature = expr.target.get_type().definition
-    if not isinstance(signature, Fun) or len(signature.args) < len(expr.args):
+    if not isinstance(signature, Fun) or len(signature.args) < len(call_args):
         return rendered
-    params = [arg.resolve(code).definition for arg in signature.args[len(signature.args) - len(expr.args) :]]
-    for i, arg in enumerate(expr.args):
+    params = [arg.resolve(code).definition for arg in signature.args[len(signature.args) - len(call_args) :]]
+    for i, arg in enumerate(call_args):
         if not isinstance(arg.get_type().definition, Ref):
             continue
         # A reference made for this call only stands for the value it holds.
@@ -604,12 +665,19 @@ def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction]) 
             defining = _find_defining_assignment(arg.name, ir_function.block)
             if isinstance(defining, IRAssign) and isinstance(defining.expr, IRRefNew):
                 made = defining.expr
-        if isinstance(made, IRRefNew) and isinstance(params[i], Ref):
+        guarded = (
+            _null_guarded_ref_source(arg, ir_function.block)
+            if isinstance(arg, IRLocal) and ir_function is not None and made is arg
+            else None
+        )
+        if guarded is not None and isinstance(params[i], Ref):
+            rendered[i] = _expression_to_haxe(guarded, code, ir_function)
+        elif isinstance(made, IRRefNew) and isinstance(params[i], Ref):
             rendered[i] = _expression_to_haxe(made.target, code, ir_function)
         elif not isinstance(params[i], Ref):
             rendered[i] = f"{rendered[i]}.get()"
     while rendered:
-        last = expr.args[len(rendered) - 1]
+        last = call_args[len(rendered) - 1]
         if not (
             isinstance(last, IRConst)
             and last.const_type == IRConst.ConstType.NULL
@@ -627,13 +695,13 @@ def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction]) 
 
     kept = []
     for i, text in enumerate(rendered):
-        arg = expr.args[i]
+        arg = call_args[i]
         if (
             isinstance(arg, IRConst)
             and arg.const_type == IRConst.ConstType.NULL
             and isinstance(params[i], Ref)
             and all(
-                _basic(params[i]) != disasm.type_name(code, expr.args[j].get_type())
+                _basic(params[i]) != disasm.type_name(code, call_args[j].get_type())
                 for j in range(i + 1, len(rendered))
             )
             and all(_basic(params[i]) != _basic(params[j]) for j in range(i + 1, len(rendered)))
@@ -1326,7 +1394,9 @@ def _expression_to_haxe(
                             f"{obj_str}.{prop_name} = {_expression_to_haxe(rest_args[0], code, ir_function)}"
                         )
                     callee_str = instance_method
-                    args_str = ", ".join(_expression_to_haxe(arg, code, ir_function) for arg in rest_args)
+                    args_str = ", ".join(
+                        _call_args(expr, code, ir_function, skip=len(expr.args) - len(rest_args))
+                    )
                     rendered_call = f"{callee_str}({args_str})"
                     if _call_needs_private_access(expr.target.value, code):
                         return f"(@:privateAccess {rendered_call})"

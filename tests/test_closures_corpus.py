@@ -83,3 +83,23 @@ class Main {
 """
     files, expected, actual = roundtrip(tmp_path, source)
     assert actual == expected
+
+
+def test_nullable_passed_to_an_optional_basic_parameter(tmp_path: Path) -> None:
+    # `get(inull)` compiles to `r = inull == null ? null : new hl.Ref(inull)` then `get(r)`.
+    source = """
+class Main {
+    var inull:Null<Int> = null;
+    var five:Null<Int> = 5;
+    function new() {}
+    function get(a = 2, b = 4.25) return a + "/" + b;
+    function run() {
+        Sys.println(get(inull));
+        Sys.println(get(five));
+        Sys.println(get(five, five));
+    }
+    static function main() new Main().run();
+}
+"""
+    files, expected, actual = roundtrip(tmp_path, source)
+    assert actual == expected
