@@ -1745,9 +1745,15 @@ class IRFunction:
                 if op.op == "ToUFloat" and isinstance(src_local, IRLocal):
                     src_local.is_unsigned = True
 
-                f64_idx = self.code.find_prim_type(Type.Kind.F64)
+                # The conversion yields whatever float kind the destination register holds
+                # (F32 for a Single); typing it F64 would box a Single as a Float.
+                dst_type_idx = self.func.regs[op.df["dst"].value]
+                if dst_type_idx.resolve(self.code).kind.value == Type.Kind.F32.value:
+                    float_idx = dst_type_idx
+                else:
+                    float_idx = self.code.find_prim_type(Type.Kind.F64)
 
-                cast_expr = IRCast(self.code, f64_idx, src_local)
+                cast_expr = IRCast(self.code, float_idx, src_local)
                 block.statements.append(IRAssign(self.code, dst_local, cast_expr))
             elif op.op == "ToDyn" or op.op == "ToVirtual":
                 dst_local = self.locals[op.df["dst"].value]
