@@ -1656,6 +1656,19 @@ def _expression_to_haxe(
         if target_name == "I32" and source_name == "I64":
             # `Int64.low` of an inlined std call: the cast truncates to the low 32 bits.
             return f"{inner}.toInt()" if re.fullmatch(r"\w+", inner) else f"({inner} : hl.I64).toInt()"
+        if target_name in {"I32", "F64", "Bool"} and source_name not in {
+            "I32",
+            "F32",
+            "F64",
+            "I64",
+            "U8",
+            "U16",
+            "Bool",
+        }:
+            # From Dynamic, `Null<T>` or an object this is the run-time conversion (null reads as
+            # zero, a mismatched value throws); an implicit one vanishes in a Dynamic context.
+            haxe_name = {"I32": "Int", "F64": "Float", "Bool": "Bool"}[target_name]
+            return f"cast({inner}, {haxe_name})"
         target_inner = expr.get_type().definition
         if (
             isinstance(target_inner, Null)
@@ -3022,7 +3035,13 @@ def _closure_adapter(
     if entry is None:
         return None
     params, body = entry
-    if not params or body != f"{params[0]}({', '.join(params[1:])})":
+    if not params:
+        return None
+    # A Dynamic argument handed on as a basic type is converted by the adapter itself.
+    forwarded = ", ".join(
+        rf"(?:{re.escape(p)}|cast\({re.escape(p)}, (?:Int|Float|Bool)\))" for p in params[1:]
+    )
+    if not re.fullmatch(re.escape(params[0]) + r"\(" + forwarded + r"\)", body):
         return None
     getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
     return obj_str
