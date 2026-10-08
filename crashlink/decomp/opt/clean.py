@@ -1641,6 +1641,11 @@ class IRDefaultArgumentRecovery(IROptimizer):
                 break
             param, values, const = entry
             assert param.reg_idx is not None  # matched against `regs`
+            # Later splits of the register (a loop carrying the value) share the local's name.
+            old_names = {value.name for value in values}
+            for local in self.func.all_locals:
+                if local.reg_idx == values[0].reg_idx and local.name in old_names:
+                    local.name = param.name
             for value in values:
                 value.name = param.name
             self.func.default_args[param.reg_idx] = (values[0], const)

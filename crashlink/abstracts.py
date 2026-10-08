@@ -147,6 +147,13 @@ def _abstract(code: Bytecode, obj: Obj) -> Optional[Abstract]:
             functions.append(func)
     module, _, impl = name.rpartition(".")
     short = impl.lstrip("$")[: -len(IMPL_SUFFIX)]
+    # A module's main type is never an abstract beside a class of the same name: such an
+    # `_Impl_` is another type's (a private `extern class` of the module keeps that name).
+    owner_module = module.rpartition(".")[2]
+    if owner_module == f"_{short}":
+        main = f"{module.rpartition('.')[0]}.{short}".lstrip(".")
+        if any(isinstance(t.definition, Obj) and t.definition.name.resolve(code) == main for t in code.types):
+            return None
     path = f"{module}.{short}" if module else short
     # The std isn't recompiled from decompiled output; its abstracts keep their API, and
     # the project's code names them by it (`Int64_Impl_.MASK` is `Int64.MASK`).
