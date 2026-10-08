@@ -3522,6 +3522,10 @@ class IRConstructorFolder(TraversingIROptimizer):
         return any(self._expr_uses_local(child, local) for child in expr.get_children())
 
 
+def _mentions_local(stmt: IRStatement, local: IRLocal) -> bool:
+    return stmt == local or any(_mentions_local(child, local) for child in stmt.get_children())
+
+
 class IREnumConstructorFolder(TraversingIROptimizer):
     """Folds `t = EnumAlloc; t.param0 = a; t.param1 = b; ...` into `t = Construct(a, b, ...)`.
 
@@ -3558,6 +3562,16 @@ class IREnumConstructorFolder(TraversingIROptimizer):
                 if construct is not None and construct.params:
                     field_names = [f"param{n}" for n in range(len(construct.params))]
                     collected: Dict[str, IRExpression] = {}
+                    # A field's value may be computed by statements that don't touch the new
+                    # value (a switch reading another enum's parameter): the allocation has no
+                    # effect of its own, so it can wait for them.
+                    first = i + 1
+                    while first < len(stmts) and not _mentions_local(stmts[first], stmt.target):
+                        first += 1
+                    if first > i + 1 and first < len(stmts):
+                        stmts[i:first] = stmts[i + 1 : first] + [stmt]
+                        new_statements.extend(stmts[i : first - 1])
+                        i = first - 1
                     j = i + 1
                     while (
                         j < len(stmts)

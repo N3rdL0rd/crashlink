@@ -617,7 +617,30 @@ def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction]) 
         ):
             break
         rendered.pop()
-    return rendered
+
+    # An omitted optional argument before required ones is left out too, which Haxe resolves
+    # by type; `null` is not accepted for a basic type. Only when no later argument could be
+    # taken for it, i.e. none has the same type.
+    def _basic(param: object) -> str:
+        inner = param.type.resolve(code) if isinstance(param, Ref) else None
+        return disasm.type_name(code, inner) if inner is not None else ""
+
+    kept = []
+    for i, text in enumerate(rendered):
+        arg = expr.args[i]
+        if (
+            isinstance(arg, IRConst)
+            and arg.const_type == IRConst.ConstType.NULL
+            and isinstance(params[i], Ref)
+            and all(
+                _basic(params[i]) != disasm.type_name(code, expr.args[j].get_type())
+                for j in range(i + 1, len(rendered))
+            )
+            and all(_basic(params[i]) != _basic(params[j]) for j in range(i + 1, len(rendered)))
+        ):
+            continue
+        kept.append(text)
+    return kept
 
 
 def _is_untyped_array_access_class(typ: "Type", code: Bytecode) -> bool:
@@ -2778,6 +2801,63 @@ def _inline_closure(
     return f"({', '.join(params[1:])}) -> {body}"
 
 
+def _optional_ref_adapter(helper_ir: IRFunction) -> Optional[List[bool]]:
+    """Whether a helper only passes its optional arguments on to the function it is bound to.
+
+    HashLink passes an optional argument of a basic type through a function type as an
+    `hl.Ref`, so assigning a function value to such a type wraps it in a helper that
+    unboxes each reference (`r != null ? r.get() : null`) and calls the function with the
+    values. Source wrote a function with optional parameters; returns, per forwarded parameter,
+    whether it is one of those."""
+    statements = list(helper_ir.block.statements)
+    if statements and isinstance(statements[-1], IRReturn):
+        last = statements.pop()
+        if isinstance(last.value, IRCall):
+            statements.append(last.value)
+    if not statements or not isinstance(statements[-1], IRCall):
+        return None
+    call = statements.pop()
+    names = [local.name for local in helper_ir.locals]
+    signature = helper_ir.func.type.resolve(helper_ir.code).definition
+    if not isinstance(signature, Fun) or not isinstance(call.target, IRLocal):
+        return None
+    params = names[: len(signature.args)]
+    if len(params) < 2 or call.target.name != params[0]:
+        return None
+    unboxed: Dict[str, str] = {}  # temporary -> the reference parameter it reads
+    for stmt in statements:
+        if not (
+            isinstance(stmt, IRConditional)
+            and isinstance(stmt.condition, IRBoolExpr)
+            and stmt.condition.op == IRBoolExpr.CompareType.NOT_NULL
+            and isinstance(stmt.condition.left, IRLocal)
+            and len(stmt.true_block.statements) == 1
+            and len(stmt.false_block.statements) == 1
+        ):
+            return None
+        read, null = stmt.true_block.statements[0], stmt.false_block.statements[0]
+        if not (isinstance(read, IRAssign) and isinstance(null, IRAssign) and read.target == null.target):
+            return None
+        value = read.expr.expr if isinstance(read.expr, IRCast) else read.expr
+        if not (
+            isinstance(value, IRRefGet)
+            and value.ref == stmt.condition.left
+            and isinstance(null.expr, IRConst)
+            and null.expr.const_type == IRConst.ConstType.NULL
+            and isinstance(read.target, IRLocal)
+        ):
+            return None
+        unboxed[read.target.name] = stmt.condition.left.name
+    forwarded = []
+    for arg in call.args:
+        if not isinstance(arg, IRLocal):
+            return None
+        forwarded.append(unboxed.get(arg.name, arg.name))
+    if forwarded != params[1:]:
+        return None
+    return [name in unboxed.values() for name in params[1:]]
+
+
 def _closure_adapter(
     expr: "IRBoundClosure", obj_str: str, code: Bytecode, ir_function: Optional[IRFunction]
 ) -> Optional[str]:
@@ -2788,6 +2868,13 @@ def _closure_adapter(
     original with the same arguments. The source wrote the function value; Haxe
     adapts it again when the result is recompiled.
     """
+    optional = getattr(ir_function, "_optional_adapters", {}).get(expr.fun.findex.value)
+    if optional is not None:
+        getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
+        names = [f"a{i}" for i in range(len(optional))]
+        params = ", ".join(f"?{n}" if flag else n for n, flag in zip(names, optional))
+        callee = f"({obj_str})" if _is_lambda_text(obj_str) else obj_str
+        return f"({params}) -> {callee}({', '.join(names)})"
     helpers = getattr(ir_function, "_inline_closure_bodies", None)
     entry = helpers.get(expr.fun.findex.value) if helpers else None
     if entry is None:
@@ -5511,16 +5598,21 @@ def _class_body(
     # inlined is only known after the methods render, so the helper emission
     # below consults `inlined`.
     inline_bodies: Dict[int, Tuple[List[str], str]] = {}
+    optional_adapters: Dict[int, List[bool]] = {}
     for findex, helper_ir in helper_irs.items():
         setattr(helper_ir, "_containing_class", ir_class)
         setattr(helper_ir, "_force_static", True)
         setattr(helper_ir, "_anon_name", f"__anon_{findex}")
         body = _closure_inline_body(helper_ir)
+        optional = _optional_ref_adapter(helper_ir) if body is None else None
+        if optional is not None:
+            optional_adapters[findex] = optional
         if body is not None:
             inline_bodies[findex] = body
     inlined: Set[int] = set()
     for ir_func in static_methods + methods:
         setattr(ir_func, "_inline_closure_bodies", inline_bodies)
+        setattr(ir_func, "_optional_adapters", optional_adapters)
         setattr(ir_func, "_inlined_closures", inlined)
 
     # Collect natives, std functions, referenced classes and referenced enums.
