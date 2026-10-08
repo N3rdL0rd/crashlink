@@ -635,6 +635,25 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
 
         return any(walk(s) for blk in blocks for s in blk.statements)
 
+    def _loop_body_writes_operand(self, loop: IRWhileLoop, expr: IRExpression) -> bool:
+        """True if the loop body assigns a local that `expr` reads."""
+        names: Set[str] = set()
+        pending: List[IRStatement] = [expr]
+        while pending:
+            node = pending.pop()
+            if isinstance(node, IRLocal):
+                names.add(node.name)
+            pending.extend(node.get_children())
+        if not names:
+            return False
+        pending = [loop.body]
+        while pending:
+            node = pending.pop()
+            if isinstance(node, IRAssign) and isinstance(node.target, IRLocal) and node.target.name in names:
+                return True
+            pending.extend(node.get_children())
+        return False
+
     def _local_used_outside_condition(
         self,
         local: IRLocal,
@@ -781,6 +800,12 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
                         reassigned_in_branch = isinstance(
                             assigned_local, IRLocal
                         ) and self._local_reassigned_in_conditional(assigned_local, while_loop_stmt)
+                        # A loop condition re-runs every iteration, so an operand the
+                        # body rewrites would be re-read changed (`for (i in 0...t)`
+                        # evaluates its bound once, even when the body then edits `t`).
+                        reassigned_in_branch = reassigned_in_branch or self._loop_body_writes_operand(
+                            while_loop_stmt, expr_to_inline
+                        )
                         if reassigned_in_branch:
                             new_statements.append(current_stmt)
                             i += 1
