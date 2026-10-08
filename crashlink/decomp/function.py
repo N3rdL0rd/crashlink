@@ -584,6 +584,12 @@ class IRFunction:
         }
         if avoid_same_reg:
             existing_names.add(self.locals[reg_idx].name)
+        if defining_op_idx is not None:
+            # A same-named variable in another register still read after this
+            # definition is a distinct live value, not the same source variable.
+            for i, loc in enumerate(self.locals):
+                if i != reg_idx and loc.name == name and self._read_after(i, defining_op_idx):
+                    existing_names.add(name)
         while name in existing_names:
             name = f"{base_name}{suffix}"
             suffix += 1
@@ -600,6 +606,16 @@ class IRFunction:
         # be re-lifted so they pick up the new name.
         self._lift_cache.clear()
         return new_local
+
+    def _read_after(self, reg: int, op_idx: int) -> bool:
+        """True if `reg` is read after `op_idx` before it is next overwritten (linear order)."""
+        for idx in range(op_idx + 1, len(self.ops)):
+            op = self.ops[idx]
+            if reg in _op_reads(op):
+                return True
+            if _op_writes(op) == reg:
+                return False
+        return False
 
     def _has_untracked_reuse(self, reg: int) -> bool:
         """True if register `reg` is written again, after its own first debug-named
@@ -1200,6 +1216,15 @@ class IRFunction:
                     for r in ordered:
                         if r == param_regs[0]:
                             continue
+                        self.locals[r].name = f"{name}{suffix}"
+                        suffix += 1
+                    continue
+                # `a = a.map(f)` builds the result in a new register while the source
+                # register is still read afterwards: two live values, not one variable.
+                suffix = 1
+                for k, r in enumerate(ordered[1:], 1):
+                    start = self._reg_first_assign.get(r)
+                    if start is not None and any(self._read_after(e, start) for e in ordered[:k]):
                         self.locals[r].name = f"{name}{suffix}"
                         suffix += 1
                 continue
