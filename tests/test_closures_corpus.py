@@ -145,3 +145,26 @@ class Main {
 """
     files, expected, actual = roundtrip(tmp_path, source)
     assert actual == expected
+
+
+def test_catch_of_an_interface_keeps_its_type(tmp_path: Path) -> None:
+    # The interface is caught by its class object; losing it makes a later `catch (e:Dynamic)` unreachable.
+    source = """
+interface Marker {}
+class Main {
+    static function main() {
+        var i = try {
+            throw (null : Marker);
+        } catch (s:Marker) {
+            1;
+        } catch (e:Dynamic) {
+            2;
+        }
+        Sys.println(i);
+    }
+}
+"""
+    files, expected, actual = roundtrip(tmp_path, source)
+    assert "catch (e:Marker)" in files["src/Main.hx"]
+    assert "catch (e:Dynamic)" in files["src/Main.hx"]
+    assert actual == expected

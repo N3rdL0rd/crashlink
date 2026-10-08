@@ -2777,7 +2777,8 @@ def _generate_statements(
             if stmt.catch_local:
                 t = disasm.type_name(code, stmt.catch_local.get_type())
                 if t and t != "Dyn":
-                    catch_type = disasm.type_to_haxe(t)
+                    # An interface (or enum) is caught by its class object, `pkg.$Name`.
+                    catch_type = disasm.type_to_haxe(destaticify(t))
             output_lines.append(f"{indent}try {{")
             try_subs = render_subs.copy()
             output_lines.extend(
