@@ -2948,15 +2948,17 @@ def _optional_ref_adapter(helper_ir: IRFunction) -> Optional[List[bool]]:
     values. Source wrote a function with optional parameters; returns, per forwarded parameter,
     whether it is one of those."""
     statements = list(helper_ir.block.statements)
+    call: Optional[IRCall] = None
     if statements and isinstance(statements[-1], IRReturn):
-        last = statements.pop()
+        last = cast(IRReturn, statements.pop())
         if isinstance(last.value, IRCall):
-            statements.append(last.value)
+            call = last.value
         elif last.value is not None:
             return None  # it also converts the return value: more than an argument adapter
-    if not statements or not isinstance(statements[-1], IRCall):
-        return None
-    call = statements.pop()
+    if call is None:
+        if not statements or not isinstance(statements[-1], IRCall):
+            return None
+        call = cast(IRCall, statements.pop())
     names = [local.name for local in helper_ir.locals]
     signature = helper_ir.func.type.resolve(helper_ir.code).definition
     if not isinstance(signature, Fun) or not isinstance(call.target, IRLocal):
