@@ -337,6 +337,7 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
         while f"enumParam{number}" in names:
             number += 1
         local = IRLocal(f"enumParam{number}", field.field_type_idx, self.func.code)
+        local.is_enum_binding = True
         self.func.all_locals.append(local)
         return local
 
