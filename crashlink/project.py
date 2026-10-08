@@ -232,7 +232,11 @@ def layout(code: Bytecode) -> Layout:
             line = _source_file(code, _functions(code, abstract.obj), abstract.name)[1]
             place(package, module, Declaration("abstract", abstract.name, False, abstract.obj, line))
             continue
-        if raw.endswith(abstracts.IMPL_SUFFIX):
+        if raw.endswith(abstracts.IMPL_SUFFIX) and not (
+            _split(_bytecode_name(raw))[1] is not None
+            and (functions := _functions(code, definition))
+            and not _is_std(code, _bytecode_name(raw), functions)
+        ):
             continue  # an std abstract, or one with no members left
         name = _bytecode_name(raw)
         interface = typeinit.interface_of(code, definition)
