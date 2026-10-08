@@ -108,7 +108,9 @@ def test_private_enum_constructor_named_like_enum(tmp_path: Path) -> None:
     modules = {
         "Main.hx": """
 class Main {
+    static var Main:Int = 10;
     static function main() {
+        Sys.println(Main);
         Sys.println(A == A);
         Sys.println(Type.enumConstructor(A));
     }

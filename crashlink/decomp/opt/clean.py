@@ -1270,6 +1270,8 @@ class IRArrayObjBoundsCheckCollapser(TraversingIROptimizer):
             value = self._resolve(value.expr, branch_defs)
         if not isinstance(value, IRArrayAccess):
             return None
+        # Without a cast the element has the type the raw read gave it (a Float array's `F64`).
+        cast_elem_type = cast_elem_type or value.elem_type_idx
 
         if cond.left is None or cond.right is None:
             return None

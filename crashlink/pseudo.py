@@ -1070,7 +1070,7 @@ def _expression_to_haxe(
             # A typed HL static-storage access must stay statically visible to
             # Haxe's DCE; a Dynamic alias can discard the referenced field.
             return _std_private_access(
-                f"{_static_owner_path(code, target_type.definition, type_name, ir_function)}.{expr.field_name}",
+                _static_member_path(code, target_type.definition, type_name, expr.field_name, ir_function),
                 target_type.definition,
                 expr.field_name,
                 code,
@@ -1095,7 +1095,7 @@ def _expression_to_haxe(
             defn = expr.target.value.definition
             if isinstance(defn, Obj):
                 return _std_private_access(
-                    f"{_static_owner_path(code, defn, defn.name.resolve(code), ir_function)}.{expr.field_name}",
+                    _static_member_path(code, defn, defn.name.resolve(code), expr.field_name, ir_function),
                     defn,
                     expr.field_name,
                     code,
@@ -4252,6 +4252,17 @@ def _static_owner_path(code: Bytecode, obj: Obj, name: str, ir_function: Optiona
     abstract's `_Impl_` class, which source can't name."""
     abstract = abstracts.abstract_of(code, obj)
     return _abstract_ref(abstract, code, ir_function) if abstract is not None else destaticify(name)
+
+
+def _static_member_path(
+    code: Bytecode, obj: Obj, name: str, field: str, ir_function: Optional[IRFunction]
+) -> str:
+    """`Owner.field`, or the bare field inside the owner when it is named like the class:
+    `pkg.C.C` reads as the class itself, never the static `C`."""
+    owner = _static_owner_path(code, obj, name, ir_function)
+    if owner.rpartition(".")[2] == field and _containing_class_name(ir_function, code) == owner:
+        return field
+    return f"{owner}.{field}"
 
 
 def _abstract_ref(abstract: abstracts.Abstract, code: Bytecode, ir_function: Optional[IRFunction]) -> str:
