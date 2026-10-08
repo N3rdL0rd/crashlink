@@ -654,6 +654,45 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
             pending.extend(node.get_children())
         return False
 
+    def _read_elsewhere_in_loop(self, block: IRBlock, local: IRLocal, skip: Tuple[IRStatement, ...]) -> bool:
+        """Whether `local` is read, outside the statements in `skip`, anywhere in the outermost
+        loop that contains `block` (false when `block` is not inside a loop)."""
+        loops = (IRWhileLoop, IRPrimitiveLoop, IRForEachLoop, IRIntRangeLoop)
+
+        def find(node: IRStatement, enclosing: Optional[IRStatement]) -> Optional[IRStatement]:
+            if node is block:
+                return enclosing
+            for child in node.get_children():
+                found = find(
+                    child, enclosing if enclosing is not None else (node if isinstance(node, loops) else None)
+                )
+                if found is not None:
+                    return found
+            return None
+
+        loop = find(self.func.block, None)
+        if loop is None:
+            return False
+
+        def reads(node: IRStatement) -> bool:
+            if node in skip:
+                return False
+            if isinstance(node, IRAssign):
+                if isinstance(node.target, (IRField, IRArrayAccess)) and self._expr_contains_local(
+                    node.target, local
+                ):
+                    return True
+                return self._expr_contains_local(node.expr, local) or any(
+                    reads(child)
+                    for child in node.get_children()
+                    if child is not node.target and child is not node.expr
+                )
+            if isinstance(node, IRLocal):
+                return node == local or node.same_register(local)
+            return any(reads(child) for child in node.get_children())
+
+        return reads(loop)
+
     def _local_used_outside_condition(
         self,
         local: IRLocal,
@@ -889,6 +928,13 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
                                     and _ScopedLocalLifetime.kills(s.target, assigned_local)
                                 ):
                                     break
+                        # In a loop, the next iteration reads whatever the body leaves behind: a
+                        # read elsewhere in the loop (its condition, or ahead of this statement)
+                        # keeps the assignment alive (`i = i + 1` feeding `j = i - 1`).
+                        if isinstance(assigned_local, IRLocal) and not used_outside:
+                            used_outside = self._read_elsewhere_in_loop(
+                                block, assigned_local, (current_stmt, assign_next_stmt)
+                            )
                         if used_outside and not self._is_safe_to_duplicate(expr_to_inline, assigned_local):
                             new_statements.append(current_stmt)
                             i += 1

@@ -132,3 +132,38 @@ class Main {
 """
     files, expected, actual = roundtrip(tmp_path, source)
     assert expected.count("note") == 1 and actual == expected
+
+
+def test_loop_counter_feeding_a_string_conversion_keeps_its_increment(tmp_path: Path) -> None:
+    # An iterator class inlined into a loop: `index++` feeds both the element read and a string
+    # conversion; folding the increment into the element read must not drop it from the loop.
+    source = """
+@:generic
+class Item<T> {
+    public var index:Int;
+    public var item:T;
+    public inline function new(index:Int, item:T) {
+        this.index = index;
+        this.item = item;
+    }
+}
+@:generic
+class Indexed<T> {
+    var items:Array<T>;
+    var i:Int = 0;
+    public inline function new(items:Array<T>) this.items = items;
+    public inline function hasNext() return i < items.length;
+    public inline function next() return new Item<T>(i, items[i++]);
+}
+class Main {
+    static function main() {
+        var buf = new StringBuf();
+        for (v in new Indexed<String>(["a", "b", "c"])) buf.add(v.index + ":" + v.item + ",");
+        Sys.println(buf.toString());
+        var n = 0.5;
+        Sys.println("" + n + "," + 2.0);
+    }
+}
+"""
+    files, expected, actual = roundtrip(tmp_path, source)
+    assert actual == expected == "0:a,1:b,2:c,\n0.5,2\n"

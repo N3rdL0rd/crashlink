@@ -4051,7 +4051,13 @@ def _render_string_concat(expr: IRCall, code: Bytecode, ir_function: Optional[IR
             continue
         if anchored and isinstance(operand, IRStringConvert):
             operand = operand.value
-        if anchored and isinstance(operand, IRConst) and not isinstance(operand.value, str):
+        if (
+            anchored
+            and isinstance(operand, IRConst)
+            and not isinstance(operand.value, str)
+            # A float prints differently in source (`0.0`) and as text (`0`).
+            and operand.get_type().kind.value not in (Type.Kind.F32.value, Type.Kind.F64.value)
+        ):
             # A constant that is already being stringified reads better as
             # part of the surrounding text than as an interpolation.
             parts.append(("lit", _expression_to_haxe(operand, code, ir_function)))
