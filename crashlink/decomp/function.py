@@ -256,6 +256,8 @@ _DST_READ_OPS = frozenset({"Setref", "Incr", "Decr"})
 def _op_reads(op: Opcode) -> List[int]:
     """Registers `op` reads (`dst` too for Setref/Incr/Decr)."""
     regs: List[int] = []
+    if op.op == "EndTrap":
+        return regs  # its operand is a placeholder (the trap's handler), not a register
     for key, operand in op.df.items():
         if key == "dst" and op.op not in _DST_READ_OPS:
             continue

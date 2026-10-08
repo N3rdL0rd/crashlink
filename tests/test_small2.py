@@ -67,3 +67,34 @@ class Main {
     }
     _, expected, actual = roundtrip(tmp_path, modules)
     assert actual == expected
+
+
+def test_optional_ref_parameters_called_without_arguments(tmp_path: Path) -> None:
+    modules = {
+        "Main.hx": """
+class Main {
+    function errorTryCatch(pos = 0, length = 100) {
+        try {
+            while (true) {
+                pos += 10;
+                length -= 10;
+                if (length <= 40) throw haxe.io.Error.Blocked;
+            }
+        } catch (e:haxe.io.Error) {
+            log += pos + "," + length + ";";
+        }
+        log += (pos + length) + ";";
+    }
+    var log = "";
+    function new() {}
+    static function main() {
+        var m = new Main();
+        m.errorTryCatch();
+        m.errorTryCatch(5);
+        Sys.println(m.log);
+    }
+}
+"""
+    }
+    _, expected, actual = roundtrip(tmp_path, modules)
+    assert actual == expected
