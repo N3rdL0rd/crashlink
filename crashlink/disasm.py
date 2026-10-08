@@ -415,6 +415,54 @@ def _trace_signature_types(code: Bytecode) -> Tuple[set[int], set[int]]:
     return positions, callbacks
 
 
+_accessor_cache: Dict[int, Tuple[Any, Dict[int, Dict[str, set[str]]]]] = {}
+
+
+def structure_accessors(code: Bytecode) -> Dict[int, Dict[str, set[str]]]:
+    """The properties of structures, by `id` of a structure's definition: `name -> {"get",
+    "set"}` for each field code reaches through `get_name`/`set_name` that the structure
+    lays out no member for. A structure over a property (`var x(get, set)`) holds only `x`;
+    the compiler reads and writes it by calling the accessor dynamically."""
+    cached = _accessor_cache.get(id(code))
+    if cached is not None and cached[0]() is code:
+        return cached[1]
+    found: Dict[int, Dict[str, set[str]]] = {}
+    for func in code.functions:
+        for op in func.ops:
+            if op.op != "DynGet":
+                continue
+            target = func.regs[op.df["obj"].value].resolve(code).definition
+            accessor = op.df["field"].resolve(code)
+            if not isinstance(target, Virtual) or not accessor.startswith(("get_", "set_")):
+                continue
+            names = {f.name.resolve(code) for f in target.fields}
+            if accessor not in names and accessor[4:] in names:
+                found.setdefault(id(target), {}).setdefault(accessor[4:], set()).add(accessor[:3])
+    _accessor_cache[id(code)] = (weakref.ref(code), found)
+    return found
+
+
+def structure_accessor_name(code: Bytecode, target: Type, accessor: str, args: int) -> Optional[str]:
+    """The property a call of `accessor` on a structure reads or writes, when the structure
+    has the property but no accessor member (see `structure_accessors`)."""
+    definition = target.definition
+    if not isinstance(definition, Virtual) or not accessor.startswith(("get_", "set_")):
+        return None
+    if args != (1 if accessor.startswith("set_") else 0):
+        return None
+    prop = structure_accessors(code).get(id(definition), {}).get(accessor[4:])
+    return accessor[4:] if prop is not None and accessor[:3] in prop else None
+
+
+def structure_property_kinds(code: Bytecode) -> Dict[str, set[str]]:
+    """The accessors (`get`, `set`) structures reach each property name through."""
+    kinds: Dict[str, set[str]] = {}
+    for properties in structure_accessors(code).values():
+        for name, accessors in properties.items():
+            kinds.setdefault(name, set()).update(accessors)
+    return kinds
+
+
 _omitted_field_cache: Dict[int, Tuple[Any, Dict[int, set[str]], Dict[int, set[str]]]] = {}
 
 
@@ -532,6 +580,14 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
             if isinstance(definition, Virtual) and not native and is_serializable_virtual(code, definition):
                 return "hxbit.Serializable"
             if isinstance(definition, Virtual) and not native:
+                names = {f.name.resolve(code) for f in definition.fields}
+                if any(n[4:] in names for n in names if n.startswith(("get_", "set_"))):
+                    # A structure can't declare accessor members (they'd be `var x(default, default)`
+                    # beside plain methods): a property is the interface's.
+                    interface = typeinit.interface_of_virtual(code, definition)
+                    if interface is not None:
+                        return type_to_haxe(interface.name)
+                accessors = structure_accessors(code).get(key, {})
                 # An anonymous structure, fields in the order the compiler laid them out.
                 # Function-typed fields are methods (iterators, interfaces): a class's
                 # methods don't satisfy a structure's function-typed vars. HL keeps no
@@ -557,7 +613,10 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                         continue
                     declared.add(name)
                     fdef = ftype.definition
-                    if name in omitted and ftype.kind.value not in _BASIC_KINDS:
+                    if name in accessors and not isinstance(fdef, Fun):
+                        setter = "set" if "set" in accessors[name] else "null"
+                        members.append(f"var {name}(get, {setter}): {render(ftype)};")
+                    elif name in omitted and ftype.kind.value not in _BASIC_KINDS:
                         members.append(f"@:optional var {name}: {render(ftype)};")
                     elif isinstance(fdef, Fun) and name not in stored:
                         params = ", ".join(

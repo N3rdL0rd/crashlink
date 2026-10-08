@@ -78,6 +78,19 @@ def implemented(code: Bytecode, obj: Optional[Obj]) -> List[Interface]:
     return registry(code).implements.get(id(obj), []) if obj is not None else []
 
 
+def interface_of_virtual(code: Bytecode, virtual: Virtual) -> Optional[Interface]:
+    """The interface whose values have the type `virtual`. Interfaces with the same members
+    share one type: the one with most implementors is the widest, which every implementing
+    class can be assigned to."""
+    found: Optional[Interface] = None
+    for interface in registry(code).interfaces.values():
+        if interface.virtual is virtual and (
+            found is None or len(interface.implementors) > len(found.implementors)
+        ):
+            found = interface
+    return found
+
+
 def dynamic_members(code: Bytecode, virtual: Virtual) -> List[str]:
     """Members of an interface's value type that its implementors declare `dynamic`.
 
