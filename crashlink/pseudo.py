@@ -1389,6 +1389,12 @@ def _expression_to_haxe(
                     if prop_name is not None:
                         obj_str = instance_method.rsplit(".", 1)[0]
                         if not rest_args:
+                            if isinstance(expr.get_type().definition, Obj) and disasm.type_name(
+                                code, expr.get_type()
+                            ).startswith("hl.types.Array"):
+                                # The property may be an abstract over an array (`Exception.stack` is
+                                # a `CallStack`); the bytecode only knows the array it wraps.
+                                return f"(cast {obj_str}.{prop_name} : {disasm._haxe_annotation(code, expr.get_type())})"
                             return f"{obj_str}.{prop_name}"
                         return (
                             f"{obj_str}.{prop_name} = {_expression_to_haxe(rest_args[0], code, ir_function)}"
@@ -2723,15 +2729,17 @@ def _generate_statements(
                     try_subs,
                 )
             )
-            # An explicit `:Dynamic` annotation on the catch variable changes
-            # Haxe's codegen (it emits an extra init op, and changes how the
-            # caught value unifies with Dynamic-typed call args) versus
-            # leaving it untyped, even though both infer to the same type —
-            # reproduce whichever the original source used.
-            omit_type = catch_type == "Dynamic" and not stmt.explicit_catch_type
-            catch_decl = catch_name if omit_type else f"{catch_name}:{catch_type}"
+            # An untyped `catch (e)` is `catch (e:haxe.Exception)` since Haxe 4.1, not Dynamic, so the
+            # type is always written; the bytecode differs only by a dead scratch store.
+            catch_decl = f"{catch_name}:{catch_type}"
             output_lines.append(f"{indent}}} catch ({catch_decl}) {{")
-            catch_subs = render_subs.copy()
+            # The catch variable is a fresh binding: a substitution recorded for an earlier
+            # local of the same name (a dead `x = null`) must not replace its reads.
+            catch_subs = {
+                key: value
+                for key, value in render_subs.items()
+                if key.name != catch_name and catch_name not in {local.name for local in value[1]}
+            }
             output_lines.extend(
                 _gen(
                     stmt.catch_block.statements,
@@ -4387,6 +4395,13 @@ def _try_instance_method_call(
         return f"super.{method_name}"
 
     arg_expr_str = _expression_to_haxe(first_arg, code, None)
+    if (
+        isinstance(first_arg, IRCast)
+        and first_arg.expr.get_type().kind.value == Type.Kind.DYN.value
+        and isinstance(first_arg.get_type().definition, Obj)
+    ):
+        # A dynamic value (`Any`) has no fields to call; name the class it is used as.
+        arg_expr_str = f"({arg_expr_str} : {disasm._haxe_annotation(code, first_arg.get_type())})"
     return f"{arg_expr_str}.{method_name}"
 
 

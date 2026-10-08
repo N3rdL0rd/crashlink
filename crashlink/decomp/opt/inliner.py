@@ -1340,6 +1340,15 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 and stmt.target.same_register(local_to_check)
             ):
                 return True
+            if isinstance(stmt, IRTryCatch):
+                # A catch clause binds its variable afresh, which ends any earlier value of it.
+                caught = [stmt.catch_local] + [local for local, _ in stmt.extra_catches]
+                if any(
+                    isinstance(local, IRLocal)
+                    and (local == local_to_check or local.same_register(local_to_check))
+                    for local in caught
+                ):
+                    return True
             for child in stmt.get_children():
                 child_stmts = child.statements if isinstance(child, IRBlock) else [child]
                 if self._is_local_redefined_walk(local_to_check, child_stmts, visited):

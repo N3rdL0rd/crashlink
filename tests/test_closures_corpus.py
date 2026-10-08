@@ -103,3 +103,45 @@ class Main {
 """
     files, expected, actual = roundtrip(tmp_path, source)
     assert actual == expected
+
+
+def test_dynamic_catch_variable_keeps_its_type(tmp_path: Path) -> None:
+    # `catch (e)` is `catch (e:haxe.Exception)`, so a Dynamic catch must be written out.
+    source = """
+class Main {
+    static function main() {
+        try {
+            throw 123;
+        } catch (e:Dynamic) {
+            var n:Int = e;
+            Sys.println(n + 1);
+        }
+        try {
+            throw "x";
+        } catch (e:Dynamic) {
+            Sys.println(Std.string(e) + "!");
+        }
+    }
+}
+"""
+    files, expected, actual = roundtrip(tmp_path, source)
+    assert "catch (" in files["src/Main.hx"] and ":Dynamic)" in files["src/Main.hx"]
+    assert actual == expected
+
+
+def test_exception_stack_and_thrown_wrapper(tmp_path: Path) -> None:
+    # `stack` is a CallStack (an abstract over an array) and `Exception.thrown` returns Any.
+    source = """
+import haxe.CallStack;
+class Main {
+    static function stacks():Array<CallStack> {
+        var result:Array<CallStack> = [];
+        result.push(new haxe.Exception("a").stack);
+        result.push(@:privateAccess (haxe.Exception.thrown("b"):haxe.Exception).stack);
+        return result;
+    }
+    static function main() Sys.println(stacks().length);
+}
+"""
+    files, expected, actual = roundtrip(tmp_path, source)
+    assert actual == expected
