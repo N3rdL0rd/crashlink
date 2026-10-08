@@ -2892,6 +2892,8 @@ def _optional_ref_adapter(helper_ir: IRFunction) -> Optional[List[bool]]:
         last = statements.pop()
         if isinstance(last.value, IRCall):
             statements.append(last.value)
+        elif last.value is not None:
+            return None  # it also converts the return value: more than an argument adapter
     if not statements or not isinstance(statements[-1], IRCall):
         return None
     call = statements.pop()
