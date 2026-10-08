@@ -17,6 +17,8 @@ class Job:
     modules: List[str] = field(default_factory=list)
     features: Tuple[str, ...] = ()
     origin: str = ""  # where the program came from, for the report
+    # Why the original cannot be the oracle (it hits a compiler bug): the program is reported invalid.
+    unreliable: str = ""
 
     def compared_modules(self) -> List[str]:
         return self.modules or [self.class_name]

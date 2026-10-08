@@ -124,7 +124,7 @@ def compile_haxe(source: str, class_name: str, directory: Path) -> tuple[Path, s
     return target, error
 
 
-def normalize_positions(text: str, class_name: str) -> str:
+def normalize_positions(text: str, class_name: str, modules: tuple = ()) -> str:
     """Strip source positions that only encode the module's own layout.
 
     The fixture is compiled from `tests/haxe/<Class>.hx` and the decompiled
@@ -133,13 +133,15 @@ def normalize_positions(text: str, class_name: str) -> str:
     frames (`Called from $C.main(<Class>.hx:12)`) are comparable. Everything
     else — values, messages, frame order, function names — is.
     """
-    module = re.escape(class_name)
-    text = re.sub(rf"(?m)^[^\s:]*{module}\.hx:\d+: ", "", text)
-    return re.sub(rf"[^\s()]*{module}\.hx:\d+", f"{class_name}.hx:?", text)
+    for name in (class_name, *modules):
+        module = re.escape(name)
+        text = re.sub(rf"(?m)^[^\s:]*{module}\.hx:\d+: ", "", text)
+        text = re.sub(rf"[^\s()]*{module}\.hx:\d+", f"{name}.hx:?", text)
+    return text
 
 
 def compare_programs(
-    original: Path, recompiled: Path, class_name: str, timeout: float = 5.0
+    original: Path, recompiled: Path, class_name: str, timeout: float = 5.0, modules: tuple = ()
 ) -> BehavioralComparison:
     runtime = resolve_hl_runtime()
     if not runtime:
@@ -154,8 +156,8 @@ def compare_programs(
             target = Path(tmp) / "program.hl"
             shutil.copyfile(program, target)
             result = execute([runtime, str(target)], tmp, timeout)
-        result.stdout = normalize_positions(result.stdout, class_name)
-        result.stderr = normalize_positions(result.stderr, class_name)
+        result.stdout = normalize_positions(result.stdout, class_name, modules)
+        result.stderr = normalize_positions(result.stderr, class_name, modules)
         observations.append(result)
         # A program that reports a failure is still an observation: fixtures
         # that end in an uncaught exception are precisely where decompiled

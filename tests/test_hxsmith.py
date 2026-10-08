@@ -184,3 +184,12 @@ def test_fix_order_puts_the_fix_that_unblocks_most_programs_first():
     assert order[0] == ("common", 3, 2)
     assert order[1] == ("rare", 3, 2)
     assert [kind for kind, _, _ in order] == ["common", "rare", "other"] and order[2][2] == 1
+
+
+def test_positions_of_the_compared_modules_are_normalised() -> None:
+    from crashtest.behavior import normalize_positions
+
+    text = "a.B.test(unit/issues/Issue1.hx:7)\nsrc/Other.hx:3: x\n"
+    assert normalize_positions(text, "Harness", ("Issue1",)) == "a.B.test(Issue1.hx:?)\nsrc/Other.hx:3: x\n"
+    # Without the module, a different line count in the decompiled source would show up as a difference.
+    assert normalize_positions(text, "Harness") == text

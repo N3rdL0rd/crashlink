@@ -14,6 +14,11 @@ SHIM = Path(__file__).resolve().parent / "shim"
 # Runner plumbing, not test classes.
 _SKIP = {"Test", "TestMain", "TestMainNow", "TestHL", "TestJava", "TestLua", "TestIO", "TestHttps"}
 
+# Tests whose original program is wrong on this runtime, so they cannot judge the decompiler.
+_UNRELIABLE = {
+    "Issue11723": "Haxe issue 11723: the original throws `Can't cast String to i32` where the source is valid",
+}
+
 _HARNESS = """class Harness {{
 	static function main() {{
 		var t = new {fqn}();
@@ -67,4 +72,5 @@ def job_for(case: Case) -> Job:
         classpaths=[str(SHIM), str(case.root)],
         modules=[case.name],
         origin=str(case.path),
+        unreliable=_UNRELIABLE.get(case.name, ""),
     )

@@ -121,6 +121,9 @@ def recompile(files: Dict[str, str], directory: Path) -> Tuple[Path, Optional[st
 def evaluate(job: Job, directory: Path) -> Result:
     """Run every stage in `directory` and return the verdict. Never raises for a bad program."""
     result = Result(job.name, job.class_name, job.features)
+    if job.unreliable:
+        result.invalid = "original is not a reliable oracle: " + job.unreliable
+        return result
     original, error = build_original(job, directory / "original")
     if error:
         result.invalid = "original does not build: " + normalize(error)
@@ -136,7 +139,7 @@ def evaluate(job: Job, directory: Path) -> Result:
     if not obs.decompile_error:
         recompiled, obs.compile_error = recompile(files, directory / "decompiled")
         if not obs.compile_error and not any("decompilation failed" in t for t in files.values()):
-            obs.behavior = compare_programs(original, recompiled, job.class_name)
+            obs.behavior = compare_programs(original, recompiled, job.class_name, modules=tuple(job.modules))
             if obs.behavior.passed:
                 try:
                     obs.similarity, obs.differing = compare(
