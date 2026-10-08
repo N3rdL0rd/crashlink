@@ -4466,6 +4466,8 @@ def _try_instance_method_call(
     ):
         # A dynamic value (`Any`) has no fields to call; name the class it is used as.
         arg_expr_str = f"({arg_expr_str} : {disasm._haxe_annotation(code, first_arg.get_type())})"
+    elif _needs_receiver_parens(arg_expr_str):
+        arg_expr_str = f"({arg_expr_str})"
     return f"{arg_expr_str}.{method_name}"
 
 
@@ -5189,6 +5191,25 @@ def _std_native_value(native: Native, code: Bytecode) -> Optional[str]:
         return None
     ref = f"{api[0]}.{api[1]}"
     return ref if api[3] else f"(@:privateAccess {ref})"
+
+
+def _needs_receiver_parens(text: str) -> bool:
+    """Whether `text` has an operator outside brackets and strings, so `text.member` would bind to
+    its last operand (`"a" + "b".indexOf(..)`)."""
+    if re.match(r"\s*(?:[-!~]|cast\b|new\b)", text):
+        return True
+    depth = 0
+    plain = []
+    for ch in text:
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif depth == 0:
+            plain.append(ch)
+    outside = "".join(plain)
+    outside = re.sub(r"\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'", "", outside)
+    return bool(re.search(r"\s(?:[-+*/%<>=!&|^?:]+|->|is)\s", outside))
 
 
 def _wrap_receiver(text: str) -> str:
