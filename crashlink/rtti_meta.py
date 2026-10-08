@@ -122,7 +122,7 @@ def _scan(code: Bytecode, entry: Function) -> Dict[str, Meta]:
             if name == "Ret":
                 break
             continue  # initialisation blocks are straight-line; branches guard unrelated work
-        dst = df["dst"].value if "dst" in df else None
+        dst = df["dst"].value if "dst" in df else -1
         if name == "String":
             values[dst] = df["ptr"].resolve(code)
         elif name in ("Int", "Float"):
@@ -179,10 +179,10 @@ def _scan(code: Bytecode, entry: Function) -> Dict[str, Meta]:
                     names[dst] = holder.type.definition.name.resolve(code)
                 continue
             if name == "Call3" and fname in ("$Type.initClass", "$Type.initEnum"):
-                if dst is not None and isinstance(values.get(args[2]), str):
+                if dst >= 0 and isinstance(values.get(args[2]), str):
                     names[dst] = values[args[2]]
                 continue
-            if dst is None:
+            if dst < 0:
                 continue
             if fname.endswith("alloc_array") and len(args) == 2 and isinstance(values.get(args[1]), int):
                 values[dst] = [None] * values[args[1]]
@@ -213,7 +213,7 @@ def _scan(code: Bytecode, entry: Function) -> Dict[str, Meta]:
                 if meta:
                     found[names[df["obj"].value]] = meta
         else:
-            if dst is not None:
+            if dst >= 0:
                 values.pop(dst, None)
     return found
 
