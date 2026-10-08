@@ -137,6 +137,8 @@ def normalize_positions(text: str, class_name: str, modules: tuple = ()) -> str:
         module = re.escape(name)
         text = re.sub(rf"(?m)^[^\s:]*{module}\.hx:\d+: ", "", text)
         text = re.sub(rf"[^\s()]*{module}\.hx:\d+", f"{name}.hx:?", text)
+        # A `haxe.StackItem.FilePos` printed as `{file : a/Mod.hx, line : 12, ...}`.
+        text = re.sub(rf"(file : [^,}}]*{module}\.hx, line : )\d+", r"\g<1>?", text)
     return text
 
 
