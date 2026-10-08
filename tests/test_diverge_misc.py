@@ -57,3 +57,29 @@ class Main {
 """
     files, expected, actual = roundtrip(tmp_path, source)
     assert actual == expected
+
+
+def test_number_to_string_conversions_sharing_a_length_cell(tmp_path: Path) -> None:
+    # HL converts a number with `itos`/`ftos`, which write the length into a cell the compiler shares
+    # between conversions and reuses as the input; reading it back as a plain local yields a wrong length.
+    source = """
+class P {
+    public var x:Float;
+    public function new(x:Float) this.x = x;
+    public function toString() return "(" + x + "," + x + ")";
+}
+class Main {
+    static function main() {
+        var t = 5;
+        var s = "";
+        for (i in 0...3) {
+            s += "," + t--;
+        }
+        Sys.println(s);
+        Sys.println(new P(1.5).toString());
+    }
+}
+"""
+    files, expected, actual = roundtrip(tmp_path, source)
+    assert "__alloc__" not in files["src/Main.hx"]
+    assert actual == expected

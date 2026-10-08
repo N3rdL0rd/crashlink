@@ -112,6 +112,7 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
             pending.extend(node.get_children())
 
         private = []
+        prefiltered: List[Tuple[IRBlock, int, IRAssign, IRAssign, IRAssign, Tuple[IRLocal, ...]]] = []
         for block, index, reference, conversion, allocation in candidates:
             if any(
                 occurrences[id(node)] != 1 for node in (reference, conversion, allocation, reference.expr)
@@ -126,8 +127,26 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
                 for right in (*scratch[pos + 1 :], allocation.target)
             ):
                 continue
-            if all(lifetime.dead_after(block, index, local) for local in scratch):
-                private.append((block, index, reference, conversion, allocation))
+            prefiltered.append((block, index, reference, conversion, allocation, scratch))
+
+        # A cell register is often shared by several conversions and by the loop around them
+        # (`itos(n, &n)`, or one `len` for two `x + "," + y`). A conversion's own statements are
+        # removed with it, so reads they make do not keep the cell alive; iterate because
+        # rejecting one conversion puts its reads back.
+        while True:
+            ignorable: Set[int] = set()
+            for block, _, reference, conversion, allocation, _ in prefiltered:
+                for stmt in (reference, conversion, allocation):
+                    self._collect_ids(stmt, ignorable)
+            kept = [
+                c
+                for c in prefiltered
+                if all(self._scratch_dead(lifetime, c[0], c[1], local, ignorable) for local in c[5])
+            ]
+            if len(kept) == len(prefiltered):
+                break
+            prefiltered = kept
+        private = [c[:5] for c in prefiltered]
 
         # A prior escaped address can observe later writes, even after the ref
         # register itself is reused. Every address of scratch storage must belong
@@ -159,6 +178,62 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
             removals[id(block)][1].update((id(reference), id(conversion)))
         for block, removed in removals.values():
             block.statements = [stmt for stmt in block.statements if id(stmt) not in removed]
+
+    @staticmethod
+    def _collect_ids(node: IRStatement, out: Set[int]) -> None:
+        if id(node) in out:
+            return
+        out.add(id(node))
+        for child in node.get_children():
+            IRStringIntConcatOptimizer._collect_ids(child, out)
+
+    def _scratch_dead(
+        self, lifetime: _ScopedLocalLifetime, block: IRBlock, index: int, local: IRLocal, ignorable: Set[int]
+    ) -> bool:
+        """Whether `local` holds nothing a later statement reads after the conversion at `index`.
+
+        Either the lifetime analysis proves it, or the register is a temporary of this block:
+        every mention is in the block, the first is a write (or all belong to the conversions
+        being folded), and none follows the conversion
+        (so a loop around the block starts each iteration with a fresh value)."""
+        if lifetime.dead_after(block, index, local):
+            return True
+
+        def mentions(node: IRStatement) -> bool:
+            if id(node) in ignorable:
+                return False
+            if isinstance(node, IRUnliftedOpcode):
+                return True
+            if isinstance(node, IRLocal):
+                return lifetime.aliases(node, local)
+            return any(mentions(child) for child in node.get_children())
+
+        def outside(node: IRStatement) -> bool:
+            if node is block:
+                return False
+            if isinstance(node, IRBlock):
+                return any(outside(stmt) for stmt in node.statements)
+            if isinstance(node, IRLocal):
+                return lifetime.aliases(node, local)
+            if isinstance(node, IRUnliftedOpcode):
+                return True
+            return any(outside(child) for child in node.get_children())
+
+        if outside(self.func.block):
+            return False
+        statements = block.statements
+        if any(mentions(stmt) for stmt in statements[index + 1 :]):
+            return False
+        for stmt in statements[: index + 1]:
+            if (
+                isinstance(stmt, IRAssign)
+                and isinstance(stmt.target, IRLocal)
+                and lifetime.aliases(stmt.target, local)
+            ):
+                return not mentions(stmt.expr)
+            if mentions(stmt):
+                return False
+        return True  # only statements that go away with the conversions touch it
 
     def _candidates(self, block: IRBlock):
         statements = block.statements
