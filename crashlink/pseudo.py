@@ -709,12 +709,15 @@ def _resolve_array_access(
     return arr_str, idx_str, None
 
 
+_ARRAY_WRAPPERS = frozenset({"hl.types.ArrayObj", "hl.types.ArrayDyn"})
+
+
 def _erased_array_into_typed(value_str: str, value: IRExpression, code: Bytecode) -> str:
     """`cast` an array whose element type was erased (`Array<Dynamic>`) before it is stored in an
     `Array<T>` declaration: Haxe does not convert between the two implicitly."""
     if value_str.startswith("cast ") or not isinstance(value, (IRCall, IREnumField, IRLocal)):
         return value_str
-    if isinstance(value, IRLocal) and value.array_elem_type is not None:
+    if isinstance(value, IRLocal) and value.array_elem_type is not None and not value.is_enum_binding:
         return value_str
     if disasm._haxe_annotation(code, value.get_type()) != "Array<Dynamic>":
         return value_str
@@ -1179,8 +1182,26 @@ def _expression_to_haxe(
         if isinstance(enum_def, Enum):
             construct_name = f"{destaticify(disasm._enum_name(code, enum_def))}.{construct_name}"
         if expr.args:
-            args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.args)
-            return f"{construct_name}({args_str})"
+            params: List[Any] = []
+            if isinstance(enum_def, Enum):
+                params = next(
+                    (c.params for c in enum_def.constructs if c.name.resolve(code) == expr.construct_name), []
+                )
+            rendered_args = []
+            for i, a in enumerate(expr.args):
+                arg = _expression_to_haxe(a, code, ir_function)
+                if (
+                    i < len(params)
+                    and params[i].resolve(code).kind.value == Type.Kind.DYN.value
+                    and a.get_type().kind.value != Type.Kind.DYN.value
+                    and arg != "null"
+                ):
+                    # A generic constructor's parameter is erased to Dynamic; Haxe would infer the
+                    # argument's own type (`Option<Int>`) for the value, which the erased `Option<Dynamic>`
+                    # signatures it is passed to and returned from do not accept.
+                    arg = f"({arg} : Dynamic)"
+                rendered_args.append(arg)
+            return f"{construct_name}({', '.join(rendered_args)})"
         return construct_name
 
     elif isinstance(expr, IREnumIndex):
@@ -1542,6 +1563,10 @@ def _expression_to_haxe(
                 for name, value in expr.expr.fields
             )
             return f"({inner} : {{ {members} }})"
+        if target_name in _ARRAY_WRAPPERS and source_name in _ARRAY_WRAPPERS:
+            # ArrayObj/ArrayDyn are one Haxe `Array<T>`; the element type comes from the context,
+            # and `(cast x : Array<Dynamic>)` would pin it to Dynamic.
+            return inner
         if (
             isinstance(target_def, Obj)
             and (

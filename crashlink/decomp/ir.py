@@ -270,6 +270,9 @@ class IRLocal(IRExpression):
         # IRNativeMapNew), so this records the recovered Haxe class name for
         # the declared-type renderer to use instead of the generic Abstract.
         self.native_map_class: Optional[str] = None
+        # Set for the local a `case C(x)` pattern binds: it holds the enum constructor's own
+        # (erased) parameter type, whatever element type later usage recovered for it.
+        self.is_enum_binding: bool = False
         # Set when this I32 local feeds a `ToUFloat` conversion: HL has no
         # separate UInt register kind (it's an I32 like Int), so this is the
         # only signal that the source used `UInt` rather than `Int` — without
