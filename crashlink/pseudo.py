@@ -1425,6 +1425,7 @@ def _expression_to_haxe(
             callee_str = f"({callee_str})"
         elif (
             expr.call_type == IRCall.CallType.CLOSURE
+            and expr.target is not None
             and callee_str.startswith("new ")
             and isinstance(expr.target.get_type().definition, Fun)
         ):
@@ -4309,6 +4310,17 @@ def _render_abstract_call_raw(
     return f"{receiver}{member}"
 
 
+#: Private abstracts of the std that source can't name, by the public property of their
+#: module's main abstract that gives one: `new Access(xml).has` is the `HasAttribAccess`.
+_PRIVATE_STD_ABSTRACT_PROPERTIES = {
+    "haxe.xml._Access.NodeAccess": ("haxe.xml.Access", "node"),
+    "haxe.xml._Access.AttribAccess": ("haxe.xml.Access", "att"),
+    "haxe.xml._Access.HasAttribAccess": ("haxe.xml.Access", "has"),
+    "haxe.xml._Access.HasNodeAccess": ("haxe.xml.Access", "hasNode"),
+    "haxe.xml._Access.NodeListAccess": ("haxe.xml.Access", "nodes"),
+}
+
+
 def _abstract_receiver(
     value: IRExpression,
     rendered: str,
@@ -4337,6 +4349,10 @@ def _abstract_receiver(
         and value.target.value.findex.value == abstract.constructor
     ):
         return f"{rendered}."
+    public = _PRIVATE_STD_ABSTRACT_PROPERTIES.get(abstract.path)
+    if public is not None:
+        owner, prop = public
+        return f"new {owner}({rendered}).{prop}."
     type_args = abstract.type_args
     if type_args == "<Dynamic>":
         # A one-parameter std abstract over an array (`Rest<T>`) takes its element type

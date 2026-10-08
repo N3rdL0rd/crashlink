@@ -121,3 +121,21 @@ class Main {
     }
     _, expected, actual = roundtrip(tmp_path, modules)
     assert actual == expected
+
+
+def test_private_std_abstract_is_reached_through_its_public_property(tmp_path: Path) -> None:
+    # `access.has.attr` inlines to a call of the private `HasAttribAccess.resolve`, a type source can't name.
+    modules = {
+        "Main.hx": """
+class Main {
+    static function main() {
+        var access = new haxe.xml.Access(Xml.parse('<node attr="1"/>').firstElement());
+        Sys.println(access.has.attr);
+        Sys.println(access.has.attra);
+        Sys.println(access.att.attr);
+    }
+}
+"""
+    }
+    _, expected, actual = roundtrip(tmp_path, modules)
+    assert actual == expected
