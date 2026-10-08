@@ -409,6 +409,27 @@ def _name_privates_locally(modules: List[Module], files: Dict[str, str]) -> None
         files[file] = disasm.outside_literals(files[file], lambda chunk: pattern.sub(r"\1", chunk))
 
 
+def _name_shadowing_constructors(modules: List[Module], files: Dict[str, str], code: Bytecode) -> None:
+    """Inside its own module, a constructor named like its enum (`enum A { A; }`) shadows the
+    type: `A.A` reads `A` as the constructor and finds no field, while a bare `A` is the
+    constructor. Other modules name it through the type."""
+    for module in modules:
+        names = []
+        for declaration in module.declarations:
+            definition = declaration.definition
+            if isinstance(definition, Enum) and any(
+                disasm.enum_construct_name(code, definition, i) == declaration.name
+                for i in range(len(definition.constructs))
+            ):
+                names.append(declaration.name)
+        if not names:
+            continue
+        prefix = rf"(?:{re.escape(module.dotted)}\.)?" if module.package else ""
+        pattern = re.compile(r"(?<![\w.])" + prefix + r"(" + "|".join(map(re.escape, names)) + r")\.\1(?!\w)")
+        file = f"src/{module.path}"
+        files[file] = disasm.outside_literals(files[file], lambda chunk: pattern.sub(r"\1", chunk))
+
+
 def export(
     code: Bytecode,
     stubs: bool = False,
@@ -431,6 +452,7 @@ def export(
     _qualify_shadowed_std(modules, files)
     _publish_named_privates(modules, files)
     _name_privates_locally(modules, files)
+    _name_shadowing_constructors(modules, files, code)
     for name, text in externs.declarations(code).items():
         if f"src/{name}.hx" in files:
             raise ValueError(f"the image declares a type {name!r}, which the project's externs need")

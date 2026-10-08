@@ -1164,7 +1164,7 @@ def _expression_to_haxe(
             # A typed HL static-storage access must stay statically visible to
             # Haxe's DCE; a Dynamic alias can discard the referenced field.
             return _std_private_access(
-                f"{_static_owner_path(code, target_type.definition, type_name, ir_function)}.{expr.field_name}",
+                _static_member_path(code, target_type.definition, type_name, expr.field_name, ir_function),
                 target_type.definition,
                 expr.field_name,
                 code,
@@ -1189,7 +1189,7 @@ def _expression_to_haxe(
             defn = expr.target.value.definition
             if isinstance(defn, Obj):
                 return _std_private_access(
-                    f"{_static_owner_path(code, defn, defn.name.resolve(code), ir_function)}.{expr.field_name}",
+                    _static_member_path(code, defn, defn.name.resolve(code), expr.field_name, ir_function),
                     defn,
                     expr.field_name,
                     code,
@@ -1302,7 +1302,13 @@ def _expression_to_haxe(
     elif isinstance(expr, IREnumField):
         inner = _expression_to_haxe(expr.value, code, ir_function)
         index = int(expr.field_name.removeprefix("param"))
-        return f"Type.enumParameters({inner})[{index}]"
+        raw = f"Type.enumParameters({inner})[{index}]"
+        # The parameter list is Array<Dynamic>; give the read back the field's own type, or an
+        # expression such as `a[0] + param[0]` is typed as Dynamic arithmetic (Float).
+        annotation = disasm._haxe_annotation(code, expr.get_type())
+        if annotation in ("Dynamic", "Array<Dynamic>", "Void") or "<" in annotation.split("Array<", 1)[0]:
+            return raw
+        return f"({raw} : {annotation})"
 
     elif isinstance(expr, IRInlineCall):
         args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.args)
@@ -1318,6 +1324,14 @@ def _expression_to_haxe(
             partial = code.partial_func_name(func)
             # Rewrite String.__add__ to Haxe's + operator (or interpolation).
             if _is_std_function(func, code) and partial == "__add__" and len(expr.args) == 2:
+                if code.full_func_name(func) == "$Std.__add__":
+                    # Dynamic addition: the result stays Dynamic even with a String operand, so
+                    # keep one side Dynamic or Haxe types `"4" + b` as String at its use.
+                    left, right = expr.args
+                    left_str = _expression_to_haxe(left, code, ir_function)
+                    if left.get_type().kind.value != Type.Kind.DYN.value:
+                        left_str = f"({left_str} : Dynamic)"
+                    return f"({left_str} + {_expression_to_haxe(right, code, ir_function)})"
                 rendered = _render_string_concat(expr, code, ir_function)
                 if rendered is not None:
                     return rendered
@@ -4455,6 +4469,17 @@ def _static_owner_path(code: Bytecode, obj: Obj, name: str, ir_function: Optiona
     abstract's `_Impl_` class, which source can't name."""
     abstract = abstracts.abstract_of(code, obj)
     return _abstract_ref(abstract, code, ir_function) if abstract is not None else destaticify(name)
+
+
+def _static_member_path(
+    code: Bytecode, obj: Obj, name: str, field: str, ir_function: Optional[IRFunction]
+) -> str:
+    """`Owner.field`, or the bare field inside the owner when it is named like the class:
+    `pkg.C.C` reads as the class itself, never the static `C`."""
+    owner = _static_owner_path(code, obj, name, ir_function)
+    if owner.rpartition(".")[2] == field and _containing_class_name(ir_function, code) == owner:
+        return field
+    return f"{owner}.{field}"
 
 
 def _abstract_ref(abstract: abstracts.Abstract, code: Bytecode, ir_function: Optional[IRFunction]) -> str:
