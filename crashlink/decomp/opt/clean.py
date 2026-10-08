@@ -382,6 +382,25 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
             required, deferred = self._split_condition_setup(setup, exit_condition)
             if any(not isinstance(stmt, IRAssign) or _has_observable_effects(stmt.expr) for stmt in deferred):
                 return None
+            # The original ran this setup before every test, including the one that
+            # exits (and the first one). Skipping it on that pass is only invisible
+            # when nothing after the loop can observe what it stored.
+            live_after = self._loop_live_out.get(id(loop), set()) | self._catch_reads
+            if any(
+                not isinstance(cast(IRAssign, stmt).target, IRLocal)
+                or cast(IRLocal, cast(IRAssign, stmt).target).name in live_after
+                for stmt in deferred
+            ):
+                return None
+            # Folding a temp into the condition deletes its store, so no later
+            # statement of the iteration may still read it.
+            for stmt in required:
+                target = cast(IRAssign, stmt).target
+                for later in list(deferred) + body_statements:
+                    if self._statement_reads_target(later, target):
+                        return None
+                    if isinstance(later, IRAssign) and later.target == target:
+                        break
             if required:
                 folded = self._fold_condition_setup(loop, required, exit_condition)
                 if folded is None:
