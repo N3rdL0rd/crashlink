@@ -299,8 +299,9 @@ def _render(code: Bytecode, declaration: Declaration, stubs: bool, externs: "pse
 
     definition = declaration.definition
     if isinstance(definition, Enum):
-        text = pseudo._enum_pseudo(definition, code, name=declaration.name)
-        return f"private {text}" if declaration.private else text
+        return pseudo._enum_pseudo(
+            definition, code, name=declaration.name, private="private " if declaration.private else ""
+        )
     target = pseudo.ModuleDeclaration(declaration.name, declaration.private, externs)
     if stubs:
         return pseudo._stub_class(code, definition, target)

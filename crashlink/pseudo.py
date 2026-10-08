@@ -32,7 +32,7 @@ from .core import (
     Null,
 )
 from . import disasm
-from . import abstracts, hxbit, hxsl, typeinit
+from . import abstracts, rtti_meta, hxbit, hxsl, typeinit
 from .std_types import STD_TYPES
 from .decomp import (
     STATIC_INIT_UNRECOVERABLE,
@@ -243,6 +243,25 @@ def _basic_type_globals(code: Bytecode) -> Dict[int, str]:
                 found[df["global"].value] = typed_objs[df["src"].value]
     _basic_type_globals_cache[id(code)] = (weakref.ref(code), found)
     return found
+
+
+def _rtti_type_meta(code: Bytecode, name: str) -> str:
+    """`@a @b(1) ` for the runtime metadata of the type registered as `name`."""
+    meta = rtti_meta.for_type(code, destaticify(name).lstrip("$"))
+    return rtti_meta.render_entries(meta.type) if meta is not None else ""
+
+
+def _rtti_member_meta(code: Bytecode, owner: Optional[Obj], member: str, static: bool) -> str:
+    """Runtime metadata of a field or method of the class `owner` (either half)."""
+    if owner is None:
+        return ""
+    meta = rtti_meta.for_type(code, destaticify(owner.name.resolve(code)).lstrip("$"))
+    if meta is None:
+        return ""
+    if not static and member in ("new", "__constructor__"):
+        member = "_"  # the constructor's metadata is kept under `_`
+    table = (meta.statics if static else meta.fields).get(member)
+    return rtti_meta.render_entries(table) if table else ""
 
 
 def _struct_meta(obj: Optional[Obj]) -> str:
@@ -3304,7 +3323,12 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     inline_kw = (
         "inline " if containing is not None and not is_dynamic and is_inline_template(code, func_core) else ""
     )
-    func_header = f"{access_kw}{static_kw}{override_kw}{inline_kw}function {func_name_str}({params_joined_str}){ret_decl} {{"
+    member_meta = (
+        _rtti_member_meta(code, getattr(containing, "dynamic", None), func_name_str, "static" in static_kw)
+        if containing is not None
+        else ""
+    )
+    func_header = f"{member_meta}{access_kw}{static_kw}{override_kw}{inline_kw}function {func_name_str}({params_joined_str}){ret_decl} {{"
     output_lines.append(func_header)
 
     initial_declared_vars = {p.split(":")[0].strip().lstrip("?") for p in params_str_list}
@@ -5488,22 +5512,29 @@ def _collect_referenced_enums(root: IRStatement, code: Bytecode) -> Dict[str, "E
     return {destaticify(disasm._enum_name(code, definition)): definition for definition in enums.values()}
 
 
-def _enum_pseudo(enum_def: "Enum", code: Bytecode, name: Optional[str] = None) -> str:
+def _enum_pseudo(enum_def: "Enum", code: Bytecode, name: Optional[str] = None, private: str = "") -> str:
     """Generate a Haxe enum declaration from a HashLink Enum definition."""
     if name is None:
         name = destaticify(disasm._enum_name(code, enum_def))
-    lines = [f"enum {name} {{"]
+    enum_meta = rtti_meta.for_type(code, enum_def.name.resolve(code)) if enum_def.name.value else None
+    type_meta = rtti_meta.render_entries(enum_meta.type) if enum_meta is not None else ""
+    lines = [f"{type_meta}{private}enum {name} {{"]
     for index, construct in enumerate(enum_def.constructs):
         cname = disasm.enum_construct_name(code, enum_def, index)
+        member_meta = (
+            rtti_meta.render_entries(enum_meta.fields[cname])
+            if enum_meta is not None and enum_meta.fields.get(cname)
+            else ""
+        )
         params = []
         for i, pidx in enumerate(construct.params):
             ptype = pidx.resolve(code)
             ptype_name = disasm._haxe_annotation(code, ptype)
             params.append(f"arg{i}: {ptype_name}")
         if params:
-            lines.append(f"    {cname}({', '.join(params)});")
+            lines.append(f"    {member_meta}{cname}({', '.join(params)});")
         else:
-            lines.append(f"    {cname};")
+            lines.append(f"    {member_meta}{cname};")
     lines.append("}")
     return "\n".join(lines)
 
@@ -5637,13 +5668,14 @@ def _interface_pseudo(code: Bytecode, interface: typeinit.Interface, name: str, 
         member.name.resolve(code) for parent in interface.parents for member in parent.virtual.fields
     }
     extends = "".join(f" extends {disasm.type_to_haxe(parent.name)}" for parent in interface.parents)
-    lines = [f"{private}interface {name}{extends} {{"]
+    lines = [f"{_rtti_type_meta(code, interface.name)}{private}interface {name}{extends} {{"]
     for member in interface.virtual.fields:
         member_name = member.name.resolve(code)
         if member_name in inherited:
             continue
         member_type = member.type.resolve(code)
         signature = member_type.definition
+        lines_before = len(lines)
         if isinstance(signature, Fun):
             implementation = _implementation(code, interface, member_name)
             defaults = default_arg_regs(code, implementation) if implementation is not None else {}
@@ -5670,6 +5702,9 @@ def _interface_pseudo(code: Bytecode, interface: typeinit.Interface, name: str, 
             lines.append(f"    var {member_name}{access}: {disasm._haxe_annotation(code, member_type)};")
         else:
             lines.append(f"    var {member_name}: {disasm._haxe_annotation(code, member_type)};")
+        member_meta = _rtti_member_meta(code, interface.obj, member_name, False)
+        if member_meta and len(lines) > lines_before:
+            lines[lines_before] = f"    {member_meta}{lines[lines_before].lstrip()}"
     lines.append("}")
     return disasm.source_paths("\n".join(lines))
 
@@ -5754,7 +5789,7 @@ def _class_body(
     output_lines: List[str] = []
     indent_str = _indent_str(1)
 
-    header = f"{_struct_meta(primary_obj)}{private}class {declared}"
+    header = f"{_rtti_type_meta(code, primary_obj.name.resolve(code)) if primary_obj is not None else ''}{_struct_meta(primary_obj)}{private}class {declared}"
     abstract = abstracts.abstract_of(code, primary_obj)
     if abstract is not None:
         header = private + abstract.header(code, declared if module is not None else None)
@@ -5910,7 +5945,7 @@ def _class_body(
                 init_str = f" = {init}" if init is not None else ""
                 comment = ""
             output_lines.append(
-                f"{indent_str}public static var {field_name}: {field_type_haxe}{init_str};{comment}"
+                f"{indent_str}{_rtti_member_meta(code, ir_class.dynamic, field_name, True)}public static var {field_name}: {field_type_haxe}{init_str};{comment}"
             )
         output_lines.append("")
 
@@ -5923,6 +5958,7 @@ def _class_body(
                     elem_haxe = disasm._haxe_annotation(code, elem_types[field_name])
                     field_type_haxe = f"Array<{elem_haxe}>"
             meta = "@:s " if serializable is not None and field_name in serializable.fields else ""
+            meta += _rtti_member_meta(code, ir_class.dynamic, field_name, False)
             if isinstance(field_type.definition, Packed):
                 meta += "@:packed "
             output_lines.append(
@@ -6384,7 +6420,7 @@ def _stub_class(code: Bytecode, primary: Obj, module: Optional[ModuleDeclaration
         return _interface_pseudo(code, interface, class_name, private)
 
     lines: List[str] = []
-    header = f"{_struct_meta(dynamic)}{private}class {class_name}"
+    header = f"{_rtti_type_meta(code, dynamic.name.resolve(code)) if dynamic is not None else ''}{_struct_meta(dynamic)}{private}class {class_name}"
     if dynamic is not None and dynamic.super and dynamic.super.value > 0:
         super_def = dynamic.super.resolve(code).definition
         if isinstance(super_def, Obj):

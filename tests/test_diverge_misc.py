@@ -101,3 +101,34 @@ class Main {
 """
     files, expected, actual = roundtrip(tmp_path, source)
     assert actual == expected == "hellohello\n"
+
+
+def test_runtime_metadata_is_recovered(tmp_path: Path) -> None:
+    # `@name(args)` without a colon is kept in the image (`hl.BaseType.__meta__`) and read by Meta.
+    source = """
+@note("hi", 3) @flag
+class Main {
+    @field(-4) public var v:Int = 0;
+    @sfield([1, {a: "b"}]) public static var s:Int = 0;
+    @ctor public function new() {}
+    @mthd static function m() {}
+    static function main() {
+        var show = function(o:Dynamic) {
+            var names = Reflect.fields(o);
+            names.sort(Reflect.compare);
+            return names.map(n -> n + "=" + haxe.Json.stringify(Reflect.field(o, n))).join(";");
+        };
+        Sys.println(show(haxe.rtti.Meta.getType(Main)));
+        Sys.println(show(haxe.rtti.Meta.getFields(Main)));
+        Sys.println(show(haxe.rtti.Meta.getStatics(Main)));
+        Sys.println(show(haxe.rtti.Meta.getType(E)));
+        Sys.println(show(haxe.rtti.Meta.getFields(E)));
+    }
+}
+@etype enum E {
+    @one A;
+    @two(5) B;
+}
+"""
+    files, expected, actual = roundtrip(tmp_path, source)
+    assert expected.count("note") == 1 and actual == expected
