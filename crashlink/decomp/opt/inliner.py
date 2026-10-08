@@ -1246,6 +1246,10 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             if stmt.value:
                 stmt.value, changed = self._substitute_in_expr(stmt.value, target, replacement)
                 made_change = made_change or changed
+        elif isinstance(stmt, IRThrow):
+            # The thrown value is a direct child: a root-equal local can't be replaced by a child walk.
+            stmt.value, changed = self._substitute_in_expr(stmt.value, target, replacement)
+            made_change = made_change or changed
         elif isinstance(stmt, IRRefSet):
             stmt.ref, changed = self._substitute_in_expr(stmt.ref, target, replacement)
             made_change = made_change or changed
@@ -1298,6 +1302,10 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             if stmt.value:
                 stmt.value, changed = self._substitute_in_expr(stmt.value, target, replacement)
                 made_change = made_change or changed
+        elif isinstance(stmt, IRThrow):
+            # The thrown value is a direct child: a root-equal local can't be replaced by a child walk.
+            stmt.value, changed = self._substitute_in_expr(stmt.value, target, replacement)
+            made_change = made_change or changed
         elif isinstance(stmt, IRRefSet):
             stmt.ref, changed = self._substitute_in_expr(stmt.ref, target, replacement)
             made_change = made_change or changed

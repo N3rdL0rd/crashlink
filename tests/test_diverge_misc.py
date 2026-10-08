@@ -83,3 +83,21 @@ class Main {
     files, expected, actual = roundtrip(tmp_path, source)
     assert "__alloc__" not in files["src/Main.hx"]
     assert actual == expected
+
+
+def test_value_thrown_from_a_try_keeps_its_definition(tmp_path: Path) -> None:
+    # `a` is read by the `throw` and again after it; folding the constant into one use must not drop `a`.
+    source = """
+class Main {
+    static function main() {
+        var a = "hello";
+        try {
+            throw a;
+        } catch (e:String) {
+            Sys.println(e + a);
+        }
+    }
+}
+"""
+    files, expected, actual = roundtrip(tmp_path, source)
+    assert actual == expected == "hellohello\n"
