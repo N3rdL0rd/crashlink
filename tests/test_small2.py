@@ -98,3 +98,26 @@ class Main {
     }
     _, expected, actual = roundtrip(tmp_path, modules)
     assert actual == expected
+
+
+def test_call_of_a_constructed_callable_abstract(tmp_path: Path) -> None:
+    modules = {
+        "Main.hx": """
+@:callable
+abstract Example(() -> String) {
+    public function new() {
+        this = null;
+        this = fun;
+    }
+    function fun() return "foo";
+}
+
+class Main {
+    static function main() {
+        Sys.println(new Example()());
+    }
+}
+"""
+    }
+    _, expected, actual = roundtrip(tmp_path, modules)
+    assert actual == expected

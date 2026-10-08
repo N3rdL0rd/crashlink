@@ -1423,6 +1423,14 @@ def _expression_to_haxe(
             return f"(@:privateAccess {callee_str[len('(@:privateAccess ') : -1]}({args_str}))"
         if _is_lambda_text(callee_str):
             callee_str = f"({callee_str})"
+        elif (
+            expr.call_type == IRCall.CallType.CLOSURE
+            and callee_str.startswith("new ")
+            and isinstance(expr.target.get_type().definition, Fun)
+        ):
+            # A constructed abstract over a function isn't callable itself (`@:callable` is
+            # lost); the function it holds is.
+            callee_str = f"({callee_str} : {disasm._haxe_annotation(code, expr.target.get_type())})"
         result = f"{callee_str}({args_str})"
         if (
             isinstance(expr.target, IRConst)
