@@ -1377,6 +1377,17 @@ def _expression_to_haxe(
                 val = _expression_to_haxe(expr.args[1], code, ir_function)
                 return f"{arr}[{idx}] = {val}"
 
+        accessor_call = expr.target.expr if isinstance(expr.target, IRCast) else expr.target
+        if isinstance(accessor_call, IRField):
+            prop = disasm.structure_accessor_name(
+                code, accessor_call.target.get_type(), accessor_call.field_name, len(expr.args)
+            )
+            if prop is not None:
+                obj = _expression_to_haxe(accessor_call.target, code, ir_function)
+                if not expr.args:
+                    return f"{obj}.{prop}"
+                return f"{obj}.{prop} = {_expression_to_haxe(expr.args[0], code, ir_function)}"
+
         if expr.call_type == IRCall.CallType.THIS and expr.target is None:
             callee_str = "this.unknownMethod"
         elif expr.target:
@@ -5484,6 +5495,29 @@ def _chain(code: Bytecode, obj: Obj) -> List[Obj]:
     return [obj, *_ancestors(code, obj)]
 
 
+def _stored_property(code: Bytecode, dynamic: Optional[Obj], name: str) -> str:
+    """The access of a field that is a property with storage (`@:isVar var x(get, set)`), or
+    "". The bytecode keeps only the accessors beside the field; a structure over the
+    property (`{ var x(get, set): T }`) is what shows the field is one, and a class's field
+    can only be assigned to it if declared with the same access."""
+    kinds = disasm.structure_property_kinds(code).get(name)
+    if dynamic is None or kinds is None:
+        return ""
+    methods = {proto.name.resolve(code) for obj in _chain(code, dynamic) for proto in obj.protos}
+    if f"get_{name}" not in methods:
+        return ""
+    return f"(get, {'set' if f'set_{name}' in methods else 'null'})"
+
+
+def _field_declaration(
+    code: Bytecode, dynamic: Optional[Obj], name: str, annotation: str, meta: str = ""
+) -> str:
+    access = _stored_property(code, dynamic, name)
+    if access:
+        return f"{meta}@:isVar public var {name}{access}: {annotation};"
+    return f"{meta}public var {name}: {annotation};"
+
+
 def _interface_properties(code: Bytecode, interface: typeinit.Interface) -> Dict[str, Tuple[bool, Type]]:
     """Fields of an interface that are properties without storage, `name -> (has a setter,
     type)`: no implementor has the field itself, only accessors. Fields an implementor
@@ -5555,6 +5589,10 @@ def _interface_pseudo(code: Bytecode, interface: typeinit.Interface, name: str, 
             lines.append(
                 f"    var {member_name}(get, {setter}): {disasm._haxe_annotation(code, member_type)};"
             )
+        elif access := next(
+            (a for imp in interface.implementors if (a := _stored_property(code, imp, member_name))), ""
+        ):
+            lines.append(f"    var {member_name}{access}: {disasm._haxe_annotation(code, member_type)};")
         else:
             lines.append(f"    var {member_name}: {disasm._haxe_annotation(code, member_type)};")
     lines.append("}")
@@ -5812,7 +5850,9 @@ def _class_body(
             meta = "@:s " if serializable is not None and field_name in serializable.fields else ""
             if isinstance(field_type.definition, Packed):
                 meta += "@:packed "
-            output_lines.append(f"{indent_str}{meta}public var {field_name}: {field_type_haxe};")
+            output_lines.append(
+                f"{indent_str}{_field_declaration(code, ir_class.dynamic, field_name, field_type_haxe, meta)}"
+            )
         output_lines.append("")
 
     properties = _implemented_properties(code, ir_class.dynamic)
@@ -6107,7 +6147,7 @@ def class_field_lines(code: Bytecode, obj: Obj) -> List[str]:
         for name, typ in _obj_fields(code, static)
     ]
     lines.extend(
-        f"public var {name}: {disasm._haxe_annotation(code, typ)};"
+        _field_declaration(code, dynamic, name, disasm._haxe_annotation(code, typ))
         for name, typ in _obj_fields(code, dynamic)
     )
     return lines
