@@ -21,6 +21,7 @@ const sidebars: SidebarsConfig = {
         "plugins",
         "patching",
         "crashtest",
+        "equivalence",
       ],
     },
     {
