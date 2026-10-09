@@ -1704,6 +1704,8 @@ def _expression_to_haxe(
         return f"new hl.Bytes({_expression_to_haxe(expr.size, code, ir_function)})"
 
     elif isinstance(expr, IRCast):
+        if expr.untyped:
+            return f"cast ({_expression_to_haxe(expr.expr, code, ir_function)})"
         target_name = disasm.type_name(code, expr.get_type())
         # `(T)null` for a non-nullable primitive T (a HL verifier-satisfying
         # placeholder, e.g. pre-growing an Array<Int>'s backing storage) isn't
@@ -3333,7 +3335,10 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             arg_core_type = arg_type_idx.resolve(code)
             arg_haxe_type_name = "Dynamic" if i in erased else disasm._haxe_annotation(code, arg_core_type)
             if start_arg + i in variables:
-                arg_haxe_type_name = _type_variable_name(variables[start_arg + i])
+                variable = _type_variable_name(variables[start_arg + i])
+                arg_haxe_type_name = (
+                    variable if arg_core_type.kind.value == Type.Kind.DYN.value else f"Array<{variable}>"
+                )
             elif i not in erased:
                 arg_haxe_type_name = mapargs.refine(
                     arg_haxe_type_name,

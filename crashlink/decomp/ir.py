@@ -1296,6 +1296,8 @@ class IRCast(IRExpression):
         super().__init__(code)
         self.target_type_idx = target_type
         self.expr = expr
+        # Written as `cast e`: the value takes whatever type its context asks for.
+        self.untyped = False
 
     def get_type(self) -> Type:
         return self.target_type_idx.resolve(self.code)

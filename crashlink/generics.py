@@ -18,7 +18,7 @@ import threading
 import weakref
 from typing import Dict, List, Optional, Tuple
 
-from .core import Bytecode, Fun, Function, Native, Opcode, Type
+from .core import Bytecode, Fun, Function, Native, Obj, Opcode, Type, tIndex
 
 _cache: Dict[int, Tuple["weakref.ReferenceType[Bytecode]", Dict[int, Dict[int, int]]]] = {}
 _lock = threading.Lock()
@@ -38,14 +38,31 @@ def _call_args(op: Opcode) -> Optional[List[int]]:
     return None
 
 
-def _evidence(caller: Function, op_index: int, reg: int) -> bool:
+def _evidence(code: Bytecode, caller: Function, op_index: int, reg: int, array: bool) -> bool:
     """True if the register a call reads was filled by a conversion made for a type variable:
-    a boxing or a cast, whose result isn't Dynamic."""
+    a boxing or a cast, whose result isn't Dynamic. For an `Array<T>` parameter (an ArrayDyn)
+    it is a cast of a typed array to it."""
     for i in range(op_index - 1, -1, -1):
-        dst = caller.ops[i].df.get("dst")
-        if dst is not None and dst.value == reg:
-            return caller.ops[i].op in ("ToDyn", "SafeCast")
+        writer = caller.ops[i]
+        dst = writer.df.get("dst")
+        if dst is None or dst.value != reg:
+            continue
+        if array:
+            return writer.op == "SafeCast" and _array_name(code, caller.regs[writer.df["src"].value]) in (
+                "hl.types.ArrayObj",
+                "hl.types.ArrayBytes_Int",
+                "hl.types.ArrayBytes_Float",
+                "hl.types.ArrayBytes_Bool",
+                "hl.types.ArrayBytes_hl_F32",
+                "hl.types.ArrayBytes_hl_UI16",
+            )
+        return writer.op in ("ToDyn", "SafeCast")
     return False
+
+
+def _array_name(code: Bytecode, index: "tIndex") -> Optional[str]:
+    definition = index.resolve(code).definition
+    return definition.name.resolve(code) if isinstance(definition, Obj) else None
 
 
 def _compute(code: Bytecode) -> Dict[int, Dict[int, int]]:
@@ -54,9 +71,13 @@ def _compute(code: Bytecode) -> Dict[int, Dict[int, int]]:
     result: Dict[int, Dict[int, int]] = {}
     for func in code.functions:
         signature = func.type.resolve(code).definition
-        if not isinstance(signature, Fun):
+        # A constructor's type variables are its class's, not its own.
+        if not isinstance(signature, Fun) or code.partial_func_name(func) == "__constructor__":
             continue
-        dyn_params = [i for i, a in enumerate(signature.args) if a.resolve(code).kind.value == dyn_kind]
+        arrays = {i for i, a in enumerate(signature.args) if _array_name(code, a) == "hl.types.ArrayDyn"}
+        dyn_params = [
+            i for i, a in enumerate(signature.args) if a.resolve(code).kind.value == dyn_kind or i in arrays
+        ]
         if not dyn_params:
             continue
         parent = {i: i for i in dyn_params}
@@ -84,7 +105,7 @@ def _compute(code: Bytecode) -> Dict[int, Dict[int, int]]:
                 p
                 for p in dyn_params
                 if caller.regs[args[p]].resolve(code).kind.value != dyn_kind
-                and _evidence(caller, ref.opcode_index, args[p])
+                and _evidence(code, caller, ref.opcode_index, args[p], p in arrays)
             ]
             for p in fed:
                 evidenced.add(p)

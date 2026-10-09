@@ -112,3 +112,51 @@ class Main {
     assert actual == expected
     for name in ("Main.run", "Main.main"):
         assert _ops(original, name) == _ops(recompiled, name)
+
+
+def test_an_array_of_type_variable_parameter_is_declared_generic(tmp_path: Path) -> None:
+    # `Array<T>` is an ArrayDyn once erased; a typed array passed for it is cast.
+    source = """
+class Main {
+    static function sameArrays<T>(a:Array<T>, b:Array<T>) {
+        Sys.println(a.length == b.length);
+    }
+    static function run() {
+        var names = ["a", "b"];
+        sameArrays(names, names);
+    }
+    static function main() {
+        run();
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "function sameArrays<T>(a: Array<T>, b: Array<T>)" in files["src/Main.hx"]
+    assert actual == expected
+    assert _ops(original, "Main.run") == _ops(recompiled, "Main.run")
+    assert "SafeCast" in _ops(recompiled, "Main.run")
+
+
+def test_arrays_of_one_type_variable_share_their_element_type(tmp_path: Path) -> None:
+    # An array of unknown element type next to typed ones for `Array<T>` parameters would not unify.
+    source = """
+class Main {
+    static function sameArrays<T>(a:Array<T>, b:Array<T>) {
+        Sys.println(a.length == b.length);
+    }
+    static function pick(from:Array<String>, other:Array<String>) {
+        return from.length > 1 ? from : other;
+    }
+    static function run() {
+        var names = ["a", "b"];
+        sameArrays(names, pick(names, ["c"]));
+        sameArrays(["d"], names);
+    }
+    static function main() {
+        run();
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "cast (Main.pick(" in files["src/Main.hx"]
+    assert actual == expected
