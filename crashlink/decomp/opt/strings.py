@@ -1258,6 +1258,10 @@ class IRStringConcatFolder(TraversingIROptimizer):
             elif use_idx is None and self._is_movable(stmt):
                 assert isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)
                 live[stmt.target.name] = (j, stmt.expr)
+            elif use_idx is None:
+                # The fold replaces everything up to the use: a statement that is not a
+                # movable definition would be dropped, or reordered against the chain.
+                return None
 
         if use_idx is None:
             return None
@@ -1298,7 +1302,10 @@ class IRStringConcatFolder(TraversingIROptimizer):
             for index, _ in sorted(live.values())
             if index not in used_defs
             and start <= index < use_idx
-            and self._read_after(statements, use_idx, cast(IRAssign, statements[index]).target)
+            and (
+                self._read_after(statements, use_idx, cast(IRAssign, statements[index]).target)
+                or self._value_reads_local(new_use, cast(IRLocal, cast(IRAssign, statements[index]).target))
+            )
         ]
         absorbed = {id(statements[index]) for index in used_defs if index < start}
         new_use.adopt(*statements[start : use_idx + 1], *(statements[index] for index in used_defs))

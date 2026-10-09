@@ -114,3 +114,41 @@ class Main {
     assert "[0]" not in files["src/Main.hx"]
     assert actual == expected
     assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")
+
+
+def test_string_self_concat_is_not_split_by_a_temporary(tmp_path: Path) -> None:
+    # `s += x` on a String is `s = s + x`: the result is stored in `s` through one register copy.
+    # The temporary the decompiler used to write instead is a different register allocation.
+    source = """
+class Main {
+    static function main() {
+        var s = "hello" + Std.random(2);
+        s += ", world";
+        var t = "x" + Std.random(2);
+        t = t + "y";
+        Sys.println(s + t);
+        Sys.println(t + s);
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "s = s + " in files["src/Main.hx"]
+    assert actual == expected
+    assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")
+
+
+def test_concat_fold_keeps_statements_between_the_chain_and_its_use(tmp_path: Path) -> None:
+    # A chain of concatenations on one variable, then an unrelated variable's chain, then one use of both.
+    source = """
+class Main {
+    static function main() {
+        var s = "hello" + Std.random(1);
+        s += ", world";
+        var t = "x" + Std.random(1);
+        t = t + "y";
+        Sys.println(s + t);
+    }
+}
+"""
+    files, expected, actual, _, _ = roundtrip(tmp_path, source)
+    assert actual == expected
