@@ -122,9 +122,9 @@ def test_string_self_concat_is_not_split_by_a_temporary(tmp_path: Path) -> None:
     source = """
 class Main {
     static function main() {
-        var s = "hello" + Std.random(2);
+        var s = "hello" + Sys.args().length;
         s += ", world";
-        var t = "x" + Std.random(2);
+        var t = "x" + Sys.args().length;
         t = t + "y";
         Sys.println(s + t);
         Sys.println(t + s);
@@ -142,9 +142,9 @@ def test_concat_fold_keeps_statements_between_the_chain_and_its_use(tmp_path: Pa
     source = """
 class Main {
     static function main() {
-        var s = "hello" + Std.random(1);
+        var s = "hello" + Sys.args().length;
         s += ", world";
-        var t = "x" + Std.random(1);
+        var t = "x" + Sys.args().length;
         t = t + "y";
         Sys.println(s + t);
     }
