@@ -1397,9 +1397,13 @@ class IRObjectLiteral(IRExpression):
     SomeException()` from ballooning into six lines of DynObj scaffolding.
     """
 
-    def __init__(self, code: Bytecode, fields: List[Tuple[str, IRExpression]]):
+    def __init__(self, code: Bytecode, fields: List[Tuple[str, IRExpression]], allocated: Any = None):
         super().__init__(code)
         self.fields = fields
+        # The type definition the allocation had: a `Virtual` when the compiler built the literal
+        # as a typed structure of exactly its own fields (it knows the shape statically), `DynObj`
+        # when it built a dynamic object and converted it to the structure afterwards.
+        self.allocated = allocated
 
     def get_type(self) -> Type:
         return _get_type_in_code(self.code, "Dyn")

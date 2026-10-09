@@ -1748,6 +1748,16 @@ def _expression_to_haxe(
             # An Int literal does not convert to a nullable 64-bit integer by itself.
             return f"({inner} : hl.I64)"
         target_def, source_def = expr.get_type().definition, expr.expr.get_type().definition
+        if (
+            isinstance(target_def, Virtual)
+            and isinstance(expr.expr, IRObjectLiteral)
+            and isinstance(expr.expr.allocated, Virtual)
+            and expr.expr.allocated is not target_def
+        ):
+            # The compiler built the literal as a structure of exactly its own fields, then
+            # converted it to the structure the context wants. A literal under an expected
+            # structure is built dynamically instead, so only `cast` leaves it typed by itself.
+            return f"cast {inner}"
         if isinstance(target_def, Null) != isinstance(source_def, Null) or (
             isinstance(target_def, Null) and isinstance(source_def, Null)
         ):

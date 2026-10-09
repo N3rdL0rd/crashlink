@@ -3791,7 +3791,7 @@ class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
             j -= len(moved)
 
         # The field values are only rewritten once the fold is certain.
-        literal = IRObjectLiteral(self.func.code, [])
+        literal = IRObjectLiteral(self.func.code, [], alloc_defn)
 
         def commit() -> None:
             literal.fields = [(name, self._substitute_temps(value, temps)) for name, value, temps in stores]
