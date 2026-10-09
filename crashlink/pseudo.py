@@ -66,6 +66,7 @@ from .decomp import (
     IRArrayAccess,
     IRRef,
     IRRefNew,
+    IRPosInfos,
     IRRefGet,
     IRRefSet,
     IRArrayLiteral,
@@ -663,17 +664,51 @@ def _null_guarded_ref_in(local: IRLocal, stmt: IRStatement) -> Optional[IRExpres
     return None
 
 
+def _elided_position(arg: IRExpression, ir_function: Optional[IRFunction], code: Bytecode) -> Optional[str]:
+    """`file:line` of an auto-filled position argument that names the enclosing function itself."""
+    if not isinstance(arg, IRPosInfos) or ir_function is None or not isinstance(ir_function.func, Function):
+        return None
+    owner, _, method = code.full_func_name(ir_function.func).rpartition(".")
+    if arg.value_of("className") != destaticify(owner).replace("._", ".").lstrip("$"):
+        # The class a private module declares is named `pkg._Module.Name` in the bytecode.
+        if arg.value_of("className") != destaticify(owner):
+            return None
+    if arg.value_of("methodName") != (method if method != "__constructor__" else "new"):
+        return None
+    file, line = arg.value_of("fileName"), arg.value_of("lineNumber")
+    if not isinstance(file, str) or not isinstance(line, int):
+        return None
+    return f"{file}:{line}"
+
+
+def _with_comment(rendered: List[str], comment: str) -> List[str]:
+    """`rendered` with `comment` after its last element (alone when there are none)."""
+    if not comment:
+        return rendered
+    if not rendered:
+        return [comment]
+    return [*rendered[:-1], f"{rendered[-1]} {comment}"]
+
+
 def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction], skip: int = 0) -> List[str]:
     """Rendered arguments of a call. HL passes an optional basic argument as an
     `hl.Ref` (null when omitted); Haxe source leaves an omitted trailing one out, and
     gives a declared basic parameter the value rather than a reference to it."""
+    pos_comment = ""
     call_args = expr.args[skip:]
     rendered = [_expression_to_haxe(arg, code, ir_function) for arg in call_args]
+    position = _elided_position(call_args[-1], ir_function, code) if call_args else None
+    if position is not None:
+        # The compiler fills the position in; source leaves it out, and the position stays as a comment.
+        call_args = call_args[:-1]
+        rendered = rendered[:-1]
+        comment = f"/* pos: {position} */"
+        pos_comment = comment
     if expr.target is None:
-        return rendered
+        return _with_comment(rendered, pos_comment)
     signature = expr.target.get_type().definition
     if not isinstance(signature, Fun) or len(signature.args) < len(call_args):
-        return rendered
+        return _with_comment(rendered, pos_comment)
     params = [arg.resolve(code).definition for arg in signature.args[len(signature.args) - len(call_args) :]]
     for i, arg in enumerate(call_args):
         if not isinstance(arg.get_type().definition, Ref):
@@ -727,7 +762,7 @@ def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction], 
         ):
             continue
         kept.append(text)
-    return kept
+    return _with_comment(kept, pos_comment)
 
 
 def _is_untyped_array_access_class(typ: "Type", code: Bytecode) -> bool:
@@ -1272,6 +1307,9 @@ def _expression_to_haxe(
         # TODO: handle IRRef more cleanly
         inner = _expression_to_haxe(expr.target, code, ir_function)
         return inner
+
+    elif isinstance(expr, IRPosInfos):
+        return _expression_to_haxe(expr.original, code, ir_function)
 
     elif isinstance(expr, IRStringConvert):
         return f"Std.string({_expression_to_haxe(expr.value, code, ir_function)})"
@@ -3107,6 +3145,8 @@ def _closure_inline_body(helper_ir: IRFunction) -> Optional[Tuple[List[str], str
     names = [local.name for local in helper_ir.locals[: len(signature.args)]]
     if len(names) != len(signature.args):
         return None
+    if names and disasm._is_pos_infos(helper_ir.code, signature.args[-1].resolve(helper_ir.code).definition):
+        names[-1] = "?" + names[-1]  # the compiler fills a position parameter in at each call
     helper_ir._rendered_as_lambda = True
     for index, (value, const) in helper_ir.default_args.items():
         if index < len(names):
@@ -3325,6 +3365,13 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
                     param_name = arg_assigns[i][0].resolve(code)
 
             if id(core_fun_type_def) in disasm._trace_signature_types(code)[1] and local_idx == 1:
+                param_name = "?" + param_name
+            elif (
+                i + start_arg == len(core_fun_type_def.args) - 1
+                and not param_name.startswith("?")
+                and disasm._is_pos_infos(code, arg_core_type.definition)
+            ):
+                # The compiler fills a `haxe.PosInfos` parameter in at each call, so it is optional.
                 param_name = "?" + param_name
             param_type_decl = f": {arg_haxe_type_name}" if arg_haxe_type_name else ""
             default = ir_func.default_args.get(local_idx)

@@ -1356,6 +1356,36 @@ class IRArrayLiteral(IRExpression):
         return f"<IRArrayLiteral: [{', '.join(repr(e) for e in self.elements)}]>"
 
 
+class IRPosInfos(IRExpression):
+    """The `?pos:haxe.PosInfos` argument the compiler fills in at a call site: `fileName`,
+    `lineNumber`, `className` and `methodName` of the call. Source never writes it, so a call
+    whose position is the enclosing function's own leaves it out (see `pseudo._call_args`);
+    anywhere else it prints as the literal it stands for."""
+
+    def __init__(
+        self, code: Bytecode, fields: List[Tuple[str, IRExpression]], original: IRExpression, typ: Type
+    ):
+        super().__init__(code)
+        self.fields = fields
+        self.original = original  # the expression this replaced, rendered when it is not elided
+        self.typ = typ
+
+    def get_type(self) -> Type:
+        return self.typ
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.original]
+
+    def value_of(self, name: str) -> Any:
+        for key, value in self.fields:
+            if key == name and isinstance(value, IRConst):
+                return getattr(value.value, "value", value.value)
+        return None
+
+    def __repr__(self) -> str:
+        return f"<IRPosInfos: {self.original!r}>"
+
+
 class IRObjectLiteral(IRExpression):
     """Represents a Haxe anonymous object literal, e.g. `{ foo: 1, bar: "x" }`.
 

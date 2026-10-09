@@ -566,6 +566,8 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                             args[i] = "?" + render(arg_def.type.resolve(code))
                 if key in callbacks:
                     args[1] = "?" + args[1]
+                elif args and not native and id(definition.args[-1].resolve(code).definition) in positions:
+                    args[-1] = "?" + args[-1]  # a position is filled in at the call
                 ret = render(definition.ret.resolve(code))
                 params = f"({', '.join(args)})" if args else "Void"
                 return f"({params} -> {ret})"

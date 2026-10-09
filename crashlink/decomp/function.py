@@ -120,6 +120,7 @@ from .opt.strings import (
     IRStringConcatFolder,
 )
 from .opt.stringalloc import IRStringAllocInliner
+from .opt.pos import IRPosInfosFolder
 from .opt.arrays import (
     IRNativeArrayAllocOptimizer,
     IRArrayObjWrapperOptimizer,
@@ -422,6 +423,7 @@ class IRFunction:
                 IREnumSwitchOptimizer(self),
                 IRGuardClauseNormalizer(self),
                 IRInlineCallRecovery(self),
+                IRPosInfosFolder(self),
             ]
             # Splice in plugin optimizers gated to this bytecode (see
             # crashlink.plugins). Which classes apply is a property of the image, so
