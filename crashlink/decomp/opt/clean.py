@@ -3791,7 +3791,7 @@ class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
             j -= len(moved)
 
         # The field values are only rewritten once the fold is certain.
-        literal = IRObjectLiteral(self.func.code, [])
+        literal = IRObjectLiteral(self.func.code, [], alloc_defn)
 
         def commit() -> None:
             literal.fields = [(name, self._substitute_temps(value, temps)) for name, value, temps in stores]
@@ -3806,6 +3806,11 @@ class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
             stmts[j].adopt(*stmts[start:j])  # the alloc + field-assign statements are dropped
             return stmts[j], j - start + 1
 
+        # A dynamic object that several statements use is a `Dynamic` local grown field by field:
+        # a literal in its place would be built as a typed structure of those fields instead.
+        # (A field that is no identifier can only be written in a literal.)
+        if isinstance(alloc_defn, DynObj) and all(name.isidentifier() for name, _, _ in stores):
+            return None
         # Used more than once: the literal initialises the local. A structure type
         # (what the local is declared as) needs every one of its fields.
         if isinstance(alloc_defn, Virtual) and {name for name, _, _ in stores} != {
