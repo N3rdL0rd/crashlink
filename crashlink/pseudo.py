@@ -32,7 +32,7 @@ from .core import (
     Null,
 )
 from . import disasm
-from . import abstracts, generics, rtti_meta, hxbit, hxsl, typeinit
+from . import abstracts, generics, mapargs, rtti_meta, hxbit, hxsl, typeinit
 from .std_types import STD_TYPES
 from .decomp import (
     STATIC_INIT_UNRECOVERABLE,
@@ -1683,9 +1683,7 @@ def _expression_to_haxe(
             return "[]"
         else:
             args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args)
-            rendered = (
-                f"new {disasm.STD_WRAPPED.get(type_name) or disasm.type_to_haxe(type_name)}({args_str})"
-            )
+            rendered = f"new {mapargs.refine(disasm.STD_WRAPPED.get(type_name) or disasm.type_to_haxe(type_name), getattr(expr, 'map_value', None))}({args_str})"
             owner = expr.get_type().definition
             # A private constructor of a std class (an inlined `JsonParser.parse`).
             return (
@@ -3336,6 +3334,11 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             arg_haxe_type_name = "Dynamic" if i in erased else disasm._haxe_annotation(code, arg_core_type)
             if start_arg + i in variables:
                 arg_haxe_type_name = _type_variable_name(variables[start_arg + i])
+            elif i not in erased:
+                arg_haxe_type_name = mapargs.refine(
+                    arg_haxe_type_name,
+                    mapargs.value_type(code, ("r", func_core.findex.value, start_arg + i)),
+                )
 
             param_name = f"arg{i}"
             local_idx = start_arg + i
@@ -3391,7 +3394,10 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             params_str_list.append(f"{param_name}{param_type_decl}")
 
         ret_core_type = core_fun_type_def.ret.resolve(code)
-        return_type_str = disasm._haxe_annotation(code, ret_core_type)
+        return_type_str = mapargs.refine(
+            disasm._haxe_annotation(code, ret_core_type),
+            mapargs.value_type(code, ("ret", func_core.findex.value)),
+        )
 
     # Constructors do not declare a return type in Haxe.
     if is_constructor or abstract_constructor:
@@ -3433,6 +3439,13 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     unused_static_aliases = _unused_static_aliases(ir_func.block, code)
     for name in unused_static_aliases:
         local_types.pop(name, None)
+    _tag_map_allocations(ir_func.block, code, func_core.findex.value, ir_func.all_locals)
+    for local in ir_func.all_locals:
+        if local.name in local_types and local.reg_idx is not None:
+            local_types[local.name] = mapargs.refine(
+                local_types[local.name],
+                mapargs.value_type(code, ("r", func_core.findex.value, local.reg_idx)),
+            )
     receiver_types = _virtual_receiver_static_types(ir_func, code)
     for name, haxe_type in receiver_types.items():
         if name in local_types:
@@ -6022,6 +6035,11 @@ def _class_body(
     if static_fields:
         for field_name, field_type in static_fields:
             field_type_haxe = disasm._haxe_annotation(code, field_type)
+            if ir_class.static is not None:
+                field_type_haxe = mapargs.refine(
+                    field_type_haxe,
+                    mapargs.value_type(code, mapargs.field_node(code, ir_class.static, field_name)),
+                )
             if field_type_haxe == "Array<Dynamic>":
                 elem_types = getattr(ir_class, "field_elem_types", {})
                 if field_name in elem_types:
@@ -6045,6 +6063,11 @@ def _class_body(
     if fields:
         for field_name, field_type in fields:
             field_type_haxe = disasm._haxe_annotation(code, field_type)
+            if ir_class.dynamic is not None:
+                field_type_haxe = mapargs.refine(
+                    field_type_haxe,
+                    mapargs.value_type(code, mapargs.field_node(code, ir_class.dynamic, field_name)),
+                )
             if field_type_haxe == "Array<Dynamic>":
                 elem_types = getattr(ir_class, "field_elem_types", {})
                 if field_name in elem_types:
@@ -6355,6 +6378,33 @@ def class_field_lines(code: Bytecode, obj: Obj) -> List[str]:
         for name, typ in _obj_fields(code, dynamic)
     )
     return lines
+
+
+def _tag_map_allocations(root: IRStatement, code: Bytecode, findex: int, locals_: List[IRLocal]) -> None:
+    """Give each `new IntMap()` bound to a local the value type recovered for the local.
+    Registers a variable of one name was split over share the type its name is declared with."""
+    seen: Set[int] = set()
+    by_name: Dict[str, str] = {}
+    for local in locals_:
+        found = mapargs.value_type(code, ("r", findex, local.reg_idx)) if local.reg_idx is not None else None
+        if found is not None:
+            by_name.setdefault(local.name, found)
+
+    def visit(stmt: IRStatement) -> None:
+        if id(stmt) in seen:
+            return
+        seen.add(id(stmt))
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRLocal)
+            and isinstance(stmt.expr, IRNew)
+            and stmt.target.reg_idx is not None
+        ):
+            stmt.expr.map_value = by_name.get(stmt.target.name)  # type: ignore[attr-defined]
+        for child in stmt.get_children():
+            visit(child)
+
+    visit(root)
 
 
 def _type_variable_name(number: int) -> str:
