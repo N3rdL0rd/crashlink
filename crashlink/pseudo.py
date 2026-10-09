@@ -32,7 +32,7 @@ from .core import (
     Null,
 )
 from . import disasm
-from . import abstracts, rtti_meta, hxbit, hxsl, typeinit
+from . import abstracts, generics, rtti_meta, hxbit, hxsl, typeinit
 from .std_types import STD_TYPES
 from .decomp import (
     STATIC_INIT_UNRECOVERABLE,
@@ -3320,6 +3320,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
 
     params_str_list = []
     return_type_str = "Void"
+    variables: Dict[int, int] = {}
 
     core_fun_type_def = func_core.type.resolve(code).definition
     if isinstance(core_fun_type_def, Fun):
@@ -3329,9 +3330,12 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             if is_instance and not is_constructor and containing is not None
             else set()
         )
+        variables = _own_type_variables(code, func_core, containing, func_name_str, is_instance)
         for i, arg_type_idx in enumerate(core_fun_type_def.args[start_arg:]):
             arg_core_type = arg_type_idx.resolve(code)
             arg_haxe_type_name = "Dynamic" if i in erased else disasm._haxe_annotation(code, arg_core_type)
+            if start_arg + i in variables:
+                arg_haxe_type_name = _type_variable_name(variables[start_arg + i])
 
             param_name = f"arg{i}"
             local_idx = start_arg + i
@@ -3395,6 +3399,11 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
 
     params_joined_str = ", ".join(params_str_list)
     ret_decl = f": {return_type_str}" if return_type_str else ""
+    type_params = (
+        "<" + ", ".join(_type_variable_name(n) for n in sorted(set(variables.values()))) + ">"
+        if isinstance(core_fun_type_def, Fun) and variables
+        else ""
+    )
     access_kw = "public "
     # A `dynamic` function is rebound at run time, so Haxe refuses to also inline it.
     is_dynamic = "dynamic" in static_kw or "dynamic" in override_kw
@@ -3406,7 +3415,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         if containing is not None
         else ""
     )
-    func_header = f"{member_meta}{access_kw}{static_kw}{override_kw}{inline_kw}function {func_name_str}({params_joined_str}){ret_decl} {{"
+    func_header = f"{member_meta}{access_kw}{static_kw}{override_kw}{inline_kw}function {func_name_str}{type_params}({params_joined_str}){ret_decl} {{"
     output_lines.append(func_header)
 
     initial_declared_vars = {p.split(":")[0].strip().lstrip("?") for p in params_str_list}
@@ -6346,6 +6355,36 @@ def class_field_lines(code: Bytecode, obj: Obj) -> List[str]:
         for name, typ in _obj_fields(code, dynamic)
     )
     return lines
+
+
+def _type_variable_name(number: int) -> str:
+    return "T" if number == 0 else f"T{number}"
+
+
+def _own_type_variables(
+    code: Bytecode,
+    func: Function,
+    containing: "Union[IRClass, _PseudoClass, None]",
+    name: str,
+    is_instance: bool,
+) -> Dict[int, int]:
+    """The parameters of `func` that are its type variables (see `generics`). A method that
+    overrides or is overridden keeps every parameter Dynamic: Haxe requires the overriding
+    method to declare the same type parameters."""
+    variables = generics.type_variables(code, func)
+    if not variables or not is_instance:
+        return variables
+    obj = containing.dynamic if containing is not None else None
+    if obj is None:
+        return {}
+    if _ancestor_declares(code, obj, name):
+        return {}
+    for t in code.types:
+        sub = t.definition
+        if isinstance(sub, Obj) and sub is not obj and name in _declared_methods(code, sub):
+            if _is_ancestor(code, obj, sub):
+                return {}
+    return variables
 
 
 def _erased_parameters(code: Bytecode, dynamic: Optional[Obj], method_name: str) -> Set[int]:
