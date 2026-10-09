@@ -1719,10 +1719,12 @@ def _expression_to_haxe(
         inner = _expression_to_haxe(expr.expr, code, ir_function)
         if target_name == "I32" and source_name in {"F32", "F64"}:
             return f"Std.int({inner})"
-        if target_name == "F32" and source_name == "I32" and isinstance(expr.expr, IRConst):
+        if target_name in ("F32", "F64") and source_name == "I32" and isinstance(expr.expr, IRConst):
             # A bare integer literal stays an Int wherever it is boxed (a Dynamic parameter);
-            # the ascription makes it a Single.
-            return f"({inner} : Single)"
+            # the ascription makes it a Single. For a Float it is the run-time widening the
+            # compiler makes of a literal it was not told is a Float (a constant given as one
+            # is folded): `f(2)` loads the Float directly, `f((2 : Float))` widens an Int.
+            return f"({inner} : {'Single' if target_name == 'F32' else 'Float'})"
         if target_name == "I32" and source_name == "I64":
             # `Int64.low` of an inlined std call: the cast truncates to the low 32 bits.
             return f"{inner}.toInt()" if re.fullmatch(r"\w+", inner) else f"({inner} : hl.I64).toInt()"

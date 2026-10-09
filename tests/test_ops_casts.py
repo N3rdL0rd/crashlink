@@ -204,3 +204,27 @@ class Main {
     assert "cast(null, Int)" in files["src/Main.hx"]
     assert actual == expected
     assert _ops(original, "Main.run") == _ops(recompiled, "Main.run")
+
+
+def test_an_int_literal_widened_at_run_time_stays_an_int_ascribed_as_float(tmp_path: Path) -> None:
+    # `{x: 2}` for a Float field widens the Int at run time (Int + ToSFloat); a plain `2` in the
+    # same place would be folded into a Float constant.
+    source = """
+@:structInit
+class Point {
+    public var x:Float;
+}
+class Main {
+    static function run() {
+        var p:Point = {x: 2};
+        Sys.println(p.x);
+    }
+    static function main() {
+        run();
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "(2 : Float)" in files["src/Main.hx"]
+    assert actual == expected
+    assert _ops(original, "Main.run") == _ops(recompiled, "Main.run")
