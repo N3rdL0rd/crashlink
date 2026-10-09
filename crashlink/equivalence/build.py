@@ -510,13 +510,23 @@ class Builder:
                 args = [self.reg(0, b)] + args
             obj_reg = df["args"].value[0].value if name == "CallMethod" else 0
             self.guard(b, args[0])
-            method = self.namer.method(type_of(obj_reg), df["field"].value)
-            set_dst(self.effect(b, "callmethod", (method, self.reg_desc[obj_reg]), *args, ty=dst_desc()))
+            direct = self.namer.devirtualise(type_of(obj_reg), df["field"].value)
+            if direct is not None:
+                set_dst(self.effect(b, "call", (direct,), *args, ty=dst_desc()))
+            else:
+                method = self.namer.method(type_of(obj_reg), df["field"].value)
+                set_dst(self.effect(b, "callmethod", (method, self.reg_desc[obj_reg]), *args, ty=dst_desc()))
         elif name == "CallClosure":
             fun = R("fun")
-            self.guard(b, fun)
             args = [self.reg(r.value, b) for r in df["args"].value]
-            set_dst(self.effect(b, "callclosure", (), fun, *args, ty=dst_desc()))
+            known = g.find(fun)
+            if known.kind == "sclosure":  # calling a closure over a known function is calling it
+                set_dst(self.effect(b, "call", (known.attrs[0],), *args, ty=dst_desc()))
+            elif known.kind == "iclosure":
+                set_dst(self.effect(b, "call", (known.attrs[0],), known.args[0], *args, ty=dst_desc()))
+            else:
+                self.guard(b, fun)
+                set_dst(self.effect(b, "callclosure", (), fun, *args, ty=dst_desc()))
         elif name == "StaticClosure":
             set_dst(g.pure("sclosure", (self.namer.function(df["fun"].value),), nonnull=True, ty=dst_desc()))
         elif name == "InstanceClosure":

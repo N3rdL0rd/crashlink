@@ -139,10 +139,14 @@ def prove(original: Bytecode, recompiled: Bytecode, modules: Collection[str]) ->
         named_functions(original),
         named_functions(recompiled),
     )
-    if any(not name.startswith(ANON) for name in extra):
+
+    def lifted(name: str) -> bool:
+        return name.startswith(ANON) or name.rsplit(".", 1)[-1].startswith("__anon_")
+
+    if any(not lifted(name) for name in extra):
         return False
     for name, func, other in paired:
-        if name.startswith(ANON):
+        if lifted(name):
             continue
         if other is None:
             return False

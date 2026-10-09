@@ -10,7 +10,7 @@ numbers things the same way, which keeps the comparison sound.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Dict, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Set, Tuple
 
 from ..core import (
     Abstract,
@@ -44,6 +44,7 @@ class Namer:
         self._function_digest = function_digest
         self._types: Dict[int, str] = {}
         self._active: Set[int] = set()
+        self._children: Optional[Dict[int, List[Obj]]] = None
         self.unstable = False
         """Set when a name had to fall back to a raw index."""
 
@@ -100,9 +101,45 @@ class Namer:
         if isinstance(target, Native):
             return ("native", code.full_func_name(target))
         name = code.full_func_name(target)
-        if name != "<none>":
+        # `__anon_N` is what decompiled output calls a lifted closure; the original has no name for it,
+        # so a closure is always identified by what it does.
+        if name != "<none>" and not name.rsplit(".", 1)[-1].startswith("__anon_"):
             return ("fn", name)
         return ("anon", self._function_digest(target))
+
+    def _subclasses(self, defn: Obj) -> List[Obj]:
+        """Every class below `defn` in the image."""
+        code = self.code
+        if self._children is None:
+            index_of = {id(t.definition): i for i, t in enumerate(code.types)}
+            self._children = {}
+            for t in code.types:
+                if isinstance(t.definition, Obj) and t.definition.super.value >= 0:
+                    self._children.setdefault(t.definition.super.value, []).append(t.definition)
+            self._index_of = index_of
+        out: List[Obj] = []
+        stack = list(self._children.get(self._index_of.get(id(defn), -1), []))
+        while stack:
+            sub = stack.pop()
+            out.append(sub)
+            stack.extend(self._children.get(self._index_of.get(id(sub), -1), []))
+        return out
+
+    def devirtualise(self, obj_type: Type, field: int) -> Optional[Tuple[str, ...]]:
+        """The function a method call on `obj_type` runs, if no class below it overrides the method.
+        A virtual call then does the same as a direct call (the image is all there is)."""
+        defn = obj_type.definition
+        if not isinstance(defn, Obj):
+            return None
+        proto = self.code.proto_by_pindex(defn, field)
+        if proto is None:
+            return None
+        name = proto.name.resolve(self.code)
+        for sub in self._subclasses(defn):
+            for other in sub.protos:
+                if other.name.resolve(self.code) == name and other.findex.value != proto.findex.value:
+                    return None
+        return self.function(proto.findex.value)
 
     def method(self, obj_type: Type, field: int) -> str:
         """The name a CallMethod/CallThis `field` operand addresses on a receiver of `obj_type`."""
