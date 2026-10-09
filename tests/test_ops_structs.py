@@ -72,3 +72,22 @@ class Main {
     assert "cast { fileName:" in files["src/Main.hx"]
     assert actual == expected
     assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")
+
+
+def test_dynamic_object_grown_field_by_field_stays_dynamic(tmp_path: Path) -> None:
+    # `var d:Dynamic = {}` is a dynamic object; a literal `{a: 1, b: "x"}` is built as a typed structure instead.
+    source = """
+class Main {
+    static function main() {
+        var d:Dynamic = {};
+        d.a = 1;
+        d.b = "x";
+        Sys.println(d.a);
+        Sys.println(d.b);
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "a: 1" not in files["src/Main.hx"]
+    assert actual == expected
+    assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")
