@@ -445,10 +445,9 @@ def test_single_expression_closures_render_inline(tmp_path):
     # A closure whose body is one expression belongs at its creation site.
     assert '() -> "hello"' in out
     assert ") -> " in out
-    # A multi-statement body cannot stand in expression position, so it stays
-    # a lifted helper rather than being mangled into one line.
-    assert "__anon_" in out
-    assert "function __anon_" in out
+    # A multi-statement body is written as a function expression at the same place, not a lifted helper.
+    assert "function() {" in out
+    assert "__anon_" not in out
 
 
 def test_boxing_temporaries_and_dead_markers_are_dropped():

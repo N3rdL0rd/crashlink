@@ -168,3 +168,49 @@ class Main {
     assert "catch (e:Marker)" in files["src/Main.hx"]
     assert "catch (e:Dynamic)" in files["src/Main.hx"]
     assert actual == expected
+
+
+def test_multi_statement_lambda_over_this_stays_a_lambda(tmp_path: Path) -> None:
+    # A lambda that closes over `this` reaches a lifted helper as its first argument; written back
+    # as a lambda it keeps the same environment instead of becoming a `.bind` of a static helper.
+    source = """
+class Main {
+    var my:Int;
+    var cb:Int->Void;
+    function new() {}
+    function run() {
+        cb = n -> switch n {
+            case 1: my = 2;
+            case _: my = 3;
+        };
+        cb(12);
+        Sys.println(my);
+    }
+    static function main() new Main().run();
+}
+"""
+    files, expected, actual = roundtrip(tmp_path, source)
+    assert ".bind(" not in files["src/Main.hx"]
+    assert "__anon" not in files["src/Main.hx"]
+    assert actual == expected
+
+
+def test_closure_that_only_throws_keeps_its_void_type(tmp_path: Path) -> None:
+    # `() -> throw x` would be typed as returning Dynamic, which a Void function value can't be cast from.
+    source = """
+class Main {
+    static function wrap(f:Void->Void):Void->Void {
+        return function() {
+            f();
+            f = () -> throw "twice";
+        };
+    }
+    static function main() {
+        var g = wrap(() -> Sys.println("once"));
+        g();
+        try g() catch (e:Dynamic) Sys.println(e);
+    }
+}
+"""
+    files, expected, actual = roundtrip(tmp_path, source)
+    assert actual == expected

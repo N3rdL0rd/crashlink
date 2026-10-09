@@ -46,6 +46,7 @@ from ..ir import (
     IRNew,
     IRNativeArrayNew,
     IRCast,
+    IRBoundClosure,
     IRStringConvert,
     IRArrayLiteral,
     IRArrayAccess,
@@ -1233,6 +1234,9 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             return expr, False
         elif isinstance(expr, IRRefGet):
             expr.ref, changed = self._substitute_in_expr(expr.ref, target, replacement)
+            made_change = made_change or changed
+        elif isinstance(expr, IRBoundClosure):
+            expr.obj, changed = self._substitute_in_expr(expr.obj, target, replacement)
             made_change = made_change or changed
         elif isinstance(expr, IREnumConstruct):
             new_args = []

@@ -1274,7 +1274,14 @@ def _expression_to_haxe(
         # mutable local holding it. Bind it now so later local assignments do
         # not retarget the closure, while mutations of that environment remain
         # visible to every closure sharing it.
-        fun_str = _expression_to_haxe(expr.fun_const, code, ir_function)
+        # The function is the head of a `.bind`, so it takes the environment as its first parameter and
+        # has to stay a typed helper rather than become a lambda.
+        previous = getattr(ir_function, "_bind_head", False)
+        setattr(ir_function, "_bind_head", True)
+        try:
+            fun_str = _expression_to_haxe(expr.fun_const, code, ir_function)
+        finally:
+            setattr(ir_function, "_bind_head", previous)
         obj_str = _expression_to_haxe(expr.obj, code, ir_function)
         fun_type = expr.fun.type.resolve(code).definition
         extra_args = fun_type.args[1:] if isinstance(fun_type, Fun) else []
@@ -1284,6 +1291,13 @@ def _expression_to_haxe(
         inline = _inline_closure(expr, obj_str, len(extra_args), code, ir_function)
         if inline is not None:
             return inline
+        block = _inline_block_closure(expr, obj_str, len(extra_args), code, ir_function)
+        if block is not None:
+            return block
+        forwarded = _forwarded_bind(expr, obj_str, code, ir_function)
+        if forwarded is not None:
+            # `Type.method.bind(a, _)`: the compiler wraps the function in a helper that only calls it.
+            return forwarded
         bind_args = ", ".join([obj_str] + ["_"] * len(extra_args))
         return f"({fun_str}).bind({bind_args})"
 
@@ -3082,6 +3096,156 @@ def _optional_ref_adapter(helper_ir: IRFunction) -> Optional[List[bool]]:
     return [name in unboxed.values() for name in params[1:]]
 
 
+def _inline_block_closure(
+    expr: "IRBoundClosure",
+    obj_str: str,
+    extra_arg_count: int,
+    code: Bytecode,
+    ir_function: Optional[IRFunction],
+) -> Optional[str]:
+    """A closure over `this` whose body takes several statements, as the block lambda it came
+    from: `n -> { ... }`. The helper's first parameter is the bound `this`."""
+    if ir_function is None or not (obj_str == "this" or re.fullmatch(r"[A-Za-z_]\w*", obj_str)):
+        return None
+    if obj_str == "this" and getattr(ir_function, "_force_static", False):
+        return None
+    helpers = getattr(ir_function, "_helper_irs", None)
+    helper = helpers.get(expr.fun.findex.value) if helpers else None
+    if helper is None:
+        return None
+    signature = helper.func.type.resolve(code).definition
+    if not isinstance(signature, Fun) or len(signature.args) != extra_arg_count + 1:
+        return None
+    names = [local.name for local in helper.locals[: len(signature.args)]]
+    if not names or any(
+        isinstance(s, IRAssign) and isinstance(s.target, IRLocal) and s.target.name == names[0]
+        for s in _all_statements(helper.block)
+    ):
+        return None
+    text = _generate_function_pseudo(helper)
+    lines = text.splitlines()
+    open_at = next(
+        (i for i, line in enumerate(lines) if line.rstrip().endswith("{") and "function " in line), None
+    )
+    if open_at is None or not lines[-1].strip() == "}":
+        return None
+    header = re.search(r"function [\w$]+\((.*)\)(?:: ([^{]*))? \{\s*$", lines[open_at])
+    if header is None:
+        return None
+    parts = [part.strip() for part in _split_params(header.group(1))]
+    declared = [part.split(":")[0].strip() for part in parts]
+    if len(declared) != extra_arg_count + 1:
+        return None
+    returns = header.group(2)
+    base = len(lines[open_at]) - len(lines[open_at].lstrip()) + 4
+    body = [line[base:] if line.startswith(" " * base) else line.lstrip() for line in lines[open_at + 1 : -1]]
+    if obj_str != "this" and declared[0] != obj_str:
+        return None  # a closure over a local sees the very same variable
+    pattern = re.compile(rf"(?<![\w.]){re.escape(declared[0])}(?!\w)")
+    inner = disasm.outside_literals("\n".join(body), lambda chunk: pattern.sub("this", chunk))
+    if obj_str != "this":
+        inner = "\n".join(body)
+    getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
+    # A function expression, typed like the declaration: an arrow takes its return type from its
+    # first `return` and cannot be annotated.
+    params = ", ".join(name if "{" in part else part for name, part in zip(declared[1:], parts[1:]))
+    ret = f": {returns.strip()}" if returns and returns.strip() not in ("", "Void") else ""
+    indented = "\n".join(("    " + line) if line else line for line in inner.splitlines())
+    return f"function({params}){ret} {{\n{indented}\n}}"
+
+
+def _split_params(text: str) -> List[str]:
+    """The top-level comma-separated parts of a parameter list (types may contain commas)."""
+    parts, depth, current = [], 0, ""
+    for ch in text:
+        if ch in "(<[{":
+            depth += 1
+        elif ch in ")>]}":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append(current)
+            current = ""
+        else:
+            current += ch
+    if current.strip():
+        parts.append(current)
+    return parts
+
+
+def _all_statements(node: IRStatement) -> List[IRStatement]:
+    found: List[IRStatement] = []
+    pending: List[IRStatement] = [node]
+    seen: Set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        found.append(current)
+        pending.extend(current.get_children())
+    return found
+
+
+def _forwarded_bind(
+    expr: "IRBoundClosure", obj_str: str, code: Bytecode, ir_function: Optional[IRFunction]
+) -> Optional[str]:
+    """`Class.function.bind(..)` (or `Class.new.bind(..)`) when the helper a bound closure runs only
+    forwards its parameters to that function: the bound value in one slot, the closure's own
+    arguments (as `_`, in order) in the others."""
+    helpers = getattr(ir_function, "_helper_irs", None)
+    helper = helpers.get(expr.fun.findex.value) if helpers else None
+    if helper is None:
+        return None
+    signature = helper.func.type.resolve(code).definition
+    if not isinstance(signature, Fun):
+        return None
+    params = [local.name for local in helper.locals[: len(signature.args)]]
+    statements = list(helper.block.statements)
+    if len(statements) != 1 or not isinstance(statements[0], IRReturn) or statements[0].value is None:
+        return None
+    call = statements[0].value
+    if isinstance(call, IRNew) and not call.constructor_args:
+        return None
+    args = (
+        call.constructor_args if isinstance(call, IRNew) else call.args if isinstance(call, IRCall) else None
+    )
+    if args is None or not params or any(not isinstance(a, IRLocal) for a in args):
+        return None
+    names = [a.name for a in args if isinstance(a, IRLocal)]
+    bound, unbound = params[0], params[1:]
+    if names.count(bound) != 1 or [n for n in names if n != bound] != unbound:
+        return None  # the bound value is used once, and the closure's own arguments keep their order
+    slots = [obj_str if n == bound else "_" for n in names]
+    while len(slots) > 1 and slots[-1] == "_":
+        slots.pop()
+    callee = _forwarded_callee(call, code, ir_function)
+    return f"{callee}.bind({', '.join(slots)})" if callee is not None else None
+
+
+def _forwarded_callee(call: IRExpression, code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
+    if isinstance(call, IRNew):
+        return f"{disasm.type_to_haxe(disasm.type_name(code, call.get_type()))}.new"
+    if (
+        isinstance(call, IRCall)
+        and isinstance(call.target, IRConst)
+        and isinstance(call.target.value, Function)
+        and call.call_type == IRCall.CallType.FUNC
+    ):
+        func = call.target.value
+        abstract = abstracts.abstract_of_function(code, func)
+        if abstract is not None and func.findex.value == abstract.constructor:
+            return f"{_abstract_ref(abstract, code, ir_function)}.new"
+        if abstract is not None and func.findex.value not in abstract.instance:
+            return f"{_abstract_ref(abstract, code, ir_function)}.{code.partial_func_name(func)}"
+        if abstract is None and _is_static_function(func, code):
+            return _expression_to_haxe(call.target, code, ir_function)
+    return None
+
+
+def _is_static_function(func: Function, code: Bytecode) -> bool:
+    return (code.full_func_name(func) or "").rpartition(".")[0].rpartition(".")[2].startswith("$")
+
+
 def _closure_adapter(
     expr: "IRBoundClosure", obj_str: str, code: Bytecode, ir_function: Optional[IRFunction]
 ) -> Optional[str]:
@@ -3118,7 +3282,7 @@ def _closure_adapter(
 
 def _inline_anonymous(func: "Function", code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
     """Render a reference to a capture-free anonymous function as a lambda."""
-    if ir_function is None:
+    if ir_function is None or getattr(ir_function, "_bind_head", False):
         return None
     helpers = getattr(ir_function, "_inline_closure_bodies", None)
     if not helpers:
@@ -3137,8 +3301,8 @@ def _closure_inline_body(helper_ir: IRFunction) -> Optional[Tuple[List[str], str
     statements = list(helper_ir.block.statements)
     if statements and isinstance(statements[-1], IRReturn) and statements[-1].value is None:
         statements = statements[:-1]
-    if len(statements) != 1:
-        return None
+    if len(statements) != 1 or isinstance(statements[0], IRThrow):
+        return None  # `() -> throw x` is typed as returning Dynamic, not as the Void function it was
     signature = helper_ir.func.type.resolve(helper_ir.code).definition
     if not isinstance(signature, Fun):
         return None
@@ -5941,7 +6105,15 @@ def _class_body(
     # below consults `inlined`.
     inline_bodies: Dict[int, Tuple[List[str], str]] = {}
     optional_adapters: Dict[int, List[bool]] = {}
-    for findex, helper_ir in helper_irs.items():
+    inlined: Set[int] = set()
+    for ir_func in static_methods + methods + list(helper_irs.values()):
+        setattr(ir_func, "_inline_closure_bodies", inline_bodies)
+        setattr(ir_func, "_helper_irs", helper_irs)
+        setattr(ir_func, "_optional_adapters", optional_adapters)
+        setattr(ir_func, "_inlined_closures", inlined)
+    # A closure is created inside the one that encloses it and so has the higher findex; rendering
+    # the inner ones first lets the outer body embed them as lambdas too.
+    for findex, helper_ir in sorted(helper_irs.items(), reverse=True):
         setattr(helper_ir, "_containing_class", ir_class)
         setattr(helper_ir, "_force_static", True)
         setattr(helper_ir, "_anon_name", f"__anon_{findex}")
@@ -5951,11 +6123,6 @@ def _class_body(
             optional_adapters[findex] = optional
         if body is not None:
             inline_bodies[findex] = body
-    inlined: Set[int] = set()
-    for ir_func in static_methods + methods:
-        setattr(ir_func, "_inline_closure_bodies", inline_bodies)
-        setattr(ir_func, "_optional_adapters", optional_adapters)
-        setattr(ir_func, "_inlined_closures", inlined)
 
     # Collect natives, std functions, referenced classes and referenced enums.
     natives: List[Native] = []
@@ -6084,13 +6251,19 @@ def _class_body(
 
     # Emit any anonymous closures referenced by this class as private helpers,
     # except the ones already rendered inline at their creation site.
+    # A helper rendered here can inline another one into its body, so render them all before deciding
+    # which are emitted.
+    rendered_helpers: Dict[int, str] = {}
     for findex, helper_ir in sorted(helper_irs.items()):
         if findex in inlined:
             continue
         setattr(helper_ir, "_containing_class", ir_class)
         setattr(helper_ir, "_force_static", True)
         setattr(helper_ir, "_anon_name", f"__anon_{findex}")
-        func_str = _generate_function_pseudo(helper_ir)
+        rendered_helpers[findex] = _generate_function_pseudo(helper_ir)
+    for findex, func_str in sorted(rendered_helpers.items()):
+        if findex in inlined:
+            continue
         for line in func_str.split("\n"):
             output_lines.append(f"{indent_str}{line}")
         output_lines.append("")
