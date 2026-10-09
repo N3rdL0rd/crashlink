@@ -1389,6 +1389,16 @@ def _expression_to_haxe(
             return f"{_CTX_MARK}{int(expr.field_name.removeprefix('param'))}{_CTX_MARK}"
         inner = _expression_to_haxe(expr.value, code, ir_function)
         index = int(expr.field_name.removeprefix("param"))
+        enum_def = expr.value.get_type().definition
+        if isinstance(enum_def, Enum) and enum_def.name.value != 0 and len(enum_def.constructs) == 1:
+            # The only constructor needs no index test: the compiler read the parameter straight
+            # from the value, which only a pattern match on it does in source.
+            slots = ["_"] * len(enum_def.constructs[0].params)
+            slots[index] = "__param"
+            name = disasm.enum_construct_name(code, enum_def, 0)
+            # Qualified: a bare constructor name can be shadowed by a type of the same name.
+            name = f"{destaticify(disasm._enum_name(code, enum_def))}.{name}"
+            return f"(switch ({inner}) {{ case {name}({', '.join(slots)}): __param; }})"
         raw = f"Type.enumParameters({inner})[{index}]"
         # The parameter list is Array<Dynamic>; give the read back the field's own type, or an
         # expression such as `a[0] + param[0]` is typed as Dynamic arithmetic (Float).

@@ -75,3 +75,26 @@ class Main {
     assert "__ClosureCtx" not in files["src/Main.hx"].split("class Main", 1)[1]
     assert actual == expected
     assert _ops(original, "Main.run") == _ops(recompiled, "Main.run")
+
+
+def test_single_constructor_enum_parameter_is_read_by_a_pattern(tmp_path: Path) -> None:
+    source = """
+enum Box {
+    Wrap(label:String);
+}
+
+class Main {
+    static function label(b:Box) {
+        return switch (b) {
+            case Wrap(l): l;
+        }
+    }
+    static function main() {
+        Sys.println(label(Wrap("x")));
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "Type.enumParameters" not in files["src/Main.hx"]
+    assert actual == expected
+    assert _ops(original, "Main.label") == _ops(recompiled, "Main.label")
