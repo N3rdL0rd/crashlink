@@ -884,6 +884,13 @@ class IRTernaryRecovery(TraversingIROptimizer):
                     new_statements.append(fall)
                     i += 2
                     continue
+            # `if (v != null) { x = v; } else { x = d; }` is `x = v ?? d`.
+            coal_else = self._try_null_coalesce_else(stmt)
+            if coal_else is not None:
+                dbg_print(f"IRTernaryRecovery (?? else): {stmt} -> {coal_else}")
+                new_statements.append(coal_else)
+                i += 1
+                continue
             # `if (c) { v = A; } else { return B; } return v;` -> `return c ? A : B`
             # (and the mirror with the assign in the else). The temp is
             # compiler-generated (single assignment, immediately returned), so
@@ -1040,6 +1047,43 @@ class IRTernaryRecovery(TraversingIROptimizer):
             out._no_user_inline = True
             return out
         return None
+
+    def _try_null_coalesce_else(self, cond_stmt: IRStatement) -> Optional[IRStatement]:
+        """Recover `x = value ?? default` from `if (value != null) { x = value; } else { x = default; }`.
+
+        The compiler lowers `??` to a conditional whose both arms write the same local; the
+        arm that reads the tested value must match it exactly, as in `_try_null_coalesce`.
+        """
+        if not isinstance(cond_stmt, IRConditional):
+            return None
+        cond = cond_stmt.condition
+        if not (isinstance(cond, IRBoolExpr) and cond.op == IRBoolExpr.CompareType.NOT_NULL):
+            return None
+        true_stmts = cond_stmt.true_block.statements if cond_stmt.true_block else []
+        false_stmts = cond_stmt.false_block.statements if cond_stmt.false_block else []
+        if len(true_stmts) != 1 or len(false_stmts) != 1:
+            return None
+        value = cond.left
+        if value is None:
+            return None
+        in_branch, else_branch = true_stmts[0], false_stmts[0]
+        if not (isinstance(in_branch, IRAssign) and isinstance(else_branch, IRAssign)):
+            return None
+        if not isinstance(else_branch.target, IRLocal):
+            return None
+        if not _ir_structurally_equal(in_branch.target, else_branch.target):
+            return None
+        # Exact match: a cast here may change the value (`Std.int(v)`), so it is not `v ?? d`.
+        if not _ir_structurally_equal(in_branch.expr, value):
+            return None
+        # The default arm runs only when the value is null in both forms, so it may read or call.
+        if not self._safe_arm(value):
+            return None
+        coal = IRNullCoalesce(self.func.code, value, else_branch.expr, else_branch.target.type)
+        out = IRAssign(self.func.code, else_branch.target, coal)
+        out.adopt(cond_stmt)
+        out._no_user_inline = True
+        return out
 
     def _unwrap_value(self, expr: IRExpression) -> IRExpression:
         """Strip representation casts so `(T)v` matches the tested `v`."""
