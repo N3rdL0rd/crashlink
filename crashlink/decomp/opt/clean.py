@@ -3825,7 +3825,10 @@ class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
             literal.fields = [(name, self._substitute_temps(value, temps)) for name, value, temps in stores]
 
         if (
-            j < len(stmts)
+            # A variable the source named keeps its declaration: folding it into its one use
+            # would evaluate the object after the use's other arguments.
+            re.fullmatch(r"var\d+", temp.name)
+            and j < len(stmts)
             and self._count_local_refs(stmts[j], temp) == 1
             and not any(self._stmt_uses_local(later, temp) for later in stmts[j + 1 :])
             and self._substitute_use(stmts[j], temp, literal)

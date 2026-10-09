@@ -152,3 +152,23 @@ class Main {
 """
     files, expected, actual, _, _ = roundtrip(tmp_path, source)
     assert actual == expected
+
+
+def test_named_object_variable_is_not_folded_into_its_use(tmp_path: Path) -> None:
+    # Folding `var o = {name: ...}` into the one call that reads it builds the object after the
+    # call's other arguments were loaded.
+    source = """
+class Main {
+    static function show(expected:String, actual:Dynamic) {
+        Sys.println(expected + ":" + actual);
+    }
+    static function main() {
+        var t2 = { name: "jason" };
+        show("jason", Reflect.field(t2, "name"));
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "var t2" in files["src/Main.hx"]
+    assert actual == expected
+    assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")
