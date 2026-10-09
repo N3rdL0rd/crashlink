@@ -811,6 +811,43 @@ def rpo(lifted: Lifted) -> List[int]:
     return post[::-1]
 
 
+def check_reducible(lifted: Lifted, order: List[int]) -> None:
+    """Every edge that goes back in reverse post-order must lead to a block that dominates its
+    source. The facts carried into a loop header (what is known non-null) are only valid then."""
+    position = {b: i for i, b in enumerate(order)}
+    idom: Dict[int, int] = {order[0]: order[0]}
+
+    def intersect(a: int, b: int) -> int:
+        while a != b:
+            while position[a] > position[b]:
+                a = idom[a]
+            while position[b] > position[a]:
+                b = idom[b]
+        return a
+
+    changed = True
+    while changed:
+        changed = False
+        for b in order[1:]:
+            done = [p for p in lifted.preds[b] if p in idom]
+            if not done:
+                continue
+            new = done[0]
+            for p in done[1:]:
+                new = intersect(p, new)
+            if idom.get(b) != new:
+                idom[b] = new
+                changed = True
+    for b in order:
+        for s in lifted.blocks[b].term.succs:
+            if position[s] <= position[b]:
+                walk = b
+                while walk != s and walk != idom[walk]:
+                    walk = idom[walk]
+                if walk != s:
+                    raise Unsupported("irreducible control flow")
+
+
 def build(
     code: Bytecode, func: Function, lifted: Lifted, namer: Namer, strict: bool, ignore_positions: bool = True
 ) -> Built:
@@ -830,7 +867,9 @@ def build(
         builder.facts_out[START] = set()
         if builder.unprocessed_preds[0] == 0:
             builder.seal(0)
-        for b in rpo(lifted):
+        order = rpo(lifted)
+        check_reducible(lifted, order)
+        for b in order:
             builder.process(b)
         g.simplify_phis()
         built = Built(g, lifted)

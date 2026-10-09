@@ -16,7 +16,7 @@ equivalent(a, fa, b, fb)                       # True only when proven
 
 ## What a signature ignores
 
-Register numbers and reuse, `Mov` copies, the order of independent pure computations, where and how constants are materialised, integer constant folding and identities (`x + 0`), dead code, jump layout and branch polarity (`JSLt` against `JSGte` with swapped targets), the order objects are allocated and filled in before first use, string concatenation chains (`"" + a + b`), and the numbering of types, functions, globals and fields (all replaced by names). A closure lifted into its own function is identified by its own signature, not its name.
+Register numbers and reuse, `Mov` copies, the order of independent pure computations, dead pure values, where and how constants are materialised, integer arithmetic (reduced to `c + k1*x1 + ...` in wrapping arithmetic, so `(x + 1 + 1) - (x + 1)` is `1`) and float constant folding, jump layout and branch polarity (`JSLt` against `JSGte` with swapped targets), conditions decided by constants and `x == null` against a null test, the order objects are allocated and filled in before first use, writes to address-taken registers (held back until a reference can observe them; `itos`/`ftos` out-parameters are write-only), string concatenation chains (`"" + a + b`), and the numbering of types, functions, globals and fields (all replaced by names). A closure lifted into its own function (including the `__anon_N` functions decompiled output declares) is identified by its own signature, not its name. A virtual call to a method no class below the receiver overrides is the direct call, and calling a closure over a known function is calling that function.
 
 ## What it keeps
 
@@ -30,6 +30,6 @@ In order: every call, store, allocation and every check that can throw (null der
 
 ## Limits
 
-A function is given no signature (and never compares equal) when it uses inline assembly, when an exception handler reads a register written inside its `try` block, or when something it refers to has no stable name. Calls are compared by callee name, so the callees' own signatures have to be compared as well. Integer division by zero is treated as defined. Unrelated mutations that alias (two names for one object) are ordered conservatively, which only costs completeness.
+A function is given no signature (and never compares equal) when it uses inline assembly, has irreducible control flow, when an exception handler reads a register written inside its `try` block, or when something it refers to has no stable name. A function's own type is part of its signature. Calls are compared by callee name, so the callees' own signatures have to be compared as well. Integer division by zero is treated as defined. Unrelated mutations that alias (two names for one object) are ordered conservatively, which only costs completeness.
 
 `python -m pytest tests/test_equivalence.py` checks both directions on compiled Haxe: pairs that differ only in names, temporaries, folding, operand order or branch layout must match; pairs that differ in a constant, operator, call order, a dropped store or a changed loop bound must not.
