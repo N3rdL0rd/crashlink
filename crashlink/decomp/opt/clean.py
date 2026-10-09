@@ -191,6 +191,17 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
         reads: List[int] = []
 
         def ordered_reads(expr: IRExpression, result: List[int]) -> bool:
+            if isinstance(expr, IRCall):
+                # A call is an ordered, possibly-faulting event like a field read: its
+                # callee and arguments are evaluated first, then the call itself.
+                if self._reads_address_taken(expr) or not all(
+                    ordered_reads(child, result)
+                    for child in expr.get_children()
+                    if isinstance(child, IRExpression)
+                ):
+                    return False
+                result.append(id(expr))
+                return True
             attrs = self._condition_children(expr)
             if attrs is None or self._reads_address_taken(expr):
                 return False
@@ -223,6 +234,23 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
                 return value, 1
             changed = 0
             result = expr
+            if isinstance(expr, IRCall):
+                new_args: List[IRExpression] = []
+                for arg in expr.args:
+                    child, count = substitute(arg, target, value)
+                    new_args.append(child)
+                    changed += count
+                if expr.target is not None:
+                    new_target, count = substitute(expr.target, target, value)
+                    changed += count
+                else:
+                    new_target = None
+                if changed:
+                    result = copy.copy(expr)
+                    field_origins[id(result)] = field_origins.get(id(expr), id(expr))
+                    result.args = new_args
+                    result.target = cast(Any, new_target)
+                return result, changed
             for attr in self._condition_children(expr) or []:
                 child, count = substitute(getattr(expr, attr), target, value)
                 if count:
