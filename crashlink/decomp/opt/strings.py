@@ -138,15 +138,15 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
             for block, _, reference, conversion, allocation, _ in prefiltered:
                 for stmt in (reference, conversion, allocation):
                     self._collect_ids(stmt, ignorable)
-            kept = [
+            alive = [
                 c
                 for c in prefiltered
                 if all(self._scratch_dead(lifetime, c[0], c[1], local, ignorable) for local in c[5])
             ]
-            if len(kept) == len(prefiltered):
+            if len(alive) == len(prefiltered):
                 break
-            prefiltered = kept
-        private = [c[:5] for c in prefiltered]
+            prefiltered = alive
+        private: List[Any] = [c[:5] for c in prefiltered]
 
         # A prior escaped address can observe later writes, even after the ref
         # register itself is reused. Every address of scratch storage must belong
