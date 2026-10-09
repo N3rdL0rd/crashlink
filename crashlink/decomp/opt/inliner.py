@@ -2268,6 +2268,15 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                             )
                         ):
                             free_locals.discard(f"field:{next_stmt.target.field_name}")
+                        # `t = f(x); x = t` is `x = f(x)`: the whole expression is read before the store.
+                        if (
+                            isinstance(next_stmt, IRAssign)
+                            and isinstance(next_stmt.target, IRLocal)
+                            and next_stmt.expr == temp_local
+                            and next_stmt.target != temp_local
+                        ):
+                            free_locals.discard(next_stmt.target.name)
+                            free_locals.discard(f"reg:{next_stmt.target.reg_idx}")
                         if (
                             self._stmt_contains_local(next_stmt, temp_local)
                             and not (

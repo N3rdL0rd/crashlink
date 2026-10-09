@@ -43,6 +43,7 @@ from .decomp import (
     IRClass,
     IRField,
     IRBoundClosure,
+    IRStoreExpr,
     IRFunction,
     IRBlock,
     IRNew,
@@ -850,6 +851,17 @@ def _has_array_access(typ: "Type", code: Bytecode) -> bool:
     return name.startswith("hl.types.Array") and not _is_untyped_array_access_class(typ, code)
 
 
+def _store_chain(expr: "IRStoreExpr", code: Bytecode, ir_function: Optional[IRFunction]) -> str:
+    """`a = b = value` for a chain of assignment expressions, without the outer parentheses."""
+    value = expr.value
+    value_str = (
+        _store_chain(value, code, ir_function)
+        if isinstance(value, IRStoreExpr)
+        else _expression_to_haxe(value, code, ir_function)
+    )
+    return f"{_expression_to_haxe(expr.target, code, ir_function)} = {value_str}"
+
+
 def _resolve_array_access(
     expr: "IRArrayAccess", code: Bytecode, ir_function: Optional[IRFunction]
 ) -> Tuple[str, str, Optional[str]]:
@@ -1393,9 +1405,16 @@ def _expression_to_haxe(
         arr_str, idx_str, method_kind = _resolve_array_access(expr, code, ir_function)
         if method_kind is not None:
             return f"{arr_str}.get{method_kind}({idx_str})"
+        if idx_str == "0" and arr_str in getattr(ir_function, "_unboxed_captures", ()):
+            return arr_str  # the variable itself: its capture box is not part of the source
         return f"{arr_str}[{idx_str}]"
 
+    elif isinstance(expr, IRStoreExpr):
+        return f"({_store_chain(expr, code, ir_function)})"
+
     elif isinstance(expr, IRArrayLiteral):
+        if id(expr) in getattr(ir_function, "_unboxed_literals", ()):
+            return _expression_to_haxe(expr.elements[0], code, ir_function)
         elements = ", ".join(_expression_to_haxe(e, code, ir_function) for e in expr.elements)
         return f"[{elements}]"
 
@@ -2488,7 +2507,11 @@ def _generate_statements(
                     value_str = _expression_to_haxe(value_expr, code, ir_function)
             else:
                 target_str = _expression_to_haxe(stmt.target, code, ir_function)
-                value_str = _expression_to_haxe(stmt.expr, code, ir_function)
+                value_str = (
+                    _store_chain(stmt.expr, code, ir_function)
+                    if isinstance(stmt.expr, IRStoreExpr)
+                    else _expression_to_haxe(stmt.expr, code, ir_function)
+                )
                 if isinstance(stmt.target, IRLocal) and stmt.target.array_elem_type is not None:
                     value_str = _erased_array_into_typed(value_str, stmt.expr, code)
             # A private field can't be written through `(@:privateAccess x.f)`: the
@@ -2536,6 +2559,29 @@ def _generate_statements(
                     and _same_receiver(a.target, b.target)
                 )
 
+            def _plain_index(expr: IRExpression) -> bool:
+                if isinstance(expr, (IRLocal, IRConst)):
+                    return True
+                return (
+                    isinstance(expr, IRArithmetic)
+                    and expr.op == IRArithmetic.ArithmeticType.SHL
+                    and _plain_index(expr.left)
+                    and _plain_index(expr.right)
+                )
+
+            def _element_eq(a: IRStatement, b: IRStatement) -> bool:
+                # x[i]++ reads and writes one element: both sides must render as the same array element.
+                return (
+                    isinstance(a, IRArrayAccess)
+                    and isinstance(b, IRArrayAccess)
+                    and isinstance(a.array, (IRLocal, IRField))
+                    and isinstance(b.array, (IRLocal, IRField))
+                    and _plain_index(a.index)
+                    and _plain_index(b.index)
+                    and _expression_to_haxe(a, code, ir_function) == target_str
+                    and _expression_to_haxe(b, code, ir_function) == target_str
+                )
+
             if (
                 isinstance(stmt.expr, IRArithmetic)
                 and stmt.expr.step
@@ -2545,6 +2591,7 @@ def _generate_statements(
                 and (
                     (isinstance(stmt.target, IRLocal) and _same_local(stmt.expr.left, stmt.target))
                     or (isinstance(stmt.target, IRField) and _field_eq(stmt.expr.left, stmt.target))
+                    or (isinstance(stmt.target, IRArrayAccess) and _element_eq(stmt.expr.left, stmt.target))
                 )
             ):
                 op_sym = "++" if stmt.expr.op == IRArithmetic.ArithmeticType.ADD else "--"
@@ -3565,6 +3612,121 @@ def _inline_anonymous(func: "Function", code: Bytecode, ir_function: Optional[IR
     return f"({', '.join(params)}) -> {body}"
 
 
+def _capture_box_uses(
+    root: IRStatement, name: str, code: Bytecode, ir_function: Optional[IRFunction]
+) -> Tuple[int, int, int, int, List[IRBoundClosure]]:
+    """How the local `name` is used in a tree: (all uses, uses that are part of a capture box,
+    box definitions, element writes, closures it is the environment of).
+
+    A capture box is the one-element array the compiler wraps a captured variable in: it is
+    created from a one-element literal, read and written only as element 0, and otherwise only
+    handed to closures as their environment."""
+    total = accounted = defs = writes = 0
+    consumers: List[IRBoundClosure] = []
+
+    def count(node: IRStatement) -> int:
+        here = 1 if isinstance(node, IRLocal) and node.name == name else 0
+        return here + sum(count(child) for child in node.get_children())
+
+    def element(node: IRStatement) -> bool:
+        if not isinstance(node, IRArrayAccess):
+            return False
+        try:
+            arr_str, idx_str, kind = _resolve_array_access(node, code, ir_function)
+        except Exception:
+            return False
+        return arr_str == name and idx_str == "0" and kind is None
+
+    def walk(node: IRStatement, written: bool = False) -> None:
+        nonlocal total, accounted, defs, writes
+        if isinstance(node, IRAssign):
+            target = node.target
+            if isinstance(target, IRLocal) and target.name == name:
+                total += 1
+                if isinstance(node.expr, IRArrayLiteral) and len(node.expr.elements) == 1:
+                    defs += 1
+                    accounted += 1
+                walk(node.expr)
+                return
+            walk(target, True)
+            walk(node.expr)
+            return
+        if element(node):
+            inside = count(node)
+            total += inside
+            accounted += inside
+            writes += 1 if written else 0
+            return
+        if isinstance(node, IRBoundClosure) and isinstance(node.obj, IRLocal) and node.obj.name == name:
+            total += 1
+            accounted += 1
+            consumers.append(node)
+            return
+        if isinstance(node, IRLocal) and node.name == name:
+            total += 1
+            return
+        for child in node.get_children():
+            walk(child)
+
+    walk(root)
+    return total, accounted, defs, writes, consumers
+
+
+def _find_capture_boxes(
+    ir_func: IRFunction,
+    helper_irs: Dict[int, IRFunction],
+    inline_bodies: Dict[int, Tuple[List[str], str]],
+) -> Dict[str, List[IRFunction]]:
+    """Capture boxes of `ir_func`, with the closure helpers sharing each.
+
+    The compiler boxes a variable that a closure captures and that is assigned, so source
+    wrote a plain variable and the closure reads it by name. Only a box every closure
+    receiving it renders as a lambda can go: a lifted helper bound to the value would
+    capture a copy."""
+    code = ir_func.code
+    candidates: Dict[str, IRArrayLiteral] = {}
+    pending: List[IRStatement] = [ir_func.block]
+    while pending:
+        node = pending.pop()
+        if (
+            isinstance(node, IRAssign)
+            and isinstance(node.target, IRLocal)
+            and isinstance(node.expr, IRArrayLiteral)
+            and len(node.expr.elements) == 1
+        ):
+            candidates.setdefault(node.target.name, node.expr)
+        pending.extend(node.get_children())
+    boxes: Dict[str, List[IRFunction]] = {}
+    local_types = _collect_locals(ir_func.block) if candidates else {}
+    for name, literal in candidates.items():
+        if not re.fullmatch(r"Array<.+>", local_types.get(name, "")):
+            continue
+        total, accounted, defs, writes, consumers = _capture_box_uses(ir_func.block, name, code, ir_func)
+        if total != accounted or defs != 1 or not consumers:
+            continue
+        helpers: List[IRFunction] = []
+        for closure in consumers:
+            findex = closure.fun.findex.value
+            helper = helper_irs.get(findex)
+            entry = inline_bodies.get(findex)
+            if helper is None or entry is None or not entry[0] or entry[0][0] != name:
+                break
+            h_total, h_accounted, h_defs, h_writes, h_consumers = _capture_box_uses(
+                helper.block, name, code, helper
+            )
+            if h_total != h_accounted or h_defs or h_consumers or helper in helpers:
+                break
+            helpers.append(helper)
+            writes += h_writes
+        else:
+            if writes:
+                boxes[name] = helpers
+                setattr(
+                    ir_func, "_unboxed_literals", getattr(ir_func, "_unboxed_literals", set()) | {id(literal)}
+                )
+    return boxes
+
+
 def _closure_inline_body(helper_ir: IRFunction) -> Optional[Tuple[List[str], str]]:
     """(parameter names, rendered body) for an anonymous function, if it is a
     single expression that can stand in expression position."""
@@ -3862,6 +4024,10 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     for name, haxe_type in receiver_types.items():
         if name in local_types:
             local_types[name] = haxe_type
+    for name in getattr(ir_func, "_unboxed_captures", ()):
+        boxed = re.fullmatch(r"Array<(.+)>", local_types.get(name, ""))
+        if boxed is not None:
+            local_types[name] = boxed.group(1)
     catch_locals = _collect_catch_local_names(ir_func.block)
     foreach_elem_names = _collect_foreach_elem_names(ir_func.block)
     inline_declarations: Dict[IRStatement, Tuple[str, str]] = {}  # stmt → (name, type_str)
@@ -6398,6 +6564,14 @@ def _class_body(
             optional_adapters[findex] = optional
         if body is not None:
             inline_bodies[findex] = body
+    for ir_func in static_methods + methods:
+        for name, helpers in _find_capture_boxes(ir_func, helper_irs, inline_bodies).items():
+            setattr(ir_func, "_unboxed_captures", getattr(ir_func, "_unboxed_captures", frozenset()) | {name})
+            for helper_ir in helpers:
+                setattr(helper_ir, "_unboxed_captures", frozenset({name}))
+                body = _closure_inline_body(helper_ir)
+                if body is not None:
+                    inline_bodies[helper_ir.func.findex.value] = body
     for ir_func in static_methods + methods:
         _hoist_closure_contexts(ir_func, ctx_bodies)
 

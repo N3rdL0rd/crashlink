@@ -192,12 +192,13 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
 
         def ordered_reads(expr: IRExpression, result: List[int]) -> bool:
             if isinstance(expr, IRCall):
-                # A call is an ordered effect like a field read: folding is sound
-                # only while the whole sequence of calls and reads is unchanged.
-                if self._reads_address_taken(expr) or isinstance(expr.target, IRLocal):
-                    return False
-                parts = ([expr.target] if expr.target is not None else []) + list(expr.args)
-                if not all(ordered_reads(part, result) for part in parts):
+                # A call is an ordered, possibly-faulting event like a field read: its
+                # callee and arguments are evaluated first, then the call itself.
+                if self._reads_address_taken(expr) or not all(
+                    ordered_reads(child, result)
+                    for child in expr.get_children()
+                    if isinstance(child, IRExpression)
+                ):
                     return False
                 result.append(id(expr))
                 return True
@@ -234,16 +235,21 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
             changed = 0
             result = expr
             if isinstance(expr, IRCall):
-                new_args = list(expr.args)
-                for position, arg in enumerate(expr.args):
+                new_args: List[IRExpression] = []
+                for arg in expr.args:
                     child, count = substitute(arg, target, value)
-                    if count:
-                        new_args[position] = child
-                        changed += count
+                    new_args.append(child)
+                    changed += count
+                if expr.target is not None:
+                    new_target, count = substitute(expr.target, target, value)
+                    changed += count
+                else:
+                    new_target = None
                 if changed:
                     result = copy.copy(expr)
-                    result.args = new_args
                     field_origins[id(result)] = field_origins.get(id(expr), id(expr))
+                    result.args = new_args
+                    result.target = cast(Any, new_target)
                 return result, changed
             for attr in self._condition_children(expr) or []:
                 child, count = substitute(getattr(expr, attr), target, value)
@@ -3880,7 +3886,10 @@ class IRAnonObjectLiteralOptimizer(TraversingIROptimizer):
             literal.fields = [(name, self._substitute_temps(value, temps)) for name, value, temps in stores]
 
         if (
-            j < len(stmts)
+            # A variable the source named keeps its declaration: folding it into its one use
+            # would evaluate the object after the use's other arguments.
+            re.fullmatch(r"var\d+", temp.name)
+            and j < len(stmts)
             and self._count_local_refs(stmts[j], temp) == 1
             and not any(self._stmt_uses_local(later, temp) for later in stmts[j + 1 :])
             and self._substitute_use(stmts[j], temp, literal)
