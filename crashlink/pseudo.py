@@ -508,7 +508,7 @@ def _null_operand(expr: Optional[IRExpression], code: Bytecode, ir_function: Opt
     """The operand of a null test; a lambda (`(x) -> x`) takes the `== null` into its body
     unless grouped."""
     rendered = _expression_to_haxe(expr, code, ir_function)
-    return f"({rendered})" if re.match(r"\([\w, ]*\) ->", rendered) else rendered
+    return f"({rendered})" if _is_lambda_text(rendered) else rendered
 
 
 _NON_NULLABLE_KINDS = {
@@ -602,6 +602,39 @@ def _is_dynamic_int_read(operand: Optional[IRExpression]) -> bool:
         Type.Kind.DYN.value,
         Type.Kind.NULL.value,
     )
+
+
+def _null_guarded_copy(
+    stmt: IRConditional, code: Bytecode, ir_function: Optional[IRFunction]
+) -> Optional[IRAssign]:
+    """`v = x` for `if (x == null) v = null else v = <x as it renders>`."""
+    condition = stmt.condition
+    if not (
+        isinstance(condition, IRBoolExpr)
+        and condition.op in (IRBoolExpr.CompareType.NULL, IRBoolExpr.CompareType.NOT_NULL)
+        and isinstance(condition.left, IRLocal)
+        and stmt.false_block is not None
+    ):
+        return None
+    null_arm, copy_arm = stmt.true_block, stmt.false_block
+    if condition.op == IRBoolExpr.CompareType.NOT_NULL:
+        null_arm, copy_arm = copy_arm, null_arm
+    if len(null_arm.statements) != 1 or len(copy_arm.statements) != 1:
+        return None
+    nulled, copied = null_arm.statements[0], copy_arm.statements[0]
+    if not (
+        isinstance(nulled, IRAssign)
+        and isinstance(copied, IRAssign)
+        and isinstance(nulled.target, IRLocal)
+        and nulled.target == copied.target
+        and isinstance(nulled.expr, IRConst)
+        and nulled.expr.const_type == IRConst.ConstType.NULL
+        and isinstance(copied.expr, IRBoundClosure)
+    ):
+        return None
+    if _expression_to_haxe(copied.expr, code, ir_function) != condition.left.name:
+        return None
+    return IRAssign(code, copied.target, condition.left)
 
 
 def _null_guarded_ref_source(local: IRLocal, block: IRBlock) -> Optional[IRExpression]:
@@ -2488,6 +2521,12 @@ def _generate_statements(
                     native_name = native_name.resolve(ir_function.code)
                 output_lines.append(f"{indent}// native stub: {native_name or '?'}")
 
+        elif isinstance(stmt, IRConditional) and (
+            null_guarded_copy := _null_guarded_copy(stmt, code, ir_function)
+        ):
+            # `v = x == null ? null : x` once the converting closure is dropped: the source
+            # assigned `x`, and the compiler adds the same guard when it converts it.
+            output_lines.extend(_gen([null_guarded_copy], indent_level, declared_vars_in_scope, render_subs))
         elif isinstance(stmt, IRConditional):
             true_stmts = stmt.true_block.statements if stmt.true_block else []
             false_stmts = stmt.false_block.statements if stmt.false_block else []

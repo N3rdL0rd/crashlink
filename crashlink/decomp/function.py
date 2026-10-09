@@ -102,6 +102,7 @@ from .opt.clean import (
     IRSequentialTempFolder,
     IRDeadAssignmentEliminator,
     IRDefaultArgumentRecovery,
+    IRNullableDefaultRecovery,
     IRInterfaceCacheCollapser,
     IRConstructorFolder,
     IREnumConstructorFolder,
@@ -422,6 +423,7 @@ class IRFunction:
                 IRTypedCatchOptimizer(self),
                 IREnumSwitchOptimizer(self),
                 IRGuardClauseNormalizer(self),
+                IRNullableDefaultRecovery(self),
                 IRInlineCallRecovery(self),
                 IRPosInfosFolder(self),
             ]
@@ -2684,6 +2686,16 @@ class IRFunction:
             return self._branch_falls_through(last.true_block) or self._branch_falls_through(last.false_block)
         return True
 
+    def _is_parameter_local(self, reg: int, local: IRLocal) -> bool:
+        """Whether `local` still is the unwritten value a parameter register came in with."""
+        fun_type = self.func.type.resolve(self.code).definition
+        return (
+            isinstance(fun_type, Fun)
+            and reg < len(fun_type.args)
+            and local.reg_idx == reg
+            and local.defining_op_idx is None
+        )
+
     def _join_branch_locals(
         self,
         entry: List[IRLocal],
@@ -2702,6 +2714,14 @@ class IRFunction:
                 self.locals[reg] = first
                 continue
             if not self._register_live_at(convergence, reg):
+                continue
+            if self._is_parameter_local(reg, entry[reg]) and entry[reg] in incoming:
+                # A branch giving the parameter a new value (`if (p == null) p = 10;`) writes the
+                # parameter itself; the branches that leave it alone need no copy.
+                for (branch, _), local in zip(live, incoming):
+                    if local != entry[reg]:
+                        branch.statements.append(IRAssign(self.code, entry[reg], local))
+                self.locals[reg] = entry[reg]
                 continue
             # A fresh name avoids overwriting a still-live source local in another
             # register. Copies belong at the outgoing edges, after all branch reads.
