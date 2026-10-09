@@ -181,6 +181,60 @@ def _decide(pred: str, operands: Tuple[int, ...], negated: bool, facts: Dict[int
     return base != negated
 
 
+PURE_OPS = frozenset(
+    {
+        "Mov", "Int", "Float", "Bool", "Bytes", "String", "Null", "Neg", "Not", "Incr", "Decr",
+        "Add", "Sub", "Mul", "SDiv", "UDiv", "SMod", "UMod", "Shl", "SShr", "UShr", "And", "Or", "Xor",
+        "StaticClosure", "InstanceClosure", "GetGlobal", "Type", "GetType", "GetTID",
+        "ToDyn", "ToSFloat", "ToUFloat", "ToInt", "ToVirtual", "UnsafeCast",
+    }
+)  # fmt: skip
+"""Opcodes whose only effect is the register they write."""
+
+
+def _drop_dead_values(
+    raw: Dict[int, "Block"], successors: Dict[int, List[int]], address_taken: Set[int]
+) -> None:
+    """Remove pure opcodes whose result nothing reads, so a block that only computed such values
+    is empty and can be threaded away like any other."""
+    use: Dict[int, Set[int]] = {}
+    defs: Dict[int, Set[int]] = {}
+    for start, block in raw.items():
+        u: Set[int] = set()
+        d: Set[int] = set()
+        for op in block.ops:
+            ou, od = uses_defs(op)
+            u.update(r for r in ou if r not in d)
+            d.update(od)
+        u.update(r for r in block.term.regs if r not in d)
+        use[start], defs[start] = u, d
+    live_in: Dict[int, Set[int]] = {s: set() for s in raw}
+    changed = True
+    while changed:
+        changed = False
+        for start in raw:
+            out: Set[int] = set()
+            for s in successors[start]:
+                out |= live_in.get(s, set())
+            new = use[start] | (out - defs[start])
+            if new != live_in[start]:
+                live_in[start] = new
+                changed = True
+    for start, block in raw.items():
+        live: Set[int] = set(block.term.regs)
+        for s in successors[start]:
+            live |= live_in.get(s, set())
+        kept: List[Opcode] = []
+        for op in reversed(block.ops):
+            ou, od = uses_defs(op)
+            if op.op in PURE_OPS and od and all(r not in live and r not in address_taken for r in od):
+                continue
+            live = (live - set(od)) | set(ou)
+            kept.append(op)
+        kept.reverse()
+        block.ops = kept
+
+
 def lift(func_ops: List[Opcode], regs: List[int], namer: Namer) -> Lifted:
     ops = func_ops
     count = len(ops)
@@ -263,6 +317,18 @@ def lift(func_ops: List[Opcode], regs: List[int], namer: Namer) -> Lifted:
                 default = last_index + 1  # no case matched: execution continues after the switch
                 block.term = Term("switch", regs=(last.df["reg"].value,), succs=tuple(cases) + (default,))
         raw[start] = block
+
+    raw_succs: Dict[int, List[int]] = {}
+    for start, block in raw.items():
+        if block.term.kind == "cond":
+            _p, _o, _n, target, fall = pending_cond[start]
+            raw_succs[start] = [target, fall]
+        else:
+            raw_succs[start] = list(block.term.succs)
+    if not any(
+        op.op == "Trap" for op in ops
+    ):  # a handler reads registers the body wrote, which liveness over normal edges misses
+        _drop_dead_values(raw, raw_succs, address_taken)
 
     # -- thread empty jump-only blocks ----------------------------------------------------------
     def is_empty(b: Block) -> bool:
