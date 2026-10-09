@@ -119,6 +119,7 @@ from .opt.strings import (
     IRTraceOptimizer,
     IRStringConcatFolder,
 )
+from .opt.chains import IRChainAssignFolder
 from .opt.stringalloc import IRStringAllocInliner
 from .opt.pos import IRPosInfosFolder
 from .opt.arrays import (
@@ -358,6 +359,7 @@ class IRFunction:
                 IRConstructorFolder(self),
                 IREnumConstructorFolder(self),
                 IRPrimitiveJumpLifter(self),
+                IRChainAssignFolder(self),
                 IRGlobalStringOptimizer(self),
                 IRStringIntConcatOptimizer(self),
                 IRConditionInliner(self),

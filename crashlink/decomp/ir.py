@@ -461,6 +461,34 @@ class IRAssign(IRStatement):
         return f"<IRAssign: {self.target} = {self.expr}{expr_type_str}>"
 
 
+class IRStoreExpr(IRExpression):
+    """An assignment used as a value, `(target = value)`: it stores and then yields what it stored.
+
+    HL keeps a chained assignment's value in one register that every store and the final
+    consumer read, so `a = b = 1` is one `Int` followed by two stores."""
+
+    def __init__(self, code: Bytecode, assign: "IRAssign"):
+        super().__init__(code)
+        self.assign = assign
+
+    @property
+    def target(self) -> IRExpression:
+        return self.assign.target
+
+    @property
+    def value(self) -> IRExpression:
+        return self.assign.expr
+
+    def get_type(self) -> Type:
+        return self.assign.expr.get_type()
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.assign.target, self.assign.expr]
+
+    def __repr__(self) -> str:
+        return f"<IRStoreExpr: ({self.assign.target} = {self.assign.expr})>"
+
+
 class IRCall(IRExpression):
     """Function call expression"""
 

@@ -172,3 +172,56 @@ class Main {
     assert "var t2" in files["src/Main.hx"]
     assert actual == expected
     assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")
+
+
+def test_chained_assignment_stays_a_chain(tmp_path: Path) -> None:
+    # `a = b = c = 42` loads 42 once and stores that register to each target.
+    source = """
+class Main {
+    public var a:Int;
+    public var b:Int;
+    public var c:Int;
+    static var j:Int = 0;
+    static var i(default, set):Int = 0;
+    static function set_i(v:Int) {
+        return i = v;
+    }
+    public function new() {
+        a = b = c = 42;
+    }
+    static function main() {
+        var m = new Main();
+        i = j = 1;
+        Sys.println(m.a);
+        Sys.println(m.b);
+        Sys.println(m.c);
+        Sys.println(i);
+        Sys.println(j);
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "this.a = this.b = this.c = 42" in files["src/Main.hx"]
+    assert actual == expected
+    assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")
+    assert _ops(original, "Main.__constructor__") == _ops(recompiled, "Main.__constructor__")
+
+
+def test_stored_value_handed_on_keeps_the_read_it_came_from(tmp_path: Path) -> None:
+    # `f(++a)` stores `a + 1` and passes it on: the read of `a` feeding the sum must stay.
+    source = """
+class Main {
+    static var a = 0;
+    static var b = 0;
+    static function show(v:Int) {
+        Sys.println(v);
+    }
+    static function main() {
+        show(++a);
+        show(++b);
+        show(++a);
+    }
+}
+"""
+    files, expected, actual, _, _ = roundtrip(tmp_path, source)
+    assert actual == expected

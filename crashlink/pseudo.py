@@ -43,6 +43,7 @@ from .decomp import (
     IRClass,
     IRField,
     IRBoundClosure,
+    IRStoreExpr,
     IRFunction,
     IRBlock,
     IRNew,
@@ -782,6 +783,17 @@ def _has_array_access(typ: "Type", code: Bytecode) -> bool:
     return name.startswith("hl.types.Array") and not _is_untyped_array_access_class(typ, code)
 
 
+def _store_chain(expr: "IRStoreExpr", code: Bytecode, ir_function: Optional[IRFunction]) -> str:
+    """`a = b = value` for a chain of assignment expressions, without the outer parentheses."""
+    value = expr.value
+    value_str = (
+        _store_chain(value, code, ir_function)
+        if isinstance(value, IRStoreExpr)
+        else _expression_to_haxe(value, code, ir_function)
+    )
+    return f"{_expression_to_haxe(expr.target, code, ir_function)} = {value_str}"
+
+
 def _resolve_array_access(
     expr: "IRArrayAccess", code: Bytecode, ir_function: Optional[IRFunction]
 ) -> Tuple[str, str, Optional[str]]:
@@ -1294,6 +1306,9 @@ def _expression_to_haxe(
         if idx_str == "0" and arr_str in getattr(ir_function, "_unboxed_captures", ()):
             return arr_str  # the variable itself: its capture box is not part of the source
         return f"{arr_str}[{idx_str}]"
+
+    elif isinstance(expr, IRStoreExpr):
+        return f"({_store_chain(expr, code, ir_function)})"
 
     elif isinstance(expr, IRArrayLiteral):
         if id(expr) in getattr(ir_function, "_unboxed_literals", ()):
@@ -2364,7 +2379,11 @@ def _generate_statements(
                     value_str = _expression_to_haxe(value_expr, code, ir_function)
             else:
                 target_str = _expression_to_haxe(stmt.target, code, ir_function)
-                value_str = _expression_to_haxe(stmt.expr, code, ir_function)
+                value_str = (
+                    _store_chain(stmt.expr, code, ir_function)
+                    if isinstance(stmt.expr, IRStoreExpr)
+                    else _expression_to_haxe(stmt.expr, code, ir_function)
+                )
                 if isinstance(stmt.target, IRLocal) and stmt.target.array_elem_type is not None:
                     value_str = _erased_array_into_typed(value_str, stmt.expr, code)
             # A private field can't be written through `(@:privateAccess x.f)`: the
