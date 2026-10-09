@@ -191,6 +191,16 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
         reads: List[int] = []
 
         def ordered_reads(expr: IRExpression, result: List[int]) -> bool:
+            if isinstance(expr, IRCall):
+                # A call is an ordered effect like a field read: folding is sound
+                # only while the whole sequence of calls and reads is unchanged.
+                if self._reads_address_taken(expr) or isinstance(expr.target, IRLocal):
+                    return False
+                parts = ([expr.target] if expr.target is not None else []) + list(expr.args)
+                if not all(ordered_reads(part, result) for part in parts):
+                    return False
+                result.append(id(expr))
+                return True
             attrs = self._condition_children(expr)
             if attrs is None or self._reads_address_taken(expr):
                 return False
@@ -223,6 +233,18 @@ class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
                 return value, 1
             changed = 0
             result = expr
+            if isinstance(expr, IRCall):
+                new_args = list(expr.args)
+                for position, arg in enumerate(expr.args):
+                    child, count = substitute(arg, target, value)
+                    if count:
+                        new_args[position] = child
+                        changed += count
+                if changed:
+                    result = copy.copy(expr)
+                    result.args = new_args
+                    field_origins[id(result)] = field_origins.get(id(expr), id(expr))
+                return result, changed
             for attr in self._condition_children(expr) or []:
                 child, count = substitute(getattr(expr, attr), target, value)
                 if count:
