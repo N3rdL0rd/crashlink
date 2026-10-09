@@ -1709,11 +1709,12 @@ def _expression_to_haxe(
         target_name = disasm.type_name(code, expr.get_type())
         # `(T)null` for a non-nullable primitive T (a HL verifier-satisfying
         # placeholder, e.g. pre-growing an Array<Int>'s backing storage) isn't
-        # valid Haxe on static targets — render the type's own default value.
+        # valid Haxe on static targets — it is the explicit conversion of null, which reads as
+        # the type's own default value and compiles to the same Null + SafeCast.
         if isinstance(expr.expr, IRConst) and expr.expr.const_type == IRConst.ConstType.NULL:
-            default_literal = {"I32": "0", "F32": "0.0", "F64": "0.0", "Bool": "false"}.get(target_name)
+            default_literal = {"I32": "Int", "F32": "Single", "F64": "Float", "Bool": "Bool"}.get(target_name)
             if default_literal is not None:
-                return default_literal
+                return f"cast(null, {default_literal})"
         source_name = disasm.type_name(code, expr.expr.get_type())
         inner = _expression_to_haxe(expr.expr, code, ir_function)
         if target_name == "I32" and source_name in {"F32", "F64"}:

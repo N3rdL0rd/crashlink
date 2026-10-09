@@ -181,3 +181,26 @@ class Main {
     assert "cast(" not in files["src/Main.hx"]
     assert actual == expected
     assert _ops(original, "Main.run") == _ops(recompiled, "Main.run")
+
+
+def test_null_read_as_a_basic_type_stays_a_cast(tmp_path: Path) -> None:
+    # `new Vector<Int>(n)` fills the last slot with `cast null`: a Null and a SafeCast.
+    source = """
+class Main {
+    static function run() {
+        var v = new haxe.ds.Vector<Int>(3);
+        v[0] = 1;
+        var f = new haxe.ds.Vector<Float>(2);
+        f[0] = 1.5;
+        Sys.println(v[0]);
+        Sys.println(f[0]);
+    }
+    static function main() {
+        run();
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "cast(null, Int)" in files["src/Main.hx"]
+    assert actual == expected
+    assert _ops(original, "Main.run") == _ops(recompiled, "Main.run")
