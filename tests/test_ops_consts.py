@@ -91,3 +91,26 @@ class Main {
     assert "a[1] = a[1] + 1" not in files["src/Main.hx"]
     assert actual == expected
     assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")
+
+
+def test_captured_assigned_variable_is_not_written_as_its_box(tmp_path: Path) -> None:
+    # The compiler boxes a captured variable that is assigned; source wrote a plain variable.
+    source = """
+class Main {
+    static function main() {
+        var n = 1;
+        n++;
+        var f = () -> Sys.println(n);
+        n += 2;
+        f();
+        var s = "a";
+        var g = () -> Sys.println(s);
+        s = "b";
+        g();
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "[0]" not in files["src/Main.hx"]
+    assert actual == expected
+    assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")
