@@ -70,3 +70,22 @@ class Main {
     assert "(cast v : Array<Dynamic>)" in files["src/Main.hx"]
     assert actual == expected
     assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")
+
+
+def test_array_returned_by_a_function_keeps_its_element_type(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function names(n:Int):Array<String> {
+        return ["a", "b" + n];
+    }
+    static function main() {
+        var all = names(1);
+        Sys.println(all[1]);
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "function names(n: Int): Array<String>" in files["src/Main.hx"]
+    assert actual == expected
+    assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")
+    assert _ops(original, "Main.names") == _ops(recompiled, "Main.names")

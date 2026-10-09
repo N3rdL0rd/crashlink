@@ -35,6 +35,7 @@ from ..ir import (
     IRCast,
     IRRef,
     IRRefNew,
+    IRReturn,
 )
 
 # Type names that represent element-type-erased object arrays.
@@ -94,6 +95,75 @@ def _class_name_of(expr: IRExpression, code: Bytecode) -> Optional[str]:
     except Exception:
         pass
     return None
+
+
+def _called_function(expr: IRExpression) -> Optional[Function]:
+    """The function a direct call invokes."""
+    if (
+        isinstance(expr, IRCall)
+        and expr.call_type == IRCall.CallType.FUNC
+        and isinstance(expr.target, IRConst)
+        and isinstance(expr.target.value, Function)
+    ):
+        return expr.target.value
+    return None
+
+
+def _returned_elem_type(
+    value: IRExpression, code: Bytecode, global_cache: Dict[Tuple[str, str], Type]
+) -> Optional[Type]:
+    value = _strip_cast(value)
+    if isinstance(value, IRArrayLiteral):
+        return value.recovered_elem_type or _uniform_element_type(value.elements, code)
+    called = _called_function(value)
+    if called is not None:
+        return function_return_elem_type(code, called)
+    return _array_element_type(value, code, global_cache)
+
+
+def function_return_elem_type(code: Bytecode, func: Function) -> Optional[Type]:
+    """The element type of the erased array `func` returns, recovered from its return statements.
+
+    Computed from the function alone (and cached), so a caller in a class decompiled before the callee's
+    gets the same answer as the callee's own declaration. `[]` returns say nothing; disagreeing ones leave
+    the type erased."""
+    cache = code._global_return_elem_types
+    findex = func.findex.value
+    if findex in cache:
+        return cache[findex]
+    cache[findex] = None  # a recursive call sees no evidence yet
+    try:
+        ret = func.resolve_fun(code).ret.resolve(code)
+        if _array_type_name(ret, code) not in _ERASED_ARRAY_TYPES or not func.ops:
+            return None
+        # A closure is lifted to a helper whose locals get no recovery of their own; a typed return
+        # would not match what its body declares.
+        if code.partial_func_name(func) in (None, "", "<none>"):
+            return None
+        from ..function import IRFunction
+
+        ir_func = IRFunction(code, func)
+        global_cache = code._global_field_elem_types
+        _walk_block(ir_func.block, code, set(), global_cache)
+        _recover_wrapper_element_types(ir_func.block, code, global_cache)
+    except Exception:
+        return None
+    found: List[Type] = []
+    pending: List[IRStatement] = [ir_func.block]
+    seen: Set[int] = set()
+    while pending:
+        node = pending.pop()
+        if id(node) in seen:
+            continue
+        seen.add(id(node))
+        if isinstance(node, IRReturn) and node.value is not None:
+            elem = _returned_elem_type(node.value, code, global_cache)
+            if elem is not None and not _is_uninformative(elem, code):
+                found.append(elem)
+        pending.extend(node.get_children())
+    result = found[0] if found and all(t == found[0] for t in found) else None
+    cache[findex] = result
+    return result
 
 
 def _walk_block(
@@ -167,6 +237,10 @@ def _walk_statement(
             except Exception:
                 elem_type = None
             _record_array_source(access.array, elem_type, code, global_cache)
+        # A call's result carries the element type its callee returns.
+        called = _called_function(_strip_cast(stmt.expr))
+        if called is not None and isinstance(stmt.target, (IRLocal, IRField)):
+            _record_array_source(stmt.target, function_return_elem_type(code, called), code, global_cache)
         # Element write: `arr[i] = v` — v's type is the element type.
         if isinstance(stmt.target, IRArrayAccess):
             access = stmt.target
