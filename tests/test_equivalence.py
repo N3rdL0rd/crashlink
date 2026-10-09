@@ -104,6 +104,11 @@ SAME = [
     ("linear arithmetic", "return p + q + 1 + 1 - 1 - (p + 1) + 2 * q;", "return 3 * q;"),
     ("scaling by a shift", "return (p << 3) + p;", "return p * 9;"),
     ("dead values", "var dead = p * 31 + q; var d2 = dead - 7; return p + q;", "return p + q;"),
+    (
+        "number to string conversions through a reference",
+        "var s = Std.string(p) + '-' + Std.string(q); return s.length;",
+        "var a = Std.string(p); var b = Std.string(q); return (a + '-' + b).length;",
+    ),
     ("float constants", "return Std.int(3 / 2) + p;", "return 1 + p;"),
     (
         "a condition decided by a constant",
@@ -121,6 +126,7 @@ DIFFERENT = [
     ("subtraction operand order", "return p - q;", "return q - p;"),
     ("call order", "var x = a(p); var y = b(q); return x + y;", "var y = b(q); var x = a(p); return x + y;"),
     ("callee", "return a(p);", "return b(p);"),
+    ("converted value", "return Std.string(p).length;", "return Std.string(q).length;"),
     (
         "a constant condition that goes the other way",
         "var one = 1; if (one == 2) return a(p); return b(q);",

@@ -29,6 +29,8 @@ MEM: Var = "mem"
 START = -1
 WIDTH = {3: 32, 4: 64}
 """Integer kinds whose arithmetic is folded, by bit width."""
+OUT_ONLY = {("native", "std.itos"), ("native", "std.ftos")}
+"""Natives whose second argument is an out-parameter."""
 COMMUTES = {"Add", "Mul", "And", "Or", "Xor"}
 ARITH = {"Add", "Sub", "Mul", "SDiv", "UDiv", "SMod", "UMod", "Shl", "SShr", "UShr", "And", "Or", "Xor"}
 LOAD_GUARDED = {
@@ -108,11 +110,13 @@ class Builder:
         self.has_setglobal = any(op.op == "SetGlobal" for b in lifted.blocks for op in b.ops)
         self.cells: Dict[int, int] = {}
         self.pending: Dict[int, _Pending] = {}
+        self.cell_pending: Dict[int, Node] = {}
         self.live_out = liveness(lifted)[1]
         self.exit_mem: List[Optional[Node]] = [None] * self.nblocks
         self.term_nodes: List[List[Node]] = [[] for _ in range(self.nblocks)]
         self.undef = self.g.pure("undef", ())
         self._find_cells()
+        self._find_ref_reach()
         self._find_handlers()
 
     # -- setup -------------------------------------------------------------------------------
@@ -125,6 +129,26 @@ class Builder:
                     reg = op.df["src"].value
                     if reg not in self.cells:
                         self.cells[reg] = len(self.cells)
+
+    def _find_ref_reach(self) -> None:
+        """For each block, the cells whose address was taken in it or in a block that reaches it:
+        a reference to such a cell may exist, so what is stored in the cell is observable."""
+        here: List[Set[int]] = [set() for _ in range(self.nblocks)]
+        for i, block in enumerate(self.lifted.blocks):
+            for op in block.ops:
+                if op.op == "Ref":
+                    here[i].add(self.cells[op.df["src"].value])
+        reach = [set(s) for s in here]
+        changed = True
+        while changed:
+            changed = False
+            for i, block in enumerate(self.lifted.blocks):
+                for s in block.term.succs:
+                    if not reach[i] <= reach[s]:
+                        reach[s] |= reach[i]
+                        changed = True
+        self.ref_reach = reach
+        self.cell_reg = {cell: reg for reg, cell in self.cells.items()}
 
     def _find_handlers(self) -> None:
         for i, block in enumerate(self.lifted.blocks):
@@ -176,6 +200,8 @@ class Builder:
 
     def reg(self, r: int, b: int, lazy_ok: bool = False) -> Node:
         if r in self.cells:
+            if r in self.cell_pending:
+                return self.cell_pending[r]
             return self.g.pure(
                 "cellread", (self.cells[r], self.reg_desc[r]), self.read(MEM, b), ty=self.reg_desc[r]
             )
@@ -209,7 +235,14 @@ class Builder:
         return real
 
     def flush(self, b: int) -> None:
-        """At the end of a block, emit the held-back objects that a later block can still reach."""
+        """At the end of a block, emit the held-back objects and cell writes a later block can still see."""
+        leaves = self.lifted.blocks[b].term.kind in ("ret", "throw", "rethrow")
+        for r in sorted(self.cell_pending):
+            # A reference to a register cannot outlive the function (it points into the stack), so a
+            # value left in one as the function returns is never seen.
+            if not leaves and (r in self.live_out[b] or self.cells[r] in self.ref_reach[b]):
+                self.flush_cell(r, b)
+        self.cell_pending.clear()
         live = self.live_out[b] | set(self.lifted.blocks[b].term.regs)
         for node_id in list(self.pending):
             node = self.g.nodes[node_id]
@@ -224,16 +257,26 @@ class Builder:
             node = self.g.find(node)
             if node.id in self.pending:
                 node = self.materialise(node, b)
-            self.effect(b, "cellwrite", (self.cells[r],), node)
+            self.cell_pending[r] = node  # held back: only a reference to the cell can observe it
         else:
             self.write(r, b, node)
 
     def effect(
         self, b: int, kind: str, attrs: Tuple[object, ...], *args: Node, nonnull: bool = False, ty: str = ""
     ) -> Node:
+        if self.cell_pending and kind != "cellwrite":
+            for arg in args:
+                found = self.g.find(arg)
+                if found.kind == "ref":
+                    self.flush_cell(self.cell_reg[cast(int, found.attrs[0])], b)
         node = self.g.effect(kind, attrs, self.read(MEM, b), *args, nonnull=nonnull, ty=ty)
         self.write(MEM, b, node)
         return node
+
+    def flush_cell(self, r: int, b: int) -> None:
+        pending = self.cell_pending.pop(r, None)
+        if pending is not None:
+            self.effect(b, "cellwrite", (self.cells[r],), pending)
 
     def known_nonnull(self, node: Node) -> bool:
         node = self.g.find(node)
@@ -613,6 +656,8 @@ class Builder:
         elif name == "Unref":
             ref = R("src")
             self.guard(b, ref)
+            if g.find(ref).kind == "ref":
+                self.flush_cell(self.cell_reg[cast(int, g.find(ref).attrs[0])], b)
             set_dst(g.pure("load", ("Unref", dst_desc()), ref, self.read(MEM, b), ty=dst_desc()))
         elif name == "Setref":
             ref = R("dst")
@@ -630,6 +675,12 @@ class Builder:
         elif name in ("Call0", "Call1", "Call2", "Call3", "Call4", "CallN"):
             args = self._call_args(df, b)
             callee = self.namer.function(df["fun"].value)
+            if callee in OUT_ONLY and len(args) == 2:
+                # The second argument is a reference the native only writes through (the length of
+                # the text it produced): whatever the cell held before is never read.
+                out = self.g.find(args[1])
+                if out.kind == "ref":
+                    self.cell_pending.pop(self.cell_reg[cast(int, out.attrs[0])], None)
             if callee == ("fn", "$String.__add__") and len(args) == 2:
                 set_dst(self.concat(args[0], args[1], dst_desc()))
             else:
@@ -704,32 +755,27 @@ class Builder:
         # here; the ones not processed yet are back edges, which only add to what the loop entry knew.
         known = [self.facts_out[p] for p in self.preds[b] if p in self.facts_out]
         self.facts = set.intersection(*known) if known else set()
+        self.cell_pending = {}
         if b == 0:
             start = self.cur[START]
-            for r, cell in sorted(self.cells.items(), key=lambda kv: kv[1]):
+            for r in sorted(self.cells, key=lambda reg: self.cells[reg]):
                 if r in start:
-                    self.effect(b, "cellwrite", (cell,), start[r])
+                    self.cell_pending[r] = start[r]
         for op in block.ops:
             self.run_op(op, b)
-        self.flush(b)
         term = block.term
-        mem = self.read(MEM, b)
-        self.exit_mem[b] = mem
         nodes: List[Node] = []
         if term.kind in ("ret", "throw", "rethrow"):
             reg = term.regs[0]
             if term.kind != "ret" or self.reg_kind[reg] != VOID_KIND:
                 nodes.append(self.reg(reg, b))
-            mem = self.read(MEM, b)
-            self.exit_mem[b] = mem
         elif term.kind == "cond":
             nodes.extend(self.reg(r, b) for r in term.regs)
-            mem = self.read(MEM, b)
-            self.exit_mem[b] = mem
         elif term.kind == "switch":
             nodes.append(self.reg(term.regs[0], b))
-            self.exit_mem[b] = self.read(MEM, b)
-        elif term.kind == "trap":
+        self.flush(b)
+        self.exit_mem[b] = self.read(MEM, b)
+        if term.kind == "trap":
             exc_reg = term.regs[0]
             handler = term.succs[1]
             self.overrides[handler] = {
