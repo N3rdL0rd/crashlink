@@ -690,13 +690,29 @@ def _with_comment(rendered: List[str], comment: str) -> List[str]:
     return [*rendered[:-1], f"{rendered[-1]} {comment}"]
 
 
+def _widens_typed_array(expr: IRExpression, code: Bytecode) -> bool:
+    """Whether `expr` converts a typed array to the erased ArrayDyn."""
+    return (
+        isinstance(expr, IRCast)
+        and disasm.type_name(code, expr.get_type()) == "hl.types.ArrayDyn"
+        and disasm.type_name(code, expr.expr.get_type()) == "hl.types.ArrayObj"
+    )
+
+
 def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction], skip: int = 0) -> List[str]:
     """Rendered arguments of a call. HL passes an optional basic argument as an
     `hl.Ref` (null when omitted); Haxe source leaves an omitted trailing one out, and
     gives a declared basic parameter the value rather than a reference to it."""
     pos_comment = ""
     call_args = expr.args[skip:]
-    rendered = [_expression_to_haxe(arg, code, ir_function) for arg in call_args]
+    # A typed array passed on as an erased `Array<Dynamic>` argument is a run-time conversion
+    # that Haxe only makes through an explicit cast; an implicit one would keep the element type.
+    rendered = [
+        f"(cast {_expression_to_haxe(arg, code, ir_function)} : Array<Dynamic>)"
+        if _widens_typed_array(arg, code)
+        else _expression_to_haxe(arg, code, ir_function)
+        for arg in call_args
+    ]
     position = _elided_position(call_args[-1], ir_function, code) if call_args else None
     if position is not None:
         # The compiler fills the position in; source leaves it out, and the position stays as a comment.
