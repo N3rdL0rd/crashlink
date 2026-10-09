@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
 from ...core import (
     Enum,
+    Fun,
 )
 from ..ir import (
     IRStatement,
@@ -163,6 +164,10 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
     """
 
     TARGET_OPCODES = {"EnumIndex", "EnumField"}
+
+    def _is_parameter(self, local: IRLocal) -> bool:
+        signature = self.func.func.type.resolve(self.func.code).definition
+        return isinstance(signature, Fun) and any(local is p for p in self.func.locals[: len(signature.args)])
 
     def visit_block(self, block: IRBlock) -> None:
         made_change = True
@@ -642,6 +647,10 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
             # Anonymous singleton enums are HL's closure environments. Do not
             # infer constructor facts for arbitrary unguarded enum reads.
             if not isinstance(enum, Enum) or enum.name.value != 0 or len(enum.constructs) != 1:
+                break
+            # A closure's context parameter must stay a plain field read: the closure
+            # renderer inlines a single-read lambda only while its body is that read.
+            if self._is_parameter(field.value):
                 break
             if value is None:
                 value = field.value

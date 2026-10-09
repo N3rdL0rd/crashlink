@@ -6728,15 +6728,21 @@ def _class_body(
     if func_extern:
         output_lines.append(func_extern)
         output_lines.append("")
+    deferred_enums: List[Tuple[str, Enum]] = []
     for enum_name in sorted(referenced_enums):
         definition = referenced_enums[enum_name]
+        if emitted_enums is not None and id(definition) in emitted_enums:
+            continue
+        if not definition.name.value:
+            # A capture context is declared only if the rendered body still uses it; a
+            # lambda that was inlined does not need one (see the end of this function).
+            deferred_enums.append((enum_name, definition))
+            continue
         if emitted_enums is not None:
-            if id(definition) in emitted_enums:
-                continue
             emitted_enums.add(id(definition))
-        output_lines.append(_enum_pseudo(referenced_enums[enum_name], code, name=enum_name))
+        output_lines.append(_enum_pseudo(definition, code, name=enum_name))
         output_lines.append("")
-
+    header_index = len(output_lines)
     output_lines.append(header)
 
     if static_fields:
@@ -6843,6 +6849,15 @@ def _class_body(
     if output_lines and output_lines[-1] == "":
         output_lines.pop()
 
+    rendered = "\n".join(output_lines[header_index:])
+    declared: List[str] = []
+    for enum_name, definition in deferred_enums:
+        if not re.search(rf"\b{re.escape(enum_name)}\b", rendered):
+            continue
+        if emitted_enums is not None:
+            emitted_enums.add(id(definition))
+        declared.extend([_enum_pseudo(definition, code, name=enum_name), ""])
+    output_lines[header_index:header_index] = declared
     output_lines.append("}")
     return disasm.source_paths("\n".join(output_lines)), referenced_classes, super_name
 
