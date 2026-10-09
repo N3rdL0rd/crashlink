@@ -124,6 +124,63 @@ def _normalise_cond(op: Opcode, namer: Namer, regs: List[int]) -> Tuple[str, Tup
     return table[name]
 
 
+def _facts(ops: List[Opcode], code: object, address_taken: Set[int]) -> Dict[int, object]:
+    """What is known about registers at the end of a block: "null", "nonnull" or an int constant.
+
+    Only facts that follow from the block's own opcodes are kept, so a condition on a value built
+    in the same block (a constant, a string, a closure) can be decided here, before blocks are
+    numbered, instead of leaving a branch that can only go one way."""
+    facts: Dict[int, object] = {}
+    nonnull = {
+        "String",
+        "Bytes",
+        "StaticClosure",
+        "InstanceClosure",
+        "VirtualClosure",
+        "New",
+        "EnumAlloc",
+        "MakeEnum",
+        "Type",
+    }
+    for op in ops:
+        name = op.op
+        assert name is not None
+        _uses, defs = uses_defs(op)
+        for d in defs:
+            facts.pop(d, None)
+        dst = op.df["dst"].value if "dst" in op.df else None
+        if dst is None or dst in address_taken:
+            continue
+        if name == "Null":
+            facts[dst] = "null"
+        elif name in nonnull:
+            facts[dst] = "nonnull"
+        elif name == "Bool":
+            facts[dst] = int(op.df["value"].value)
+        elif name == "Int":
+            facts[dst] = int(op.df["ptr"].resolve(code).value)  # type: ignore[attr-defined]
+        elif name == "Mov" and op.df["src"].value in facts and op.df["src"].value not in address_taken:
+            facts[dst] = facts[op.df["src"].value]
+    return facts
+
+
+def _decide(pred: str, operands: Tuple[int, ...], negated: bool, facts: Dict[int, object]) -> Optional[bool]:
+    """Whether the jump is certainly taken (True) or certainly not (False), if the facts settle it."""
+    known = [facts.get(r) for r in operands]
+    base: Optional[bool] = None
+    if pred == "null" and known[0] in ("null", "nonnull"):
+        base = known[0] == "null"
+    elif pred == "true" and isinstance(known[0], int):
+        base = known[0] != 0
+    elif pred == "eq" and isinstance(known[0], int) and isinstance(known[1], int):
+        base = known[0] == known[1]
+    elif pred == "eq" and {known[0], known[1]} == {"null", "nonnull"}:
+        base = False
+    if base is None:
+        return None
+    return base != negated
+
+
 def lift(func_ops: List[Opcode], regs: List[int], namer: Namer) -> Lifted:
     ops = func_ops
     count = len(ops)
@@ -149,6 +206,8 @@ def lift(func_ops: List[Opcode], regs: List[int], namer: Namer) -> Lifted:
 
     raw: Dict[int, Block] = {}
     pending_cond: Dict[int, Tuple[str, Tuple[int, ...], bool, int, int]] = {}
+    decided: Dict[int, Optional[bool]] = {}
+    address_taken = {op.df["src"].value for op in ops if op.op == "Ref"}
     for n, start in enumerate(starts):
         end = starts[n + 1] if n + 1 < len(starts) else count
         block = Block(start)
@@ -179,6 +238,9 @@ def lift(func_ops: List[Opcode], regs: List[int], namer: Namer) -> Lifted:
             if name in CONDITIONALS:
                 pred, operands, negated = _normalise_cond(last, namer, regs)
                 pending_cond[start] = (pred, operands, negated, target, fall)
+                decided[start] = _decide(
+                    pred, operands, negated, _facts(block.ops, namer.code, address_taken)
+                )  # type: ignore[arg-type]
                 block.term = Term("cond")
             elif name == "JAlways":
                 block.term = Term("jump", succs=(target,))
@@ -215,6 +277,8 @@ def lift(func_ops: List[Opcode], regs: List[int], namer: Namer) -> Lifted:
         if block.term.kind == "cond":
             _pred, _operands, negated, target, fall = pending_cond[start]
             t, f = resolve(target), resolve(fall)
+            if decided.get(start) is not None:
+                return ((t if decided[start] else f),) * 2
             return (f, t) if negated else (t, f)
         return tuple(resolve(s) for s in block.term.succs)
 

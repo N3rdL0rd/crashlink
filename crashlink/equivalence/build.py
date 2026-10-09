@@ -375,7 +375,9 @@ class Builder:
                 set_dst(g.pure("Not", (), src, ty=dst_desc()))
         elif name in ("ToDyn", "ToSFloat", "ToUFloat", "ToInt", "ToVirtual"):
             src_reg = df["src"].value
-            set_dst(g.pure(name, (self.reg_desc[src_reg], dst_desc()), R("src"), ty=dst_desc()))
+            # Boxing gives the same dynamic value whether it is then typed Dyn or Null<T>.
+            attrs = (self.reg_desc[src_reg],) if name == "ToDyn" else (self.reg_desc[src_reg], dst_desc())
+            set_dst(g.pure(name, attrs, R("src"), ty=dst_desc()))
         elif name in ("SafeCast", "UnsafeCast"):
             src_reg = df["src"].value
             src, sdesc, ddesc = R("src"), self.reg_desc[src_reg], dst_desc()

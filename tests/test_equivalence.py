@@ -101,6 +101,11 @@ SAME = [
         "var k = p * 2; var m = o.v; return m + k;",
     ),
     ("identity arithmetic", "return (p + 0) * 1 - 0;", "return p;"),
+    (
+        "a condition decided by a constant",
+        "var z = Sys.args().length * 0; var one = 1; if (one == 1) return a(p); return b(q);",
+        "var z = Sys.args().length * 0; return a(p);",
+    ),
 ]
 
 DIFFERENT = [
@@ -109,6 +114,11 @@ DIFFERENT = [
     ("subtraction operand order", "return p - q;", "return q - p;"),
     ("call order", "var x = a(p); var y = b(q); return x + y;", "var y = b(q); var x = a(p); return x + y;"),
     ("callee", "return a(p);", "return b(p);"),
+    (
+        "a constant condition that goes the other way",
+        "var one = 1; if (one == 2) return a(p); return b(q);",
+        "return a(p);",
+    ),
     ("dropped call", "a(p); return q;", "return q;"),
     (
         "branch targets swapped",
