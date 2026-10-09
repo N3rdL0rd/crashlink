@@ -10,6 +10,9 @@ have declared it in, under `src/`:
   since the bytecode names it `pkg.Name` either way. A top-level type in another module is
   imported for every module by `src/import.hx` instead.
 - A private type is named `pkg._Module.Name`: it's declared `private` in `pkg/Module.hx`.
+  A type that names one (as a superclass, field or signature) is declared in its module
+  too, since Haxe reads a private type only from there. It keeps its bytecode name, with
+  `@:native` when its package changes.
 - An abstract is declared in the module its `_Impl_` class names.
 
 Natives and std functions the code calls through externs are declared once, in
@@ -265,8 +268,7 @@ def layout(code: Bytecode) -> Layout:
         place(package, module, Declaration(kind, short, False, definition, line))
 
     for module in modules.values():
-        # The module's main type first, the rest in source order.
-        module.declarations.sort(key=lambda d: (d.name != module.name, d.line == 0, d.line))
+        module.declarations.sort(key=_declaration_order(module))
     main = _main_class(code)
     if main is not None:
         main = paths.get(main, main)
@@ -431,6 +433,84 @@ def _name_shadowing_constructors(modules: List[Module], files: Dict[str, str], c
         files[file] = disasm.outside_literals(files[file], lambda chunk: pattern.sub(r"\1", chunk))
 
 
+def _move_private_users(plan: Layout, texts: Dict[int, str], code: Bytecode) -> None:
+    """Move a type that names a private type of another module into that module. Haxe
+    reads a private type only from its own module, so the type can't stay where it is
+    (`_publish_named_privates` would make the private one public, which renames it). The
+    moved type keeps its bytecode name: `@:native` when its path differs from it, and
+    references to it are rewritten to its new path. Types that are a module's main type,
+    private, or name private types of two modules are left where they are."""
+    owners: Dict[str, Module] = {}
+    for module in plan.modules.values():
+        if module.package:
+            for declaration in module.declarations:
+                if declaration.private:
+                    owners[f"{module.dotted}.{declaration.name}"] = module
+    if not owners:
+        return
+    pattern = re.compile(
+        r"(?<![\w.])("
+        + "|".join(re.escape(path) for path in sorted(owners, key=len, reverse=True))
+        + r")(?!\w)"
+    )
+    moved = True
+    while moved:
+        moved = False
+        for module in list(plan.modules.values()):
+            for declaration in list(module.declarations):
+                if declaration.private or declaration.kind not in ("class", "interface"):
+                    continue
+                named: List[str] = []
+
+                def collect(chunk: str) -> str:
+                    named.extend(pattern.findall(chunk))
+                    return chunk
+
+                disasm.outside_literals(texts[id(declaration)], collect)
+                targets = {owners[path].dotted: owners[path] for path in named if owners[path] is not module}
+                if len(targets) != 1:
+                    continue
+                target = next(iter(targets.values()))
+                _move_declaration(plan, module, target, declaration, texts, code)
+                moved = True
+    for module in list(plan.modules.values()):
+        if not module.declarations:
+            del plan.modules[module.dotted]
+
+
+def _move_declaration(
+    plan: Layout,
+    module: Module,
+    target: Module,
+    declaration: Declaration,
+    texts: Dict[int, str],
+    code: Bytecode,
+) -> None:
+    module.declarations.remove(declaration)
+    target.declarations.append(declaration)
+    target.declarations.sort(key=_declaration_order(target))
+    old_path = f"{module.dotted}.{declaration.name}"
+    new_path = f"{target.dotted}.{declaration.name}"
+    bytecode = _bytecode_name(declaration.definition.name.resolve(code))
+    expected = f"{target.package}.{declaration.name}" if target.package else declaration.name
+    if bytecode != expected:
+        texts[id(declaration)] = f'@:native("{bytecode}")\n' + texts[id(declaration)]
+    if "." in bytecode:
+        plan.paths[bytecode] = new_path
+    else:
+        plan.imports.append(new_path)
+    if old_path in plan.imports:
+        plan.imports.remove(old_path)
+    plan.imports.sort()
+    if plan.main in (bytecode, old_path):
+        plan.main = new_path
+
+
+def _declaration_order(module: Module):
+    """The module's main type first, the rest in source order."""
+    return lambda d: (d.name != module.name, d.line == 0, d.line)
+
+
 def export(
     code: Bytecode,
     stubs: bool = False,
@@ -440,16 +520,22 @@ def export(
     from . import pseudo
 
     plan = layout(code)
-    rewrite = _rewriter(plan.paths)
     externs = pseudo.ProjectExterns()
-    files: Dict[str, str] = {}
+    texts: Dict[int, str] = {}
     modules = sorted(plan.modules.values(), key=lambda m: m.dotted)
     for done, module in enumerate(modules):
-        chunks = [_render(code, declaration, stubs, externs) for declaration in module.declarations]
-        header = f"package {module.package};\n\n" if module.package else ""
-        files[f"src/{module.path}"] = rewrite(header + "\n\n".join(chunks) + "\n")
+        for declaration in module.declarations:
+            texts[id(declaration)] = _render(code, declaration, stubs, externs)
         if progress is not None:
             progress(done + 1, len(modules))
+    _move_private_users(plan, texts, code)
+    rewrite = _rewriter(plan.paths)
+    files: Dict[str, str] = {}
+    modules = sorted(plan.modules.values(), key=lambda m: m.dotted)
+    for module in modules:
+        chunks = [texts[id(declaration)] for declaration in module.declarations]
+        header = f"package {module.package};\n\n" if module.package else ""
+        files[f"src/{module.path}"] = rewrite(header + "\n\n".join(chunks) + "\n")
     _qualify_shadowed_std(modules, files)
     _publish_named_privates(modules, files)
     _name_privates_locally(modules, files)
