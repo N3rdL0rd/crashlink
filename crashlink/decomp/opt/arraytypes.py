@@ -274,9 +274,54 @@ def _walk_statement(
     elif isinstance(stmt, IRForEachLoop):
         # `for (x in arr)` reads every element into x.
         _record_array_source(_strip_cast(stmt.array), stmt.elem.get_type(), code, global_cache)
+    _record_cast_element_reads(stmt, code, global_cache)
     for child in stmt.get_children():
         if isinstance(child, IRBlock):
             _walk_block(child, code, visited, global_cache)
+
+
+# Methods whose result is one element of the receiver array.
+_ELEMENT_READ_METHODS = {
+    f"{cls}.{method}"
+    for cls in ("hl.types.ArrayObj", "hl.types.ArrayDyn")
+    for method in ("pop", "shift", "first", "last")
+}
+
+
+def _record_cast_element_reads(
+    stmt: IRStatement, code: Bytecode, global_cache: Dict[Tuple[str, str], Type]
+) -> None:
+    """`(T)arr[i]` and `(T)arr.pop()`: the cast says what type the erased element is used as.
+
+    The read itself is Dynamic, so only the cast reveals the element type.
+    """
+    pending: List[IRStatement] = [stmt]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, IRBlock):
+            continue
+        if isinstance(node, IRCast):
+            src = node.expr
+            array: Optional[IRExpression] = None
+            if isinstance(src, IRArrayAccess):
+                array = src.array
+            elif (
+                isinstance(src, IRCall)
+                and src.call_type == IRCall.CallType.FUNC
+                and isinstance(src.target, IRConst)
+                and isinstance(src.target.value, Function)
+                and code.full_func_name(src.target.value) in _ELEMENT_READ_METHODS
+                and src.args
+            ):
+                array = src.args[0]
+            if array is not None:
+                try:
+                    cast_type = node.get_type()
+                except Exception:
+                    cast_type = None
+                if cast_type is not None:
+                    _record_array_source(_strip_cast(array), cast_type, code, global_cache)
+        pending.extend(node.get_children())
 
 
 def _array_element_type(
