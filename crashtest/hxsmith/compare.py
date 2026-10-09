@@ -40,8 +40,16 @@ def user_functions(code: Bytecode, modules: Collection[str]) -> Dict[str, Functi
     return found
 
 
+def named_functions(code: Bytecode) -> Dict[str, Function]:
+    """Every named function of the image, whichever file its code is in."""
+    return {code.full_func_name(f): f for f in code.functions if not _is_anonymous(code.full_func_name(f))}
+
+
 def pair(
-    before: Dict[str, Function], after: Dict[str, Function]
+    before: Dict[str, Function],
+    after: Dict[str, Function],
+    all_before: Optional[Dict[str, Function]] = None,
+    all_after: Optional[Dict[str, Function]] = None,
 ) -> Tuple[List[Tuple[str, Function, Optional[Function]]], List[str]]:
     """Match the two images' functions: by name, and the anonymous ones to their most similar
     counterpart (a closure's findex order differs between the images). Returns the original's
@@ -50,7 +58,9 @@ def pair(
     paired: List[Tuple[str, Function, Optional[Function]]] = []
     for name, func in before.items():
         if not name.startswith(ANON):
-            paired.append((name, func, after.get(name)))
+            # A function's code can sit in another file than the module (macro-built bodies carry the
+            # macro's position), so a name missing from the module is looked up image-wide.
+            paired.append((name, func, after.get(name) or (all_after or {}).get(name)))
     spare = {name: func for name, func in after.items() if name.startswith(ANON)}
     originals = [(name, func) for name, func in before.items() if name.startswith(ANON)]
     # Most similar pairs first, so a closure is not stolen by a lookalike.
@@ -74,7 +84,11 @@ def pair(
     for name, func in originals:
         other_name = matches.get(name)
         paired.append((name, func, spare[other_name] if other_name is not None else None))
-    extra = sorted(name for name in after if not name.startswith(ANON) and name not in before)
+    extra = sorted(
+        name
+        for name in after
+        if not name.startswith(ANON) and name not in before and name not in (all_before or {})
+    )
     extra += sorted(name for name in spare if name not in taken_after)
     return paired, extra
 
@@ -84,7 +98,12 @@ def compare(
 ) -> Tuple[float, List[Tuple[str, float]]]:
     """Mean opcode-sequence similarity over the original's user functions (a function the
     recompiled image lacks counts as 0), and the ones that are not identical, worst first."""
-    paired, extra = pair(user_functions(original, modules), user_functions(recompiled, modules))
+    paired, extra = pair(
+        user_functions(original, modules),
+        user_functions(recompiled, modules),
+        named_functions(original),
+        named_functions(recompiled),
+    )
     scores: List[Tuple[str, float]] = []
     for name, func, other in paired:
         if other is None:
