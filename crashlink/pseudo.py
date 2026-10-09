@@ -3515,12 +3515,12 @@ def _inline_block_closure(
 
 
 def _split_params(text: str) -> List[str]:
-    """The top-level comma-separated parts of a parameter list (types may contain commas)."""
+    """The top-level comma-separated parts of a parameter list (types may contain commas and arrows)."""
     parts, depth, current = [], 0, ""
-    for ch in text:
+    for i, ch in enumerate(text):
         if ch in "(<[{":
             depth += 1
-        elif ch in ")>]}":
+        elif ch in ")]}" or (ch == ">" and text[i - 1 : i] != "-"):
             depth -= 1
         if ch == "," and depth == 0:
             parts.append(current)
