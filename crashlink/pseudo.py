@@ -1946,6 +1946,15 @@ def _expression_to_haxe(
                     and not _is_ancestor(code, target_def, source_def)
                 )
                 or isinstance(source_def, Virtual)  # a structural value only reaches a class via `cast`
+                or (
+                    source_name
+                    == "Dyn"  # an implicit Dynamic->class conversion vanishes when a type parameter is fixed by another argument (`eq(null, cast dyn)`)
+                    and isinstance(expr.expr, IRCall)
+                    and expr.expr.call_type
+                    == IRCall.CallType.FUNC  # an erased result of a user function, not a native or field read
+                    # a generic target would be rendered with its type argument pinned to Dynamic, which Haxe rejects
+                    and "<" not in disasm.type_to_haxe(target_name)
+                )
             )
             and not inner.startswith("cast ")  # already unchecked, typed by its context
         ):
