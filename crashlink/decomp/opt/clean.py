@@ -85,6 +85,15 @@ from . import (
 from .inliner import _ReferenceAwareOptimizer, _is_pure_numeric_cast_tree
 
 
+def _same_value(a: IRExpression, b: IRExpression) -> bool:
+    """Whether two expressions denote the same value. Locals compare by variable identity: the
+    per-write `defining_op_idx` differs between two writes to one local, so a deep compare would
+    reject a ternary whose arms assign the same variable."""
+    if isinstance(a, IRLocal) and isinstance(b, IRLocal):
+        return a == b
+    return _ir_structurally_equal(a, b)
+
+
 class IRLoopConditionOptimizer(_ReferenceAwareOptimizer):
     """
     Optimizes IRPrimitiveLoop structures into IRWhileLoop.
@@ -940,8 +949,7 @@ class IRTernaryRecovery(TraversingIROptimizer):
             return out
         if isinstance(in_branch, IRAssign) and isinstance(fallthrough, IRAssign):
             if not (
-                isinstance(in_branch.target, IRLocal)
-                and _ir_structurally_equal(in_branch.target, fallthrough.target)
+                isinstance(in_branch.target, IRLocal) and _same_value(in_branch.target, fallthrough.target)
             ):
                 return None
             if not (self._safe_arm(in_branch.expr) and self._safe_arm(fallthrough.expr)):
@@ -989,7 +997,7 @@ class IRTernaryRecovery(TraversingIROptimizer):
         target = assign_side.target
         if not (isinstance(target, IRLocal) and target.name.startswith("var") and target.name[3:].isdigit()):
             return None
-        if not _ir_structurally_equal(following.value, target):
+        if not _same_value(following.value, target):
             return None
         if not (self._safe_arm(assign_side.expr) and self._safe_arm(return_side.value)):
             return None
@@ -1022,7 +1030,7 @@ class IRTernaryRecovery(TraversingIROptimizer):
         if isinstance(in_branch, IRReturn) and isinstance(fallthrough, IRReturn):
             if in_branch.value is None or fallthrough.value is None:
                 return None
-            if not _ir_structurally_equal(self._unwrap_value(in_branch.value), self._unwrap_value(value)):
+            if not _same_value(self._unwrap_value(in_branch.value), self._unwrap_value(value)):
                 return None
             if not self._safe_arm(value) or not self._safe_arm(fallthrough.value):
                 return None
@@ -1033,11 +1041,11 @@ class IRTernaryRecovery(TraversingIROptimizer):
             out.adopt(cond_stmt, fallthrough)
             return out
         if isinstance(in_branch, IRAssign) and isinstance(fallthrough, IRAssign):
-            if not _ir_structurally_equal(in_branch.target, fallthrough.target):
+            if not _same_value(in_branch.target, fallthrough.target):
                 return None
             if not isinstance(fallthrough.target, IRLocal):
                 return None
-            if not _ir_structurally_equal(self._unwrap_value(in_branch.expr), self._unwrap_value(value)):
+            if not _same_value(self._unwrap_value(in_branch.expr), self._unwrap_value(value)):
                 return None
             if not self._safe_arm(value) or not self._safe_arm(fallthrough.expr):
                 return None
@@ -1071,10 +1079,10 @@ class IRTernaryRecovery(TraversingIROptimizer):
             return None
         if not isinstance(else_branch.target, IRLocal):
             return None
-        if not _ir_structurally_equal(in_branch.target, else_branch.target):
+        if not _same_value(in_branch.target, else_branch.target):
             return None
         # Exact match: a cast here may change the value (`Std.int(v)`), so it is not `v ?? d`.
-        if not _ir_structurally_equal(in_branch.expr, value):
+        if not _same_value(in_branch.expr, value):
             return None
         # The default arm runs only when the value is null in both forms, so it may read or call.
         if not self._safe_arm(value):
@@ -1151,7 +1159,7 @@ class IRTernaryRecovery(TraversingIROptimizer):
         # if (cond) { x = a; } else { x = b; }  ->  x = (cond ? a : b)
         if not (isinstance(t, IRAssign) and isinstance(f, IRAssign)):
             return None
-        if not (isinstance(t.target, IRLocal) and _ir_structurally_equal(t.target, f.target)):
+        if not (isinstance(t.target, IRLocal) and _same_value(t.target, f.target)):
             return None
         if not (self._safe_arm(t.expr) and self._safe_arm(f.expr)):
             return None

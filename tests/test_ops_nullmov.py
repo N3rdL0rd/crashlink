@@ -88,3 +88,46 @@ Sys.println(f(null));
     files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
     assert actual == expected
     assert _ops(original, "Main.f") == _ops(recompiled, "Main.f")
+
+
+def test_declared_local_assigned_in_both_arms_of_conditional_is_ternary(tmp_path: Path) -> None:
+    source = """
+class Main {
+static function equals(a: Int, b: Int): Bool { return a == b; }
+static function test() {
+var s: String;
+if (equals(1, 1) == true) { s = "1"; } else { s = "2"; }
+Sys.println(s);
+}
+static function main() { test(); }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert actual == expected
+    assert _ops(original, "Main.test") == _ops(recompiled, "Main.test")
+
+
+def test_switch_expression_with_extension_call_is_ternary(tmp_path: Path) -> None:
+    source = """
+using Main;
+class Base {
+public function new() {}
+function eq<T>(v: T, v2: T, ?pos: haxe.PosInfos) { Sys.println(v == v2); }
+function t(v: Bool, ?pos: haxe.PosInfos) { Sys.println(v); }
+}
+class Main extends Base {
+function test() {
+t(true);
+var s = switch(1) {
+case _.equals(1) => true: "1";
+case _: "2";
+}
+eq("1", s);
+}
+static function equals(i1: Int, i2: Int) { return i1 == i2; }
+static function main() { new Main().test(); }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert actual == expected
+    assert _ops(original, "Main.test") == _ops(recompiled, "Main.test")
