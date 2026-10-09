@@ -237,10 +237,13 @@ def lift(func_ops: List[Opcode], regs: List[int], namer: Namer) -> Lifted:
             fall = last_index + 1
             if name in CONDITIONALS:
                 pred, operands, negated = _normalise_cond(last, namer, regs)
+                facts = _facts(block.ops, namer.code, address_taken)
+                if pred == "eq" and "null" in (facts.get(operands[0]), facts.get(operands[1])):
+                    # `x == null` is a test for null, however it was written.
+                    other = operands[1] if facts.get(operands[0]) == "null" else operands[0]
+                    pred, operands = "null", (other,)
                 pending_cond[start] = (pred, operands, negated, target, fall)
-                decided[start] = _decide(
-                    pred, operands, negated, _facts(block.ops, namer.code, address_taken)
-                )  # type: ignore[arg-type]
+                decided[start] = _decide(pred, operands, negated, facts)
                 block.term = Term("cond")
             elif name == "JAlways":
                 block.term = Term("jump", succs=(target,))

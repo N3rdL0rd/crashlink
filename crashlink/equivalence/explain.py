@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Dict, List
 
 from ..core import Bytecode, Function
@@ -11,15 +12,17 @@ from .names import Namer
 from .terms import Node
 
 
-def explain(code: Bytecode, func: Function, *, strict: bool = True) -> str:
-    namer = Namer(code, lambda f: "anon")
+def explain(code: Bytecode, func: Function, *, strict: bool = True, depth: int = 6) -> str:
+    from . import _signer
+
+    namer = Namer(code, _signer(code, strict, True)._anon_digest)
     lifted = lift(func.ops, [t.value for t in func.regs], namer)
     check_trap_handlers(lifted)
     built = build(code, func, lifted, namer, strict)
-    return render(built)
+    return f"type: {namer.type_index(func.type.value)}\n" + render(built, depth)
 
 
-def render(built: Built) -> str:
+def render(built: Built, limit: int = 6) -> str:
     g = built.graph
     lines: List[str] = []
     for b, block in enumerate(built.lifted.blocks):
@@ -45,7 +48,7 @@ def render(built: Built) -> str:
                 "undef",
             ):
                 return f"{node.kind}{node.attrs}".replace("'", "")
-            if depth > 6:
+            if depth > limit:
                 return "..."
             inner = ", ".join(show(a, depth + 1) for a in node.args)
             attrs = "" if not node.attrs else str(node.attrs).replace("'", "")
@@ -66,4 +69,4 @@ def render(built: Built) -> str:
             lines.append(f"    @{i} = {e.kind}{attrs}({args})")
         operands = ", ".join(show(n) for n in built.term_nodes[b])
         lines.append(f"    -> {term.kind} {term.pred} ({operands}) {term.succs}")
-    return "\n".join(lines)
+    return re.sub(r"\b[0-9a-f]{32}\b", lambda m: m.group(0)[:6], "\n".join(lines))
