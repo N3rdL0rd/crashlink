@@ -668,7 +668,15 @@ def _elided_position(arg: IRExpression, ir_function: Optional[IRFunction], code:
     """`file:line` of an auto-filled position argument that names the enclosing function itself."""
     if not isinstance(arg, IRPosInfos) or ir_function is None or not isinstance(ir_function.func, Function):
         return None
-    owner, _, method = code.full_func_name(ir_function.func).rpartition(".")
+    containing = getattr(ir_function, "_containing_class", None)
+    primary = (containing.dynamic or containing.static) if containing is not None else None
+    if getattr(ir_function, "_rendered_as_lambda", False) and primary is not None:
+        # A lambda is lifted out of the function that wrote it: its position names that
+        # function (not the lifted body), of the same class.
+        owner = primary.name.resolve(code)
+        method = arg.value_of("methodName")
+    else:
+        owner, _, method = code.full_func_name(ir_function.func).rpartition(".")
     if arg.value_of("className") != destaticify(owner).replace("._", ".").lstrip("$"):
         # The class a private module declares is named `pkg._Module.Name` in the bytecode.
         if arg.value_of("className") != destaticify(owner):
@@ -1274,6 +1282,14 @@ def _expression_to_haxe(
         # mutable local holding it. Bind it now so later local assignments do
         # not retarget the closure, while mutations of that environment remain
         # visible to every closure sharing it.
+        if expr.captures is not None:
+            ctx_entry = getattr(ir_function, "_ctx_closure_bodies", {}).get(expr.fun.findex.value)
+            if ctx_entry is not None:
+                getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
+                captured = [_expression_to_haxe(c, code, ir_function) for c in expr.captures]
+                params, body = ctx_entry
+                body = re.sub(_CTX_MARK + r"(\d+)" + _CTX_MARK, lambda m: captured[int(m.group(1))], body)
+                return f"({', '.join(params[1:])}) -> {body}"
         fun_str = _expression_to_haxe(expr.fun_const, code, ir_function)
         obj_str = _expression_to_haxe(expr.obj, code, ir_function)
         fun_type = expr.fun.type.resolve(code).definition
@@ -1365,6 +1381,12 @@ def _expression_to_haxe(
         return f"Type.enumIndex({inner})"
 
     elif isinstance(expr, IREnumField):
+        if (
+            isinstance(expr.value, IRLocal)
+            and getattr(ir_function, "_ctx_param", None) == expr.value.name
+            and expr.field_name.startswith("param")
+        ):
+            return f"{_CTX_MARK}{int(expr.field_name.removeprefix('param'))}{_CTX_MARK}"
         inner = _expression_to_haxe(expr.value, code, ir_function)
         index = int(expr.field_name.removeprefix("param"))
         raw = f"Type.enumParameters({inner})[{index}]"
@@ -3021,6 +3043,156 @@ def _inline_closure(
     return f"({', '.join(params[1:])}) -> {body}"
 
 
+_CTX_MARK = "\x00"
+
+
+def _closure_context_body(helper_ir: IRFunction) -> Optional[Tuple[List[str], str]]:
+    """Like `_closure_inline_body`, for a closure whose first parameter is an anonymous capture
+    context (several captured variables travel in one enum value). The body reads each capture
+    through the context's parameters; those reads render as `_CTX_MARK<index>_CTX_MARK`
+    placeholders for the creating function to replace with the captured expressions."""
+    signature = helper_ir.func.type.resolve(helper_ir.code).definition
+    if not isinstance(signature, Fun) or not signature.args or not helper_ir.locals:
+        return None
+    ctx_type = signature.args[0].resolve(helper_ir.code).definition
+    if not isinstance(ctx_type, Enum) or ctx_type.name.value != 0:
+        return None
+    ctx_name = helper_ir.locals[0].name
+    setattr(helper_ir, "_ctx_param", ctx_name)
+    try:
+        entry = _closure_inline_body(helper_ir)
+    finally:
+        setattr(helper_ir, "_ctx_param", None)
+    if entry is None or re.search(rf"\b{re.escape(ctx_name)}\b", entry[1]):
+        return None  # the context itself is used, not just read
+    return entry
+
+
+def _walk_ir(node: Optional[IRStatement]) -> Iterator[IRStatement]:
+    if node is None:
+        return
+    yield node
+    if isinstance(node, IRBlock):
+        for stmt in node.statements:
+            yield from _walk_ir(stmt)
+    else:
+        for child in node.get_children():
+            yield from _walk_ir(child)
+
+
+def _hoist_closure_contexts(ir_func: IRFunction, ctx_bodies: Dict[int, Tuple[List[str], str]]) -> None:
+    """Bind closures to the values their capture context holds, and drop the context.
+
+    The compiler builds the context from the captured variables right before the closures that
+    share it; the source only named the variables, so the closures are rendered as lambdas
+    over them (`IRBoundClosure.captures`) and the context's construction disappears."""
+    if not ctx_bodies:
+        return
+    progress = True
+    while progress:
+        progress = False
+        for block in [n for n in _walk_ir(ir_func.block) if isinstance(n, IRBlock)]:
+            for idx, stmt in enumerate(block.statements):
+                if not (
+                    isinstance(stmt, IRAssign)
+                    and isinstance(stmt.target, IRLocal)
+                    and isinstance(stmt.expr, IREnumConstruct)
+                    and isinstance(stmt.expr.get_type().definition, Enum)
+                    and cast(Enum, stmt.expr.get_type().definition).name.value == 0
+                    and all(isinstance(a, IRLocal) for a in stmt.expr.args)
+                ):
+                    continue
+                if _hoist_one_context(ir_func, block, idx, ctx_bodies):
+                    progress = True
+                    break
+            if progress:
+                break
+
+
+def _hoist_one_context(
+    ir_func: IRFunction, block: IRBlock, idx: int, ctx_bodies: Dict[int, Tuple[List[str], str]]
+) -> bool:
+    stmt = cast(IRAssign, block.statements[idx])
+    ctx = cast(IRLocal, stmt.target)
+    captured = cast(List[IRLocal], cast(IREnumConstruct, stmt.expr).args)
+    closures: List[IRBoundClosure] = []
+    last_use = -1
+    for j, later in enumerate(block.statements):
+        if later is stmt:
+            continue
+        for node in _walk_ir(later):
+            if isinstance(node, IRBoundClosure) and node.obj == ctx:
+                closures.append(node)
+                last_use = max(last_use, j)
+    others = 0
+
+    def count(node: Optional[IRStatement]) -> None:
+        nonlocal others
+        if node is None or node is stmt:
+            return
+        if isinstance(node, IRBoundClosure) and node.obj == ctx:
+            count(node.fun_const)
+            return
+        if isinstance(node, IRLocal) and node == ctx:
+            others += 1
+        if isinstance(node, IRBlock):
+            for s in node.statements:
+                count(s)
+        else:
+            for child in node.get_children():
+                count(child)
+
+    count(ir_func.block)
+    if others or not closures:
+        return False
+    # Every closure must come after the context, in the same block, with the captured
+    # variables unchanged in between.
+    seen = sum(1 for n in _walk_ir(ir_func.block) if isinstance(n, IRBoundClosure) and n.obj == ctx)
+    if seen != len(closures) or any(
+        isinstance(n, IRBoundClosure) and n.obj == ctx
+        for s in block.statements[: idx + 1]
+        for n in _walk_ir(s)
+    ):
+        return False
+
+    # The context holds the values as they were when it was built; a lambda reads its variables
+    # when it runs. They agree only if each captured variable is written (at most) by a statement
+    # that runs before the context on every path to it.
+    def ancestry(node: IRBlock) -> Optional[List[Tuple[IRBlock, int]]]:
+        if node is block:
+            return [(node, idx)]
+        for child_idx, child in enumerate(node.statements):
+            for sub in [child] if isinstance(child, IRBlock) else child.get_children():
+                if isinstance(sub, IRBlock):
+                    found = ancestry(sub)
+                    if found is not None:
+                        return [(node, child_idx), *found]
+        return None
+
+    path = ancestry(ir_func.block)
+    if path is None:
+        return False
+    settled = {id(s) for owner, at in path for s in owner.statements[:at]}
+    for node in _walk_ir(ir_func.block):
+        if isinstance(node, IRAssign) and isinstance(node.target, IRLocal) and node.target in captured:
+            if id(node) not in settled:
+                return False
+    names = {c.name for c in captured}
+    for closure in closures:
+        entry = ctx_bodies.get(closure.fun.findex.value)
+        if entry is None:
+            return False
+        params, body = entry
+        if any(int(m) >= len(captured) for m in re.findall(_CTX_MARK + r"(\d+)" + _CTX_MARK, body)):
+            return False
+        if names & {p.lstrip("?").split(" = ")[0] for p in params[1:]}:
+            return False  # a parameter would shadow a captured variable
+    for closure in closures:
+        closure.captures = list(captured)
+    del block.statements[idx]
+    return True
+
+
 def _optional_ref_adapter(helper_ir: IRFunction) -> Optional[List[bool]]:
     """Whether a helper only passes its optional arguments on to the function it is bound to.
 
@@ -4566,7 +4738,7 @@ def _try_instance_method_call(
     ):
         return f"super.{method_name}"
 
-    arg_expr_str = _expression_to_haxe(first_arg, code, None)
+    arg_expr_str = _expression_to_haxe(first_arg, code, ir_function)
     if (
         isinstance(first_arg, IRCast)
         and first_arg.expr.get_type().kind.value == Type.Kind.DYN.value
@@ -5941,10 +6113,14 @@ def _class_body(
     # below consults `inlined`.
     inline_bodies: Dict[int, Tuple[List[str], str]] = {}
     optional_adapters: Dict[int, List[bool]] = {}
+    ctx_bodies: Dict[int, Tuple[List[str], str]] = {}
     for findex, helper_ir in helper_irs.items():
         setattr(helper_ir, "_containing_class", ir_class)
         setattr(helper_ir, "_force_static", True)
         setattr(helper_ir, "_anon_name", f"__anon_{findex}")
+        ctx_body = _closure_context_body(helper_ir)
+        if ctx_body is not None:
+            ctx_bodies[findex] = ctx_body
         body = _closure_inline_body(helper_ir)
         optional = _optional_ref_adapter(helper_ir) if body is None else None
         if optional is not None:
@@ -5956,6 +6132,8 @@ def _class_body(
         setattr(ir_func, "_inline_closure_bodies", inline_bodies)
         setattr(ir_func, "_optional_adapters", optional_adapters)
         setattr(ir_func, "_inlined_closures", inlined)
+        setattr(ir_func, "_ctx_closure_bodies", ctx_bodies)
+        _hoist_closure_contexts(ir_func, ctx_bodies)
 
     # Collect natives, std functions, referenced classes and referenced enums.
     natives: List[Native] = []
