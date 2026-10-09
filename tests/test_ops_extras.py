@@ -54,6 +54,47 @@ def _ops(code: Bytecode, name: str) -> list:
     return [str(op.op) for op in func.ops]
 
 
+def test_bound_instance_method_keeps_its_receiver(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function main() {
+        var a = [0, 1, 2];
+        var boundPush = a.push.bind();
+        Sys.println(boundPush(3));
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "__anon_" not in files["src/Main.hx"]
+    assert actual == expected
+    assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")
+
+
+def test_void_forwarding_helper_is_not_lifted(tmp_path: Path) -> None:
+    source = """
+private abstract A(Array<Int>) {
+    public function new() {
+        this = [];
+    }
+    public inline function add(i:Int):Void {
+        this.push(i);
+    }
+    public function get() return this.pop();
+}
+class Main {
+    static function main() {
+        var a = new A();
+        var f = a.add;
+        f(12);
+        Sys.println(a.get());
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "__anon_" not in files["src/Main.hx"]
+    assert actual == expected
+
+
 def test_block_closure_with_function_parameter_is_inlined(tmp_path: Path) -> None:
     source = """
 class Main {
