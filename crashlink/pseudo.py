@@ -1158,8 +1158,16 @@ def _expression_to_haxe(
         return f"({cond} ? {then} : {otherwise})"
 
     elif isinstance(expr, IRNullCoalesce):
-        # `value ?? default`.
-        value = _expression_to_haxe(expr.value, code, ir_function)
+        # `value ?? default`. The null test is the guard of the unboxing, so an unboxing cast on the
+        # left (which would turn a null into zero before the test) is not part of the source.
+        operand = expr.value
+        while isinstance(operand, IRCast) and operand.get_type().kind.value in (
+            Type.Kind.I32.value,
+            Type.Kind.F64.value,
+            Type.Kind.BOOL.value,
+        ):
+            operand = operand.expr
+        value = _expression_to_haxe(operand, code, ir_function)
         default = _expression_to_haxe(expr.default, code, ir_function)
         return f"({value} ?? {default})"
 

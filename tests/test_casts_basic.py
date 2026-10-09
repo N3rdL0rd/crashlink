@@ -92,3 +92,19 @@ class Main {
     _, original, decompiled = roundtrip(tmp_path, source)
     assert original == "threw\n"
     assert decompiled == original
+
+
+def test_null_coalescing_keeps_null_on_the_left(tmp_path: Path) -> None:
+    # `v ?? 42` tests the nullable value; unboxing it first would make a null read as 0.
+    source = """
+class Main {
+    static function pick(v:Null<Int>):Int return v ?? 42;
+    static function main() {
+        Sys.println(pick(null));
+        Sys.println(pick(5));
+        Sys.println(pick(0));
+    }
+}
+"""
+    files, expected, actual = roundtrip(tmp_path, source)
+    assert actual == expected == "42\n5\n0\n"
