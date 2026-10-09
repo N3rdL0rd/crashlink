@@ -3515,12 +3515,12 @@ def _inline_block_closure(
 
 
 def _split_params(text: str) -> List[str]:
-    """The top-level comma-separated parts of a parameter list (types may contain commas)."""
+    """The top-level comma-separated parts of a parameter list (types may contain commas and arrows)."""
     parts, depth, current = [], 0, ""
-    for ch in text:
+    for i, ch in enumerate(text):
         if ch in "(<[{":
             depth += 1
-        elif ch in ")>]}":
+        elif ch in ")]}" or (ch == ">" and text[i - 1 : i] != "-"):
             depth -= 1
         if ch == "," and depth == 0:
             parts.append(current)
@@ -3560,10 +3560,15 @@ def _forwarded_bind(
     if not isinstance(signature, Fun):
         return None
     params = [local.name for local in helper.locals[: len(signature.args)]]
-    statements = list(helper.block.statements)
-    if len(statements) != 1 or not isinstance(statements[0], IRReturn) or statements[0].value is None:
+    statements = [s for s in helper.block.statements if not (isinstance(s, IRReturn) and s.value is None)]
+    if len(statements) != 1:
         return None
-    call = statements[0].value
+    if isinstance(statements[0], IRReturn) and statements[0].value is not None:
+        call = statements[0].value
+    elif isinstance(statements[0], IRCall):
+        call = statements[0]  # a void helper: the forwarded call is the whole body
+    else:
+        return None
     if isinstance(call, IRNew) and not call.constructor_args:
         return None
     args = (
@@ -3578,8 +3583,38 @@ def _forwarded_bind(
     slots = [obj_str if n == bound else "_" for n in names]
     while len(slots) > 1 and slots[-1] == "_":
         slots.pop()
-    callee = _forwarded_callee(call, code, ir_function)
-    return f"{callee}.bind({', '.join(slots)})" if callee is not None else None
+    method = _instance_method(call, code)
+    if names[0] == bound and method is not None:
+        # The receiver is the bound value and the closure's arguments follow it in order. The compiler
+        # keeps `obj.method.bind()` as an instance closure on the helper; a plain `obj.method` value is
+        # built around a capture context instead.
+        receiver = f"({obj_str})" if _is_lambda_text(obj_str) else obj_str
+        rendered = f"{receiver}.{code.partial_func_name(method)}.bind()"
+    else:
+        callee = _forwarded_callee(call, code, ir_function)
+        if callee is None:
+            return None
+        rendered = f"{callee}.bind({', '.join(slots)})"
+    getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
+    return rendered
+
+
+def _instance_method(call: IRExpression, code: Bytecode) -> Optional[Function]:
+    """The instance method a call invokes directly, if the call is one (its first argument is the receiver)."""
+    if not (
+        isinstance(call, IRCall)
+        and isinstance(call.target, IRConst)
+        and isinstance(call.target.value, Function)
+        and call.call_type == IRCall.CallType.FUNC
+    ):
+        return None
+    func = call.target.value
+    abstract = abstracts.abstract_of_function(code, func)
+    if _is_static_function(func, code) or (
+        abstract is not None and func.findex.value not in abstract.instance
+    ):
+        return None
+    return func
 
 
 def _forwarded_callee(call: IRExpression, code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
