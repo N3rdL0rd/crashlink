@@ -1715,6 +1715,8 @@ def _expression_to_haxe(
             default_literal = {"I32": "Int", "F32": "Single", "F64": "Float", "Bool": "Bool"}.get(target_name)
             if default_literal is not None:
                 return f"cast(null, {default_literal})"
+            if isinstance(expr.get_type().definition, Obj):
+                return "cast null"  # a SafeCast of the Dynamic null to a class
         source_name = disasm.type_name(code, expr.expr.get_type())
         inner = _expression_to_haxe(expr.expr, code, ir_function)
         if target_name == "I32" and source_name in {"F32", "F64"}:

@@ -228,3 +228,21 @@ class Main {
     assert "(2 : Float)" in files["src/Main.hx"]
     assert actual == expected
     assert _ops(original, "Main.run") == _ops(recompiled, "Main.run")
+
+
+def test_null_cast_to_a_class_stays_a_cast(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function run() {
+        var s:String = cast null;
+        Sys.println(s == "x");
+    }
+    static function main() {
+        run();
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "cast null" in files["src/Main.hx"]
+    assert actual == expected
+    assert _ops(original, "Main.run") == _ops(recompiled, "Main.run")
