@@ -74,3 +74,25 @@ class Main {
     assert "while (true)" not in files["src/Main.hx"]
     assert actual == expected
     assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")
+
+
+def test_optional_parameter_default_is_a_default_argument(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function boxed(?p = 10) {
+        return p;
+    }
+    static function text(?s:String = "x") {
+        return s + "!";
+    }
+    static function main() {
+        Sys.println(boxed() + boxed(3));
+        Sys.println(text() + text("y"));
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "function boxed(p: Null<Int> = 10)" in files["src/Main.hx"]
+    assert actual == expected
+    for name in ("Main.boxed", "Main.text"):
+        assert _ops(original, name) == _ops(recompiled, name)

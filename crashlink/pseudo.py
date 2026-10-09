@@ -508,7 +508,7 @@ def _null_operand(expr: Optional[IRExpression], code: Bytecode, ir_function: Opt
     """The operand of a null test; a lambda (`(x) -> x`) takes the `== null` into its body
     unless grouped."""
     rendered = _expression_to_haxe(expr, code, ir_function)
-    return f"({rendered})" if re.match(r"\([\w, ]*\) ->", rendered) else rendered
+    return f"({rendered})" if _is_lambda_text(rendered) else rendered
 
 
 _NON_NULLABLE_KINDS = {

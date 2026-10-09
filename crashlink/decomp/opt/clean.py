@@ -1660,6 +1660,67 @@ def default_arg_value(code: Bytecode, load: Opcode) -> IRConst:
     return IRConst(code, const_type, load.df["ptr"])
 
 
+class IRNullableDefaultRecovery(IROptimizer):
+    """
+    Recovers the default of an optional parameter that is held boxed or by
+    reference-type (`?p = 10`, `s = "x"`): the compiler opens the function with
+    `if (p == null) p = K`, which source code cannot spell as an assignment
+    without changing the opcodes, but a default argument gives back exactly.
+    """
+
+    def optimize(self) -> None:
+        fun_type = self.func.func.type.resolve(self.func.code).definition
+        if not isinstance(fun_type, Fun):
+            return
+        stmts = self.func.block.statements
+        while stmts:
+            entry = self._prologue_entry(stmts[0], len(fun_type.args))
+            if entry is None or entry[0].reg_idx in self.func.default_args:
+                return
+            param, const = entry
+            assert param.reg_idx is not None
+            self.func.default_args[param.reg_idx] = (param, const)
+            stmts.pop(0)
+
+    @staticmethod
+    def _prologue_entry(stmt: IRStatement, arity: int) -> Optional[Tuple[IRLocal, IRConst]]:
+        """`(parameter, default)` of one leading `if (p == null) p = K`."""
+        if not isinstance(stmt, IRConditional) or (
+            stmt.false_block is not None and stmt.false_block.statements
+        ):
+            return None
+        cond = stmt.condition
+        if not (
+            isinstance(cond, IRBoolExpr)
+            and cond.op == IRBoolExpr.CompareType.NULL
+            and isinstance(cond.left, IRLocal)
+            and cond.left.reg_idx is not None
+            and cond.left.reg_idx < arity
+            and cond.left.defining_op_idx is None
+            and len(stmt.true_block.statements) == 1
+        ):
+            return None
+        given = stmt.true_block.statements[0]
+        if not (isinstance(given, IRAssign) and given.target == cond.left):
+            return None
+        value = given.expr
+        while isinstance(value, IRCast):  # boxing the default into `Null<T>`
+            value = value.expr
+        if not (
+            isinstance(value, IRConst)
+            and value.const_type
+            in (
+                IRConst.ConstType.INT,
+                IRConst.ConstType.FLOAT,
+                IRConst.ConstType.BOOL,
+                IRConst.ConstType.STRING,
+                IRConst.ConstType.GLOBAL_STRING,
+            )
+        ):
+            return None
+        return cond.left, value
+
+
 class IRDefaultArgumentRecovery(IROptimizer):
     """
     Recovers default argument values (see `default_arg_regs`). Drops the
