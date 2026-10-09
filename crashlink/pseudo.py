@@ -6407,6 +6407,13 @@ def _tag_map_allocations(root: IRStatement, code: Bytecode, findex: int, locals_
         if id(stmt) in seen:
             return
         seen.add(id(stmt))
+        if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRField) and isinstance(stmt.expr, IRNew):
+            owner = stmt.target.target.get_type().definition
+            for declaring in [owner, *_ancestors(code, owner)] if isinstance(owner, Obj) else []:
+                node = mapargs.field_node(code, declaring, stmt.target.field_name)
+                if node is not None:
+                    stmt.expr.map_value = mapargs.value_type(code, node)  # type: ignore[attr-defined]
+                    break
         if (
             isinstance(stmt, IRAssign)
             and isinstance(stmt.target, IRLocal)

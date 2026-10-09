@@ -267,3 +267,25 @@ class Main {
     assert "(this : Dynamic).name" in files["src/Main.hx"]
     assert actual == expected
     assert _ops(original, "Main.run") == _ops(recompiled, "Main.run")
+
+
+def test_a_map_field_allocated_in_the_constructor_has_the_recovered_value_type(tmp_path: Path) -> None:
+    source = """
+class Store {
+    var items:Map<String, Int> = new Map();
+    public function new() {
+        items.set("k", 5);
+    }
+    public function at(key:String):Int {
+        return items.get(key);
+    }
+}
+class Main {
+    static function main() {
+        Sys.println(new Store().at("k"));
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert actual == expected
+    assert _ops(original, "Store.at") == _ops(recompiled, "Store.at")
