@@ -72,3 +72,22 @@ class Main {
     assert "while (true)" not in files["src/Main.hx"]
     assert actual == expected
     assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")
+
+
+def test_element_increment_stays_an_increment(tmp_path: Path) -> None:
+    # `a[i]++` is read, Incr, write; `a[i] = a[i] + 1` compiles to a different opcode sequence.
+    source = """
+class Main {
+    static function main() {
+        var a = [1, 2, 3];
+        var i = 1;
+        a[i]++;
+        a[2]--;
+        Sys.println(a.join(","));
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "a[1] = a[1] + 1" not in files["src/Main.hx"]
+    assert actual == expected
+    assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")

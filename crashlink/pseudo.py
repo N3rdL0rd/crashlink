@@ -2408,6 +2408,29 @@ def _generate_statements(
                     and _same_receiver(a.target, b.target)
                 )
 
+            def _plain_index(expr: IRExpression) -> bool:
+                if isinstance(expr, (IRLocal, IRConst)):
+                    return True
+                return (
+                    isinstance(expr, IRArithmetic)
+                    and expr.op == IRArithmetic.ArithmeticType.SHL
+                    and _plain_index(expr.left)
+                    and _plain_index(expr.right)
+                )
+
+            def _element_eq(a: IRStatement, b: IRStatement) -> bool:
+                # x[i]++ reads and writes one element: both sides must render as the same array element.
+                return (
+                    isinstance(a, IRArrayAccess)
+                    and isinstance(b, IRArrayAccess)
+                    and isinstance(a.array, (IRLocal, IRField))
+                    and isinstance(b.array, (IRLocal, IRField))
+                    and _plain_index(a.index)
+                    and _plain_index(b.index)
+                    and _expression_to_haxe(a, code, ir_function) == target_str
+                    and _expression_to_haxe(b, code, ir_function) == target_str
+                )
+
             if (
                 isinstance(stmt.expr, IRArithmetic)
                 and stmt.expr.step
@@ -2417,6 +2440,7 @@ def _generate_statements(
                 and (
                     (isinstance(stmt.target, IRLocal) and _same_local(stmt.expr.left, stmt.target))
                     or (isinstance(stmt.target, IRField) and _field_eq(stmt.expr.left, stmt.target))
+                    or (isinstance(stmt.target, IRArrayAccess) and _element_eq(stmt.expr.left, stmt.target))
                 )
             ):
                 op_sym = "++" if stmt.expr.op == IRArithmetic.ArithmeticType.ADD else "--"
