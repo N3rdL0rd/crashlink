@@ -101,6 +101,9 @@ SAME = [
         "var k = p * 2; var m = o.v; return m + k;",
     ),
     ("identity arithmetic", "return (p + 0) * 1 - 0;", "return p;"),
+    ("linear arithmetic", "return p + q + 1 + 1 - 1 - (p + 1) + 2 * q;", "return 3 * q;"),
+    ("scaling by a shift", "return (p << 3) + p;", "return p * 9;"),
+    ("float constants", "return Std.int(3 / 2) + p;", "return 1 + p;"),
     (
         "a condition decided by a constant",
         "var z = Sys.args().length * 0; var one = 1; if (one == 1) return a(p); return b(q);",
@@ -110,6 +113,9 @@ SAME = [
 
 DIFFERENT = [
     ("constant", "return p + 12;", "return p + 13;"),
+    ("linear arithmetic that is not equal", "return p + q + 1 - (p + 1) + 2 * q;", "return 2 * q;"),
+    ("a product of unknowns is not linear", "return p * q + p;", "return p * q + q;"),
+    ("float truncation", "return Std.int(7 / 2) + p;", "return 4 + p;"),
     ("operator", "return p + q;", "return p - q;"),
     ("subtraction operand order", "return p - q;", "return q - p;"),
     ("call order", "var x = a(p); var y = b(q); return x + y;", "var y = b(q); var x = a(p); return x + y;"),

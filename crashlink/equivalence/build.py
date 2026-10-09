@@ -16,12 +16,13 @@ asserting equivalence only for executions in which no check fails.
 
 from __future__ import annotations
 
+import struct
 import sys
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, cast
 
 from ..core import Bytecode, Enum, Fun, Function, Type
 from .lift import Block, Lifted, Unsupported, liveness
-from .names import INT_KINDS, VOID_KIND, Namer
+from .names import FLOAT_KINDS, INT_KINDS, VOID_KIND, Namer
 from .terms import Graph, Node, Var
 
 MEM: Var = "mem"
@@ -255,6 +256,9 @@ class Builder:
         ca, cb = self.const_int(a), self.const_int(b)
         width = WIDTH.get(kind)
         if width is not None:
+            linear = self.linear_arith(name, desc, width, a, b, ca, cb)
+            if linear is not None:
+                return linear
             if ca is not None and cb is not None:
                 folded = self._fold(name, ca, cb, width)
                 if folded is not None:
@@ -271,7 +275,120 @@ class Builder:
         elif kind in INT_KINDS:
             if cb == 0 and name in {"Add", "Sub", "Or", "Xor"}:
                 return a
+        elif kind in FLOAT_KINDS:
+            folded = self.fold_float(name, kind, desc, a, b)
+            if folded is not None:
+                return folded
         return self.g.pure(name, (desc,), a, b, ty=desc)
+
+    def convert_const(
+        self, name: str, src: Node, src_kind: int, dst_kind: int, dst_desc: str
+    ) -> Optional[Node]:
+        """Numeric conversions of constants."""
+        if name in ("ToSFloat", "ToUFloat") and dst_kind in FLOAT_KINDS:
+            value = self.const_int(src)
+            if value is None:
+                return None
+            if name == "ToUFloat":
+                value &= (1 << WIDTH.get(src_kind, 32)) - 1
+            number = float(value)
+            if dst_kind == 5:
+                number = struct.unpack("f", struct.pack("f", number))[0]
+            return self.g.pure("float", (dst_desc, repr(number)), ty=dst_desc)
+        if name == "ToInt" and src_kind in FLOAT_KINDS and dst_kind in WIDTH:
+            number = self.const_float(src)
+            if number is not None and abs(number) < 2**31 and number == number:
+                return self.g.pure("int", (dst_desc, int(number)), ty=dst_desc)
+        return None
+
+    def const_float(self, node: Node) -> Optional[float]:
+        node = self.g.find(node)
+        if node.kind == "float":
+            return float(str(node.attrs[1]))
+        return None
+
+    def fold_float(self, name: str, kind: int, desc: str, a: Node, b: Optional[Node]) -> Optional[Node]:
+        """Arithmetic on float constants, computed as the machine would (IEEE double, or single)."""
+        x = self.const_float(a)
+        y = self.const_float(b) if b is not None else None
+        if x is None or (b is not None and y is None):
+            return None
+        try:
+            if name == "Neg":
+                value = -x
+            elif y is None:
+                return None
+            elif name == "Add":
+                value = x + y
+            elif name == "Sub":
+                value = x - y
+            elif name == "Mul":
+                value = x * y
+            elif name == "SDiv":
+                value = x / y
+            else:
+                return None
+        except (ZeroDivisionError, OverflowError):
+            return None
+        if kind == 5:  # single precision rounds after every operation
+            value = struct.unpack("f", struct.pack("f", value))[0]
+        return self.g.pure("float", (desc, repr(float(value))), ty=desc)
+
+    def _lin(self, node: Node, width: int) -> Tuple[int, Dict[int, int], Dict[int, Node]]:
+        """`node` as constant + sum of coefficient * atom, in wrapping integer arithmetic."""
+        node = self.g.find(node)
+        const = self.const_int(node)
+        if const is not None:
+            return const, {}, {}
+        if node.kind == "lin":
+            base, coeffs = node.attrs[1], node.attrs[2]
+            assert isinstance(base, int) and isinstance(coeffs, tuple)
+            atoms = [self.g.find(x) for x in node.args]
+            return base, {x.id: cast(int, c) for x, c in zip(atoms, coeffs)}, {x.id: x for x in atoms}
+        return 0, {node.id: 1}, {node.id: node}
+
+    def linear_arith(
+        self, name: str, desc: str, width: int, a: Node, b: Node, ca: Optional[int], cb: Optional[int]
+    ) -> Optional[Node]:
+        """Add, Sub and multiplication or shift by a constant keep a value in the form
+        `c + k1*x1 + k2*x2 ...`, so that `(x + 1 + 1) - (x + 1)` and `1` are the same value."""
+        if name not in ("Add", "Sub", "Mul", "Shl"):
+            return None
+        if name == "Mul" and ca is None and cb is None:
+            return None
+        if name == "Shl" and not (cb is not None and 0 <= cb < width):
+            return None
+        const_a, coeffs_a, atoms_a = self._lin(a, width)
+        const_b, coeffs_b, atoms_b = self._lin(b, width)
+        if name == "Mul":
+            scale, (const, coeffs, atoms) = (
+                (ca, (const_b, coeffs_b, atoms_b)) if ca is not None else (cb, (const_a, coeffs_a, atoms_a))
+            )
+            assert scale is not None
+            const, coeffs, atoms = const * scale, {k: v * scale for k, v in coeffs.items()}, dict(atoms)
+        elif name == "Shl":
+            assert cb is not None
+            scale = 1 << cb
+            const, coeffs, atoms = const_a * scale, {k: v * scale for k, v in coeffs_a.items()}, dict(atoms_a)
+        else:
+            sign = 1 if name == "Add" else -1
+            const = const_a + sign * const_b
+            coeffs = dict(coeffs_a)
+            atoms = dict(atoms_a)
+            for key, value in coeffs_b.items():
+                coeffs[key] = coeffs.get(key, 0) + sign * value
+                atoms[key] = atoms_b[key]
+        const = _wrap(const, width)
+        coeffs = {k: _wrap(v, width) for k, v in coeffs.items()}
+        coeffs = {k: v for k, v in coeffs.items() if v != 0}
+        if not coeffs:
+            return self.g.pure("int", (desc, const), ty=desc)
+        ordered = sorted(coeffs)
+        if len(ordered) == 1 and const == 0 and coeffs[ordered[0]] == 1:
+            return atoms[ordered[0]]
+        return self.g.pure(
+            "lin", (desc, const, tuple(coeffs[k] for k in ordered)), *(atoms[k] for k in ordered), ty=desc
+        )
 
     @staticmethod
     def _fold(name: str, a: int, b: int, width: int) -> Optional[int]:
@@ -365,7 +482,14 @@ class Builder:
                 dst, b, self.arith("Add" if name == "Incr" else "Sub", kind, desc, self.reg(dst, b), one)
             )
         elif name == "Neg":
-            set_dst(g.pure("Neg", (dst_desc(),), R("src"), ty=dst_desc()))
+            dst = df["dst"].value
+            kind, desc = self.reg_kind[dst], self.reg_desc[dst]
+            src = R("src")
+            if kind in WIDTH:
+                set_dst(self.arith("Sub", kind, desc, g.pure("int", (desc, 0), ty=desc), src))
+            else:
+                folded = self.fold_float("Neg", kind, desc, src, None)
+                set_dst(folded if folded is not None else g.pure("Neg", (desc,), src, ty=desc))
         elif name == "Not":
             src = R("src")
             src_f = g.find(src)
@@ -377,7 +501,11 @@ class Builder:
             src_reg = df["src"].value
             # Boxing gives the same dynamic value whether it is then typed Dyn or Null<T>.
             attrs = (self.reg_desc[src_reg],) if name == "ToDyn" else (self.reg_desc[src_reg], dst_desc())
-            set_dst(g.pure(name, attrs, R("src"), ty=dst_desc()))
+            src_node = R("src")
+            converted = self.convert_const(
+                name, src_node, self.reg_kind[src_reg], self.reg_kind[df["dst"].value], dst_desc()
+            )
+            set_dst(converted if converted is not None else g.pure(name, attrs, src_node, ty=dst_desc()))
         elif name in ("SafeCast", "UnsafeCast"):
             src_reg = df["src"].value
             src, sdesc, ddesc = R("src"), self.reg_desc[src_reg], dst_desc()

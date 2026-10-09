@@ -49,6 +49,12 @@ class _Digester:
             if expanded:
                 active.discard(node.id)
                 children = [self.memo[g.find(a).id] for a in node.args]
+                if node.kind == "lin":
+                    # attrs = (type, constant, coefficients): the terms are a set, whatever order they were built in
+                    desc, const, coeffs = node.attrs[0], node.attrs[1], node.attrs[2]
+                    assert isinstance(coeffs, tuple)
+                    self.memo[node.id] = _h(("lin", desc, const, tuple(sorted(zip(coeffs, children)))))
+                    continue
                 if node.kind in COMMUTATIVE:
                     children.sort()
                 self.memo[node.id] = _h((node.kind, node.attrs, tuple(children)))
