@@ -206,7 +206,7 @@ class Main {
     assert _ops(original, "Main.run") == _ops(recompiled, "Main.run")
 
 
-def test_an_int_literal_widened_at_run_time_stays_an_int_ascribed_as_float(tmp_path: Path) -> None:
+def test_an_int_literal_widened_at_run_time_stays_an_int_cast_to_float(tmp_path: Path) -> None:
     # `{x: 2}` for a Float field widens the Int at run time (Int + ToSFloat); a plain `2` in the
     # same place would be folded into a Float constant.
     source = """
@@ -225,7 +225,7 @@ class Main {
 }
 """
     files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
-    assert "(2 : Float)" in files["src/Main.hx"]
+    assert "cast 2" in files["src/Main.hx"]
     assert actual == expected
     assert _ops(original, "Main.run") == _ops(recompiled, "Main.run")
 
@@ -244,5 +244,26 @@ class Main {
 """
     files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
     assert "cast null" in files["src/Main.hx"]
+    assert actual == expected
+    assert _ops(original, "Main.run") == _ops(recompiled, "Main.run")
+
+
+def test_a_dynamic_read_of_a_typed_receiver_stays_dynamic(tmp_path: Path) -> None:
+    # `var d:Dynamic = this` is elided: the field is read with a DynGet on the typed register.
+    source = """
+class Main {
+    public var name = "n";
+    public function new() {}
+    function run() {
+        var d:Dynamic = this;
+        Sys.println(d.name);
+    }
+    static function main() {
+        new Main().run();
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "(this : Dynamic).name" in files["src/Main.hx"]
     assert actual == expected
     assert _ops(original, "Main.run") == _ops(recompiled, "Main.run")

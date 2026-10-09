@@ -1101,6 +1101,9 @@ class IRField(IRExpression):
         # Set when this field access is a method closure lifted from a
         # VirtualClosure opcode; see IRFunction._lift_ops_into_block.
         self.virtual_dispatch_fun: Optional["Function"] = None
+        # Set for a DynGet/DynSet: the compiler saw the receiver as Dynamic, whatever type its
+        # register has (`var d:Dynamic = this` reads through `this` itself).
+        self.dynamic = False
 
     def get_type(self) -> Type:
         return self.field_type_idx.resolve(self.code)

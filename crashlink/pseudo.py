@@ -1232,6 +1232,9 @@ def _expression_to_haxe(
                 code,
                 ir_function,
             )
+        if expr.dynamic and isinstance(target_type.definition, Obj):
+            # The compiler read the field of a Dynamic that holds this class's instance.
+            return f"({target_str} : Dynamic).{expr.field_name}"
         if type_name == "String" and expr.field_name == "bytes":
             return f"(@:privateAccess {target_str}.bytes)"
         # Public Array<T> hides the fields of its concrete HL representation.
@@ -1725,8 +1728,8 @@ def _expression_to_haxe(
             # A bare integer literal stays an Int wherever it is boxed (a Dynamic parameter);
             # the ascription makes it a Single. For a Float it is the run-time widening the
             # compiler makes of a literal it was not told is a Float (a constant given as one
-            # is folded): `f(2)` loads the Float directly, `f((2 : Float))` widens an Int.
-            return f"({inner} : {'Single' if target_name == 'F32' else 'Float'})"
+            # is folded): `f(2)` loads the Float directly, `f(cast 2)` widens an Int (an ascription would also fix a type variable to Float).
+            return f"({inner} : Single)" if target_name == "F32" else f"cast {inner}"
         if target_name == "I32" and source_name == "I64":
             # `Int64.low` of an inlined std call: the cast truncates to the low 32 bits.
             return f"{inner}.toInt()" if re.fullmatch(r"\w+", inner) else f"({inner} : hl.I64).toInt()"
