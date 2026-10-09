@@ -160,3 +160,24 @@ class Main {
     files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
     assert "cast (Main.pick(" in files["src/Main.hx"]
     assert actual == expected
+
+
+def test_an_int_read_from_an_array_is_widened_where_a_float_is_wanted(tmp_path: Path) -> None:
+    # The element read has the array's element type, so the Int to Float conversion is the
+    # implicit one (ToSFloat), not a `cast`.
+    source = """
+class Main {
+    static function run(i:Int) {
+        var ints = [1, 2];
+        var total = ints[i] + 1.5;
+        Sys.println(total);
+    }
+    static function main() {
+        run(0);
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "cast(" not in files["src/Main.hx"]
+    assert actual == expected
+    assert _ops(original, "Main.run") == _ops(recompiled, "Main.run")
