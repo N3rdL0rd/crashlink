@@ -96,3 +96,27 @@ class Main {
     assert actual == expected
     for name in ("Main.boxed", "Main.text"):
         assert _ops(original, name) == _ops(recompiled, name)
+
+
+def test_closure_adapter_null_guard_is_not_repeated(tmp_path: Path) -> None:
+    source = """
+typedef Action<T> = T->Void;
+
+abstract Abstr<T>(Dynamic) {
+    @:op(x += y) function opAdd(fn:Action<T>) return this;
+}
+
+class Child extends Main {}
+
+class Main {
+    static function main() {
+        var a:Action<Main> = null;
+        var signal:Abstr<Child> = null;
+        signal += a;
+        Sys.println("done");
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert actual == expected
+    assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")
