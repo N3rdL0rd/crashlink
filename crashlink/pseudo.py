@@ -4793,10 +4793,11 @@ def _render_string_concat(expr: IRCall, code: Bytecode, ir_function: Optional[IR
         parts.append(("val", (operand, simple)))
         interp_count += 1
 
-    # Use interpolation only for dense chains (multiple interpolated values),
-    # and only when there is at least one literal to host the interpolation.
-    has_literal = any(kind == "lit" for kind, _ in parts)
-    if interp_count >= 2 and has_literal:
+    # Use interpolation only for dense chains (multiple interpolated values) that start with
+    # literal text. Haxe lowers `'${a} ...'` to `"" + a + ...`, so a leading value would add
+    # an empty-string concat the original chain never had.
+    starts_with_literal = parts[0][0] == "lit"
+    if interp_count >= 2 and starts_with_literal:
         return _render_interpolated(parts)
 
     # Otherwise: flat `a + b + c`, no redundant wrapping parentheses.
