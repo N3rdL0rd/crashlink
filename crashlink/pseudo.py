@@ -1498,7 +1498,7 @@ def _expression_to_haxe(
         inner = _expression_to_haxe(expr.value, code, ir_function)
         index = int(expr.field_name.removeprefix("param"))
         enum_def = expr.value.get_type().definition
-        if isinstance(enum_def, Enum) and enum_def.name.value != 0 and len(enum_def.constructs) == 1:
+        if isinstance(enum_def, Enum) and len(enum_def.constructs) == 1:
             # The only constructor needs no index test: the compiler read the parameter straight
             # from the value, which only a pattern match on it does in source.
             slots = ["_"] * len(enum_def.constructs[0].params)
