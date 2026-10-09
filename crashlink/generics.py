@@ -20,7 +20,9 @@ from typing import Dict, List, Optional, Tuple
 
 from .core import Bytecode, Fun, Function, Native, Obj, Opcode, Type, tIndex
 
-_cache: Dict[int, Tuple["weakref.ReferenceType[Bytecode]", Dict[int, Dict[int, int]]]] = {}
+# Per function: its parameter variables, and the variable of its return (None if it doesn't return one).
+_Variables = Tuple[Dict[int, int], Optional[int]]
+_cache: Dict[int, Tuple["weakref.ReferenceType[Bytecode]", Dict[int, _Variables]]] = {}
 _lock = threading.Lock()
 
 
@@ -65,10 +67,33 @@ def _array_name(code: Bytecode, index: "tIndex") -> Optional[str]:
     return definition.name.resolve(code) if isinstance(definition, Obj) else None
 
 
-def _compute(code: Bytecode) -> Dict[int, Dict[int, int]]:
+def _returned_parameter(func: Function, parameters: List[int]) -> Optional[int]:
+    """The parameter every return of `func` returns unchanged, if it is one of `parameters`."""
+    returned = {op.df["ret"].value for op in func.ops if op.op == "Ret"}
+    if len(returned) != 1:
+        return None
+    (reg,) = returned
+    if reg not in parameters or any(
+        op.df.get("dst") is not None and op.df["dst"].value == reg for op in func.ops
+    ):
+        return None
+    return reg
+
+
+def _result_is_cast(caller: Function, op_index: int) -> bool:
+    """True if the result of the call at `op_index` is cast straight away: the compiler casts the
+    erased Dynamic result of a call that returns a type variable to the type the call fixed it at."""
+    dst = caller.ops[op_index].df.get("dst")
+    if dst is None or op_index + 1 >= len(caller.ops):
+        return False
+    following = caller.ops[op_index + 1]
+    return following.op == "SafeCast" and following.df["src"].value == dst.value
+
+
+def _compute(code: Bytecode) -> Dict[int, _Variables]:
     index = code.xref_index()
     dyn_kind = Type.Kind.DYN.value
-    result: Dict[int, Dict[int, int]] = {}
+    result: Dict[int, _Variables] = {}
     for func in code.functions:
         signature = func.type.resolve(code).definition
         # A constructor's type variables are its class's, not its own.
@@ -89,6 +114,12 @@ def _compute(code: Bytecode) -> Dict[int, Dict[int, int]]:
             return i
 
         evidenced: set = set()
+        result_cast = False
+        returned = (
+            _returned_parameter(func, dyn_params)
+            if signature.ret.resolve(code).kind.value == dyn_kind
+            else None
+        )
         for ref in index.callers_of(func.findex.value):
             caller = code.fn(ref.source_index, native=False)
             if ref.opcode_index is None or not isinstance(caller, Function):
@@ -112,25 +143,38 @@ def _compute(code: Bytecode) -> Dict[int, Dict[int, int]]:
                 for q in dyn_params:
                     if reg_type(q) == reg_type(p):
                         parent[find(q)] = find(p)
-        if not evidenced:
-            continue
+            result_cast = result_cast or returned is not None and _result_is_cast(caller, ref.opcode_index)
         roots = {find(e) for e in evidenced}
+        if result_cast and returned is not None:
+            roots.add(find(returned))
+        if not roots:
+            continue
         groups: Dict[int, int] = {}
         numbered = {}
         for p in dyn_params:
             if find(p) in roots:
                 numbered[p] = groups.setdefault(find(p), len(groups))
-        result[func.findex.value] = numbered
+        result[func.findex.value] = (numbered, numbered[returned] if returned in numbered else None)
     return result
 
 
-def type_variables(code: Bytecode, func: Function | Native) -> Dict[int, int]:
-    """Map the index (into the function's argument types, receiver included) of each parameter
-    that is a type variable to the number of its variable."""
+def _variables(code: Bytecode, func: Function | Native) -> _Variables:
     key = id(code)
     with _lock:
         cached = _cache.get(key)
         if cached is None or cached[0]() is not code:
             cached = (weakref.ref(code), _compute(code))
             _cache[key] = cached
-    return cached[1].get(func.findex.value, {})
+    return cached[1].get(func.findex.value, ({}, None))
+
+
+def type_variables(code: Bytecode, func: Function | Native) -> Dict[int, int]:
+    """Map the index (into the function's argument types, receiver included) of each parameter
+    that is a type variable to the number of its variable."""
+    return _variables(code, func)[0]
+
+
+def return_variable(code: Bytecode, func: Function | Native) -> Optional[int]:
+    """The number of the type variable `func` returns, when it returns one of its parameters
+    unchanged: `function alias<T>(t:T):T` erases to a Dynamic return of its parameter."""
+    return _variables(code, func)[1]
