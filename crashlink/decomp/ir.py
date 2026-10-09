@@ -1121,11 +1121,16 @@ class IRBoundClosure(IRExpression):
         self.fun = fun
         self.fun_const = IRConst(code, IRConst.ConstType.FUN, idx=fun.findex)
         self.obj = obj
+        # The values of an anonymous capture context this closure was bound to, once the
+        # renderer has taken the context apart (see pseudo._hoist_closure_contexts).
+        self.captures: Optional[List[IRExpression]] = None
 
     def get_type(self) -> Type:
         return self.fun.type.resolve(self.code)
 
     def get_children(self) -> List[IRStatement]:
+        if self.captures is not None:
+            return [self.fun_const, *self.captures]
         return [self.fun_const, self.obj]
 
     def __repr__(self) -> str:
