@@ -20,7 +20,7 @@ import weakref
 from dataclasses import dataclass, field
 from typing import Dict, FrozenSet, Optional, Tuple
 
-from . import disasm
+from . import disasm, mapargs
 from .core import Bytecode, Fun, Function, Obj, Type, destaticify
 from .std_types import STD_TYPES
 
@@ -90,7 +90,15 @@ class Abstract:
         return f"<{', '.join(['Dynamic'] * count)}>" if count else ""
 
     def underlying_annotation(self, code: Bytecode) -> str:
-        return disasm._haxe_annotation(code, self.underlying) if self.underlying is not None else "Dynamic"
+        if self.underlying is None:
+            return "Dynamic"
+        annotation = disasm._haxe_annotation(code, self.underlying)
+        # A wrapped map has the value type its methods' uses of the value show.
+        for findex in sorted(self.instance):
+            value = mapargs.value_type(code, ("r", findex, 0))
+            if value is not None:
+                return mapargs.refine(annotation, value)
+        return annotation
 
     def header(self, code: Bytecode, name: Optional[str] = None) -> str:
         """The declaration line, up to the opening brace, declaring `name` (default

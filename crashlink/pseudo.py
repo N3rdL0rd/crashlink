@@ -32,7 +32,7 @@ from .core import (
     Null,
 )
 from . import disasm
-from . import abstracts, rtti_meta, hxbit, hxsl, typeinit
+from . import abstracts, generics, mapargs, rtti_meta, hxbit, hxsl, typeinit
 from .std_types import STD_TYPES
 from .decomp import (
     STATIC_INIT_UNRECOVERABLE,
@@ -1324,6 +1324,9 @@ def _expression_to_haxe(
                 code,
                 ir_function,
             )
+        if expr.dynamic and isinstance(target_type.definition, Obj):
+            # The compiler read the field of a Dynamic that holds this class's instance.
+            return f"({target_str} : Dynamic).{expr.field_name}"
         if type_name == "String" and expr.field_name == "bytes":
             return f"(@:privateAccess {target_str}.bytes)"
         # Public Array<T> hides the fields of its concrete HL representation.
@@ -1820,9 +1823,7 @@ def _expression_to_haxe(
             return "[]"
         else:
             args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args)
-            rendered = (
-                f"new {disasm.STD_WRAPPED.get(type_name) or disasm.type_to_haxe(type_name)}({args_str})"
-            )
+            rendered = f"new {mapargs.refine(disasm.STD_WRAPPED.get(type_name) or disasm.type_to_haxe(type_name), getattr(expr, 'map_value', None))}({args_str})"
             owner = expr.get_type().definition
             # A private constructor of a std class (an inlined `JsonParser.parse`).
             return (
@@ -1843,22 +1844,29 @@ def _expression_to_haxe(
         return f"new hl.Bytes({_expression_to_haxe(expr.size, code, ir_function)})"
 
     elif isinstance(expr, IRCast):
+        if expr.untyped:
+            return f"cast ({_expression_to_haxe(expr.expr, code, ir_function)})"
         target_name = disasm.type_name(code, expr.get_type())
         # `(T)null` for a non-nullable primitive T (a HL verifier-satisfying
         # placeholder, e.g. pre-growing an Array<Int>'s backing storage) isn't
-        # valid Haxe on static targets — render the type's own default value.
+        # valid Haxe on static targets — it is the explicit conversion of null, which reads as
+        # the type's own default value and compiles to the same Null + SafeCast.
         if isinstance(expr.expr, IRConst) and expr.expr.const_type == IRConst.ConstType.NULL:
-            default_literal = {"I32": "0", "F32": "0.0", "F64": "0.0", "Bool": "false"}.get(target_name)
+            default_literal = {"I32": "Int", "F32": "Single", "F64": "Float", "Bool": "Bool"}.get(target_name)
             if default_literal is not None:
-                return default_literal
+                return f"cast(null, {default_literal})"
+            if isinstance(expr.get_type().definition, Obj):
+                return "cast null"  # a SafeCast of the Dynamic null to a class
         source_name = disasm.type_name(code, expr.expr.get_type())
         inner = _expression_to_haxe(expr.expr, code, ir_function)
         if target_name == "I32" and source_name in {"F32", "F64"}:
             return f"Std.int({inner})"
-        if target_name == "F32" and source_name == "I32" and isinstance(expr.expr, IRConst):
+        if target_name in ("F32", "F64") and source_name == "I32" and isinstance(expr.expr, IRConst):
             # A bare integer literal stays an Int wherever it is boxed (a Dynamic parameter);
-            # the ascription makes it a Single.
-            return f"({inner} : Single)"
+            # the ascription makes it a Single. For a Float it is the run-time widening the
+            # compiler makes of a literal it was not told is a Float (a constant given as one
+            # is folded): `f(2)` loads the Float directly, `f(cast 2)` widens an Int (an ascription would also fix a type variable to Float).
+            return f"({inner} : Single)" if target_name == "F32" else f"cast {inner}"
         if target_name == "I32" and source_name == "I64":
             # `Int64.low` of an inlined std call: the cast truncates to the low 32 bits.
             return f"{inner}.toInt()" if re.fullmatch(r"\w+", inner) else f"({inner} : hl.I64).toInt()"
@@ -3916,6 +3924,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
 
     params_str_list = []
     return_type_str = "Void"
+    variables: Dict[int, int] = {}
 
     core_fun_type_def = func_core.type.resolve(code).definition
     if isinstance(core_fun_type_def, Fun):
@@ -3925,9 +3934,20 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             if is_instance and not is_constructor and containing is not None
             else set()
         )
+        variables = _own_type_variables(code, func_core, containing, func_name_str, is_instance)
         for i, arg_type_idx in enumerate(core_fun_type_def.args[start_arg:]):
             arg_core_type = arg_type_idx.resolve(code)
             arg_haxe_type_name = "Dynamic" if i in erased else disasm._haxe_annotation(code, arg_core_type)
+            if start_arg + i in variables:
+                variable = _type_variable_name(variables[start_arg + i])
+                arg_haxe_type_name = (
+                    variable if arg_core_type.kind.value == Type.Kind.DYN.value else f"Array<{variable}>"
+                )
+            elif i not in erased:
+                arg_haxe_type_name = mapargs.refine(
+                    arg_haxe_type_name,
+                    mapargs.value_type(code, ("r", func_core.findex.value, start_arg + i)),
+                )
 
             param_name = f"arg{i}"
             local_idx = start_arg + i
@@ -3983,7 +4003,10 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             params_str_list.append(f"{param_name}{param_type_decl}")
 
         ret_core_type = core_fun_type_def.ret.resolve(code)
-        return_type_str = _return_annotation(code, func_core, ret_core_type)
+        return_type_str = mapargs.refine(
+            _return_annotation(code, func_core, ret_core_type),
+            mapargs.value_type(code, ("ret", func_core.findex.value)),
+        )
 
     # Constructors do not declare a return type in Haxe.
     if is_constructor or abstract_constructor:
@@ -3991,6 +4014,11 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
 
     params_joined_str = ", ".join(params_str_list)
     ret_decl = f": {return_type_str}" if return_type_str else ""
+    type_params = (
+        "<" + ", ".join(_type_variable_name(n) for n in sorted(set(variables.values()))) + ">"
+        if isinstance(core_fun_type_def, Fun) and variables
+        else ""
+    )
     access_kw = "public "
     # A `dynamic` function is rebound at run time, so Haxe refuses to also inline it.
     is_dynamic = "dynamic" in static_kw or "dynamic" in override_kw
@@ -4002,7 +4030,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         if containing is not None
         else ""
     )
-    func_header = f"{member_meta}{access_kw}{static_kw}{override_kw}{inline_kw}function {func_name_str}({params_joined_str}){ret_decl} {{"
+    func_header = f"{member_meta}{access_kw}{static_kw}{override_kw}{inline_kw}function {func_name_str}{type_params}({params_joined_str}){ret_decl} {{"
     output_lines.append(func_header)
 
     initial_declared_vars = {p.split(":")[0].strip().lstrip("?") for p in params_str_list}
@@ -4020,6 +4048,13 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     unused_static_aliases = _unused_static_aliases(ir_func.block, code)
     for name in unused_static_aliases:
         local_types.pop(name, None)
+    _tag_map_allocations(ir_func.block, code, func_core.findex.value, ir_func.all_locals)
+    for local in ir_func.all_locals:
+        if local.name in local_types and local.reg_idx is not None:
+            local_types[local.name] = mapargs.refine(
+                local_types[local.name],
+                mapargs.value_type(code, ("r", func_core.findex.value, local.reg_idx)),
+            )
     receiver_types = _virtual_receiver_static_types(ir_func, code)
     for name, haxe_type in receiver_types.items():
         if name in local_types:
@@ -6631,6 +6666,11 @@ def _class_body(
     if static_fields:
         for field_name, field_type in static_fields:
             field_type_haxe = disasm._haxe_annotation(code, field_type)
+            if ir_class.static is not None:
+                field_type_haxe = mapargs.refine(
+                    field_type_haxe,
+                    mapargs.value_type(code, mapargs.field_node(code, ir_class.static, field_name)),
+                )
             if field_type_haxe == "Array<Dynamic>":
                 elem_types = getattr(ir_class, "field_elem_types", {})
                 if field_name in elem_types:
@@ -6654,6 +6694,11 @@ def _class_body(
     if fields:
         for field_name, field_type in fields:
             field_type_haxe = disasm._haxe_annotation(code, field_type)
+            if ir_class.dynamic is not None:
+                field_type_haxe = mapargs.refine(
+                    field_type_haxe,
+                    mapargs.value_type(code, mapargs.field_node(code, ir_class.dynamic, field_name)),
+                )
             if field_type_haxe == "Array<Dynamic>":
                 elem_types = getattr(ir_class, "field_elem_types", {})
                 if field_name in elem_types:
@@ -6970,6 +7015,70 @@ def class_field_lines(code: Bytecode, obj: Obj) -> List[str]:
         for name, typ in _obj_fields(code, dynamic)
     )
     return lines
+
+
+def _tag_map_allocations(root: IRStatement, code: Bytecode, findex: int, locals_: List[IRLocal]) -> None:
+    """Give each `new IntMap()` bound to a local the value type recovered for the local.
+    Registers a variable of one name was split over share the type its name is declared with."""
+    seen: Set[int] = set()
+    by_name: Dict[str, str] = {}
+    for local in locals_:
+        found = mapargs.value_type(code, ("r", findex, local.reg_idx)) if local.reg_idx is not None else None
+        if found is not None:
+            by_name.setdefault(local.name, found)
+
+    def visit(stmt: IRStatement) -> None:
+        if id(stmt) in seen:
+            return
+        seen.add(id(stmt))
+        if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRField) and isinstance(stmt.expr, IRNew):
+            owner = stmt.target.target.get_type().definition
+            for declaring in [owner, *_ancestors(code, owner)] if isinstance(owner, Obj) else []:
+                node = mapargs.field_node(code, declaring, stmt.target.field_name)
+                if node is not None:
+                    stmt.expr.map_value = mapargs.value_type(code, node)  # type: ignore[attr-defined]
+                    break
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRLocal)
+            and isinstance(stmt.expr, IRNew)
+            and stmt.target.reg_idx is not None
+        ):
+            stmt.expr.map_value = by_name.get(stmt.target.name)  # type: ignore[attr-defined]
+        for child in stmt.get_children():
+            visit(child)
+
+    visit(root)
+
+
+def _type_variable_name(number: int) -> str:
+    return "T" if number == 0 else f"T{number}"
+
+
+def _own_type_variables(
+    code: Bytecode,
+    func: Function,
+    containing: "Union[IRClass, _PseudoClass, None]",
+    name: str,
+    is_instance: bool,
+) -> Dict[int, int]:
+    """The parameters of `func` that are its type variables (see `generics`). A method that
+    overrides or is overridden keeps every parameter Dynamic: Haxe requires the overriding
+    method to declare the same type parameters."""
+    variables = generics.type_variables(code, func)
+    if not variables or not is_instance:
+        return variables
+    obj = containing.dynamic if containing is not None else None
+    if obj is None:
+        return {}
+    if _ancestor_declares(code, obj, name):
+        return {}
+    for t in code.types:
+        sub = t.definition
+        if isinstance(sub, Obj) and sub is not obj and name in _declared_methods(code, sub):
+            if _is_ancestor(code, obj, sub):
+                return {}
+    return variables
 
 
 def _erased_parameters(code: Bytecode, dynamic: Optional[Obj], method_name: str) -> Set[int]:

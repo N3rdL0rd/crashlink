@@ -15,6 +15,7 @@ from ..core import (
     Fun,
     Function,
     Native,
+    Obj,
     Opcode,
     Ref,
     ResolvableVarInt,
@@ -1128,6 +1129,9 @@ class IRField(IRExpression):
         # Set when this field access is a method closure lifted from a
         # VirtualClosure opcode; see IRFunction._lift_ops_into_block.
         self.virtual_dispatch_fun: Optional["Function"] = None
+        # Set for a DynGet/DynSet: the compiler saw the receiver as Dynamic, whatever type its
+        # register has (`var d:Dynamic = this` reads through `this` itself).
+        self.dynamic = False
 
     def get_type(self) -> Type:
         return self.field_type_idx.resolve(self.code)
@@ -1329,6 +1333,8 @@ class IRCast(IRExpression):
         super().__init__(code)
         self.target_type_idx = target_type
         self.expr = expr
+        # Written as `cast e`: the value takes whatever type its context asks for.
+        self.untyped = False
 
     def get_type(self) -> Type:
         return self.target_type_idx.resolve(self.code)
@@ -1476,6 +1482,18 @@ class IRArrayAccess(IRExpression):
     def get_type(self) -> Type:
         if self.elem_type_idx:
             return self.elem_type_idx.resolve(self.code)
+        # The elements of a typed array are as its class says (`ArrayBytes_Int` holds Int).
+        array_type = self.array.get_type().definition
+        if isinstance(array_type, Obj):
+            name = array_type.name.resolve(self.code)
+            element = {
+                "hl.types.ArrayBytes_Int": "I32",
+                "hl.types.ArrayBytes_Float": "F64",
+                "hl.types.ArrayBytes_Bool": "Bool",
+                "hl.types.ArrayBytes_hl_F32": "F32",
+            }.get(name)
+            if element is not None:
+                return _get_type_in_code(self.code, element)
         return _get_type_in_code(self.code, "Void")
 
     def get_children(self) -> List[IRStatement]:

@@ -17,7 +17,8 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
 if TYPE_CHECKING:
     from ..function import IRClass, IRFunction
 
-from ...core import Bytecode, Function, Obj, Type
+from ... import generics
+from ...core import Bytecode, Fun, Function, Obj, Type
 from ..ir import (
     IRBlock,
     IRStatement,
@@ -380,6 +381,7 @@ def _propagate_calls_in_stmt(
             val = expr.target.value
             if isinstance(val, Function):
                 callee = findex_to_irfunc.get(val.findex.value)
+                _share_type_variable_elements(expr, val, code, global_cache)
         elif expr.call_type == IRCall.CallType.METHOD and isinstance(expr.target, IRField):
             callee = name_to_irfunc.get(expr.target.field_name)
             skip_args = 1  # args[0] is the receiver
@@ -419,6 +421,52 @@ def _propagate_calls_in_stmt(
     for child in stmt.get_children():
         if isinstance(child, IRBlock):
             _propagate_call_sites(child, code, visited, name_to_irfunc, findex_to_irfunc, global_cache)
+
+
+def _share_type_variable_elements(
+    call: IRCall, callee: Function, code: Bytecode, global_cache: Dict[Tuple[str, str], Type]
+) -> None:
+    """Arrays passed for `Array<T>` parameters of one type variable have the one element type:
+    an array whose element type is unknown takes the type of another that has it."""
+    groups: Dict[int, List[IRExpression]] = {}
+    for position, number in generics.type_variables(code, callee).items():
+        if position < len(call.args):
+            groups.setdefault(number, []).append(_strip_cast(call.args[position]))
+    for args in groups.values():
+        known: Optional[Type] = None
+        for arg in args:
+            if isinstance(arg, IRArrayLiteral):
+                known = arg.recovered_elem_type or _uniform_element_type(arg.elements, code)
+            else:
+                known = _array_element_type(arg, code, global_cache)
+            if known is not None and not _is_uninformative(known, code):
+                break
+            known = None
+        if known is None:
+            continue
+        signature = callee.type.resolve(code).definition
+        for position, number in generics.type_variables(code, callee).items():
+            arg = _strip_cast(call.args[position]) if position < len(call.args) else None
+            if (
+                arg is not None
+                and not isinstance(arg, (IRLocal, IRField, IRArrayLiteral, IRConst))
+                and _is_erased_array(arg, code)
+                and _array_element_type(arg, code, global_cache) is None
+                and isinstance(signature, Fun)
+            ):
+                # An array of unknown element type among typed ones doesn't unify with them.
+                cast = IRCast(code, signature.args[position], arg)
+                cast.untyped = True
+                call.args[position] = cast
+        for arg in args:
+            if not _is_erased_array(arg, code):
+                continue
+            if isinstance(arg, IRLocal) and arg.array_elem_type is None:
+                arg.array_elem_type = known
+            elif isinstance(arg, IRField):
+                owner = _class_name_of(arg.target, code)
+                if owner is not None:
+                    global_cache.setdefault((owner, arg.field_name), known)
 
 
 def _collect_calls(stmt: IRStatement) -> List[IRCall]:

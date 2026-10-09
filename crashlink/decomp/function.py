@@ -1918,12 +1918,14 @@ class IRFunction:
                 src_local = source_locals[op.df["src"].value]
                 field_name = op.df["field"].resolve(self.code)
                 field_expr = IRField(self.code, obj_local, field_name, self.func.regs[op.df["src"].value])
+                field_expr.dynamic = True
                 block.statements.append(IRAssign(self.code, field_expr, src_local))
             elif op.op == "DynGet":
                 dst_local = self.locals[op.df["dst"].value]
                 obj_local = source_locals[op.df["obj"].value]
                 field_name = op.df["field"].resolve(self.code)
                 field_expr = IRField(self.code, obj_local, field_name, self.func.regs[op.df["dst"].value])
+                field_expr.dynamic = True
                 block.statements.append(IRAssign(self.code, dst_local, field_expr))
             elif op.op == "SetField":
                 obj_local = source_locals[op.df["obj"].value]
