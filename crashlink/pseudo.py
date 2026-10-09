@@ -3960,6 +3960,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     params_str_list = []
     return_type_str = "Void"
     variables: Dict[int, int] = {}
+    returned_variable: Optional[int] = None
 
     core_fun_type_def = func_core.type.resolve(code).definition
     if isinstance(core_fun_type_def, Fun):
@@ -3969,7 +3970,9 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             if is_instance and not is_constructor and containing is not None
             else set()
         )
-        variables = _own_type_variables(code, func_core, containing, func_name_str, is_instance)
+        variables, returned_variable = _own_type_variables(
+            code, func_core, containing, func_name_str, is_instance
+        )
         for i, arg_type_idx in enumerate(core_fun_type_def.args[start_arg:]):
             arg_core_type = arg_type_idx.resolve(code)
             arg_haxe_type_name = "Dynamic" if i in erased else disasm._haxe_annotation(code, arg_core_type)
@@ -4042,6 +4045,8 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             _return_annotation(code, func_core, ret_core_type),
             mapargs.value_type(code, ("ret", func_core.findex.value)),
         )
+        if returned_variable is not None:
+            return_type_str = _type_variable_name(returned_variable)
 
     # Constructors do not declare a return type in Haxe.
     if is_constructor or abstract_constructor:
@@ -7096,24 +7101,25 @@ def _own_type_variables(
     containing: "Union[IRClass, _PseudoClass, None]",
     name: str,
     is_instance: bool,
-) -> Dict[int, int]:
-    """The parameters of `func` that are its type variables (see `generics`). A method that
-    overrides or is overridden keeps every parameter Dynamic: Haxe requires the overriding
-    method to declare the same type parameters."""
+) -> Tuple[Dict[int, int], Optional[int]]:
+    """The parameters of `func` that are its type variables, and the variable of its return (see
+    `generics`). A method that overrides or is overridden keeps every parameter Dynamic: Haxe
+    requires the overriding method to declare the same type parameters."""
     variables = generics.type_variables(code, func)
+    returned = generics.return_variable(code, func)
     if not variables or not is_instance:
-        return variables
+        return variables, returned
     obj = containing.dynamic if containing is not None else None
     if obj is None:
-        return {}
+        return {}, None
     if _ancestor_declares(code, obj, name):
-        return {}
+        return {}, None
     for t in code.types:
         sub = t.definition
         if isinstance(sub, Obj) and sub is not obj and name in _declared_methods(code, sub):
             if _is_ancestor(code, obj, sub):
-                return {}
-    return variables
+                return {}, None
+    return variables, returned
 
 
 def _erased_parameters(code: Bytecode, dynamic: Optional[Obj], method_name: str) -> Set[int]:
