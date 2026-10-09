@@ -69,8 +69,9 @@ Each program lands on the highest rung it reaches:
 | 1 `UNLIFTED` | the output contains `UNLIFTED OPCODE` markers |
 | 2 `NO_COMPILE` | the decompiled project does not compile with Haxe |
 | 3 `DIVERGES` | it compiles but the real runtime shows different stdout, stderr or exit status |
-| 4 `BEHAVES` | same observable behaviour |
-| 5 `IDENTICAL` | same behaviour and every user function recompiles to the same opcode sequence |
+| 4 `BEHAVES` | same observable behaviour on the test run |
+| 5 `EQUIVALENT` | every user function is proven to behave the same for any input (see [Behavioural Signatures](/equivalence)); the opcodes still differ |
+| 6 `IDENTICAL` | same behaviour and every user function recompiles to the same opcode sequence |
 
 The report shows the histogram, failures clustered by a normalised signature (biggest first, with example seeds), and the failure rate per feature. A program the generator got wrong (does not compile, is nondeterministic, does not terminate) is reported as *invalid* and never counted against the decompiler. Artifacts for every program below `--keep` (default `behaves`) stay under `crashtest/hxsmith-runs/<time>/seed<N>/`: the source, the decompiled project and `result.json`.
 

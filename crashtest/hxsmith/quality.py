@@ -26,7 +26,8 @@ class Quality(IntEnum):
     NO_COMPILE = 2  # output does not typecheck/compile with Haxe
     DIVERGES = 3  # compiles, but the program behaves differently on the real runtime
     BEHAVES = 4  # same observable behaviour as the original
-    IDENTICAL = 5  # same behaviour and the same opcode sequence in every user function
+    EQUIVALENT = 5  # proven to behave the same in every user function (`crashlink.equivalence`)
+    IDENTICAL = 6  # same behaviour and the same opcode sequence in every user function
 
     @property
     def meaning(self) -> str:
@@ -38,7 +39,8 @@ _MEANING = {
     Quality.UNLIFTED: "output contains UNLIFTED OPCODE markers",
     Quality.NO_COMPILE: "decompiled source does not compile",
     Quality.DIVERGES: "compiles but behaves differently",
-    Quality.BEHAVES: "behaves identically",
+    Quality.BEHAVES: "behaves identically on the test run",
+    Quality.EQUIVALENT: "every user function is proven to behave the same, whatever the input",
     Quality.IDENTICAL: "behaves identically and recompiles to the same opcodes",
 }
 
@@ -55,6 +57,8 @@ class Observation:
     similarity: Optional[float] = None
     # User functions whose opcode sequence differs, worst first: (name, similarity).
     differing: List[tuple] = field(default_factory=list)
+    # Every user function proven equivalent to the original's (None when the proof was not tried).
+    equivalent: Optional[bool] = None
 
 
 @dataclass
@@ -171,6 +175,15 @@ def classify(obs: Observation) -> Verdict:
         return Verdict(Quality.DIVERGES, "run", first_difference(behavior), _diff_signature(behavior))
     if obs.similarity is not None and obs.similarity >= 1.0 and not obs.differing:
         return Verdict(Quality.IDENTICAL, "compare", similarity=obs.similarity)
+    if obs.equivalent:
+        return Verdict(
+            Quality.EQUIVALENT,
+            "compare",
+            "every user function proven equivalent",
+            "equivalent",
+            similarity=obs.similarity,
+            differing=list(obs.differing),
+        )
     detail = f"mean opcode similarity {obs.similarity:.3f}" if obs.similarity is not None else ""
     return Verdict(
         Quality.BEHAVES,

@@ -120,3 +120,32 @@ def compare(
     if extra:
         mean = min(mean, 0.999)
     return mean, differing
+
+
+def prove(original: Bytecode, recompiled: Bytecode, modules: Collection[str]) -> bool:
+    """Whether every user function of the original is proven equivalent to its counterpart.
+
+    Equivalence here is `crashlink.equivalence`: equal signatures prove equal behaviour, so a
+    False means "not shown", not "different". Lifted closures are not paired one by one: a
+    closure is part of the signature of whatever creates it, so a reachable one is covered by its
+    creator, and one nothing reaches cannot change behaviour. Any other function the recompiled
+    image gained or lost, or a function with no signature, leaves the program unproven.
+    """
+    from crashlink.equivalence import signature
+
+    paired, extra = pair(
+        user_functions(original, modules),
+        user_functions(recompiled, modules),
+        named_functions(original),
+        named_functions(recompiled),
+    )
+    if any(not name.startswith(ANON) for name in extra):
+        return False
+    for name, func, other in paired:
+        if name.startswith(ANON):
+            continue
+        if other is None:
+            return False
+        if not signature(original, func).matches(signature(recompiled, other)):
+            return False
+    return True

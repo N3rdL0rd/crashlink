@@ -20,7 +20,7 @@ from crashlink import project
 from crashlink.core import Bytecode
 
 from ..behavior import compare_programs, execute, resolve_hl_runtime
-from .compare import compare
+from .compare import compare, prove
 from .job import Job
 from .quality import Observation, Quality, Verdict, classify, normalize
 
@@ -142,11 +142,10 @@ def evaluate(job: Job, directory: Path) -> Result:
             obs.behavior = compare_programs(original, recompiled, job.class_name, modules=tuple(job.modules))
             if obs.behavior.passed:
                 try:
-                    obs.similarity, obs.differing = compare(
-                        Bytecode.from_path(str(original)),
-                        Bytecode.from_path(str(recompiled)),
-                        job.compared_modules(),
-                    )
+                    before, after = Bytecode.from_path(str(original)), Bytecode.from_path(str(recompiled))
+                    obs.similarity, obs.differing = compare(before, after, job.compared_modules())
+                    if obs.differing:
+                        obs.equivalent = prove(before, after, job.compared_modules())
                 except Exception as exc:  # noqa: BLE001 - similarity is diagnostic; behaviour already passed
                     obs.similarity, obs.differing = None, [("compare failed: " + str(exc), 0.0)]
     result.verdict = classify(obs)

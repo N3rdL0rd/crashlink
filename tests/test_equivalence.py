@@ -177,3 +177,13 @@ def test_a_function_without_a_signature_never_matches() -> None:
     assert not none
     assert not none.matches(none)
     assert not none.matches(Signature("00"))
+
+
+def test_a_program_is_proven_only_when_every_function_is(tmp_path: Path) -> None:
+    from crashtest.hxsmith.compare import prove
+
+    base = build(tmp_path, "a", f("var t = p + q; return t * 2 - p;"))
+    same = build(tmp_path, "b", f("var u = q + p; var w = u * 2; return w - p;"))
+    other = build(tmp_path, "c", f("return (p + q) * 2 + p;"))
+    assert prove(base, same, ["Main"])
+    assert not prove(base, other, ["Main"])

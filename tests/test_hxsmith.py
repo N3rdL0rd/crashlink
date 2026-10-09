@@ -27,7 +27,7 @@ def _observation(**overrides: Any) -> Observation:
 def test_ladder_orders_from_worst_to_best():
     assert list(Quality) == sorted(Quality)
     assert Quality.CRASH < Quality.UNLIFTED < Quality.NO_COMPILE < Quality.DIVERGES < Quality.BEHAVES
-    assert Quality.BEHAVES < Quality.IDENTICAL
+    assert Quality.BEHAVES < Quality.EQUIVALENT < Quality.IDENTICAL
 
 
 @pytest.mark.parametrize(
@@ -45,6 +45,10 @@ def test_ladder_orders_from_worst_to_best():
         (_observation(), Quality.BEHAVES),
         (_observation(similarity=1.0), Quality.IDENTICAL),
         (_observation(similarity=1.0, differing=[("F.extra", 0.0)]), Quality.BEHAVES),
+        (_observation(differing=[("F.f", 0.5)], equivalent=True), Quality.EQUIVALENT),
+        (_observation(differing=[("F.f", 0.5)], equivalent=False), Quality.BEHAVES),
+        (_observation(similarity=1.0, equivalent=True), Quality.IDENTICAL),
+        (_observation(behavior=_behavior(False, "1\n", "2\n"), equivalent=True), Quality.DIVERGES),
     ],
 )
 def test_classify_places_each_observation_on_its_rung(obs, expected):
