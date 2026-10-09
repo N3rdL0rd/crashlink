@@ -89,6 +89,7 @@ from .decomp import (
     IRNullCoalesce,
 )
 from .decomp.ir import IREnumPattern, IRInlineCall, basic_type_of_global
+from .decomp.opt.arraytypes import function_return_elem_type
 from .decomp.opt.clean import default_arg_regs, default_arg_value, overriding_default_arg_regs
 from .decomp.inline_calls import inline_index, is_inline_template
 
@@ -723,13 +724,39 @@ def _with_comment(rendered: List[str], comment: str) -> List[str]:
     return [*rendered[:-1], f"{rendered[-1]} {comment}"]
 
 
+def _return_annotation(code: Bytecode, func: Function, ret_type: Type) -> str:
+    """The declared return type of `func`: an erased array gets the element type its returns recover."""
+    annotation = disasm._haxe_annotation(code, ret_type)
+    if annotation == "Array<Dynamic>":
+        elem = function_return_elem_type(code, func)
+        if elem is not None:
+            return f"Array<{disasm._haxe_annotation(code, elem)}>"
+    return annotation
+
+
+def _widens_typed_array(expr: IRExpression, code: Bytecode) -> bool:
+    """Whether `expr` converts a typed array to the erased ArrayDyn."""
+    return (
+        isinstance(expr, IRCast)
+        and disasm.type_name(code, expr.get_type()) == "hl.types.ArrayDyn"
+        and disasm.type_name(code, expr.expr.get_type()) == "hl.types.ArrayObj"
+    )
+
+
 def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction], skip: int = 0) -> List[str]:
     """Rendered arguments of a call. HL passes an optional basic argument as an
     `hl.Ref` (null when omitted); Haxe source leaves an omitted trailing one out, and
     gives a declared basic parameter the value rather than a reference to it."""
     pos_comment = ""
     call_args = expr.args[skip:]
-    rendered = [_expression_to_haxe(arg, code, ir_function) for arg in call_args]
+    # A typed array passed on as an erased `Array<Dynamic>` argument is a run-time conversion
+    # that Haxe only makes through an explicit cast; an implicit one would keep the element type.
+    rendered = [
+        f"(cast {_expression_to_haxe(arg, code, ir_function)} : Array<Dynamic>)"
+        if _widens_typed_array(arg, code)
+        else _expression_to_haxe(arg, code, ir_function)
+        for arg in call_args
+    ]
     position = _elided_position(call_args[-1], ir_function, code) if call_args else None
     if position is not None:
         # The compiler fills the position in; source leaves it out, and the position stays as a comment.
@@ -890,6 +917,16 @@ def _resolve_array_access(
 _ARRAY_WRAPPERS = frozenset({"hl.types.ArrayObj", "hl.types.ArrayDyn"})
 
 
+def _called_return_is_typed(call: IRCall, code: Bytecode) -> bool:
+    """Whether the call's callee declares an `Array<T>` result (see `_return_annotation`)."""
+    return (
+        call.call_type == IRCall.CallType.FUNC
+        and isinstance(call.target, IRConst)
+        and isinstance(call.target.value, Function)
+        and function_return_elem_type(code, call.target.value) is not None
+    )
+
+
 def _erased_array_into_typed(value_str: str, value: IRExpression, code: Bytecode) -> str:
     """`cast` an array whose element type was erased (`Array<Dynamic>`) before it is stored in an
     `Array<T>` declaration: Haxe does not convert between the two implicitly."""
@@ -898,6 +935,8 @@ def _erased_array_into_typed(value_str: str, value: IRExpression, code: Bytecode
     if isinstance(value, IRLocal) and value.array_elem_type is not None and not value.is_enum_binding:
         return value_str
     if disasm._haxe_annotation(code, value.get_type()) != "Array<Dynamic>":
+        return value_str
+    if isinstance(value, IRCall) and _called_return_is_typed(value, code):
         return value_str
     return f"cast {value_str}"
 
@@ -1552,7 +1591,7 @@ def _expression_to_haxe(
                             ).startswith("hl.types.Array"):
                                 # The property may be an abstract over an array (`Exception.stack` is
                                 # a `CallStack`); the bytecode only knows the array it wraps.
-                                return f"(cast {obj_str}.{prop_name} : {disasm._haxe_annotation(code, expr.get_type())})"
+                                return f"(cast {obj_str}.{prop_name} : {_return_annotation(code, expr.target.value, expr.get_type())})"
                             return f"{obj_str}.{prop_name}"
                         return (
                             f"{obj_str}.{prop_name} = {_expression_to_haxe(rest_args[0], code, ir_function)}"
@@ -3600,7 +3639,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             params_str_list.append(f"{param_name}{param_type_decl}")
 
         ret_core_type = core_fun_type_def.ret.resolve(code)
-        return_type_str = disasm._haxe_annotation(code, ret_core_type)
+        return_type_str = _return_annotation(code, func_core, ret_core_type)
 
     # Constructors do not declare a return type in Haxe.
     if is_constructor or abstract_constructor:
@@ -6659,7 +6698,7 @@ def _stub_method(code: Bytecode, func: Function, is_instance: bool, dynamic: Opt
             optional = "?" if id(fun_def) in disasm._trace_signature_types(code)[1] and start + i == 1 else ""
             params.append(f"{optional}arg{i}: {t}" if t else f"{optional}arg{i}")
         ret_type = fun_def.ret.resolve(code)
-    ret_name = disasm._haxe_annotation(code, ret_type) if ret_type is not None else "Void"
+    ret_name = _return_annotation(code, func, ret_type) if ret_type is not None else "Void"
 
     static_kw = "" if is_instance else "static "
     override_kw = (
