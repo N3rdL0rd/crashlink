@@ -17,6 +17,8 @@ from ..ir import (
     IRBlock,
     IRLocal,
     IRAssign,
+    IRCast,
+    IRExpression,
     IRBoolExpr,
     IRConst,
     IRConditional,
@@ -130,6 +132,30 @@ class IRIntSwitchOptimizer(TraversingIROptimizer):
         return IRSwitch(self.func.code, local, cases, default).adopt(*chain)
 
 
+def _enum_read(node: IRStatement) -> Optional[IREnumField]:
+    """The enum field a statement reads: `e.paramN`, or `dst = e.paramN` / `dst = cast(e.paramN)`."""
+    expr = node
+    if isinstance(node, IRAssign) and isinstance(node.target, IRLocal):
+        expr = node.expr
+        if isinstance(expr, IRCast):
+            expr = expr.expr
+    return expr if isinstance(expr, IREnumField) else None
+
+
+def _mentions(node: IRStatement, names: Set[str]) -> bool:
+    """Whether any local named in `names` appears anywhere under `node`."""
+    if isinstance(node, IRLocal):
+        return node.name in names
+    return any(_mentions(child, names) for child in node.get_children())
+
+
+def _read_cast(node: IRStatement) -> Optional[IRCast]:
+    """The cast wrapping a field read assigned to a local, if any."""
+    if isinstance(node, IRAssign) and isinstance(node.target, IRLocal) and isinstance(node.expr, IRCast):
+        return node.expr
+    return None
+
+
 class IREnumSwitchOptimizer(TraversingIROptimizer):
     """
     Transform switches on enum indices into switches on the enum value itself,
@@ -218,27 +244,59 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
                     return None
                 alias_cases.append(alias_case)
             body = IRBlock(self.func.code)
-            consumed = 0
-            for node in case_block.statements:
-                field = node.expr if isinstance(node, IRAssign) and isinstance(node.target, IRLocal) else node
-                if not isinstance(field, IREnumField) or field.value != enum_value:
+            statements = case_block.statements
+            # Locals every enum read defines: no statement may write one of them while it is skipped over.
+            read_targets = {
+                node.target.name
+                for node in statements
+                if isinstance(node, IRAssign)
+                and isinstance(node.target, IRLocal)
+                and _enum_read(node) is not None
+            }
+            # Names a skipped statement must not read yet: the enum value and reads not reached so far.
+            pending = read_targets | {enum_value.name}
+            consumed: List[IRStatement] = []
+            position = 0
+            while position < len(statements):
+                node = statements[position]
+                field = _enum_read(node)
+                if field is None or field.value != enum_value:
+                    if (
+                        isinstance(node, IRAssign)
+                        and isinstance(node.target, IRLocal)
+                        and node.target.name not in read_targets
+                        and not _mentions(node.expr, pending)
+                    ):
+                        body.statements.append(node)
+                        position += 1
+                        continue
                     break
                 slot = self._valid_field(field, pattern)
                 if slot is None or slot in pattern.slots:
                     break
                 if isinstance(node, IRAssign):
                     node_target = cast(IRLocal, node.target)
+                    pending.discard(node_target.name)
                     if node_target == enum_value:
                         break
-                    if not self._private_block(case_block) or self._mentions_outside(
-                        node_target.name, {id(case_block)}
+                    if (
+                        _read_cast(node) is not None
+                        or not self._private_block(case_block)
+                        or self._mentions_outside(node_target.name, {id(case_block)})
                     ):
                         binding = self._fresh_binding(field)
                         pattern.slots[slot] = binding
-                        body.statements.append(IRAssign(self.func.code, node_target, binding).adopt(node))
+                        body.statements.append(
+                            IRAssign(self.func.code, node_target, self._field_value(node, binding)).adopt(
+                                node
+                            )
+                        )
                     else:
                         pattern.slots[slot] = node_target
-                consumed += 1
+                consumed.append(node)
+                position += 1
+            body.statements.extend(statements[position:])
+            body.adopt(case_block, *consumed)
             if alias_cases:
                 # Field bindings belong to one constructor; a body shared by several
                 # (`case A, B:`) can only be recovered when it binds none.
@@ -246,8 +304,6 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
                     return None
                 new_aliases[new_case_val] = [alias_val for alias_val, _ in alias_cases]
                 patterns.update(alias_cases)
-            body.statements.extend(case_block.statements[consumed:])
-            body.adopt(case_block, *case_block.statements[:consumed])
             new_cases[new_case_val] = body
             patterns[new_case_val] = pattern
 
@@ -340,6 +396,15 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
         local.is_enum_binding = True
         self.func.all_locals.append(local)
         return local
+
+    def _field_value(self, node: IRStatement, binding: IRLocal) -> IRExpression:
+        """The value a field binding stands for at `node`: the cast around the read, if any."""
+        cast_node = _read_cast(node)
+        if cast_node is None:
+            return binding
+        value = IRCast(self.func.code, cast_node.target_type_idx, binding)
+        value.untyped = cast_node.untyped
+        return value
 
     def _reads(self, statements: List[IRStatement], name: str, excluded: Set[int]) -> bool:
         """Conservative read scan; writes on one DAG edge cannot kill another."""
@@ -454,8 +519,8 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
             position = 0
             while position < len(current.statements):
                 node = current.statements[position]
-                field = node.expr if isinstance(node, IRAssign) and isinstance(node.target, IRLocal) else node
-                if not isinstance(field, IREnumField) or not isinstance(field.value, IRLocal):
+                field = _enum_read(node)
+                if field is None or not isinstance(field.value, IRLocal):
                     break
                 pattern = facts.get(field.value.name)
                 if pattern is None:
@@ -532,8 +597,10 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
                 continue
             if isinstance(node, IRAssign):
                 node_target = cast(IRLocal, node.target)
-                if self._private_block(current) and not self._mentions_outside(
-                    node_target.name, excluded | {id(current)}
+                if (
+                    _read_cast(node) is None
+                    and self._private_block(current)
+                    and not self._mentions_outside(node_target.name, excluded | {id(current)})
                 ):
                     # The destination exists solely inside this successful case.
                     # Binding it directly cannot shadow an outer live value.
@@ -541,7 +608,9 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
                 else:
                     binding = self._fresh_binding(field)
                     pattern.slots[slot] = binding
-                    bindings.append(IRAssign(self.func.code, node_target, binding).adopt(node))
+                    bindings.append(
+                        IRAssign(self.func.code, node_target, self._field_value(node, binding)).adopt(node)
+                    )
         body = IRBlock(self.func.code)
         body.statements = bindings + body_statements
         key = IRConst(

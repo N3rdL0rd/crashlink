@@ -3515,12 +3515,12 @@ def _inline_block_closure(
 
 
 def _split_params(text: str) -> List[str]:
-    """The top-level comma-separated parts of a parameter list (types may contain commas)."""
+    """The top-level comma-separated parts of a parameter list (types may contain commas and arrows)."""
     parts, depth, current = [], 0, ""
-    for ch in text:
+    for i, ch in enumerate(text):
         if ch in "(<[{":
             depth += 1
-        elif ch in ")>]}":
+        elif ch in ")]}" or (ch == ">" and text[i - 1 : i] != "-"):
             depth -= 1
         if ch == "," and depth == 0:
             parts.append(current)
@@ -3560,10 +3560,15 @@ def _forwarded_bind(
     if not isinstance(signature, Fun):
         return None
     params = [local.name for local in helper.locals[: len(signature.args)]]
-    statements = list(helper.block.statements)
-    if len(statements) != 1 or not isinstance(statements[0], IRReturn) or statements[0].value is None:
+    statements = [s for s in helper.block.statements if not (isinstance(s, IRReturn) and s.value is None)]
+    if len(statements) != 1:
         return None
-    call = statements[0].value
+    if isinstance(statements[0], IRReturn) and statements[0].value is not None:
+        call = statements[0].value
+    elif isinstance(statements[0], IRCall):
+        call = statements[0]  # a void helper: the forwarded call is the whole body
+    else:
+        return None
     if isinstance(call, IRNew) and not call.constructor_args:
         return None
     args = (
@@ -3578,8 +3583,38 @@ def _forwarded_bind(
     slots = [obj_str if n == bound else "_" for n in names]
     while len(slots) > 1 and slots[-1] == "_":
         slots.pop()
-    callee = _forwarded_callee(call, code, ir_function)
-    return f"{callee}.bind({', '.join(slots)})" if callee is not None else None
+    method = _instance_method(call, code)
+    if names[0] == bound and method is not None:
+        # The receiver is the bound value and the closure's arguments follow it in order. The compiler
+        # keeps `obj.method.bind()` as an instance closure on the helper; a plain `obj.method` value is
+        # built around a capture context instead.
+        receiver = f"({obj_str})" if _is_lambda_text(obj_str) else obj_str
+        rendered = f"{receiver}.{code.partial_func_name(method)}.bind()"
+    else:
+        callee = _forwarded_callee(call, code, ir_function)
+        if callee is None:
+            return None
+        rendered = f"{callee}.bind({', '.join(slots)})"
+    getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
+    return rendered
+
+
+def _instance_method(call: IRExpression, code: Bytecode) -> Optional[Function]:
+    """The instance method a call invokes directly, if the call is one (its first argument is the receiver)."""
+    if not (
+        isinstance(call, IRCall)
+        and isinstance(call.target, IRConst)
+        and isinstance(call.target.value, Function)
+        and call.call_type == IRCall.CallType.FUNC
+    ):
+        return None
+    func = call.target.value
+    abstract = abstracts.abstract_of_function(code, func)
+    if _is_static_function(func, code) or (
+        abstract is not None and func.findex.value not in abstract.instance
+    ):
+        return None
+    return func
 
 
 def _forwarded_callee(call: IRExpression, code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
@@ -3960,6 +3995,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     params_str_list = []
     return_type_str = "Void"
     variables: Dict[int, int] = {}
+    returned_variable: Optional[int] = None
 
     core_fun_type_def = func_core.type.resolve(code).definition
     if isinstance(core_fun_type_def, Fun):
@@ -3969,7 +4005,9 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             if is_instance and not is_constructor and containing is not None
             else set()
         )
-        variables = _own_type_variables(code, func_core, containing, func_name_str, is_instance)
+        variables, returned_variable = _own_type_variables(
+            code, func_core, containing, func_name_str, is_instance
+        )
         for i, arg_type_idx in enumerate(core_fun_type_def.args[start_arg:]):
             arg_core_type = arg_type_idx.resolve(code)
             arg_haxe_type_name = "Dynamic" if i in erased else disasm._haxe_annotation(code, arg_core_type)
@@ -4042,6 +4080,8 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             _return_annotation(code, func_core, ret_core_type),
             mapargs.value_type(code, ("ret", func_core.findex.value)),
         )
+        if returned_variable is not None:
+            return_type_str = _type_variable_name(returned_variable)
 
     # Constructors do not declare a return type in Haxe.
     if is_constructor or abstract_constructor:
@@ -4793,10 +4833,11 @@ def _render_string_concat(expr: IRCall, code: Bytecode, ir_function: Optional[IR
         parts.append(("val", (operand, simple)))
         interp_count += 1
 
-    # Use interpolation only for dense chains (multiple interpolated values),
-    # and only when there is at least one literal to host the interpolation.
-    has_literal = any(kind == "lit" for kind, _ in parts)
-    if interp_count >= 2 and has_literal:
+    # Use interpolation only for dense chains (multiple interpolated values) that start with
+    # literal text. Haxe lowers `'${a} ...'` to `"" + a + ...`, so a leading value would add
+    # an empty-string concat the original chain never had.
+    starts_with_literal = parts[0][0] == "lit"
+    if interp_count >= 2 and starts_with_literal:
         return _render_interpolated(parts)
 
     # Otherwise: flat `a + b + c`, no redundant wrapping parentheses.
@@ -7096,24 +7137,25 @@ def _own_type_variables(
     containing: "Union[IRClass, _PseudoClass, None]",
     name: str,
     is_instance: bool,
-) -> Dict[int, int]:
-    """The parameters of `func` that are its type variables (see `generics`). A method that
-    overrides or is overridden keeps every parameter Dynamic: Haxe requires the overriding
-    method to declare the same type parameters."""
+) -> Tuple[Dict[int, int], Optional[int]]:
+    """The parameters of `func` that are its type variables, and the variable of its return (see
+    `generics`). A method that overrides or is overridden keeps every parameter Dynamic: Haxe
+    requires the overriding method to declare the same type parameters."""
     variables = generics.type_variables(code, func)
+    returned = generics.return_variable(code, func)
     if not variables or not is_instance:
-        return variables
+        return variables, returned
     obj = containing.dynamic if containing is not None else None
     if obj is None:
-        return {}
+        return {}, None
     if _ancestor_declares(code, obj, name):
-        return {}
+        return {}, None
     for t in code.types:
         sub = t.definition
         if isinstance(sub, Obj) and sub is not obj and name in _declared_methods(code, sub):
             if _is_ancestor(code, obj, sub):
-                return {}
-    return variables
+                return {}, None
+    return variables, returned
 
 
 def _erased_parameters(code: Bytecode, dynamic: Optional[Obj], method_name: str) -> Set[int]:
