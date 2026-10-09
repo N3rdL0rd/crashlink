@@ -140,6 +140,16 @@ DIFFERENT = [
     ),
     ("comparison", "if (p < q) return 1; return 2;", "if (p <= q) return 1; return 2;"),
     (
+        "comparison with a constant",
+        "if (p < 5) return a(1); return a(2);",
+        "if (p < 6) return a(1); return a(2);",
+    ),
+    (
+        "loop bound constant",
+        "var i = 0; while (i < 10) { a(i); i++; } return i;",
+        "var i = 0; while (i < 11) { a(i); i++; } return i;",
+    ),
+    (
         "store dropped",
         "o.v = p; return q;",
         "return q;",

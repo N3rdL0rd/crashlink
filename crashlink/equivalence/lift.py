@@ -193,7 +193,10 @@ PURE_OPS = frozenset(
 
 
 def _drop_dead_values(
-    raw: Dict[int, "Block"], successors: Dict[int, List[int]], address_taken: Set[int]
+    raw: Dict[int, "Block"],
+    successors: Dict[int, List[int]],
+    address_taken: Set[int],
+    cond_regs: Dict[int, Tuple[int, ...]],
 ) -> None:
     """Remove pure opcodes whose result nothing reads, so a block that only computed such values
     is empty and can be threaded away like any other."""
@@ -206,7 +209,7 @@ def _drop_dead_values(
             ou, od = uses_defs(op)
             u.update(r for r in ou if r not in d)
             d.update(od)
-        u.update(r for r in block.term.regs if r not in d)
+        u.update(r for r in block.term.regs + cond_regs.get(start, ()) if r not in d)
         use[start], defs[start] = u, d
     live_in: Dict[int, Set[int]] = {s: set() for s in raw}
     changed = True
@@ -221,7 +224,7 @@ def _drop_dead_values(
                 live_in[start] = new
                 changed = True
     for start, block in raw.items():
-        live: Set[int] = set(block.term.regs)
+        live: Set[int] = set(block.term.regs) | set(cond_regs.get(start, ()))
         for s in successors[start]:
             live |= live_in.get(s, set())
         kept: List[Opcode] = []
@@ -328,7 +331,7 @@ def lift(func_ops: List[Opcode], regs: List[int], namer: Namer) -> Lifted:
     if not any(
         op.op == "Trap" for op in ops
     ):  # a handler reads registers the body wrote, which liveness over normal edges misses
-        _drop_dead_values(raw, raw_succs, address_taken)
+        _drop_dead_values(raw, raw_succs, address_taken, {s: c[1] for s, c in pending_cond.items()})
 
     # -- thread empty jump-only blocks ----------------------------------------------------------
     def is_empty(b: Block) -> bool:
