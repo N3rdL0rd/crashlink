@@ -3247,6 +3247,57 @@ def _walk_ir(node: Optional[IRStatement]) -> Iterator[IRStatement]:
             yield from _walk_ir(child)
 
 
+def _captures_stable(ir_func: IRFunction, block: IRBlock, idx: int, captured: List[IRLocal]) -> bool:
+    """Whether every write to a captured variable runs before `block.statements[idx]` on every path to it."""
+
+    def ancestry(node: IRBlock) -> Optional[List[Tuple[IRBlock, int]]]:
+        if node is block:
+            return [(node, idx)]
+        for child_idx, child in enumerate(node.statements):
+            for sub in [child] if isinstance(child, IRBlock) else child.get_children():
+                if isinstance(sub, IRBlock):
+                    found = ancestry(sub)
+                    if found is not None:
+                        return [(node, child_idx), *found]
+        return None
+
+    path = ancestry(ir_func.block)
+    if path is None:
+        return False
+    settled = {id(s) for owner, at in path for s in owner.statements[:at]}
+    for node in _walk_ir(ir_func.block):
+        if isinstance(node, IRAssign) and isinstance(node.target, IRLocal) and node.target in captured:
+            if id(node) not in settled:
+                return False
+    return True
+
+
+def _capture_context_in_place(ir_func: IRFunction, ctx_bodies: Dict[int, Tuple[List[str], str]]) -> None:
+    """The same as `_hoist_closure_contexts` for a context the optimizer already folded into the
+    closure that is bound to it."""
+    for block in [n for n in _walk_ir(ir_func.block) if isinstance(n, IRBlock)]:
+        for idx, stmt in enumerate(block.statements):
+            for node in _walk_ir(stmt):
+                if not (
+                    isinstance(node, IRBoundClosure)
+                    and node.captures is None
+                    and node.fun.findex.value in ctx_bodies
+                    and isinstance(node.obj, IREnumConstruct)
+                    and isinstance(node.obj.get_type().definition, Enum)
+                    and cast(Enum, node.obj.get_type().definition).name.value == 0
+                    and all(isinstance(a, IRLocal) for a in node.obj.args)
+                ):
+                    continue
+                captured = cast(List[IRLocal], node.obj.args)
+                params, body = ctx_bodies[node.fun.findex.value]
+                if any(int(m) >= len(captured) for m in re.findall(_CTX_MARK + r"(\d+)" + _CTX_MARK, body)):
+                    continue
+                if {c.name for c in captured} & {p.lstrip("?").split(" = ")[0] for p in params[1:]}:
+                    continue
+                if _captures_stable(ir_func, block, idx, captured):
+                    node.captures = list(captured)
+
+
 def _hoist_closure_contexts(ir_func: IRFunction, ctx_bodies: Dict[int, Tuple[List[str], str]]) -> None:
     """Bind closures to the values their capture context holds, and drop the context.
 
@@ -3255,6 +3306,7 @@ def _hoist_closure_contexts(ir_func: IRFunction, ctx_bodies: Dict[int, Tuple[Lis
     over them (`IRBoundClosure.captures`) and the context's construction disappears."""
     if not ctx_bodies:
         return
+    _capture_context_in_place(ir_func, ctx_bodies)
     progress = True
     while progress:
         progress = False
@@ -3325,25 +3377,8 @@ def _hoist_one_context(
     # The context holds the values as they were when it was built; a lambda reads its variables
     # when it runs. They agree only if each captured variable is written (at most) by a statement
     # that runs before the context on every path to it.
-    def ancestry(node: IRBlock) -> Optional[List[Tuple[IRBlock, int]]]:
-        if node is block:
-            return [(node, idx)]
-        for child_idx, child in enumerate(node.statements):
-            for sub in [child] if isinstance(child, IRBlock) else child.get_children():
-                if isinstance(sub, IRBlock):
-                    found = ancestry(sub)
-                    if found is not None:
-                        return [(node, child_idx), *found]
-        return None
-
-    path = ancestry(ir_func.block)
-    if path is None:
+    if not _captures_stable(ir_func, block, idx, captured):
         return False
-    settled = {id(s) for owner, at in path for s in owner.statements[:at]}
-    for node in _walk_ir(ir_func.block):
-        if isinstance(node, IRAssign) and isinstance(node.target, IRLocal) and node.target in captured:
-            if id(node) not in settled:
-                return False
     names = {c.name for c in captured}
     for closure in closures:
         entry = ctx_bodies.get(closure.fun.findex.value)
@@ -7036,7 +7071,7 @@ def _tag_map_allocations(root: IRStatement, code: Bytecode, findex: int, locals_
             for declaring in [owner, *_ancestors(code, owner)] if isinstance(owner, Obj) else []:
                 node = mapargs.field_node(code, declaring, stmt.target.field_name)
                 if node is not None:
-                    stmt.expr.map_value = mapargs.value_type(code, node)  # type: ignore[attr-defined]
+                    setattr(stmt.expr, "map_value", mapargs.value_type(code, node))
                     break
         if (
             isinstance(stmt, IRAssign)
@@ -7044,7 +7079,7 @@ def _tag_map_allocations(root: IRStatement, code: Bytecode, findex: int, locals_
             and isinstance(stmt.expr, IRNew)
             and stmt.target.reg_idx is not None
         ):
-            stmt.expr.map_value = by_name.get(stmt.target.name)  # type: ignore[attr-defined]
+            setattr(stmt.expr, "map_value", by_name.get(stmt.target.name))
         for child in stmt.get_children():
             visit(child)
 

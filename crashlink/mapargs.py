@@ -17,7 +17,7 @@ import threading
 import weakref
 from typing import Dict, List, Optional, Set, Tuple
 
-from .core import Bytecode, Function, Null, Obj, Type
+from .core import Bytecode, Fun, Function, Null, Obj, Type
 
 # Class name -> index of the value type among its (erased) type arguments.
 MAP_VALUE_ARGUMENT = {
@@ -135,7 +135,7 @@ def _compute(code: Bytecode) -> Dict[Node, str]:
             return regs[reg] in map_types
 
         signature = func.type.resolve(code).definition
-        ret_type = signature.ret.value if hasattr(signature, "ret") else -1
+        ret_type = signature.ret.value if isinstance(signature, Fun) else -1
         for index, op in enumerate(func.ops):
             name, df = op.op, op.df
             if name == "Mov":
@@ -160,7 +160,7 @@ def _compute(code: Bytecode) -> Dict[Node, str]:
                     slot = _owner_slot(code, owner, df["field"].value)
                     if slot is not None:
                         union(("field",) + slot, ("r", findex, reg))
-            elif name.startswith("Call"):
+            elif name is not None and name.startswith("Call"):
                 args = _call_args(op)
                 if args is None:
                     continue
