@@ -1324,8 +1324,9 @@ def _expression_to_haxe(
                 code,
                 ir_function,
             )
-        if expr.dynamic and isinstance(target_type.definition, Obj):
-            # The compiler read the field of a Dynamic that holds this class's instance.
+        if expr.dynamic:
+            # The compiler read a field through Dynamic. A null or structural receiver would
+            # otherwise type the access statically, so keep the Dynamic cast.
             return f"({target_str} : Dynamic).{expr.field_name}"
         if type_name == "String" and expr.field_name == "bytes":
             return f"(@:privateAccess {target_str}.bytes)"
