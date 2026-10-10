@@ -970,6 +970,41 @@ def _expression_for_type(
     return value
 
 
+def _literal_type_annotation(expr: IRArrayLiteral, code: Bytecode) -> Optional[str]:
+    """The `Array<T>` type the bytecode records for an array literal, or None when unknown.
+
+    A literal whose element type was erased (`Array<Dynamic>`, as for arrays of arrays) takes its
+    type from its own literal elements, when they all agree.
+    """
+    if expr.recovered_elem_type is None:
+        return None
+    elem = disasm._haxe_annotation(code, expr.recovered_elem_type)
+    if elem == "Dynamic":
+        return None
+    if elem != "Array<Dynamic>":
+        return f"Array<{elem}>"
+    if not expr.elements or not all(isinstance(e, IRArrayLiteral) for e in expr.elements):
+        return None
+    inner = {_literal_type_annotation(e, code) for e in expr.elements if isinstance(e, IRArrayLiteral)}
+    if len(inner) != 1 or None in inner:
+        return None
+    return f"Array<{next(iter(inner))}>"
+
+
+def _array_literal_ascription(expr: IRArrayLiteral, code: Bytecode) -> Optional[str]:
+    """The `Array<T>` to ascribe to a literal so Haxe allocates the element type the bytecode records.
+
+    Haxe infers a non-empty literal's element type from its elements, so only an empty literal or
+    an erased outer array (whose inner arrays Haxe cannot infer) needs the ascription.
+    """
+    if expr.recovered_elem_type is None:
+        return None
+    erased = disasm._haxe_annotation(code, expr.recovered_elem_type) == "Array<Dynamic>"
+    if expr.elements and not erased:
+        return None
+    return _literal_type_annotation(expr, code)
+
+
 def _expression_to_haxe(
     expr: Optional[IRStatement],
     code: Bytecode,
@@ -1423,7 +1458,9 @@ def _expression_to_haxe(
         if id(expr) in getattr(ir_function, "_unboxed_literals", ()):
             return _expression_to_haxe(expr.elements[0], code, ir_function)
         elements = ", ".join(_expression_to_haxe(e, code, ir_function) for e in expr.elements)
-        return f"[{elements}]"
+        literal = f"[{elements}]"
+        ascription = _array_literal_ascription(expr, code)
+        return f"({literal} : {ascription})" if ascription is not None else literal
 
     elif isinstance(expr, IRObjectLiteral):
         fields = ", ".join(
